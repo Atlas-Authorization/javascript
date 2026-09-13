@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // Framework-agnostic, dependency-free logic — no DOM, no Node. It runs
+    // identically in an edge worker, a browser bundle, and a Node server, which
+    // is the whole point: one authorization primitive every SDK shares.
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

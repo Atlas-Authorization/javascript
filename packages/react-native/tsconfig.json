@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "jsx": "react-jsx",
+    /*
+     * React Native provides `fetch`, `Response`, `URL` and `setTimeout` at
+     * runtime, and the DOM lib is the only place TypeScript ships their types.
+     * Pulling it in is a type-only convenience (matching @atlasauth/js and
+     * @atlasauth/react) — this package renders NO DOM: no `document`, no `window`,
+     * no `localStorage`. The session lives in a caller-supplied storage adapter,
+     * not a cookie, precisely because RN has neither.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

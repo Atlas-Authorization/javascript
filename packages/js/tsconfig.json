@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * Browser code in a Node-typed workspace. DOM is the environment this
+     * package actually runs in — BroadcastChannel, localStorage and the storage
+     * event are its subject matter, and typing them as `any` would defeat the
+     * point of the fallback logic being checked at all.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}
