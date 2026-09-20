@@ -19,7 +19,7 @@ export interface AtlasClientConfig {
    */
   secretKey: string;
   /**
-   * Base URL of the instance's Backend API, e.g. `https://api.atlas.dev`. The
+   * Base URL of the instance's Backend API, e.g. `https://api.atlasauth.net`. The
    * `/v1/...` path is appended by each method. Trailing slashes are tolerated.
    */
   apiUrl?: string;
@@ -28,7 +28,7 @@ export interface AtlasClientConfig {
 }
 
 /** The default BAPI origin, overridable per instance via `apiUrl`. */
-export const DEFAULT_API_URL = 'https://api.atlas.dev';
+export const DEFAULT_API_URL = 'https://api.atlasauth.net';
 
 export type QueryValue = string | number | boolean | undefined | null;
 export type QueryParams = Record<string, QueryValue | QueryValue[]>;

@@ -3,7 +3,7 @@ import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { AtlasBackend, hasPermission, hasRole } from './verify';
 import { JwksCache, REFETCH_INTERVAL_MS, readKid } from './jwks-cache';
 
-const ISSUER = 'https://bright-fox-42.fapi.atlas.dev';
+const ISSUER = 'https://bright-fox-42.fapi.atlasauth.net';
 const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
 
 async function keyring(kid = 'kid-1') {
@@ -56,7 +56,7 @@ describe('local verification', () => {
     });
 
     // Without the issuer check, any Atlas instance's token would be accepted.
-    const token = await mint(privateKey, kid, {}, { issuer: 'https://evil.fapi.atlas.dev' });
+    const token = await mint(privateKey, kid, {}, { issuer: 'https://evil.fapi.atlasauth.net' });
     expect(await backend.verify(token)).toEqual({ ok: false, reason: 'invalid' });
   });
 
@@ -430,7 +430,7 @@ describe('verifyOnline', () => {
         issuer: ISSUER,
         fetchImpl,
         secretKey: 'sk_test_x',
-        bapiBaseUrl: 'https://api.atlas.dev',
+        bapiBaseUrl: 'https://api.atlasauth.net',
       }),
       token: await mint(privateKey, kid),
     };

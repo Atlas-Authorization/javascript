@@ -32,7 +32,7 @@ export interface ModuleOptions {
    * `NUXT_PUBLIC_ATLAS_PUBLISHABLE_KEY` env var in production.
    */
   publishableKey?: string;
-  /** The instance's FAPI origin (e.g. `https://fox.fapi.atlas.dev`). Public. */
+  /** The instance's FAPI origin (e.g. `https://fox.fapi.atlasauth.net`). Public. */
   frontendApi?: string;
   /**
    * The instance's JWKS URL, used by the Nitro side to verify session JWTs.
