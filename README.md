@@ -1,37 +1,16 @@
-# Atlas JavaScript SDKs
+# Atlas JavaScript & TypeScript SDKs
 
-Official JavaScript / TypeScript SDKs for [Atlas Authorization](https://atlasauth.net), published under the [`@atlasauth`](https://www.npmjs.com/org/atlasauth) npm scope.
+> **This repository is archived.** It was an early mirror of the Atlas JS/TS SDKs
+> and is no longer the source of truth. The SDKs are actively published to npm.
 
-```bash
-pnpm add @atlasauth/react     # React hooks + <AtlasProvider>, <Protect>, <SignIn>
-pnpm add @atlasauth/nextjs    # Next.js middleware + server helpers
-pnpm add @atlasauth/js        # Framework-agnostic browser client
-pnpm add @atlasauth/backend   # Server-side session (JWT) verification
+## Install from npm (the `@atlasauth/*` scope)
+
+```sh
+npm i @atlasauth/backend      # secret-key Backend API + session/JWT verification
+npm i @atlasauth/js           # the core frontend client
+npm i @atlasauth/react        # React (also: nextjs, vue, nuxt, angular, svelte)
+npm i @atlasauth/react-native # native apps (also: electron, chrome-extension)
 ```
 
-## Packages
-
-| Package | What it is |
-|---|---|
-| [`@atlasauth/js`](packages/js) | Framework-agnostic browser client (sign-in, sessions, handshake) |
-| [`@atlasauth/react`](packages/react) | React bindings — `<AtlasProvider>`, hooks, `<Protect>` |
-| [`@atlasauth/nextjs`](packages/nextjs) | Next.js middleware + `auth()` server helpers |
-| [`@atlasauth/backend`](packages/backend) | Server-side session-token verification against your JWKS |
-| [`@atlasauth/authz`](packages/authz) | Shared authorization primitive (`has()` / `<Protect>` conditions) |
-| [`@atlasauth/vue`](packages/vue) | Vue composables + components |
-| [`@atlasauth/nuxt`](packages/nuxt) | Nuxt module |
-| [`@atlasauth/svelte`](packages/svelte) | Svelte stores + components |
-| [`@atlasauth/angular`](packages/angular) | Angular providers + guards |
-| [`@atlasauth/react-native`](packages/react-native) | React Native / Expo client |
-| [`@atlasauth/embed`](packages/embed) | Drop-in embeddable auth widget |
-
-## Development
-
-```bash
-pnpm install
-pnpm -r build
-```
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+See the full lineup at https://www.npmjs.com/org/atlasauth and the guides at
+https://atlasauth.net/docs.
