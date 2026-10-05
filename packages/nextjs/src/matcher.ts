@@ -36,6 +36,31 @@ export function matchesAny(pathname: string, patterns: readonly string[]): boole
 }
 
 /**
+ * §10.1 Clerk-parity `createRouteMatcher(patterns)` — the idiom integrators write
+ * at the top of `middleware.ts` (`const isProtected = createRouteMatcher(['/dashboard(.*)'])`).
+ * Returns a predicate over anything carrying a pathname: a Next `NextRequest`
+ * (`req.nextUrl.pathname`), a plain `{ nextUrl }` / `{ url }`, or a bare path
+ * string. Uses the SAME `(.*)`-only pattern engine as the middleware, so a
+ * matcher written here and the middleware's own routing agree exactly (no second
+ * dialect, no customer regex in the auth path).
+ */
+export function createRouteMatcher(
+  patterns: readonly string[],
+): (input: string | { nextUrl?: { pathname?: string }; url?: string }) => boolean {
+  return (input) => {
+    let pathname: string;
+    if (typeof input === 'string') {
+      // Accept a full URL or a bare path.
+      pathname = input.startsWith('http') ? new URL(input).pathname : input;
+    } else {
+      pathname =
+        input.nextUrl?.pathname ?? (input.url ? new URL(input.url, 'http://x').pathname : '');
+    }
+    return matchesAny(pathname, patterns);
+  };
+}
+
+/**
  * Paths that are never auth decisions.
  *
  * Running auth on every image request is a measurable cost on a page with forty

@@ -162,6 +162,36 @@ describe('the middleware', () => {
     expect(String(response.calls[0]!.arg)).toContain('/sign-in?redirect_url=%2Fdashboard');
   });
 
+  // §R3.1: `__session` is briefly absent between the ~60s client refreshes. A
+  // durable signed-in hint must keep the gate from bouncing a real user to
+  // /login in that window — the page's own auth() still enforces.
+  it('does NOT bounce a user whose __session is missing but who has the __atlas_uat hint', async () => {
+    const { middleware } = await build();
+    const response = responder();
+
+    await middleware(
+      request('/dashboard', { cookie: `__atlas_uat=${Math.floor(Date.now() / 1000)}` }),
+      response,
+    );
+    expect(response.calls[0]!.kind).toBe('next');
+  });
+
+  it('treats the same-origin refresh cookie as a signed-in hint too', async () => {
+    const { middleware } = await build();
+    const response = responder();
+
+    await middleware(request('/dashboard', { cookie: `__atlas_rt=sometoken` }), response);
+    expect(response.calls[0]!.kind).toBe('next');
+  });
+
+  it('still bounces when the hint is signed-out (__atlas_uat=0)', async () => {
+    const { middleware } = await build();
+    const response = responder();
+
+    await middleware(request('/dashboard', { cookie: `__atlas_uat=0` }), response);
+    expect(response.calls[0]!.kind).toBe('redirect');
+  });
+
   it('lets a signed-out user reach a public page', async () => {
     const { middleware } = await build({ publicRoutes: ['/', '/sign-in(.*)'] });
     const response = responder();

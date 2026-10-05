@@ -48,6 +48,13 @@ export const EN_US: Catalog = {
   'userButton.manageAccount': 'Manage account',
   'userButton.signOut': 'Sign out',
   'userButton.signOutAll': 'Sign out of all devices',
+  'userButton.switchTo': 'Switch to',
+
+  'commerce.subscribe': 'Subscribe',
+  'commerce.manage': 'Manage billing',
+  'commerce.invoices': 'Invoices',
+  'commerce.noInvoices': 'No invoices yet.',
+  'commerce.viewInvoice': 'View',
 
   'userProfile.title': 'Account',
   'userProfile.profileSection': 'Profile',
@@ -66,6 +73,21 @@ export const EN_US: Catalog = {
   'organization.members': 'Members',
   'organization.invite': 'Invite member',
   'organization.roleLabel': 'Role',
+  'organization.createTitle': 'Create organization',
+  'organization.nameLabel': 'Organization name',
+  'organization.create': 'Create organization',
+  'organization.orCreate': 'or create a new organization',
+
+  'waitlist.title': 'Join the waitlist',
+  'waitlist.emailLabel': 'Email address',
+  'waitlist.submit': 'Join the waitlist',
+  'waitlist.success': "You're on the list. We'll be in touch.",
+
+  'reverification.title': "Confirm it's you",
+  'reverification.subtitle': 'Re-enter your password to continue.',
+  'reverification.passwordLabel': 'Password',
+  'reverification.submit': 'Confirm',
+  'reverification.cancel': 'Cancel',
 
   'error.generic': 'Something went wrong. Please try again.',
   'error.network': 'We could not reach the server. Check your connection.',

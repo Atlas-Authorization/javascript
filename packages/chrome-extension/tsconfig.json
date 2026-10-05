@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "jsx": "react-jsx",
+    /*
+     * The DOM lib supplies the types for `fetch`, `Response`, `Headers`, `URL`
+     * and `atob` — all of which an extension has at runtime. This package renders
+     * no cookie-based session: there is none to the FAPI origin, which is the
+     * whole reason the token lives in `chrome.storage` and rides as a bearer.
+     * `chrome` is typed structurally in src/storage.ts, so no @types/chrome.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

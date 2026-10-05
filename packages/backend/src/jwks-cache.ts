@@ -26,7 +26,15 @@ export interface Jwks {
 }
 
 export interface JwksCacheDeps {
-  url: string;
+  /** The instance's JWKS URL. Optional only when `staticJwks` is supplied. */
+  url?: string;
+  /**
+   * A fixed, in-memory key set. When present the cache serves it directly and
+   * NEVER calls `fetch` — the offline path a customer's CI uses to verify
+   * Atlas-minted test tokens (§1.3c). Mutually exclusive with `url` in practice;
+   * when both are given the static set wins and no network call is ever made.
+   */
+  staticJwks?: Jwks;
   fetchImpl?: typeof fetch;
   now?: () => number;
   ttlMs?: number;
@@ -64,6 +72,25 @@ export class JwksCache {
    * brand-new key fail, and those are a minute old at most.
    */
   async get(kid?: string): Promise<Jwks | null> {
+    /**
+     * The static path. When a fixed key set was supplied there is nothing to
+     * fetch, refetch or throttle: the keys never rotate for the life of the
+     * process, so every `get` — hit or `kid` miss — is answered from the set
+     * with no outbound request. This is what makes verification hermetic.
+     */
+    if (this.deps.staticJwks) {
+      this.lastOutcome = 'cached';
+      return this.deps.staticJwks;
+    }
+
+    if (this.deps.url === undefined) {
+      // Neither a URL nor a static set: nothing to verify against. Report
+      // "no keys" rather than attempting `fetch(undefined)`.
+      this.lastOutcome = 'failed';
+      return null;
+    }
+
+    const url = this.deps.url;
     const now = this.now;
     const ttl = this.deps.ttlMs ?? DEFAULT_TTL_MS;
     const interval = this.deps.refetchIntervalMs ?? REFETCH_INTERVAL_MS;
@@ -89,7 +116,7 @@ export class JwksCache {
     this.lastAttemptAt = now;
 
     try {
-      const response = await (this.deps.fetchImpl ?? fetch)(this.deps.url, {
+      const response = await (this.deps.fetchImpl ?? fetch)(url, {
         headers: { accept: 'application/json' },
       });
       if (!response.ok) throw new Error(`JWKS fetch failed (${response.status})`);

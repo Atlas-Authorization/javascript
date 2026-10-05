@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/react",
-  "version": "0.1.1",
+  "version": "0.1.30",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -26,12 +26,7 @@
   },
   "files": [
     "dist",
-    "README.md"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
-    "directory": "packages/react"
-  },
-  "license": "MIT"
+    "README.md",
+    "CHANGELOG.md"
+  ]
 }

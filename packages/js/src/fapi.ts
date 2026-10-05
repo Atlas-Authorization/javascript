@@ -32,6 +32,21 @@ export interface FapiResponse<T> {
 export class FapiClient {
   constructor(private readonly options: FapiClientOptions) {}
 
+  /**
+   * The origin FAPI serves from — where an OAuth popup's callback page lives, so
+   * the popup flow can pin `postMessage`'s `event.origin` to it. Empty `baseUrl`
+   * means same-origin, so callers fall back to `window.location.origin`.
+   */
+  get frontendApiOrigin(): string {
+    const base = this.options.baseUrl;
+    if (!base) return '';
+    try {
+      return new URL(base).origin;
+    } catch {
+      return '';
+    }
+  }
+
   async request<T>(path: string, init: RequestInit = {}): Promise<FapiResponse<T>> {
     const doFetch = this.options.fetchImpl ?? fetch;
 

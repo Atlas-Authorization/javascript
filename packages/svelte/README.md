@@ -41,7 +41,7 @@ component which also paints the appearance tokens onto a host-DOM wrapper.
   import { AtlasProvider } from '@atlas/svelte';
 </script>
 
-<AtlasProvider publishableKey="pk_live_…" frontendApi="https://<instance>.atlas.dev">
+<AtlasProvider publishableKey="pk_live_…" frontendApi="https://your-instance-fapi.atlasauth.net">
   <slot />
 </AtlasProvider>
 ```
@@ -159,8 +159,8 @@ server verifies with no network round-trip.
 import { handleAtlas } from '@atlas/svelte/server';
 
 export const handle = handleAtlas({
-  jwksUrl: 'https://<instance>.atlas.dev/.well-known/jwks.json',
-  issuer: 'https://<instance>.atlas.dev',
+  jwksUrl: 'https://your-instance-fapi.atlasauth.net/.well-known/jwks.json',
+  issuer: 'https://your-instance-fapi.atlasauth.net',
   // authorizedParties: ['https://app.example.com'], // optional azp allowlist
 });
 ```

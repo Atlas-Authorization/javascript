@@ -1,8 +1,19 @@
 {
   "name": "@atlasauth/nextjs",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -11,10 +22,19 @@
   "dependencies": {
     "@atlasauth/backend": "workspace:*"
   },
+  "peerDependencies": {
+    "next": ">=13.4"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "typescript": "^5.6.3",
     "vitest": "^2.1.4",
-    "jose": "^5.9.6"
+    "jose": "^5.9.6",
+    "next": "^15.0.0"
   },
   "publishConfig": {
     "access": "public"
@@ -22,11 +42,5 @@
   "files": [
     "dist",
     "README.md"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
-    "directory": "packages/nextjs"
-  },
-  "license": "MIT"
+  ]
 }

@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * The renderer helper uses `fetch`, `Headers`, `RequestInfo` and the
+     * `globalThis`/`window` global — types TypeScript only ships in the DOM lib.
+     * Pulling it in is type-only (matching @atlasauth/js and @atlasauth/react-native).
+     * The MAIN-process and PRELOAD pieces render no DOM; Electron itself is a
+     * structurally-typed peer (see src/shared.ts), so `types` stays empty and
+     * this package compiles without `electron` or `@types/node` installed.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

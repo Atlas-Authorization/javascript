@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/embed",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -23,11 +23,5 @@
   "files": [
     "dist",
     "README.md"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
-    "directory": "packages/embed"
-  },
-  "license": "MIT"
+  ]
 }

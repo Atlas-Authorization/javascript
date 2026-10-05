@@ -155,14 +155,40 @@ export function collectDeviceSignals(): DeviceSignals {
   } as DeviceSignals;
 }
 
-/** A stable pseudonymous client id, persisted in localStorage. */
+/**
+ * Whether the browser is signalling Do-Not-Track. Checked from `navigator`
+ * (and IE's `window.doNotTrack`). When true we still fire the per-interaction
+ * anti-bot signal, but we do NOT persist a cross-session identifier — see
+ * {@link deviceId}.
+ */
+export function doNotTrackEnabled(): boolean {
+  return (
+    safe(() => {
+      const n = nav() as (Navigator & { msDoNotTrack?: string }) | undefined;
+      const w = typeof window !== 'undefined' ? (window as { doNotTrack?: string }) : undefined;
+      const v = n?.doNotTrack ?? n?.msDoNotTrack ?? w?.doNotTrack;
+      return v === '1' || v === 'yes';
+    }, false) ?? false
+  );
+}
+
+/**
+ * A stable pseudonymous client id, persisted in localStorage.
+ *
+ * Honors Do-Not-Track: when the browser signals DNT we return an **ephemeral**
+ * per-call id and never write it to storage, so no durable tracking identifier
+ * is kept on the device. The anti-bot beacon still runs for the current
+ * interaction — DNT suppresses persistent tracking, not one-shot security signals.
+ */
 export function deviceId(): string | null {
   return safe(() => {
+    const fresh = () => 'd_' + djb2(String(Math.random()) + String(Date.now()) + (nav()?.userAgent ?? ''));
+    if (doNotTrackEnabled()) return fresh(); // ephemeral, never persisted
     if (typeof localStorage === 'undefined') return null;
     const KEY = '__atlas_did';
     let id = localStorage.getItem(KEY);
     if (!id) {
-      id = 'd_' + djb2(String(Math.random()) + String(Date.now()) + (nav()?.userAgent ?? ''));
+      id = fresh();
       localStorage.setItem(KEY, id);
     }
     return id;

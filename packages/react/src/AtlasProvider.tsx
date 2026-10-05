@@ -11,16 +11,25 @@ import {
 import {
   FapiClient,
   TokenCache,
+  bestChannel,
   getProviderToken as fetchProviderToken,
   msUntilRefresh,
   readExpiry,
   readRedirectResult,
   stripRedirectParams,
+  type Channel,
   type ProviderToken,
 } from '@atlasauth/js';
 import { cssVariables, resolveTokens, type Appearance } from './appearance';
+import { ATLAS_BASE_CSS, ATLAS_STYLE_ELEMENT_ID } from './styles';
 import { EN_US, withFallback, type Catalog } from './i18n';
-import type { AtlasOrganizationMembership, AtlasSession, AtlasUser, SessionClaims } from './types';
+import type {
+  AtlasOrganizationMembership,
+  AtlasSession,
+  AtlasSessionResource,
+  AtlasUser,
+  SessionClaims,
+} from './types';
 
 /**
  * §10.1 `<AtlasProvider publishableKey>`.
@@ -40,9 +49,16 @@ interface AtlasContextValue {
   status: AuthStatus;
   user: AtlasUser | null;
   session: AtlasSession | null;
+  /**
+   * §L1 every account signed in on this browser (multi-session), active first.
+   * A single-session client is a one-element list. Surfaced by `useSessionList`.
+   */
+  sessions: AtlasSessionResource[];
   claims: SessionClaims | null;
   memberships: AtlasOrganizationMembership[];
   appearance?: Appearance;
+  /** §oauth popup mode — app-wide default for social/OIDC sign-in (see AtlasProviderProps). */
+  oauthMode?: 'popup' | 'redirect';
   catalog: Catalog;
   /**
    * §5.3: a sign-in attempt handed back by an OAuth redirect that still needs a
@@ -61,17 +77,60 @@ interface AtlasContextValue {
   getProviderToken(provider: string): Promise<ProviderToken | null>;
   signOut(): Promise<void>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
+  /**
+   * §L1 switch which signed-in account is active on this browser (Clerk
+   * `setActive({ session })`). Accepts a session id or a session resource from
+   * `useSessionList()`. Re-boots the client and nudges other tabs.
+   */
+  setActiveSession(session: string | { id: string }): Promise<void>;
   reload(): Promise<void>;
 }
 
 const AtlasContext = createContext<AtlasContextValue | null>(null);
 
+/** §R3.2 the cross-tab "auth changed here, re-check" signal. Carries no token —
+ *  a receiving tab re-boots from the shared cookies, never from the channel. */
+const SESSION_SIGNAL = 'atlas:session';
+
 export interface AtlasProviderProps {
   publishableKey: string;
-  /** The instance's FAPI origin. */
-  frontendApi?: string;
+  /**
+   * The instance's Frontend API origin — REQUIRED.
+   *
+   * The publishable key is `pk_(live|test)_<instanceId>`: it encodes the
+   * instance id (sent as the `x-publishable-key` header on every request) but
+   * NOT a host, so the FAPI origin cannot be derived from the key. An unclaimed
+   * instance has no per-instance subdomain provisioned either, so synthesising
+   * `https://<instanceId>.atlasauth.net` would point at a host that does not
+   * resolve. The origin is therefore passed explicitly:
+   *   - on the hosted fleet, before you verify a custom domain, the shared host
+   *     `https://atlasauth.net` (FAPI resolves the instance from the key);
+   *   - once a custom domain is verified, that host, e.g. `https://auth.acme.com`;
+   *   - `""` for a same-origin / reverse-proxy setup where you serve FAPI under
+   *     your own origin (requests then go to relative paths).
+   *
+   * It is required (not optional) so that omitting it is a COMPILE error rather
+   * than a silent fall-through to relative URLs that hit the app's own origin and
+   * fail. Pass `""` deliberately for the same-origin case.
+   */
+  frontendApi: string;
   appearance?: Appearance;
   localization?: Catalog;
+  /**
+   * §oauth popup mode — the app-wide default for social/OIDC sign-in. `"popup"`
+   * completes in a GSI-style popup (no page navigation), auto-falling back to a
+   * redirect when the popup is blocked. A `<SignIn oauthMode>` overrides it per
+   * mount. Defaults to `"redirect"`.
+   */
+  oauthMode?: 'popup' | 'redirect';
+  /**
+   * Fires ONCE when a user goes from signed-out to signed-in — the reliable
+   * "sign-in completed" hook, including right after a popup handoff (where the
+   * opener re-boots via a session reload). Does NOT fire on a page load that
+   * boots already-signed-in from a cached session, so it's safe for one-time
+   * actions (redirect, toast, analytics).
+   */
+  onSignedIn?: (user: AtlasUser) => void;
   children: ReactNode;
   fetchImpl?: typeof fetch;
 }
@@ -84,11 +143,17 @@ export function AtlasProvider(props: AtlasProviderProps) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<AtlasUser | null>(null);
   const [session, setSession] = useState<AtlasSession | null>(null);
+  const [sessions, setSessions] = useState<AtlasSessionResource[]>([]);
   const [claims, setClaims] = useState<SessionClaims | null>(null);
   const [memberships, setMemberships] = useState<AtlasOrganizationMembership[]>([]);
 
   const cache = useRef(new TokenCache());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // §R3.2 cross-tab session channel + refs the tab-propagation effect reads
+  // without re-subscribing on every render.
+  const channel = useRef<Channel | null>(null);
+  const statusRef = useRef<AuthStatus>('loading');
+  const reloadRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   /**
    * Captured synchronously during the first render (not in an effect) so it is
@@ -135,6 +200,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
 
       const body = (await response.json()) as {
         session: AtlasSession | null;
+        sessions?: AtlasSessionResource[];
         user: AtlasUser | null;
         jwt?: string;
         organization_memberships?: AtlasOrganizationMembership[];
@@ -145,6 +211,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
         setStatus('signed_out');
         setUser(null);
         setSession(null);
+        setSessions([]);
         setClaims(null);
         setMemberships([]);
         return;
@@ -152,6 +219,19 @@ export function AtlasProvider(props: AtlasProviderProps) {
 
       setUser(body.user);
       setSession(body.session);
+      // §L1 the multi-session list, active first. Older servers omit it; fall
+      // back to a one-element list built from the active session + user.
+      setSessions(
+        body.sessions ?? [
+          {
+            object: 'session',
+            id: body.session.id,
+            status: body.session.status,
+            last_active_organization_id: body.session.last_active_organization_id,
+            user: body.user,
+          },
+        ],
+      );
       setMemberships(body.organization_memberships ?? []);
       if (body.jwt) applyToken(body.jwt, body.session.id);
       setStatus('signed_in');
@@ -197,6 +277,60 @@ export function AtlasProvider(props: AtlasProviderProps) {
     };
   }, [status, claims, refresh]);
 
+  /** §R3.2 tell sibling tabs that auth changed here, so they re-check. */
+  const announceSessionChange = useCallback(() => {
+    channel.current?.post({ type: SESSION_SIGNAL });
+  }, []);
+
+  // Keep refs current for the once-mounted tab-propagation effect below, so it
+  // reads live `status`/`reload` without re-subscribing every render.
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+  useEffect(() => {
+    reloadRef.current = reload;
+  }, [reload]);
+
+  /**
+   * §R3.2 cross-tab + on-focus session propagation — THE stranded-tab fix.
+   *
+   * A redirect sign-in (or one that completes in a popup/new tab, like the
+   * Google button's fallback) leaves the tab that STARTED it sitting on the
+   * sign-in form, because nothing tells it a session now exists. Two signals
+   * close that gap:
+   *   - a BroadcastChannel (with a localStorage fallback) message that a
+   *     signing-in/out tab posts, which sibling tabs answer by re-booting from
+   *     the shared cookies;
+   *   - a visibility/focus listener, so a tab the user simply returns to
+   *     re-checks even when no channel is available (Safari private mode) or the
+   *     message was missed. It re-checks only when NOT already signed in, so a
+   *     focused signed-in tab never reloads on every alt-tab.
+   *
+   * `reload()` never broadcasts, so a received signal cannot loop.
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const ch = bestChannel('atlas-session');
+    channel.current = ch;
+    const unsub = ch?.subscribe((msg) => {
+      if ((msg as { type?: unknown } | null)?.type === SESSION_SIGNAL) void reloadRef.current();
+    });
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && statusRef.current !== 'signed_in') {
+        void reloadRef.current();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      unsub?.();
+      ch?.close();
+      channel.current = null;
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, []);
+
   /**
    * §6.3 step 3: complete a redirect-based sign-in. An OAuth or hosted-page flow
    * lands back here with a one-time ticket in the URL; exchange it for cookies,
@@ -219,6 +353,9 @@ export function AtlasProvider(props: AtlasProviderProps) {
         window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
       }
       await reload();
+      // §R3.2 if this was the tab that completed a sign-in, wake any sibling tab
+      // (e.g. the one that opened the Google window) so it leaves the form too.
+      if (result?.ticket) announceSessionChange();
     })();
     // Runs once on mount (empty deps): the redirect is handled exactly once, and
     // re-running would only re-read an already-scrubbed URL. `reload`/`call` are
@@ -264,7 +401,10 @@ export function AtlasProvider(props: AtlasProviderProps) {
     setSession(null);
     setClaims(null);
     setMemberships([]);
-  }, [call]);
+    // §R3.2 sign every sibling tab out too, so a shared device doesn't leave a
+    // live-looking session in another tab after the user signed out here.
+    announceSessionChange();
+  }, [announceSessionChange, call]);
 
   const setActiveOrganization = useCallback(
     async (organizationId: string | null) => {
@@ -282,8 +422,26 @@ export function AtlasProvider(props: AtlasProviderProps) {
       // costs a round trip for information already in hand.
       applyToken(body.jwt, current.sessionId);
       await reload();
+      // §R3.2 the active org is session state other tabs reflect — nudge them.
+      announceSessionChange();
     },
-    [applyToken, call, reload],
+    [announceSessionChange, applyToken, call, reload],
+  );
+
+  const setActiveSession = useCallback(
+    async (target: string | { id: string }) => {
+      const id = typeof target === 'string' ? target : target.id;
+      const response = await call(`/v1/client/sessions/${id}/set_active`, { method: 'POST' });
+      if (!response.ok) return;
+      const body = (await response.json()) as { jwt?: string; id?: string };
+      // The response mints the newly-active session's JWT; apply it before the
+      // re-boot so an immediate getToken() already reflects the switch.
+      if (body.jwt && body.id) applyToken(body.jwt, body.id);
+      await reload();
+      // §R3.2 the active account is session state other tabs reflect — nudge them.
+      announceSessionChange();
+    },
+    [announceSessionChange, applyToken, call, reload],
   );
 
   const catalog = useMemo(
@@ -291,13 +449,29 @@ export function AtlasProvider(props: AtlasProviderProps) {
     [localization],
   );
 
+  // §onSignedIn: fire once on a genuine signed_out → signed_in transition (a NEW
+  // sign-in, including the post-popup re-boot), never on a cached-boot load. Uses
+  // a ref for the callback so a new function identity each render can't re-fire it.
+  const onSignedInRef = useRef(props.onSignedIn);
+  onSignedInRef.current = props.onSignedIn;
+  const prevStatusRef = useRef<AuthStatus>('loading');
+  useEffect(() => {
+    const was = prevStatusRef.current;
+    prevStatusRef.current = status;
+    if (was === 'signed_out' && status === 'signed_in' && user) {
+      onSignedInRef.current?.(user);
+    }
+  }, [status, user]);
+
   const value = useMemo<AtlasContextValue>(
     () => ({
       publishableKey,
       frontendApi: baseUrl,
+      oauthMode: props.oauthMode,
       status,
       user,
       session,
+      sessions,
       claims,
       memberships,
       appearance,
@@ -307,12 +481,14 @@ export function AtlasProvider(props: AtlasProviderProps) {
       getProviderToken,
       signOut,
       setActiveOrganization,
+      setActiveSession,
       reload,
     }),
     [
       appearance,
       baseUrl,
       publishableKey,
+      props.oauthMode,
       catalog,
       claims,
       getToken,
@@ -321,7 +497,9 @@ export function AtlasProvider(props: AtlasProviderProps) {
       pendingAttempt,
       reload,
       session,
+      sessions,
       setActiveOrganization,
+      setActiveSession,
       signOut,
       status,
       user,
@@ -335,6 +513,16 @@ export function AtlasProvider(props: AtlasProviderProps) {
 
   return (
     <AtlasContext.Provider value={value}>
+      {/*
+        §10.3 base component styles, rendered in the provider's own output so
+        they are present in the SERVER HTML (no SSR flash of unstyled content)
+        AND on the client — the prebuilt components are styled on first paint
+        with no stylesheet import. Rendering it (rather than a client-only
+        effect) is what makes SSR zero-FOUC. `.atlas-root`-scoped + token-driven,
+        so customer CSS / appearance.elements still layer on top. A stable id
+        lets `injectAtlasStyles()` (exported for manual use) no-op when present.
+      */}
+      <style id={ATLAS_STYLE_ELEMENT_ID} dangerouslySetInnerHTML={{ __html: ATLAS_BASE_CSS }} />
       {/* Tokens land as CSS variables on a host-DOM element — no iframe. */}
       <div className="atlas-root" style={style}>
         {children}

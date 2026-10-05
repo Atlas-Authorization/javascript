@@ -1,8 +1,8 @@
 {
   "name": "@atlasauth/nuxt",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
-  "description": "Official Nuxt 3 module for Atlas — SSR session verification (Nitro) built on the @atlasauth/vue client.",
+  "description": "Official Nuxt 3 module for Atlas \u2014 SSR session verification (Nitro) built on the @atlasauth/vue client.",
   "license": "MIT",
   "main": "./dist/module.mjs",
   "types": "./dist/types.d.mts",
@@ -49,10 +49,5 @@
   },
   "publishConfig": {
     "access": "public"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
-    "directory": "packages/nuxt"
   }
 }

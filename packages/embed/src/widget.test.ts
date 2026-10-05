@@ -641,7 +641,9 @@ describe('native Google (GSI)', () => {
     // Google's REAL button is rendered into an INVISIBLE overlay INSIDE our button.
     expect(renderedInto).toBeTruthy();
     expect(google?.contains(renderedInto)).toBe(true);
-    expect((renderedInto as unknown as HTMLElement).style.opacity).toBe('0');
+    // Near-zero, NOT exactly 0: GSI silently refuses a click on an element at
+    // opacity:0 (treats it as not-visible), so the invisible overlay uses 0.004.
+    expect((renderedInto as unknown as HTMLElement).style.opacity).toBe('0.004');
   });
 
   it('falls back to a redirect button for google when no native client_id is offered', async () => {

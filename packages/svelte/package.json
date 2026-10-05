@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/svelte",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "type": "module",
   "svelte": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -56,8 +56,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "url": "git+https://github.com/alphajew420/ssoly.git",
     "directory": "packages/svelte"
   },
-  "license": "MIT"
+  "homepage": "https://github.com/alphajew420/ssoly/tree/main/packages/svelte#readme",
+  "bugs": {
+    "url": "https://github.com/alphajew420/ssoly/issues"
+  }
 }

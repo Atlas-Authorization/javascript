@@ -4,6 +4,7 @@ export * from './attempt';
 export * from './redirect';
 export * from './fapi';
 export * from './native';
+export * from './native-session';
 export * from './passkey';
 export * from './telegram';
 export * from './siwe';

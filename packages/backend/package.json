@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/backend",
-  "version": "0.1.1",
+  "version": "0.1.7",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -25,8 +25,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "url": "git+https://github.com/alphajew420/ssoly.git",
     "directory": "packages/backend"
   },
-  "license": "MIT"
+  "homepage": "https://github.com/alphajew420/ssoly/tree/main/packages/backend#readme",
+  "bugs": {
+    "url": "https://github.com/alphajew420/ssoly/issues"
+  }
 }

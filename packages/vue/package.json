@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/vue",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -31,8 +31,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "url": "git+https://github.com/alphajew420/ssoly.git",
     "directory": "packages/vue"
   },
-  "license": "MIT"
+  "homepage": "https://github.com/alphajew420/ssoly/tree/main/packages/vue#readme",
+  "bugs": {
+    "url": "https://github.com/alphajew420/ssoly/issues"
+  }
 }

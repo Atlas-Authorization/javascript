@@ -38,17 +38,19 @@ const MONO: Record<string, { fill: string; path: string }> = {
 
 /**
  * An inline SVG string for a provider's brand mark, or null when we have none.
- * The SVG carries no width/height — the button CSS sizes it — so one mark works
- * at every button size.
+ * Every mark carries an intrinsic 18px `width`/`height` so it never renders 0px
+ * where no CSS sizes it; the widget's `.atlas-embed-social-icon svg` rule still
+ * overrides it, so one mark works at every button size. Kept in lockstep with
+ * `packages/core/src/branding/provider-icons.ts`.
  */
 export function providerIcon(id: string): string | null {
   const multi = MULTICOLOR[id];
   if (multi) {
-    return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${multi}</svg>`;
+    return `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">${multi}</svg>`;
   }
   const mono = MONO[id];
   if (mono) {
-    return `<svg viewBox="0 0 24 24" fill="${mono.fill}" aria-hidden="true" focusable="false"><path d="${mono.path}"/></svg>`;
+    return `<svg viewBox="0 0 24 24" width="18" height="18" fill="${mono.fill}" aria-hidden="true" focusable="false"><path d="${mono.path}"/></svg>`;
   }
   return null;
 }

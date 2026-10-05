@@ -120,8 +120,8 @@ export async function resolveServerAuth(
  * // src/hooks.server.ts
  * import { handleAtlas } from '@atlasauth/svelte/server';
  * export const handle = handleAtlas({
- *   jwksUrl: 'https://<instance>.atlas.dev/.well-known/jwks.json',
- *   issuer: 'https://<instance>.atlas.dev',
+ *   jwksUrl: 'https://<instance>.atlasauth.net/.well-known/jwks.json',
+ *   issuer: 'https://<instance>.atlasauth.net',
  * });
  * ```
  */

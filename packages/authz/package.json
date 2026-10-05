@@ -18,11 +18,5 @@
   "files": [
     "dist",
     "README.md"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
-    "directory": "packages/authz"
-  },
-  "license": "MIT"
+  ]
 }

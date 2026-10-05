@@ -172,3 +172,24 @@ if (result.status === 'needs_more' && result.attemptId) {
 `getToken()` returns the stored session JWT for attaching to your own API
 requests. `getProviderToken(provider)` returns the signed-in user's own live
 access token at a connected social provider (Google, GitHub, …).
+
+## Native session (first-party OAuth → session)
+
+A first-party app that already holds an Atlas OAuth access token can trade it for
+a cookie-free session with `createNativeSessionManager` — it exchanges once, then
+auto-refreshes the short-lived JWT and persists each rotated refresh token into
+your `TokenStorage` (Keychain / Keystore):
+
+```ts
+import { createNativeSessionManager, exchangeForSession } from '@atlasauth/react-native';
+
+const mgr = await createNativeSessionManager({
+  frontendApi: 'https://fapi.your-instance.atlasauth.net',
+  publishableKey: 'pk_...',
+  storage: secureStorage, // a TokenStorage dedicated to the native session
+});
+const session = await exchangeForSession({ baseUrl, clientId, accessToken });
+if (session) mgr.setSession(session);
+
+const headers = await mgr.authHeaders(); // { Authorization, 'x-publishable-key' }
+```

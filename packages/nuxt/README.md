@@ -33,7 +33,7 @@ export default defineNuxtConfig({
   atlas: {
     // Public — sent to the browser.
     publishableKey: 'pk_test_...',
-    frontendApi: 'https://your-instance.fapi.atlasauth.net',
+    frontendApi: 'https://your-instance-fapi.atlasauth.net',
   },
 
   runtimeConfig: {
@@ -57,9 +57,9 @@ In production, prefer environment variables (they override the config above):
 
 ```bash
 NUXT_PUBLIC_ATLAS_PUBLISHABLE_KEY=pk_live_...
-NUXT_PUBLIC_ATLAS_FRONTEND_API=https://your-instance.fapi.atlasauth.net
-NUXT_ATLAS_JWKS_URL=https://your-instance.fapi.atlasauth.net/.well-known/jwks.json
-NUXT_ATLAS_ISSUER=https://your-instance.fapi.atlasauth.net
+NUXT_PUBLIC_ATLAS_FRONTEND_API=https://your-instance-fapi.atlasauth.net
+NUXT_ATLAS_JWKS_URL=https://your-instance-fapi.atlasauth.net/.well-known/jwks.json
+NUXT_ATLAS_ISSUER=https://your-instance-fapi.atlasauth.net
 ```
 
 ## Use in pages and components

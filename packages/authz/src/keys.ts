@@ -12,7 +12,7 @@
  * differently — the arity of the key tells you which you are looking at.
  *
  * The full creation-time rules (reserved `sys_` prefix, immutability, length)
- * are the shared source of truth these SDKs and the Atlas server both build on so they can
+ * live in `@atlas/core`'s validator, which imports these patterns so the two can
  * never drift.
  */
 

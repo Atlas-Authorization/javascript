@@ -61,3 +61,83 @@ describe('the documented components and hooks are all exported', () => {
     }
   });
 });
+
+describe('Clerk-parity ergonomic exports (2026-09-15 quick wins)', () => {
+  it('exports the auth-button, redirect, avatar, and useSignUp helpers', () => {
+    for (const name of [
+      'SignInButton',
+      'SignUpButton',
+      'SignOutButton',
+      'RedirectToSignIn',
+      'RedirectToSignUp',
+      'UserAvatar',
+      'useSignUp',
+    ] as const) {
+      expect(typeof (sdk as Record<string, unknown>)[name]).toBe('function');
+    }
+  });
+
+  it('exports the organization-list, waitlist, and reverification helpers', () => {
+    for (const name of [
+      'useOrganizationList',
+      'CreateOrganization',
+      'OrganizationList',
+      'Waitlist',
+      'useWaitlist',
+      'useReverification',
+    ] as const) {
+      expect(typeof (sdk as Record<string, unknown>)[name]).toBe('function');
+    }
+  });
+});
+
+describe('§commerce billing surface (Clerk commerce parity)', () => {
+  it('exports the billing hooks and components', () => {
+    for (const name of [
+      'useBilling',
+      'useCheckout',
+      'useSubscription',
+      'useInvoices',
+      'usePaymentMethods',
+      'PricingTable',
+      'Invoices',
+      'EmbeddedCheckout',
+    ] as const) {
+      expect(typeof (sdk as Record<string, unknown>)[name]).toBe('function');
+    }
+  });
+});
+
+describe('§L1 multi-session / multi-account surface', () => {
+  it('exports useSessionList and <MultisessionAppSupport>', () => {
+    expect(typeof (sdk as Record<string, unknown>).useSessionList).toBe('function');
+    expect(typeof (sdk as Record<string, unknown>).MultisessionAppSupport).toBe('function');
+  });
+});
+
+describe('§L3 prebuilt-component extension API (Clerk static-subcomponent parity)', () => {
+  it('attaches the UserButton menu-item descriptors as statics', () => {
+    // The extension surface is discovered by identity off the parent component,
+    // so the statics must be the very functions a consumer writes as
+    // `<UserButton.Action>` — not merely "some function".
+    expect(typeof sdk.UserButton.MenuItems).toBe('function');
+    expect(typeof sdk.UserButton.Action).toBe('function');
+    expect(typeof sdk.UserButton.Link).toBe('function');
+  });
+
+  it('attaches the UserProfile page/link descriptors as statics', () => {
+    expect(typeof sdk.UserProfile.Page).toBe('function');
+    expect(typeof sdk.UserProfile.Link).toBe('function');
+  });
+
+  it('descriptor components render nothing themselves (parent reads them)', () => {
+    // A descriptor is a marker, not a renderer: calling it must yield null, so a
+    // stray `<UserButton.Action>` outside a `<UserButton>` paints nothing rather
+    // than leaking raw props into the DOM.
+    expect(sdk.UserButton.Action({ label: 'x' })).toBeNull();
+    expect(sdk.UserButton.Link({ label: 'x', href: '/y' })).toBeNull();
+    expect(sdk.UserButton.MenuItems({})).toBeNull();
+    expect(sdk.UserProfile.Page({ label: 'x' })).toBeNull();
+    expect(sdk.UserProfile.Link({ label: 'x', url: '/y' })).toBeNull();
+  });
+});

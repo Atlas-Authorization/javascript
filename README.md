@@ -1,16 +1,28 @@
-# Atlas JavaScript & TypeScript SDKs
+# Atlas — JavaScript & TypeScript SDKs
 
-> **This repository is archived.** It was an early mirror of the Atlas JS/TS SDKs
-> and is no longer the source of truth. The SDKs are actively published to npm.
+The official Atlas SDKs for JavaScript/TypeScript, published to npm under the
+[`@atlasauth`](https://www.npmjs.com/org/atlasauth) scope. This repository holds
+their source.
 
-## Install from npm (the `@atlasauth/*` scope)
+## Frontend (publishable key)
 
-```sh
-npm i @atlasauth/backend      # secret-key Backend API + session/JWT verification
-npm i @atlasauth/js           # the core frontend client
-npm i @atlasauth/react        # React (also: nextjs, vue, nuxt, angular, svelte)
-npm i @atlasauth/react-native # native apps (also: electron, chrome-extension)
-```
+| Package | Install |
+|---|---|
+| Core client | `npm i @atlasauth/js` |
+| React | `npm i @atlasauth/react` |
+| Next.js | `npm i @atlasauth/nextjs` |
+| Vue / Nuxt | `npm i @atlasauth/vue` · `npm i @atlasauth/nuxt` |
+| Angular / Svelte | `npm i @atlasauth/angular` · `npm i @atlasauth/svelte` |
+| React Native | `npm i @atlasauth/react-native` |
+| Electron / Chrome extension | `npm i @atlasauth/electron` · `npm i @atlasauth/chrome-extension` |
+| Embed / Authz helpers | `npm i @atlasauth/embed` · `npm i @atlasauth/authz` |
 
-See the full lineup at https://www.npmjs.com/org/atlasauth and the guides at
-https://atlasauth.net/docs.
+## Backend & framework adapters (secret key)
+
+| Package | Install |
+|---|---|
+| Backend API + JWT verify | `npm i @atlasauth/backend` |
+| Express / Hono / Fastify | `npm i @atlasauth/express` · `@atlasauth/hono` · `@atlasauth/fastify` |
+| Astro / React Router / TanStack Start | `npm i @atlasauth/astro` · `@atlasauth/react-router` · `@atlasauth/tanstack-react-start` |
+
+Docs & guides: https://atlasauth.net/docs

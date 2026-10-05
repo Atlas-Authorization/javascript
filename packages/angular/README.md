@@ -1,6 +1,6 @@
 # @atlas/angular
 
-The official **Angular** SDK for Atlas — the Angular peer of [`@atlas/react`](../react). It wraps the framework-agnostic [`@atlas/js`](../js) client and exposes Atlas's reactive auth state, sign-in/up flows, prebuilt UI, authorization directives, and route guards as idiomatic modern Angular (standalone APIs, RxJS **and** Signals, DI).
+The official **Angular** SDK for Atlas — the Angular peer of [`@atlasauth/react`](../react). It wraps the framework-agnostic [`@atlasauth/js`](../js) client and exposes Atlas's reactive auth state, sign-in/up flows, prebuilt UI, authorization directives, and route guards as idiomatic modern Angular (standalone APIs, RxJS **and** Signals, DI).
 
 Requires **Angular 17+**.
 
@@ -152,7 +152,7 @@ Server-driven, rendered in the host DOM (no iframe), themed via the `appearance`
 | `<atlas-user-profile>` | `<UserProfile/>` |
 | `<atlas-organization-profile>` | `<OrganizationProfile/>` |
 
-`<atlas-sign-in>` / `<atlas-sign-up>` run the full multi-step flow (identifier → first factor → 2FA / enrollment → email code → completion, plus magic-link polling), driven entirely by the server-side attempt status through the shared `@atlas/js` engine.
+`<atlas-sign-in>` / `<atlas-sign-up>` run the full multi-step flow (identifier → first factor → 2FA / enrollment → email code → completion, plus magic-link polling), driven entirely by the server-side attempt status through the shared `@atlasauth/js` engine.
 
 ---
 
@@ -186,7 +186,7 @@ Like the components, guards are UX, not security — the server enforces the sam
 
 ## Theming & i18n
 
-`appearance` accepts design tokens + per-element class overrides and a `baseTheme` (`default`, `dark`, `neobrutalist`); overrides are **appended** to the base classes so your Tailwind/CSS just works. `localization` merges a catalog over `en-US`. Both are identical in shape to `@atlas/react` — see `appearance.ts` and `i18n.ts`, which are shared verbatim.
+`appearance` accepts design tokens + per-element class overrides and a `baseTheme` (`default`, `dark`, `neobrutalist`); overrides are **appended** to the base classes so your Tailwind/CSS just works. `localization` merges a catalog over `en-US`. Both are identical in shape to `@atlasauth/react` — see `appearance.ts` and `i18n.ts`, which are shared verbatim.
 
 ## Build & test
 

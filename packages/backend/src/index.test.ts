@@ -3,7 +3,7 @@ import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { AtlasBackend, hasPermission, hasRole } from './verify';
 import { JwksCache, REFETCH_INTERVAL_MS, readKid } from './jwks-cache';
 
-const ISSUER = 'https://bright-fox-42.fapi.atlasauth.net';
+const ISSUER = 'https://bright-fox-42.fapi.atlas.dev';
 const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
 
 async function keyring(kid = 'kid-1') {
@@ -56,7 +56,7 @@ describe('local verification', () => {
     });
 
     // Without the issuer check, any Atlas instance's token would be accepted.
-    const token = await mint(privateKey, kid, {}, { issuer: 'https://evil.fapi.atlasauth.net' });
+    const token = await mint(privateKey, kid, {}, { issuer: 'https://evil.fapi.atlas.dev' });
     expect(await backend.verify(token)).toEqual({ ok: false, reason: 'invalid' });
   });
 
@@ -169,6 +169,65 @@ describe('token confusion guard (§13.1)', () => {
   it('accepts a LEGACY session token with no token_use/aud (backward-compat)', async () => {
     const { backend, privateKey, kid } = await backendFor();
     expect((await backend.verify(await mint(privateKey, kid))).ok).toBe(true);
+  });
+});
+
+/**
+ * §S4 optional audience check — what stops a verifier with a mis-set issuer or a
+ * JWKS shared across instances from accepting another instance's session token.
+ * A real session token now carries BOTH `aud` (its instance id) and the
+ * `token_use:'session'` marker, so these fixtures mint both.
+ */
+describe('audience check (§S4)', () => {
+  const INSTANCE_A = 'ins_01A';
+  const INSTANCE_B = 'ins_01B';
+  const sessionClaims = (aud: string) => ({ aud, token_use: 'session' });
+
+  it('accepts a token whose aud matches the configured audience', async () => {
+    const { privateKey, jwks, kid } = await keyring();
+    const backend = new AtlasBackend({
+      jwksUrl: JWKS_URL,
+      issuer: ISSUER,
+      audience: INSTANCE_A,
+      fetchImpl: serving(jwks),
+    });
+    const result = await backend.verify(await mint(privateKey, kid, sessionClaims(INSTANCE_A)));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.claims.aud).toBe(INSTANCE_A);
+  });
+
+  it('a token for instance A fails an audience check for instance B', async () => {
+    const { privateKey, jwks, kid } = await keyring();
+    const backend = new AtlasBackend({
+      jwksUrl: JWKS_URL,
+      issuer: ISSUER,
+      audience: INSTANCE_B,
+      fetchImpl: serving(jwks),
+    });
+    expect(await backend.verify(await mint(privateKey, kid, sessionClaims(INSTANCE_A)))).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+  });
+
+  it('verification with no audience requirement still passes a token carrying aud (backward-compat)', async () => {
+    const { privateKey, jwks, kid } = await keyring();
+    const backend = new AtlasBackend({ jwksUrl: JWKS_URL, issuer: ISSUER, fetchImpl: serving(jwks) });
+    const result = await backend.verify(await mint(privateKey, kid, sessionClaims(INSTANCE_A)));
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts one of several configured audiences', async () => {
+    const { privateKey, jwks, kid } = await keyring();
+    const backend = new AtlasBackend({
+      jwksUrl: JWKS_URL,
+      issuer: ISSUER,
+      audience: [INSTANCE_B, INSTANCE_A],
+      fetchImpl: serving(jwks),
+    });
+    expect((await backend.verify(await mint(privateKey, kid, sessionClaims(INSTANCE_A)))).ok).toBe(
+      true,
+    );
   });
 });
 
@@ -430,7 +489,7 @@ describe('verifyOnline', () => {
         issuer: ISSUER,
         fetchImpl,
         secretKey: 'sk_test_x',
-        bapiBaseUrl: 'https://api.atlasauth.net',
+        bapiBaseUrl: 'https://api.atlas.dev',
       }),
       token: await mint(privateKey, kid),
     };

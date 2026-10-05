@@ -92,6 +92,33 @@ function readCookie(header: string | null, name: string): string | undefined {
 }
 
 /**
+ * §R3.1 the durable "probably signed in" signal, for the routing gate ONLY.
+ *
+ * `__session` is short-lived (~60s) and refreshed client-side, so it is briefly
+ * ABSENT between refreshes — a background tab, a slow refresh, a direct server
+ * navigation. Gating a protected route on `__session` alone therefore bounces a
+ * genuinely-signed-in user to /login in those windows (the exact bug this fixes).
+ *
+ * So when `__session` doesn't verify, we consult two durable signals the browser
+ * still carries: the non-HttpOnly hint cookie `__atlas_uat` (a Unix-seconds
+ * timestamp, `0`/absent = signed out) and, same-origin at the edge, the HttpOnly
+ * refresh cookie `__atlas_rt` (the middleware CAN read it from the request; only
+ * customer JS cannot). Either present ⇒ "probably signed in" ⇒ let the request
+ * through so the client SDK can refresh `__session` and the page re-render, INSTEAD
+ * of a false bounce. This is a routing hint, never proof of identity: a page that
+ * needs a verified user still calls `auth()`/`protect()`, which fail closed with no
+ * valid token. On real sign-out Atlas clears BOTH cookies, so the hint disappears
+ * exactly when the session does. Mirrors Clerk's `__client_uat` model.
+ */
+export function hasSignedInHint(request: EdgeRequest): boolean {
+  const header = request.headers.get('cookie');
+  const uat = readCookie(header, '__atlas_uat');
+  if (uat && uat !== '0' && Number(uat) > 0) return true;
+  // Same-origin edge: the HttpOnly refresh cookie is present on the request.
+  return Boolean(readCookie(header, '__atlas_rt'));
+}
+
+/**
  * Resolve the auth state for a request.
  *
  * A token that fails verification produces SIGNED_OUT, never a thrown error. A
@@ -209,6 +236,17 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions) {
 
       case 'redirect': {
         /**
+         * §R3.1 FIRST, don't bounce a user who is actually signed in here but
+         * whose short-lived `__session` is momentarily absent (between the
+         * client-side refreshes). If a durable signed-in signal is present
+         * (`__atlas_uat` or the same-origin refresh cookie), let the request
+         * through: the client SDK refreshes `__session` and the page re-renders,
+         * and any page that needs a verified user still enforces via `auth()`.
+         * This is checked before the handshake and the sign-in redirect, so the
+         * common "same-property, token just expired" case never leaves the app.
+         */
+        if (hasSignedInHint(request)) return response.next();
+        /**
          * Cross-property handshake: before sending a signed-out user to the
          * sign-in page, try the Atlas handshake ONCE — they may already have a
          * session on a sibling property. The `__atlas_hs` marker the endpoint
@@ -296,6 +334,56 @@ export function createAuthHelper(options: AtlasMiddlewareOptions) {
         const outcome = evaluate(state.claims, condition);
         if (!outcome.allowed) throw new ForbiddenError(outcome.reason, condition);
       },
+    };
+  };
+}
+
+/**
+ * §R3.1 Clerk-parity alias. Integrators reach for `authMiddleware` by name; it is
+ * exactly {@link atlasMiddleware}, which already reads cookies, verifies the JWT at
+ * the edge, honours the durable signed-in hint, runs the cross-property handshake,
+ * and enforces the route matcher.
+ */
+export const authMiddleware = atlasMiddleware;
+
+/** The profile a `currentUser()` returns — read straight from the verified session
+ *  claims, so it costs no network call. `email`/`name` are present only when the
+ *  instance opted into those session claims (§R3.5). */
+export interface CurrentUser {
+  id: string;
+  orgId: string | null;
+  orgRole: string | null;
+  email: string | null;
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
+}
+
+/**
+ * §R3.1 `currentUser()` — the signed-in user's profile for a server component or
+ * route handler, or `null` when signed out. Built from the verified session claims
+ * (no round-trip): with the opt-in profile claims (§R3.5) it already carries email
+ * and name, so provision-on-first-login needs no `user.updated` webhook wait.
+ */
+export function createCurrentUserHelper(options: AtlasMiddlewareOptions) {
+  const auth = createAuthHelper(options);
+  return async function currentUser(request: EdgeRequest): Promise<CurrentUser | null> {
+    const state = await auth(request);
+    if (!state.userId || !state.claims) return null;
+    const c = state.claims as SessionClaims & {
+      email?: string;
+      name?: string;
+      given_name?: string;
+      family_name?: string;
+    };
+    return {
+      id: state.userId,
+      orgId: state.orgId,
+      orgRole: state.orgRole,
+      email: c.email ?? null,
+      name: c.name ?? null,
+      firstName: c.given_name ?? null,
+      lastName: c.family_name ?? null,
     };
   };
 }

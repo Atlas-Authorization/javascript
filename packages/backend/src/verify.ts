@@ -50,6 +50,12 @@ export interface SessionClaims {
   exp: number;
   nbf?: number;
   iat?: number;
+  /**
+   * §S4 audience — the instance this token is FOR (the stable instance id by
+   * default, or the value pinned via `authConfig.session.audience`). Verified
+   * only when `AtlasBackend` is configured with an expected `audience`.
+   */
+  aud?: string | string[];
   azp?: string;
   sv?: number;
   mfa?: boolean;
@@ -136,8 +142,21 @@ function authorized(claims: SessionClaims): AuthorizedSession {
 }
 
 export interface AtlasBackendOptions {
-  /** The instance's JWKS URL. */
-  jwksUrl: string;
+  /**
+   * The instance's JWKS URL. Provide exactly one of `jwksUrl` or `jwks`: with a
+   * URL, keys are fetched and cached (the production default); with a static
+   * `jwks`, verification is fully offline.
+   */
+  jwksUrl?: string;
+  /**
+   * A static JSON Web Key Set to verify against, INSTEAD of fetching from a URL.
+   * When set, verification makes NO network call — the hermetic path a
+   * customer's CI uses to validate Atlas-minted test session JWTs (§1.3c). The
+   * `@atlasauth/backend/testing` `createTestIssuer()` helper produces a matching
+   * `{ jwks }`. Signature, issuer, `token_use` and `azp` checks are unchanged;
+   * only where the keys come from differs. Mutually exclusive with `jwksUrl`.
+   */
+  jwks?: Jwks;
   /** Expected `iss`. Required — an unchecked issuer accepts any Atlas instance. */
   issuer: string;
   /**
@@ -146,6 +165,18 @@ export interface AtlasBackendOptions {
    * customer's apps being replayed against another.
    */
   authorizedParties?: readonly string[];
+  /**
+   * §S4 optional expected audience. When set, a verified token's `aud` MUST
+   * contain this value (or one of these values), which is what stops a verifier
+   * with a mis-set `issuer` — or a JWKS shared across instances — from accepting
+   * a token minted for a DIFFERENT instance. Pass your instance id (the stable
+   * `ins_…` embedded in your publishable key) here, which is what Atlas stamps
+   * as `aud` by default; or the specific value your instance pins via
+   * `authConfig.session.audience`. When UNSET, `aud` is not checked at all —
+   * tokens that carry one still verify — so adopting this is strictly opt-in and
+   * backwards compatible.
+   */
+  audience?: string | readonly string[];
   secretKey?: string;
   bapiBaseUrl?: string;
   fetchImpl?: typeof fetch;
@@ -156,8 +187,20 @@ export class AtlasBackend {
   private readonly jwks: JwksCache;
 
   constructor(private readonly options: AtlasBackendOptions) {
+    // Exactly one key source. Two would be ambiguous (which wins?), and zero
+    // leaves nothing to verify against — either is a configuration error worth
+    // failing loudly on rather than silently accepting or rejecting every token.
+    const hasUrl = typeof options.jwksUrl === 'string' && options.jwksUrl.length > 0;
+    const hasStatic = options.jwks !== undefined;
+    if (hasUrl === hasStatic) {
+      throw new Error(
+        'AtlasBackend needs exactly one key source: pass `jwksUrl` (fetch from the instance) OR `jwks` (a static key set for offline verification), not both and not neither.',
+      );
+    }
+
     this.jwks = new JwksCache({
       url: options.jwksUrl,
+      staticJwks: options.jwks,
       fetchImpl: options.fetchImpl,
       now: options.now,
     });
@@ -180,6 +223,12 @@ export class AtlasBackend {
         // algorithm the key material can be coerced into — verifies.
         algorithms: ['RS256'],
         issuer: this.options.issuer,
+        // §S4 enforce `aud` ONLY when the caller configured an expected audience.
+        // Unset leaves `aud` unchecked, so a token carrying its default
+        // instance-id audience still verifies (backwards compatible).
+        ...(this.options.audience !== undefined
+          ? { audience: this.options.audience as string | string[] }
+          : {}),
         clockTolerance: CLOCK_SKEW_SECONDS,
         currentDate: this.options.now ? new Date(this.options.now()) : undefined,
       });
@@ -203,7 +252,17 @@ export class AtlasBackend {
      * so this never mass-invalidates a live fleet.
      */
     const tokenUse = (claims as { token_use?: unknown }).token_use;
-    if ((tokenUse !== undefined && tokenUse !== 'session') || claims.aud !== undefined) {
+    const isSessionMarked = tokenUse === 'session';
+    // §S4: a first-party session token now carries `aud` (its instance id), so
+    // `aud`-present no longer distinguishes an id_token. The positive
+    // `token_use:'session'` marker is the discriminator: reject an OP access
+    // token (token_use present, not 'session') and an id_token (carries `aud`
+    // but NOT the marker); a legacy session token (neither) and a new session
+    // token (aud + marker) both pass.
+    if (tokenUse !== undefined && !isSessionMarked) {
+      return { ok: false, reason: 'invalid' };
+    }
+    if (claims.aud !== undefined && !isSessionMarked) {
       return { ok: false, reason: 'invalid' };
     }
 
@@ -285,6 +344,70 @@ export class AtlasBackend {
 
     return this.verify(token);
   }
+
+  /**
+   * §migration — redirect forwarding.
+   *
+   * Build the URL your provider callback should 302 to when you KEPT your own,
+   * already-registered provider callback (a connection's `custom_redirect_uri`)
+   * instead of registering Atlas's `<fapi>/v1/oauth/callback/<provider>`. The
+   * provider redirects to your callback with `?code&state`; you forward those to
+   * Atlas, which holds the `client_secret`, completes the exchange and issues the
+   * session. Your handler is then a one-liner:
+   *
+   *   res.redirect(302, atlas.oauthCallbackForwardUrl('github', req.url));
+   *
+   * The target is derived from the configured `issuer` (your instance's FAPI
+   * host), so it's correct on the shared host and on a custom domain alike. Only
+   * the OAuth callback params are carried across — there is no open-ended
+   * passthrough of caller-controlled query into Atlas's callback — and `state`
+   * (which Atlas minted and validates) rides along so the forward can't strip it.
+   */
+  oauthCallbackForwardUrl(
+    provider: string,
+    incoming: string | URLSearchParams | Record<string, string | string[] | undefined>,
+  ): string {
+    if (!/^[a-z0-9_]+$/i.test(provider)) {
+      throw new Error(`Invalid provider key: ${JSON.stringify(provider)}`);
+    }
+    const src = toForwardParams(incoming);
+    const out = new URLSearchParams();
+    for (const key of ['code', 'state', 'error', 'error_description', 'error_uri', 'iss']) {
+      const v = src.get(key);
+      if (v != null && v !== '') out.set(key, v);
+    }
+    const base = this.options.issuer.replace(/\/+$/, '');
+    const qs = out.toString();
+    return `${base}/v1/oauth/callback/${provider}${qs ? `?${qs}` : ''}`;
+  }
+}
+
+/**
+ * Normalise whatever a framework hands a callback handler — Node's `req.url`
+ * (path+query), a full URL, a bare query string, Express's `req.query` object, or
+ * a `URLSearchParams` — into query params, so `oauthCallbackForwardUrl` accepts
+ * them all.
+ */
+function toForwardParams(
+  incoming: string | URLSearchParams | Record<string, string | string[] | undefined>,
+): URLSearchParams {
+  if (incoming instanceof URLSearchParams) return incoming;
+  if (typeof incoming === 'object' && incoming !== null) {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(incoming)) {
+      if (Array.isArray(v)) {
+        if (v[0] != null) p.set(k, String(v[0]));
+      } else if (v != null) {
+        p.set(k, String(v));
+      }
+    }
+    return p;
+  }
+  const s = String(incoming);
+  const qIdx = s.indexOf('?');
+  if (qIdx >= 0) return new URLSearchParams(s.slice(qIdx + 1));
+  // No '?': a bare query string ("code=…&state=…") vs a bare path ("/cb").
+  return s.includes('=') ? new URLSearchParams(s) : new URLSearchParams();
 }
 
 function readHeader(

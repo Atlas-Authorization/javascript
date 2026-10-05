@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SIGN_IN_URL,
+  createRouteMatcher,
   decideRoute,
   isStaticAsset,
   matchesAny,
@@ -196,5 +197,18 @@ describe('validating a return URL', () => {
 
   it('uses the supplied fallback', () => {
     expect(safeRedirect('https://evil.test', [], '/home')).toBe('/home');
+  });
+});
+
+describe('createRouteMatcher (Clerk-parity)', () => {
+  it('matches a bare path, a {nextUrl}, a {url}, and a full URL against (.*) patterns', () => {
+    const isProtected = createRouteMatcher(['/dashboard(.*)', '/admin']);
+    expect(isProtected('/dashboard')).toBe(true);
+    expect(isProtected('/dashboard/settings')).toBe(true);
+    expect(isProtected({ nextUrl: { pathname: '/dashboard/x' } })).toBe(true);
+    expect(isProtected({ url: 'https://app.test/admin' })).toBe(true);
+    expect(isProtected('https://app.test/dashboard/deep')).toBe(true);
+    expect(isProtected('/pricing')).toBe(false);
+    expect(isProtected('/adminx')).toBe(false); // exact, not prefix, without (.*)
   });
 });

@@ -1,7 +1,7 @@
 {
   "name": "@atlasauth/angular",
-  "version": "0.1.1",
-  "description": "Official Angular SDK for Atlas — the Angular peer of @atlasauth/react.",
+  "version": "0.1.3",
+  "description": "Official Angular SDK for Atlas \u2014 the Angular peer of @atlasauth/react.",
   "license": "MIT",
   "module": "./dist/fesm2022/atlas-angular.mjs",
   "typings": "./dist/index.d.ts",
@@ -57,7 +57,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "url": "git+https://github.com/alphajew420/ssoly.git",
     "directory": "packages/angular"
+  },
+  "homepage": "https://github.com/alphajew420/ssoly/tree/main/packages/angular#readme",
+  "bugs": {
+    "url": "https://github.com/alphajew420/ssoly/issues"
   }
 }

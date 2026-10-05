@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { checkSession, type CheckSessionOptions, type ProviderToken } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { evaluate, type ProtectCondition } from './protect';
-import type { AtlasOrganizationMembership, AtlasSession, AtlasUser } from './types';
+import type { AtlasOrganizationMembership, AtlasSession, AtlasSessionResource, AtlasUser } from './types';
 
 /**
  * §10.1 hooks.
@@ -37,6 +37,26 @@ export function useUser(): {
 export function useSession(): { isLoaded: boolean; session: AtlasSession | null } {
   const { status, session } = useAtlas();
   return { isLoaded: status !== 'loading', session };
+}
+
+/**
+ * §L1 multi-session/multi-account (Clerk `useSessionList`). Every account signed
+ * in on this browser (active first), and `setActive({ session })` to switch which
+ * one is active. `sessions` is a one-element list on a single-session client, so
+ * a caller can render an account switcher unconditionally and it simply shows one
+ * row until a second account signs in.
+ */
+export function useSessionList(): {
+  isLoaded: boolean;
+  sessions: AtlasSessionResource[];
+  setActive(params: { session: string | { id: string } }): Promise<void>;
+} {
+  const { status, sessions, setActiveSession } = useAtlas();
+  return {
+    isLoaded: status !== 'loading',
+    sessions,
+    setActive: ({ session }) => setActiveSession(session),
+  };
 }
 
 export function useAuth() {
