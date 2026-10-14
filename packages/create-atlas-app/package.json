@@ -1,0 +1,31 @@
+{
+  "name": "@atlasauth/create-atlas-app",
+  "version": "0.2.0",
+  "description": "Scaffold a starter app pre-wired with Atlas auth (npm create @atlasauth/atlas-app).",
+  "bin": {
+    "create-atlas-app": "dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@atlasauth/cli-banner": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "README.md"
+  ]
+}

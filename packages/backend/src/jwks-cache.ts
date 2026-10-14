@@ -35,6 +35,12 @@ export interface JwksCacheDeps {
    * when both are given the static set wins and no network call is ever made.
    */
   staticJwks?: Jwks;
+  /**
+   * Resolve the JWKS URL lazily (OIDC discovery) when no fixed `url` is given.
+   * Called on each fetch attempt; it does its own caching. A rejection is
+   * recorded as {@link JwksCache.lastError} and treated like a failed fetch.
+   */
+  resolveUrl?: () => Promise<string>;
   fetchImpl?: typeof fetch;
   now?: () => number;
   ttlMs?: number;
@@ -49,6 +55,8 @@ export class JwksCache {
   private lastAttemptAt = 0;
   /** Exposed so a caller can assert the rate limit actually bit. */
   lastOutcome: FetchOutcome = 'fresh';
+  /** Why the last attempt produced no keys (e.g. a discovery failure), for diagnostics. */
+  lastError: string | null = null;
 
   constructor(private readonly deps: JwksCacheDeps) {}
 
@@ -83,14 +91,13 @@ export class JwksCache {
       return this.deps.staticJwks;
     }
 
-    if (this.deps.url === undefined) {
+    if (this.deps.url === undefined && this.deps.resolveUrl === undefined) {
       // Neither a URL nor a static set: nothing to verify against. Report
       // "no keys" rather than attempting `fetch(undefined)`.
       this.lastOutcome = 'failed';
       return null;
     }
 
-    const url = this.deps.url;
     const now = this.now;
     const ttl = this.deps.ttlMs ?? DEFAULT_TTL_MS;
     const interval = this.deps.refetchIntervalMs ?? REFETCH_INTERVAL_MS;
@@ -115,6 +122,19 @@ export class JwksCache {
 
     this.lastAttemptAt = now;
 
+    let url: string;
+    if (this.deps.url !== undefined) {
+      url = this.deps.url;
+    } else {
+      try {
+        url = await this.deps.resolveUrl!();
+      } catch (error) {
+        this.lastOutcome = 'failed';
+        this.lastError = error instanceof Error ? error.message : String(error);
+        return this.cached;
+      }
+    }
+
     try {
       const response = await (this.deps.fetchImpl ?? fetch)(url, {
         headers: { accept: 'application/json' },
@@ -126,12 +146,14 @@ export class JwksCache {
 
       this.cached = body;
       this.fetchedAt = now;
+      this.lastError = null;
       this.lastOutcome = kidMiss ? 'refetched' : 'fresh';
       return this.cached;
-    } catch {
+    } catch (error) {
       // Keep serving what we have. A JWKS outage should degrade to "new keys
       // do not work yet", not "nobody can authenticate".
       this.lastOutcome = 'failed';
+      this.lastError = `JWKS fetch from ${url} failed: ${error instanceof Error ? error.message : String(error)}`;
       return this.cached;
     }
   }

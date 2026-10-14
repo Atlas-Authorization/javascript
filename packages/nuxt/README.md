@@ -1,10 +1,10 @@
-# @atlas/nuxt
+# @atlasauth/nuxt
 
 The official **Nuxt 3** module for [Atlas](https://atlasauth.net). A thin Nuxt
-binding: the client half is [`@atlas/vue`](../vue) (the `createAtlas()` plugin,
+binding: the client half is [`@atlasauth/vue`](../vue) (the `createAtlas()` plugin,
 its composables and components), the server half mirrors
-[`@atlas/nextjs`](../nextjs) — it verifies the `__session` JWT **locally** with
-`@atlas/backend` inside a Nitro middleware and exposes a `getAtlasAuth(event)`
+[`@atlasauth/nextjs`](../nextjs) — it verifies the `__session` JWT **locally** with
+`@atlasauth/backend` inside a Nitro middleware and exposes a `getAtlasAuth(event)`
 helper to your server routes.
 
 - **No secrets in the browser.** The client holds only the short-lived session
@@ -16,7 +16,7 @@ helper to your server routes.
 ## Install
 
 ```bash
-pnpm add @atlas/nuxt
+pnpm add @atlasauth/nuxt
 ```
 
 ## Configure
@@ -28,7 +28,7 @@ server-only `runtimeConfig.atlas`.
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-  modules: ['@atlas/nuxt'],
+  modules: ['@atlasauth/nuxt'],
 
   atlas: {
     // Public — sent to the browser.
@@ -64,7 +64,7 @@ NUXT_ATLAS_ISSUER=https://your-instance-fapi.atlasauth.net
 
 ## Use in pages and components
 
-Every `@atlas/vue` composable and component is **auto-imported** — no `import`
+Every `@atlasauth/vue` composable and component is **auto-imported** — no `import`
 line needed.
 
 **Components** (`SignedIn`, `SignedOut`, `Protect`, `SignIn`, `SignUp`,
@@ -161,17 +161,17 @@ prefers reading it directly.
 | `has(condition?)`                  | boolean check — `permission` / `role` / `anyPermission` / `allPermissions` |
 | `protect(condition?)`              | assert; throws 401 (signed out) / 403 (insufficient)               |
 
-You can also `import { getAtlasAuth, verifyCarriers, atlasBackend } from '@atlas/nuxt/server'`
+You can also `import { getAtlasAuth, verifyCarriers, atlasBackend } from '@atlasauth/nuxt/server'`
 if you prefer explicit imports.
 
 ## How it fits together
 
 | layer                | package        | what it does                                                             |
 | -------------------- | -------------- | ----------------------------------------------------------------------- |
-| client plugin        | `@atlas/vue`   | `createAtlas()` installed on the Nuxt Vue app (per request during SSR)   |
-| composables / comps  | `@atlas/vue`   | auto-imported into pages/components                                      |
-| Nitro middleware     | `@atlas/backend` | verifies `__session` once per request → `event.context.auth`          |
-| `getAtlasAuth`       | `@atlas/backend` | the server-route auth helper (local verify, cached JWKS)              |
+| client plugin        | `@atlasauth/vue`   | `createAtlas()` installed on the Nuxt Vue app (per request during SSR)   |
+| composables / comps  | `@atlasauth/vue`   | auto-imported into pages/components                                      |
+| Nitro middleware     | `@atlasauth/backend` | verifies `__session` once per request → `event.context.auth`          |
+| `getAtlasAuth`       | `@atlasauth/backend` | the server-route auth helper (local verify, cached JWKS)              |
 
 ## Build & test
 

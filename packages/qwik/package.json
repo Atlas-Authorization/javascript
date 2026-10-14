@@ -1,0 +1,58 @@
+{
+  "name": "@atlasauth/qwik",
+  "version": "0.1.2",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@atlasauth/js": "workspace:*",
+    "@atlasauth/embed": "workspace:*"
+  },
+  "peerDependencies": {
+    "@builder.io/qwik": ">=1.5",
+    "@builder.io/qwik-city": ">=1.5"
+  },
+  "peerDependenciesMeta": {
+    "@builder.io/qwik-city": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@builder.io/qwik": "^1.5",
+    "happy-dom": "^15.11.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alphajew420/ssoly.git",
+    "directory": "packages/qwik"
+  },
+  "homepage": "https://github.com/alphajew420/ssoly/tree/main/packages/qwik#readme",
+  "bugs": {
+    "url": "https://github.com/alphajew420/ssoly/issues"
+  }
+}

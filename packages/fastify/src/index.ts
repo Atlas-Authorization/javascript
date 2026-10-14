@@ -6,6 +6,16 @@ import {
   type ProtectCondition,
   type SessionClaims,
 } from '@atlasauth/backend';
+// Real Fastify types, type-only so `fastify` is a peer dependency and is NEVER
+// bundled or pinned — a handler then wires `getAuth`/`requireAuth`/the plugin
+// against genuine Fastify types with no structural cast at the boundary.
+import type {
+  FastifyReply,
+  FastifyRequest,
+  FastifyInstance,
+  FastifyPluginCallback,
+  preHandlerHookHandler,
+} from 'fastify';
 
 /**
  * `@atlasauth/fastify` — the Fastify adapter for Atlas auth, the server-side
@@ -103,46 +113,17 @@ export interface AtlasPluginOptions {
 /** The lifecycle hooks {@link atlasPlugin} may attach to. */
 export const ALLOWED_HOOKS = ['onRequest', 'preHandler'] as const;
 
-/** The minimal Fastify request shape this adapter reads and decorates. Kept
- *  structural so the package needs no `fastify` type dependency at build time,
- *  exactly as `@atlasauth/express` keeps its Express types structural. A real
- *  `fastify.FastifyRequest` satisfies it. */
-export interface AtlasFastifyRequest {
-  headers: Record<string, string | string[] | undefined>;
-  /** Decorated by {@link atlasPlugin}; read it via {@link getAuth}. */
-  atlas?: AtlasAuth | null;
-  [key: string]: unknown;
+/**
+ * Decorate the REAL `FastifyRequest` with `request.atlas`, so a route reads
+ * `request.atlas` / `getAuth(request)` on a genuine Fastify request with no
+ * structural cast — the same module-augmentation idiom `@clerk/fastify` uses.
+ */
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** Decorated by {@link atlasPlugin}; read it via {@link getAuth}. */
+    atlas?: AtlasAuth | null;
+  }
 }
-
-/** The minimal Fastify reply shape {@link requireAuth} writes to. */
-export interface AtlasFastifyReply {
-  code(statusCode: number): AtlasFastifyReply;
-  send(payload: unknown): unknown;
-  [key: string]: unknown;
-}
-
-/** Fastify hook `done` callback (for non-async hooks). */
-export type HookDone = (err?: unknown) => void;
-
-/** The minimal Fastify instance shape {@link atlasPlugin} decorates and hooks. */
-export interface AtlasFastifyInstance {
-  decorateRequest(name: string, value: unknown): unknown;
-  addHook(
-    name: string,
-    handler: (request: AtlasFastifyRequest, reply: AtlasFastifyReply) => Promise<void> | void,
-  ): unknown;
-  [key: string]: unknown;
-}
-
-/** Fastify plugin `done` callback. */
-export type PluginDone = (err?: unknown) => void;
-
-/** A Fastify plugin function, as produced by {@link atlasPlugin}. */
-export type AtlasFastifyPlugin = (
-  instance: AtlasFastifyInstance,
-  opts: unknown,
-  done: PluginDone,
-) => void;
 
 function firstHeader(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -210,7 +191,7 @@ function signedIn(claims: SessionClaims): AtlasAuth {
  */
 export async function resolveAuth(
   backend: AtlasBackend,
-  request: AtlasFastifyRequest,
+  request: FastifyRequest,
 ): Promise<AtlasAuth> {
   try {
     const header = firstHeader(request.headers.authorization ?? request.headers.Authorization);
@@ -253,7 +234,7 @@ export async function resolveAuth(
  *   reply.send({ userId });
  * });
  */
-export function atlasPlugin(options: AtlasPluginOptions): AtlasFastifyPlugin {
+export function atlasPlugin(options: AtlasPluginOptions): FastifyPluginCallback {
   const hookName = options.hookName ?? 'preHandler';
   if (!ALLOWED_HOOKS.includes(hookName)) {
     throw new Error(`Unsupported hookName: ${hookName}`);
@@ -266,20 +247,25 @@ export function atlasPlugin(options: AtlasPluginOptions): AtlasFastifyPlugin {
     fetchImpl: options.fetchImpl,
   });
 
-  return function plugin(instance, _opts, done) {
+  return function plugin(instance: FastifyInstance, _opts, done) {
     // Seed the decorator so every request carries the property (Fastify
     // optimises requests whose shape is declared up front).
     instance.decorateRequest('atlas', null);
 
-    instance.addHook(hookName, async (request: AtlasFastifyRequest) => {
-      // resolveAuth already fails closed, but guard the attach step too: a
-      // signed-out decoration is always safe, a thrown hook is not.
+    // resolveAuth already fails closed, but guard the attach step too: a
+    // signed-out decoration is always safe, a thrown hook is not.
+    const hook = async (request: FastifyRequest): Promise<void> => {
       try {
         request.atlas = await resolveAuth(backend, request);
       } catch {
         request.atlas = signedOut();
       }
-    });
+    };
+
+    // Branch on the literal so `addHook`'s per-hook overloads resolve cleanly
+    // (passing the `'onRequest' | 'preHandler'` union would not pick one).
+    if (hookName === 'onRequest') instance.addHook('onRequest', hook);
+    else instance.addHook('preHandler', hook);
 
     done();
   };
@@ -291,30 +277,37 @@ export function atlasPlugin(options: AtlasPluginOptions): AtlasFastifyPlugin {
  * never has to null-check `request.atlas` itself — mirrors Clerk's
  * `getAuth(request)`.
  */
-export function getAuth(request: AtlasFastifyRequest): AtlasAuth {
+export function getAuth(request: FastifyRequest): AtlasAuth {
   return request.atlas ?? signedOut();
 }
 
 /**
- * Require a signed-in request. On a signed-out request it responds `401` with
- * `{ errors: [{ code: 'UNAUTHENTICATED' }] }` and returns `false`; otherwise it
- * returns `true` and sends nothing. Because sending a reply short-circuits a
- * Fastify request, it works directly as a `preHandler` — either called from one
- * or supplied as one.
+ * A real Fastify `preHandler` that requires a signed-in request. On a signed-out
+ * request it responds `401` with `{ errors: [{ code: 'UNAUTHENTICATED' }] }`;
+ * sending the reply short-circuits the lifecycle, so the route handler never
+ * runs. On a signed-in request it resolves without touching the reply and the
+ * handler proceeds.
+ *
+ * It returns `Promise<void>` (NOT a boolean) so it drops straight into a route's
+ * `preHandler` slot with no wrapper or cast — the signature Fastify's
+ * {@link preHandlerHookHandler} demands. Typed against the real `FastifyRequest`
+ * /`FastifyReply`, so a consumer passes the request/reply it already has.
  *
  * @example
- * app.get('/protected', { preHandler: requireAuth }, (request, reply) => { ... });
- * // or, imperatively:
- * app.get('/protected', (request, reply) => {
- *   if (!requireAuth(request, reply)) return;
- *   reply.send({ ok: true });
+ * app.get('/protected', { preHandler: requireAuth }, (request, reply) => {
+ *   reply.send({ userId: getAuth(request).userId });
  * });
  */
-export function requireAuth(request: AtlasFastifyRequest, reply: AtlasFastifyReply): boolean {
+export async function requireAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const auth = getAuth(request);
   if (!auth.userId) {
     reply.code(401).send({ errors: [{ code: 'UNAUTHENTICATED' }] });
-    return false;
   }
-  return true;
 }
+
+/**
+ * Compile-time proof that {@link requireAuth} is a genuine Fastify `preHandler`,
+ * so `{ preHandler: requireAuth }` type-checks for consumers with no cast.
+ */
+const _requireAuthIsPreHandler: preHandlerHookHandler = requireAuth;
+void _requireAuthIsPreHandler;

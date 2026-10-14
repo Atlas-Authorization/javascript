@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // Types-only, dependency-free, runtime-free: no DOM, no Node. Nothing here
+    // compiles to real runtime code — every module is `export type` — so the
+    // emitted `.js` files are empty and a consumer that imports a type pulls in
+    // no runtime SDK at all.
+    "lib": ["ES2022"],
+    "declaration": true,
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

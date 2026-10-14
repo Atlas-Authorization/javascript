@@ -1,6 +1,7 @@
 import { computed, type ComputedRef, type ShallowRef } from 'vue';
-import type { ProviderToken } from '@atlasauth/js';
+import type { ProviderToken, SignOutOptions } from '@atlasauth/js';
 import { useAtlas } from './context';
+import type { AuthStatus } from './plugin';
 import { evaluate, type ProtectCondition } from './protect';
 import type { AtlasOrganizationMembership, AtlasSession, AtlasUser } from './types';
 
@@ -50,19 +51,25 @@ export function useSession(): {
 export function useAuth(): {
   isLoaded: ComputedRef<boolean>;
   isSignedIn: ComputedRef<boolean>;
+  /** Three-state auth status (`loading` | `signed_in` | `signed_out`); same source as isLoaded/isSignedIn. */
+  status: ShallowRef<AuthStatus>;
+  /** The active session, or null while loading or signed out. */
+  session: ShallowRef<AtlasSession | null>;
   userId: ComputedRef<string | null>;
   sessionId: ComputedRef<string | null>;
   orgId: ComputedRef<string | null>;
   orgRole: ComputedRef<string | null>;
   getToken(): Promise<string | null>;
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(): Promise<void>;
+  signOut(options?: SignOutOptions): Promise<void>;
   has(condition: ProtectCondition): boolean;
 } {
-  const { status, claims, getToken, getProviderToken, signOut } = useAtlas();
+  const { status, session, claims, getToken, getProviderToken, signOut } = useAtlas();
   return {
     isLoaded: computed(() => status.value !== 'loading'),
     isSignedIn: computed(() => status.value === 'signed_in'),
+    status,
+    session,
     userId: computed(() => claims.value?.sub ?? null),
     sessionId: computed(() => claims.value?.sid ?? null),
     orgId: computed(() => (claims.value?.org_id as string | undefined) ?? null),

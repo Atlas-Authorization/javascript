@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * The `Appearance` / `DesignTokens` / `ElementKey` types come from
+     * `@atlasauth/react` (packages/react/src/appearance.ts), resolved from its
+     * built `dist/index.d.ts` like every other cross-package import in this
+     * monorepo — `pnpm -r build` builds workspace deps first. Every reference is
+     * `import type`, so nothing from @atlasauth/react is emitted into this
+     * package and there is no runtime dependency on it (it is a devDependency).
+     */
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

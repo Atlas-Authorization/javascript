@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "jsx": "react-jsx",
+    /*
+     * Expo / React Native provides `fetch`, `Response`, `Headers`, `URL` and
+     * `setTimeout` at runtime, and the DOM lib is the only place TypeScript ships
+     * their types. Pulling it in is a type-only convenience (matching @atlasauth/js,
+     * @atlasauth/react and @atlasauth/react-native) — this package renders NO DOM of
+     * its own: the session lives in an `expo-secure-store` token cache, not a
+     * cookie, precisely because React Native has neither a cookie jar nor
+     * `localStorage`.
+     *
+     * `expo-secure-store`, `expo-web-browser` and `expo-auth-session` are optional
+     * peers the app installs; this package compiles, typechecks and tests WITHOUT
+     * them, so their surfaces are declared structurally (see src/token-cache.ts)
+     * and `types` stays empty.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

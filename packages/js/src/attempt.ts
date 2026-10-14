@@ -40,9 +40,24 @@ export type Step =
   | { kind: 'unknown'; status: string };
 
 export interface AttemptView {
+  /**
+   * The attempt id — what the next submit targets and what a completion's ticket
+   * exchange is keyed on, so consumers read `attempt.id` directly rather than
+   * casting it on. It is a string on every real attempt; it is `null` ONLY on the
+   * pre-attempt captcha challenge marker (§15.4), where no attempt row exists yet
+   * (the server's `SignInChallengeView`). Typed `string | null` for that one case
+   * rather than pretending it is always present.
+   */
+  id: string | null;
+  /** The resource type the server stamps on every attempt view. */
+  object?: 'sign_in_attempt';
   status: string;
+  /** The identifier the attempt was started with; `null` before one is collected. */
+  identifier?: string | null;
   supported_first_factors?: string[];
   created_session_id?: string | null;
+  /** Attempt expiry (epoch ms); `null` on the pre-attempt challenge marker. */
+  expires_at?: number | null;
 }
 
 export function nextStep(attempt: AttemptView): Step {

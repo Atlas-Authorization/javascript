@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useAtlas } from './AtlasProvider';
 import { useOrganization } from './hooks';
-import { useClass, useMeClient, useText } from './components-shared';
+import { useClass, useClasses, useMeClient, useText } from './components-shared';
 import { Protect } from './control-components';
 
 export function OrganizationSwitcher() {
@@ -76,6 +76,7 @@ export function CreateOrganization({
   const { setActive } = useOrganization();
   const t = useText();
   const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
   const titleClass = useClass('headerTitle', 'atlas-title');
   const inputClass = useClass('formFieldInput', 'atlas-input');
   const buttonClass = useClass('formButtonPrimary', 'atlas-button');
@@ -116,8 +117,8 @@ export function CreateOrganization({
       }}
     >
       <h2 className={titleClass}>{t('organization.createTitle')}</h2>
-      <label className="atlas-field">
-        <span>{t('organization.nameLabel')}</span>
+      <label className={cls('formField', 'atlas-field')}>
+        <span className={cls('formFieldLabel', 'atlas-field-label')}>{t('organization.nameLabel')}</span>
         <input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} />
       </label>
       {error ? (
@@ -168,19 +169,20 @@ export function OrganizationProfile() {
   const { organization, membership } = useOrganization();
   const t = useText();
   const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
 
   if (!organization) return null;
 
   return (
     <div className={cardClass}>
-      <h1>{organization.name}</h1>
-      <p>
+      <h1 className={cls('headerTitle', 'atlas-heading')}>{organization.name}</h1>
+      <p className={cls('headerSubtitle', 'atlas-subtitle')}>
         {t('organization.roleLabel')}: {membership?.role}
       </p>
       {/* Management controls are gated on the ACTIVE org role, matching the
           server's §9.2 rule rather than duplicating a looser one. */}
       <Protect permission="org:sys_memberships:manage">
-        <button>{t('organization.invite')}</button>
+        <button className={cls('formButtonSecondary', 'atlas-button-secondary')}>{t('organization.invite')}</button>
       </Protect>
     </div>
   );

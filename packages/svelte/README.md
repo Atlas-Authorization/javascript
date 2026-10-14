@@ -1,11 +1,11 @@
-# @atlas/svelte
+# @atlasauth/svelte
 
 The official **Svelte / SvelteKit** SDK for Atlas — the Svelte peer of
-[`@atlas/react`](../react). Same surface, expressed the Svelte way: a client
+[`@atlasauth/react`](../react). Same surface, expressed the Svelte way: a client
 installed through **context**, reactive auth state exposed as **stores**, and
 `.svelte` **components** for the common flows.
 
-It wraps [`@atlas/js`](../js), the framework-agnostic browser client, exactly as
+It wraps [`@atlasauth/js`](../js), the framework-agnostic browser client, exactly as
 the React SDK does — so both frameworks drive the same FAPI endpoints through one
 implementation and cannot diverge in what the server sees.
 
@@ -21,7 +21,7 @@ implementation and cannot diverge in what the server sees.
 ## Install
 
 ```bash
-pnpm add @atlas/svelte
+pnpm add @atlasauth/svelte
 ```
 
 Peer dependencies: `svelte >= 4`. `@sveltejs/kit` is an **optional** peer, needed
@@ -38,7 +38,7 @@ component which also paints the appearance tokens onto a host-DOM wrapper.
 ```svelte
 <!-- src/routes/+layout.svelte -->
 <script lang="ts">
-  import { AtlasProvider } from '@atlas/svelte';
+  import { AtlasProvider } from '@atlasauth/svelte';
 </script>
 
 <AtlasProvider publishableKey="pk_live_…" frontendApi="https://your-instance-fapi.atlasauth.net">
@@ -50,7 +50,7 @@ Or imperatively, from any component's `<script>`:
 
 ```svelte
 <script lang="ts">
-  import { initAtlas } from '@atlas/svelte';
+  import { initAtlas } from '@atlasauth/svelte';
   const atlas = initAtlas({ publishableKey: 'pk_live_…' });
 </script>
 ```
@@ -73,7 +73,7 @@ live. They mirror the React hooks one-to-one:
 
 ```svelte
 <script lang="ts">
-  import { getUser, getAuth } from '@atlas/svelte';
+  import { getUser, getAuth } from '@atlasauth/svelte';
   const user = getUser();
   const auth = getAuth();
 
@@ -97,7 +97,7 @@ The raw stores are also on the client: `useAtlas().user`, `.session`,
 
 ### 3. Components
 
-Mirror `@atlas/react`'s `components.tsx`:
+Mirror `@atlasauth/react`'s `components.tsx`:
 
 | Component               | Purpose                                                        |
 | ----------------------- | ------------------------------------------------------------- |
@@ -114,7 +114,7 @@ Mirror `@atlas/react`'s `components.tsx`:
 
 ```svelte
 <script lang="ts">
-  import { SignedIn, SignedOut, SignIn, UserButton, Protect } from '@atlas/svelte';
+  import { SignedIn, SignedOut, SignIn, UserButton, Protect } from '@atlasauth/svelte';
 </script>
 
 <SignedOut><SignIn /></SignedOut>
@@ -132,7 +132,7 @@ Mirror `@atlas/react`'s `components.tsx`:
 
 ### Theming & i18n
 
-Same as `@atlas/react`: pass `appearance` (design tokens + per-element class
+Same as `@atlasauth/react`: pass `appearance` (design tokens + per-element class
 overrides — components render in the host DOM, no iframe, so Tailwind/CSS just
 work) and `localization` (a flat i18n catalog, merged over `en-US`) to
 `initAtlas` / `<AtlasProvider>`.
@@ -148,15 +148,15 @@ work) and `localization` (a flat i18n catalog, merged over `en-US`) to
 
 ## SvelteKit SSR
 
-The server helper lives at the separate `@atlas/svelte/server` entry (it depends
-on `@atlas/backend` and must never enter a browser bundle). It verifies the
+The server helper lives at the separate `@atlasauth/svelte/server` entry (it depends
+on `@atlasauth/backend` and must never enter a browser bundle). It verifies the
 session JWT **locally at the edge** — the JWKS is cached in-process, so a warm
 server verifies with no network round-trip.
 
 ### `hooks.server.ts`
 
 ```ts
-import { handleAtlas } from '@atlas/svelte/server';
+import { handleAtlas } from '@atlasauth/svelte/server';
 
 export const handle = handleAtlas({
   jwksUrl: 'https://your-instance-fapi.atlasauth.net/.well-known/jwks.json',
@@ -172,7 +172,7 @@ This resolves the session once per request and stashes it on
 
 ```ts
 // +layout.server.ts
-import { getServerAuth } from '@atlas/svelte/server';
+import { getServerAuth } from '@atlasauth/svelte/server';
 
 export const load = (event) => {
   const auth = getServerAuth(event);
@@ -182,7 +182,7 @@ export const load = (event) => {
 
 ```ts
 // a protected +page.server.ts
-import { getServerAuth } from '@atlas/svelte/server';
+import { getServerAuth } from '@atlasauth/svelte/server';
 import { error } from '@sveltejs/kit';
 
 export const load = (event) => {
@@ -198,13 +198,13 @@ export const load = (event) => {
 
 `getServerAuth(event).has(condition)` answers a condition without throwing;
 `.protect(condition)` asserts it (throwing `ForbiddenError`). Both use the shared
-`@atlas/authz` primitive — the same one `<Protect>` evaluates in the browser — so
+`@atlasauth/authz` primitive — the same one `<Protect>` evaluates in the browser — so
 a check reads identically on the client, here, and in the React/Next SDKs.
 
 For strong typing of `event.locals.auth`, add to `src/app.d.ts`:
 
 ```ts
-import type { ServerAuth } from '@atlas/svelte/server';
+import type { ServerAuth } from '@atlasauth/svelte/server';
 declare global {
   namespace App {
     interface Locals {
@@ -218,13 +218,13 @@ export {};
 ## Development
 
 ```bash
-pnpm --filter @atlas/svelte build       # svelte-package → dist/
-pnpm --filter @atlas/svelte typecheck   # svelte-check
-pnpm --filter @atlas/svelte test        # vitest (jsdom + @testing-library/svelte)
+pnpm --filter @atlasauth/svelte build       # svelte-package → dist/
+pnpm --filter @atlasauth/svelte typecheck   # svelte-check
+pnpm --filter @atlasauth/svelte test        # vitest (jsdom + @testing-library/svelte)
 ```
 
 Tests cover the context init, the reactive stores, and `<SignedIn>`/`<SignedOut>`
-(with `@atlas/js` mocked).
+(with `@atlasauth/js` mocked).
 
 ## License
 

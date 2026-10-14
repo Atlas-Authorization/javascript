@@ -1,7 +1,7 @@
 import { Children, isValidElement, useMemo, type ReactElement, type ReactNode } from 'react';
 import { useAtlas } from './AtlasProvider';
 import { FapiClient } from './fapi';
-import { classFor } from './appearance';
+import { classFor, type ElementKey } from './appearance';
 import { translate } from './i18n';
 
 /**
@@ -14,6 +14,12 @@ import { translate } from './i18n';
 export function useClass(appearanceKey: Parameters<typeof classFor>[0], base: string) {
   const { appearance } = useAtlas();
   return classFor(appearanceKey, appearance, base);
+}
+
+/** A class builder for components that style many elements: `cls('list', 'atlas-list')`. */
+export function useClasses(): (key: ElementKey, base: string) => string {
+  const { appearance } = useAtlas();
+  return (key, base) => classFor(key, appearance, base);
 }
 
 export function useText() {

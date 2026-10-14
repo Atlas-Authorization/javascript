@@ -6,6 +6,12 @@ import {
   type ProtectCondition,
 } from '@atlasauth/authz';
 import { JwksCache, readKid, type Jwks } from './jwks-cache';
+import { JwksDiscovery, instanceIdFromPublishableKey } from './discovery';
+import {
+  checkLogoutToken,
+  type LogoutTokenCheckOptions,
+  type LogoutTokenResult,
+} from './logout-token';
 
 // Re-export the shared authorization primitive so a backend customer imports
 // `has`, `protect`, `ProtectCondition`, etc. from `@atlasauth/backend` directly —
@@ -119,7 +125,16 @@ export interface AuthorizedSession {
 
 export type VerifyResult =
   | AuthorizedSession
-  | { ok: false; reason: 'malformed' | 'invalid' | 'no_keys' | 'unauthorized_party' };
+  | {
+      ok: false;
+      reason: 'malformed' | 'invalid' | 'no_keys' | 'unauthorized_party';
+      /**
+       * Set with `no_keys` when the key set could not be obtained — e.g. OIDC
+       * discovery failed — saying why. A configuration diagnostic, never a
+       * statement about the token.
+       */
+      detail?: string;
+    };
 
 /** Build the success result with `has`/`protect` bound to the verified claims. */
 function authorized(claims: SessionClaims): AuthorizedSession {
@@ -143,11 +158,21 @@ function authorized(claims: SessionClaims): AuthorizedSession {
 
 export interface AtlasBackendOptions {
   /**
-   * The instance's JWKS URL. Provide exactly one of `jwksUrl` or `jwks`: with a
-   * URL, keys are fetched and cached (the production default); with a static
-   * `jwks`, verification is fully offline.
+   * The instance's JWKS URL. Optional: when neither `jwksUrl` nor `jwks` is
+   * given, the URL is discovered from `${issuer}/.well-known/openid-configuration`
+   * (cached like the JWKS itself). With a static `jwks`, verification is fully
+   * offline. `jwksUrl` and `jwks` are mutually exclusive.
    */
   jwksUrl?: string;
+  /**
+   * Only for discovery on an instance WITHOUT its own frontend API domain (the
+   * shared host): its tokens carry the shared issuer, so discovery must use the
+   * per-instance document. Pass the instance id (`ins_…`), or `publishableKey`.
+   * Ignored when `jwksUrl` or `jwks` is set.
+   */
+  instanceId?: string;
+  /** Alternative to `instanceId`: the instance id is read from the publishable key. */
+  publishableKey?: string;
   /**
    * A static JSON Web Key Set to verify against, INSTEAD of fetching from a URL.
    * When set, verification makes NO network call — the hermetic path a
@@ -192,17 +217,53 @@ export class AtlasBackend {
     // failing loudly on rather than silently accepting or rejecting every token.
     const hasUrl = typeof options.jwksUrl === 'string' && options.jwksUrl.length > 0;
     const hasStatic = options.jwks !== undefined;
-    if (hasUrl === hasStatic) {
+    if (hasUrl && hasStatic) {
       throw new Error(
-        'AtlasBackend needs exactly one key source: pass `jwksUrl` (fetch from the instance) OR `jwks` (a static key set for offline verification), not both and not neither.',
+        'AtlasBackend takes one key source: `jwksUrl` (fetch from the instance) OR `jwks` (a static key set for offline verification), not both. Omit both to discover the JWKS URL from the issuer.',
       );
+    }
+    if (typeof options.issuer !== 'string' || !options.issuer) {
+      throw new Error('AtlasBackend needs `issuer` (your instance\'s frontend API origin, the `iss` of its tokens).');
+    }
+
+    let discovery: JwksDiscovery | undefined;
+    if (!hasUrl && !hasStatic) {
+      const instanceId =
+        options.instanceId ??
+        (options.publishableKey ? instanceIdFromPublishableKey(options.publishableKey) : undefined);
+      if (options.publishableKey && !options.instanceId && !instanceId) {
+        throw new Error('AtlasBackend: `publishableKey` does not carry an instance id; pass `instanceId` or `jwksUrl` instead.');
+      }
+      discovery = new JwksDiscovery({
+        issuer: options.issuer,
+        instanceId,
+        fetchImpl: options.fetchImpl,
+        now: options.now,
+      });
     }
 
     this.jwks = new JwksCache({
-      url: options.jwksUrl,
+      url: hasUrl ? options.jwksUrl : undefined,
       staticJwks: options.jwks,
+      resolveUrl: discovery ? () => discovery.jwksUri() : undefined,
       fetchImpl: options.fetchImpl,
       now: options.now,
+    });
+  }
+
+  /**
+   * Verify an OIDC back-channel `logout_token` signed by this instance (same
+   * issuer and key cache as {@link verify}). `clientId` is the audience the
+   * token must carry — your session-exchange app's audience or OAuth client id.
+   */
+  verifyLogoutToken(
+    token: string,
+    options: Omit<LogoutTokenCheckOptions, 'issuer' | 'now'>,
+  ): Promise<LogoutTokenResult> {
+    return checkLogoutToken(token, this.jwks, {
+      ...options,
+      issuer: this.options.issuer,
+      now: this.options.now,
     });
   }
 
@@ -214,7 +275,11 @@ export class AtlasBackend {
     if (!token || token.split('.').length !== 3) return { ok: false, reason: 'malformed' };
 
     const keys: Jwks | null = await this.jwks.get(readKid(token));
-    if (!keys || keys.keys.length === 0) return { ok: false, reason: 'no_keys' };
+    if (!keys || keys.keys.length === 0) {
+      return this.jwks.lastError
+        ? { ok: false, reason: 'no_keys', detail: this.jwks.lastError }
+        : { ok: false, reason: 'no_keys' };
+    }
 
     let claims: SessionClaims;
     try {

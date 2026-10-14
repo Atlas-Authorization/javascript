@@ -7,6 +7,7 @@ export * from './AtlasProvider';
 export * from './hooks';
 export * from './fapi';
 export * from './components';
+export * from './sign-in-with-atlas';
 // Cross-property SSO: the browser silent-check (hidden-iframe OIDC prompt=none),
 // surfaced first-class here from @atlasauth/js.
 export { checkSession, handleSilentCallback } from '@atlasauth/js';

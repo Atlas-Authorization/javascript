@@ -1,8 +1,8 @@
-# @atlas/react-native
+# @atlasauth/react-native
 
 The official Atlas SDK for React Native and Expo — the native peer of
-[`@atlas/react`](../react). It reuses the framework-agnostic
-[`@atlas/js`](../js) client for every API call and mirrors the web hook surface
+[`@atlasauth/react`](../react). It reuses the framework-agnostic
+[`@atlasauth/js`](../js) client for every API call and mirrors the web hook surface
 (`useAuth`, `useUser`, `useSignIn`, `useSignUp`, …), minus the DOM.
 
 The one architectural difference from the web SDK: **the web SDK keeps the
@@ -13,7 +13,7 @@ where it lives — the Keychain / Keystore (recommended) or AsyncStorage.
 ## Install
 
 ```sh
-npm install @atlas/react-native
+npm install @atlasauth/react-native
 # peers you already have in an Expo / RN app:
 #   react, react-native
 # plus whichever secure store you wire the adapter to (see below)
@@ -29,7 +29,7 @@ package ships a non-persistent in-memory default so it runs out of the box, but
 
 ```ts
 import * as SecureStore from 'expo-secure-store';
-import type { TokenStorage } from '@atlas/react-native';
+import type { TokenStorage } from '@atlasauth/react-native';
 
 export const secureStorage: TokenStorage = {
   getToken: () => SecureStore.getItemAsync('atlas.session'),
@@ -42,7 +42,7 @@ export const secureStorage: TokenStorage = {
 
 ```ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { TokenStorage } from '@atlas/react-native';
+import type { TokenStorage } from '@atlasauth/react-native';
 
 export const asyncStorage: TokenStorage = {
   getToken: () => AsyncStorage.getItem('atlas.session'),
@@ -57,7 +57,7 @@ contract, so you install only what you use.
 ## Provider
 
 ```tsx
-import { AtlasProvider } from '@atlas/react-native';
+import { AtlasProvider } from '@atlasauth/react-native';
 import { secureStorage } from './storage';
 
 export default function App() {
@@ -78,7 +78,7 @@ export default function App() {
 ```tsx
 import { useState } from 'react';
 import { View, TextInput, Button, Text } from 'react-native';
-import { useSignIn, useAuth } from '@atlas/react-native';
+import { useSignIn, useAuth } from '@atlasauth/react-native';
 
 function SignInScreen() {
   const { signInWithPassword } = useSignIn();
@@ -118,7 +118,7 @@ deep-link callback back to `completeOAuthRedirect`.
 ```tsx
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import { useSignIn } from '@atlas/react-native';
+import { useSignIn } from '@atlasauth/react-native';
 
 function useGoogleSignIn() {
   const { startOAuth, completeOAuthRedirect } = useSignIn();
@@ -147,7 +147,7 @@ mechanism that opens a URL and gives you back the callback works.
 ## Sign-up
 
 ```tsx
-import { useSignUp } from '@atlas/react-native';
+import { useSignUp } from '@atlasauth/react-native';
 
 const { signUpWithPassword, verifyEmailCode } = useSignUp();
 
@@ -157,6 +157,24 @@ if (result.status === 'needs_more' && result.attemptId) {
   await verifyEmailCode({ attemptId: result.attemptId, code });
 }
 // 'complete' → the token is persisted; the user is signed in.
+```
+
+### Error codes
+
+`FlowResult.errors` carries the server's `{ code, message }` items; `message` is
+written for end users. `ATLAS_ERROR_CODES` names the codes the SDK knows. When the
+app has no way to send email, any step that would send one (sign-up verification,
+email code, reset) is refused with **422 `EMAIL_DELIVERY_NOT_CONFIGURED`** before
+anything is issued:
+
+```tsx
+import { firstErrorMessage, isEmailDeliveryNotConfigured } from '@atlasauth/react-native';
+
+const result = await signUpWithPassword({ emailAddress, password });
+if (isEmailDeliveryNotConfigured(result)) {
+  // "This app can't send email right now. Try another sign-in method or contact the app owner."
+  setBanner(firstErrorMessage(result));
+}
 ```
 
 ## Hooks

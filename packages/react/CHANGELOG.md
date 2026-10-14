@@ -1,5 +1,55 @@
 # @atlasauth/react changelog
 
+## 0.4.1
+- **Front-channel logout on sign-out.** `signOut()` now loads the `frontchannel_logout_urls` the
+  Frontend API returns (apps signed in with "Sign in with Atlas" through this session) in hidden,
+  sandboxed iframes, so those apps clear their sessions in this browser too. It waits until the frames
+  load or 5 s pass, never fails the sign-out, only loads `https:` URLs (and `http://localhost`), and
+  does nothing during SSR. Pass `signOut({ frontchannel: false })` to skip it.
+
+## 0.4.0
+- **Design system.** Components now adopt the design configured in the Atlas dashboard
+  automatically (fetched from the Frontend API; opt out with `appearance.instanceDesign: false`).
+- **New `appearance.preset`** (`minimal`, `atlas`, `glass`, `midnight`, `editorial`, `terminal`,
+  `sunrise`, `forest`, `grape`, `slate`, `split-photo`, `bold`) and **`appearance.design`**
+  (structured overrides: palette, typography, shape, elevation, density, card, buttons, inputs…).
+  Precedence: dashboard design < `preset` < `variables` < `design`. Values are validated — an
+  invalid one is dropped with a development warning and never reaches CSS.
+- `appearance.variables` and `baseTheme` keep working unchanged when no design is in play; with a
+  design they map onto it (colours, radius, curated font, density).
+- The provider root carries stable `data-atlas-*` attributes (`data-atlas-card`, `data-atlas-button`,
+  `data-atlas-input`, `data-atlas-density`, `data-atlas-theme`, …) and the components read the
+  documented `--atlas-*` design variables.
+- **More element keys** for `appearance.elements`: `sectionTitle`, `formButtonSecondary` (now
+  rendered), `socialButtonIcon`, `socialButtonText`, `alert`, `text`, `link`, `list`, `listItem`,
+  `userButton`, `tabs`, `tab`, `pricingTable`, `planName`, `price`, `priceInterval`; `root`,
+  `formField`, `formFieldLabel` and `headerSubtitle` are now applied.
+- New dependency: `@atlasauth/design`.
+
+## 0.3.1
+- `useAuth()` now also returns `status` (`'loading' | 'signed_in' | 'signed_out'`) and `session`,
+  the same names `useAtlas()` uses, so code that destructures them no longer gets `undefined`.
+  `isLoaded` / `isSignedIn` are unchanged.
+- `useAuth()` has an exported return type, `UseAuthReturn`; annotate with it and TypeScript
+  rejects fields that don't exist.
+
+## 0.2.0
+- **New: `<SignInWithAtlasButton>` + `completeSignInWithAtlas()`** — "Sign in with Atlas" for any
+  website via OIDC authorization-code + PKCE against `https://atlasauth.net`. Standalone: no
+  `<AtlasProvider>` needed. `buildAtlasAuthorizeUrl()` is exported for custom buttons. Shares its
+  sessionStorage contract with the hosted script, so the two can be mixed.
+  - `loginUri` prop for server apps: the click goes to your backend login route (a same-origin
+    path or an `https://` URL, same check as the script's `data-login-uri`); `clientId` /
+    `redirectUri` aren't needed in that mode.
+  - `completeSignInWithAtlas()` matches the script's `AtlasID.handleCallback()` exactly: a
+    callback `error` is reported before the state check; the stored transaction is validated
+    and removed as soon as it is read (blocked storage → `state_mismatch`); the id_token's `iss`
+    and `aud` must match (`invalid_id_token`); an unparseable token response is
+    `token_exchange_failed`; an unparseable callback URL is `invalid_url`.
+  - The button looks like the script's button: same colours, weight, sizes and Atlas mark.
+- The prebuilt `<SignIn>` social section now shows a "Continue with Atlas" button when the
+  instance has Sign in with Atlas enabled. Space on it no longer scrolls the page.
+
 ## 0.1.30
 - **`frontendApi` is now a REQUIRED prop on `<AtlasProvider>`** (D10). It was silently
   defaulting to `''`, so omitting it sent every request to a relative URL and failed with no

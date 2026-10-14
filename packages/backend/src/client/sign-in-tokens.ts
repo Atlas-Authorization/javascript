@@ -1,4 +1,4 @@
-import type { RequestFn } from './request';
+import { enc, type RequestFn } from './request';
 
 export interface SignInToken {
   object: 'sign_in_token';
@@ -20,6 +20,16 @@ export function signInTokensResource(request: RequestFn) {
   return {
     create(body: CreateSignInTokenBody, idempotencyKey?: string): Promise<SignInToken> {
       return request({ method: 'POST', path: '/v1/sign_in_tokens', body, idempotencyKey });
+    },
+    /**
+     * `POST /v1/sign_in_tokens/:id/revoke` — revoke an unused sign-in token
+     * before its 60-second window elapses.
+     *
+     * @deprecated The sign-in token API is deprecated (sunset 2027-04-01).
+     * Mint a session directly with `sessions.create()` instead.
+     */
+    revoke(id: string): Promise<{ object: 'sign_in_token'; id: string; revoked: true }> {
+      return request({ method: 'POST', path: `/v1/sign_in_tokens/${enc(id)}/revoke` });
     },
   };
 }

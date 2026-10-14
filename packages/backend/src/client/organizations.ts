@@ -53,10 +53,152 @@ export interface OrgDomain {
   created_at: number;
 }
 
+/** Whether an organization runs an end-user (reader) pool beside its staff members. */
+export interface OrganizationEndUserPoolPolicy {
+  enabled: boolean;
+  /** New readers start `pending` until approved. */
+  requireApproval?: boolean;
+  /** Readers may sign up on the hosted pages. */
+  allowHostedSignup?: boolean;
+}
+
+/**
+ * The organization's security policy overrides. Keys are camelCase on this
+ * route, and only overrides that are set appear. Unknown keys from a newer API
+ * version are kept in the index signature.
+ */
+export interface OrganizationPolicySettings {
+  requireMfa?: boolean;
+  ssoRequired?: boolean;
+  sessionIdleOverrideMs?: number;
+  /**
+   * Sign-in methods a member may use (e.g. `password`, `passkey`, `oauth`,
+   * `oauth:google`, `saml`, `magic_link`). Absent = all methods.
+   */
+  allowedSignInMethods?: string[];
+  /** CIDR allow-list gating member sign-in (e.g. `203.0.113.0/24`). Absent = unrestricted. */
+  ipAllowlist?: string[];
+  /** Cap on the absolute session lifetime for members, in seconds (300 … 7776000). */
+  maxSessionAgeSeconds?: number;
+  endUserPool?: OrganizationEndUserPoolPolicy;
+  [key: string]: unknown;
+}
+
 export interface OrganizationPolicy {
   object: 'organization_policy';
   organization_id: string;
-  policy: Record<string, unknown>;
+  policy: OrganizationPolicySettings;
+}
+
+/** An organization's settings document, validated against the instance's settings schema. */
+export interface OrganizationSettings {
+  object: 'organization_settings';
+  organization_id: string;
+  values: Record<string, unknown>;
+  /** Monotonic per-organization version; 0 when nothing is set yet. */
+  version: number;
+  updated_by: string | null;
+  /** Last write (epoch ms), or null if never set. */
+  updated_at: number | null;
+}
+
+/** An organization's audit stream destination. The signing secret is never returned. */
+export interface OrganizationAuditStream {
+  object: 'org_audit_stream';
+  id: string;
+  organization_id: string;
+  url: string;
+  format: string;
+  active: boolean;
+  has_secret: boolean;
+  created_at: number;
+}
+
+export interface CreateOrganizationAuditStreamBody {
+  /** Public HTTPS endpoint of the SIEM/collector. */
+  url: string;
+  /** Shared HMAC-SHA256 signing secret (min 16 chars). Write-only. */
+  secret: string;
+  /** Shape hint for the collector. Default `json`. */
+  format?: string;
+}
+
+/** The organization's hosted-page branding overlay. Null fields inherit the instance brand. */
+export interface OrganizationBranding {
+  object: 'organization_branding';
+  organization_id: string;
+  display_name: string | null;
+  logo_url: string | null;
+  primary_color: string | null;
+  support_url: string | null;
+  custom_domain: string | null;
+  updated_at: number | null;
+}
+
+/** A partial merge: a provided field overrides, `null` (or `''`) clears it back. */
+export interface UpdateOrganizationBrandingBody {
+  display_name?: string | null;
+  logo_url?: string | null;
+  primary_color?: string | null;
+  support_url?: string | null;
+  custom_domain?: string | null;
+}
+
+export type OrganizationEndUserStatus = 'active' | 'pending' | 'blocked';
+
+/** A reader in an organization's end-user pool (distinct from its staff members). */
+export interface OrganizationEndUser {
+  object: 'organization_end_user';
+  id: string;
+  organization_id: string;
+  user_id: string;
+  status: OrganizationEndUserStatus;
+  source: string;
+  public_metadata: Metadata;
+  approved_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ListOrganizationEndUsersParams extends CursorParams {
+  status?: OrganizationEndUserStatus;
+}
+
+export interface AddOrganizationEndUserBody {
+  user_id: string;
+  /** Defaults to `active`. */
+  status?: OrganizationEndUserStatus;
+  /** How the reader entered the pool. Defaults to `token_exchange`. */
+  source?: 'hosted' | 'federated' | 'token_exchange' | 'import';
+}
+
+/** A host whose sign-ups join the organization's end-user pool. */
+export interface OrganizationReaderDomain {
+  object: 'custom_domain';
+  id: string;
+  role: string;
+  host: string;
+  status: string;
+  action: string | null;
+  live: boolean;
+  cname_target: string | null;
+  last_checked_at: number | null;
+  last_observed_target: string | null;
+  failure_reason: string | null;
+  certificate_expires_at: number | null;
+  cookie_domain: string | null;
+}
+
+/** The reader domain just bound, with the DNS record to publish. */
+export interface OrganizationReaderDomainCreated extends OrganizationReaderDomain {
+  instructions: Array<{
+    role: string;
+    host: string;
+    type: 'CNAME';
+    target: string;
+    purpose: string;
+  }>;
+  note: string;
 }
 
 export interface OrganizationHierarchy {
@@ -95,11 +237,25 @@ export interface ReplaceOrganizationMetadataBody {
   private_metadata?: Metadata;
 }
 
-/** The org security policy patch (§4.4). Fields are camelCase on this route. */
+/**
+ * The org security policy patch (§4.4), a partial merge. Fields are camelCase on
+ * this route; an explicit `null` clears an override.
+ */
 export interface OrganizationPolicyPatch {
-  requireMfa?: boolean;
-  ssoRequired?: boolean;
+  requireMfa?: boolean | null;
+  ssoRequired?: boolean | null;
   sessionIdleOverrideMs?: number | null;
+  /** Restrict member sign-in methods; `null` clears (all methods). Unknown method → 400. */
+  allowedSignInMethods?: string[] | null;
+  /** CIDR allow-list for member sign-in; `null` clears. A bad CIDR → 400. */
+  ipAllowlist?: string[] | null;
+  /** Absolute session lifetime cap in seconds (300 … 7776000); `null` clears. */
+  maxSessionAgeSeconds?: number | null;
+  /** Retired: only `null` is accepted, to clear a stored value. Use `entitlementOverrides.create`. */
+  entitlementPlan?: null;
+  /** Retired: only `null` is accepted, to clear a stored value. */
+  entitlementOverrides?: null;
+  endUserPool?: OrganizationEndUserPoolPolicy | null;
   [key: string]: unknown;
 }
 
@@ -255,6 +411,153 @@ export function organizationsResource(request: RequestFn) {
           method: 'DELETE',
           path: `/v1/organizations/${enc(orgId)}/domains/${enc(domainId)}`,
         });
+      },
+    },
+
+    /** The organization's settings document, validated against `organizationSettingsSchema`. */
+    settings: {
+      /** An empty document at version 0 when nothing is set. */
+      get(orgId: string): Promise<OrganizationSettings> {
+        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/settings` });
+      },
+      /** Replace the whole document. A schema mismatch is a 422 `SETTINGS_INVALID`. */
+      replace(
+        orgId: string,
+        values: Record<string, unknown>,
+        idempotencyKey?: string,
+      ): Promise<OrganizationSettings> {
+        return request({
+          method: 'PUT',
+          path: `/v1/organizations/${enc(orgId)}/settings`,
+          body: { values },
+          idempotencyKey,
+        });
+      },
+      /**
+       * Merge a partial object (RFC 7396 shallow merge): a key set to `null` is
+       * removed, any other value overwrites, untouched keys are kept.
+       */
+      update(
+        orgId: string,
+        values: Record<string, unknown>,
+        idempotencyKey?: string,
+      ): Promise<OrganizationSettings> {
+        return request({
+          method: 'PATCH',
+          path: `/v1/organizations/${enc(orgId)}/settings`,
+          body: { values },
+          idempotencyKey,
+        });
+      },
+    },
+
+    /** Per-organization audit stream destinations (only that org's events are forwarded). */
+    auditStreams: {
+      list(orgId: string): Promise<ListPage<OrganizationAuditStream>> {
+        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/audit_streams` });
+      },
+      create(
+        orgId: string,
+        body: CreateOrganizationAuditStreamBody,
+        idempotencyKey?: string,
+      ): Promise<OrganizationAuditStream> {
+        return request({
+          method: 'POST',
+          path: `/v1/organizations/${enc(orgId)}/audit_streams`,
+          body,
+          idempotencyKey,
+        });
+      },
+      delete(
+        orgId: string,
+        streamId: string,
+      ): Promise<{ object: 'org_audit_stream'; id: string; deleted: true }> {
+        return request({
+          method: 'DELETE',
+          path: `/v1/organizations/${enc(orgId)}/audit_streams/${enc(streamId)}`,
+        });
+      },
+    },
+
+    /** The organization's hosted-page branding overlay. */
+    branding: {
+      get(orgId: string): Promise<OrganizationBranding> {
+        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/branding` });
+      },
+      /** Partial merge: provided fields override, `null` clears back to the instance brand. */
+      update(orgId: string, body: UpdateOrganizationBrandingBody): Promise<OrganizationBranding> {
+        return request({ method: 'PUT', path: `/v1/organizations/${enc(orgId)}/branding`, body });
+      },
+    },
+
+    /** The organization's end-user (reader) pool — external users, not staff members. */
+    endUsers: {
+      list(
+        orgId: string,
+        params: ListOrganizationEndUsersParams = {},
+      ): Promise<CursorPage<OrganizationEndUser> & { object: 'list' }> {
+        return request({
+          method: 'GET',
+          path: `/v1/organizations/${enc(orgId)}/end_users`,
+          query: { ...params },
+        });
+      },
+      /** Attach an instance user as a reader. Idempotent per (org, user); grants no org role. */
+      add(
+        orgId: string,
+        body: AddOrganizationEndUserBody,
+        idempotencyKey?: string,
+      ): Promise<OrganizationEndUser> {
+        return request({
+          method: 'POST',
+          path: `/v1/organizations/${enc(orgId)}/end_users`,
+          body,
+          idempotencyKey,
+        });
+      },
+      /** Approve (`active`), gate (`pending`) or block a reader. */
+      update(
+        orgId: string,
+        userId: string,
+        body: { status: OrganizationEndUserStatus },
+      ): Promise<OrganizationEndUser> {
+        return request({
+          method: 'PATCH',
+          path: `/v1/organizations/${enc(orgId)}/end_users/${enc(userId)}`,
+          body,
+        });
+      },
+      remove(
+        orgId: string,
+        userId: string,
+      ): Promise<{ object: 'organization_end_user'; id: string; deleted: true }> {
+        return request({
+          method: 'DELETE',
+          path: `/v1/organizations/${enc(orgId)}/end_users/${enc(userId)}`,
+        });
+      },
+    },
+
+    /** The host(s) whose sign-ups join the organization's end-user pool. */
+    readerDomain: {
+      list(orgId: string): Promise<ListPage<OrganizationReaderDomain>> {
+        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/reader_domain` });
+      },
+      /** Bind a host; returns the CNAME to publish. Verify with `domains.verify(id)`. */
+      create(
+        orgId: string,
+        body: { host: string },
+        idempotencyKey?: string,
+      ): Promise<OrganizationReaderDomainCreated> {
+        return request({
+          method: 'POST',
+          path: `/v1/organizations/${enc(orgId)}/reader_domain`,
+          body,
+          idempotencyKey,
+        });
+      },
+      delete(orgId: string): Promise<{ object: 'custom_domain'; id: string; deleted: true }> {
+        return request({ method: 'DELETE', path: `/v1/organizations/${enc(orgId)}/reader_domain` });
       },
     },
 

@@ -4,5 +4,5 @@
   "lib": {
     "entryFile": "src/public-api.ts"
   },
-  "allowedNonPeerDependencies": ["@atlasauth/js", "@atlasauth/authz"]
+  "allowedNonPeerDependencies": ["@atlasauth/js", "@atlasauth/authz", "@atlasauth/design"]
 }

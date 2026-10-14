@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useAtlas } from './AtlasProvider';
-import { currentUrl, navigateTo, useClass, useMeClient, useText } from './components-shared';
+import { currentUrl, navigateTo, useClass, useClasses, useMeClient, useText } from './components-shared';
 import type {
   AtlasBillingInvoice,
   AtlasBillingPlan,
@@ -152,6 +152,7 @@ export function PricingTable({ orgId }: { orgId?: string } = {}) {
 
   const cardClass = useClass('card', 'atlas-card');
   const buttonClass = useClass('formButtonPrimary', 'atlas-button');
+  const cls = useClasses();
 
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
   const currentPlanId = subscription?.plan?.id ?? null;
@@ -159,20 +160,20 @@ export function PricingTable({ orgId }: { orgId?: string } = {}) {
   if (!isLoaded) return <div data-atlas="pricing-table" aria-busy="true" />;
 
   return (
-    <div className="atlas-pricing-table" data-atlas="pricing-table">
+    <div className={cls('pricingTable', 'atlas-pricing-table')} data-atlas="pricing-table">
       {plans.map((plan) => {
         const isCurrent = plan.id === currentPlanId;
         return (
           <div key={plan.id} className={cardClass} data-atlas="pricing-plan" data-current={isCurrent}>
-            <h3>{plan.name}</h3>
-            <p className="atlas-price">
+            <h3 className={cls('planName', 'atlas-plan-name')}>{plan.name}</h3>
+            <p className={cls('price', 'atlas-price')}>
               {formatPrice(plan.amount, plan.currency)}
-              <span className="atlas-interval"> / {plan.interval}</span>
+              <span className={cls('priceInterval', 'atlas-interval')}> / {plan.interval}</span>
             </p>
             {plan.features.length ? (
-              <ul>
+              <ul className={cls('list', 'atlas-list')}>
                 {plan.features.map((f, i) => (
-                  <li key={i}>{f}</li>
+                  <li className={cls('listItem', 'atlas-list-item')} key={i}>{f}</li>
                 ))}
               </ul>
             ) : null}
@@ -214,23 +215,24 @@ export function Invoices({ orgId }: { orgId?: string } = {}) {
   const { isLoaded, invoices } = useInvoices({ orgId });
   const t = useText();
   const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
 
   if (!isLoaded) return <div data-atlas="invoices" aria-busy="true" />;
 
   return (
     <div className={cardClass} data-atlas="invoices">
-      <h3>{t('commerce.invoices')}</h3>
+      <h3 className={cls('sectionTitle', 'atlas-section-title')}>{t('commerce.invoices')}</h3>
       {invoices.length === 0 ? (
-        <p data-atlas="invoices-empty">{t('commerce.noInvoices')}</p>
+        <p className={cls('text', 'atlas-text')} data-atlas="invoices-empty">{t('commerce.noInvoices')}</p>
       ) : (
-        <ul>
+        <ul className={cls('list', 'atlas-list')}>
           {invoices.map((inv) => (
-            <li key={inv.id} data-atlas="invoice" data-status={inv.status}>
+            <li className={cls('listItem', 'atlas-list-item')} key={inv.id} data-atlas="invoice" data-status={inv.status}>
               <span>{inv.number ?? inv.id}</span>{' '}
               <span>{formatPrice(inv.amount_paid || inv.amount_due, inv.currency)}</span>{' '}
               <span>{inv.status}</span>{' '}
               {inv.hosted_invoice_url ? (
-                <a href={inv.hosted_invoice_url} target="_blank" rel="noreferrer">
+                <a className={cls('link', 'atlas-link')} href={inv.hosted_invoice_url} target="_blank" rel="noreferrer">
                   {t('commerce.viewInvoice')}
                 </a>
               ) : null}

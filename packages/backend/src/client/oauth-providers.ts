@@ -48,6 +48,49 @@ export interface OAuthProvider {
   allow_sign_up: boolean;
   scopes: string[];
   updated_at: number | null;
+  /** Extra scopes the provider's API supports beyond sign-in. */
+  api_scopes?: string[];
+  /** The effective sign-in mode (in-page native library or redirect). */
+  mode?: OAuthProviderMode;
+  /** Native providers only: the JavaScript origins to register at the provider console. */
+  javascript_origins?: string[];
+  /** Atlas's own callback URL; a `custom_redirect_uri` forwards `?code&state` here. */
+  atlas_callback?: string;
+  /** Your own already-registered callback (migration), or null. */
+  custom_redirect_uri?: string | null;
+  /** The instance's icon override for this provider's button, or null. */
+  icon_url?: string | null;
+  /** Wallet providers only (siwe, siws, siwf): the stored verifier settings. */
+  setting_values?: Record<string, string>;
+}
+
+export type OAuthProviderMode = 'native' | 'redirect';
+
+/** `GET /v1/oauth_providers` filters. */
+export interface ListOAuthProvidersParams {
+  /** Only these catalogue keys (exact match, e.g. `google`). */
+  provider?: string | string[];
+  /** `true`: only providers with credentials stored; `false`: only those not set up. */
+  configured?: boolean;
+}
+
+/**
+ * Verifier settings for the wallet providers (no credentials). `null` or `""`
+ * clears one; an unknown key is refused.
+ */
+export interface OAuthWalletSettings {
+  /** siwe / siws / siwf: the expected domain (`hostname[:port]`). */
+  domain?: string | null;
+  /** siwe / siwf: allowed chain ids (positive integers, array or comma list). */
+  chain_ids?: number[] | string | null;
+  /** siwe: an https RPC URL; enables smart-contract (EIP-1271) wallets. */
+  rpc_url?: string | null;
+  /** siws: allowed networks. */
+  networks?: Array<'mainnet' | 'devnet' | 'testnet'> | string | null;
+  /** siwf: an https Optimism RPC URL, required to verify FID ownership. */
+  optimism_rpc_url?: string | null;
+  /** siwf: the Farcaster ID registry contract (`0x…`). */
+  id_registry_address?: string | null;
 }
 
 /**
@@ -62,7 +105,32 @@ export interface UpsertOAuthProviderBody {
   client_secret?: string;
   scopes?: string[];
   values?: Record<string, string>;
-  settings?: Record<string, string>;
+  /**
+   * Non-secret provider settings (e.g. `redirect_uri`), or the wallet
+   * providers' verifier settings. `null` or `""` clears a setting.
+   */
+  settings?: Record<string, string | null> | OAuthWalletSettings;
+  /** Your own already-registered callback URL (migration). */
+  custom_redirect_uri?: string;
+  native?: boolean;
+  /** Force the sign-in mode; `""` or `null` clears the override. */
+  mode?: OAuthProviderMode | '' | null;
+  /** The brand shown on the button (e.g. "Discord"); empty or `null` clears. Display only. */
+  display_name?: string | null;
+  /** An http(s) or `data:image` icon for the button; empty or `null` clears. */
+  icon_url?: string | null;
+}
+
+/** What `upsert` returns. */
+export interface OAuthProviderUpsertResult {
+  object: 'oauth_provider';
+  provider: string;
+  configured: boolean;
+  enabled: boolean;
+  /** Wallet providers only: the stored verifier settings after this write. */
+  setting_values?: Record<string, string>;
+  updated_fields: string[];
+  warning?: string;
 }
 
 /** The connectivity test's honest verdict: what it proved, and what it did not. */
@@ -81,8 +149,13 @@ export interface OAuthConnectionTest {
 export function oauthProvidersResource(request: RequestFn) {
   return {
     /** The whole catalog, configured or not — a not-yet-set-up provider is exactly the one a setup agent wants. */
-    list(): Promise<ListPage<OAuthProvider>> {
-      return request({ method: 'GET', path: '/v1/oauth_providers' });
+    list(params: ListOAuthProvidersParams = {}): Promise<ListPage<OAuthProvider>> {
+      const provider = Array.isArray(params.provider) ? params.provider.join(',') : params.provider;
+      return request({
+        method: 'GET',
+        path: '/v1/oauth_providers',
+        query: { provider, configured: params.configured },
+      });
     },
     get(provider: string): Promise<OAuthProvider> {
       return request({ method: 'GET', path: `/v1/oauth_providers/${enc(provider)}` });
@@ -92,7 +165,7 @@ export function oauthProvidersResource(request: RequestFn) {
       provider: string,
       body: UpsertOAuthProviderBody,
       idempotencyKey?: string,
-    ): Promise<{ object: 'oauth_provider'; provider: string; configured: true }> {
+    ): Promise<OAuthProviderUpsertResult> {
       return request({
         method: 'PUT',
         path: `/v1/oauth_providers/${enc(provider)}`,

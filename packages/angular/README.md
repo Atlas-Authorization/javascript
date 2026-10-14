@@ -1,4 +1,4 @@
-# @atlas/angular
+# @atlasauth/angular
 
 The official **Angular** SDK for Atlas — the Angular peer of [`@atlasauth/react`](../react). It wraps the framework-agnostic [`@atlasauth/js`](../js) client and exposes Atlas's reactive auth state, sign-in/up flows, prebuilt UI, authorization directives, and route guards as idiomatic modern Angular (standalone APIs, RxJS **and** Signals, DI).
 
@@ -9,7 +9,7 @@ Requires **Angular 17+**.
 ## Install
 
 ```bash
-pnpm add @atlas/angular
+pnpm add @atlasauth/angular
 # peers: @angular/core, @angular/common (>=17), rxjs (>=7); @angular/router if you use the guards
 ```
 
@@ -22,7 +22,7 @@ pnpm add @atlas/angular
 ```ts
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
-import { provideAtlas } from '@atlas/angular';
+import { provideAtlas } from '@atlasauth/angular';
 import { AppComponent } from './app/app.component';
 import { routes } from './app/routes';
 
@@ -44,7 +44,7 @@ The service begins booting immediately — completing any OAuth/hosted-page redi
 ### NgModule
 
 ```ts
-import { AtlasModule } from '@atlas/angular';
+import { AtlasModule } from '@atlasauth/angular';
 
 @NgModule({
   imports: [AtlasModule.forRoot({ publishableKey: 'pk_test_…' })],
@@ -55,7 +55,7 @@ export class AppModule {}
 Feature modules `import { AtlasModule }` (no `forRoot`) to use the directives and components. Standalone components import them individually, or spread `ATLAS_UI`:
 
 ```ts
-import { ATLAS_UI } from '@atlas/angular';
+import { ATLAS_UI } from '@atlasauth/angular';
 
 @Component({ standalone: true, imports: [...ATLAS_UI], template: '…' })
 export class DashboardComponent {}
@@ -162,7 +162,7 @@ Server-driven, rendered in the host DOM (no iframe), themed via the `appearance`
 
 ```ts
 import { Routes } from '@angular/router';
-import { atlasGuard } from '@atlas/angular';
+import { atlasGuard } from '@atlasauth/angular';
 
 export const routes: Routes = [
   {
@@ -190,6 +190,6 @@ Like the components, guards are UX, not security — the server enforces the sam
 
 ## Build & test
 
-- **Build**: `pnpm --filter @atlas/angular build` (ng-packagr → `dist/`, an Angular Package Format bundle with FESM2022 + type definitions).
-- **Typecheck**: `pnpm --filter @atlas/angular typecheck`.
+- **Build**: `pnpm --filter @atlasauth/angular build` (ng-packagr → `dist/`, an Angular Package Format bundle with FESM2022 + type definitions).
+- **Typecheck**: `pnpm --filter @atlasauth/angular typecheck`.
 - **Test**: unit specs run under the Angular CLI test runner (Karma/Jasmine or your configured runner). A starter spec lives in `src/lib/atlas.service.spec.ts`.

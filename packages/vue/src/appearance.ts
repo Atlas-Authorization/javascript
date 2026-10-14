@@ -18,6 +18,17 @@
  * component's base styles from scratch.
  */
 
+import {
+  renderDesignAppearance,
+  type AppearanceRender,
+  type DesignAppearance,
+  type DesignWarn,
+  type InstanceDesign,
+} from '@atlasauth/design/runtime';
+
+export { instanceDesignFrom } from '@atlasauth/design/runtime';
+export type { AppearanceRender, AtlasDesign, InstanceDesign, PresetId } from '@atlasauth/design/runtime';
+
 export interface DesignTokens {
   colorPrimary?: string;
   colorText?: string;
@@ -49,11 +60,19 @@ export type ElementKey =
   | 'menuItem'
   | 'badge';
 
-export interface Appearance {
-  /** A prebuilt theme to start from. */
+export interface Appearance extends DesignAppearance {
+  /** A prebuilt token theme to start from (pre-design-system themes). */
   baseTheme?: keyof typeof THEMES;
+  /**
+   * Legacy design tokens. Without a design they set the `--atlas-*` variables
+   * exactly as before; with one they map onto it.
+   */
   variables?: DesignTokens;
   elements?: Partial<Record<ElementKey, string>>;
+  // From DesignAppearance:
+  //   preset?: PresetId            a design preset (replaces the dashboard design as the base)
+  //   design?: AtlasDesign         structured overrides, highest precedence
+  //   instanceDesign?: boolean     apply the dashboard design automatically (default true)
 }
 
 export const DEFAULT_TOKENS: Required<DesignTokens> = {
@@ -135,4 +154,43 @@ export function classFor(
 ): string {
   const override = appearance?.elements?.[element];
   return override ? `${base} ${override}` : base;
+}
+
+// ---- the design system ---------------------------------------------------------
+
+/**
+ * The legacy tokens the developer chose EXPLICITLY: a non-default `baseTheme`
+ * plus `variables`. Only these map onto a design — the token defaults must not
+ * overwrite the dashboard design.
+ */
+export function explicitTokens(appearance?: Appearance): DesignTokens {
+  const out: DesignTokens = {};
+  if (appearance?.baseTheme && appearance.baseTheme !== 'default') {
+    Object.assign(out, THEMES[appearance.baseTheme]);
+  }
+  for (const [key, value] of Object.entries(appearance?.variables ?? {})) {
+    if (value !== undefined) out[key as keyof DesignTokens] = value;
+  }
+  return out;
+}
+
+/**
+ * Turn an `appearance` (+ the instance's dashboard design from the Frontend
+ * API) into root attributes and a stylesheet — the same semantics as
+ * `@atlasauth/react`. Precedence, lowest first: dashboard design < `preset` <
+ * `variables` (and a non-default `baseTheme`) < `design`. Without a dashboard
+ * design and without `preset`/`design`, the output is exactly the
+ * pre-design-system one: the token variables, no stylesheet, no attributes.
+ */
+export function renderAppearance(
+  appearance: Appearance | undefined,
+  instanceDesign: InstanceDesign | null | undefined,
+  options: { frontendApi?: string; warn?: DesignWarn } = {},
+): AppearanceRender {
+  return renderDesignAppearance(appearance, instanceDesign, {
+    tokens: explicitTokens(appearance),
+    legacyStyle: () => cssVariables(resolveTokens(appearance)),
+    frontendApi: options.frontendApi,
+    warn: options.warn,
+  });
 }

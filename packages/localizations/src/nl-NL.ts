@@ -1,0 +1,91 @@
+import type { Localization } from './types';
+
+/**
+ * Dutch (Netherlands). A `DeepPartial` override of `en-US`; omitted keys fall
+ * back to English. `{application}` / `{provider}` placeholders preserved.
+ */
+export const nlNL: Localization = {
+  locale: 'nl-NL',
+
+  'signIn.title': 'Inloggen',
+  'signIn.subtitle': 'om door te gaan naar {application}',
+  'signIn.identifierLabel': 'E-mailadres',
+  'signIn.passwordLabel': 'Wachtwoord',
+  'signIn.submit': 'Doorgaan',
+  'signIn.forgotPassword': 'Wachtwoord vergeten?',
+  'signIn.noAccount': 'Geen account?',
+  'signIn.signUpLink': 'Registreren',
+  'signIn.orDivider': 'of',
+  'signIn.socialButton': 'Doorgaan met {provider}',
+  'signIn.emailCodeLabel': 'Verificatiecode',
+  'signIn.magicLinkSent': 'Controleer je e-mail voor een inloglink.',
+  'signIn.checkOtherTab':
+    'Je kunt dit tabblad sluiten — je bent ingelogd waar je begon.',
+
+  'signUp.title': 'Maak je account aan',
+  'signUp.submit': 'Doorgaan',
+  'signUp.haveAccount': 'Heb je al een account?',
+  'signUp.signInLink': 'Inloggen',
+
+  'mfa.title': 'Verificatie in twee stappen',
+  'mfa.subtitle': 'Voer de code uit je authenticator-app in.',
+  'mfa.codeLabel': 'Code',
+  'mfa.enrollFirstCodeLabel': 'Code uit je authenticator-app',
+  'mfa.enrollSecondCodeLabel': 'De volgende code die wordt weergegeven',
+  'mfa.usePasskey': 'Gebruik in plaats daarvan een passkey',
+  'mfa.useBackupCode': 'Gebruik een herstelcode',
+  'mfa.submit': 'Verifiëren',
+
+  'reset.title': 'Je wachtwoord opnieuw instellen',
+  'reset.submit': 'Herstelcode verzenden',
+  'reset.newPasswordLabel': 'Nieuw wachtwoord',
+
+  'userButton.manageAccount': 'Account beheren',
+  'userButton.signOut': 'Uitloggen',
+  'userButton.signOutAll': 'Op alle apparaten uitloggen',
+  'userButton.switchTo': 'Wisselen naar',
+
+  'commerce.subscribe': 'Abonneren',
+  'commerce.manage': 'Facturering beheren',
+  'commerce.invoices': 'Facturen',
+  'commerce.noInvoices': 'Nog geen facturen.',
+  'commerce.viewInvoice': 'Bekijken',
+
+  'userProfile.title': 'Account',
+  'userProfile.profileSection': 'Profiel',
+  'userProfile.emailsSection': 'E-mailadressen',
+  'userProfile.securitySection': 'Beveiliging',
+  'userProfile.devicesSection': 'Actieve apparaten',
+  'userProfile.dangerSection': 'Gevarenzone',
+  'userProfile.addEmail': 'Een e-mailadres toevoegen',
+  'userProfile.makePrimary': 'Als primair instellen',
+  'userProfile.unverified': 'Niet geverifieerd',
+  'userProfile.revokeDevice': 'Uitloggen',
+  'userProfile.deleteAccount': 'Account verwijderen',
+
+  'organization.switcher': 'Organisatie wisselen',
+  'organization.personal': 'Persoonlijk account',
+  'organization.members': 'Leden',
+  'organization.invite': 'Lid uitnodigen',
+  'organization.roleLabel': 'Rol',
+  'organization.createTitle': 'Organisatie aanmaken',
+  'organization.nameLabel': 'Naam van de organisatie',
+  'organization.create': 'Organisatie aanmaken',
+  'organization.orCreate': 'of maak een nieuwe organisatie aan',
+
+  'waitlist.title': 'Aanmelden voor de wachtlijst',
+  'waitlist.emailLabel': 'E-mailadres',
+  'waitlist.submit': 'Aanmelden voor de wachtlijst',
+  'waitlist.success': 'Je staat op de lijst. We nemen contact met je op.',
+
+  'reverification.title': 'Bevestig dat jij het bent',
+  'reverification.subtitle': 'Voer je wachtwoord opnieuw in om door te gaan.',
+  'reverification.passwordLabel': 'Wachtwoord',
+  'reverification.submit': 'Bevestigen',
+  'reverification.cancel': 'Annuleren',
+
+  'error.generic': 'Er is iets misgegaan. Probeer het opnieuw.',
+  'error.network': 'We konden de server niet bereiken. Controleer je verbinding.',
+};
+
+export default nlNL;

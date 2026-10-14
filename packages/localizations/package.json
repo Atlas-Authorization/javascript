@@ -1,0 +1,57 @@
+{
+  "name": "@atlasauth/localizations",
+  "version": "0.1.0",
+  "description": "i18n string bundles for the Atlas hosted pages and @atlasauth/react components — the Atlas peer of @clerk/localizations.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./en-US": {
+      "types": "./dist/en-US.d.ts",
+      "default": "./dist/en-US.js"
+    },
+    "./fr-FR": {
+      "types": "./dist/fr-FR.d.ts",
+      "default": "./dist/fr-FR.js"
+    },
+    "./es-ES": {
+      "types": "./dist/es-ES.d.ts",
+      "default": "./dist/es-ES.js"
+    },
+    "./de-DE": {
+      "types": "./dist/de-DE.d.ts",
+      "default": "./dist/de-DE.js"
+    },
+    "./pt-BR": {
+      "types": "./dist/pt-BR.d.ts",
+      "default": "./dist/pt-BR.js"
+    },
+    "./ja-JP": {
+      "types": "./dist/ja-JP.d.ts",
+      "default": "./dist/ja-JP.js"
+    },
+    "./nl-NL": {
+      "types": "./dist/nl-NL.d.ts",
+      "default": "./dist/nl-NL.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

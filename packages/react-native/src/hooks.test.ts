@@ -59,7 +59,17 @@ describe('useAuth', () => {
     const auth = useAuth();
     expect(auth.isLoaded).toBe(false);
     expect(auth.isSignedIn).toBe(false);
+    expect(auth.status).toBe('loading');
+    expect(auth.session).toBeNull();
     expect(auth.userId).toBeNull();
+  });
+
+  it('reports signed_out as loaded, not signed in', () => {
+    setSnapshot({ status: 'signed_out', user: null, session: null, claims: null });
+    const auth = useAuth();
+    expect(auth.status).toBe('signed_out');
+    expect(auth.isLoaded).toBe(true);
+    expect(auth.isSignedIn).toBe(false);
   });
 
   it('projects claims and passes the store auth methods when signed in', () => {
@@ -67,6 +77,8 @@ describe('useAuth', () => {
     const auth = useAuth();
     expect(auth.isLoaded).toBe(true);
     expect(auth.isSignedIn).toBe(true);
+    expect(auth.status).toBe('signed_in');
+    expect(auth.session).toBe(SIGNED_IN.session);
     expect(auth.userId).toBe('user_1');
     expect(auth.sessionId).toBe('sess_1');
     expect(auth.orgId).toBe('org_1');

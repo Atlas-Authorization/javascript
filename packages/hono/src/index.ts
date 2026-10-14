@@ -103,6 +103,12 @@ export interface AtlasAuthState {
  */
 export interface AtlasAuth extends AtlasAuthState {
   /**
+   * Convenience flag: `true` exactly when `userId` is non-null. Present so the
+   * Hono `getAuth()` matches `@atlasauth/express` and `@atlasauth/fastify` — a
+   * route reads `getAuth(c).isSignedIn` instead of re-deriving `userId !== null`.
+   */
+  isSignedIn: boolean;
+  /**
    * True when the claims satisfy the condition (an empty condition means
    * "signed in"). Full condition set: permission / role / anyPermission /
    * allPermissions / plan / feature.
@@ -149,6 +155,8 @@ function readCookie(header: string | undefined, name: string): string | undefine
 function buildAuth(state: AtlasAuthState): AtlasAuth {
   return {
     ...state,
+    // Derived from the resolved state so it can never drift from `userId`.
+    isSignedIn: state.userId !== null,
     has(condition: ProtectCondition = {}) {
       return hasFromClaims(state.claims, condition);
     },

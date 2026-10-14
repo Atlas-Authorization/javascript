@@ -18,6 +18,18 @@
  * component's base styles from scratch.
  */
 
+import {
+  renderDesignAppearance,
+  type AppearanceRender,
+  type AtlasDesign,
+  type DesignWarn,
+  type InstanceDesign,
+  type PresetId,
+} from '@atlasauth/design/runtime';
+
+export { instanceDesignFrom, warnOnce } from '@atlasauth/design/runtime';
+export type { AppearanceRender, AtlasDesign, InstanceDesign, PresetId } from '@atlasauth/design/runtime';
+
 export interface DesignTokens {
   colorPrimary?: string;
   colorText?: string;
@@ -29,31 +41,111 @@ export interface DesignTokens {
   spacingUnit?: string;
 }
 
-/** Every element a customer may target. Named for what it IS, not where it sits. */
+/**
+ * Every element a customer may target. Named for what it IS, not where it sits.
+ *
+ * Each key maps to a stable `atlas-*` base class on the rendered element; the
+ * class you pass in `appearance.elements[key]` is APPENDED to it. Keys marked
+ * "reserved" are accepted for forward compatibility but no current component
+ * renders that element.
+ */
 export type ElementKey =
+  /** The provider's wrapper element (`.atlas-root`). */
   | 'root'
+  /** The card around a form or account section (`.atlas-card`). */
   | 'card'
+  /** A component title (`.atlas-title`; page titles `.atlas-heading`). */
   | 'headerTitle'
+  /** The line under a page title (`.atlas-subtitle`). */
   | 'headerSubtitle'
+  /** A section heading inside a card, e.g. "Passkeys" (`.atlas-section-title`). */
+  | 'sectionTitle'
+  /** A label + input + error group (`.atlas-field`). */
   | 'formField'
+  /** A field's label text (`.atlas-field-label`). */
   | 'formFieldLabel'
   | 'formFieldInput'
   | 'formFieldError'
   | 'formButtonPrimary'
+  /** Secondary actions: revoke, remove, save in account sections (`.atlas-button-secondary`). */
   | 'formButtonSecondary'
   | 'socialButton'
-  | 'dividerText'
-  | 'footerAction'
+  /** The provider icon inside a social button (`.atlas-social-icon`). */
+  | 'socialButtonIcon'
+  /** The label inside a social button (`.atlas-social-label`). */
+  | 'socialButtonText'
+  /** A non-field message: section errors, social sign-in errors (`.atlas-alert`). */
+  | 'alert'
+  /** Body copy / status messages (`.atlas-text`). */
+  | 'text'
+  /** An in-component link (`.atlas-link`). */
+  | 'link'
+  /** Lists: sessions, emails, passkeys, backup codes, plan features, invoices (`.atlas-list`). */
+  | 'list'
+  | 'listItem'
+  /** The user button's wrapper (`.atlas-user-button`). */
+  | 'userButton'
   | 'avatar'
   | 'menu'
   | 'menuItem'
+  /** The user-profile tab bar (`.atlas-tabs`). */
+  | 'tabs'
+  /** A user-profile tab (`.atlas-tab`; also receives the `menuItem` class). */
+  | 'tab'
+  /** The pricing grid (`.atlas-pricing-table`). */
+  | 'pricingTable'
+  /** A plan's name (`.atlas-plan-name`). */
+  | 'planName'
+  /** A plan's price (`.atlas-price`). */
+  | 'price'
+  /** A price's billing interval (`.atlas-interval`). */
+  | 'priceInterval'
+  /** Reserved. */
+  | 'dividerText'
+  /** Reserved. */
+  | 'footerAction'
+  /** Reserved. */
   | 'badge';
 
+/** The element keys, for iteration and docs. */
+export const ELEMENT_KEYS: readonly ElementKey[] = [
+  'root', 'card', 'headerTitle', 'headerSubtitle', 'sectionTitle', 'formField', 'formFieldLabel',
+  'formFieldInput', 'formFieldError', 'formButtonPrimary', 'formButtonSecondary', 'socialButton',
+  'socialButtonIcon', 'socialButtonText', 'alert', 'text', 'link', 'list', 'listItem', 'userButton',
+  'avatar', 'menu', 'menuItem', 'tabs', 'tab', 'pricingTable', 'planName', 'price', 'priceInterval',
+  'dividerText', 'footerAction', 'badge',
+];
+
 export interface Appearance {
-  /** A prebuilt theme to start from. */
+  /** A prebuilt token theme to start from (pre-design-system themes). */
   baseTheme?: keyof typeof THEMES;
+  /**
+   * Legacy design tokens. Still supported: without a design they set the
+   * `--atlas-*` variables exactly as before; with one they map onto it
+   * (colorPrimary → palette.primary, colorText → palette.text, colorBackground →
+   * palette.surface, colorDanger → palette.danger, colorBorder → palette.border,
+   * borderRadius → shape, fontFamily → a curated font, spacingUnit → density).
+   */
   variables?: DesignTokens;
+  /** Extra classes per element, appended to ours. */
   elements?: Partial<Record<ElementKey, string>>;
+  /**
+   * A design preset. Replaces the dashboard design as the starting point:
+   * `minimal`, `atlas`, `glass`, `midnight`, `editorial`, `terminal`, `sunrise`,
+   * `forest`, `grape`, `slate`, `split-photo`, `bold`.
+   */
+  preset?: PresetId;
+  /**
+   * Structured design overrides — the same settings as the dashboard's design
+   * editor. Layered over the dashboard design (or `preset`); highest precedence.
+   * Invalid values are dropped (with a console warning in development).
+   */
+  design?: AtlasDesign;
+  /**
+   * Apply the design configured in the Atlas dashboard automatically. Default
+   * `true`; set `false` to ignore it (code-level `preset`/`design` still apply).
+   */
+  instanceDesign?: boolean;
 }
 
 export const DEFAULT_TOKENS: Required<DesignTokens> = {
@@ -135,4 +227,44 @@ export function classFor(
 ): string {
   const override = appearance?.elements?.[element];
   return override ? `${base} ${override}` : base;
+}
+
+// ---- the design system ---------------------------------------------------------
+
+/**
+ * The legacy tokens the developer chose EXPLICITLY: a non-default `baseTheme`
+ * plus `variables`. Only these map onto a design — the token defaults must not
+ * overwrite the dashboard design.
+ */
+export function explicitTokens(appearance?: Appearance): DesignTokens {
+  const out: DesignTokens = {};
+  if (appearance?.baseTheme && appearance.baseTheme !== 'default') {
+    Object.assign(out, THEMES[appearance.baseTheme]);
+  }
+  for (const [key, value] of Object.entries(appearance?.variables ?? {})) {
+    if (value !== undefined) out[key as keyof DesignTokens] = value;
+  }
+  return out;
+}
+
+/**
+ * Turn an `appearance` (+ the instance's dashboard design from the Frontend
+ * API) into root attributes and a stylesheet.
+ *
+ * Precedence, lowest first: dashboard design < `preset` < `variables` (and a
+ * non-default `baseTheme`) < `design`. Without a dashboard design and without
+ * `preset`/`design`, the output is exactly the pre-design-system one: the token
+ * variables inline, no stylesheet, no attributes.
+ */
+export function renderAppearance(
+  appearance: Appearance | undefined,
+  instanceDesign: InstanceDesign | null | undefined,
+  options: { frontendApi?: string; warn?: DesignWarn } = {},
+): AppearanceRender {
+  return renderDesignAppearance(appearance, instanceDesign, {
+    tokens: explicitTokens(appearance),
+    legacyStyle: () => cssVariables(resolveTokens(appearance)),
+    frontendApi: options.frontendApi,
+    warn: options.warn,
+  });
 }

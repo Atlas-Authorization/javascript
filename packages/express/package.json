@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/express",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -11,10 +11,15 @@
   "dependencies": {
     "@atlasauth/backend": "workspace:*"
   },
+  "peerDependencies": {
+    "express": ">=4"
+  },
   "devDependencies": {
     "typescript": "^5.6.3",
     "vitest": "^2.1.4",
-    "jose": "^5.9.6"
+    "jose": "^5.9.6",
+    "express": "^5.0.0",
+    "@types/express": "^5.0.0"
   },
   "publishConfig": {
     "access": "public"

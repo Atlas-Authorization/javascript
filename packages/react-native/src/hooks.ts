@@ -1,6 +1,6 @@
 import { hasFromClaims, type ProtectCondition, type ProviderToken } from '@atlasauth/js';
 import { useAtlasState, useAtlasStore } from './AtlasProvider';
-import type { AtlasSession, AtlasUser, FlowResult } from './types';
+import type { AtlasSession, AtlasUser, AuthStatus, FlowResult } from './types';
 
 /**
  * The RN hook surface. Mirrors `@atlasauth/react` — `useAuth`, `useUser`,
@@ -13,6 +13,10 @@ import type { AtlasSession, AtlasUser, FlowResult } from './types';
 export function useAuth(): {
   isLoaded: boolean;
   isSignedIn: boolean;
+  /** Three-state auth status (`loading` | `signed_in` | `signed_out`); same source as isLoaded/isSignedIn. */
+  status: AuthStatus;
+  /** The active session, or null while loading or signed out. */
+  session: AtlasSession | null;
   userId: string | null;
   sessionId: string | null;
   orgId: string | null;
@@ -29,10 +33,12 @@ export function useAuth(): {
   signOut(): Promise<void>;
 } {
   const store = useAtlasStore();
-  const { status, claims } = useAtlasState();
+  const { status, session, claims } = useAtlasState();
   return {
     isLoaded: status !== 'loading',
     isSignedIn: status === 'signed_in',
+    status,
+    session,
     userId: claims?.sub ?? null,
     sessionId: claims?.sid ?? null,
     orgId: claims?.org_id ?? null,

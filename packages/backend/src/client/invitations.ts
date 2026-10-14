@@ -17,8 +17,34 @@ export interface CreateInvitationBody {
   public_metadata?: Metadata;
 }
 
+/** A per-entry failure from a bulk create; `index` points into the request array. */
+export interface BulkInvitationError {
+  index: number;
+  email_address: string | null;
+  code: string;
+  message: string;
+}
+
+export interface BulkInvitationsResult {
+  object: 'list';
+  data: Invitation[];
+  errors: BulkInvitationError[];
+}
+
 export function invitationsResource(request: RequestFn) {
   return {
+    /** Create up to 100 invitations; each entry is validated and de-duplicated on its own. */
+    bulkCreate(
+      invitations: CreateInvitationBody[],
+      idempotencyKey?: string,
+    ): Promise<BulkInvitationsResult> {
+      return request({
+        method: 'POST',
+        path: '/v1/invitations/bulk',
+        body: { invitations },
+        idempotencyKey,
+      });
+    },
     list(params: CursorParams = {}): Promise<CursorPage<Invitation>> {
       return request({ method: 'GET', path: '/v1/invitations', query: { ...params } });
     },

@@ -8,7 +8,7 @@ import {
   readExpiry,
 } from './token-cache';
 import { CLAIM_WINDOW_MS, isRefreshMessage, winsElection } from './tab-election';
-import { errorsFor, fieldErrors, formErrors, isTerminal, nextStep } from './attempt';
+import { errorsFor, fieldErrors, formErrors, isTerminal, nextStep, type AttemptView } from './attempt';
 
 const NOW = 1_800_000_000_000;
 const token = (expiresInMs: number) => ({
@@ -191,6 +191,14 @@ describe('electing one refreshing tab', () => {
  * itself.
  */
 describe('the attempt state machine client', () => {
+  // The step-mapping helpers read only `status` (+ a couple of optional fields);
+  // this fixture supplies the now-required `id` so the literals stay terse.
+  const at = (status: string, extra: Partial<AttemptView> = {}): AttemptView => ({
+    id: 'sia_test',
+    status,
+    ...extra,
+  });
+
   it('maps every status the server can send', () => {
     const cases: Array<[string, string]> = [
       ['needs_identifier', 'collect_identifier'],
@@ -205,7 +213,7 @@ describe('the attempt state machine client', () => {
     ];
 
     for (const [status, kind] of cases) {
-      expect(nextStep({ status }).kind, status).toBe(kind);
+      expect(nextStep(at(status)).kind, status).toBe(kind);
     }
   });
 
@@ -215,10 +223,10 @@ describe('the attempt state machine client', () => {
    * exist and leave them with no way past it.
    */
   it('separates enrolling a factor from entering an existing one', () => {
-    expect(nextStep({ status: 'needs_mfa_enrollment' }).kind).toBe('enroll_second_factor');
-    expect(nextStep({ status: 'needs_second_factor' }).kind).toBe('collect_second_factor');
+    expect(nextStep(at('needs_mfa_enrollment')).kind).toBe('enroll_second_factor');
+    expect(nextStep(at('needs_second_factor')).kind).toBe('collect_second_factor');
     // Still somewhere to go, so a poller keeps polling.
-    expect(isTerminal({ status: 'needs_mfa_enrollment' })).toBe(false);
+    expect(isTerminal(at('needs_mfa_enrollment'))).toBe(false);
   });
 
   /**
@@ -226,7 +234,7 @@ describe('the attempt state machine client', () => {
    * sign-in flow that means a blank screen with no error.
    */
   it('reports an unrecognised status instead of rendering nothing', () => {
-    const step = nextStep({ status: 'some_future_status' });
+    const step = nextStep(at('some_future_status'));
     expect(step).toEqual({ kind: 'unknown', status: 'some_future_status' });
   });
 
@@ -236,10 +244,9 @@ describe('the attempt state machine client', () => {
    * enumeration leak the uniform response exists to close.
    */
   it('passes the server factor list through untouched', () => {
-    const step = nextStep({
-      status: 'needs_first_factor',
+    const step = nextStep(at('needs_first_factor', {
       supported_first_factors: ['password', 'email_code'],
-    });
+    }));
     expect(step).toEqual({
       kind: 'collect_first_factor',
       strategies: ['password', 'email_code'],
@@ -247,16 +254,16 @@ describe('the attempt state machine client', () => {
   });
 
   it('carries the session id through completion', () => {
-    expect(nextStep({ status: 'complete', created_session_id: 'sess_9' })).toEqual({
+    expect(nextStep(at('complete', { created_session_id: 'sess_9' }))).toEqual({
       kind: 'done',
       sessionId: 'sess_9',
     });
   });
 
   it('knows which statuses can still progress', () => {
-    expect(isTerminal({ status: 'complete' })).toBe(true);
-    expect(isTerminal({ status: 'abandoned' })).toBe(true);
-    expect(isTerminal({ status: 'needs_second_factor' })).toBe(false);
+    expect(isTerminal(at('complete'))).toBe(true);
+    expect(isTerminal(at('abandoned'))).toBe(true);
+    expect(isTerminal(at('needs_second_factor'))).toBe(false);
   });
 });
 

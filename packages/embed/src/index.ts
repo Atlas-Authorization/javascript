@@ -35,3 +35,4 @@ export {
   type ResolvedSocialButtons,
 } from './appearance';
 export { providerIcon } from './icons';
+export { widgetDesign, type WidgetDesign } from './design';

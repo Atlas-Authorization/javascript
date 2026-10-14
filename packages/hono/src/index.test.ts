@@ -144,6 +144,7 @@ describe('atlasMiddleware + getAuth', () => {
     expect(nextCalled).toBe(true);
     const auth = getAuth(c);
     expect(auth.userId).toBe('user_1');
+    expect(auth.isSignedIn).toBe(true);
     expect(c.store.get(ATLAS_CONTEXT_KEY)).toBe(auth);
   });
 
@@ -162,7 +163,9 @@ describe('atlasMiddleware + getAuth', () => {
   });
 
   it('getAuth returns SIGNED_OUT when the middleware never ran', () => {
-    expect(getAuth(fakeContext())).toBe(SIGNED_OUT);
+    const auth = getAuth(fakeContext());
+    expect(auth).toBe(SIGNED_OUT);
+    expect(auth.isSignedIn).toBe(false);
   });
 });
 

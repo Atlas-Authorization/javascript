@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  // Typecheck (tsconfig.json) covers the tests and the in-memory fake, but the
+  // BUILD must emit neither into dist — the fake is a test-only helper.
+  "exclude": ["**/*.test.ts", "**/*.test.tsx", "src/testing/**"]
+}

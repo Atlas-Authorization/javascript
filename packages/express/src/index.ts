@@ -6,6 +6,14 @@ import {
   type ProtectCondition,
   type SessionClaims,
 } from '@atlasauth/backend';
+// Real Express types, type-only so `express` is a peer dependency and is NEVER
+// bundled or pinned — the middleware/handlers then type against genuine Express
+// types, so a consumer passes the `req`/`res` it already has with no cast.
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
+
+// Re-export the real Express types so an integrator can name them from
+// `@atlasauth/express` directly, the same way the backend surface is re-exported.
+export type { Request, Response, NextFunction, RequestHandler } from 'express';
 
 /**
  * `@atlasauth/express` — the Express.js adapter for Atlas auth, the server-side
@@ -97,33 +105,21 @@ export interface AtlasMiddlewareOptions {
   fetchImpl?: typeof fetch;
 }
 
-/** The minimal Express request shape this adapter reads and decorates. Kept
- *  structural so the package needs no `@types/express` at build time, exactly
- *  as `@atlasauth/nextjs` avoids a hard Next.js dependency. A real
- *  `express.Request` satisfies it. */
-export interface AtlasExpressRequest {
-  headers: Record<string, string | string[] | undefined>;
-  /** Decorated by {@link atlasMiddleware}; read it via {@link getAuth}. */
-  atlas?: AtlasAuth;
-  [key: string]: unknown;
+/**
+ * Decorate the REAL Express `Request` with `req.atlas`, so a route reads
+ * `req.atlas` / `getAuth(req)` on a genuine Express request with no structural
+ * cast — the global-namespace augmentation idiom `@clerk/express` and Passport
+ * use.
+ */
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      /** Decorated by {@link atlasMiddleware}; read it via {@link getAuth}. */
+      atlas?: AtlasAuth;
+    }
+  }
 }
-
-/** The minimal Express response shape {@link requireAuth} writes to. */
-export interface AtlasExpressResponse {
-  status(code: number): AtlasExpressResponse;
-  json(body: unknown): unknown;
-  [key: string]: unknown;
-}
-
-/** Express `next` callback. */
-export type NextFunction = (err?: unknown) => void;
-
-/** Express-style request handler. */
-export type RequestHandler = (
-  req: AtlasExpressRequest,
-  res: AtlasExpressResponse,
-  next: NextFunction,
-) => void;
 
 function firstHeader(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -191,7 +187,7 @@ function signedIn(claims: SessionClaims): AtlasAuth {
  */
 export async function resolveAuth(
   backend: AtlasBackend,
-  req: AtlasExpressRequest,
+  req: Request,
 ): Promise<AtlasAuth> {
   try {
     const header = firstHeader(req.headers.authorization ?? req.headers.Authorization);
@@ -258,7 +254,7 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions): RequestHandler
  * caller never has to null-check `req.atlas` itself — mirrors Clerk's
  * `getAuth(req)`.
  */
-export function getAuth(req: AtlasExpressRequest): AtlasAuth {
+export function getAuth(req: Request): AtlasAuth {
   return req.atlas ?? signedOut();
 }
 

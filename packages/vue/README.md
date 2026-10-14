@@ -1,21 +1,21 @@
-# @atlas/vue
+# @atlasauth/vue
 
 The official Atlas SDK for Vue 3 — the framework peer of
-[`@atlas/react`](../react). It reuses the framework-agnostic
-[`@atlas/js`](../js) client for every API call and the shared
-[`@atlas/authz`](../authz) primitive for permission checks, and mirrors the web
+[`@atlasauth/react`](../react). It reuses the framework-agnostic
+[`@atlasauth/js`](../js) client for every API call and the shared
+[`@atlasauth/authz`](../authz) primitive for permission checks, and mirrors the web
 surface as idiomatic Vue Composition API: a plugin, `Ref`/`computed`-based
 composables, and components that render in your host DOM (no iframe, so
 Tailwind/CSS just works).
 
-Like `@atlas/js`'s web binding, the session lives in an **HttpOnly cookie** the
+Like `@atlasauth/js`'s web binding, the session lives in an **HttpOnly cookie** the
 browser sends automatically; the short-lived JWT is held only in memory for the
 life of the tab. Nothing is written to `localStorage`.
 
 ## Install
 
 ```sh
-npm install @atlas/vue
+npm install @atlasauth/vue
 # peer you already have in a Vue 3 app:
 #   vue >= 3.3
 ```
@@ -28,7 +28,7 @@ appearance tokens onto the document root as CSS variables.
 
 ```ts
 import { createApp } from 'vue';
-import { createAtlas } from '@atlas/vue';
+import { createAtlas } from '@atlasauth/vue';
 import App from './App.vue';
 
 createApp(App)
@@ -51,7 +51,7 @@ state is reactive (`Ref` / `computed`).
 
 ```vue
 <script setup lang="ts">
-import { useUser, useAuth, useSession, useOrganization } from '@atlas/vue';
+import { useUser, useAuth, useSession, useOrganization } from '@atlasauth/vue';
 
 const { isLoaded, isSignedIn, user } = useUser();
 const { userId, orgRole, getToken, signOut, has } = useAuth();
@@ -98,7 +98,7 @@ import {
   Protect,
   SignIn,
   UserButton,
-} from '@atlas/vue';
+} from '@atlasauth/vue';
 </script>
 
 <template>
@@ -138,7 +138,7 @@ request is what actually stops them acting.
 
 ## Theming
 
-The `appearance` option mirrors `@atlas/react`: design tokens (`variables`),
+The `appearance` option mirrors `@atlasauth/react`: design tokens (`variables`),
 per-element class overrides (`elements`), and prebuilt `baseTheme`s (`default`,
 `dark`, `neobrutalist`). Overrides are **appended** to our base classes, so a
 Tailwind class you add makes a rounder button — not an unstyled one.
@@ -152,9 +152,9 @@ renders.
 ## Testing
 
 ```sh
-pnpm --filter @atlas/vue test        # vitest + @vue/test-utils (happy-dom)
-pnpm --filter @atlas/vue typecheck   # tsc --noEmit
-pnpm --filter @atlas/vue build       # tsc -> dist
+pnpm --filter @atlasauth/vue test        # vitest + @vue/test-utils (happy-dom)
+pnpm --filter @atlasauth/vue typecheck   # tsc --noEmit
+pnpm --filter @atlasauth/vue build       # tsc -> dist
 ```
 
 ## License

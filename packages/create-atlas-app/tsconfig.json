@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
+  // `templates/` is DATA, not source: the files there reference packages
+  // (next, react, @atlasauth/*) that this package does not install, and several
+  // use JSX. They must never be type-checked or built by this package.
+  "exclude": ["templates", "dist"]
+}

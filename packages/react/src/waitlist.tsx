@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useClass, useMeClient, useText } from './components-shared';
+import { useClass, useClasses, useMeClient, useText } from './components-shared';
 
 /**
  * Clerk-parity `useWaitlist()`. Headless join: `join(email)` posts the address to
@@ -25,6 +25,7 @@ export function Waitlist() {
   const { join } = useWaitlist();
   const t = useText();
   const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
   const titleClass = useClass('headerTitle', 'atlas-title');
   const inputClass = useClass('formFieldInput', 'atlas-input');
   const buttonClass = useClass('formButtonPrimary', 'atlas-button');
@@ -58,11 +59,11 @@ export function Waitlist() {
     >
       <h1 className={titleClass}>{t('waitlist.title')}</h1>
       {joined ? (
-        <p data-atlas="waitlist-success">{t('waitlist.success')}</p>
+        <p className={cls('text', 'atlas-text')} data-atlas="waitlist-success">{t('waitlist.success')}</p>
       ) : (
         <>
-          <label className="atlas-field">
-            <span>{t('waitlist.emailLabel')}</span>
+          <label className={cls('formField', 'atlas-field')}>
+            <span className={cls('formFieldLabel', 'atlas-field-label')}>{t('waitlist.emailLabel')}</span>
             <input
               className={inputClass}
               type="email"

@@ -26,7 +26,7 @@ import {
   shouldKeepPolling,
   type FlowState,
 } from './fapi';
-import { useClass, useText } from './components-shared';
+import { useClass, useClasses, useText } from './components-shared';
 
 /**
  * §10.2 components.
@@ -124,13 +124,14 @@ export function AttemptFlow({
   const inputClass = useClass('formFieldInput', 'atlas-input');
   const buttonClass = useClass('formButtonPrimary', 'atlas-button');
   const errorClass = useClass('formFieldError', 'atlas-error');
+  const cls = useClasses();
 
   const [values, setValues] = useState<Record<string, string>>({});
   const step = attempt ? nextStep(attempt) : { kind: 'collect_identifier' as const };
 
   const field = (name: string, labelKey: string, type = 'text') => (
-    <label key={name} className="atlas-field">
-      <span>{t(labelKey)}</span>
+    <label key={name} className={cls('formField', 'atlas-field')}>
+      <span className={cls('formFieldLabel', 'atlas-field-label')}>{t(labelKey)}</span>
       <input
         className={inputClass}
         type={type}
@@ -170,11 +171,11 @@ export function AttemptFlow({
       case 'collect_new_password':
         return [field('password', 'reset.newPasswordLabel', 'password')];
       case 'await_oauth':
-        return [<p key="oauth">{t('signIn.magicLinkSent')}</p>];
+        return [<p key="oauth" className={cls('text', 'atlas-text')}>{t('signIn.magicLinkSent')}</p>];
       case 'done':
-        return [<p key="done">{t('signIn.checkOtherTab')}</p>];
+        return [<p key="done" className={cls('text', 'atlas-text')}>{t('signIn.checkOtherTab')}</p>];
       case 'restart':
-        return [<p key="restart">{t('error.generic')}</p>];
+        return [<p key="restart" className={cls('text', 'atlas-text')}>{t('error.generic')}</p>];
       default:
         /**
          * A status this SDK version does not know. Saying so beats rendering
@@ -666,6 +667,7 @@ function GoogleSignInButton({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const socialButtonClass = useClass('socialButton', 'atlas-social-button');
+  const cls = useClasses();
   const onCredential = useCallback(
     async (idToken: string, nonce: string) => {
       const next = await nativeSignIn(client, { provider: 'google', idToken, nonce });
@@ -724,7 +726,7 @@ function GoogleSignInButton({
       {showHostChrome ? (
         <>
           <GoogleMark />
-          <span className="atlas-social-label">Continue with Google</span>
+          <span className={cls('socialButtonText', 'atlas-social-label')}>Continue with Google</span>
         </>
       ) : null}
     </div>
@@ -739,13 +741,16 @@ const DEFAULT_SOCIAL_BUTTON_STYLE: CSSProperties = {
   gap: '8px',
   width: '100%',
   boxSizing: 'border-box',
-  minHeight: '40px',
+  // Each value reads the design variable first (defined only when a design is
+  // active) and falls back to the legacy token, so with no design the button is
+  // exactly as before.
+  minHeight: 'var(--atlas-control-height, 40px)',
   padding: '10px 16px',
-  border: '1px solid var(--atlas-color-border, #e4e4e9)',
-  borderRadius: 'var(--atlas-border-radius, 8px)',
-  background: 'var(--atlas-color-background, #ffffff)',
+  border: 'var(--atlas-border-width, 1px) solid var(--atlas-color-border, #e4e4e9)',
+  borderRadius: 'var(--atlas-radius-control, var(--atlas-border-radius, 8px))',
+  background: 'var(--atlas-color-surface, var(--atlas-color-background, #ffffff))',
   color: 'var(--atlas-color-text, #1c1c1f)',
-  fontFamily: 'var(--atlas-font-family, inherit)',
+  fontFamily: 'var(--atlas-font-family, var(--atlas-font-body, inherit))',
   fontWeight: 500,
   cursor: 'pointer',
   userSelect: 'none',
@@ -788,6 +793,46 @@ function providerLabel(p: string): string {
   return PROVIDER_LABEL[p] ?? p.charAt(0).toUpperCase() + p.slice(1).replace(/[_-]/g, ' ');
 }
 
+/** The SSO connection id for "Sign in with Atlas" when the instance has it enabled, else null. */
+export function atlasSsoTarget(appearance: {
+  sign_in_with_atlas?: { enabled: boolean; connection_id?: string };
+}): string | null {
+  const s = appearance.sign_in_with_atlas;
+  return s?.enabled && s.connection_id ? s.connection_id : null;
+}
+
+export function AtlasSsoButton({
+  onClick,
+  className,
+  labelClassName,
+}: {
+  onClick: () => void;
+  className?: string;
+  /** Class for the label (defaults to `atlas-social-label`). */
+  labelClassName?: string;
+}) {
+  return (
+    <div
+      className={className}
+      data-atlas="social-signin"
+      data-atlas-provider="atlas"
+      role="button"
+      tabIndex={0}
+      style={DEFAULT_SOCIAL_BUTTON_STYLE}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          // Space would also scroll the page; a real <button> doesn't.
+          e.preventDefault();
+          onClick();
+        }
+      }}
+    >
+      <span className={labelClassName ?? 'atlas-social-label'}>Continue with Atlas</span>
+    </div>
+  );
+}
+
 /**
  * §6 all enabled social sign-in providers, native-first.
  *
@@ -815,6 +860,7 @@ export function SocialSignInButtons({
   googleButton?: GoogleButtonMode;
 }) {
   const socialButtonClass = useClass('socialButton', 'atlas-social-button');
+  const cls = useClasses();
   const { oauthMode: providerOauthMode } = useAtlas();
   const effectiveMode = oauthMode ?? providerOauthMode ?? 'redirect';
   const [redirectProviders, setRedirectProviders] = useState<
@@ -824,6 +870,43 @@ export function SocialSignInButtons({
       icon?: { type: 'svg' | 'url'; value: string } | null;
     }>
   >([]);
+  const [atlasConnection, setAtlasConnection] = useState<string | null>(null);
+  const [atlasError, setAtlasError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const appearance = await client.get<{
+          sign_in_with_atlas?: { enabled: boolean; connection_id?: string };
+        }>('/v1/appearance');
+        if (alive && appearance.data) setAtlasConnection(atlasSsoTarget(appearance.data));
+      } catch {
+        // No Atlas button is the safe fallback when appearance can't be read.
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [client]);
+
+  const startAtlas = useCallback(() => {
+    void (async () => {
+      if (typeof window === 'undefined' || !atlasConnection) return;
+      setAtlasError(null);
+      try {
+        const res = await client.post<{ authorization_url?: string }>('/v1/client/sign_ins/sso', {
+          connection_id: atlasConnection,
+          redirect_url: window.location.href,
+        });
+        const url = res.data?.authorization_url;
+        if (url) window.location.assign(url);
+        else setAtlasError(res.errors?.[0]?.message ?? 'Could not start Sign in with Atlas.');
+      } catch {
+        setAtlasError('Could not start Sign in with Atlas.');
+      }
+    })();
+  }, [client, atlasConnection]);
 
   useEffect(() => {
     let alive = true;
@@ -921,20 +1004,32 @@ export function SocialSignInButtons({
               icon-less in the SDK) and custom providers with an override. */}
           {icon?.type === 'svg' ? (
             <span
-              className="atlas-social-icon"
+              className={cls('socialButtonIcon', 'atlas-social-icon')}
               aria-hidden
               dangerouslySetInnerHTML={{ __html: icon.value }}
             />
           ) : icon?.type === 'url' ? (
-            <span className="atlas-social-icon">
+            <span className={cls('socialButtonIcon', 'atlas-social-icon')}>
               <img src={icon.value} width={18} height={18} alt="" loading="lazy" />
             </span>
           ) : null}
-          <span className="atlas-social-label">
+          <span className={cls('socialButtonText', 'atlas-social-label')}>
             {label ?? `Continue with ${providerLabel(provider)}`}
           </span>
         </div>
       ))}
+{atlasConnection ? (
+        <AtlasSsoButton
+          className={socialButtonClass}
+          labelClassName={cls('socialButtonText', 'atlas-social-label')}
+          onClick={startAtlas}
+        />
+      ) : null}
+      {atlasError ? (
+        <div className={cls('alert', 'atlas-alert')} role="alert" data-atlas="social-signin-error">
+          {atlasError}
+        </div>
+      ) : null}
     </>
   );
 }

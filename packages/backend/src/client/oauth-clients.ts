@@ -14,8 +14,31 @@ export interface OAuthClient {
   secret_prefix: string | null;
   is_public: boolean;
   first_party: boolean;
+  /** Where the client may send users after an RP-initiated logout. */
+  post_logout_redirect_uris: string[];
+  /** Back-channel logout endpoint Atlas POSTs a `logout_token` to, or null. */
+  backchannel_logout_uri: string | null;
+  /** Whether the back-channel `logout_token` must carry `sid`. */
+  backchannel_logout_session_required: boolean;
+  /** Front-channel logout URL Atlas loads in an iframe on sign-out, or null. */
+  frontchannel_logout_uri: string | null;
+  /** Whether `iss` and `sid` are appended to the front-channel logout URL. */
+  frontchannel_logout_session_required: boolean;
   created_at: number;
   updated_at: number;
+}
+
+/**
+ * OIDC logout registration (RP-Initiated, Back-Channel and Front-Channel
+ * Logout), accepted on create and update. On update, `null` clears a URI and
+ * `[]` clears the post-logout redirect list.
+ */
+export interface OAuthClientLogoutFields {
+  post_logout_redirect_uris?: string[];
+  backchannel_logout_uri?: string | null;
+  backchannel_logout_session_required?: boolean;
+  frontchannel_logout_uri?: string | null;
+  frontchannel_logout_session_required?: boolean;
 }
 
 /** Create/rotate reveal the secret exactly once, alongside the client. */
@@ -35,7 +58,7 @@ export interface ClientGrant {
   updated_at: number;
 }
 
-export interface CreateOAuthClientBody {
+export interface CreateOAuthClientBody extends OAuthClientLogoutFields {
   name: string;
   redirect_uris: string[];
   allowed_scopes?: string[];
@@ -45,7 +68,7 @@ export interface CreateOAuthClientBody {
   first_party?: boolean;
 }
 
-export interface UpdateOAuthClientBody {
+export interface UpdateOAuthClientBody extends OAuthClientLogoutFields {
   name?: string;
   redirect_uris?: string[];
   allowed_scopes?: string[];
@@ -54,8 +77,35 @@ export interface UpdateOAuthClientBody {
   first_party?: boolean;
 }
 
+/** One client in a migration import. Idempotent per `client_id`. */
+export interface ImportOAuthClientEntry {
+  /** Preserve the existing client_id. */
+  client_id: string;
+  name: string;
+  redirect_uris: string[];
+  /** Plaintext secret; hashed on import. Write-only. */
+  client_secret?: string;
+  /** A pre-computed secret hash imported verbatim (instead of `client_secret`). */
+  client_secret_hash?: string;
+  allowed_scopes?: string[];
+  grant_types?: string[];
+  token_endpoint_auth_method?: string;
+}
+
+/** An imported client as returned by `import`. */
+export interface ImportedOAuthClient extends OAuthClient {
+  client_secret?: string;
+}
+
 export function oauthClientsResource(request: RequestFn) {
   return {
+    /** Bulk-import OAuth clients for a migration, optionally with pre-hashed secrets. */
+    import(
+      body: { clients: ImportOAuthClientEntry[] },
+      idempotencyKey?: string,
+    ): Promise<ListPage<ImportedOAuthClient>> {
+      return request({ method: 'POST', path: '/v1/oauth_clients/import', body, idempotencyKey });
+    },
     list(): Promise<ListPage<OAuthClient>> {
       return request({ method: 'GET', path: '/v1/oauth_clients' });
     },

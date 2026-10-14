@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * The framework adapters use `fetch`, `Headers`, `URL` and `globalThis` — the
+     * DOM lib carries `fetch`/`Headers`/`Request` typings (matching @atlasauth/js,
+     * @atlasauth/react-native and @atlasauth/electron). The Playwright and Cypress
+     * peers are modelled STRUCTURALLY (see src/playwright.ts, src/cypress.ts), so
+     * `types` stays empty and this package compiles with neither peer — nor
+     * `@types/node` — installed. That is deliberate: both peers are optional.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

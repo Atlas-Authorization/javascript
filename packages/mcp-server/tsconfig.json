@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * The `@modelcontextprotocol/sdk` ships its types only through its
+     * package.json `exports` map (deep subpaths like `./server/mcp.js` resolve
+     * via the `./*` wildcard + `typesVersions`). The repo-wide classic `Node`
+     * resolution does not read `exports`, so this one package upgrades to
+     * `Node16` to resolve the SDK. Emit stays CommonJS — this package has no
+     * `"type": "module"`, so `Node16` picks the SDK's `require` (CJS) build and
+     * emits `require()`, matching the rest of the monorepo's runtime.
+     */
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    // The CLI and config reader use `process`; `typeof fetch` resolves against
+    // @types/node's global `fetch` (Node 18+), so no DOM lib is needed.
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

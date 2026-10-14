@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // Solid publishes its entrypoints (solid-js/web, solid-js/store, solid-js/h)
+    // only through the package "exports" map, which the classic Node resolver
+    // the base config uses cannot read. Bundler resolution honours it — and is
+    // what every Solid consumer (Vite) uses anyway — so "module" moves to ESNext
+    // to match (Bundler requires an ESM module target). The emitted package is
+    // therefore ESM, which `"type": "module"` in package.json declares.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

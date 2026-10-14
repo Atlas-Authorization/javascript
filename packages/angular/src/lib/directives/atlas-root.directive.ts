@@ -1,11 +1,6 @@
-import {
-  Directive,
-  ElementRef,
-  OnInit,
-  Renderer2,
-  RendererStyleFlags2,
-  inject,
-} from '@angular/core';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
+import { Directive, ElementRef, OnInit, PLATFORM_ID, Renderer2, inject } from '@angular/core';
+import { applyAppearanceToDom } from '@atlasauth/design/runtime';
 import { AtlasService } from '../atlas.service';
 
 /**
@@ -23,6 +18,10 @@ import { AtlasService } from '../atlas.service';
  *   <router-outlet></router-outlet>
  * </div>
  * ```
+ *
+ * With a design (a code-level `appearance.preset` / `appearance.design`, or
+ * the dashboard design, fetched in the browser) the host also gets the stable
+ * `data-atlas-*` attributes and the design stylesheet is added to `<head>` once.
  */
 @Directive({
   selector: '[atlasRoot]',
@@ -32,13 +31,18 @@ export class AtlasRootDirective implements OnInit {
   private readonly atlas = inject(AtlasService);
   private readonly el = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly renderer = inject(Renderer2);
+  private readonly document = inject(DOCUMENT);
+  private readonly platformId = inject(PLATFORM_ID);
 
   ngOnInit(): void {
-    this.renderer.addClass(this.el.nativeElement, 'atlas-root');
-    const vars = this.atlas.appearanceVariables();
-    for (const [name, value] of Object.entries(vars)) {
-      // DashCase so a `--atlas-*` custom property is written verbatim, not camelCased.
-      this.renderer.setStyle(this.el.nativeElement, name, value, RendererStyleFlags2.DashCase);
-    }
+    const host = this.el.nativeElement;
+    this.renderer.addClass(host, 'atlas-root');
+    // Custom properties via `style.setProperty` (written verbatim, never camelCased).
+    let applied = applyAppearanceToDom(this.document, host, this.atlas.appearanceRender());
+    if (!isPlatformBrowser(this.platformId)) return;
+    void this.atlas.loadInstanceDesign().then((design) => {
+      if (!design) return;
+      applied = applyAppearanceToDom(this.document, host, this.atlas.appearanceRender(design), applied);
+    });
   }
 }

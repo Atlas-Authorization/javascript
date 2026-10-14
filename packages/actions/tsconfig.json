@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // A pure, dependency-free SDK: typed event/api shapes, a mock harness, and
+    // template handlers. No Node APIs (the harness builds its async runner from
+    // the AsyncFunction constructor, not `node:vm`) and no DOM — so `types`
+    // stays empty and the package compiles with neither `@types/node` nor a
+    // browser lib installed. It is meant to be imported from server, browser
+    // and CLI alike.
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

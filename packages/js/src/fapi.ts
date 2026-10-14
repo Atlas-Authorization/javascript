@@ -196,7 +196,7 @@ export function requestForStep(
   }
 
   const step = nextStep(attempt);
-  const id = (attempt as { id?: string }).id ?? '';
+  const id = attempt.id ?? '';
 
   switch (step.kind) {
     case 'collect_identifier':
@@ -307,7 +307,7 @@ export function flowFromPending(pending: { id: string; status: string } | null):
   if (!pending) return initialFlow;
   return {
     ...initialFlow,
-    attempt: { id: pending.id, status: pending.status } as AttemptView,
+    attempt: { id: pending.id, status: pending.status },
   };
 }
 
@@ -389,7 +389,7 @@ export async function prepareFactor(
   state: FlowState,
   strategy: 'email_code' | 'email_link',
 ): Promise<FlowState> {
-  const id = (state.attempt as { id?: string } | null)?.id;
+  const id = state.attempt?.id;
   if (!id) return state;
 
   const response = await client.post<{ poll_secret?: string }>(
@@ -417,7 +417,7 @@ export async function pollAttempt(
   client: FapiClient,
   state: FlowState,
 ): Promise<{ state: FlowState; ticket: string | null }> {
-  const id = (state.attempt as { id?: string } | null)?.id;
+  const id = state.attempt?.id;
   if (!id || !state.pollSecret) return { state, ticket: null };
 
   const response = await client.get<AttemptView & { ticket?: string }>(

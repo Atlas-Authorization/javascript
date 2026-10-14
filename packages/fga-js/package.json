@@ -1,0 +1,32 @@
+{
+  "name": "@atlasauth/fga-js",
+  "version": "0.1.0",
+  "description": "Atlas FGA (fine-grained, OpenFGA-shaped relationship authorization) client for JavaScript/TypeScript. Native, dependency-free, preconfigured for Atlas.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "atlas",
+    "atlasauth",
+    "fga",
+    "openfga",
+    "authorization",
+    "zanzibar",
+    "rebac"
+  ],
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

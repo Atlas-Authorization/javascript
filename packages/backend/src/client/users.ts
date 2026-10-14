@@ -220,7 +220,488 @@ export function usersResource(request: RequestFn) {
     ): Promise<{ object: 'grant'; id: string; deleted: true; tokens_revoked: number }> {
       return request({ method: 'DELETE', path: `/v1/grants/${enc(grantId)}` });
     },
+    /**
+     * `POST /v1/users/by_emails` — resolve up to 1000 addresses to user ids in
+     * one call. Verified, live users only by default; an address ABSENT from
+     * `data` has no such user. For rights requests pass `include_unverified`.
+     */
+    byEmails(body: UsersByEmailsBody): Promise<ListPage<UserEmailMatch>> {
+      return request({ method: 'POST', path: '/v1/users/by_emails', body });
+    },
+    /**
+     * `GET /v1/users/:id/resolved` — the flat identity: real primary email,
+     * whether it is verified, name, image and linked provider identities.
+     */
+    resolved(id: string): Promise<ResolvedUser> {
+      return request({ method: 'GET', path: `/v1/users/${enc(id)}/resolved` });
+    },
+    /** `GET /v1/users/:id/state` — portable state: progression, tier, flair, entitlements, directives, roles. */
+    state(id: string): Promise<UserState> {
+      return request({ method: 'GET', path: `/v1/users/${enc(id)}/state` });
+    },
+    /**
+     * `GET /v1/users/:id/sign_in_history` — successful sign-ins, newest first,
+     * cursor-paginated (`limit` 1–100, default 50). Works with `paginate()`:
+     * `paginate((p) => atlas.users.signInHistory('user_1', p))`.
+     */
+    signInHistory(id: string, params: CursorParams = {}): Promise<CursorPage<SignInEvent>> {
+      return request({
+        method: 'GET',
+        path: `/v1/users/${enc(id)}/sign_in_history`,
+        query: { ...params },
+      });
+    },
+    /**
+     * `GET /v1/users/:id/organization_memberships` — the organizations a user
+     * belongs to with role, resolved plan and join time. Cursor-paginated
+     * (`limit` default 20, max 100).
+     */
+    listOrganizationMemberships(
+      id: string,
+      params: CursorParams = {},
+    ): Promise<CursorPage<UserOrganizationMembership>> {
+      return request({
+        method: 'GET',
+        path: `/v1/users/${enc(id)}/organization_memberships`,
+        query: { ...params },
+      });
+    },
+    /**
+     * `POST /v1/users/:id/password` — set (reset) a user's password. Password
+     * history and policy apply unless `skip_password_checks` is set.
+     */
+    setPassword(id: string, body: SetUserPasswordBody): Promise<User> {
+      return request({ method: 'POST', path: `/v1/users/${enc(id)}/password`, body });
+    },
+    /** `DELETE /v1/users/:id/profile_image` — clear the profile image. */
+    deleteProfileImage(id: string): Promise<User> {
+      return request({ method: 'DELETE', path: `/v1/users/${enc(id)}/profile_image` });
+    },
+    /** `DELETE /v1/users/:id/passkeys/:passkeyId` — remove one of the user's passkeys. */
+    deletePasskey(
+      id: string,
+      passkeyId: string,
+    ): Promise<{ object: 'passkey'; id: string; deleted: true }> {
+      return request({
+        method: 'DELETE',
+        path: `/v1/users/${enc(id)}/passkeys/${enc(passkeyId)}`,
+      });
+    },
+    /**
+     * `POST /v1/users/:id/identities/import` — link a KNOWN provider identity
+     * (migration) without an OAuth flow. A `(provider, provider_user_id)` held
+     * by another user is a 409. Idempotent on the same user.
+     */
+    importIdentity(id: string, body: ImportIdentityBody): Promise<Identity> {
+      return request({ method: 'POST', path: `/v1/users/${enc(id)}/identities/import`, body });
+    },
+    /**
+     * `DELETE /v1/users/:id/identities/by-provider/:provider` — hard-remove a
+     * provider identity (undo a mis-import). Unlike `unlinkIdentity`, no new
+     * user is created. The account's only sign-in identity is refused.
+     */
+    removeIdentityByProvider(
+      id: string,
+      provider: string,
+    ): Promise<{ object: string; id: string; provider: string; removed: boolean }> {
+      return request({
+        method: 'DELETE',
+        path: `/v1/users/${enc(id)}/identities/by-provider/${enc(provider)}`,
+      });
+    },
+    /**
+     * `POST /v1/users/:id/erasure_acks` — your app confirms it purged its copy
+     * of the user during a scheduled deletion, optionally contributing a JSON
+     * `payload` to the erasure export. Upserts on (user, source).
+     */
+    acknowledgeErasure(
+      id: string,
+      body: UserErasureAckBody,
+      idempotencyKey?: string,
+    ): Promise<UserErasureAck> {
+      return request({
+        method: 'POST',
+        path: `/v1/users/${enc(id)}/erasure_acks`,
+        body,
+        idempotencyKey,
+      });
+    },
+    /**
+     * `GET /v1/users/:id/erasure_export` — Atlas's own data about the user plus
+     * every app's contributed payload, in one package.
+     */
+    erasureExport(id: string): Promise<UserErasureExport> {
+      return request({ method: 'GET', path: `/v1/users/${enc(id)}/erasure_export` });
+    },
+    /** Graceful deletion with a cancellation window (`DELETE /v1/users/:id` stays the immediate path). */
+    deletion: {
+      /** `POST /v1/users/:id/deletion` — schedule; `grace_seconds` defaults to the instance erasure grace. */
+      schedule(
+        id: string,
+        body: { grace_seconds?: number } = {},
+        idempotencyKey?: string,
+      ): Promise<User> {
+        return request({
+          method: 'POST',
+          path: `/v1/users/${enc(id)}/deletion`,
+          body,
+          idempotencyKey,
+        });
+      },
+      /** `POST /v1/users/:id/deletion/cancel` — 409 unless a deletion is still scheduled. */
+      cancel(id: string, idempotencyKey?: string): Promise<User> {
+        return request({
+          method: 'POST',
+          path: `/v1/users/${enc(id)}/deletion/cancel`,
+          idempotencyKey,
+        });
+      },
+      /** `POST /v1/users/:id/deletion/finalize` — purge once the window has lapsed; 409 if none is due. */
+      finalize(
+        id: string,
+        idempotencyKey?: string,
+      ): Promise<{ object: 'user'; id: string; deleted: true }> {
+        return request({
+          method: 'POST',
+          path: `/v1/users/${enc(id)}/deletion/finalize`,
+          idempotencyKey,
+        });
+      },
+    },
+    /** Cross-property directives: suspension, read-only, forced logout. */
+    directives: {
+      /** `POST /v1/users/:id/directives` — revokes live sessions where applicable. */
+      impose(
+        id: string,
+        body: ImposeUserDirectiveBody,
+        idempotencyKey?: string,
+      ): Promise<UserDirective> {
+        return request({
+          method: 'POST',
+          path: `/v1/users/${enc(id)}/directives`,
+          body,
+          idempotencyKey,
+        });
+      },
+      /** `DELETE /v1/users/:id/directives` — lift the user's directive. */
+      lift(id: string): Promise<{ object: 'directive'; user_id: string; lifted: true }> {
+        return request({ method: 'DELETE', path: `/v1/users/${enc(id)}/directives` });
+      },
+    },
+    /** Versioned consent records (ToS, privacy, marketing…). Append-only. */
+    consents: {
+      list(id: string): Promise<{ object: string; data: UserConsent[] }> {
+        return request({ method: 'GET', path: `/v1/users/${enc(id)}/consents` });
+      },
+      /** Record acceptance (default) or `status: 'withdrawn'`. Repeating the current standing returns the existing record. */
+      record(
+        id: string,
+        body: RecordUserConsentBody,
+        idempotencyKey?: string,
+      ): Promise<UserConsent> {
+        return request({
+          method: 'POST',
+          path: `/v1/users/${enc(id)}/consents`,
+          body,
+          idempotencyKey,
+        });
+      },
+    },
+    /** Push number-matching approval of an arbitrary action ("approve this transfer"). */
+    approvalRequests: {
+      /**
+       * `POST /v1/users/:id/approval_requests` — push the prompt to the user's
+       * devices. Display the returned `match_number` yourself; 409 when the user
+       * has no push device.
+       */
+      create(id: string, body: CreateUserApprovalRequestBody): Promise<UserApprovalRequestCreated> {
+        return request({ method: 'POST', path: `/v1/users/${enc(id)}/approval_requests`, body });
+      },
+      /** `GET /v1/users/:id/approval_requests/:approvalId` — poll its status. */
+      get(id: string, approvalId: string): Promise<UserApprovalRequest> {
+        return request({
+          method: 'GET',
+          path: `/v1/users/${enc(id)}/approval_requests/${enc(approvalId)}`,
+        });
+      },
+    },
+    /** Security-notification preferences of one end user. */
+    notificationPreferences: {
+      get(id: string): Promise<UserNotificationPreferences> {
+        return request({
+          method: 'GET',
+          path: `/v1/users/${enc(id)}/notification_preferences`,
+        });
+      },
+      /** `{ preferences: { category: enabled } }`. Security-critical categories cannot be disabled. */
+      update(
+        id: string,
+        body: UpdateUserNotificationPreferencesBody,
+      ): Promise<UserNotificationPreferences> {
+        return request({
+          method: 'PATCH',
+          path: `/v1/users/${enc(id)}/notification_preferences`,
+          body,
+        });
+      },
+    },
+    /** Phone numbers on a user (the SMS counterpart of email addresses). */
+    phoneNumbers: {
+      /** Starts unverified. */
+      add(id: string, body: { phone_number: string }): Promise<UserPhoneNumber> {
+        return request({ method: 'POST', path: `/v1/users/${enc(id)}/phone_numbers`, body });
+      },
+      /** Mark verified. 409 if the number is already verified on another user. */
+      verify(id: string, phoneId: string): Promise<UserPhoneNumber> {
+        return request({
+          method: 'POST',
+          path: `/v1/users/${enc(id)}/phone_numbers/${enc(phoneId)}/verify`,
+        });
+      },
+      delete(
+        id: string,
+        phoneId: string,
+      ): Promise<{ object: 'phone_number'; id: string; deleted: true }> {
+        return request({
+          method: 'DELETE',
+          path: `/v1/users/${enc(id)}/phone_numbers/${enc(phoneId)}`,
+        });
+      },
+    },
+    /** XP / level progression. */
+    progression: {
+      /**
+       * `POST /v1/users/:id/progression/events` — append an event, idempotent on
+       * `idempotency_key` (per calling key). A negative `amount` needs the `*` scope.
+       */
+      addEvent(id: string, body: UserProgressionEventBody): Promise<UserProgressionEvent> {
+        return request({
+          method: 'POST',
+          path: `/v1/users/${enc(id)}/progression/events`,
+          body,
+        });
+      },
+    },
   };
+}
+
+export interface UsersByEmailsBody {
+  /** Up to 1000 addresses, case-insensitive, deduplicated. */
+  email_addresses: string[];
+  /** Also match addresses never verified (for rights requests). Default false. */
+  include_unverified?: boolean;
+  /** Also match soft-deleted users. Default false. */
+  include_deleted?: boolean;
+}
+
+export interface UserEmailMatch {
+  email_address: string;
+  user_id: string;
+  verified: boolean;
+  /** Present (true) only for a soft-deleted user matched via `include_deleted`. */
+  deleted?: boolean;
+}
+
+export interface ResolvedUser {
+  object: string;
+  user_id: string;
+  /** The real primary email, never a placeholder; null when the user has none. */
+  email: string | null;
+  email_verified: boolean;
+  name: string | null;
+  image_url: string | null;
+  identities: Array<{ provider: string; provider_user_id: string; email: string | null }>;
+}
+
+export interface UserState {
+  object: 'user_state';
+  attributes: {
+    /** Keyed by track name. */
+    progression: Record<string, { xp: number; level: number }>;
+    /** From `public_metadata.tier`, when set. */
+    tier?: unknown;
+    /** From `public_metadata.flair`, when set. */
+    flair?: unknown;
+  };
+  entitlements: unknown[];
+  directives: unknown[];
+  roles: unknown[];
+}
+
+export interface SignInEvent {
+  object: 'sign_in_event';
+  id: string;
+  /** password, email_code, oauth, passkey, … */
+  method: string;
+  /** The social provider, for an oauth sign-in. */
+  provider: string | null;
+  provider_email: string | null;
+  ip: string | null;
+  /** The actor id when the sign-in was an impersonation. */
+  impersonated_by: string | null;
+  created_at: number;
+}
+
+export interface UserOrganizationMembership {
+  object: 'organization_membership';
+  organization_id: string;
+  organization_slug: string;
+  role: string;
+  plan: string | null;
+  joined_at: number;
+}
+
+export interface SetUserPasswordBody {
+  password: string;
+  skip_password_checks?: boolean;
+  /** Revoke the user's other sessions. */
+  sign_out_of_other_sessions?: boolean;
+}
+
+export interface ImportIdentityBody {
+  provider: string;
+  provider_user_id: string;
+  email_address?: string;
+  verified?: boolean;
+}
+
+export interface UserErasureAckBody {
+  /** The acknowledging app/system (its app id or a label). */
+  source: string;
+  /** Alias of `source`. */
+  app_id?: string;
+  /** Your data for the erasure export; omit to only confirm the purge. */
+  payload?: Record<string, unknown>;
+}
+
+export interface UserErasureAck {
+  object: 'user_erasure_ack';
+  id: string;
+  user_id: string;
+  source: string;
+  created_at: number;
+}
+
+export interface UserErasureExport {
+  object: 'erasure_export';
+  format_version: 1;
+  generated_at: number;
+  user_id: string;
+  /** Atlas's own data about the user (no secrets). */
+  atlas: Record<string, unknown>;
+  app_contributions: Array<{ source: string; contributed_at: number; payload: unknown }>;
+}
+
+export interface ImposeUserDirectiveBody {
+  /** ISO 8601 timestamp the suspension lasts until. */
+  suspended_until?: string;
+  read_only?: boolean;
+  forced_logout?: boolean;
+  reason?: string;
+}
+
+export interface UserDirective {
+  object: 'directive';
+  user_id: string;
+  suspended_until?: string;
+  read_only?: true;
+  forced_logout?: true;
+  reason?: string;
+  /** Live sessions revoked by imposing the directive. */
+  sessions_revoked: number;
+}
+
+export interface RecordUserConsentBody {
+  /** e.g. `tos`, `privacy`, `marketing`. */
+  policy: string;
+  /** The policy version accepted. */
+  version: string;
+  /** `accepted` (default) or `withdrawn`. */
+  status?: 'accepted' | 'withdrawn';
+  source?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UserConsent {
+  object: 'consent';
+  id: string;
+  policy: string;
+  version: string;
+  status: 'accepted' | 'withdrawn' | (string & {});
+  source: string | null;
+  metadata?: unknown;
+  created_at: number;
+}
+
+export interface CreateUserApprovalRequestBody {
+  /** What is being approved, shown on the device. */
+  description: string;
+  /** Extra key/value details shown under the description. Strings only. */
+  context?: Record<string, string>;
+}
+
+export interface UserApprovalRequestCreated {
+  object: 'approval_request';
+  id: string;
+  status: 'pending';
+  /** Show this to the user; they confirm the matching number on their device. */
+  match_number: string;
+  expires_at: number;
+}
+
+export interface UserApprovalRequest {
+  object: 'approval_request';
+  id: string;
+  status: 'pending' | 'approved' | 'denied' | 'expired';
+  description: string;
+  context?: Record<string, string>;
+  approved_by_device_id: string | null;
+  created_at: number;
+  expires_at: number;
+  resolved_at: number | null;
+}
+
+export interface UserNotificationPreference {
+  category: string;
+  label: string;
+  enabled: boolean;
+  /** False for security-critical categories, which are always enabled. */
+  optional: boolean;
+}
+
+export interface UserNotificationPreferences {
+  object: 'notification_preferences';
+  preferences: UserNotificationPreference[];
+}
+
+export interface UpdateUserNotificationPreferencesBody {
+  /** Category key → enabled. */
+  preferences: Record<string, boolean>;
+}
+
+export interface UserPhoneNumber {
+  object: 'phone_number';
+  id: string;
+  phone_number: string;
+  verified: boolean;
+  created_at: number;
+}
+
+export interface UserProgressionEventBody {
+  track?: string;
+  amount: number;
+  reason: string;
+  /** Required; a retry with the same key is a no-op. */
+  idempotency_key: string;
+}
+
+export interface UserProgressionEvent {
+  object: 'progression_event';
+  track: string;
+  xp: number;
+  level: number;
+  level_changed: boolean;
+  delta: number;
 }
 
 /** One sign-in identity on a user: the base Atlas anchor, or a linked provider. */

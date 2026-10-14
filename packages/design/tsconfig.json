@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /* Browser-safe: no Node types, so a stray `node:` import fails the typecheck. */
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

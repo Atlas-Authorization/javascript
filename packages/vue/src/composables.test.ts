@@ -87,12 +87,38 @@ describe('useAuth', () => {
     await nextTick();
 
     expect(result.isSignedIn.value).toBe(true);
+    expect(result.status.value).toBe('signed_in');
     expect(result.userId.value).toBe('u1');
     expect(result.sessionId.value).toBe('s1');
     expect(result.orgId.value).toBe('org1');
     expect(result.orgRole.value).toBe('org:admin');
     expect(result.has({ permission: 'org:billing:manage' })).toBe(true);
     expect(result.has({ permission: 'org:billing:read' })).toBe(false);
+  });
+});
+
+describe('useAuth status/session', () => {
+  // Field report: code destructured `status`/`session` from useAuth() and got
+  // undefined. Both are on useAuth() now, live, and agree with isLoaded/isSignedIn.
+  it('exposes the live status and session refs', async () => {
+    const client = makeClient();
+    const { result } = withClient(client, () => useAuth());
+
+    expect(result.status.value).toBe('loading');
+    expect(result.session.value).toBeNull();
+
+    client.status.value = 'signed_in';
+    client.session.value = { id: 's1' } as AtlasSession;
+    await nextTick();
+    expect(result.status.value).toBe('signed_in');
+    expect(result.session.value?.id).toBe('s1');
+
+    client.status.value = 'signed_out';
+    client.session.value = null;
+    await nextTick();
+    expect(result.status.value).toBe('signed_out');
+    expect(result.isLoaded.value).toBe(true);
+    expect(result.isSignedIn.value).toBe(false);
   });
 });
 

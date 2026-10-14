@@ -19,10 +19,20 @@ import {
   readRedirectResult,
   stripRedirectParams,
   type ProviderToken,
+  runFrontChannelLogoutFromResponse,
+  type SignOutOptions,
 } from '@atlasauth/js';
 import { evaluate, type ProtectCondition } from '@atlasauth/authz';
 import { ATLAS_OPTIONS } from './atlas.config';
-import { cssVariables, resolveTokens, type Appearance } from './appearance';
+import {
+  cssVariables,
+  instanceDesignFrom,
+  renderAppearance,
+  resolveTokens,
+  type Appearance,
+  type AppearanceRender,
+  type InstanceDesign,
+} from './appearance';
 import { EN_US, withFallback, type Catalog } from './i18n';
 import type {
   AtlasOrganizationMembership,
@@ -186,6 +196,33 @@ export class AtlasService implements OnDestroy {
     return cssVariables(resolveTokens(this.options.appearance));
   }
 
+  /**
+   * The full appearance render for a root element: inline variables, the
+   * `data-atlas-*` attributes and the design stylesheet. Pass the dashboard
+   * design (from {@link loadInstanceDesign}) to layer code overrides on it —
+   * the same semantics as `@atlasauth/react`.
+   */
+  appearanceRender(instanceDesign?: InstanceDesign | null): AppearanceRender {
+    return renderAppearance(this.options.appearance, instanceDesign ?? null, {
+      frontendApi: this.baseUrl,
+    });
+  }
+
+  /**
+   * The design configured in the Atlas dashboard (`GET /v1/appearance`), or null
+   * when there is none, it cannot be read, or the app opted out with
+   * `appearance.instanceDesign: false`.
+   */
+  async loadInstanceDesign(): Promise<InstanceDesign | null> {
+    if (this.options.appearance?.instanceDesign === false) return null;
+    try {
+      const response = await this.call('/v1/appearance');
+      return response.ok ? instanceDesignFrom(await response.json()) : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** A fresh {@link FapiClient} for driving a sign-in/sign-up flow. */
   createFapiClient(): FapiClient {
     return new FapiClient({ publishableKey: this.publishableKey, baseUrl: this.baseUrl });
@@ -222,12 +259,15 @@ export class AtlasService implements OnDestroy {
   }
 
   /** Revoke the current session server-side and drop all local auth state. */
-  async signOut(): Promise<void> {
+  async signOut(options?: SignOutOptions): Promise<void> {
     const current = this.cache.peek();
     if (current) {
-      await this.call(`/v1/client/sessions/${current.sessionId}/revoke`, {
+      const revoked = await this.call(`/v1/client/sessions/${current.sessionId}/revoke`, {
         method: 'POST',
       }).catch(() => undefined);
+      // OIDC Front-Channel Logout: let the apps signed in through this session
+      // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
+      if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(revoked);
     }
     this.clearRefreshTimer();
     this.cache.clear();

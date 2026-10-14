@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  // esbuild (build.mjs) emits the JS; tsc only emits the type declarations.
+  "compilerOptions": {
+    "emitDeclarationOnly": true
+  },
+  // Typecheck covers the tests; the published dist must not carry them.
+  "exclude": ["**/*.test.ts"]
+}

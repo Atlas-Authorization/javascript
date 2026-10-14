@@ -1,0 +1,33 @@
+{
+  "name": "@atlasauth/cli-banner",
+  "version": "0.1.0",
+  "description": "The animated Atlas mark for CLIs — a real-time 3D software renderer (z-buffer, Lambert + specular, luminance ASCII ramp, truecolor) that spins the Atlas diamond-on-tile logo in the terminal. TTY-only, CI-safe, NO_COLOR-aware.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "atlas-banner": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

@@ -25,6 +25,8 @@ import {
 } from './appearance';
 import { createClient, fetchAppearance } from './client';
 import { injectStyles } from './styles';
+import { applyAppearanceToDom, instanceDesignFrom, type AppliedAppearance, type InstanceDesign } from '@atlasauth/design/runtime';
+import { widgetDesign, type WidgetDesign } from './design';
 import { render, renderLoading } from './widget/render';
 import { handleRedirectLanding } from './widget/flow';
 import { startConditionalPasskey } from './widget/passkey';
@@ -63,6 +65,9 @@ export class AtlasWidget {
   readonly client: FapiClient;
   readonly mode: 'sign-in' | 'sign-up';
   appearance: PublicAppearance | null = null;
+  /** The design-system layer (dashboard design + inline preset/design), when any. */
+  design: WidgetDesign | null = null;
+  private appliedDesign?: AppliedAppearance;
   providers: string[] = [];
   /** Providers that render the official native button (Google GSI), by client_id. */
   nativeProviders: { provider: string; client_id: string }[] = [];
@@ -153,6 +158,8 @@ export class AtlasWidget {
   async mount(): Promise<void> {
     injectStyles(this.root.ownerDocument ?? document);
     this.root.classList.add('atlas-embed-root');
+    // An inline preset/design themes the very first (loading) paint.
+    this.resolveDesign(null);
     this.applyTheme();
     this.applyInteraction();
     renderLoading(this);
@@ -186,12 +193,16 @@ export class AtlasWidget {
       this.rememberMeEnabled = data.rememberMe === true;
       this.trustedDeviceEnabled = data.rememberDevice === true;
       this.captchaFlows = data.captchaFlows ?? {};
+      this.resolveDesign(instanceDesignFrom(data));
       this.applyTheme();
     }
     // Social-button look: tenant server default (if any) overlaid by the inline
     // appearance override the embedding page passed.
+    // A design's social layout sits over the tenant's default (inline still wins).
     this.social = resolveSocialButtons(
-      this.appearance?.socialButtons,
+      this.design
+        ? { ...this.appearance?.socialButtons, ...this.design.socialButtons }
+        : this.appearance?.socialButtons,
       this.options.appearance?.socialButtons,
     );
     this.codeInputStyle = resolveCodeInput(
@@ -199,7 +210,9 @@ export class AtlasWidget {
       this.options.appearance?.codeInput,
     );
     this.interaction = resolveInteraction(
-      this.appearance?.interaction,
+      this.design
+        ? { ...this.appearance?.interaction, ...this.design.interaction }
+        : this.appearance?.interaction,
       this.options.appearance?.interaction,
     );
     this.applyInteraction();
@@ -219,9 +232,34 @@ export class AtlasWidget {
   }
 
   private applyTheme(): void {
-    const tokens = resolveTokens(this.appearance, this.options.appearance);
+    // With a design (dashboard or inline preset/design) the tokens come from it;
+    // otherwise exactly as before: tenant branding, then the inline variables.
+    const tokens = this.design?.tokens ?? resolveTokens(this.appearance, this.options.appearance);
     const vars = cssVariables(tokens);
     for (const [key, value] of Object.entries(vars)) this.root.style.setProperty(key, value);
+    if (this.design) {
+      this.appliedDesign = applyAppearanceToDom(
+        this.root.ownerDocument ?? document,
+        this.root,
+        this.design.render,
+        this.appliedDesign,
+      );
+    }
+  }
+
+  /** Resolve the design layer (null when there is none). */
+  private resolveDesign(instance: InstanceDesign | null): void {
+    const win = this.root.ownerDocument?.defaultView ?? (typeof window !== 'undefined' ? window : null);
+    let prefersDark = false;
+    try {
+      prefersDark = !!win?.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    } catch {
+      /* no media queries: light */
+    }
+    this.design = widgetDesign(instance, this.options.appearance, {
+      frontendApi: this.options.frontendApi,
+      prefersDark,
+    });
   }
 
   /**

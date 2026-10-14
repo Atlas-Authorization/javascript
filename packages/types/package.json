@@ -1,0 +1,27 @@
+{
+  "name": "@atlasauth/types",
+  "version": "0.1.0",
+  "description": "Shared public TypeScript types for Atlas — the Atlas peer of @clerk/types. Dependency-free, runtime-free: import type { User } from '@atlasauth/types' pulls in no runtime SDK.",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@atlasauth/localizations": "workspace:*",
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

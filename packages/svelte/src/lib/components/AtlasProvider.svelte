@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { initAtlas, type AtlasClient } from '../context';
-  import { cssVariables, resolveTokens, type Appearance } from '../appearance';
+  import { renderAppearance, type Appearance, type InstanceDesign } from '../appearance';
   import type { Catalog } from '../i18n';
 
   /**
@@ -26,17 +26,45 @@
     fetchImpl,
   });
 
+  /**
+   * The dashboard design (fetched after mount, best-effort) layered with the
+   * code-level `appearance.preset` / `appearance.design` — the same semantics as
+   * @atlasauth/react. Without any design this is exactly the token variables.
+   */
+  let instanceDesign: InstanceDesign | null = null;
+  $: rendered = renderAppearance(appearance, instanceDesign, { frontendApi });
+
   // Tokens land as CSS variables on a host-DOM element — no iframe.
-  $: style = Object.entries(cssVariables(resolveTokens(appearance)))
+  $: style = Object.entries(rendered.style)
     .map(([name, value]) => `${name}: ${value}`)
     .join('; ');
 
+  // The compiled design stylesheet: custom properties only, from validated
+  // settings; the compiler refuses any output containing `<`.
+  $: designStyle = rendered.css
+    ? `<style data-atlas-design="${rendered.key}">${rendered.css}</style>`
+    : '';
+
   // initAtlas already boots in the browser; this is the belt-and-braces mount
   // hook (idempotent), and the symmetric teardown that cancels the refresh timer.
-  onMount(() => void client.boot());
+  onMount(() => {
+    void client.boot();
+    if (appearance?.instanceDesign !== false) {
+      void client.loadInstanceDesign().then((design) => {
+        if (design) instanceDesign = design;
+      });
+    }
+  });
   onDestroy(() => client.destroy());
 </script>
 
-<div class="atlas-root" {style}>
+<svelte:head>
+  {@html designStyle}
+  {#each rendered.fontStylesheets as href (href)}
+    <link rel="stylesheet" {href} data-atlas-font="" />
+  {/each}
+</svelte:head>
+
+<div class="atlas-root" {style} {...rendered.attributes}>
   <slot />
 </div>

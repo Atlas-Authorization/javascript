@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * This is a Node CLI: it reads/writes files and spawns a process, so it
+     * needs the Node globals (`process`, `require.main`, `fs`, `path`, `util`)
+     * and nothing from the DOM. jscodeshift ships its own types via
+     * @types/jscodeshift.
+     */
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

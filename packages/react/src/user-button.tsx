@@ -1,6 +1,6 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { useAuth, useSession, useSessionList, useUser } from './hooks';
-import { collectByType, useClass, useText } from './components-shared';
+import { collectByType, useClass, useClasses, useText } from './components-shared';
 
 /**
  * §L3 prebuilt-component EXTENSION API (Clerk `<UserButton.MenuItems>` /
@@ -56,6 +56,7 @@ function collectMenuEntries(children: ReactNode): MenuEntry[] {
  * to add custom `<UserButton.Action>` / `<UserButton.Link>` rows above sign-out.
  */
 export function UserButton({ children }: { children?: ReactNode } = {}) {
+  const cls = useClasses();
   const { user } = useUser();
   const { signOut } = useAuth();
   const { session } = useSession();
@@ -78,7 +79,7 @@ export function UserButton({ children }: { children?: ReactNode } = {}) {
   const others = sessions.filter((s) => s.id !== session?.id);
 
   return (
-    <div className="atlas-user-button">
+    <div className={cls('userButton', 'atlas-user-button')}>
       <button className={avatarClass} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         {user.image_url ? <img alt="" src={user.image_url} /> : <span>{label.slice(0, 1)}</span>}
       </button>

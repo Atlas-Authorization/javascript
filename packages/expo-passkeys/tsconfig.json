@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * Uses `fetch`, `Headers`, `RequestInfo` (via @atlasauth/js) — DOM-lib types
+     * React Native provides at runtime. `react-native-passkey` is an optional
+     * peer: its surface is declared structurally (see src/passkey-native.ts) so
+     * this package compiles, typechecks and tests without it, hence `types: []`.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

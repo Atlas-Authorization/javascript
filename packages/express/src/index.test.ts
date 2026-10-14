@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { ForbiddenError } from '@atlasauth/backend';
 import { atlasMiddleware, getAuth, requireAuth, signedOut } from './index';
-import type { AtlasExpressRequest, AtlasExpressResponse, NextFunction } from './index';
+// The adapter now types against the REAL Express types; the lightweight doubles
+// below are cast to them (legitimate test-double casts, not a consumer cast).
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
 
 const ISSUER = 'https://fox.fapi.atlas.test';
 const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
@@ -28,15 +30,16 @@ async function token(privateKey: unknown, claims: Record<string, unknown> = {}) 
 const serving = (jwks: unknown) =>
   (async () => new Response(JSON.stringify(jwks), { status: 200 })) as unknown as typeof fetch;
 
-const request = (headers: Record<string, string> = {}): AtlasExpressRequest => ({
-  // Express lower-cases header names; mirror that.
-  headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v])),
-});
+const request = (headers: Record<string, string> = {}): Request =>
+  ({
+    // Express lower-cases header names; mirror that.
+    headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v])),
+  }) as unknown as Request;
 
 /** A minimal Express response double that records the last status()/json(). */
 function responder() {
   const state: { status: number | null; body: unknown } = { status: null, body: null };
-  const res: AtlasExpressResponse = {
+  const res = {
     status(code: number) {
       state.status = code;
       return res;
@@ -46,14 +49,14 @@ function responder() {
       return res;
     },
   };
-  return { res, state };
+  return { res: res as unknown as Response, state };
 }
 
 /** Run a middleware to completion, capturing whether next() was called. */
 function run(
-  handler: (req: AtlasExpressRequest, res: AtlasExpressResponse, next: NextFunction) => void,
-  req: AtlasExpressRequest,
-  res: AtlasExpressResponse,
+  handler: RequestHandler,
+  req: Request,
+  res: Response,
 ): Promise<{ nextCalled: boolean; nextError: unknown }> {
   return new Promise((resolve) => {
     let settled = false;
@@ -230,5 +233,20 @@ describe('requireAuth', () => {
 
     expect(nextCalled).toBe(false);
     expect(state.status).toBe(401);
+  });
+});
+
+describe('framework typing', () => {
+  it('types: a real Express handler reads getAuth with no cast', () => {
+    // Compile-only proof. `req` is the route's own Express `Request` and feeds
+    // `getAuth` directly; `atlasMiddleware`/`requireAuth` are real `RequestHandler`s.
+    const handler: RequestHandler = (req, res, next: NextFunction) => {
+      const auth = getAuth(req);
+      res.status(200).json({ userId: auth.userId, signedIn: auth.isSignedIn });
+      next();
+    };
+    const mw: RequestHandler = atlasMiddleware({ jwksUrl: JWKS_URL, issuer: ISSUER });
+    const gate: RequestHandler = requireAuth();
+    expect([handler, mw, gate].every((h) => typeof h === 'function')).toBe(true);
   });
 });

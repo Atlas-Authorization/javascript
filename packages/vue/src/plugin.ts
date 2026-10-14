@@ -15,8 +15,11 @@ import {
   readRedirectResult,
   stripRedirectParams,
   type ProviderToken,
+  runFrontChannelLogoutFromResponse,
+  type SignOutOptions,
 } from '@atlasauth/js';
-import { cssVariables, resolveTokens, type Appearance } from './appearance';
+import { applyAppearanceToDom } from '@atlasauth/design/runtime';
+import { instanceDesignFrom, renderAppearance, type Appearance, type InstanceDesign } from './appearance';
 import { EN_US, withFallback, type Catalog } from './i18n';
 import { ATLAS_INJECTION_KEY } from './context';
 import type { AtlasOrganizationMembership, AtlasSession, AtlasUser, SessionClaims } from './types';
@@ -68,7 +71,7 @@ export interface AtlasClient {
    * server refreshes a stale token on read; the refresh token is never exposed.
    */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(): Promise<void>;
+  signOut(options?: SignOutOptions): Promise<void>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
   reload(): Promise<void>;
 }
@@ -89,7 +92,7 @@ export interface CreateAtlasOptions {
  * Tailwind/CSS just works), and boots the session.
  */
 export function createAtlas(options: CreateAtlasOptions): Plugin {
-  const { client, boot } = createAtlasClient(options);
+  const { client, boot, loadInstanceDesign } = createAtlasClient(options);
 
   return {
     install(app: App) {
@@ -98,13 +101,30 @@ export function createAtlas(options: CreateAtlasOptions): Plugin {
       // Tokens land as CSS variables on the host document root — the Vue peer of
       // React's `<div class="atlas-root" style={cssVars}>`. There is no single
       // element wrapping the whole app in a plugin, so the document root inherits
-      // them for every component that renders.
+      // them for every component that renders. With a design (a code-level
+      // `preset`/`design`, or the dashboard design once fetched) the root also
+      // gets the `data-atlas-*` attributes and the design stylesheet is added to
+      // <head> once (see @atlasauth/design `applyAppearanceToDom`).
       if (typeof document !== 'undefined') {
-        const vars = cssVariables(resolveTokens(options.appearance));
-        for (const [name, value] of Object.entries(vars)) {
-          document.documentElement.style.setProperty(name, value);
+        const root = document.documentElement;
+        root.classList.add('atlas-root');
+        let applied = applyAppearanceToDom(
+          document,
+          root,
+          renderAppearance(options.appearance, null, { frontendApi: options.frontendApi }),
+        );
+        if (typeof window !== 'undefined' && options.appearance?.instanceDesign !== false) {
+          // Deferred a tick so the session boot request goes first.
+          void Promise.resolve().then(loadInstanceDesign).then((design) => {
+            if (!design) return;
+            applied = applyAppearanceToDom(
+              document,
+              root,
+              renderAppearance(options.appearance, design, { frontendApi: options.frontendApi }),
+              applied,
+            );
+          });
         }
-        document.documentElement.classList.add('atlas-root');
       }
 
       // Boot once per install. Guarded to the browser: on the server there is no
@@ -125,6 +145,7 @@ export function createAtlas(options: CreateAtlasOptions): Plugin {
 function createAtlasClient(options: CreateAtlasOptions): {
   client: AtlasClient;
   boot: () => Promise<void>;
+  loadInstanceDesign: () => Promise<InstanceDesign | null>;
 } {
   const publishableKey = options.publishableKey;
   const baseUrl = options.frontendApi ?? '';
@@ -248,12 +269,15 @@ function createAtlasClient(options: CreateAtlasOptions): {
   const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch });
   const getProviderToken = (provider: string) => fetchProviderToken(fapiClient, provider);
 
-  const signOut = async () => {
+  const signOut = async (options?: SignOutOptions) => {
     const current = cache.peek();
     if (current) {
-      await call(`/v1/client/sessions/${current.sessionId}/revoke`, { method: 'POST' }).catch(
-        () => undefined,
-      );
+      const revoked = await call(`/v1/client/sessions/${current.sessionId}/revoke`, {
+        method: 'POST',
+      }).catch(() => undefined);
+      // OIDC Front-Channel Logout: let the apps signed in through this session
+      // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
+      if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(revoked);
     }
     cache.clear();
     status.value = 'signed_out';
@@ -315,6 +339,16 @@ function createAtlasClient(options: CreateAtlasOptions): {
     await reload();
   };
 
+  /** The dashboard design from `GET /v1/appearance`; null on any failure (best-effort). */
+  const loadInstanceDesign = async (): Promise<InstanceDesign | null> => {
+    try {
+      const response = await call('/v1/appearance');
+      return response.ok ? instanceDesignFrom(await response.json()) : null;
+    } catch {
+      return null;
+    }
+  };
+
   // `boot` is returned separately, not on the client — it is an install-time
   // concern the plugin drives exactly once, so the public `AtlasClient` surface
   // stays identical to React's context value.
@@ -337,6 +371,7 @@ function createAtlasClient(options: CreateAtlasOptions): {
       reload,
     },
     boot,
+    loadInstanceDesign,
   };
 }
 

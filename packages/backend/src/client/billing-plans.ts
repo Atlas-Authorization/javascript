@@ -73,6 +73,41 @@ export interface ListSubscriptionsParams {
   subject_id?: string;
 }
 
+/** Adopt an existing Stripe subscription (same Stripe account) onto an Atlas subject. */
+export interface ImportBillingSubscriptionBody {
+  subject_type: 'user' | 'org';
+  subject_id: string;
+  stripe_subscription_id: string;
+  stripe_customer_id?: string;
+  /** Resolved from the subscription's price when omitted. */
+  plan_id?: string;
+}
+
+/** Report metered usage for a subject. Idempotent on `idempotency_key`. */
+export interface ReportBillingUsageBody {
+  subject_type: 'user' | 'org';
+  subject_id: string;
+  /** Non-negative. */
+  quantity: number;
+  idempotency_key: string;
+}
+
+export interface BillingUsageReport {
+  object: 'billing_usage';
+  /** False when this `idempotency_key` was already recorded. */
+  recorded: boolean;
+  /** Whether it was mirrored to a Stripe meter (the plan is metered and configured). */
+  metered: boolean;
+  total: number;
+}
+
+export interface BillingSeatSync {
+  object: 'billing_seats';
+  subject_type: string;
+  subject_id: string;
+  quantity: number;
+}
+
 export function billingResource(request: RequestFn) {
   return {
     listPlans(): Promise<ListPage<BillingPlan>> {
@@ -92,6 +127,35 @@ export function billingResource(request: RequestFn) {
     },
     listSubscriptions(params?: ListSubscriptionsParams): Promise<ListPage<BillingSubscription>> {
       return request({ method: 'GET', path: '/v1/billing/subscriptions', query: { ...params } });
+    },
+    /**
+     * Adopt an EXISTING Stripe subscription onto a user/org + plan, for
+     * migrating billing into Atlas without re-charging. Read-only on Stripe.
+     */
+    importSubscription(
+      body: ImportBillingSubscriptionBody,
+      idempotencyKey?: string,
+    ): Promise<BillingSubscription> {
+      return request({
+        method: 'POST',
+        path: '/v1/billing/subscriptions/import',
+        body,
+        idempotencyKey,
+      });
+    },
+    /** Report metered usage (mirrored to a Stripe meter event when the plan is metered). */
+    reportUsage(body: ReportBillingUsageBody): Promise<BillingUsageReport> {
+      return request({ method: 'POST', path: '/v1/billing/usage', body });
+    },
+    /**
+     * Sync a per-seat subscription's Stripe quantity to the org's current member
+     * count (prorated). Never changes the paid status.
+     */
+    syncSeats(subjectType: 'user' | 'org', subjectId: string): Promise<BillingSeatSync> {
+      return request({
+        method: 'POST',
+        path: `/v1/billing/subjects/${enc(subjectType)}/${enc(subjectId)}/sync_seats`,
+      });
     },
   };
 }

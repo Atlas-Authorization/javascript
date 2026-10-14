@@ -1,4 +1,4 @@
-import { createRequest, type AtlasClientConfig } from './request';
+import { createRequest, type AtlasClientConfig, type AtlasRequestSettings } from './request';
 import { usersResource } from './users';
 import { sessionsResource } from './sessions';
 import { organizationsResource } from './organizations';
@@ -18,6 +18,7 @@ import { signInTokensResource } from './sign-in-tokens';
 import { auditLogsResource } from './audit-logs';
 import { jwtTemplatesResource } from './jwt-templates';
 import { apiKeysResource } from './api-keys';
+import { machinesResource } from './machines';
 import { oauthProvidersResource } from './oauth-providers';
 import { ssoOnboardingResource } from './sso-onboarding';
 import { scimProvisioningResource } from './scim-provisioning';
@@ -42,6 +43,26 @@ import { ltiPlatformsResource } from './lti-platforms';
 import { instanceResource } from './instance';
 import { instanceSecurityResource } from './instance-security';
 import { tokensResource } from './tokens';
+import { captchaResource } from './captcha';
+import { designResource } from './design';
+import { entitlementOverridesResource } from './entitlement-overrides';
+import { orgLdapConnectionsResource } from './org-ldap-connections';
+import { organizationSettingsSchemaResource } from './organization-settings-schema';
+import { emailAddressesResource } from './email-addresses';
+import { openfgaResource } from './openfga';
+import { connectorsResource } from './connectors';
+import { notificationsResource } from './notifications';
+import { auditEventsResource } from './audit-events';
+import { configChangelogResource, eventsResource, usageResource } from './activity';
+import { pcaResource } from './pca';
+import { mcpConnectorResource, mcpResource } from './mcp';
+import { legacyAuthConnectionResource } from './legacy-auth';
+import { redirectUrlsResource } from './redirect-urls';
+import { sessionExchangeAppsResource } from './session-exchange-apps';
+import { ticketsResource } from './tickets';
+import { testModeResource } from './test-mode';
+import { diagnosticsResource } from './diagnostics';
+import type { RequestFn } from './request';
 
 /**
  * The typed management client for the Atlas Backend API — the secret-key
@@ -52,9 +73,17 @@ import { tokensResource } from './tokens';
  * mapping and the wire types live, so this file stays a table of contents you
  * can read top to bottom to see the whole surface.
  */
-export function createAtlasClient(config: AtlasClientConfig) {
+export function createAtlasClient(config: AtlasClientConfig): AtlasClient {
   const request = createRequest(config);
+  return {
+    ...buildNamespaces(request),
+    withOptions(overrides: AtlasRequestSettings): AtlasClient {
+      return createAtlasClient({ ...config, ...overrides });
+    },
+  };
+}
 
+function buildNamespaces(request: RequestFn) {
   return {
     users: usersResource(request),
     sessions: sessionsResource(request),
@@ -77,6 +106,8 @@ export function createAtlasClient(config: AtlasClientConfig) {
     auditLogs: auditLogsResource(request),
     jwtTemplates: jwtTemplatesResource(request),
     apiKeys: apiKeysResource(request),
+    // §9.3 / §P1-7 named machine identities + device registry + enrolment tokens.
+    machines: machinesResource(request),
     oauthProviders: oauthProvidersResource(request),
     ssoOnboarding: ssoOnboardingResource(request),
     scimProvisioning: scimProvisioningResource(request),
@@ -101,14 +132,59 @@ export function createAtlasClient(config: AtlasClientConfig) {
     instance: instanceResource(request),
     instanceSecurity: instanceSecurityResource(request),
     tokens: tokensResource(request),
+    // §5 "captcha anywhere" — verify any CAPTCHA token against the instance's
+    // centrally-configured provider, server-side, with the secret held by Atlas.
+    captcha: captchaResource(request),
+    // Sign-in page design: instance + per-organization overrides, images, catalog.
+    design: designResource(request),
+    entitlementOverrides: entitlementOverridesResource(request),
+    orgLdapConnections: orgLdapConnectionsResource(request),
+    organizationSettingsSchema: organizationSettingsSchemaResource(request),
+    emailAddresses: emailAddressesResource(request),
+    // OpenFGA-wire ReBAC stores, models and tuples.
+    openfga: openfgaResource(request),
+    connectors: connectorsResource(request),
+    notifications: notificationsResource(request),
+    // The tenant's own custom audit events (distinct from Atlas's auditLogs).
+    auditEvents: auditEventsResource(request),
+    events: eventsResource(request),
+    usage: usageResource(request),
+    configChangelog: configChangelogResource(request),
+    pca: pcaResource(request),
+    mcp: mcpResource(request),
+    mcpConnector: mcpConnectorResource(request),
+    legacyAuthConnection: legacyAuthConnectionResource(request),
+    redirectUrls: redirectUrlsResource(request),
+    sessionExchangeApps: sessionExchangeAppsResource(request),
+    tickets: ticketsResource(request),
+    // Development-instance helpers: the paired test instance, test users, testing tokens.
+    testMode: testModeResource(request),
+    diagnostics: diagnosticsResource(request),
   };
 }
 
-/** The fully typed client instance `createAtlasClient` returns. */
-export type AtlasClient = ReturnType<typeof createAtlasClient>;
+/** Every resource namespace of the management client. */
+export type AtlasClientNamespaces = ReturnType<typeof buildNamespaces>;
 
-export type { AtlasClientConfig } from './request';
+/** The fully typed client instance `createAtlasClient` returns. */
+export interface AtlasClient extends AtlasClientNamespaces {
+  /**
+   * A copy of this client with some settings changed — e.g.
+   * `atlas.withOptions({ strict: true }).users.update(...)` for one strict call.
+   */
+  withOptions(overrides: AtlasRequestSettings): AtlasClient;
+}
+
+export type {
+  AtlasClientConfig,
+  AtlasRequestSettings,
+  UnknownFieldsEvent,
+  RawBody,
+} from './request';
 export { DEFAULT_API_URL } from './request';
+export { AtlasErrorCodes, type AtlasErrorCode } from './error';
+export { createAtlasPlatformClient } from './platform';
+export type { AtlasPlatformClient, AtlasPlatformClientConfig } from './platform';
 export { AtlasApiError, type AtlasErrorItem } from './error';
 export { paginate, collect } from './paginate';
 
@@ -133,6 +209,7 @@ export * from './sign-in-tokens';
 export * from './audit-logs';
 export * from './jwt-templates';
 export * from './api-keys';
+export * from './machines';
 export * from './oauth-providers';
 export * from './sso-onboarding';
 export * from './scim-provisioning';
@@ -157,3 +234,23 @@ export * from './lti-platforms';
 export * from './instance';
 export * from './instance-security';
 export * from './tokens';
+export * from './captcha';
+export * from './design';
+export * from './entitlement-overrides';
+export * from './org-ldap-connections';
+export * from './organization-settings-schema';
+export * from './email-addresses';
+export * from './openfga';
+export * from './connectors';
+export * from './notifications';
+export * from './audit-events';
+export * from './activity';
+export * from './pca';
+export * from './mcp';
+export * from './legacy-auth';
+export * from './redirect-urls';
+export * from './session-exchange-apps';
+export * from './tickets';
+export * from './test-mode';
+export * from './diagnostics';
+export * from './platform';

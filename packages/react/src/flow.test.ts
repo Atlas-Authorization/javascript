@@ -1,11 +1,20 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment happy-dom
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { FapiClient } from './fapi';
 import {
   afterUrlTarget,
   gsiButtonRendered,
   resolveGoogleButtonRender,
   usesNativeGoogle,
+  SocialSignInButtons,
   type EnvSocialProvider,
 } from './flow';
+
+vi.mock('./AtlasProvider', () => ({
+  useAtlas: () => ({ oauthMode: 'redirect', appearance: undefined }),
+}));
 
 /**
  * §2.1a/§2.1b native-Google decision helpers. Pure predicates, so no DOM: the
@@ -119,5 +128,78 @@ describe('§10.2 afterUrlTarget decides the completion redirect', () => {
 
   it('trims surrounding whitespace so a padded value still navigates', () => {
     expect(afterUrlTarget('  /welcome  ')).toBe('/welcome');
+  });
+});
+
+
+describe('SocialSignInButtons "Sign in with Atlas"', () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const mounted: Array<() => void> = [];
+  afterEach(() => {
+    mounted.splice(0).forEach((f) => f());
+    vi.restoreAllMocks();
+  });
+
+  async function mount(
+    sso: unknown,
+    post: (path: string, body: unknown) => Promise<unknown> = async () => ({}),
+  ) {
+    const postFn = vi.fn(post);
+    const client = {
+      get: vi.fn(async (path: string) => {
+        if (path === '/v1/appearance') return { data: { sign_in_with_atlas: sso } };
+        return { data: { social_providers: [] } };
+      }),
+      post: postFn,
+    } as unknown as FapiClient;
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => {
+      root.render(createElement(SocialSignInButtons, { client, onComplete: () => {} }));
+    });
+    mounted.push(() => act(() => root.unmount()));
+    return { el, postFn };
+  }
+
+  it('renders the Atlas button when enabled with a connection_id', async () => {
+    const { el } = await mount({ enabled: true, connection_id: 'conn_1' });
+    expect(el.querySelector('[data-atlas-provider="atlas"]')?.textContent).toContain(
+      'Continue with Atlas',
+    );
+  });
+
+  it('renders nothing when disabled', async () => {
+    const { el } = await mount({ enabled: false, connection_id: 'conn_1' });
+    expect(el.querySelector('[data-atlas-provider="atlas"]')).toBeNull();
+  });
+
+  it('click POSTs the SSO start with connection_id + redirect_url and navigates', async () => {
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { href: 'https://site.test/login', assign },
+    });
+    const { el, postFn } = await mount({ enabled: true, connection_id: 'conn_1' }, async () => ({
+      data: { authorization_url: 'https://id.atlasauth.net/x' },
+    }));
+    await act(async () => {
+      (el.querySelector('[data-atlas-provider="atlas"]') as HTMLElement).click();
+    });
+    expect(postFn).toHaveBeenCalledWith('/v1/client/sign_ins/sso', {
+      connection_id: 'conn_1',
+      redirect_url: 'https://site.test/login',
+    });
+    expect(assign).toHaveBeenCalledWith('https://id.atlasauth.net/x');
+  });
+
+  it('surfaces an error when no authorization_url comes back', async () => {
+    const { el } = await mount({ enabled: true, connection_id: 'conn_1' }, async () => ({
+      data: {},
+    }));
+    await act(async () => {
+      (el.querySelector('[data-atlas-provider="atlas"]') as HTMLElement).click();
+    });
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain('Sign in with Atlas');
   });
 });

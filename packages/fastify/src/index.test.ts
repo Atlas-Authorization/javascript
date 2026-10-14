@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { ForbiddenError } from '@atlasauth/backend';
 import { atlasPlugin, getAuth, requireAuth, signedOut } from './index';
+import type { AtlasPluginOptions } from './index';
+// The adapter now types against the REAL Fastify types; the lightweight doubles
+// below are cast to them (legitimate test-double casts, not a consumer cast).
 import type {
-  AtlasFastifyInstance,
-  AtlasFastifyReply,
-  AtlasFastifyRequest,
-  AtlasPluginOptions,
-} from './index';
+  FastifyInstance,
+  FastifyReply,
+  FastifyRequest,
+  preHandlerHookHandler,
+} from 'fastify';
 
 const ISSUER = 'https://fox.fapi.atlas.test';
 const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
@@ -33,15 +36,16 @@ async function token(privateKey: unknown, claims: Record<string, unknown> = {}) 
 const serving = (jwks: unknown) =>
   (async () => new Response(JSON.stringify(jwks), { status: 200 })) as unknown as typeof fetch;
 
-const request = (headers: Record<string, string> = {}): AtlasFastifyRequest => ({
-  // Fastify lower-cases header names; mirror that.
-  headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v])),
-});
+const request = (headers: Record<string, string> = {}): FastifyRequest =>
+  ({
+    // Fastify lower-cases header names; mirror that.
+    headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v])),
+  }) as unknown as FastifyRequest;
 
 /** A minimal Fastify reply double that records the last code()/send(). */
 function responder() {
   const state: { code: number | null; body: unknown } = { code: null, body: null };
-  const reply: AtlasFastifyReply = {
+  const reply = {
     code(statusCode: number) {
       state.code = statusCode;
       return reply;
@@ -51,7 +55,7 @@ function responder() {
       return reply;
     },
   };
-  return { reply, state };
+  return { reply: reply as unknown as FastifyReply, state };
 }
 
 /**
@@ -62,18 +66,18 @@ function responder() {
 function harness() {
   const hooks: Record<
     string,
-    Array<(req: AtlasFastifyRequest, reply: AtlasFastifyReply) => Promise<void> | void>
+    Array<(req: FastifyRequest, reply: FastifyReply) => Promise<void> | void>
   > = {};
-  const instance: AtlasFastifyInstance = {
+  const instance = {
     decorateRequest() {
       return instance;
     },
-    addHook(name, handler) {
+    addHook(name: string, handler: (req: FastifyRequest, reply: FastifyReply) => Promise<void> | void) {
       (hooks[name] ||= []).push(handler);
       return instance;
     },
   };
-  return { instance, hooks };
+  return { instance: instance as unknown as FastifyInstance, hooks };
 }
 
 /**
@@ -89,7 +93,7 @@ function register(options: AtlasPluginOptions) {
   const hookName = options.hookName ?? 'preHandler';
   return {
     pluginDone: () => pluginDone,
-    run: async (req: AtlasFastifyRequest, reply: AtlasFastifyReply) => {
+    run: async (req: FastifyRequest, reply: FastifyReply) => {
       for (const hook of hooks[hookName] ?? []) {
         await hook(req, reply);
       }
@@ -240,27 +244,26 @@ describe('signedOut', () => {
 });
 
 describe('requireAuth', () => {
-  it('401s with UNAUTHENTICATED and returns false when signed out', () => {
+  it('401s with UNAUTHENTICATED (sending a reply short-circuits) when signed out', async () => {
     const req = request();
     req.atlas = signedOut();
     const { reply, state } = responder();
 
-    const allowed = requireAuth(req, reply);
+    await requireAuth(req, reply);
 
-    expect(allowed).toBe(false);
     expect(state.code).toBe(401);
     expect(state.body).toEqual({ errors: [{ code: 'UNAUTHENTICATED' }] });
   });
 
-  it('401s when no plugin ran (undecorated request)', () => {
+  it('401s when no plugin ran (undecorated request)', async () => {
     const req = request();
     const { reply, state } = responder();
 
-    expect(requireAuth(req, reply)).toBe(false);
+    await requireAuth(req, reply);
     expect(state.code).toBe(401);
   });
 
-  it('returns true and sends nothing when a signed-in auth is attached', async () => {
+  it('sends nothing (lets the handler run) when a signed-in auth is attached', async () => {
     const { privateKey, jwks } = await keyring();
     const { run } = register({ jwksUrl: JWKS_URL, issuer: ISSUER, fetchImpl: serving(jwks) });
     const req = request({ cookie: `__session=${await token(privateKey)}` });
@@ -268,8 +271,19 @@ describe('requireAuth', () => {
     await run(req, reply);
 
     const gate = responder();
-    const allowed = requireAuth(req, gate.reply);
-    expect(allowed).toBe(true);
+    await requireAuth(req, gate.reply);
     expect(gate.state.code).toBeNull();
+  });
+
+  it('types: wires into a real Fastify route with no cast', () => {
+    // Compile-only proof. `requireAuth` IS a preHandler, and `getAuth` takes the
+    // route's own `FastifyRequest` directly — neither needs an `as` adapter.
+    const preHandler: preHandlerHookHandler = requireAuth;
+    const handler = (req: FastifyRequest, reply: FastifyReply): void => {
+      const auth = getAuth(req);
+      reply.send({ userId: auth.userId, signedIn: auth.isSignedIn });
+    };
+    expect(typeof preHandler).toBe('function');
+    expect(typeof handler).toBe('function');
   });
 });

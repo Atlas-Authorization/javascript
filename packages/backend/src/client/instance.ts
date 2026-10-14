@@ -33,6 +33,54 @@ export interface InstanceUpdateResult {
   auth_config: Metadata;
 }
 
+/** One problem (or note) the setup check found. */
+export interface PreflightFinding {
+  severity: 'error' | 'warning' | 'info';
+  /** Stable snake_case identifier, e.g. `oauth_provider_missing_credentials`. */
+  code: string;
+  /** What is wrong, in a plain sentence. */
+  message: string;
+  /** What to do about it, in a plain sentence. */
+  fix: string;
+  /** Ids of what the finding is about (provider, client_id, domain, …). */
+  subject?: Record<string, string>;
+}
+
+export interface PreflightReport {
+  object: 'preflight';
+  /** True when there are no error-severity findings. */
+  ok: boolean;
+  /** When the check ran (epoch ms). */
+  checked_at: number;
+  /** Ordered error, then warning, then info. */
+  findings: PreflightFinding[];
+}
+
+/** The cookie-consent script injected into the hosted sign-in, sign-up and account pages. */
+export interface CookieConsent {
+  object: 'cookie_consent';
+  enabled: boolean;
+  /** The consent script URL (https). */
+  script_url?: string;
+  script_id?: string | null;
+  site_id?: string | null;
+  blocking_mode?: string | null;
+  extra_origins?: string[];
+}
+
+export interface SetCookieConsentBody {
+  /** Your consent script URL. Must be https; its origin is added to the page CSP. */
+  script_url: string;
+  /** The `<script id>` some consent tools need. */
+  script_id?: string | null;
+  /** Your consent site id (sent as `data-cbid`). */
+  site_id?: string | null;
+  /** The prior-blocking mode, e.g. `"auto"` (sent as `data-blockingmode`). */
+  blocking_mode?: string | null;
+  /** Other https URLs the script loads from or calls; each origin is added to the CSP. */
+  extra_origins?: string[];
+}
+
 export function instanceResource(request: RequestFn) {
   return {
     get(): Promise<Instance> {
@@ -40,6 +88,24 @@ export function instanceResource(request: RequestFn) {
     },
     update(body: UpdateInstanceBody): Promise<InstanceUpdateResult> {
       return request({ method: 'PATCH', path: '/v1/instance', body });
+    },
+    /** Check your setup in one call: configuration the server can see is broken or risky. */
+    preflight(): Promise<PreflightReport> {
+      return request({ method: 'GET', path: '/v1/instance/preflight' });
+    },
+    /** The cookie-consent script on the hosted pages (any provider). */
+    cookieConsent: {
+      get(): Promise<CookieConsent> {
+        return request({ method: 'GET', path: '/v1/instance/cookie_consent' });
+      },
+      /** Replaces the whole setting. */
+      set(body: SetCookieConsentBody): Promise<CookieConsent> {
+        return request({ method: 'PUT', path: '/v1/instance/cookie_consent', body });
+      },
+      /** Turn it off: no script is injected and the CSP goes back to the default. */
+      delete(): Promise<CookieConsent> {
+        return request({ method: 'DELETE', path: '/v1/instance/cookie_consent' });
+      },
     },
   };
 }

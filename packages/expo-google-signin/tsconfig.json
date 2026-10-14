@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * Uses `fetch`, `Headers`, `RequestInfo` (via @atlasauth/js) — DOM-lib types
+     * React Native provides at runtime. `@react-native-google-signin/google-signin`
+     * is an optional peer declared structurally (see src/google-native.ts), so the
+     * package compiles, typechecks and tests without it, hence `types: []`.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

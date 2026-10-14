@@ -12,6 +12,8 @@
  *   - an inline `appearance` option the embedding page passes, which wins.
  */
 
+import type { AtlasDesign, InstanceDesign, PresetId } from '@atlasauth/design/runtime';
+
 /** Design tokens a tenant (or the inline override) can set. */
 export interface DesignTokens {
   colorPrimary?: string;
@@ -231,6 +233,16 @@ export function resolveSocialButtons(
 
 /** The inline override an embedding page may pass as `appearance`. */
 export interface WidgetAppearance {
+  /**
+   * A design preset (`minimal`, `atlas`, `glass`, `midnight`, `editorial`,
+   * `terminal`, `sunrise`, `forest`, `grape`, `slate`, `split-photo`, `bold`).
+   * Replaces the dashboard design as the starting point.
+   */
+  preset?: PresetId;
+  /** Structured design overrides — the dashboard design editor's settings. Highest precedence. */
+  design?: AtlasDesign;
+  /** Apply the design configured in the dashboard (default true). */
+  instanceDesign?: boolean;
   variables?: DesignTokens;
   elements?: Partial<Record<ElementKey, string>>;
   /** How the social buttons look — variant, size, layout, per-provider labels. */
@@ -303,6 +315,8 @@ export interface PublicSignUpField {
 export interface AppearanceResponse {
   object: 'appearance';
   appearance: PublicAppearance;
+  /** The design configured in the dashboard (structured design system), when any. */
+  design?: InstanceDesign | null;
   /** ENABLED social provider ids (keys only), e.g. `['google','github']`. */
   providers: string[];
   /**

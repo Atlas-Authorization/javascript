@@ -9,9 +9,11 @@ import {
   readRedirectResult,
   stripRedirectParams,
   type ProviderToken,
+  runFrontChannelLogoutFromResponse,
+  type SignOutOptions,
 } from '@atlasauth/js';
 import { EN_US, withFallback, type Catalog } from './i18n';
-import type { Appearance } from './appearance';
+import { instanceDesignFrom, type Appearance, type InstanceDesign } from './appearance';
 import type {
   AtlasOrganizationMembership,
   AtlasSession,
@@ -89,7 +91,7 @@ export interface AtlasClient extends AtlasStores {
    * exposed; the server refreshes a stale token on read.
    */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(): Promise<void>;
+  signOut(options?: SignOutOptions): Promise<void>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
   reload(): Promise<void>;
   /**
@@ -98,6 +100,11 @@ export interface AtlasClient extends AtlasStores {
    * `<AtlasProvider>` also calls it in `onMount`, and a second call is a no-op.
    */
   boot(): Promise<void>;
+  /**
+   * The design configured in the Atlas dashboard (`GET /v1/appearance`), or null
+   * when there is none or it cannot be read. `<AtlasProvider>` applies it.
+   */
+  loadInstanceDesign(): Promise<InstanceDesign | null>;
   /** Cancel the scheduled refresh — call from a component's `onDestroy`. */
   destroy(): void;
 }
@@ -253,12 +260,15 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
     return fetchProviderToken(fapiClient, provider);
   }
 
-  async function signOut(): Promise<void> {
+  async function signOut(options?: SignOutOptions): Promise<void> {
     const current = cache.peek();
     if (current) {
-      await call(`/v1/client/sessions/${current.sessionId}/revoke`, { method: 'POST' }).catch(
-        () => undefined,
-      );
+      const revoked = await call(`/v1/client/sessions/${current.sessionId}/revoke`, {
+        method: 'POST',
+      }).catch(() => undefined);
+      // OIDC Front-Channel Logout: let the apps signed in through this session
+      // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
+      if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(revoked);
     }
     if (timer) clearTimeout(timer);
     timer = null;
@@ -308,6 +318,15 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
     await reload();
   }
 
+  async function loadInstanceDesign(): Promise<InstanceDesign | null> {
+    try {
+      const response = await call('/v1/appearance');
+      return response.ok ? instanceDesignFrom(await response.json()) : null;
+    } catch {
+      return null;
+    }
+  }
+
   function destroy(): void {
     if (timer) clearTimeout(timer);
     timer = null;
@@ -335,6 +354,7 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
     setActiveOrganization,
     reload,
     boot,
+    loadInstanceDesign,
     destroy,
   };
 

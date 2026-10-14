@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // Qwik ships ESM with an `exports` map and a JSX runtime; `Bundler`
+    // resolution honours both (classic `Node` resolution ignores the map and
+    // cannot find `@builder.io/qwik/jsx-runtime`). ESM output matches the way a
+    // Qwik app consumes the package.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // Qwik's own JSX factory — NOT React. `tsc` compiles `component$` + JSX to
+    // type-correct `dist` calls against `@builder.io/qwik/jsx-runtime`; the
+    // consumer's Qwik optimizer re-processes the result when it bundles.
+    "jsx": "react-jsx",
+    "jsxImportSource": "@builder.io/qwik",
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ATLAS_BASE_CSS, injectAtlasStyles } from './styles';
+import { ATLAS_BASE_CSS, ATLAS_STYLES_CSS, injectAtlasStyles } from './styles';
 
 /**
  * The v0.1.15 bug: the components emitted `atlas-*` class names but the package
@@ -34,7 +34,7 @@ describe('base stylesheet covers every emitted class', () => {
   ];
 
   it('defines a rule for each class', () => {
-    const missing = EMITTED.filter((cls) => !ATLAS_BASE_CSS.includes(`.${cls}`));
+    const missing = EMITTED.filter((cls) => !ATLAS_STYLES_CSS.includes(`.${cls}`));
     expect(missing).toEqual([]);
   });
 
@@ -58,7 +58,7 @@ describe('base stylesheet covers every emitted class', () => {
       const src = readFileSync(join(__dirname, file), 'utf8');
       for (const m of src.matchAll(/(?<![-\w])atlas-[a-z-]+/g)) used.add(m[0]);
     }
-    const uncovered = [...used].filter((cls) => !ATLAS_BASE_CSS.includes(`.${cls}`));
+    const uncovered = [...used].filter((cls) => !ATLAS_STYLES_CSS.includes(`.${cls}`));
     expect(uncovered).toEqual([]);
   });
 

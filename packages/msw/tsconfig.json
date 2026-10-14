@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * The handlers use `Request`, `Response`, `Headers`, `URL` and `fetch` — the
+     * Fetch API types TypeScript ships only in the DOM lib (matching
+     * @atlasauth/js, @atlasauth/testing and @atlasauth/electron). `msw` is a
+     * peer dependency and brings its own types, so `types` stays empty and the
+     * package compiles without `@types/node`.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

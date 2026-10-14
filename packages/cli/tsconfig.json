@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // A pure Node CLI: it reads argv, prompts on a TTY, and writes the config
+    // file. No DOM. `@types/node` is the only ambient lib it needs; `fetch`
+    // lives inside @atlasauth/backend, which brings its own typings.
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

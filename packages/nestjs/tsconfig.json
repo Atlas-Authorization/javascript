@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "lib": ["ES2023", "DOM"],
+    "types": [],
+    /*
+     * NestJS leans on decorator metadata: `@Injectable()`, the guard's
+     * constructor DI, `SetMetadata` markers read back through `Reflector`, and
+     * `createParamDecorator`. Both flags are required for that machinery to emit
+     * and resolve, exactly as a Nest app's own tsconfig sets them.
+     */
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

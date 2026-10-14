@@ -44,3 +44,33 @@ export class AtlasApiError extends Error {
     return this.errors.some((e) => e.code === code);
   }
 }
+
+/**
+ * Stable error codes worth branching on, as named constants. Any `code` string
+ * Atlas returns can be compared with `error.code` / `error.hasCode()` directly;
+ * these just save typing them.
+ */
+export const AtlasErrorCodes = {
+  /** Emails cannot be sent: no email provider is configured for the instance. */
+  EMAIL_DELIVERY_NOT_CONFIGURED: 'EMAIL_DELIVERY_NOT_CONFIGURED',
+  /** This setting needs your own email provider configured first. */
+  EMAIL_PROVIDER_REQUIRED: 'EMAIL_PROVIDER_REQUIRED',
+  /** Strict mode: the body had a field this endpoint does not accept (`param` names it). */
+  UNKNOWN_FIELD: 'UNKNOWN_FIELD',
+  /** The billing plan still has subscribers and cannot be removed. */
+  PLAN_IN_USE: 'PLAN_IN_USE',
+  /** The key is valid but for another API surface (e.g. a platform key on the Backend API). */
+  WRONG_KEY_SURFACE: 'WRONG_KEY_SURFACE',
+  /** The key is unknown, revoked or malformed. */
+  INVALID_KEY: 'INVALID_KEY',
+  NOT_FOUND: 'NOT_FOUND',
+  VALIDATION_FAILED: 'VALIDATION_FAILED',
+  RATE_LIMITED: 'RATE_LIMITED',
+  IDEMPOTENCY_CONFLICT: 'IDEMPOTENCY_CONFLICT',
+  SCOPE_MISSING: 'SCOPE_MISSING',
+  FORBIDDEN: 'FORBIDDEN',
+  CONFLICT: 'CONFLICT',
+} as const;
+
+/** One of the named {@link AtlasErrorCodes}. */
+export type AtlasErrorCode = (typeof AtlasErrorCodes)[keyof typeof AtlasErrorCodes];

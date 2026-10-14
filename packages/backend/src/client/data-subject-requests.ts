@@ -18,6 +18,8 @@ export interface DataSubjectRequest {
   requested_by_id: string | null;
   reason: string | null;
   scheduled_for: number | null;
+  /** Estimated completion (epoch ms): an erasure's grace deadline; null for an export. */
+  eta?: number | null;
   requested_at: number;
   updated_at: number;
   completed_at: number | null;
@@ -31,8 +33,35 @@ export interface ListDataSubjectRequestsParams extends CursorParams {
   user_id?: string;
 }
 
+/** Identify the subject by `user_id` OR `subject_email` (`user_id` wins if both are given). */
+export interface CreateDataSubjectRequestBody {
+  type: 'export' | 'erasure';
+  user_id?: string;
+  /** The subject's email (verified, else unverified), resolved to the user. */
+  subject_email?: string;
+  reason?: string;
+}
+
 export function dataSubjectRequestsResource(request: RequestFn) {
   return {
+    /**
+     * Open an export or erasure request for a user from the backend. Same worker,
+     * grace window and webhooks as the self-service flow; idempotent on an
+     * in-flight request.
+     */
+    create(
+      body: CreateDataSubjectRequestBody,
+      idempotencyKey?: string,
+    ): Promise<DataSubjectRequest> {
+      return request({ method: 'POST', path: '/v1/data_subject_requests', body, idempotencyKey });
+    },
+    /**
+     * Cancel a scheduled erasure inside its grace window. Once processing or
+     * terminal it is a 409; exports are not cancellable.
+     */
+    cancel(id: string): Promise<DataSubjectRequest> {
+      return request({ method: 'POST', path: `/v1/data_subject_requests/${enc(id)}/cancel` });
+    },
     list(
       params: ListDataSubjectRequestsParams = {},
     ): Promise<CursorPage<DataSubjectRequest>> {

@@ -19,9 +19,17 @@ import {
   stripRedirectParams,
   type Channel,
   type ProviderToken,
+  type SignOutOptions,
+  runFrontChannelLogoutFromResponse,
 } from '@atlasauth/js';
-import { cssVariables, resolveTokens, type Appearance } from './appearance';
-import { ATLAS_BASE_CSS, ATLAS_STYLE_ELEMENT_ID } from './styles';
+import {
+  classFor,
+  instanceDesignFrom,
+  renderAppearance,
+  type Appearance,
+  type InstanceDesign,
+} from './appearance';
+import { ATLAS_STYLES_CSS, ATLAS_STYLE_ELEMENT_ID } from './styles';
 import { EN_US, withFallback, type Catalog } from './i18n';
 import type {
   AtlasOrganizationMembership,
@@ -75,7 +83,7 @@ interface AtlasContextValue {
    * server refreshes a stale token on read; the refresh token is never exposed.
    */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(): Promise<void>;
+  signOut(options?: SignOutOptions): Promise<void>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
   /**
    * §L1 switch which signed-in account is active on this browser (Clerk
@@ -388,12 +396,15 @@ export function AtlasProvider(props: AtlasProviderProps) {
     [fapiClient],
   );
 
-  const signOut = useCallback(async () => {
+  const signOut = useCallback(async (options?: SignOutOptions) => {
     const current = cache.current.peek();
     if (current) {
-      await call(`/v1/client/sessions/${current.sessionId}/revoke`, { method: 'POST' }).catch(
-        () => undefined,
-      );
+      const revoked = await call(`/v1/client/sessions/${current.sessionId}/revoke`, {
+        method: 'POST',
+      }).catch(() => undefined);
+      // OIDC Front-Channel Logout: let the apps signed in through this session
+      // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
+      if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(revoked);
     }
     cache.current.clear();
     setStatus('signed_out');
@@ -506,10 +517,36 @@ export function AtlasProvider(props: AtlasProviderProps) {
     ],
   );
 
-  const style = useMemo(
-    () => cssVariables(resolveTokens(appearance)) as React.CSSProperties,
-    [appearance],
+  /**
+   * The design configured in the Atlas dashboard, from `GET /v1/appearance`.
+   * Best-effort: a failure (older server, network) leaves it null and the
+   * components render exactly as before. Skipped when the app opted out.
+   */
+  const [instanceDesign, setInstanceDesign] = useState<InstanceDesign | null>(null);
+  const wantsInstanceDesign = appearance?.instanceDesign !== false;
+  useEffect(() => {
+    if (!wantsInstanceDesign) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const response = await call('/v1/appearance');
+        if (!response.ok) return;
+        const design = instanceDesignFrom(await response.json());
+        if (alive) setInstanceDesign(design);
+      } catch {
+        // No dashboard design is the safe fallback.
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [call, wantsInstanceDesign]);
+
+  const rendered = useMemo(
+    () => renderAppearance(appearance, instanceDesign, { frontendApi: baseUrl }),
+    [appearance, instanceDesign, baseUrl],
   );
+  const style = rendered.style as React.CSSProperties;
 
   return (
     <AtlasContext.Provider value={value}>
@@ -522,9 +559,26 @@ export function AtlasProvider(props: AtlasProviderProps) {
         so customer CSS / appearance.elements still layer on top. A stable id
         lets `injectAtlasStyles()` (exported for manual use) no-op when present.
       */}
-      <style id={ATLAS_STYLE_ELEMENT_ID} dangerouslySetInnerHTML={{ __html: ATLAS_BASE_CSS }} />
+      <style id={ATLAS_STYLE_ELEMENT_ID} dangerouslySetInnerHTML={{ __html: ATLAS_STYLES_CSS }} />
+      {/*
+        The design stylesheet: custom properties only, compiled client-side from
+        validated settings (never the raw text of a prop or a response), scoped
+        to `.atlas-root[data-atlas-design="<key>"]` so two providers with
+        different designs cannot collide. Rendered in the provider's output like
+        the base styles, so a code-level preset/design is in the SERVER HTML.
+      */}
+      {rendered.css ? (
+        <style data-atlas-design={rendered.key} dangerouslySetInnerHTML={{ __html: rendered.css }} />
+      ) : null}
+      {rendered.fontStylesheets.map((href) => (
+        <link key={href} rel="stylesheet" href={href} data-atlas-font="" />
+      ))}
       {/* Tokens land as CSS variables on a host-DOM element — no iframe. */}
-      <div className="atlas-root" style={style}>
+      <div
+        {...rendered.attributes}
+        className={classFor('root', appearance, 'atlas-root')}
+        style={style}
+      >
         {children}
       </div>
     </AtlasContext.Provider>

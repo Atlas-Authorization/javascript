@@ -56,6 +56,10 @@ export function optionsFromElement(
 
   const options: WidgetOptions = { publishableKey, frontendApi, mode };
   if (redirect) options.redirect = redirect;
+  // `data-atlas-preset="midnight"` — a design preset straight from markup. Any
+  // value is passed through; the design system ignores (and warns on) unknown ids.
+  const preset = dataset.atlasPreset ?? attr('preset');
+  if (preset) options.appearance = { preset: preset as never };
   return options;
 }
 

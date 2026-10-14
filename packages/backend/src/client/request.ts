@@ -25,6 +25,40 @@ export interface AtlasClientConfig {
   apiUrl?: string;
   /** Injectable `fetch`, for tests and non-global-fetch runtimes. */
   fetch?: typeof fetch;
+  /**
+   * Strict request bodies. `true` sends `Atlas-Strict: true` on every write, so
+   * a body field the endpoint does not accept is refused with
+   * `422 UNKNOWN_FIELD` (before anything changes) instead of being ignored.
+   * `false` sends `Atlas-Strict: false`, opting out of an instance-wide strict
+   * default. Unset sends nothing and the instance setting applies. Override it
+   * for a single call with `client.withOptions({ strict })`.
+   */
+  strict?: boolean;
+  /**
+   * Called when a write succeeded but Atlas ignored some body fields (the
+   * `Atlas-Unknown-Fields` response header) — usually a typo or a field from a
+   * newer API version. Not called in strict mode, where the write fails instead.
+   */
+  onUnknownFields?: (event: UnknownFieldsEvent) => void;
+}
+
+/** What {@link AtlasClientConfig.onUnknownFields} receives. */
+export interface UnknownFieldsEvent {
+  method: RequestOptions['method'];
+  /** The request path, e.g. `/v1/users/user_123`. */
+  path: string;
+  /** Every ignored field; nested fields as `parent.child`. */
+  fields: string[];
+}
+
+/** Per-client settings `withOptions` can override. */
+export type AtlasRequestSettings = Pick<AtlasClientConfig, 'strict' | 'onUnknownFields'>;
+
+/** A raw (non-JSON) request body, e.g. image bytes for a design-asset upload. */
+export interface RawBody {
+  data: Blob | ArrayBuffer | ArrayBufferView;
+  /** The body's media type, e.g. `image/png`. Defaults to a Blob's own `type`. */
+  contentType?: string;
 }
 
 /** The default BAPI origin, overridable per instance via `apiUrl`. */
@@ -40,10 +74,14 @@ export interface RequestOptions {
   query?: QueryParams;
   /** JSON body; omitted entirely when undefined. */
   body?: unknown;
+  /** A raw body sent as-is with its own content type (instead of `body`). */
+  rawBody?: RawBody;
   /** Idempotency-Key header (§9.1), when a caller supplies one. */
   idempotencyKey?: string;
   /** When true, the raw text body is returned instead of parsed JSON (SAML XML). */
   raw?: boolean;
+  /** Per-request override of {@link AtlasClientConfig.strict}. */
+  strict?: boolean;
 }
 
 /** Serialize a query object to a string, dropping null/undefined, spreading arrays. */
@@ -80,6 +118,20 @@ export function createRequest(config: AtlasClientConfig): RequestFn {
   if (!config.secretKey) {
     throw new Error('createAtlasClient requires a secretKey.');
   }
+  return createKeyedRequest(config.secretKey, config);
+}
+
+/** Settings shared by every keyed client (secret key or platform key). */
+export interface KeyedRequestConfig extends AtlasRequestSettings {
+  apiUrl?: string;
+  fetch?: typeof fetch;
+}
+
+/**
+ * The request core for any bearer key: the secret key (`sk_...`) of the
+ * management client or the platform key (`psk_...`) of the platform client.
+ */
+export function createKeyedRequest(key: string, config: KeyedRequestConfig): RequestFn {
   const base = config.apiUrl ?? DEFAULT_API_URL;
   const fetchImpl = config.fetch ?? globalThis.fetch;
   if (typeof fetchImpl !== 'function') {
@@ -92,22 +144,48 @@ export function createRequest(config: AtlasClientConfig): RequestFn {
     const url = joinUrl(base, options.path) + serializeQuery(options.query);
 
     const headers: Record<string, string> = {
-      authorization: `Bearer ${config.secretKey}`,
+      authorization: `Bearer ${key}`,
       accept: 'application/json',
     };
-    let body: string | undefined;
-    if (options.body !== undefined) {
+    let body: RequestInit['body'];
+    if (options.rawBody !== undefined) {
+      const { data, contentType } = options.rawBody;
+      const type =
+        contentType ?? (typeof Blob !== 'undefined' && data instanceof Blob ? data.type : '');
+      if (!type) {
+        throw new Error('A raw upload needs a contentType (for example image/png).');
+      }
+      headers['content-type'] = type;
+      body = data as RequestInit['body'];
+    } else if (options.body !== undefined) {
       headers['content-type'] = 'application/json';
       body = JSON.stringify(options.body);
     }
     if (options.idempotencyKey) {
       headers['idempotency-key'] = options.idempotencyKey;
     }
+    const strict = options.strict ?? config.strict;
+    if (strict !== undefined && options.method !== 'GET') {
+      headers['atlas-strict'] = strict ? 'true' : 'false';
+    }
 
     const response = await fetchImpl(url, { method: options.method, headers, body });
 
     if (!response.ok) {
       throw await toApiError(response);
+    }
+
+    if (config.onUnknownFields) {
+      const ignored = response.headers?.get?.('atlas-unknown-fields');
+      if (ignored) {
+        const fields = ignored
+          .split(',')
+          .map((f) => f.trim())
+          .filter(Boolean);
+        if (fields.length) {
+          config.onUnknownFields({ method: options.method, path: options.path, fields });
+        }
+      }
     }
 
     // 204 and other empty bodies: nothing to parse.

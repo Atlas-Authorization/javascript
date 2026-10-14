@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { createPasskey, passkeysSupported } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { useUser } from './hooks';
-import { collectByType, useClass, useMeClient, useText } from './components-shared';
+import { collectByType, useClass, useClasses, useMeClient, useText } from './components-shared';
 
 interface DeviceSession {
   id: string;
@@ -22,6 +22,7 @@ interface DeviceSession {
 export function ActiveSessions() {
   const client = useMeClient();
   const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
   const [sessions, setSessions] = useState<DeviceSession[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -53,15 +54,15 @@ export function ActiveSessions() {
 
   return (
     <section className={cardClass} data-atlas="active-sessions">
-      <h2>Active devices</h2>
-      <ul>
+      <h2 className={cls('sectionTitle', 'atlas-section-title')}>Active devices</h2>
+      <ul className={cls('list', 'atlas-list')}>
         {sessions.map((s) => (
-          <li key={s.id}>
+          <li className={cls('listItem', 'atlas-list-item')} key={s.id}>
             <strong>{s.device_label ?? [s.browser, s.os].filter(Boolean).join(' on ') ?? 'Unknown device'}</strong>
             {s.current ? <em> — this device</em> : null}
             <div>{[s.location, fmt(s.last_active_at)].filter(Boolean).join(' · ')}</div>
             {!s.current ? (
-              <button type="button" disabled={busy} onClick={() => void revoke(s.id)}>
+              <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void revoke(s.id)}>
                 Sign out
               </button>
             ) : null}
@@ -69,7 +70,7 @@ export function ActiveSessions() {
         ))}
       </ul>
       {sessions.some((s) => !s.current) ? (
-        <button type="button" disabled={busy} onClick={() => void revokeOthers()}>
+        <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void revokeOthers()}>
           Sign out of all other devices
         </button>
       ) : null}
@@ -87,6 +88,7 @@ export function ProfileCard() {
   const { reload } = useAtlas();
   const client = useMeClient();
   const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -112,21 +114,21 @@ export function ProfileCard() {
 
   return (
     <section className={cardClass} data-atlas="profile-card">
-      <h2>Profile</h2>
-      <label>
+      <h2 className={cls('sectionTitle', 'atlas-section-title')}>Profile</h2>
+      <label className={cls('formField', 'atlas-account-field')}>
         First name
-        <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+        <input className={cls('formFieldInput', 'atlas-account-input')} value={firstName} onChange={(e) => setFirstName(e.target.value)} />
       </label>
-      <label>
+      <label className={cls('formField', 'atlas-account-field')}>
         Last name
-        <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+        <input className={cls('formFieldInput', 'atlas-account-input')} value={lastName} onChange={(e) => setLastName(e.target.value)} />
       </label>
-      <button type="button" disabled={saving} onClick={() => void save()}>
+      <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={saving} onClick={() => void save()}>
         Save
       </button>
-      <ul data-atlas="emails">
+      <ul className={cls('list', 'atlas-list')} data-atlas="emails">
         {(user.email_addresses ?? []).map((email) => (
-          <li key={email.id}>
+          <li className={cls('listItem', 'atlas-list-item')} key={email.id}>
             {email.email_address}
             {email.verified ? null : <em> — unverified</em>}
             {email.primary ? <em> — primary</em> : null}
@@ -154,6 +156,7 @@ interface MfaFactor {
 export function ManageMfa() {
   const client = useMeClient();
   const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
   const [factors, setFactors] = useState<MfaFactor[]>([]);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [enroll, setEnroll] = useState<{ id: string; secret: string; uri: string; requiredCodes: number } | null>(
@@ -221,26 +224,26 @@ export function ManageMfa() {
 
   return (
     <section className={cardClass} data-atlas="manage-mfa">
-      <h2>Two-factor authentication</h2>
+      <h2 className={cls('sectionTitle', 'atlas-section-title')}>Two-factor authentication</h2>
       {totp ? (
         <>
-          <p>
+          <p className={cls('text', 'atlas-text')}>
             Authenticator app is on.
             {remaining != null ? ` ${remaining} backup codes remaining.` : ''}
           </p>
-          <button type="button" disabled={busy} onClick={() => void disable(totp.id)}>
+          <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void disable(totp.id)}>
             Turn off
           </button>
         </>
       ) : enroll ? (
         <div>
-          <p>Add this to your authenticator app — scan the QR you render from the URI, or enter the key:</p>
+          <p className={cls('text', 'atlas-text')}>Add this to your authenticator app — scan the QR you render from the URI, or enter the key:</p>
           <code data-atlas="totp-secret">{enroll.secret}</code>
-          <p>
-            <a href={enroll.uri}>Open in an authenticator app</a>
+          <p className={cls('text', 'atlas-text')}>
+            <a className={cls('link', 'atlas-link')} href={enroll.uri}>Open in an authenticator app</a>
           </p>
           {codes.map((c, i) => (
-            <input
+            <input className={cls('formFieldInput', 'atlas-account-input')}
               key={i}
               inputMode="numeric"
               autoComplete="one-time-code"
@@ -249,28 +252,28 @@ export function ManageMfa() {
               onChange={(e) => setCodes((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))}
             />
           ))}
-          <button type="button" disabled={busy} onClick={() => void verify()}>
+          <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void verify()}>
             Verify &amp; enable
           </button>
         </div>
       ) : backupCodes ? (
         <div>
-          <p>Two-factor is on. Save these backup codes now — they are shown only once:</p>
-          <ul data-atlas="backup-codes">
+          <p className={cls('text', 'atlas-text')}>Two-factor is on. Save these backup codes now — they are shown only once:</p>
+          <ul className={cls('list', 'atlas-list')} data-atlas="backup-codes">
             {backupCodes.map((c) => (
-              <li key={c}>
+              <li className={cls('listItem', 'atlas-list-item')} key={c}>
                 <code>{c}</code>
               </li>
             ))}
           </ul>
         </div>
       ) : (
-        <button type="button" disabled={busy} onClick={() => void startEnroll()}>
+        <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void startEnroll()}>
           Enable authenticator app
         </button>
       )}
       {error ? (
-        <p data-atlas="mfa-error" role="alert">
+        <p className={cls('alert', 'atlas-alert')} data-atlas="mfa-error" role="alert">
           {error}
         </p>
       ) : null}
@@ -295,6 +298,7 @@ interface Passkey {
 export function ManagePasskeys() {
   const client = useMeClient();
   const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
   const [passkeys, setPasskeys] = useState<Passkey[]>([]);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -344,17 +348,17 @@ export function ManagePasskeys() {
 
   return (
     <section className={cardClass} data-atlas="manage-passkeys">
-      <h2>Passkeys</h2>
-      <ul data-atlas="passkey-list">
+      <h2 className={cls('sectionTitle', 'atlas-section-title')}>Passkeys</h2>
+      <ul className={cls('list', 'atlas-list')} data-atlas="passkey-list">
         {passkeys.map((pk) => (
-          <li key={pk.id}>
+          <li className={cls('listItem', 'atlas-list-item')} key={pk.id}>
             <strong>{pk.name || 'Passkey'}</strong>
             <div>
               {[pk.last_used_at ? `Last used ${fmt(pk.last_used_at)}` : `Added ${fmt(pk.created_at)}`]
                 .filter(Boolean)
                 .join(' · ')}
             </div>
-            <button type="button" disabled={busy} onClick={() => void remove(pk.id)}>
+            <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void remove(pk.id)}>
               Remove
             </button>
           </li>
@@ -362,20 +366,20 @@ export function ManagePasskeys() {
       </ul>
       {supported ? (
         <div data-atlas="passkey-add">
-          <input
+          <input className={cls('formFieldInput', 'atlas-account-input')}
             value={name}
             placeholder="Name this device (optional)"
             onChange={(e) => setName(e.target.value)}
           />
-          <button type="button" disabled={busy} onClick={() => void add()}>
+          <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void add()}>
             Add a passkey
           </button>
         </div>
       ) : (
-        <p>Passkeys are not supported in this browser.</p>
+        <p className={cls('text', 'atlas-text')}>Passkeys are not supported in this browser.</p>
       )}
       {error ? (
-        <p data-atlas="passkey-error" role="alert">
+        <p className={cls('alert', 'atlas-alert')} data-atlas="passkey-error" role="alert">
           {error}
         </p>
       ) : null}
@@ -420,7 +424,8 @@ export function UserProfile({ children }: { children?: ReactNode } = {}) {
   const { user } = useUser();
   const t = useText();
   const cardClass = useClass('card', 'atlas-card');
-  const tabClass = useClass('menuItem', 'atlas-tab');
+  const cls = useClasses();
+  const tabClass = cls('tab', useClass('menuItem', 'atlas-tab'));
 
   const pages = useMemo(
     () =>
@@ -444,10 +449,10 @@ export function UserProfile({ children }: { children?: ReactNode } = {}) {
 
   return (
     <div className={cardClass} data-atlas="user-profile">
-      <h1>{t('userProfile.title')}</h1>
+      <h1 className={cls('headerTitle', 'atlas-heading')}>{t('userProfile.title')}</h1>
 
       {pages.length || links.length ? (
-        <nav className="atlas-tabs" role="tablist">
+        <nav className={cls('tabs', 'atlas-tabs')} role="tablist">
           <button
             className={tabClass}
             role="tab"

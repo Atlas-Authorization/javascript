@@ -1,5 +1,5 @@
 import { enc, type RequestFn } from './request';
-import type { ListPage } from './types';
+import type { CursorPage, ListPage } from './types';
 
 export type ApiKeySubjectType = 'user' | 'organization';
 
@@ -62,6 +62,49 @@ export type ApiKeyVerification =
       last_used_at: number | null;
     };
 
+/**
+ * §P1-8 a short-lived, offline-verifiable access JWT minted from a long-lived
+ * `ak_` key (`POST /v1/api_keys/token`). Signed with the instance's RS256 key, so
+ * any resource server verifies it against the public JWKS without a round trip.
+ */
+export interface ApiKeyToken {
+  object: 'api_key_token';
+  token: string;
+  token_type: 'Bearer';
+  jti: string;
+  key_id: string;
+  subject_type: ApiKeySubjectType;
+  subject_id: string;
+  scopes: string[];
+  constraints: Record<string, unknown>;
+  expires_in: number;
+  expires_at: number;
+  /** Which JWKS/issuer a verifier should check, so it needn't parse the JWT first. */
+  issuer: string;
+}
+
+export interface MintApiKeyTokenBody {
+  /** The long-lived `ak_` secret to mint from. */
+  secret: string;
+  /** Requested lifetime; clamped to the key's ceiling, its expiry, and the global cap. */
+  ttl_seconds?: number;
+  audience?: string | string[];
+}
+
+/** One entry in the revocation feed: an id and when it was revoked. */
+export interface RevokedApiKeyRef {
+  object: 'api_key';
+  id: string;
+  revoked_at: number | null;
+}
+
+export interface ListRevokedApiKeysQuery {
+  /** An ISO-8601 instant, epoch-millis, or a `next_cursor` from a previous page. */
+  since?: string;
+  /** Page size (server clamps to its own maximum). */
+  limit?: number;
+}
+
 export function apiKeysResource(request: RequestFn) {
   return {
     /** Optionally narrowed to one subject. */
@@ -88,6 +131,20 @@ export function apiKeysResource(request: RequestFn) {
     /** Revoke a key. It stays queryable but never authenticates again. */
     delete(id: string): Promise<{ object: 'api_key'; id: string; revoked: true }> {
       return request({ method: 'DELETE', path: `/v1/api_keys/${enc(id)}` });
+    },
+    /**
+     * §P1-8 mint a short-lived delegated token from an `ak_` key. Rate-limited —
+     * presenting the secret is the same online credential surface as verify.
+     */
+    mintToken(body: MintApiKeyTokenBody): Promise<ApiKeyToken> {
+      return request({ method: 'POST', path: '/v1/api_keys/token', body });
+    },
+    /**
+     * §P1-8 the revocation feed a resource server polls to deny-list revoked keys
+     * while their delegated tokens are still live. Keyset-paginated via `since`.
+     */
+    listRevoked(query: ListRevokedApiKeysQuery = {}): Promise<CursorPage<RevokedApiKeyRef>> {
+      return request({ method: 'GET', path: '/v1/api_keys/revoked', query: { ...query } });
     },
   };
 }

@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * Rules operate purely on the ESTree AST surfaced by @typescript-eslint/utils;
+     * they touch no DOM or Node globals, so `types` stays empty and the package
+     * compiles without `@types/node`. The suggestion fixer emits the TEXT
+     * `process.env.ATLAS_PUBLISHABLE_KEY` as a string — it never evaluates it.
+     */
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

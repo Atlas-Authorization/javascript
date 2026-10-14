@@ -7,8 +7,9 @@ import {
   shouldKeepPolling,
   type FlowState,
   type ProviderToken,
+  type SignOutOptions,
 } from '@atlasauth/js';
-import { useAtlas } from './context';
+import { useAtlas, type AuthStatus } from './context';
 import { evaluate, type ProtectCondition } from './protect';
 import type { AtlasOrganizationMembership, AtlasSession, AtlasUser } from './types';
 
@@ -64,6 +65,10 @@ export function getSession(): Readable<UseSession> {
 export interface UseAuth {
   isLoaded: boolean;
   isSignedIn: boolean;
+  /** Three-state auth status (`loading` | `signed_in` | `signed_out`); same source as isLoaded/isSignedIn. */
+  status: AuthStatus;
+  /** The active session, or null while loading or signed out. */
+  session: AtlasSession | null;
   userId: string | null;
   sessionId: string | null;
   orgId: string | null;
@@ -72,16 +77,18 @@ export interface UseAuth {
   getToken(): Promise<string | null>;
   /** §6.6 the user's own live access token at a connected social provider. */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(): Promise<void>;
+  signOut(options?: SignOutOptions): Promise<void>;
   /** Mirrors `<Protect>`, for logic that is not a render decision. */
   has(condition: ProtectCondition): boolean;
 }
 
 export function getAuth(): Readable<UseAuth> {
   const atlas = useAtlas();
-  return derived([atlas.status, atlas.claims], ([$status, $claims]) => ({
+  return derived([atlas.status, atlas.session, atlas.claims], ([$status, $session, $claims]) => ({
     isLoaded: $status !== 'loading',
     isSignedIn: $status === 'signed_in',
+    status: $status,
+    session: $session,
     userId: ($claims?.sub as string | undefined) ?? null,
     sessionId: ($claims?.sid as string | undefined) ?? null,
     orgId: ($claims?.org_id as string | undefined) ?? null,
@@ -124,8 +131,8 @@ export function getToken(): Promise<string | null> {
 }
 
 /** Revoke the session and drop all in-memory state. */
-export function signOut(): Promise<void> {
-  return useAtlas().signOut();
+export function signOut(options?: SignOutOptions): Promise<void> {
+  return useAtlas().signOut(options);
 }
 
 /**

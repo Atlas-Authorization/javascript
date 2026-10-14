@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
-import { checkSession, type CheckSessionOptions, type ProviderToken } from '@atlasauth/js';
-import { useAtlas } from './AtlasProvider';
+import {
+  checkSession,
+  type CheckSessionOptions,
+  type ProviderToken,
+  type SignOutOptions,
+} from '@atlasauth/js';
+import { useAtlas, type AuthStatus } from './AtlasProvider';
 import { evaluate, type ProtectCondition } from './protect';
 import type { AtlasOrganizationMembership, AtlasSession, AtlasSessionResource, AtlasUser } from './types';
 
@@ -59,23 +64,62 @@ export function useSessionList(): {
   };
 }
 
-export function useAuth() {
-  const { status, claims, getToken, getProviderToken, signOut } = useAtlas();
+/**
+ * What `useAuth()` returns. Exported so a caller can annotate
+ * (`const auth: UseAuthReturn = useAuth()`) and have TypeScript reject a field
+ * that does not exist instead of handing back `undefined` at runtime.
+ */
+export interface UseAuthReturn {
+  /** `false` until the first session check finishes. */
+  isLoaded: boolean;
+  /** `true` only when `status === 'signed_in'`. */
+  isSignedIn: boolean;
+  /**
+   * The same three-state status the provider tracks: `'loading'` while booting,
+   * then `'signed_in'` or `'signed_out'`. Equivalent to `isLoaded` + `isSignedIn`.
+   */
+  status: AuthStatus;
+  /** The active session, or `null` while loading or signed out. */
+  session: AtlasSession | null;
+  userId: string | null;
+  sessionId: string | null;
+  orgId: string | null;
+  orgRole: string | null;
+  /** Always fresh: refreshes first if the cached token is close to expiry. */
+  getToken(): Promise<string | null>;
+  /** §6.6 the user's own live access token at a connected social provider. */
+  getProviderToken(provider: string): Promise<ProviderToken | null>;
+  signOut(options?: SignOutOptions): Promise<void>;
+  /** Mirrors <Protect>, for logic that is not a render decision. */
+  has(condition: ProtectCondition): boolean;
+}
+
+/** Pure projection of the provider context onto the `useAuth()` shape. */
+export function authFromContext(
+  ctx: Pick<
+    ReturnType<typeof useAtlas>,
+    'status' | 'session' | 'claims' | 'getToken' | 'getProviderToken' | 'signOut'
+  >,
+): UseAuthReturn {
+  const { status, session, claims, getToken, getProviderToken, signOut } = ctx;
   return {
     isLoaded: status !== 'loading',
     isSignedIn: status === 'signed_in',
+    status,
+    session,
     userId: claims?.sub ?? null,
     sessionId: claims?.sid ?? null,
     orgId: claims?.org_id ?? null,
     orgRole: claims?.org_role ?? null,
-    /** Always fresh: refreshes first if the cached token is close to expiry. */
     getToken,
-    /** §6.6 the user's own live access token at a connected social provider. */
     getProviderToken,
     signOut,
-    /** Mirrors <Protect>, for logic that is not a render decision. */
     has: (condition: ProtectCondition) => evaluate(claims, condition).allowed,
   };
+}
+
+export function useAuth(): UseAuthReturn {
+  return authFromContext(useAtlas());
 }
 
 export function useOrganization(): {

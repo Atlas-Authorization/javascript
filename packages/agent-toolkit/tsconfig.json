@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * `fetch`/`Response` are forwarded through to the backend client, so the DOM
+     * lib is pulled in for those global types (type-only — matching
+     * @atlasauth/electron). `types: []` keeps `@types/node` and every other
+     * ambient package OUT, which is what proves the package typechecks with
+     * neither `ai` NOR `@langchain/core` installed: the LangChain adapter
+     * describes `@langchain/core/tools` structurally (see src/langchain.ts) and
+     * the AI SDK adapter reproduces the `tool()` shape, so both are optional peers.
+     */
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

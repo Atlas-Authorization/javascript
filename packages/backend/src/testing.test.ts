@@ -80,9 +80,9 @@ describe('createTestIssuer — hermetic offline verification', () => {
     expect(await atlas.verify(await fx.mintSession())).toEqual({ ok: false, reason: 'invalid' });
   });
 
-  it('requires exactly one key source', async () => {
+  it('refuses two key sources (no key source now means discovery)', async () => {
     const fx = await createTestIssuer();
-    expect(() => new AtlasBackend({ issuer: fx.issuer })).toThrow(/exactly one/);
+    expect(() => new AtlasBackend({ issuer: fx.issuer })).not.toThrow();
     expect(
       () =>
         new AtlasBackend({
@@ -90,7 +90,7 @@ describe('createTestIssuer — hermetic offline verification', () => {
           jwks: fx.jwks,
           jwksUrl: 'https://x/.well-known/jwks.json',
         }),
-    ).toThrow(/exactly one/);
+    ).toThrow(/not both/);
   });
 });
 

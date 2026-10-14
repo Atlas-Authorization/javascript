@@ -1,7 +1,26 @@
 // §7.3 token verification — the original surface, unchanged.
 export * from './jwks-cache';
+// OIDC discovery of the JWKS URL when only `issuer` is configured.
+export { DiscoveryError, JwksDiscovery, discoveryUrlFor, instanceIdFromPublishableKey } from './discovery';
 export * from './verify';
 export * from './handshake';
+
+// OIDC Back-Channel Logout: verify the logout_token Atlas POSTs to your app.
+export {
+  BACKCHANNEL_LOGOUT_EVENT,
+  LOGOUT_TOKEN_CLOCK_SKEW_SECONDS,
+  LOGOUT_TOKEN_MAX_AGE_SECONDS,
+  LogoutTokenVerifier,
+  memoryLogoutReplayStore,
+  verifyLogoutToken,
+} from './logout-token';
+export type {
+  LogoutReplayStore,
+  LogoutTokenCheckOptions,
+  LogoutTokenClaims,
+  LogoutTokenResult,
+  LogoutTokenVerifierOptions,
+} from './logout-token';
 
 // §12.2 inbound webhook verification for consumers.
 export * from './webhooks';
@@ -16,3 +35,10 @@ export * from './client';
 // Its own module, so it never sits on the hot verification path.
 export { createTestIssuer } from './testing';
 export type { TestIssuer, CreateTestIssuerOptions } from './testing';
+
+// Proof-Carrying Authority (agentic auth): offline verifier + framework-agnostic guard,
+// beside the session-token verifier above.
+export { verifyPCActn } from './pca/verify';
+export type { PcaVerdict, PcaContext, VerifyPCActnOptions } from './pca/verify';
+export { requirePCA, defaultExtract, memoryPcaStore } from './pca/require-pca';
+export type { RequirePcaOptions, PcaGuardResult, PcaRequestLike, PcaStateStore } from './pca/require-pca';

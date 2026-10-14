@@ -1,0 +1,5 @@
+{
+  "main": "../dist/runtime.js",
+  "types": "../dist/runtime.d.ts",
+  "sideEffects": false
+}

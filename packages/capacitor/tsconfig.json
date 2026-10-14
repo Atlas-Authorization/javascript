@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * Capacitor runs the web layer in a system WebView (iOS/Android) or a real
+     * browser (web target), so `fetch`, `Response`, `URL`, `crypto.subtle` and
+     * `window` are all present at runtime — the DOM lib is the only place
+     * TypeScript ships their types. Pulling it in is a type-only convenience
+     * (matching @atlasauth/js and @atlasauth/expo); this package renders NO DOM of
+     * its own.
+     *
+     * `@capacitor/core`, `@capacitor/browser`, `@capacitor/app` and
+     * `@capacitor/preferences` are OPTIONAL peers the app installs. This package
+     * compiles, typechecks and tests WITHOUT them, so their surfaces are declared
+     * structurally (see src/plugins.ts) and loaded lazily at runtime — `types`
+     * stays empty.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

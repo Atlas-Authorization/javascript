@@ -13,6 +13,11 @@ export * from './reauth';
 export * from './connect';
 export * from './password-reset';
 export * from './check-session';
+// OIDC Front-Channel Logout after a browser sign-out.
+export * from './frontchannel-logout';
+// §5 "captcha anywhere" — fetch the central widget config, render the provider
+// widget, and verify a solved token, all without hardcoding provider keys.
+export * from './captcha';
 // Framework-agnostic authorization primitive — `has()`/`evaluate` for any
 // non-React/Next consumer reading org_role/org_permissions off its session.
 export {

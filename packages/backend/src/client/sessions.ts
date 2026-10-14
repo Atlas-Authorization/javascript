@@ -42,6 +42,14 @@ export interface MintedSession {
   impersonated_by?: { sub: string };
 }
 
+/** A JWT minted from a named JWT template. */
+export interface SessionTemplateToken {
+  object: string;
+  jwt: string;
+  /** Seconds until the token expires. */
+  expires_in: number;
+}
+
 export function sessionsResource(request: RequestFn) {
   return {
     /**
@@ -60,6 +68,16 @@ export function sessionsResource(request: RequestFn) {
     },
     revoke(id: string): Promise<{ object: 'session'; id: string; status: 'revoked' }> {
       return request({ method: 'POST', path: `/v1/sessions/${enc(id)}/revoke` });
+    },
+    /**
+     * `POST /v1/sessions/:id/tokens/:template` — mint a token from a named JWT
+     * template for this session. The reserved name `session` is refused.
+     */
+    getToken(id: string, template: string): Promise<SessionTemplateToken> {
+      return request({
+        method: 'POST',
+        path: `/v1/sessions/${enc(id)}/tokens/${enc(template)}`,
+      });
     },
   };
 }

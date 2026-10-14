@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /*
+     * No DOM is rendered and no network call is made here, but the ES2023 lib is
+     * inherited via the base for Promise/Map; DOM is kept for parity with the
+     * sibling packages. `expo-local-authentication` is an optional peer declared
+     * structurally (see src/local-authentication.ts), so `types` stays empty and
+     * the package compiles without it installed.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

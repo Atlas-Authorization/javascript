@@ -73,6 +73,81 @@ export const ATLAS_BASE_CSS = `
 `.trim();
 
 /**
+ * Design-system rules. They apply ONLY when a design is active — the root then
+ * carries `data-atlas-design` (plus the `data-atlas-*` variant attributes) and
+ * the design stylesheet defines the `--atlas-*` design variables — so a
+ * component with no design looks exactly as it did before the design system.
+ *
+ * Every selector is `:where(<root state>) .atlas-x`, i.e. the SAME specificity
+ * as the base rule it refines (one class), so `appearance.elements` classes and
+ * host CSS keep layering on top exactly as before. A raw legacy token the
+ * design could not express (`--atlas-font-family`, a `var(--brand)` colour)
+ * still wins where it applies, via the fallback order.
+ *
+ * In design mode the root no longer sets text colour/font on the whole host
+ * app — only the components take the design's typography, so a dark-mode
+ * design never recolours the app around them.
+ */
+export const ATLAS_DESIGN_CSS = `
+.atlas-root[data-atlas-design]{color:inherit;font-family:inherit;}
+:where(.atlas-root[data-atlas-design]) :is(.atlas-card,.atlas-menu,.atlas-tabs,.atlas-pricing-table,.atlas-social-button,.atlas-alert){font-family:var(--atlas-font-family,var(--atlas-font-body));font-size:var(--atlas-font-size-base);font-weight:var(--atlas-font-weight-body);color:var(--atlas-color-text);}
+
+:where(.atlas-root[data-atlas-design]) .atlas-card{gap:var(--atlas-space-gap);max-width:var(--atlas-card-width);padding:var(--atlas-space-card);background:var(--atlas-card-background);border:var(--atlas-card-border-width) solid var(--atlas-color-border);border-radius:var(--atlas-radius-card);box-shadow:var(--atlas-shadow-card);}
+:where(.atlas-root[data-atlas-card="glass"]) .atlas-card{-webkit-backdrop-filter:blur(var(--atlas-card-blur));backdrop-filter:blur(var(--atlas-card-blur));}
+:where(.atlas-root[data-atlas-design]) .atlas-pricing-table .atlas-card{max-width:none;}
+:where(.atlas-root[data-atlas-design]) .atlas-card form{gap:var(--atlas-space-gap);}
+
+:where(.atlas-root[data-atlas-design]) :is(.atlas-title,.atlas-heading,.atlas-section-title,.atlas-plan-name,.atlas-price){font-family:var(--atlas-font-heading);font-weight:var(--atlas-font-weight-heading);color:var(--atlas-color-text);}
+:where(.atlas-root[data-atlas-design]) .atlas-title{font-size:var(--atlas-font-size-title);}
+:where(.atlas-root[data-atlas-design]) .atlas-heading{font-size:var(--atlas-font-size-title);margin:0;}
+:where(.atlas-root[data-atlas-design]) .atlas-section-title,:where(.atlas-root[data-atlas-design]) .atlas-plan-name{font-size:var(--atlas-font-size-lg);margin:0;}
+:where(.atlas-root[data-atlas-design]) .atlas-subtitle,:where(.atlas-root[data-atlas-design]) .atlas-text{color:var(--atlas-color-muted);margin:0;}
+:where(.atlas-root[data-atlas-design]) .atlas-link{color:var(--atlas-color-primary-text);}
+:where(.atlas-root[data-atlas-design]) .atlas-list{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:calc(var(--atlas-space-unit) * 1.5);}
+:where(.atlas-root[data-atlas-design]) .atlas-list-item{color:var(--atlas-color-text);}
+
+:where(.atlas-root[data-atlas-design]) .atlas-field{gap:calc(var(--atlas-space-unit) * 1.5);font-size:var(--atlas-font-size-sm);}
+:where(.atlas-root[data-atlas-design]) .atlas-field-label{color:var(--atlas-color-text);}
+:where(.atlas-root[data-atlas-design]) .atlas-account-field{display:flex;flex-direction:column;gap:calc(var(--atlas-space-unit) * 1.5);font-size:var(--atlas-font-size-sm);color:var(--atlas-color-text);}
+:where(.atlas-root[data-atlas-design]) .atlas-account-input{padding:6px 10px;font-family:inherit;outline:none;}
+
+:where(.atlas-root[data-atlas-design]) :is(.atlas-input,.atlas-account-input){min-height:var(--atlas-control-height);font-size:var(--atlas-font-size-base);color:var(--atlas-color-input-text);background:var(--atlas-color-input-background);border:var(--atlas-border-width) solid var(--atlas-color-border);border-radius:var(--atlas-radius-control);}
+:where(.atlas-root[data-atlas-design]) :is(.atlas-input:focus,.atlas-account-input:focus){border-color:var(--atlas-color-primary);box-shadow:0 0 0 3px var(--atlas-color-focus-ring);}
+:where(.atlas-root[data-atlas-input="filled"]) :is(.atlas-input,.atlas-account-input){background:color-mix(in srgb,var(--atlas-color-text) 6%,var(--atlas-color-input-background));border-color:transparent;}
+:where(.atlas-root[data-atlas-input="underline"]) :is(.atlas-input,.atlas-account-input){background:transparent;border-width:0 0 max(1px,var(--atlas-border-width)) 0;border-radius:0;padding-left:0;padding-right:0;}
+:where(.atlas-root[data-atlas-input="underline"]) :is(.atlas-input,.atlas-account-input):focus{box-shadow:0 1px 0 0 var(--atlas-color-primary);}
+
+:where(.atlas-root[data-atlas-design]) .atlas-button{min-height:var(--atlas-control-height);font-size:var(--atlas-font-size-base);color:var(--atlas-color-primary-ink);background:var(--atlas-color-primary);border-width:var(--atlas-border-width);border-radius:var(--atlas-radius-control);text-transform:var(--atlas-button-text-transform);letter-spacing:var(--atlas-button-letter-spacing);}
+:where(.atlas-root[data-atlas-design]) :is(.atlas-button,.atlas-button-secondary,.atlas-social-button):focus-visible{outline:none;box-shadow:0 0 0 3px var(--atlas-color-focus-ring);}
+:where(.atlas-root[data-atlas-button="outline"]) .atlas-button{background:transparent;color:var(--atlas-color-primary-text);border:max(1px,var(--atlas-border-width)) solid var(--atlas-color-primary);}
+:where(.atlas-root[data-atlas-button="soft"]) .atlas-button{background:color-mix(in srgb,var(--atlas-color-primary) 14%,transparent);color:var(--atlas-color-primary-text);border-color:transparent;}
+:where(.atlas-root[data-atlas-button="gradient"]) .atlas-button{background:linear-gradient(135deg,var(--atlas-color-primary),var(--atlas-color-accent));}
+:where(.atlas-root[data-atlas-design]) .atlas-button-secondary{display:inline-flex;align-items:center;justify-content:center;min-height:calc(var(--atlas-control-height) - 8px);padding:0 calc(var(--atlas-space-unit) * 3);font-family:inherit;font-size:var(--atlas-font-size-sm);font-weight:500;color:var(--atlas-color-text);background:transparent;border:max(1px,var(--atlas-border-width)) solid var(--atlas-color-border);border-radius:var(--atlas-radius-control);text-transform:var(--atlas-button-text-transform);letter-spacing:var(--atlas-button-letter-spacing);cursor:pointer;}
+:where(.atlas-root[data-atlas-design]) .atlas-button-secondary:disabled{opacity:.6;cursor:not-allowed;}
+
+:where(.atlas-root[data-atlas-design]) .atlas-error,:where(.atlas-root[data-atlas-design]) .atlas-alert{color:var(--atlas-color-danger);font-size:var(--atlas-font-size-sm);}
+
+:where(.atlas-root[data-atlas-social="icons"]) .atlas-social-label{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}
+
+:where(.atlas-root[data-atlas-design]) .atlas-avatar{background:var(--atlas-color-primary);color:var(--atlas-color-primary-ink);}
+:where(.atlas-root[data-atlas-design]) .atlas-menu{background:var(--atlas-color-surface);border:var(--atlas-card-border-width) solid var(--atlas-color-border);border-radius:var(--atlas-radius-card);box-shadow:var(--atlas-shadow-card);}
+:where(.atlas-root[data-atlas-design]) .atlas-menu-item{color:var(--atlas-color-text);border-radius:var(--atlas-radius-control);}
+:where(.atlas-root[data-atlas-design]) .atlas-tabs{border-bottom-color:var(--atlas-color-border);}
+:where(.atlas-root[data-atlas-design]) .atlas-tab{color:var(--atlas-color-text);}
+:where(.atlas-root[data-atlas-design]) .atlas-tab[aria-selected="true"]{border-bottom-color:var(--atlas-color-primary);}
+:where(.atlas-root[data-atlas-design]) .atlas-pricing-table{gap:var(--atlas-space-gap);}
+:where(.atlas-root[data-atlas-design]) .atlas-pricing-table .atlas-card[data-current="true"]{border-color:var(--atlas-color-primary);box-shadow:0 0 0 2px var(--atlas-color-focus-ring),var(--atlas-shadow-card);}
+:where(.atlas-root[data-atlas-design]) .atlas-interval{color:var(--atlas-color-muted);opacity:1;}
+`.trim();
+
+/**
+ * The full stylesheet the provider renders: base rules + design-system rules.
+ * (Exported separately so the base rules stay byte-identical to earlier
+ * versions — the backward-compatibility guarantee is testable.)
+ */
+export const ATLAS_STYLES_CSS = `${ATLAS_BASE_CSS}\n${ATLAS_DESIGN_CSS}`;
+
+/**
  * Inject the base stylesheet once. Idempotent (guards on the element id), so
  * multiple `<AtlasProvider>`s — or a re-mount — add it exactly once. A no-op
  * when there is no DOM (SSR); the styles land on the client at insertion time.
@@ -82,6 +157,6 @@ export function injectAtlasStyles(): void {
   if (document.getElementById(ATLAS_STYLE_ELEMENT_ID)) return;
   const style = document.createElement('style');
   style.id = ATLAS_STYLE_ELEMENT_ID;
-  style.textContent = ATLAS_BASE_CSS;
+  style.textContent = ATLAS_STYLES_CSS;
   document.head.appendChild(style);
 }

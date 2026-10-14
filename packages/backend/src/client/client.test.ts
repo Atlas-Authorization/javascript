@@ -412,4 +412,241 @@ describe('parity wave: the full-breadth namespaces reach every BAPI resource', (
     await c.tokens.verify({ token: 'jwt' });
     expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/tokens/verify` });
   });
+
+  it('captcha.verify POSTs the token (+ action/remote_ip) to /v1/captcha/verify', async () => {
+    const { impl, calls } = mockFetch([
+      { body: { object: 'captcha_verification', success: true, action: 'comment.create', provider: 'hcaptcha', score: 0.9 } },
+    ]);
+    const c = client(impl);
+    const result = await c.captcha.verify('tok-123', { action: 'comment.create', remoteIp: '203.0.113.9' });
+    expect(result.success).toBe(true);
+    expect(result.provider).toBe('hcaptcha');
+    const call = last(calls);
+    expect(call).toMatchObject({ method: 'POST', url: `${API_URL}/v1/captcha/verify` });
+    expect(JSON.parse(call.body!)).toEqual({
+      token: 'tok-123',
+      action: 'comment.create',
+      remote_ip: '203.0.113.9',
+    });
+  });
+
+  it('captcha.verify omits action/remote_ip when not supplied', async () => {
+    const { impl, calls } = mockFetch([
+      { body: { object: 'captcha_verification', success: false, action: null, provider: 'turnstile' } },
+    ]);
+    const c = client(impl);
+    await c.captcha.verify('tok');
+    expect(JSON.parse(last(calls).body!)).toEqual({ token: 'tok' });
+  });
+});
+
+describe('machines: device registry, enrolment tokens, m2m verify', () => {
+  it('list serializes the round-7 filters and parses the page', async () => {
+    const { impl, calls } = mockFetch([
+      {
+        body: {
+          object: 'list',
+          data: [
+            {
+              object: 'machine',
+              id: 'mch_1',
+              name: 'ci-runner',
+              organization_id: 'org_1',
+              status: 'active',
+              public_key_jkt: 'jkt_abc',
+              metadata: { hostname: 'ci-1' },
+              enrolled_at: 1,
+              created_at: 2,
+              updated_at: 3,
+            },
+          ],
+          has_more: false,
+          next_cursor: null,
+        },
+      },
+    ]);
+    const c = client(impl);
+    const page = await c.machines.list({
+      status: 'active',
+      owner_user_id: 'user_1',
+      organization_id: 'org_1',
+      limit: 20,
+    });
+    const call = last(calls);
+    expect(call.method).toBe('GET');
+    expect(call.url).toBe(
+      `${API_URL}/v1/machines?status=active&owner_user_id=user_1&organization_id=org_1&limit=20`,
+    );
+    expect(page.object).toBe('list');
+    expect(page.data[0]!.id).toBe('mch_1');
+    expect(page.data[0]!.status).toBe('active');
+  });
+
+  it('create POSTs name + owner_user_id and returns the secret once', async () => {
+    const { impl, calls } = mockFetch([
+      {
+        status: 201,
+        body: {
+          object: 'machine',
+          id: 'mch_2',
+          name: 'worker',
+          organization_id: null,
+          status: 'active',
+          public_key_jkt: null,
+          metadata: {},
+          enrolled_at: null,
+          created_at: 10,
+          updated_at: 10,
+          secret: 'mk_s3cr3t',
+        },
+      },
+    ]);
+    const c = client(impl);
+    const out = await c.machines.create({ name: 'worker', owner_user_id: 'user_7' }, 'idem-m1');
+    const call = last(calls);
+    expect(call).toMatchObject({ method: 'POST', url: `${API_URL}/v1/machines` });
+    expect(call.headers['idempotency-key']).toBe('idem-m1');
+    expect(JSON.parse(call.body!)).toEqual({ name: 'worker', owner_user_id: 'user_7' });
+    expect(out.secret).toBe('mk_s3cr3t');
+    expect(out.id).toBe('mch_2');
+  });
+
+  it('rename, patchMetadata, approve, revoke, rotateSecret, rotateKey, delete, memberships', async () => {
+    const { impl, calls } = mockFetch([{ body: {} }]);
+    const c = client(impl);
+
+    await c.machines.rename('mch_1', 'renamed');
+    expect(last(calls)).toMatchObject({ method: 'PATCH', url: `${API_URL}/v1/machines/mch_1` });
+    expect(JSON.parse(last(calls).body!)).toEqual({ name: 'renamed' });
+
+    await c.machines.patchMetadata('mch_1', { os: 'linux' });
+    expect(last(calls)).toMatchObject({ method: 'PATCH', url: `${API_URL}/v1/machines/mch_1/metadata` });
+    expect(JSON.parse(last(calls).body!)).toEqual({ metadata: { os: 'linux' } });
+
+    await c.machines.approve('mch_1');
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/machines/mch_1/approve` });
+
+    await c.machines.revoke('mch_1');
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/machines/mch_1/revoke` });
+
+    await c.machines.rotateSecret('mch_1');
+    expect(last(calls)).toMatchObject({
+      method: 'POST',
+      url: `${API_URL}/v1/machines/mch_1/rotate_secret`,
+    });
+
+    await c.machines.rotateKey('mch_1', '-----BEGIN PUBLIC KEY-----');
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/machines/mch_1/rotate_key` });
+    expect(JSON.parse(last(calls).body!)).toEqual({ public_key_pem: '-----BEGIN PUBLIC KEY-----' });
+
+    await c.machines.delete('mch_1');
+    expect(last(calls)).toMatchObject({ method: 'DELETE', url: `${API_URL}/v1/machines/mch_1` });
+
+    await c.machines.organizationMemberships('mch_1');
+    expect(last(calls).url).toBe(`${API_URL}/v1/machines/mch_1/organization_memberships`);
+  });
+
+  it('enrolment token create / list / delete hit the right method+path', async () => {
+    const { impl, calls } = mockFetch([
+      {
+        status: 201,
+        body: {
+          object: 'machine_enrolment_token',
+          id: 'met_1',
+          organization_id: 'org_1',
+          max_uses: 5,
+          uses: 0,
+          expires_at: 123,
+          requires_approval: true,
+          created_at: 1,
+          token: 'met_secret',
+        },
+      },
+    ]);
+    const c = client(impl);
+    const tok = await c.machines.createEnrolmentToken(
+      { organization_id: 'org_1', max_uses: 5, requires_approval: true, single_session: true },
+      'idem-e1',
+    );
+    const call = last(calls);
+    expect(call).toMatchObject({ method: 'POST', url: `${API_URL}/v1/machine_enrolment_tokens` });
+    expect(call.headers['idempotency-key']).toBe('idem-e1');
+    expect(JSON.parse(call.body!)).toEqual({
+      organization_id: 'org_1',
+      max_uses: 5,
+      requires_approval: true,
+      single_session: true,
+    });
+    expect(tok.token).toBe('met_secret');
+
+    await c.machines.listEnrolmentTokens();
+    expect(last(calls)).toMatchObject({ method: 'GET', url: `${API_URL}/v1/machine_enrolment_tokens` });
+
+    await c.machines.deleteEnrolmentToken('met_1');
+    expect(last(calls)).toMatchObject({
+      method: 'DELETE',
+      url: `${API_URL}/v1/machine_enrolment_tokens/met_1`,
+    });
+  });
+
+  it('verifyM2mToken POSTs the token to /v1/m2m_tokens/verify', async () => {
+    const { impl, calls } = mockFetch([
+      { body: { object: 'm2m_verification', valid: true, machine_id: 'mch_1', name: 'ci' } },
+    ]);
+    const c = client(impl);
+    const v = await c.machines.verifyM2mToken('mk_abc');
+    const call = last(calls);
+    expect(call).toMatchObject({ method: 'POST', url: `${API_URL}/v1/m2m_tokens/verify` });
+    expect(JSON.parse(call.body!)).toEqual({ token: 'mk_abc' });
+    expect(v).toMatchObject({ valid: true, machine_id: 'mch_1' });
+  });
+});
+
+describe('apiKeys: delegated-token mint + revocation feed', () => {
+  it('mintToken POSTs the secret to /v1/api_keys/token and parses the JWT', async () => {
+    const { impl, calls } = mockFetch([
+      {
+        body: {
+          object: 'api_key_token',
+          token: 'eyJ.jwt',
+          token_type: 'Bearer',
+          jti: 'jti_1',
+          key_id: 'eak_1',
+          subject_type: 'user',
+          subject_id: 'user_1',
+          scopes: ['read'],
+          constraints: {},
+          expires_in: 300,
+          expires_at: 999,
+          issuer: 'https://fapi.example',
+        },
+      },
+    ]);
+    const c = client(impl);
+    const out = await c.apiKeys.mintToken({ secret: 'ak_live_xyz', ttl_seconds: 300 });
+    const call = last(calls);
+    expect(call).toMatchObject({ method: 'POST', url: `${API_URL}/v1/api_keys/token` });
+    expect(JSON.parse(call.body!)).toEqual({ secret: 'ak_live_xyz', ttl_seconds: 300 });
+    expect(out.token).toBe('eyJ.jwt');
+    expect(out.key_id).toBe('eak_1');
+  });
+
+  it('listRevoked GETs /v1/api_keys/revoked with since/limit and parses the feed', async () => {
+    const { impl, calls } = mockFetch([
+      {
+        body: {
+          object: 'list',
+          data: [{ object: 'api_key', id: 'eak_1', revoked_at: 123 }],
+          has_more: true,
+          next_cursor: 'cur_2',
+        },
+      },
+    ]);
+    const c = client(impl);
+    const page = await c.apiKeys.listRevoked({ since: 'cur_1', limit: 50 });
+    expect(last(calls).url).toBe(`${API_URL}/v1/api_keys/revoked?since=cur_1&limit=50`);
+    expect(page.data[0]!.id).toBe('eak_1');
+    expect(page.data[0]!.revoked_at).toBe(123);
+    expect(page.next_cursor).toBe('cur_2');
+  });
 });
