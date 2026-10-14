@@ -1,10 +1,11 @@
-import type { Localization } from './types';
+import type { LocalizationResource } from './types';
 
 /**
- * German (Germany). A `DeepPartial` override of `en-US`; omitted keys fall back
- * to English. `{application}` / `{provider}` placeholders preserved verbatim.
+ * German (Germany). A COMPLETE bundle: typed as the full `LocalizationResource`,
+ * so a key added to `en-US` and not translated here is a compile error.
+ * `{application}` / `{provider}` placeholders preserved verbatim.
  */
-export const deDE: Localization = {
+export const deDE: LocalizationResource = {
   locale: 'de-DE',
 
   'signIn.title': 'Anmelden',
@@ -26,6 +27,18 @@ export const deDE: Localization = {
   'signUp.submit': 'Weiter',
   'signUp.haveAccount': 'Sie haben bereits ein Konto?',
   'signUp.signInLink': 'Anmelden',
+  'signUp.emailLabel': 'E-Mail-Adresse',
+  'signUp.passwordLabel': 'Passwort',
+  'signUp.optionalField': '{label} (optional)',
+  'signUp.selectPlaceholder': 'Auswählen…',
+  'signUp.consentAgree': 'Ich akzeptiere die',
+  'signUp.consentNotice': 'Wenn du fortfährst, akzeptierst du die',
+  'signUp.terms': 'Nutzungsbedingungen',
+  'signUp.privacy': 'Datenschutzerklärung',
+  'signUp.and': 'und',
+  'captcha.prompt': 'Schließe die Sicherheitsprüfung ab, um fortzufahren.',
+  'captcha.required': 'Bitte schließe die Sicherheitsprüfung ab und versuche es erneut.',
+  'captcha.failed': 'Die Sicherheitsprüfung ist fehlgeschlagen. Bitte versuche es erneut.',
 
   'mfa.title': 'Zwei-Faktor-Authentifizierung',
   'mfa.subtitle': 'Geben Sie den Code aus Ihrer Authenticator-App ein.',
@@ -86,6 +99,38 @@ export const deDE: Localization = {
 
   'error.generic': 'Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.',
   'error.network': 'Der Server war nicht erreichbar. Überprüfen Sie Ihre Verbindung.',
+  'apiKeys.title': 'API-Schlüssel',
+  'apiKeys.subtitle': 'Mit Schlüsseln können Skripte und Integrationen in deinem Namen handeln. Behandle sie wie Passwörter.',
+  'apiKeys.organizationSubtitle': 'Mit Schlüsseln können Skripte und Integrationen im Namen dieser Organisation handeln. Behandle sie wie Passwörter.',
+  'apiKeys.empty': 'Noch keine API-Schlüssel.',
+  'apiKeys.disabled': 'API-Schlüssel sind für dieses Konto nicht verfügbar.',
+  'apiKeys.create': 'Schlüssel erstellen',
+  'apiKeys.nameLabel': 'Name',
+  'apiKeys.namePlaceholder': 'z. B. CI-Pipeline',
+  'apiKeys.expiresLabel': 'Läuft ab',
+  'apiKeys.expiresNever': 'Nie',
+  'apiKeys.expiresDays': 'In {days} Tagen',
+  'apiKeys.scopesLabel': 'Berechtigungen',
+  'apiKeys.submit': 'Schlüssel erstellen',
+  'apiKeys.cancel': 'Abbrechen',
+  'apiKeys.secretTitle': 'Kopiere deinen neuen Schlüssel',
+  'apiKeys.secretHint': 'Er wird nur dieses eine Mal angezeigt. Wenn du ihn verlierst, widerrufe ihn und erstelle einen neuen.',
+  'apiKeys.copy': 'Kopieren',
+  'apiKeys.copied': 'Kopiert',
+  'apiKeys.done': 'Fertig',
+  'apiKeys.rename': 'Umbenennen',
+  'apiKeys.save': 'Speichern',
+  'apiKeys.revoke': 'Widerrufen',
+  'apiKeys.revokeConfirm': 'Diesen Schlüssel widerrufen? Alles, was ihn nutzt, funktioniert dann nicht mehr.',
+  'apiKeys.revokeConfirmButton': 'Ja, widerrufen',
+  'apiKeys.unnamed': 'Unbenannter Schlüssel',
+  'apiKeys.revoked': 'Widerrufen',
+  'apiKeys.expired': 'Abgelaufen',
+  'apiKeys.lastUsed': 'Zuletzt verwendet: {date}',
+  'apiKeys.neverUsed': 'Nie verwendet',
+  'apiKeys.expiresOn': 'Läuft am {date} ab',
+  'apiKeys.limits': 'Limits',
+  'apiKeys.limitReached': 'Du hast das Maximum von {max} aktiven Schlüsseln erreicht. Widerrufe einen, um einen neuen zu erstellen.',
 };
 
 export default deDE;

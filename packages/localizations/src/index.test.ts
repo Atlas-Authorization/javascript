@@ -10,7 +10,7 @@ import { ptBR } from './pt-BR';
 import type { Localization, LocalizationResource } from './types';
 
 /** The non-base bundles, each tagged with the locale its file declares. */
-const LOCALES: { file: string; bundle: Localization }[] = [
+const BUNDLES: { file: string; bundle: Localization }[] = [
   { file: 'fr-FR', bundle: frFR },
   { file: 'es-ES', bundle: esES },
   { file: 'de-DE', bundle: deDE },
@@ -34,7 +34,7 @@ describe('en-US (reference bundle)', () => {
   });
 });
 
-describe.each(LOCALES)('$file', ({ file, bundle }) => {
+describe.each(BUNDLES)('$file', ({ file, bundle }) => {
   it("declares a locale matching the file's name", () => {
     expect(bundle.locale).toBe(file);
   });
@@ -66,5 +66,12 @@ describe('type surface', () => {
     // Compile-time check made explicit at runtime: every base key is present.
     const resource: LocalizationResource = enUS;
     expect(Object.keys(resource).length).toBe(baseKeys.size);
+  });
+
+  it('es-ES, fr-FR, de-DE and pt-BR satisfy the full LocalizationResource', () => {
+    const complete: LocalizationResource[] = [esES, frFR, deDE, ptBR];
+    for (const resource of complete) {
+      expect(new Set(Object.keys(resource)), resource.locale).toEqual(baseKeys);
+    }
   });
 });

@@ -26,6 +26,11 @@ export { OrganizationSwitcherComponent } from './lib/components/organization-swi
 export { UserProfileComponent } from './lib/components/user-profile.component';
 export { OrganizationProfileComponent } from './lib/components/organization-profile.component';
 export { AttemptFlowComponent } from './lib/components/attempt-flow.component';
+export {
+  SignUpFormComponent,
+  type SignUpFormSubmit,
+} from './lib/components/sign-up-form.component';
+export { AtlasCaptchaSlotDirective } from './lib/directives/captcha-slot.directive';
 export { AtlasFlowController } from './lib/components/flow-controller';
 export { ATLAS_UI } from './lib/atlas.ui';
 
@@ -42,3 +47,14 @@ export * from './lib/i18n';
 export * from './lib/protect';
 export * from './lib/types';
 export * from './lib/fapi';
+
+// The instance's public sign-in / sign-up settings the prebuilt forms read
+// (`AtlasFlowController.settings`), and the captcha types they render.
+export type {
+  InstanceSettings,
+  PublicSignUpField,
+  CaptchaController,
+  CaptchaFlowKey,
+  CaptchaWidgetMode,
+  FlowCaptcha,
+} from '@atlasauth/js';

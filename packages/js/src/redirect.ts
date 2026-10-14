@@ -106,6 +106,14 @@ export interface PopupStartResult extends PopupOutcome {
   /** True when the popup was blocked — the caller falls back to a full redirect. */
   blocked?: boolean;
   authorizationUrl?: string;
+  /**
+   * Set (with `error: 'popup_closed'`) when the popup closed without posting a
+   * result but the Frontend API now reports a signed-in session — e.g. the
+   * browser severed `window.opener`, so the popup finished the sign-in itself.
+   * The caller should re-boot its session state rather than treat it as a
+   * cancel.
+   */
+  sessionDetected?: boolean;
 }
 
 function centeredPopupFeatures(w: number, h: number): string {
@@ -174,11 +182,32 @@ export async function startOauthPopup(
       settle(outcome);
     };
     // The user closing the popup without finishing is a cancellation, not a hang.
+    // But a popup can also close (or look closed to us) after completing the
+    // sign-in itself: when a browser severs `window.opener` (a Cross-Origin-
+    // Opener-Policy on some hop, a privacy feature), the callback page cannot
+    // post back and finishes via the ordinary redirect instead, which sets the
+    // session cookies. So check the session once before calling it a cancel.
+    let probing = false;
     const timer = setInterval(() => {
-      if (popup && popup.closed) settle({ error: 'popup_closed' });
+      if (!popup || !popup.closed || probing || done) return;
+      probing = true;
+      clearInterval(timer);
+      void probeSession(client).then((signedIn) =>
+        settle(signedIn ? { error: 'popup_closed', sessionDetected: true } : { error: 'popup_closed' }),
+      );
     }, 500);
     window.addEventListener('message', onMessage);
   });
+}
+
+/** One `GET /v1/client`: is there a signed-in session on this browser now? */
+async function probeSession(client: FapiClient): Promise<boolean> {
+  try {
+    const res = await client.get<{ session?: unknown; user?: unknown }>('/v1/client');
+    return Boolean(res.ok && res.data?.session && res.data?.user);
+  } catch {
+    return false;
+  }
 }
 
 /**

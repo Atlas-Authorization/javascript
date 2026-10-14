@@ -80,6 +80,46 @@ await atlas.design.organizations.update('org_123', { palette: { primary: null } 
 
 Uploads send the raw image bytes with their content type. A `Blob` brings its own type.
 
+### API key spend caps
+
+Give an end-user API key caps per unit and period (`request`, `day`, `month` or `total`), then meter what each call costs. A debit that would exceed a cap is refused without recording anything; it resolves with `allowed: false` rather than throwing.
+
+```ts
+const key = await atlas.apiKeys.create({
+  subject_type: 'user',
+  subject_id: 'user_123',
+  limits: [
+    { unit: 'requests', amount: 1000, period: 'day' },
+    { unit: 'usd_cents', amount: 5000, period: 'month' },
+  ],
+});
+
+const debit = await atlas.apiKeys.recordUsage(key.id, {
+  unit: 'usd_cents',
+  amount: 12,
+  idempotency_key: 'req_8f2c', // a retry returns the first outcome without counting again
+});
+if (!debit.allowed) {
+  // debit.code === 'LIMIT_EXCEEDED'; debit.exceeded lists the caps that refused it
+}
+
+const { usage } = await atlas.apiKeys.getUsage(key.id); // used / remaining / resets_at per cap
+await atlas.apiKeys.update(key.id, { limits: null }); // remove the caps
+```
+
+`apiKeys.verify(secret)` also returns the key's `name`, `scopes`, `constraints`, `limits` and current `usage`.
+
+### Session keep-alive
+
+If your app loads the Atlas frontend SDK only on some pages, time spent on the other pages can count as inactivity. Touch the session from your backend to slide its inactivity window:
+
+```ts
+const s = await atlas.sessions.touch(sessionId);
+// s.idle_expires_at is the new inactivity deadline; s.extended is false when a touch in the last minute already did it
+```
+
+A touch never extends past the session's absolute expiry and never revives an ended session (`409 SESSION_REVOKED`, `SESSION_IDLE_EXPIRED` or `SESSION_EXPIRED`). It writes at most once a minute, so calling it on every request is safe.
+
 ### Strict request bodies
 
 By default Atlas ignores a body field an endpoint does not accept. It lists the ignored fields in the `Atlas-Unknown-Fields` response header.

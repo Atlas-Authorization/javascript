@@ -1,10 +1,11 @@
-import type { Localization } from './types';
+import type { LocalizationResource } from './types';
 
 /**
- * Spanish (Spain). A `DeepPartial` override of `en-US`; omitted keys fall back
- * to English. `{application}` / `{provider}` placeholders preserved verbatim.
+ * Spanish (Spain). A COMPLETE bundle: typed as the full `LocalizationResource`,
+ * so a key added to `en-US` and not translated here is a compile error.
+ * `{application}` / `{provider}` placeholders preserved verbatim.
  */
-export const esES: Localization = {
+export const esES: LocalizationResource = {
   locale: 'es-ES',
 
   'signIn.title': 'Iniciar sesión',
@@ -26,6 +27,18 @@ export const esES: Localization = {
   'signUp.submit': 'Continuar',
   'signUp.haveAccount': '¿Ya tienes una cuenta?',
   'signUp.signInLink': 'Iniciar sesión',
+  'signUp.emailLabel': 'Correo electrónico',
+  'signUp.passwordLabel': 'Contraseña',
+  'signUp.optionalField': '{label} (opcional)',
+  'signUp.selectPlaceholder': 'Selecciona…',
+  'signUp.consentAgree': 'Acepto los',
+  'signUp.consentNotice': 'Al continuar, aceptas los',
+  'signUp.terms': 'Términos del servicio',
+  'signUp.privacy': 'Política de privacidad',
+  'signUp.and': 'y',
+  'captcha.prompt': 'Completa la verificación de seguridad para continuar.',
+  'captcha.required': 'Completa la verificación de seguridad e inténtalo de nuevo.',
+  'captcha.failed': 'La verificación de seguridad no se superó. Inténtalo de nuevo.',
 
   'mfa.title': 'Verificación en dos pasos',
   'mfa.subtitle': 'Introduce el código de tu aplicación de autenticación.',
@@ -86,6 +99,38 @@ export const esES: Localization = {
 
   'error.generic': 'Algo salió mal. Inténtalo de nuevo.',
   'error.network': 'No pudimos contactar con el servidor. Comprueba tu conexión.',
+  'apiKeys.title': 'Claves de API',
+  'apiKeys.subtitle': 'Las claves permiten que scripts e integraciones actúen en tu nombre. Trátalas como contraseñas.',
+  'apiKeys.organizationSubtitle': 'Las claves permiten que scripts e integraciones actúen en nombre de esta organización. Trátalas como contraseñas.',
+  'apiKeys.empty': 'Todavía no hay claves de API.',
+  'apiKeys.disabled': 'Las claves de API no están disponibles para esta cuenta.',
+  'apiKeys.create': 'Crear clave',
+  'apiKeys.nameLabel': 'Nombre',
+  'apiKeys.namePlaceholder': 'p. ej., pipeline de CI',
+  'apiKeys.expiresLabel': 'Caduca',
+  'apiKeys.expiresNever': 'Nunca',
+  'apiKeys.expiresDays': 'En {days} días',
+  'apiKeys.scopesLabel': 'Permisos',
+  'apiKeys.submit': 'Crear clave',
+  'apiKeys.cancel': 'Cancelar',
+  'apiKeys.secretTitle': 'Copia tu nueva clave',
+  'apiKeys.secretHint': 'Solo se mostrará esta vez. Si la pierdes, revócala y crea otra.',
+  'apiKeys.copy': 'Copiar',
+  'apiKeys.copied': 'Copiada',
+  'apiKeys.done': 'Listo',
+  'apiKeys.rename': 'Renombrar',
+  'apiKeys.save': 'Guardar',
+  'apiKeys.revoke': 'Revocar',
+  'apiKeys.revokeConfirm': '¿Revocar esta clave? Todo lo que la use dejará de funcionar.',
+  'apiKeys.revokeConfirmButton': 'Sí, revocar',
+  'apiKeys.unnamed': 'Clave sin nombre',
+  'apiKeys.revoked': 'Revocada',
+  'apiKeys.expired': 'Caducada',
+  'apiKeys.lastUsed': 'Último uso: {date}',
+  'apiKeys.neverUsed': 'Nunca usada',
+  'apiKeys.expiresOn': 'Caduca el {date}',
+  'apiKeys.limits': 'Límites',
+  'apiKeys.limitReached': 'Has alcanzado el máximo de {max} claves activas. Revoca una para crear otra.',
 };
 
 export default esES;

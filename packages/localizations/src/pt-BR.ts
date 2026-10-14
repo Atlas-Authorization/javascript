@@ -1,10 +1,11 @@
-import type { Localization } from './types';
+import type { LocalizationResource } from './types';
 
 /**
- * Portuguese (Brazil). A `DeepPartial` override of `en-US`; omitted keys fall
- * back to English. `{application}` / `{provider}` placeholders preserved.
+ * Portuguese (Brazil). A COMPLETE bundle: typed as the full
+ * `LocalizationResource`, so a key added to `en-US` and not translated here is
+ * a compile error. `{application}` / `{provider}` placeholders preserved.
  */
-export const ptBR: Localization = {
+export const ptBR: LocalizationResource = {
   locale: 'pt-BR',
 
   'signIn.title': 'Entrar',
@@ -26,6 +27,18 @@ export const ptBR: Localization = {
   'signUp.submit': 'Continuar',
   'signUp.haveAccount': 'Já tem uma conta?',
   'signUp.signInLink': 'Entrar',
+  'signUp.emailLabel': 'Endereço de e-mail',
+  'signUp.passwordLabel': 'Senha',
+  'signUp.optionalField': '{label} (opcional)',
+  'signUp.selectPlaceholder': 'Selecione…',
+  'signUp.consentAgree': 'Eu concordo com os',
+  'signUp.consentNotice': 'Ao continuar, você concorda com os',
+  'signUp.terms': 'Termos de Serviço',
+  'signUp.privacy': 'Política de Privacidade',
+  'signUp.and': 'e',
+  'captcha.prompt': 'Conclua a verificação de segurança para continuar.',
+  'captcha.required': 'Conclua a verificação de segurança e tente novamente.',
+  'captcha.failed': 'A verificação de segurança não foi aprovada. Tente novamente.',
 
   'mfa.title': 'Verificação em duas etapas',
   'mfa.subtitle': 'Digite o código do seu aplicativo autenticador.',
@@ -86,6 +99,38 @@ export const ptBR: Localization = {
 
   'error.generic': 'Algo deu errado. Tente novamente.',
   'error.network': 'Não conseguimos acessar o servidor. Verifique sua conexão.',
+  'apiKeys.title': 'Chaves de API',
+  'apiKeys.subtitle': 'As chaves permitem que scripts e integrações ajam em seu nome. Trate-as como senhas.',
+  'apiKeys.organizationSubtitle': 'As chaves permitem que scripts e integrações ajam em nome desta organização. Trate-as como senhas.',
+  'apiKeys.empty': 'Nenhuma chave de API ainda.',
+  'apiKeys.disabled': 'As chaves de API não estão disponíveis para esta conta.',
+  'apiKeys.create': 'Criar chave',
+  'apiKeys.nameLabel': 'Nome',
+  'apiKeys.namePlaceholder': 'ex.: pipeline de CI',
+  'apiKeys.expiresLabel': 'Expira',
+  'apiKeys.expiresNever': 'Nunca',
+  'apiKeys.expiresDays': 'Em {days} dias',
+  'apiKeys.scopesLabel': 'Escopos',
+  'apiKeys.submit': 'Criar chave',
+  'apiKeys.cancel': 'Cancelar',
+  'apiKeys.secretTitle': 'Copie sua nova chave',
+  'apiKeys.secretHint': 'Ela só será exibida desta vez. Se você a perder, revogue-a e crie outra.',
+  'apiKeys.copy': 'Copiar',
+  'apiKeys.copied': 'Copiada',
+  'apiKeys.done': 'Concluir',
+  'apiKeys.rename': 'Renomear',
+  'apiKeys.save': 'Salvar',
+  'apiKeys.revoke': 'Revogar',
+  'apiKeys.revokeConfirm': 'Revogar esta chave? Tudo o que a usa deixará de funcionar.',
+  'apiKeys.revokeConfirmButton': 'Sim, revogar',
+  'apiKeys.unnamed': 'Chave sem nome',
+  'apiKeys.revoked': 'Revogada',
+  'apiKeys.expired': 'Expirada',
+  'apiKeys.lastUsed': 'Último uso: {date}',
+  'apiKeys.neverUsed': 'Nunca usada',
+  'apiKeys.expiresOn': 'Expira em {date}',
+  'apiKeys.limits': 'Limites',
+  'apiKeys.limitReached': 'Você atingiu o máximo de {max} chaves ativas. Revogue uma para criar outra.',
 };
 
 export default ptBR;

@@ -146,7 +146,36 @@ export async function resolveAuth(backend: AtlasBackend, request: EdgeRequest): 
   };
 }
 
-export function atlasMiddleware(options: AtlasMiddlewareOptions) {
+/** A first-party cookie Atlas wants set on the response it returns. */
+export interface AtlasCookie {
+  name: string;
+  value: string;
+  options: {
+    path?: string;
+    httpOnly?: boolean;
+    sameSite?: 'lax' | 'strict' | 'none';
+    secure?: boolean;
+    maxAge?: number;
+  };
+}
+
+/**
+ * What Atlas decided for one request, before it is rendered into any particular
+ * response type. `atlasMiddleware` renders it through Next's `NextResponse`
+ * helpers; `atlasProxy` renders it as a standard Web `Response`. Keeping the
+ * decision in one place means the two can never disagree about who is let in.
+ */
+export type AtlasDecision =
+  | { kind: 'continue'; auth: AuthState }
+  | { kind: 'redirect'; location: string; cookies: AtlasCookie[]; auth: AuthState }
+  | { kind: 'unauthorized'; auth: AuthState };
+
+/**
+ * The runtime-neutral decision engine behind {@link atlasMiddleware} and
+ * `atlasProxy`. Uses only Web-standard APIs (`URL`, `fetch`, Web Crypto), so it
+ * runs unchanged on the Edge runtime and on Node.
+ */
+export function createAtlasDecider(options: AtlasMiddlewareOptions) {
   const backend = new AtlasBackend({
     jwksUrl: options.jwksUrl,
     issuer: options.issuer,
@@ -154,7 +183,7 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions) {
     fetchImpl: options.fetchImpl,
   });
 
-  return async function middleware(request: EdgeRequest, response: EdgeResponse) {
+  return async function decide(request: EdgeRequest): Promise<AtlasDecision> {
     /**
      * Cross-domain satellite RETURN: the handshake endpoint bounced the browser
      * back with `?__atlas_hs=ok&__atlas_hu=<userId>&__atlas_hn=<nonce>`. Exchange
@@ -192,17 +221,21 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions) {
         for (const k of ['__atlas_hs', '__atlas_hu', '__atlas_hn']) clean.searchParams.delete(k);
 
         if (session) {
-          const res = response.redirect(clean.toString());
-          res.cookies?.set('__session', session.jwt, { path: '/', sameSite: 'lax', secure: true });
-          res.cookies?.set('__atlas_rt', session.refreshToken, {
-            path: '/',
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: true,
-          });
-          // The verifier is spent — clear it so it can't be reused or leak.
-          res.cookies?.set('__atlas_hv', '', { path: '/', maxAge: 0 });
-          return res;
+          return {
+            kind: 'redirect',
+            location: clean.toString(),
+            auth: SIGNED_OUT,
+            cookies: [
+              { name: '__session', value: session.jwt, options: { path: '/', sameSite: 'lax', secure: true } },
+              {
+                name: '__atlas_rt',
+                value: session.refreshToken,
+                options: { path: '/', httpOnly: true, sameSite: 'lax', secure: true },
+              },
+              // The verifier is spent — clear it so it can't be reused or leak.
+              { name: '__atlas_hv', value: '', options: { path: '/', maxAge: 0 } },
+            ],
+          };
         }
 
         // A bad/expired/replayed nonce, a rejected PKCE proof, or no verifier →
@@ -211,9 +244,12 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions) {
         // URL here would bounce straight back to the handshake forever. With the
         // marker, normal routing takes over and sends the user to sign-in.
         clean.searchParams.set('__atlas_hs', 'failed');
-        const res = response.redirect(clean.toString());
-        res.cookies?.set('__atlas_hv', '', { path: '/', maxAge: 0 });
-        return res;
+        return {
+          kind: 'redirect',
+          location: clean.toString(),
+          auth: SIGNED_OUT,
+          cookies: [{ name: '__atlas_hv', value: '', options: { path: '/', maxAge: 0 } }],
+        };
       }
     }
 
@@ -229,10 +265,10 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions) {
     switch (decision.action) {
       case 'skip':
       case 'allow':
-        return response.next();
+        return { kind: 'continue', auth };
 
       case 'unauthorized':
-        return response.json({ errors: [{ code: 'UNAUTHENTICATED' }] }, { status: 401 });
+        return { kind: 'unauthorized', auth };
 
       case 'redirect': {
         /**
@@ -245,7 +281,7 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions) {
          * This is checked before the handshake and the sign-in redirect, so the
          * common "same-property, token just expired" case never leaves the app.
          */
-        if (hasSignedInHint(request)) return response.next();
+        if (hasSignedInHint(request)) return { kind: 'continue', auth };
         /**
          * Cross-property handshake: before sending a signed-out user to the
          * sign-in page, try the Atlas handshake ONCE — they may already have a
@@ -267,15 +303,24 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions) {
             hs.searchParams.set('publishable_key', options.publishableKey);
             hs.searchParams.set('redirect_url', current.toString());
             hs.searchParams.set('code_challenge', challenge);
-            const res = response.redirect(hs.toString());
-            res.cookies?.set('__atlas_hv', verifier, {
-              path: '/',
-              httpOnly: true,
-              sameSite: 'lax',
-              secure: true,
-              maxAge: 300, // the handshake round trip is seconds; don't linger
-            });
-            return res;
+            return {
+              kind: 'redirect',
+              location: hs.toString(),
+              auth,
+              cookies: [
+                {
+                  name: '__atlas_hv',
+                  value: verifier,
+                  options: {
+                    path: '/',
+                    httpOnly: true,
+                    sameSite: 'lax',
+                    secure: true,
+                    maxAge: 300, // the handshake round trip is seconds; don't linger
+                  },
+                },
+              ],
+            };
           }
         }
         /**
@@ -285,7 +330,31 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions) {
          * would otherwise be carried forward unchecked (§13.1).
          */
         const base = request.url ? new URL(request.url).origin : '';
-        return response.redirect(`${base}${decision.to}`);
+        return { kind: 'redirect', location: `${base}${decision.to}`, auth, cookies: [] };
+      }
+    }
+  };
+}
+
+/** The JSON body Atlas answers an unauthenticated API request with. */
+export const UNAUTHENTICATED_BODY = { errors: [{ code: 'UNAUTHENTICATED' }] } as const;
+
+export function atlasMiddleware(options: AtlasMiddlewareOptions) {
+  const decide = createAtlasDecider(options);
+
+  return async function middleware(request: EdgeRequest, response: EdgeResponse) {
+    const decision = await decide(request);
+    switch (decision.kind) {
+      case 'continue':
+        return response.next();
+      case 'unauthorized':
+        return response.json(UNAUTHENTICATED_BODY, { status: 401 });
+      case 'redirect': {
+        const res = response.redirect(decision.location);
+        for (const cookie of decision.cookies) {
+          res.cookies?.set(cookie.name, cookie.value, cookie.options);
+        }
+        return res;
       }
     }
   };

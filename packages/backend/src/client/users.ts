@@ -50,6 +50,11 @@ export interface CreateUserBody {
   public_metadata?: Metadata;
   private_metadata?: Metadata;
   unsafe_metadata?: Metadata;
+  /**
+   * Whether creating the user may notify them. Defaults to false, which
+   * guarantees no email, SMS or push is sent as a consequence of the create.
+   */
+  notify?: boolean;
 }
 
 export interface UpdateUserBody {

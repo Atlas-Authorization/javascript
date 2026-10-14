@@ -24,7 +24,7 @@ describe('<AtlasProvider> design support (same semantics as @atlasauth/react)', 
     const fetchImpl = vi.fn(async (url: string) =>
       url.endsWith('/v1/appearance') ? jsonResponse({ design: null }) : jsonResponse({ session: null, user: null }),
     ) as unknown as typeof fetch;
-    const { container } = render(AtlasProvider, { props: { publishableKey: 'pk_test', fetchImpl } });
+    const { container } = render(AtlasProvider, { props: { publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl } });
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
     const root = container.querySelector('.atlas-root')!;
@@ -35,7 +35,7 @@ describe('<AtlasProvider> design support (same semantics as @atlasauth/react)', 
   it('applies a code preset on the root and in <head>', () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ session: null, user: null })) as unknown as typeof fetch;
     const { container } = render(AtlasProvider, {
-      props: { publishableKey: 'pk_test', appearance: { preset: 'midnight', instanceDesign: false }, fetchImpl },
+      props: { publishableKey: 'pk_test', frontendApi: 'https://fapi.example', appearance: { preset: 'midnight', instanceDesign: false }, fetchImpl },
     });
     const root = container.querySelector('.atlas-root')!;
     const key = root.getAttribute('data-atlas-design');
@@ -50,7 +50,7 @@ describe('<AtlasProvider> design support (same semantics as @atlasauth/react)', 
       url.endsWith('/v1/appearance') ? jsonResponse({ design: { resolved } }) : jsonResponse({ session: null, user: null }),
     ) as unknown as typeof fetch;
     const { container } = render(AtlasProvider, {
-      props: { publishableKey: 'pk_test', appearance: { design: { card: { style: 'glass' } } }, fetchImpl },
+      props: { publishableKey: 'pk_test', frontendApi: 'https://fapi.example', appearance: { design: { card: { style: 'glass' } } }, fetchImpl },
     });
     const root = container.querySelector('.atlas-root')!;
     const cssFor = () =>

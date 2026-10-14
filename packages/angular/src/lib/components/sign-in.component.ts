@@ -7,12 +7,15 @@ import {
   inject,
 } from '@angular/core';
 import { AtlasService } from '../atlas.service';
+import { translate } from '../i18n';
 import { AttemptFlowComponent } from './attempt-flow.component';
 import { AtlasFlowController } from './flow-controller';
 
 /**
  * `<atlas-sign-in>` — the full, multi-step sign-in flow driven entirely by the
- * server-side attempt status. The Angular peer of React's `<SignIn/>`.
+ * server-side attempt status. The Angular peer of React's `<SignIn/>`. Draws the
+ * instance's sign-in captcha when it is required (always-on, or a
+ * `needs_captcha` challenge).
  *
  * ```html
  * <atlas-sign-in *atlasSignedOut afterUrl="/dashboard"></atlas-sign-in>
@@ -29,6 +32,7 @@ import { AtlasFlowController } from './flow-controller';
       [busy]="flow.state().busy"
       [errors]="flow.state().errors"
       titleKey="signIn.title"
+      [captcha]="flow.captchaDrawn() ? flow.captcha : null"
       (submitFlow)="flow.submit($event)"
     ></atlas-attempt-flow>
   `,
@@ -44,11 +48,15 @@ export class SignInComponent implements OnInit, OnDestroy {
     () => this.atlas.reload(),
     // Resume mid-flow if an OAuth redirect came back owing a second factor.
     this.atlas.pendingAttempt,
+    (key) => translate(this.atlas.localization, key),
   );
 
   ngOnInit(): void {
     // If seeded from a pending attempt that is already pollable, start polling.
     this.flow.syncPolling();
+    // §5 the instance's captcha settings: switching captcha on in the dashboard
+    // draws it here with no code change.
+    if (typeof window !== 'undefined') void this.flow.loadSettings();
   }
 
   ngOnDestroy(): void {

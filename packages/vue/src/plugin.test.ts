@@ -32,7 +32,7 @@ describe('createAtlas boots the session', () => {
 
     const wrapper = mount(Harness, {
       global: {
-        plugins: [createAtlas({ publishableKey: 'pk_test', fetchImpl: fetchImpl as unknown as typeof fetch })],
+        plugins: [createAtlas({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl: fetchImpl as unknown as typeof fetch })],
       },
     });
 
@@ -46,7 +46,8 @@ describe('createAtlas boots the session', () => {
     expect(wrapper.find('.in').exists()).toBe(false);
     // The boot hit the client endpoint with the publishable key attached.
     expect(fetchImpl).toHaveBeenCalled();
-    const [, init] = fetchImpl.mock.calls[0]!;
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe('https://fapi.example/v1/client');
     expect((init as RequestInit).credentials).toBe('include');
     expect(((init as RequestInit).headers as Record<string, string>)['x-publishable-key']).toBe('pk_test');
   });
@@ -61,7 +62,7 @@ describe('createAtlas boots the session', () => {
 
     const wrapper = mount(Harness, {
       global: {
-        plugins: [createAtlas({ publishableKey: 'pk_test', fetchImpl: fetchImpl as unknown as typeof fetch })],
+        plugins: [createAtlas({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl: fetchImpl as unknown as typeof fetch })],
       },
     });
 
@@ -86,7 +87,7 @@ describe('createAtlas boots the session', () => {
 
     mount(Probe, {
       global: {
-        plugins: [createAtlas({ publishableKey: 'pk_test', fetchImpl: fetchImpl as unknown as typeof fetch })],
+        plugins: [createAtlas({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl: fetchImpl as unknown as typeof fetch })],
       },
     });
     await flushPromises();
@@ -104,5 +105,16 @@ describe('createAtlas boots the session', () => {
       },
     });
     expect(() => mount(Orphan)).toThrow(/Atlas composables must be used after/);
+  });
+
+  it('throws a clear config error when frontendApi is missing', () => {
+    let caught: unknown;
+    try {
+      createAtlas({ publishableKey: 'pk_test' });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { name?: string }).name).toBe('AtlasConfigError');
+    expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
   });
 });

@@ -10,8 +10,13 @@ export interface AtlasOptions {
   /** The instance's publishable key (`pk_…`). Required. */
   publishableKey: string;
   /**
-   * The instance's FAPI origin. Empty string (the default) means same-origin —
-   * requests go to `/v1/...` on the app's own host.
+   * The instance's Frontend API: an absolute URL such as
+   * `"https://auth.example.com"`, or `"same-origin"` / a path such as `"/atlas"`
+   * behind a reverse proxy on the app's own origin (requests then go to
+   * `/v1/...` on the app's host). Required at runtime — `AtlasService` throws an
+   * `AtlasConfigError` (`FRONTEND_API_REQUIRED` / `FRONTEND_API_INVALID`) when
+   * it is missing or malformed. Optional in the type only so existing call sites
+   * keep compiling.
    */
   frontendApi?: string;
   /** Design tokens + per-element class overrides. See {@link Appearance}. */

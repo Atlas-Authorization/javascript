@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/angular",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Official Angular SDK for Atlas \u2014 the Angular peer of @atlasauth/react.",
   "license": "MIT",
   "module": "./dist/fesm2022/atlas-angular.mjs",
@@ -54,7 +54,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "repository": {
     "type": "git",

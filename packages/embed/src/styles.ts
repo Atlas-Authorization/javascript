@@ -19,6 +19,9 @@ export const EMBED_CSS = `
   --_card: var(--atlas-embed-color-card, #ffffff);
   --_text: var(--atlas-embed-color-text, #1c1c1f);
   --_primary: var(--atlas-embed-color-primary, #5b5bd6);
+  --_on-primary: var(--atlas-embed-color-text-on-primary, #ffffff);
+  /* Keyboard focus ring — a solid outline (3:1 on the default background). */
+  --_focus: var(--atlas-embed-color-focus-ring, var(--_primary));
   --_border: var(--atlas-embed-color-border, #e4e4e9);
   --_radius: var(--atlas-embed-border-radius, 10px);
   /* Transition tempo — the widget sets --atlas-embed-motion from motionSpeed and
@@ -107,10 +110,10 @@ export const EMBED_CSS = `
 .atlas-embed-social-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .atlas-embed-social-field .atlas-embed-social { margin-bottom: 0; }
 .atlas-embed-social-search {
-  width: 100%; padding: 9px 12px; font-size: 14px; color: var(--_text);
+  width: 100%; padding: 9px 12px; font-size: 16px; color: var(--_text);
   background: var(--_bg); border: 1px solid var(--_border); border-radius: var(--_radius);
 }
-.atlas-embed-social-search:focus { outline: 2px solid var(--_primary); outline-offset: -1px; }
+.atlas-embed-social-search:focus { outline: 2px solid var(--_focus); outline-offset: -1px; }
 .atlas-embed-social-button[hidden] { display: none; }
 .atlas-embed-social-empty { font-size: 13px; color: #9ca3af; text-align: center; padding: 6px 0; }
 .atlas-embed-social-empty[hidden] { display: none; }
@@ -124,10 +127,11 @@ export const EMBED_CSS = `
 .atlas-embed-field { display: block; margin: 0 0 12px; }
 .atlas-embed-label { display: block; font-size: 13px; margin: 0 0 5px; color: var(--_text); }
 .atlas-embed-input {
-  width: 100%; padding: 10px 12px; font-size: 14px; color: var(--_text);
+  /* 16px: iOS Safari zooms the page when a smaller field takes focus. */
+  width: 100%; padding: 10px 12px; font-size: 16px; color: var(--_text);
   background: var(--_bg); border: 1px solid var(--_border); border-radius: var(--_radius);
 }
-.atlas-embed-input:focus { outline: 2px solid var(--_primary); outline-offset: -1px; }
+.atlas-embed-input:focus { outline: 2px solid var(--_focus); outline-offset: -1px; }
 /* Password field with a show/hide toggle. */
 .atlas-embed-password { position: relative; display: flex; align-items: center; }
 .atlas-embed-password .atlas-embed-input { width: 100%; padding-right: 54px; }
@@ -147,10 +151,15 @@ fieldset.atlas-embed-field { border: 0; padding: 0; margin: 0 0 12px; }
 .atlas-embed-choice input { width: 16px; height: 16px; margin: 0; flex: none; accent-color: var(--_primary); }
 .atlas-embed-button {
   width: 100%; margin-top: 6px; padding: 11px 12px; font-size: 14px; font-weight: 650;
-  cursor: pointer; color: #ffffff; background: var(--_primary);
+  cursor: pointer; color: var(--_on-primary); background: var(--_primary);
   border: 0; border-radius: var(--_radius);
 }
 .atlas-embed-button:disabled { opacity: 0.6; cursor: default; }
+.atlas-embed-button:focus-visible, .atlas-embed-social-button:focus-visible,
+.atlas-embed-handle-back:focus-visible, .atlas-embed-step-back:focus-visible,
+.atlas-embed-password-toggle:focus-visible, .atlas-embed-carousel-nav:focus-visible {
+  outline: 2px solid var(--_focus); outline-offset: 2px;
+}
 .atlas-embed-handle-back {
   width: 100%; margin-top: 8px; padding: 6px; font-size: 13px; font-weight: 550;
   cursor: pointer; color: #6b7280; background: none; border: 0;
@@ -193,7 +202,7 @@ form > .atlas-embed-step-back { display: block; width: 100%; text-align: center;
   font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--_text);
   background: var(--_bg); border: 1px solid var(--_border); border-radius: var(--_radius);
 }
-.atlas-embed-code-box:focus { outline: 2px solid var(--_primary); outline-offset: -1px; }
+.atlas-embed-code-box:focus { outline: 2px solid var(--_focus); outline-offset: -1px; }
 /* A real step change eases its content in; error/busy re-renders (same step) do
    not, and a reduced-motion viewer gets no animation at all. */
 @media (prefers-reduced-motion: no-preference) {

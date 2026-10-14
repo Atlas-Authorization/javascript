@@ -5,7 +5,7 @@ import type { AtlasSession, SessionClaims } from './types';
 const noop = {
   getToken: async () => null,
   getProviderToken: async () => null,
-  signOut: async () => {},
+  signOut: async () => ({ revoked: true }),
 };
 
 const session = { id: 'sess_1', status: 'active' } as unknown as AtlasSession;

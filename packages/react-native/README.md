@@ -159,6 +159,34 @@ if (result.status === 'needs_more' && result.attemptId) {
 // 'complete' → the token is persisted; the user is signed in.
 ```
 
+Pass the instance's configured sign-up fields by key with `fields` (`firstName` /
+`lastName` are shorthands for `first_name` / `last_name`), and `consent: true` when
+the instance requires agreement to its terms.
+
+### Captcha
+
+When the instance requires a captcha on sign-up or sign-in, the request needs a
+solved token. Captcha providers draw their challenge in a browser, so this SDK
+renders none itself — render it your own way (the provider's React Native SDK, or
+a WebView that loads the provider script with the site key) and hand the token
+over, either per call or once on the provider:
+
+```tsx
+<AtlasProvider
+  publishableKey={pk}
+  getCaptchaToken={async ({ flow, captcha }) => {
+    // captcha: { provider, siteKey, widget } for this flow, or null
+    return await showCaptchaChallenge(captcha); // resolve the token, or null to cancel
+  }}
+>
+```
+
+`getCaptchaToken` is only called when a token is needed (the request was refused
+with `CAPTCHA_REQUIRED` / `CAPTCHA_FAILED`, or sign-in answered with a captcha
+challenge), and the request is retried once with it. A `captchaToken` passed to
+`signUpWithPassword` / `signInWithPassword` is used first. Without either, the call
+returns a `CAPTCHA_REQUIRED` error — check it with `isCaptchaRequired(result)`.
+
 ### Error codes
 
 `FlowResult.errors` carries the server's `{ code, message }` items; `message` is

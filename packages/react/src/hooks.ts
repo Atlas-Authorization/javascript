@@ -4,6 +4,7 @@ import {
   type CheckSessionOptions,
   type ProviderToken,
   type SignOutOptions,
+  type SignOutResult,
 } from '@atlasauth/js';
 import { useAtlas, type AuthStatus } from './AtlasProvider';
 import { evaluate, type ProtectCondition } from './protect';
@@ -89,7 +90,12 @@ export interface UseAuthReturn {
   getToken(): Promise<string | null>;
   /** §6.6 the user's own live access token at a connected social provider. */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(options?: SignOutOptions): Promise<void>;
+  /**
+   * Revoke the active session and sign out. Resolves `{ revoked, activeSessionId? }`
+   * (since 0.5.0; earlier versions resolved `undefined`). `{ strict: true }`
+   * rejects with a `SignOutError` when the server could not confirm the revoke.
+   */
+  signOut(options?: SignOutOptions): Promise<SignOutResult>;
   /** Mirrors <Protect>, for logic that is not a render decision. */
   has(condition: ProtectCondition): boolean;
 }

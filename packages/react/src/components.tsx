@@ -70,6 +70,18 @@ export { useWaitlist, Waitlist } from './waitlist';
 // Step-up reverification.
 export { useReverification } from './reverification';
 
+// End-user API key self-service (`<ApiKeys/>` + `useApiKeys()`).
+export type {
+  ApiKeysProps,
+  ApiKeysStatus,
+  ApiKeyClaimsFieldsContext,
+  UseApiKeysResult,
+  CreateUserApiKeyInput,
+  CreatedUserApiKey,
+  UserApiKey,
+} from './api-keys';
+export { ApiKeys, useApiKeys } from './api-keys';
+
 // Commerce / billing.
 export type { CheckoutParams } from './billing';
 export {

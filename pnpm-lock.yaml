@@ -776,6 +776,9 @@ importers:
       '@atlasauth/js':
         specifier: workspace:*
         version: link:../js
+      '@atlasauth/localizations':
+        specifier: workspace:*
+        version: link:../localizations
     devDependencies:
       '@types/react':
         specifier: ^18.3.12

@@ -11,7 +11,16 @@ export interface Session {
   last_active_at: number;
   expire_at: number;
   abandon_at: number;
+  /** Epoch ms the session ends from inactivity unless there is activity first (same value as `abandon_at`). */
+  idle_expires_at?: number;
   created_at: number;
+}
+
+/** The session after a keep-alive {@link sessionsResource} `touch`. */
+export interface TouchedSession extends Session {
+  idle_expires_at: number;
+  /** true when this touch moved the inactivity window; false when one within the last 60 seconds already had. */
+  extended: boolean;
 }
 
 export interface ListSessionsParams {
@@ -68,6 +77,16 @@ export function sessionsResource(request: RequestFn) {
     },
     revoke(id: string): Promise<{ object: 'session'; id: string; status: 'revoked' }> {
       return request({ method: 'POST', path: `/v1/sessions/${enc(id)}/revoke` });
+    },
+    /**
+     * `POST /v1/sessions/:id/touch` — keep a session alive from your backend:
+     * slides its inactivity window as if the user had just loaded a page. Never
+     * extends past the absolute expiry and never revives an ended session (409
+     * `SESSION_REVOKED` / `SESSION_IDLE_EXPIRED` / `SESSION_EXPIRED`). At most one
+     * effective write per minute, so calling it on every request is safe.
+     */
+    touch(id: string): Promise<TouchedSession> {
+      return request({ method: 'POST', path: `/v1/sessions/${enc(id)}/touch` });
     },
     /**
      * `POST /v1/sessions/:id/tokens/:template` — mint a token from a named JWT

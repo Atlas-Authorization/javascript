@@ -17,7 +17,7 @@
  * want to drive the pieces themselves.
  */
 
-import type { NativeSession, NativeSessionManager } from '@atlasauth/js';
+import { resolveFrontendApi, type NativeSession, type NativeSessionManager } from '@atlasauth/js';
 import {
   isNativePlatform,
   loadCapacitorPlugins,
@@ -131,6 +131,14 @@ export interface AtlasCapacitor {
 export async function createAtlasCapacitor(
   config: CreateAtlasCapacitorConfig,
 ): Promise<AtlasCapacitor> {
+  // Validated (and normalised — no trailing slash) before anything else: a
+  // missing value, "same-origin" or a bare path throws an `AtlasConfigError`.
+  // The OAuth URLs below are built from it, and a native app has no origin of
+  // its own to resolve a relative one against.
+  const frontendApi = resolveFrontendApi(config.frontendApi, {
+    component: 'createAtlasCapacitor()',
+    allowSameOrigin: false,
+  });
   const plugins = config.plugins ?? (await loadCapacitorPlugins());
 
   const storage =
@@ -146,7 +154,7 @@ export async function createAtlasCapacitor(
       : createInMemoryTokenStore());
 
   const manager = await createNativeSessionManager({
-    frontendApi: config.frontendApi,
+    frontendApi,
     publishableKey: config.publishableKey,
     clientId: config.clientId,
     storage,
@@ -166,7 +174,7 @@ export async function createAtlasCapacitor(
       const clientId = requireString(options.clientId ?? config.clientId, 'clientId');
       const redirectUri = requireString(options.redirectUri ?? config.redirectUri, 'redirectUri');
       const outcome = await signInWithBrowser({
-        frontendApi: config.frontendApi,
+        frontendApi,
         clientId,
         redirectUri,
         scope: options.scope ?? config.scope,
@@ -190,7 +198,7 @@ export async function createAtlasCapacitor(
       const clientId = requireString(config.clientId, 'clientId');
       const redirectUri = requireString(config.redirectUri, 'redirectUri');
       const session = await completeRedirectSignIn({
-        frontendApi: config.frontendApi,
+        frontendApi,
         clientId,
         redirectUri,
         url: landingUrl,

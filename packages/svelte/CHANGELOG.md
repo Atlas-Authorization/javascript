@@ -1,5 +1,32 @@
 # @atlasauth/svelte changelog
 
+## 0.3.0
+- **`<SignUp>` now creates accounts.** Its first step is a create-account form (the instance's
+  configured sign-up fields, email, password and the legal-consent row) that posts
+  `POST /v1/client/sign_ups`; the emailed-code step and the ticket exchange then run through the shared
+  flow. Previously `<SignUp>` rendered the sign-in identifier step and could not create an account.
+- **Captcha renders automatically.** When the instance turns captcha on for a flow, `<SignUp>` and
+  `<SignIn>` show the provider's widget (Turnstile, hCaptcha, reCAPTCHA v2/v3/Enterprise) in the
+  configured mode (`visible`, `managed`, or `invisible` — run on submit), send its token as
+  `captcha_token`, answer the sign-in `needs_captcha` step (continuing as soon as it is solved), and on
+  `CAPTCHA_REQUIRED` / `CAPTCHA_FAILED` show a localized message and a fresh widget.
+- **Added to `FlowController`** (returned by `signIn()` / `signUp()`): `create(values, consent?)`,
+  `settings: Readable<InstanceSettings | null>`, `captcha: CaptchaController`,
+  `signUpCaptcha: CaptchaController`; `destroy()` now also removes the captcha widgets.
+- **Added type re-exports** `InstanceSettings`, `PublicSignUpField`, `CaptchaController`,
+  `CaptchaFlowKey`, `CaptchaWidgetMode`, `FlowCaptcha` from `@atlasauth/js`.
+- **Added catalog keys** (en-US): `signUp.emailLabel`, `signUp.passwordLabel`, `signUp.optionalField`,
+  `signUp.selectPlaceholder`, `signUp.consentAgree`, `signUp.consentNotice`, `signUp.terms`,
+  `signUp.privacy`, `signUp.and`, `captcha.prompt`, `captcha.required`, `captcha.failed`.
+- New element classes `atlas-captcha`, `atlas-consent`, `atlas-choices`, `atlas-choice`, `atlas-text`,
+  `atlas-link`; the flow's inputs now carry `name` attributes.
+- **`frontendApi` is validated at `initAtlas()` / `<AtlasProvider>`.** A missing (or non-string) or malformed value now throws an
+  `AtlasConfigError` (from `@atlasauth/js`; `code: 'FRONTEND_API_REQUIRED'` or `'FRONTEND_API_INVALID'`)
+  instead of silently sending requests to relative URLs on the app's own origin. Accepted: an absolute
+  `https:` URL (`http:` only for localhost / local development hosts), or `"same-origin"` / a root-relative path such as `"/atlas"` for a reverse proxy.
+- **Deprecated:** `frontendApi: ""` (the original same-origin spelling) still works as same-origin, with a
+  one-time console warning; use `"same-origin"` instead.
+
 ## 0.2.1
 - **Front-channel logout on sign-out.** `signOut()` now loads the `frontchannel_logout_urls` the
   Frontend API returns (apps signed in with "Sign in with Atlas" through this session) in hidden,
@@ -18,6 +45,10 @@
 - `appearance.variables` / `baseTheme` are unchanged when no design is in play.
 - New dependency: `@atlasauth/design`.
 
+## 0.1.5
+- **`getAuth()` now also returns `status` and `session`.** `status` is the three-state `AuthStatus` (`loading` | `signed_in` | `signed_out`) and `session` is the active session or `null`; both come from the same source as `isLoaded` / `isSignedIn`. The `UseAuth` type gains both fields.
+- README uses the published `@atlasauth/*` package names.
+
 ## 0.1.4
 - **Docs fix.** Frontend API host examples use a single-label host (`your-instance-fapi.atlasauth.net`); a two-level `*.fapi.atlasauth.net` host isn't TLS-covered behind Cloudflare.
 
@@ -26,4 +57,12 @@
 
 ## 0.1.2
 - **Docs fix.** README Frontend API examples now use the real host shape `https://your-instance.fapi.atlasauth.net` (was a non-resolving `.atlas.dev`).
+
+## 0.1.1
+- First published release.
+- **Client and context.** Install with `initAtlas()` or `<AtlasProvider>`; `createAtlasClient()` and `useAtlas()` give direct access to the client and its stores.
+- **Store accessors.** `getUser()`, `getSession()`, `getAuth()` and `getOrganization()` return reactive stores; `getToken()`, `signIn()`, `signUp()` and `signOut()` are the action helpers.
+- **Components.** `SignedIn`, `SignedOut`, `AtlasLoading`, `AtlasLoaded`, `Protect`, `SignIn`, `SignUp`, `UserButton`, `UserProfile`, `OrganizationSwitcher` and `OrganizationProfile`.
+- **SvelteKit server.** The separate `@atlasauth/svelte/server` entry provides `handleAtlas()` (a `handle` hook that verifies the session) and `getServerAuth()` for load functions and endpoints, so the backend verifier never enters a browser bundle.
+- Appearance, localization and authorization helpers shared with the other Atlas UI SDKs.
 

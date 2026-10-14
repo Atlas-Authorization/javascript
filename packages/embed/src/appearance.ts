@@ -12,6 +12,7 @@
  *   - an inline `appearance` option the embedding page passes, which wins.
  */
 
+import { contrastRatio, parseCssColor, toHex } from '@atlasauth/design/runtime';
 import type { AtlasDesign, InstanceDesign, PresetId } from '@atlasauth/design/runtime';
 
 /** Design tokens a tenant (or the inline override) can set. */
@@ -413,6 +414,18 @@ export function cssVariables(tokens: Required<DesignTokens>): Record<string, str
     vars[`--atlas-embed-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`] = value;
   }
   return vars;
+}
+
+/**
+ * Label colour for the primary button: white or near-black, whichever contrasts
+ * more with the primary (a fixed white label is unreadable on a light brand
+ * colour). White when the primary cannot be evaluated (`var(--brand)`).
+ */
+export function textOnPrimary(primary: string): string {
+  const parsed = parseCssColor(primary);
+  if (!parsed) return '#ffffff';
+  const hex = toHex(parsed);
+  return contrastRatio('#ffffff', hex) >= contrastRatio('#111111', hex) ? '#ffffff' : '#111111';
 }
 
 /** Our base class plus the page's override, appended so theirs wins on ties. */

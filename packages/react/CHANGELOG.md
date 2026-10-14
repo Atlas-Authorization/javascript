@@ -1,5 +1,83 @@
 # @atlasauth/react changelog
 
+## 0.5.0
+- **`<SignUp>` now creates accounts.** Its first step is a create-account form (the instance's
+  configured sign-up fields, email, password and the legal-consent row) that posts
+  `POST /v1/client/sign_ups`; the emailed-code step and completion then run through the shared flow.
+  Previously `<SignUp>` rendered the sign-in identifier step and could not create an account.
+- **Captcha renders automatically.** When the instance turns captcha on for a flow, `<SignUp>` and
+  `<SignIn>` show the provider's widget (Turnstile, hCaptcha, reCAPTCHA v2/v3/Enterprise) in the
+  configured mode (`visible`, `managed`, or `invisible` — run on submit), send its token as
+  `captcha_token`, answer the sign-in `needs_captcha` step (continuing as soon as it is solved), and on
+  `CAPTCHA_REQUIRED` / `CAPTCHA_FAILED` show a localized message and a fresh widget.
+- **Added** `useAtlas().instanceSettings: InstanceSettings | null` — the instance's public
+  `captchaFlows`, `signUpFields` and `legal` settings from `GET /v1/appearance`. The provider now
+  fetches `/v1/appearance` even with `appearance.instanceDesign: false` (the design is still not
+  applied then).
+- **Added types** `InstanceSettings`, `PublicSignUpField`, and re-exported `FlowCaptcha`,
+  `CaptchaFlowKey`, `CaptchaWidgetMode` from `@atlasauth/js`.
+- **Added catalog keys** (en-US): `signUp.emailLabel`, `signUp.passwordLabel`, `signUp.optionalField`,
+  `signUp.selectPlaceholder`, `signUp.consentAgree`, `signUp.consentNotice`, `signUp.terms`,
+  `signUp.privacy`, `signUp.and`, `captcha.prompt`, `captcha.required`, `captcha.failed`.
+- `InstanceSettings`, `PublicSignUpField` and `localizeCaptchaErrors` now come from `@atlasauth/js`
+  (same shapes; one implementation shared with the other framework SDKs).
+- **Added base classes** `atlas-captcha`, `atlas-consent`, `atlas-choices`, `atlas-choice` (new `ATLAS_FLOW_CSS` export, appended to `ATLAS_STYLES_CSS`; `ATLAS_BASE_CSS` is unchanged). The flow's inputs now carry `name` attributes.
+- **Added base classes** `atlas-captcha`, `atlas-consent`, `atlas-choices`, `atlas-choice` (new `ATLAS_FLOW_CSS` export, appended to `ATLAS_STYLES_CSS`). The flow's inputs now carry `name` attributes.
+- **`frontendApi` is validated at render.** A missing (`undefined`/`null`), non-string, blank or malformed value now
+  throws an **`AtlasConfigError`** (exported; `code: 'FRONTEND_API_REQUIRED' | 'FRONTEND_API_INVALID'`, type
+  `AtlasConfigErrorCode`) instead of silently sending every request to relative URLs on the app's own
+  origin. Accepted: an absolute `https:` URL (`http:` only for localhost / local development hosts), or
+  `"same-origin"` (exported as `SAME_ORIGIN_FRONTEND_API`) / a root-relative path such as `"/atlas"` for a
+  reverse proxy.
+- **Deprecated:** `frontendApi=""` (the original same-origin spelling) still works as same-origin, with a one-time
+  console warning; use `"same-origin"` instead.
+- **`signOut()` now resolves `SignOutResult`** — `{ revoked: boolean; activeSessionId?: string }` (was
+  `Promise<void>`; `await signOut()` keeps working). Changed on both `useAtlas()` and `useAuth()`
+  (`UseAuthReturn.signOut`).
+  - The revoke is retried once. If it still fails, the user is signed out locally anyway and the session id
+    is remembered (this tab + sibling tabs via the session broadcast), so focus, a sibling tab's signal or a
+    failed token refresh never re-adopt it from the still-valid refresh cookie; the next re-check retries the
+    revoke in the background.
+  - The revoke runs even when no token is cached (it falls back to the booted session, or asks the Frontend
+    API which session the browser's cookies carry).
+  - When the server promotes another account signed in on this browser, the provider adopts it and
+    `activeSessionId` names it.
+  - **New option `signOut({ strict: true })`** rejects with a **`SignOutError`** (exported;
+    `code: 'SIGN_OUT_REVOKE_FAILED'`, `sessionId`, `status`) after the local sign-out when the revoke fails.
+  - `sessions` is now cleared on sign-out too.
+- **New `locale` prop on `<AtlasProvider>`** (`SupportedLocale | string`): `'en'`, `'en-US'`, `'es'`, `'es-ES'`,
+  `'fr'`, `'fr-FR'`, `'de'`, `'de-DE'`, `'pt'`, `'pt-BR'`, `'ja'`, `'ja-JP'`, `'nl'`, `'nl-NL'`, and regional
+  variants that fall back to their language. Unknown → English with a console warning. `localization` still
+  overrides key by key on top. Re-exported from `@atlasauth/localizations`: `resolveLocale`,
+  `LOCALIZATION_KEYS`, `missingKeys`, type `SupportedLocale`. New dependency: `@atlasauth/localizations`
+  (bundled statically: the catalogs are small, and a synchronous lookup means no English flash and identical
+  SSR output).
+- **New context method `broadcastSessionChange()`** on `useAtlas()`: tells sibling tabs to re-check. The
+  built-in flows call it after completing a sign-in, so other tabs update immediately instead of on focus.
+- **Popup OAuth:** a popup that closes without posting back but left a session behind (the browser severed
+  `window.opener`) now completes the sign-in in the opener (re-boot, `afterUrl`, sibling tabs) instead of
+  being treated as a cancel.
+- **Accessibility / appearance:**
+  - New `appearance.variables.colorTextOnPrimary` (→ `--atlas-color-text-on-primary`): primary button and avatar
+    text. Defaults to white or near-black, whichever contrasts more with the resolved `colorPrimary` (was a
+    fixed `#fff`). The `dark` and `neobrutalist` themes now get dark button text.
+  - New `appearance.variables.colorFocusRing` (→ `--atlas-color-focus-ring`): a solid 2px `:focus-visible`
+    outline (2px offset) on inputs, buttons, social buttons, menu items, tabs and the avatar, replacing the
+    translucent glow. Defaults to the primary (`neobrutalist`: black).
+  - With a design active, explicit `colorTextOnPrimary` / `colorFocusRing` still win over the design's ink
+    and ring; design-mode focus is a solid outline too.
+  - Inputs are at least 16px (base and design mode), so iOS Safari no longer zooms on focus.
+  - `DesignTokens`, `DEFAULT_TOKENS` and `THEMES` gain both keys. The base stylesheet (`ATLAS_BASE_CSS`)
+    changed deliberately for these fixes.
+- **`<ApiKeys/>` and `useApiKeys()`.** Let signed-in users manage their own API keys: list, create
+  (prompts for the password and retries when the server asks for a recent sign-in), show the new
+  secret once with a copy button, rename, and revoke after a confirmation. Props: `organizationId`,
+  `renderClaimsFields` (alias `claimsForm`) for extra fields that go into the key's `claims`,
+  `onCreate`, and `expiryOptionsDays`. Shows a key's `limits` when present.
+- New exported types: `ApiKeysProps`, `ApiKeysStatus`, `ApiKeyClaimsFieldsContext`,
+  `UseApiKeysResult`, and re-exports of `UserApiKey`, `CreatedUserApiKey`, `CreateUserApiKeyInput`.
+- New en-US catalog keys under `apiKeys.*` (32 keys).
+
 ## 0.4.1
 - **Front-channel logout on sign-out.** `signOut()` now loads the `frontchannel_logout_urls` the
   Frontend API returns (apps signed in with "Sign in with Atlas" through this session) in hidden,
@@ -33,6 +111,16 @@
 - `useAuth()` has an exported return type, `UseAuthReturn`; annotate with it and TypeScript
   rejects fields that don't exist.
 
+## 0.3.0
+- **Popup sign-in for "Sign in with Atlas".** New `signInWithAtlasPopup(opts)` signs in from a
+  popup with no full-page redirect and no callback page; the code is exchanged in the page with
+  PKCE. It rejects with `popup_closed` if the user closes the popup, and falls back to the
+  redirect flow when the popup is blocked.
+- `<SignInWithAtlasButton>` accepts `uxMode: 'redirect' | 'popup'` (default `'redirect'`) and
+  `onSuccess(result)` for popup mode.
+- The sign-in result (`AtlasIdResult`) now also includes `credential` (the id_token).
+- Changed: the default issuer is `https://atlasauth.net`.
+
 ## 0.2.0
 - **New: `<SignInWithAtlasButton>` + `completeSignInWithAtlas()`** — "Sign in with Atlas" for any
   website via OIDC authorization-code + PKCE against `https://atlasauth.net`. Standalone: no
@@ -60,6 +148,9 @@
   but never read; it now redirects after the session is established. No-op when unset.
 - **Provider icons render at a real size** (D12). Brand marks (GitHub especially) carried only a
   `viewBox` and collapsed to 0×0 in the SDK; they now have an intrinsic size plus a CSS rule.
+- **`frontendApi` is now a REQUIRED prop on `<AtlasProvider>`**. It was silently
+- **`<SignIn afterUrl>` / `<SignUp afterUrl>` now navigate** on completion. It was typed
+- **Provider icons render at a real size**. Brand marks (GitHub especially) carried only a
 
 ## 0.1.29
 - **Fix — the invisible Google overlay is no longer rendered at exactly `opacity:0`.** GSI's
@@ -124,6 +215,35 @@
   Redirect for Google requires a `client_secret` to be configured on the provider.
 - **Add `hideTitle` prop** to `<SignIn>` / `<SignUp>`. Set it when your page already renders its own "Sign in" heading above the panel, so the title doesn't appear twice.
 
+## 0.1.23
+- The headless `<SocialSignInButton provider="google">` (and `useSignIn()`) now use the same
+  in-page Google button as the built-in `<SignIn>`, so Google sign-in completes without a
+  redirect or a stranded tab. Other providers keep the popup / redirect flow.
+
+## 0.1.22
+- Social buttons in `<SignIn>` now show a provider icon: the built-in brand mark, or a custom
+  icon URL configured for the provider in the dashboard.
+
+## 0.1.21
+- Added: `onSignedIn(user)` prop on `<AtlasProvider>`. Fires once on a real signed-out →
+  signed-in transition (including after a popup sign-in), never when a session is restored on
+  page load.
+
+## 0.1.20
+- Social buttons in `<SignIn>` now use the per-instance button label configured in the
+  dashboard when one is set, instead of always "Continue with {provider}".
+
+## 0.1.19
+- Added: popup-mode social / OIDC sign-in. Set `oauthMode: 'popup' | 'redirect'` on
+  `<AtlasProvider>` as the app default or on `<SignIn>` to override; the default stays
+  `'redirect'`. A blocked popup falls back to redirect.
+- Added: `useSignIn().startOauth({ provider, mode })` and a headless `<SocialSignInButton>`
+  with `onOpen`, `onError` and `onBlockedFallback` callbacks.
+
+## 0.1.18
+- Added: `hideTitle` prop on `<SignIn>` / `<SignUp>` to hide the panel's own heading when the
+  page already shows one.
+
 ## 0.1.17
 - **Fix — SSR-safe base styles.** The base stylesheet is now rendered as a `<style id="atlas-base-styles">` in `AtlasProvider`'s own output, so prebuilt components are styled in server-rendered HTML **and** on the client (no flash of unstyled content on SSR/Next.js). `ATLAS_BASE_CSS` and `injectAtlasStyles` are exported for manual/advanced use.
 - **Use `>= 0.1.17`** if you rely on the prebuilt components styling themselves. 0.1.15/0.1.16 did not ship usable CSS (see below).
@@ -137,3 +257,79 @@
 ---
 
 Components are styled out of the box from 0.1.17 with no CSS import — see the guide: https://atlasauth.net/docs/react-appearance-and-styling
+## 0.1.14
+- Added: billing hooks `useBilling()`, `useCheckout()` and `useSubscription()` (user- or
+  organization-scoped via `{ orgId }`) and a `<PricingTable>` component; checkout and the billing
+  portal open on Stripe-hosted pages. New `CheckoutParams`, `AtlasBillingPlan` and
+  `AtlasBillingSubscription` types.
+
+## 0.1.13
+- Added: multiple signed-in accounts per browser. `useSessionList()` lists them and
+  `setActive({ session })` switches; `<UserButton>` lists other accounts for one-click
+  switching; `<MultisessionAppSupport>` remounts its children on a switch. New
+  `AtlasSessionResource` type.
+- Added: extension points for prebuilt components — `<UserButton.MenuItems>` with
+  `<UserButton.Action>` / `<UserButton.Link>`, and `<UserProfile.Page>` / `<UserProfile.Link>`.
+
+## 0.1.12
+- Added: `useOrganizationList()`, `<CreateOrganization>` and `<OrganizationList>`.
+- Added: `<Waitlist>` and `useWaitlist()`.
+- Added: `useReverification()` — headless wrapper for step-up re-authentication.
+
+## 0.1.11
+- Added: `<SignInButton>`, `<SignUpButton>` and `<SignOutButton>` (new `AuthButtonProps` type),
+  `<RedirectToSignIn>` / `<RedirectToSignUp>`, `<UserAvatar>`, and the headless `useSignUp()`.
+
+## 0.1.10
+- Fixed: republished with resolved dependency versions; 0.1.9 was published with unresolved
+  workspace dependencies and could not be installed (deprecated on npm).
+
+## 0.1.9
+- Added: `<ManagePasskeys>` — list, add and remove passkeys; included in `<UserProfile>`. Shows a
+  "not supported" note when the browser has no WebAuthn.
+
+## 0.1.8
+- Added: `<ManageMfa>` — enrol an authenticator app (TOTP), verify, show backup codes and turn
+  2FA off; included in `<UserProfile>`.
+
+## 0.1.7
+- Added: `<ProfileCard>` (editable name, email addresses) and `<ActiveSessions>` (devices with
+  per-device sign-out and "sign out of all other devices"). `<UserProfile>` now composes them.
+
+## 0.1.6
+- `<SignIn>` now shows a button for every enabled social provider: Google in-page, the others
+  via redirect back to the current page.
+
+## 0.1.5
+- Sign-in, sign-out and organization switches now propagate to other open tabs, and a tab
+  re-checks the session on focus, so a tab that started a sign-in elsewhere updates itself.
+
+## 0.1.4
+- The Google button in `<SignIn>` now has default styling from the `--atlas-*` appearance
+  variables, so it looks like a button without any custom CSS.
+
+## 0.1.3
+- Changed: the Google button in `<SignIn>` is now your themed button (the `socialButton`
+  appearance element) with Google's real button overlaid invisibly, instead of Google's own
+  fixed-style button.
+
+## 0.1.2
+- Added: `<SignIn>` shows a native in-page Google button when the Google connection is enabled
+  with a client id; One Tap is opt-in via `googleOneTap`.
+- Added: headless `useSignIn()` for apps that render their own Google button.
+
+## 0.1.1
+- First published release.
+- `<AtlasProvider>` with `useAtlas()`, `useAuth()`, `useUser()`, `useSession()`,
+  `useOrganization()`.
+- Components: `<SignIn>`, `<SignUp>`, `<UserButton>`, `<UserProfile>`,
+  `<OrganizationSwitcher>`, `<OrganizationProfile>`, `<SignedIn>`, `<SignedOut>`, `<Protect>`,
+  `<AtlasLoading>`, `<AtlasLoaded>`.
+- Theming via `appearance` (design tokens, themes, per-element classes) and i18n.
+- Silent cross-site session check: `useSilentAuth()`, plus `checkSession` /
+  `handleSilentCallback` re-exported from `@atlasauth/js`.
+
+---
+
+Components are styled out of the box from 0.1.17 with no CSS import — see the guide: https://atlasauth.net/docs/react-appearance-and-styling
+

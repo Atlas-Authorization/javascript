@@ -16,4 +16,15 @@ export type { CheckSessionOptions, CheckSessionResult } from '@atlasauth/js';
 // a provider's native-sign-in setup (resolved mode/client_id, page origin, live
 // overlay geometry, session credential flag). Surfaced here from @atlasauth/js.
 export { diagnoseProvider } from '@atlasauth/js';
+// Provider configuration errors (a missing/invalid `frontendApi`) and the
+// sign-out result/error types, surfaced from @atlasauth/js.
+export { AtlasConfigError, SAME_ORIGIN_FRONTEND_API, SignOutError } from '@atlasauth/js';
+export type { AtlasConfigErrorCode, SignOutOptions, SignOutResult } from '@atlasauth/js';
+// Built-in UI languages for `<AtlasProvider locale>` + CI coverage helpers.
+export { LOCALIZATION_KEYS, missingKeys, resolveLocale } from '@atlasauth/localizations';
+export type { SupportedLocale } from '@atlasauth/localizations';
 export type { ProviderDiagnosis, OverlayGeometry, Rect } from '@atlasauth/js';
+
+// The instance's public sign-in / sign-up settings (`useAtlas().instanceSettings`).
+export type { InstanceSettings, PublicSignUpField } from './instance-settings';
+export type { CaptchaFlowKey, CaptchaWidgetMode, FlowCaptcha } from '@atlasauth/js';

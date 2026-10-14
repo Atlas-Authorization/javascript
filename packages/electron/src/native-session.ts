@@ -18,6 +18,7 @@
 import {
   NativeSessionManager,
   parseNativeSession,
+  resolveFrontendApi,
   serializeNativeSession,
   type NativeSession,
 } from '@atlasauth/js';
@@ -58,12 +59,18 @@ export interface NativeSessionOptions {
 export async function createNativeSessionManager(
   options: NativeSessionOptions,
 ): Promise<NativeSessionManager> {
+  // The main process has no origin of its own, so "same-origin" / a bare path
+  // is refused along with a missing value.
+  const baseUrl = resolveFrontendApi(options.frontendApi, {
+    component: 'createNativeSessionManager()',
+    allowSameOrigin: false,
+  });
   const storage = options.storage ?? createInMemoryTokenStorage();
   const key = options.sessionKey ?? DEFAULT_NATIVE_SESSION_KEY;
   const initial = parseNativeSession(await storage.get(key)) ?? undefined;
 
   return new NativeSessionManager({
-    baseUrl: options.frontendApi,
+    baseUrl,
     publishableKey: options.publishableKey,
     clientId: options.clientId,
     initial,

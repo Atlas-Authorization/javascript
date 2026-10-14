@@ -79,6 +79,8 @@ export interface ImportUsersBody {
   users: ImportUserRow[];
   /** Update an existing user matched by verified email instead of skipping it. */
   upsert?: boolean;
+  /** Whether the import may notify the imported users. Defaults to false: nothing is sent. */
+  notify?: boolean;
 }
 
 export function importExportResource(request: RequestFn) {

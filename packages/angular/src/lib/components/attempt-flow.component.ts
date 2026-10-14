@@ -6,8 +6,9 @@ import {
   Output,
   inject,
 } from '@angular/core';
-import { nextStep, type AttemptView, type FieldError } from '@atlasauth/js';
+import { nextStep, type AttemptView, type CaptchaController, type FieldError } from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
+import { AtlasCaptchaSlotDirective } from '../directives/captcha-slot.directive';
 import { classFor, type ElementKey } from '../appearance';
 import { translate } from '../i18n';
 
@@ -38,6 +39,7 @@ interface StepField {
   selector: 'atlas-attempt-flow',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [AtlasCaptchaSlotDirective],
   template: `
     <div [class]="cls('card', 'atlas-card')">
       <h1 [class]="cls('headerTitle', 'atlas-title')">{{ t(titleKey) }}</h1>
@@ -54,6 +56,7 @@ interface StepField {
               <input
                 [class]="cls('formFieldInput', 'atlas-input')"
                 [type]="f.type"
+                [attr.name]="f.name"
                 [value]="values[f.name] ?? ''"
                 (input)="setValue(f.name, $any($event.target).value)"
               />
@@ -64,6 +67,10 @@ interface StepField {
           } @else {
             <p>{{ t(f.labelKey) }}</p>
           }
+        }
+
+        @if (showCaptcha()) {
+          <div class="atlas-captcha" data-atlas-captcha="" [atlasCaptchaSlot]="captcha"></div>
         }
 
         @if (showSubmit()) {
@@ -82,6 +89,12 @@ export class AttemptFlowComponent {
   @Input() busy = false;
   @Input() errors: FieldError[] = [];
   @Input() titleKey = 'signIn.title';
+  /**
+   * The sign-in captcha, drawn above the submit button on the identifier step
+   * (an always-on sign-in captcha) and on the challenge step the server demands
+   * with `needs_captcha`. Null when the flow draws none.
+   */
+  @Input() captcha: CaptchaController | null = null;
 
   /** Emits the collected field values when the form is submitted. */
   @Output() submitFlow = new EventEmitter<Record<string, string>>();
@@ -117,6 +130,11 @@ export class AttemptFlowComponent {
     return this.attempt ? nextStep(this.attempt) : ({ kind: 'collect_identifier' } as const);
   }
 
+  protected showCaptcha(): boolean {
+    const kind = this.step().kind;
+    return !!this.captcha && (kind === 'collect_identifier' || kind === 'collect_captcha');
+  }
+
   protected showSubmit(): boolean {
     const kind = this.step().kind;
     return kind !== 'done' && kind !== 'await_oauth';
@@ -142,6 +160,10 @@ export class AttemptFlowComponent {
         return [{ kind: 'input', name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
       case 'collect_new_password':
         return [{ kind: 'input', name: 'password', labelKey: 'reset.newPasswordLabel', type: 'password' }];
+      case 'collect_captcha':
+        // §5 the server withheld the attempt until a captcha clears. Solving the
+        // widget resubmits the identifier on its own; the button retries.
+        return [msg('captcha.prompt')];
       case 'await_oauth':
         return [msg('signIn.magicLinkSent')];
       case 'done':

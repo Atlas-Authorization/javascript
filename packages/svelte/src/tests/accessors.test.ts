@@ -31,6 +31,7 @@ describe('getAuth status/session', () => {
     );
     current = createAtlasClient({
       publishableKey: 'pk_test',
+      frontendApi: 'https://fapi.example',
       manualBoot: true,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });

@@ -1,4 +1,4 @@
-import { FapiClient, type ProviderToken } from '@atlasauth/js';
+import { FapiClient, resolveFrontendApi, type ProviderToken } from '@atlasauth/js';
 import type { AtlasSession, AtlasUser } from './types';
 
 /**
@@ -42,7 +42,12 @@ export function createNativeClient(opts: {
 }): FapiClient {
   return new FapiClient({
     publishableKey: opts.publishableKey,
-    baseUrl: opts.frontendApi,
+    // Exported, so validated here too: a native app has no origin to resolve a
+    // relative URL against.
+    baseUrl: resolveFrontendApi(opts.frontendApi, {
+      component: 'createNativeClient()',
+      allowSameOrigin: false,
+    }),
     fetchImpl: bearerFetch(opts.fetchImpl, opts.getToken),
   });
 }

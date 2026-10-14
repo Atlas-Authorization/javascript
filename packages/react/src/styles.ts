@@ -17,6 +17,13 @@
  * (`appearance.elements` classes, or the host's own CSS) are APPENDED and land
  * later in the cascade, so they win on equal specificity — the base never fights
  * an override.
+ *
+ * Accessibility floor: label text on a primary fill reads
+ * `--atlas-color-text-on-primary` (contrast-picked from the primary by
+ * `resolveTokens`), every interactive element gets a solid 2px
+ * `:focus-visible` outline in `--atlas-color-focus-ring` (a glow alone is too
+ * faint to find the focus by), and inputs are never under 16px so iOS Safari
+ * does not zoom the page on focus.
  */
 export const ATLAS_STYLE_ELEMENT_ID = 'atlas-base-styles';
 
@@ -32,10 +39,11 @@ export const ATLAS_BASE_CSS = `
 .atlas-field{display:flex;flex-direction:column;gap:calc(var(--atlas-spacing-unit,4px) * 1.5);font-size:.875rem;}
 .atlas-field > span{font-weight:500;color:var(--atlas-color-text,#1c1c1f);}
 
-.atlas-input{width:100%;padding:10px 12px;font-size:.95rem;font-family:inherit;color:var(--atlas-color-text,#1c1c1f);background:var(--atlas-color-background,#fff);border:1px solid var(--atlas-color-border,#e4e4e9);border-radius:var(--atlas-border-radius,8px);outline:none;transition:border-color .15s ease,box-shadow .15s ease;}
-.atlas-input:focus{border-color:var(--atlas-color-primary,#5b5bd6);box-shadow:0 0 0 3px color-mix(in srgb,var(--atlas-color-primary,#5b5bd6) 25%,transparent);}
+.atlas-input{width:100%;padding:10px 12px;font-size:max(16px,.95rem);font-family:inherit;color:var(--atlas-color-text,#1c1c1f);background:var(--atlas-color-background,#fff);border:1px solid var(--atlas-color-border,#e4e4e9);border-radius:var(--atlas-border-radius,8px);outline:none;transition:border-color .15s ease,box-shadow .15s ease;}
+.atlas-input:focus{border-color:var(--atlas-color-primary,#5b5bd6);}
+:is(.atlas-input,.atlas-button,.atlas-social-button,.atlas-menu-item,.atlas-tab,.atlas-avatar):focus-visible{outline:2px solid var(--atlas-color-focus-ring,var(--atlas-color-primary,#5b5bd6));outline-offset:2px;}
 
-.atlas-button{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:40px;padding:10px 16px;font-size:.95rem;font-weight:600;font-family:inherit;color:#fff;background:var(--atlas-color-primary,#5b5bd6);border:1px solid transparent;border-radius:var(--atlas-border-radius,8px);cursor:pointer;transition:filter .15s ease,opacity .15s ease;}
+.atlas-button{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:40px;padding:10px 16px;font-size:.95rem;font-weight:600;font-family:inherit;color:var(--atlas-color-text-on-primary,#fff);background:var(--atlas-color-primary,#5b5bd6);border:1px solid transparent;border-radius:var(--atlas-border-radius,8px);cursor:pointer;transition:filter .15s ease,opacity .15s ease;}
 .atlas-button:hover:not(:disabled){filter:brightness(1.06);}
 .atlas-button:active:not(:disabled){filter:brightness(.94);}
 .atlas-button:disabled{opacity:.6;cursor:not-allowed;}
@@ -53,7 +61,7 @@ export const ATLAS_BASE_CSS = `
 .atlas-social-icon svg{width:18px;height:18px;display:block;}
 
 .atlas-user-button{position:relative;display:inline-block;}
-.atlas-avatar{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:none;border-radius:999px;overflow:hidden;background:var(--atlas-color-primary,#5b5bd6);color:#fff;font-weight:600;font-size:.875rem;cursor:pointer;}
+.atlas-avatar{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:none;border-radius:999px;overflow:hidden;background:var(--atlas-color-primary,#5b5bd6);color:var(--atlas-color-text-on-primary,#fff);font-weight:600;font-size:.875rem;cursor:pointer;}
 .atlas-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
 
 .atlas-menu{position:absolute;right:0;top:100%;margin-top:6px;min-width:12rem;display:flex;flex-direction:column;padding:4px;background:var(--atlas-color-background,#fff);border:1px solid var(--atlas-color-border,#e4e4e9);border-radius:var(--atlas-border-radius,8px);box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:50;}
@@ -111,14 +119,14 @@ export const ATLAS_DESIGN_CSS = `
 :where(.atlas-root[data-atlas-design]) .atlas-account-field{display:flex;flex-direction:column;gap:calc(var(--atlas-space-unit) * 1.5);font-size:var(--atlas-font-size-sm);color:var(--atlas-color-text);}
 :where(.atlas-root[data-atlas-design]) .atlas-account-input{padding:6px 10px;font-family:inherit;outline:none;}
 
-:where(.atlas-root[data-atlas-design]) :is(.atlas-input,.atlas-account-input){min-height:var(--atlas-control-height);font-size:var(--atlas-font-size-base);color:var(--atlas-color-input-text);background:var(--atlas-color-input-background);border:var(--atlas-border-width) solid var(--atlas-color-border);border-radius:var(--atlas-radius-control);}
-:where(.atlas-root[data-atlas-design]) :is(.atlas-input:focus,.atlas-account-input:focus){border-color:var(--atlas-color-primary);box-shadow:0 0 0 3px var(--atlas-color-focus-ring);}
+:where(.atlas-root[data-atlas-design]) :is(.atlas-input,.atlas-account-input){min-height:var(--atlas-control-height);font-size:max(16px,var(--atlas-font-size-base));color:var(--atlas-color-input-text);background:var(--atlas-color-input-background);border:var(--atlas-border-width) solid var(--atlas-color-border);border-radius:var(--atlas-radius-control);}
+:where(.atlas-root[data-atlas-design]) :is(.atlas-input:focus,.atlas-account-input:focus){border-color:var(--atlas-color-primary);}
+:where(.atlas-root[data-atlas-design]) :is(.atlas-input,.atlas-account-input,.atlas-button,.atlas-button-secondary,.atlas-social-button,.atlas-menu-item,.atlas-tab,.atlas-avatar):focus-visible{outline:2px solid var(--atlas-focus-outline-color,var(--atlas-color-primary));outline-offset:2px;}
 :where(.atlas-root[data-atlas-input="filled"]) :is(.atlas-input,.atlas-account-input){background:color-mix(in srgb,var(--atlas-color-text) 6%,var(--atlas-color-input-background));border-color:transparent;}
 :where(.atlas-root[data-atlas-input="underline"]) :is(.atlas-input,.atlas-account-input){background:transparent;border-width:0 0 max(1px,var(--atlas-border-width)) 0;border-radius:0;padding-left:0;padding-right:0;}
 :where(.atlas-root[data-atlas-input="underline"]) :is(.atlas-input,.atlas-account-input):focus{box-shadow:0 1px 0 0 var(--atlas-color-primary);}
 
-:where(.atlas-root[data-atlas-design]) .atlas-button{min-height:var(--atlas-control-height);font-size:var(--atlas-font-size-base);color:var(--atlas-color-primary-ink);background:var(--atlas-color-primary);border-width:var(--atlas-border-width);border-radius:var(--atlas-radius-control);text-transform:var(--atlas-button-text-transform);letter-spacing:var(--atlas-button-letter-spacing);}
-:where(.atlas-root[data-atlas-design]) :is(.atlas-button,.atlas-button-secondary,.atlas-social-button):focus-visible{outline:none;box-shadow:0 0 0 3px var(--atlas-color-focus-ring);}
+:where(.atlas-root[data-atlas-design]) .atlas-button{min-height:var(--atlas-control-height);font-size:var(--atlas-font-size-base);color:var(--atlas-color-text-on-primary,var(--atlas-color-primary-ink));background:var(--atlas-color-primary);border-width:var(--atlas-border-width);border-radius:var(--atlas-radius-control);text-transform:var(--atlas-button-text-transform);letter-spacing:var(--atlas-button-letter-spacing);}
 :where(.atlas-root[data-atlas-button="outline"]) .atlas-button{background:transparent;color:var(--atlas-color-primary-text);border:max(1px,var(--atlas-border-width)) solid var(--atlas-color-primary);}
 :where(.atlas-root[data-atlas-button="soft"]) .atlas-button{background:color-mix(in srgb,var(--atlas-color-primary) 14%,transparent);color:var(--atlas-color-primary-text);border-color:transparent;}
 :where(.atlas-root[data-atlas-button="gradient"]) .atlas-button{background:linear-gradient(135deg,var(--atlas-color-primary),var(--atlas-color-accent));}
@@ -129,7 +137,7 @@ export const ATLAS_DESIGN_CSS = `
 
 :where(.atlas-root[data-atlas-social="icons"]) .atlas-social-label{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}
 
-:where(.atlas-root[data-atlas-design]) .atlas-avatar{background:var(--atlas-color-primary);color:var(--atlas-color-primary-ink);}
+:where(.atlas-root[data-atlas-design]) .atlas-avatar{background:var(--atlas-color-primary);color:var(--atlas-color-text-on-primary,var(--atlas-color-primary-ink));}
 :where(.atlas-root[data-atlas-design]) .atlas-menu{background:var(--atlas-color-surface);border:var(--atlas-card-border-width) solid var(--atlas-color-border);border-radius:var(--atlas-radius-card);box-shadow:var(--atlas-shadow-card);}
 :where(.atlas-root[data-atlas-design]) .atlas-menu-item{color:var(--atlas-color-text);border-radius:var(--atlas-radius-control);}
 :where(.atlas-root[data-atlas-design]) .atlas-tabs{border-bottom-color:var(--atlas-color-border);}
@@ -142,10 +150,20 @@ export const ATLAS_DESIGN_CSS = `
 
 /**
  * The full stylesheet the provider renders: base rules + design-system rules.
- * (Exported separately so the base rules stay byte-identical to earlier
- * versions — the backward-compatibility guarantee is testable.)
+ * (Exported separately so the base rules are pinned by a hash — they change
+ * only deliberately, as in 0.5.0 for accessibility.)
  */
-export const ATLAS_STYLES_CSS = `${ATLAS_BASE_CSS}\n${ATLAS_DESIGN_CSS}`;
+/**
+ * Rules for the create-account form and the captcha slot (added in 0.5.0). Kept
+ * out of {@link ATLAS_BASE_CSS} so the base rules stay byte-identical.
+ */
+export const ATLAS_FLOW_CSS = `.atlas-captcha{display:flex;justify-content:center;}
+.atlas-captcha:empty{display:none;}
+.atlas-consent{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;font-size:.875rem;}
+.atlas-choices{display:flex;flex-direction:column;gap:6px;}
+.atlas-choice{display:flex;gap:6px;align-items:center;font-weight:400;}`;
+
+export const ATLAS_STYLES_CSS = `${ATLAS_BASE_CSS}\n${ATLAS_DESIGN_CSS}\n${ATLAS_FLOW_CSS}`;
 
 /**
  * Inject the base stylesheet once. Idempotent (guards on the element id), so

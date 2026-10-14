@@ -23,6 +23,13 @@ export const ATLAS_ERROR_CODES = {
   PASSWORD_BREACHED: 'PASSWORD_BREACHED',
   PASSWORD_POLICY: 'PASSWORD_POLICY',
   LOCKED: 'LOCKED',
+  /**
+   * The instance requires a captcha for this flow and no token was supplied
+   * (pass `captchaToken`, or give `<AtlasProvider>` a `getCaptchaToken`).
+   */
+  CAPTCHA_REQUIRED: 'CAPTCHA_REQUIRED',
+  /** The captcha token was rejected by the provider; get a fresh one and retry. */
+  CAPTCHA_FAILED: 'CAPTCHA_FAILED',
 } as const;
 
 export type AtlasErrorCode = (typeof ATLAS_ERROR_CODES)[keyof typeof ATLAS_ERROR_CODES];
@@ -48,6 +55,19 @@ export function isEmailDeliveryNotConfigured(
   input: ErrorList | Pick<FlowResult, 'errors'> | null | undefined,
 ): boolean {
   return hasErrorCode(input, ATLAS_ERROR_CODES.EMAIL_DELIVERY_NOT_CONFIGURED);
+}
+
+/**
+ * True when the flow was refused for a captcha (`CAPTCHA_REQUIRED` or
+ * `CAPTCHA_FAILED`): render the provider's challenge and retry with its token.
+ */
+export function isCaptchaRequired(
+  input: ErrorList | Pick<FlowResult, 'errors'> | null | undefined,
+): boolean {
+  return (
+    hasErrorCode(input, ATLAS_ERROR_CODES.CAPTCHA_REQUIRED) ||
+    hasErrorCode(input, ATLAS_ERROR_CODES.CAPTCHA_FAILED)
+  );
 }
 
 /** The first server message — written for end users, so show it verbatim. */

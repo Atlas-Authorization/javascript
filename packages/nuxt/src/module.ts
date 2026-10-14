@@ -32,7 +32,12 @@ export interface ModuleOptions {
    * `NUXT_PUBLIC_ATLAS_PUBLISHABLE_KEY` env var in production.
    */
   publishableKey?: string;
-  /** The instance's FAPI origin (e.g. `https://fox-fapi.atlasauth.net`). Public. */
+  /**
+   * The instance's FAPI origin (e.g. `https://fox-fapi.atlasauth.net`), or
+   * `"same-origin"` behind a reverse proxy on the app's own origin. Public.
+   * Required — set here or via `NUXT_PUBLIC_ATLAS_FRONTEND_API`; the runtime
+   * plugin throws an `AtlasConfigError` when neither provides it.
+   */
   frontendApi?: string;
   /**
    * The instance's JWKS URL, used by the Nitro side to verify session JWTs.
@@ -72,7 +77,11 @@ export default defineNuxtModule<ModuleOptions>({
     // ---- runtime config ----------------------------------------------------
     // Public (client + server): only the publishable key and FAPI origin — both
     // safe in a browser bundle. Module options seed the values; the matching
-    // `NUXT_PUBLIC_ATLAS_*` env vars still override at runtime.
+    // `NUXT_PUBLIC_ATLAS_*` env vars still override at runtime. The `''`
+    // placeholder must stay: Nuxt only applies an env override to a key that
+    // exists in runtimeConfig. `frontendApi` is therefore NOT validated here at
+    // build time (it may legitimately arrive only at runtime) — the runtime
+    // plugin validates it when the app starts.
     const publicConfig = (nuxt.options.runtimeConfig.public.atlas ?? {}) as Record<string, unknown>;
     nuxt.options.runtimeConfig.public.atlas = {
       publishableKey: options.publishableKey || (publicConfig.publishableKey as string) || '',

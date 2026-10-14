@@ -11,9 +11,9 @@ import { provideAtlas } from './provide-atlas';
  * fetch, and the imperative token path, without touching the network.
  */
 describe('AtlasService', () => {
-  function configure(fetchImpl: typeof fetch) {
+  function configure(fetchImpl: typeof fetch, frontendApi: string | undefined = 'https://fapi.example') {
     TestBed.configureTestingModule({
-      providers: [provideAtlas({ publishableKey: 'pk_test_x', fetchImpl })],
+      providers: [provideAtlas({ publishableKey: 'pk_test_x', frontendApi, fetchImpl })],
     });
     return TestBed.inject(AtlasService);
   }
@@ -39,10 +39,30 @@ describe('AtlasService', () => {
     expect(await atlas.getToken()).toBeNull();
   });
 
-  it('exposes the publishable key configuration through frontendApi default', () => {
+  it('exposes the resolved frontendApi', () => {
     const fetchImpl = (async () =>
       new Response('{}', { status: 200 })) as unknown as typeof fetch;
-    const atlas = configure(fetchImpl);
+    const atlas = configure(fetchImpl, 'https://fapi.example/');
+    expect(atlas.frontendApi).toBe('https://fapi.example');
+  });
+
+  it('resolves "same-origin" to relative request paths', () => {
+    const fetchImpl = (async () =>
+      new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    const atlas = configure(fetchImpl, 'same-origin');
     expect(atlas.frontendApi).toBe('');
+  });
+
+  it('throws a clear config error when frontendApi is missing', () => {
+    const fetchImpl = (async () =>
+      new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    let caught: unknown;
+    try {
+      configure(fetchImpl, undefined);
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { name?: string }).name).toBe('AtlasConfigError');
+    expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
   });
 });

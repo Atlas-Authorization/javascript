@@ -34,7 +34,7 @@ describe('appearance design support (same semantics as @atlasauth/react)', () =>
       String(url).endsWith('/v1/appearance') ? json({ design: null }) : json({ session: null, user: null }),
     );
     createApp({ render: () => h('div') })
-      .use(createAtlas({ publishableKey: 'pk_test', fetchImpl: fetchImpl as unknown as typeof fetch }))
+      .use(createAtlas({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl: fetchImpl as unknown as typeof fetch }))
       .mount(document.createElement('div'));
     await flush();
     await flush();
@@ -46,7 +46,7 @@ describe('appearance design support (same semantics as @atlasauth/react)', () =>
     reset();
     const fetchImpl = vi.fn(async () => json({ session: null, user: null }));
     createApp({ render: () => h('div') })
-      .use(createAtlas({ publishableKey: 'pk_test', appearance: { preset: 'midnight' }, fetchImpl: fetchImpl as unknown as typeof fetch }))
+      .use(createAtlas({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', appearance: { preset: 'midnight' }, fetchImpl: fetchImpl as unknown as typeof fetch }))
       .mount(document.createElement('div'));
     const root = document.documentElement;
     const key = root.getAttribute('data-atlas-design');
@@ -65,7 +65,7 @@ describe('appearance design support (same semantics as @atlasauth/react)', () =>
       .use(
         createAtlas({
           publishableKey: 'pk_test',
-          frontendApi: '',
+          frontendApi: 'same-origin',
           appearance: { design: { palette: { accent: '#123456' } } },
           fetchImpl: fetchImpl as unknown as typeof fetch,
         }),

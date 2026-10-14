@@ -43,7 +43,7 @@ describe('control components', () => {
     const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ session: null, user: null }));
 
     const { container } = render(() =>
-      h(AtlasProvider, { publishableKey: 'pk_test', fetchImpl }, [
+      h(AtlasProvider, { publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl }, [
         h(SignedIn, {}, h('span', { class: 'in' }, 'in')),
         h(SignedOut, {}, h('span', { class: 'out' }, 'out')),
       ]),
@@ -62,7 +62,7 @@ describe('control components', () => {
     const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json(signedIn()));
 
     const { container } = render(() =>
-      h(AtlasProvider, { publishableKey: 'pk_test', fetchImpl }, [
+      h(AtlasProvider, { publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl }, [
         h(SignedIn, {}, h('span', { class: 'in' }, 'in')),
         h(SignedOut, {}, h('span', { class: 'out' }, 'out')),
       ]),
@@ -86,7 +86,7 @@ describe('control components', () => {
     const { container } = render(() =>
       h(
         AtlasProvider,
-        { publishableKey: 'pk_test', fetchImpl },
+        { publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl },
         h(Protect, { permission: 'org:x:manage' }, h('span', { class: 'allowed' }, 'ok')),
       ),
     );
@@ -103,7 +103,7 @@ describe('control components', () => {
     const { container } = render(() =>
       h(
         AtlasProvider,
-        { publishableKey: 'pk_test', fetchImpl },
+        { publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl },
         h(
           Protect,
           { permission: 'org:x:delete', fallback: h('span', { class: 'denied' }, 'no') },

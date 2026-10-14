@@ -9,6 +9,7 @@ import {
   msUntilRefresh,
   readExpiry,
   readRedirectResult,
+  resolveFrontendApi,
   stripRedirectParams,
   type ProviderToken,
   runFrontChannelLogoutFromResponse,
@@ -94,7 +95,14 @@ export interface AtlasClient {
 
 export interface AtlasProviderProps {
   publishableKey: string;
-  /** The instance's FAPI origin. Empty for same-origin. */
+  /**
+   * The instance's Frontend API: an absolute URL such as
+   * `"https://auth.example.com"`, or `"same-origin"` / a path such as `"/atlas"`
+   * behind a reverse proxy on the app's own origin. Required at runtime — a
+   * missing or malformed value throws an `AtlasConfigError`
+   * (`FRONTEND_API_REQUIRED` / `FRONTEND_API_INVALID`). Optional in the type
+   * only so existing call sites keep compiling.
+   */
   frontendApi?: string;
   /** Injected in tests to drive the client through a mocked network. */
   fetchImpl?: typeof fetch;
@@ -112,7 +120,9 @@ export function createAtlasClient(options: {
   fetchImpl?: typeof fetch;
 }): { client: AtlasClient; boot: () => Promise<void>; dispose: () => void } {
   const publishableKey = options.publishableKey;
-  const baseUrl = options.frontendApi ?? '';
+  // Throws on a missing/invalid value rather than quietly sending every request
+  // to a relative path on the app's origin.
+  const baseUrl = resolveFrontendApi(options.frontendApi, { component: '<AtlasProvider>' });
   const doFetch = options.fetchImpl ?? fetch;
 
   const [state, setState] = createStore<AtlasState>({

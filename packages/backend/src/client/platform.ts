@@ -166,10 +166,10 @@ export interface CreateAccountlessAppBody {
 
 /** Page text on the Sign in with Atlas page. Plain text; null or empty uses the default. */
 export interface AtlasIdAppCopy {
-  /** Default "Sign in to continue to {app}". */
+  /** Default "Sign in" (the app is named on the "to continue to {app}" line under it). */
   sign_in_title?: string | null;
   sign_in_subtitle?: string | null;
-  /** Default "Create your account to continue to {app}". */
+  /** Default "Create your Atlas Account". */
   sign_up_title?: string | null;
   sign_up_subtitle?: string | null;
   /** Shown on the consent screen above the list of permissions. */

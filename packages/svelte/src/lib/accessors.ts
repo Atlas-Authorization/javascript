@@ -1,15 +1,23 @@
 import { derived, get, writable, type Readable } from 'svelte/store';
 import {
   FapiClient,
-  advance,
+  advanceWithCaptcha,
+  createCaptchaController,
+  createSignUp,
+  fetchInstanceSettings,
+  flowNeedsCaptcha,
+  signInCaptchaOptions,
   flowFromPending,
   pollAttempt,
   shouldKeepPolling,
+  type CaptchaController,
   type FlowState,
+  type InstanceSettings,
   type ProviderToken,
   type SignOutOptions,
 } from '@atlasauth/js';
 import { useAtlas, type AuthStatus } from './context';
+import { translate } from './i18n';
 import { evaluate, type ProtectCondition } from './protect';
 import type { AtlasOrganizationMembership, AtlasSession, AtlasUser } from './types';
 
@@ -147,7 +155,24 @@ export function signOut(options?: SignOutOptions): Promise<void> {
 export interface FlowController {
   state: Readable<FlowState>;
   submit(values: Record<string, string>): void;
-  /** Stop the magic-link poll loop — call from `onDestroy`. */
+  /**
+   * Create an account (`POST /v1/client/sign_ups`) from a create-account form's
+   * values — email, password and any configured sign-up fields — carrying the
+   * sign-up captcha's token when the instance requires one. The emailed code is
+   * then posted with {@link submit}.
+   */
+  create(values: Record<string, string>, consent?: boolean): void;
+  /**
+   * The instance's public sign-in / sign-up settings (captcha, sign-up fields,
+   * legal consent) from `GET /v1/appearance`; null until loaded or when the
+   * server could not be reached.
+   */
+  settings: Readable<InstanceSettings | null>;
+  /** The sign-in captcha (identifier step / `needs_captcha` challenge). */
+  captcha: CaptchaController;
+  /** The sign-up captcha (the create-account step). */
+  signUpCaptcha: CaptchaController;
+  /** Stop the magic-link poll loop and remove the captcha widgets — call from `onDestroy`. */
   destroy(): void;
 }
 
@@ -161,6 +186,27 @@ function createFlow(): FlowController {
   // Seeded from a redirect that came back mid-flow (e.g. OAuth needing a second
   // factor), so the user resumes at the demanded step instead of starting over.
   const state = writable<FlowState>(flowFromPending(atlas.pendingAttempt));
+  const settings = writable<InstanceSettings | null>(null);
+  const t = (key: string) => translate(atlas.catalog, key);
+
+  // §5 the per-flow captcha, driven by the instance's settings so turning it on
+  // in the dashboard needs no code change. Kept in step with the settings and
+  // the flow's step synchronously, before the components re-render.
+  const captcha = createCaptchaController();
+  const signUpCaptcha = createCaptchaController();
+  let identifier = '';
+  const unsubscribeCaptcha = derived([settings, state], (pair) => pair).subscribe(
+    ([current, flow]) => {
+      captcha.configure(signInCaptchaOptions(current?.captchaFlows.signIn, flow, () => submit({})));
+      const signUpFlow = current?.captchaFlows.signUp;
+      signUpCaptcha.configure({ flow: signUpFlow, active: !flow.attempt && flowNeedsCaptcha(signUpFlow) });
+    },
+  );
+  if (typeof window !== 'undefined') {
+    void fetchInstanceSettings(client).then((loaded) => {
+      if (loaded) settings.set(loaded);
+    });
+  }
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   function stopPolling(): void {
@@ -189,32 +235,57 @@ function createFlow(): FlowController {
     }, 2_000);
   }
 
+  // On completion the response carries a one-time ticket (§7.1). Exchange it
+  // for cookies over a same-origin request — FAPI is cross-origin to the app
+  // and cannot set the cookie on the completion response itself — THEN
+  // re-boot so the rest of the app sees a signed-in user.
+  async function finish(next: FlowState): Promise<void> {
+    state.set(next);
+    if (next.attempt?.status === 'complete') {
+      if (next.ticket) {
+        await client.post('/v1/client/tickets/exchange', {
+          attempt_id: (next.attempt as { id?: string }).id,
+          ticket: next.ticket,
+        });
+      }
+      await atlas.reload();
+      return;
+    }
+    maybeStartPolling();
+  }
+
   function submit(values: Record<string, string>): void {
     void (async () => {
       state.update((current) => ({ ...current, busy: true, errors: [] }));
-      const next = await advance(client, get(state), values);
-      state.set(next);
-
-      // On completion the response carries a one-time ticket (§7.1). Exchange it
-      // for cookies over a same-origin request — FAPI is cross-origin to the app
-      // and cannot set the cookie on the completion response itself — THEN
-      // re-boot so the rest of the app sees a signed-in user.
-      if (next.attempt?.status === 'complete') {
-        if (next.ticket) {
-          await client.post('/v1/client/tickets/exchange', {
-            attempt_id: (next.attempt as { id?: string }).id,
-            ticket: next.ticket,
-          });
-        }
-        await atlas.reload();
-        return;
-      }
-
-      maybeStartPolling();
+      const out = await advanceWithCaptcha(client, get(state), values, { captcha, identifier, t });
+      identifier = out.identifier;
+      await finish(out.state);
     })();
   }
 
-  return { state: { subscribe: state.subscribe }, submit, destroy: stopPolling };
+  function create(values: Record<string, string>, consent = true): void {
+    void (async () => {
+      state.update((current) => ({ ...current, busy: true, errors: [] }));
+      await finish(await createSignUp(client, values, { consent, captcha: signUpCaptcha, t }));
+    })();
+  }
+
+  function destroy(): void {
+    stopPolling();
+    unsubscribeCaptcha();
+    captcha.destroy();
+    signUpCaptcha.destroy();
+  }
+
+  return {
+    state: { subscribe: state.subscribe },
+    submit,
+    create,
+    settings: { subscribe: settings.subscribe },
+    captcha,
+    signUpCaptcha,
+    destroy,
+  };
 }
 
 /** Start (or resume) a sign-in flow. Drives `<SignIn>`; usable standalone too. */
@@ -222,7 +293,11 @@ export function signIn(): FlowController {
   return createFlow();
 }
 
-/** Start a sign-up flow. Drives `<SignUp>`; usable standalone too. */
+/**
+ * Start a sign-up flow. Drives `<SignUp>`; usable standalone too:
+ * `create(values)` posts `/v1/client/sign_ups` (the account is created there),
+ * then `submit({ code })` verifies the emailed code and completes the session.
+ */
 export function signUp(): FlowController {
   return createFlow();
 }

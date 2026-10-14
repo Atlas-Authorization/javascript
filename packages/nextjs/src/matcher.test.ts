@@ -4,6 +4,7 @@ import {
   createRouteMatcher,
   decideRoute,
   isStaticAsset,
+  localizeSignInUrl,
   matchesAny,
   matchesPattern,
   safeRedirect,
@@ -210,5 +211,55 @@ describe('createRouteMatcher (Clerk-parity)', () => {
     expect(isProtected('https://app.test/dashboard/deep')).toBe(true);
     expect(isProtected('/pricing')).toBe(false);
     expect(isProtected('/adminx')).toBe(false); // exact, not prefix, without (.*)
+  });
+});
+
+describe('locale-prefixed patterns', () => {
+  it('matches a :param segment against exactly one non-empty segment', () => {
+    expect(matchesPattern('/en/dashboard', '/:locale/dashboard')).toBe(true);
+    expect(matchesPattern('/dashboard', '/:locale/dashboard')).toBe(false);
+    expect(matchesPattern('/en/dashboard/x', '/:locale/dashboard')).toBe(false);
+    expect(matchesPattern('/en', '/:locale')).toBe(true);
+    expect(matchesPattern('/', '/:locale')).toBe(false);
+  });
+
+  it('combines a :param segment with the trailing wildcard', () => {
+    expect(matchesPattern('/de/dashboard/settings', '/:locale/dashboard(.*)')).toBe(true);
+    expect(matchesPattern('/de/dashboard', '/:locale/dashboard(.*)')).toBe(true);
+    expect(matchesPattern('/de/pricing', '/:locale/dashboard(.*)')).toBe(false);
+    expect(matchesPattern('/de/anything', '/:locale(.*)')).toBe(true);
+  });
+
+  it('restricts :locale to the configured locales', () => {
+    const options = { locales: ['en', 'de'] };
+    expect(matchesPattern('/de/sign-in', '/:locale/sign-in(.*)', options)).toBe(true);
+    expect(matchesPattern('/admin/sign-in', '/:locale/sign-in(.*)', options)).toBe(false);
+    expect(createRouteMatcher(['/:locale/dashboard(.*)'], options)('/fr/dashboard')).toBe(false);
+  });
+
+  it('leaves patterns without a :param on their original semantics', () => {
+    expect(matchesPattern('/dashboardx', '/dashboard(.*)')).toBe(true);
+    expect(matchesPattern('/a/b', '/a')).toBe(false);
+  });
+
+  it('fills /:locale in the sign-in URL from the request', () => {
+    const config = { locales: ['en', 'de'], defaultLocale: 'en' };
+    expect(localizeSignInUrl('/:locale/sign-in', '/de/dashboard', config)).toBe('/de/sign-in');
+    expect(localizeSignInUrl('/:locale/sign-in', '/dashboard', config)).toBe('/en/sign-in');
+    expect(localizeSignInUrl('/:locale/sign-in', '/dashboard', { locales: ['en'] })).toBe('/sign-in');
+    expect(localizeSignInUrl('/sign-in', '/de/dashboard', config)).toBe('/sign-in');
+  });
+
+  it('protects a locale-prefixed route and redirects to the localized sign-in', () => {
+    const decision = decideRoute({
+      pathname: '/de/dashboard',
+      signedIn: false,
+      config: {
+        locales: ['en', 'de'],
+        signInUrl: '/:locale/sign-in',
+        publicRoutes: ['/:locale', '/:locale/sign-in(.*)'],
+      },
+    });
+    expect(decision).toEqual({ action: 'redirect', to: '/de/sign-in?redirect_url=%2Fde%2Fdashboard' });
   });
 });

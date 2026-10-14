@@ -17,6 +17,7 @@ import {
   msUntilRefresh,
   readExpiry,
   readRedirectResult,
+  resolveFrontendApi,
   stripRedirectParams,
   type ProviderToken,
   runFrontChannelLogoutFromResponse,
@@ -145,7 +146,11 @@ export class AtlasService implements OnDestroy {
   constructor() {
     const options = this.options;
     this.publishableKey = options.publishableKey;
-    this.baseUrl = options.frontendApi ?? '';
+    // Throws an `AtlasConfigError` on a missing/invalid value rather than quietly
+    // sending every request to a relative path on the app's origin.
+    this.baseUrl = resolveFrontendApi(options.frontendApi, {
+      component: 'provideAtlas() / AtlasModule.forRoot()',
+    });
     this.doFetch = options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
 
     this.catalog = options.localization ? withFallback(options.localization) : EN_US;

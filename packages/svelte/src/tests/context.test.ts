@@ -18,7 +18,7 @@ function jsonResponse(body: unknown): Response {
 
 describe('createAtlasClient — context init', () => {
   it('starts in the loading state with empty stores', () => {
-    const client = createAtlasClient({ publishableKey: 'pk_test', manualBoot: true });
+    const client = createAtlasClient({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', manualBoot: true });
 
     expect(get(client.status)).toBe('loading');
     expect(get(client.user)).toBeNull();
@@ -40,6 +40,17 @@ describe('createAtlasClient — context init', () => {
     expect(client.frontendApi).toBe('https://fapi.example');
     expect(client.catalog['signIn.submit']).toBe('Continue');
   });
+
+  it('throws a clear config error when frontendApi is missing', () => {
+    let caught: unknown;
+    try {
+      createAtlasClient({ publishableKey: 'pk_test', manualBoot: true });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { name?: string }).name).toBe('AtlasConfigError');
+    expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
+  });
 });
 
 describe('createAtlasClient — reload transitions the stores', () => {
@@ -54,6 +65,7 @@ describe('createAtlasClient — reload transitions the stores', () => {
 
     const client = createAtlasClient({
       publishableKey: 'pk_test',
+      frontendApi: 'https://fapi.example',
       fetchImpl,
       manualBoot: true,
     });
@@ -78,7 +90,7 @@ describe('createAtlasClient — reload transitions the stores', () => {
       jsonResponse({ session: null, user: null }),
     ) as unknown as typeof fetch;
 
-    const client = createAtlasClient({ publishableKey: 'pk_test', fetchImpl, manualBoot: true });
+    const client = createAtlasClient({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl, manualBoot: true });
     await client.reload();
 
     expect(get(client.status)).toBe('signed_out');
@@ -91,7 +103,7 @@ describe('createAtlasClient — reload transitions the stores', () => {
       throw new Error('offline');
     }) as unknown as typeof fetch;
 
-    const client = createAtlasClient({ publishableKey: 'pk_test', fetchImpl, manualBoot: true });
+    const client = createAtlasClient({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl, manualBoot: true });
     await client.reload();
 
     // A failed boot from loading is treated as signed_out (nothing to show), but

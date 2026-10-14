@@ -13,6 +13,7 @@ import {
   msUntilRefresh,
   readExpiry,
   readRedirectResult,
+  resolveFrontendApi,
   stripRedirectParams,
   type ProviderToken,
   runFrontChannelLogoutFromResponse,
@@ -78,7 +79,14 @@ export interface AtlasClient {
 
 export interface CreateAtlasOptions {
   publishableKey: string;
-  /** The instance's FAPI origin. */
+  /**
+   * The instance's Frontend API: an absolute URL such as
+   * `"https://auth.example.com"`, or `"same-origin"` / a path such as `"/atlas"`
+   * behind a reverse proxy on the app's own origin. Required at runtime —
+   * `createAtlas()` throws an `AtlasConfigError` (`FRONTEND_API_REQUIRED` /
+   * `FRONTEND_API_INVALID`) when it is missing or malformed. Optional in the
+   * type only so existing call sites keep compiling.
+   */
   frontendApi?: string;
   appearance?: Appearance;
   localization?: Catalog;
@@ -111,7 +119,7 @@ export function createAtlas(options: CreateAtlasOptions): Plugin {
         let applied = applyAppearanceToDom(
           document,
           root,
-          renderAppearance(options.appearance, null, { frontendApi: options.frontendApi }),
+          renderAppearance(options.appearance, null, { frontendApi: client.frontendApi }),
         );
         if (typeof window !== 'undefined' && options.appearance?.instanceDesign !== false) {
           // Deferred a tick so the session boot request goes first.
@@ -120,7 +128,7 @@ export function createAtlas(options: CreateAtlasOptions): Plugin {
             applied = applyAppearanceToDom(
               document,
               root,
-              renderAppearance(options.appearance, design, { frontendApi: options.frontendApi }),
+              renderAppearance(options.appearance, design, { frontendApi: client.frontendApi }),
               applied,
             );
           });
@@ -148,7 +156,9 @@ function createAtlasClient(options: CreateAtlasOptions): {
   loadInstanceDesign: () => Promise<InstanceDesign | null>;
 } {
   const publishableKey = options.publishableKey;
-  const baseUrl = options.frontendApi ?? '';
+  // Throws (synchronously, from `createAtlas()`) on a missing/invalid value
+  // rather than quietly sending every request to a relative path.
+  const baseUrl = resolveFrontendApi(options.frontendApi, { component: '`createAtlas()`' });
   const doFetch = options.fetchImpl ?? fetch;
 
   const status = shallowRef<AuthStatus>('loading');

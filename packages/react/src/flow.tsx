@@ -5,8 +5,10 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from 'react';
 import {
+  flowNeedsCaptcha,
   mintNativeNonce,
   nativeSignIn,
   nextStep,
@@ -27,6 +29,7 @@ import {
   type FlowState,
 } from './fapi';
 import { useClass, useClasses, useText } from './components-shared';
+import { localizeCaptchaErrors, useCaptcha } from './captcha';
 
 /**
  * §10.2 components.
@@ -110,6 +113,7 @@ export function AttemptFlow({
   errors,
   titleKey,
   hideTitle,
+  captcha,
 }: {
   attempt: AttemptView | null;
   onSubmit(values: Record<string, string>): void;
@@ -117,6 +121,12 @@ export function AttemptFlow({
   errors: FieldError[];
   titleKey: string;
   hideTitle?: boolean;
+  /**
+   * The captcha widget slot (see `useCaptcha`), drawn above the submit button on
+   * the identifier step (an always-on sign-in captcha) and on the challenge step
+   * the server demands with `needs_captcha`.
+   */
+  captcha?: ReactNode;
 }) {
   const t = useText();
   const cardClass = useClass('card', 'atlas-card');
@@ -135,6 +145,7 @@ export function AttemptFlow({
       <input
         className={inputClass}
         type={type}
+        name={name}
         value={values[name] ?? ''}
         onChange={(event) => setValues((v) => ({ ...v, [name]: event.target.value }))}
       />
@@ -170,6 +181,18 @@ export function AttemptFlow({
         return [field('code', 'signIn.emailCodeLabel')];
       case 'collect_new_password':
         return [field('password', 'reset.newPasswordLabel', 'password')];
+      case 'collect_captcha':
+        /**
+         * §5 the server withheld the attempt until a captcha clears (an always-on
+         * sign-in gate, or a risk-triggered challenge). The widget below yields
+         * the token; solving it resubmits the identifier automatically, and the
+         * button retries by hand.
+         */
+        return [
+          <p key="captcha" className={cls('text', 'atlas-text')}>
+            {t('captcha.prompt')}
+          </p>,
+        ];
       case 'await_oauth':
         return [<p key="oauth" className={cls('text', 'atlas-text')}>{t('signIn.magicLinkSent')}</p>];
       case 'done':
@@ -208,6 +231,7 @@ export function AttemptFlow({
         }}
       >
         {fields()}
+        {step.kind === 'collect_identifier' || step.kind === 'collect_captcha' ? captcha : null}
         {step.kind !== 'done' && step.kind !== 'await_oauth' ? (
           <button className={buttonClass} disabled={busy} type="submit">
             {t('signIn.submit')}
@@ -250,11 +274,43 @@ function navigateAfterComplete(afterUrl?: string): void {
  * the native/popup social `onComplete`, and the cross-device poll), after the
  * session re-boot, so the destination page already sees a signed-in user.
  */
-export function useFlow({ afterUrl }: { afterUrl?: string } = {}) {
-  const { publishableKey, frontendApi, reload, pendingAttempt } = useAtlas();
+export function useFlow({
+  afterUrl,
+  signInCaptcha = true,
+}: {
+  afterUrl?: string;
+  /**
+   * Drive the sign-in captcha (always-on per-flow captcha and the server's
+   * `needs_captcha` challenge). `<SignUp>` turns it off: its create step has its
+   * own sign-up captcha, and it never posts a sign-in identifier.
+   */
+  signInCaptcha?: boolean;
+} = {}) {
+  const { publishableKey, frontendApi, reload, pendingAttempt, instanceSettings, broadcastSessionChange } = useAtlas();
+  const t = useText();
   // Seeded from a redirect that came back mid-flow (e.g. OAuth needing a second
   // factor), so the user resumes at the demanded step instead of starting over.
   const [state, setState] = useState<FlowState>(() => flowFromPending(pendingAttempt));
+
+  /**
+   * §5 the sign-in captcha. Drawn on the identifier step when the instance
+   * ALWAYS requires one for sign-in (so the first POST already carries the
+   * token), and on the `needs_captcha` challenge step the server answers with
+   * when it withheld the attempt (always-on, or risk-triggered) — where solving
+   * it resubmits the identifier on its own.
+   */
+  const signInFlow = signInCaptcha ? instanceSettings?.captchaFlows.signIn : undefined;
+  const stepKind = state.attempt ? nextStep(state.attempt).kind : 'collect_identifier';
+  const challenged = stepKind === 'collect_captcha';
+  const identifierRef = useRef('');
+  const submitRef = useRef<(values: Record<string, string>) => void>(() => undefined);
+  const captcha = useCaptcha(signInFlow, {
+    active: challenged || (stepKind === 'collect_identifier' && flowNeedsCaptcha(signInFlow)),
+    // On the challenge step the widget is the only thing to do: draw it (even an
+    // invisible one) straight away and continue once it is solved.
+    eager: challenged ? true : undefined,
+    onSolved: challenged ? () => submitRef.current({}) : undefined,
+  });
 
   const client = useMemo(
     () => new FapiClient({ publishableKey, baseUrl: frontendApi }),
@@ -278,23 +334,66 @@ export function useFlow({ afterUrl }: { afterUrl?: string } = {}) {
           });
         }
         await reload();
+        // §R3.2 wake sibling tabs now, rather than when they next gain focus.
+        broadcastSessionChange();
         // §10.2 send the user on once signed-in — no-op when afterUrl is unset.
         navigateAfterComplete(afterUrl);
       }
     },
-    [afterUrl, client, reload],
+    [afterUrl, broadcastSessionChange, client, reload],
   );
 
   const submit = useCallback(
     (values: Record<string, string>) => {
       void (async () => {
         setState((current) => ({ ...current, busy: true, errors: [] }));
-        const next = await advance(client, state, values);
+
+        const kind = state.attempt ? nextStep(state.attempt).kind : 'collect_identifier';
+        let input = values;
+        let sentToken = false;
+        if (kind === 'collect_identifier' || kind === 'collect_captcha') {
+          if (values.identifier) identifierRef.current = values.identifier;
+          if (captcha.needed) {
+            const token = await captcha.getToken();
+            if (token) {
+              // The challenge marker carries no attempt; re-issue the identifier
+              // POST with the token to create the real attempt.
+              const identifier =
+                identifierRef.current ||
+                ((state.attempt as { identifier?: string | null } | null)?.identifier ?? '');
+              input = { ...values, identifier, captcha_token: token };
+              sentToken = true;
+            } else if (kind === 'collect_captcha') {
+              // Nothing to send until the widget yields a token.
+              setState((current) => ({
+                ...current,
+                busy: false,
+                errors: [{ code: 'CAPTCHA_REQUIRED', message: t('captcha.required') }],
+              }));
+              return;
+            }
+          }
+        }
+
+        let next = await advance(client, state, input);
+
+        // A token the provider rejected comes back as the same challenge (the
+        // server does not say why); say so, and draw a fresh widget — tokens are
+        // single-use.
+        const rechallenged = !!next.attempt && nextStep(next.attempt).kind === 'collect_captcha';
+        if (sentToken && rechallenged) {
+          next = { ...next, errors: [{ code: 'CAPTCHA_FAILED', message: t('captcha.failed') }] };
+        }
+        const localized = localizeCaptchaErrors(next.errors, t);
+        next = { ...next, errors: localized.errors };
+        if (sentToken && (rechallenged || next.errors.length > 0)) captcha.reset();
+
         await finish(next);
       })();
     },
-    [client, finish, state],
+    [captcha, client, finish, state, t],
   );
+  submitRef.current = submit;
 
   /** §5.3: collect a sign-in completed by a link opened on another device. */
   useEffect(() => {
@@ -321,7 +420,7 @@ export function useFlow({ afterUrl }: { afterUrl?: string } = {}) {
     return () => clearInterval(timer);
   }, [afterUrl, client, reload, state]);
 
-  return { state, submit, client, finish };
+  return { state, setState, submit, client, finish, captcha };
 }
 
 /** Google's multi-color "G" mark — trusted, static, first-party SVG. */
@@ -960,6 +1059,13 @@ export function SocialSignInButtons({
           // so the existing status handling takes over in the opener.
           if (out.continuationUrl) {
             window.location.href = out.continuationUrl;
+            return;
+          }
+          // Closed without posting back, but the session now exists: the popup
+          // finished the sign-in itself (the browser severed window.opener). Drive
+          // the same completion path, minus the ticket the cookies already used.
+          if (out.sessionDetected) {
+            await onComplete({ attempt: { status: 'complete' } } as unknown as FlowState);
             return;
           }
           // popup_closed / start_failed → the user cancelled; nothing to do.

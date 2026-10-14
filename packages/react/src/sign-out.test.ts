@@ -23,6 +23,9 @@ let host: HTMLDivElement;
 let unmount: (() => void) | null = null;
 
 beforeEach(() => {
+  // Each test signs the same session id out; a tab never re-adopts a session it
+  // signed out of (sessionStorage tombstone), so start every test clean.
+  sessionStorage.clear();
   host = document.createElement('div');
   const original = document.body.appendChild.bind(document.body);
   // Hidden logout frames go to a detached container, so they never navigate.

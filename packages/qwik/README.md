@@ -38,7 +38,7 @@ export default component$(() => (
 
 ## API
 
-- `<AtlasProvider publishableKey frontendApi?>` — boots the client and provides
+- `<AtlasProvider publishableKey frontendApi>` — boots the client and provides
   the reactive store via Qwik context.
 - `useAuth()` / `useUser()` / `useSession()` / `useOrganization()` — read the
   store; each returns `isLoaded` so you never flash the signed-out UI mid-boot.

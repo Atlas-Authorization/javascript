@@ -1,4 +1,4 @@
-import { FapiClient } from '@atlasauth/js';
+import { FapiClient, resolveFrontendApi } from '@atlasauth/js';
 
 /**
  * How the helper reaches an Atlas instance. Native sign-in is unauthenticated
@@ -18,6 +18,12 @@ export interface AtlasFapiConfig {
 
 /** Build a bearer-authenticated `@atlasauth/js` FapiClient from the config. */
 export function createFapiClient(config: AtlasFapiConfig): FapiClient {
+  // A native app has no origin of its own: a missing value, "same-origin" or a
+  // bare path throws an `AtlasConfigError` instead of producing relative URLs.
+  const baseUrl = resolveFrontendApi(config.frontendApi, {
+    component: 'createFapiClient()',
+    allowSameOrigin: false,
+  });
   const base = config.fetchImpl ?? fetch;
   const fetchImpl: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
@@ -27,7 +33,7 @@ export function createFapiClient(config: AtlasFapiConfig): FapiClient {
   };
   return new FapiClient({
     publishableKey: config.publishableKey,
-    baseUrl: config.frontendApi,
+    baseUrl,
     fetchImpl,
   });
 }

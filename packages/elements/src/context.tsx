@@ -12,16 +12,34 @@
  * them.
  */
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   FapiClient,
-  advance,
+  advanceWithCaptcha,
+  createCaptchaController,
+  flowNeedsCaptcha,
+  isRenderableCaptcha,
+  localizeCaptchaErrors,
+  signInCaptchaOptions,
   startSignUp,
+  advance,
   prepareFactor,
   flowFromPending,
   initialFlow,
   getPasskeyAssertion,
   type AttemptView,
+  type CaptchaController,
+  type CaptchaControllerOptions,
   type FieldError,
   type FlowState,
 } from '@atlasauth/js';
@@ -46,7 +64,19 @@ export interface FlowContextValue {
   startOauth(provider: string): Promise<void>;
   /** Begin a passkey sign-in (`<SignIn.Strategy name="passkey">`). */
   startPasskey(): Promise<void>;
+  /**
+   * §5 the instance's captcha for this flow (sign-up's create step, sign-in's
+   * identifier step / `needs_captcha` challenge), drawn by `<SignIn.Captcha>` /
+   * `<SignUp.Captcha>`. Its token is sent as `captcha_token` automatically.
+   * Optional so hand-built contexts (tests, custom drivers) stay valid.
+   */
+  captcha?: CaptchaController;
+  /** Whether the current step draws a captcha widget. */
+  captchaNeeded?: boolean;
 }
+
+/** `useLayoutEffect` in the browser, `useEffect` during SSR (no warning). */
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 const FlowContext = createContext<FlowContextValue | null>(null);
 
@@ -79,7 +109,8 @@ export function useFlowContext(expected?: FlowMode): FlowContextValue {
  * developer composes the primitives.
  */
 export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}): FlowContextValue {
-  const { publishableKey, frontendApi, reload, pendingAttempt } = useAtlas();
+  const { publishableKey, frontendApi, reload, pendingAttempt, instanceSettings, catalog } =
+    useAtlas();
   // Reuse the React SDK's imperative OAuth starter (popup/redirect + ticket
   // exchange + re-boot) rather than re-implementing it, so social sign-in behaves
   // identically to the prebuilt `<SignIn>`.
@@ -96,6 +127,32 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
     mode === 'sign-in' ? flowFromPending(pendingAttempt) : initialFlow,
   );
   const [values, setValues] = useState<Record<string, string>>({});
+
+  // §5 the per-flow captcha, driven by the instance's settings (`/v1/appearance`)
+  // so switching it on in the dashboard makes `<*.Captcha>` draw it with no
+  // code change. The shared controller from `@atlasauth/js` owns the lifecycle.
+  const t = useCallback((key: string) => catalog[key] ?? key, [catalog]);
+  const captchaRef = useRef<CaptchaController | null>(null);
+  if (!captchaRef.current) captchaRef.current = createCaptchaController();
+  const captcha = captchaRef.current;
+  const identifierRef = useRef('');
+  const submitRef = useRef<() => Promise<void>>(async () => undefined);
+  const captchaOptions = useMemo<CaptchaControllerOptions>(() => {
+    if (mode === 'sign-up') {
+      const flow = instanceSettings?.captchaFlows.signUp;
+      return { flow, active: !state.attempt && flowNeedsCaptcha(flow) };
+    }
+    return signInCaptchaOptions(instanceSettings?.captchaFlows.signIn, state, () => {
+      void submitRef.current();
+    });
+  }, [instanceSettings, mode, state]);
+  const captchaNeeded = captchaOptions.active && isRenderableCaptcha(captchaOptions.flow?.provider);
+  // A layout effect: a `<*.Captcha>` mounting in this commit has attached its
+  // element by now (child refs run first), so `configure` draws straight into it.
+  useIsomorphicLayoutEffect(() => {
+    captcha.configure(captchaOptions);
+  }, [captcha, captchaOptions]);
+  useEffect(() => () => captcha.destroy(), [captcha]);
 
   const setValue = useCallback((name: string, value: string) => {
     setValues((current) => ({ ...current, [name]: value }));
@@ -134,20 +191,38 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
       for (const [k, v] of Object.entries(values)) {
         if (!reserved.has(k)) fields[k] = v;
       }
-      const next = await startSignUp(client, {
+      // A token the developer set by hand (`setValue('captcha_token', …)`) wins;
+      // otherwise the rendered `<SignUp.Captcha>` supplies one when required.
+      const captchaToken = values.captcha_token || (await captcha.getToken()) || undefined;
+      let next = await startSignUp(client, {
         email: values.email ?? values.identifier ?? '',
         password: values.password ?? '',
         ...(Object.keys(fields).length ? { fields } : {}),
         ...(values.consent === 'true' ? { consent: true } : {}),
-        ...(values.captcha_token ? { captchaToken: values.captcha_token } : {}),
+        ...(captchaToken ? { captchaToken } : {}),
       });
+      next = { ...next, errors: localizeCaptchaErrors(next.errors, t).errors };
+      // The token was spent either way; a refused create needs a fresh one.
+      if (next.errors.length > 0 && captcha.needed) captcha.reset();
       await finish(next);
       return;
     }
 
-    const next = await advance(client, state, values);
-    await finish(next);
-  }, [client, finish, mode, state, values]);
+    if (values.captcha_token) {
+      // A hand-supplied token: drive the step as-is.
+      const next = await advance(client, state, values);
+      await finish(next);
+      return;
+    }
+    const out = await advanceWithCaptcha(client, state, values, {
+      captcha,
+      identifier: identifierRef.current,
+      t,
+    });
+    identifierRef.current = out.identifier;
+    await finish(out.state);
+  }, [captcha, client, finish, mode, state, t, values]);
+  submitRef.current = submit;
 
   const resend = useCallback(async () => {
     if (!state.attempt) return;
@@ -210,8 +285,23 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
       resend,
       startOauth,
       startPasskey,
+      captcha,
+      captchaNeeded,
     }),
-    [mode, state.attempt, state.errors, state.busy, values, setValue, submit, resend, startOauth, startPasskey],
+    [
+      mode,
+      state.attempt,
+      state.errors,
+      state.busy,
+      values,
+      setValue,
+      submit,
+      resend,
+      startOauth,
+      startPasskey,
+      captcha,
+      captchaNeeded,
+    ],
   );
 }
 

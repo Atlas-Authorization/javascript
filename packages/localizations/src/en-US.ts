@@ -5,8 +5,8 @@ import type { LocalizationResource } from './types';
  *
  * Every key is filled. Strings are copied verbatim from the Atlas catalog in
  * `packages/react/src/i18n.ts` (`EN_US`); this file is the single source every
- * other locale is a (partial) override of, and the test suite's strict-subset
- * check is anchored on its key set.
+ * other locale translates, and `LOCALIZATION_KEYS`, `missingKeys` and the test
+ * suite's strict-subset check are all anchored on its key set.
  */
 export const enUS: LocalizationResource = {
   locale: 'en-US',
@@ -29,6 +29,19 @@ export const enUS: LocalizationResource = {
   'signUp.submit': 'Continue',
   'signUp.haveAccount': 'Already have an account?',
   'signUp.signInLink': 'Sign in',
+  'signUp.emailLabel': 'Email address',
+  'signUp.passwordLabel': 'Password',
+  'signUp.optionalField': '{label} (optional)',
+  'signUp.selectPlaceholder': 'Select…',
+  'signUp.consentAgree': 'I agree to the',
+  'signUp.consentNotice': 'By continuing you agree to the',
+  'signUp.terms': 'Terms of Service',
+  'signUp.privacy': 'Privacy Policy',
+  'signUp.and': 'and',
+
+  'captcha.prompt': 'Complete the security check to continue.',
+  'captcha.required': 'Please complete the security check, then try again.',
+  'captcha.failed': "The security check didn't pass. Please try again.",
 
   'mfa.title': 'Two-step verification',
   'mfa.subtitle': 'Enter the code from your authenticator app.',
@@ -86,6 +99,39 @@ export const enUS: LocalizationResource = {
   'reverification.passwordLabel': 'Password',
   'reverification.submit': 'Confirm',
   'reverification.cancel': 'Cancel',
+
+  'apiKeys.title': 'API keys',
+  'apiKeys.subtitle': 'Keys let scripts and integrations act as you. Treat them like passwords.',
+  'apiKeys.organizationSubtitle': 'Keys let scripts and integrations act as this organization. Treat them like passwords.',
+  'apiKeys.empty': 'No API keys yet.',
+  'apiKeys.disabled': 'API keys are not available for this account.',
+  'apiKeys.create': 'Create key',
+  'apiKeys.nameLabel': 'Name',
+  'apiKeys.namePlaceholder': 'e.g. CI pipeline',
+  'apiKeys.expiresLabel': 'Expires',
+  'apiKeys.expiresNever': 'Never',
+  'apiKeys.expiresDays': 'In {days} days',
+  'apiKeys.scopesLabel': 'Scopes',
+  'apiKeys.submit': 'Create key',
+  'apiKeys.cancel': 'Cancel',
+  'apiKeys.secretTitle': 'Copy your new key',
+  'apiKeys.secretHint': 'This is the only time it will be shown. If you lose it, revoke it and create another.',
+  'apiKeys.copy': 'Copy',
+  'apiKeys.copied': 'Copied',
+  'apiKeys.done': 'Done',
+  'apiKeys.rename': 'Rename',
+  'apiKeys.save': 'Save',
+  'apiKeys.revoke': 'Revoke',
+  'apiKeys.revokeConfirm': 'Revoke this key? Anything using it will stop working.',
+  'apiKeys.revokeConfirmButton': 'Yes, revoke',
+  'apiKeys.unnamed': 'Unnamed key',
+  'apiKeys.revoked': 'Revoked',
+  'apiKeys.expired': 'Expired',
+  'apiKeys.lastUsed': 'Last used {date}',
+  'apiKeys.neverUsed': 'Never used',
+  'apiKeys.expiresOn': 'Expires {date}',
+  'apiKeys.limits': 'Limits',
+  'apiKeys.limitReached': "You've reached the maximum of {max} active keys. Revoke one to create another.",
 
   'error.generic': 'Something went wrong. Please try again.',
   'error.network': 'We could not reach the server. Check your connection.',

@@ -75,6 +75,14 @@ describe('createNativeSessionManager (expo)', () => {
   });
 });
 
+describe('createNativeSessionManager config', () => {
+  it('refuses a missing frontendApi with a clear config error', async () => {
+    await expect(
+      createNativeSessionManager({ frontendApi: undefined as unknown as string, publishableKey: 'pk_test' }),
+    ).rejects.toMatchObject({ name: 'AtlasConfigError', code: 'FRONTEND_API_REQUIRED' });
+  });
+});
+
 describe('clearNativeSession', () => {
   it('drops the persisted session', async () => {
     const storage = fakeStorage(serializeNativeSession(session1));

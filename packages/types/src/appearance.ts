@@ -17,6 +17,10 @@ export interface DesignTokens {
   borderRadius?: string;
   fontFamily?: string;
   spacingUnit?: string;
+  /** Text/icon colour on a `colorPrimary` fill. Defaults to a contrast-picked white or near-black. */
+  colorTextOnPrimary?: string;
+  /** The keyboard focus ring (solid outline). Defaults to `colorPrimary`. */
+  colorFocusRing?: string;
 }
 
 /** Every element a customer may target. Named for what it IS, not where it sits. */

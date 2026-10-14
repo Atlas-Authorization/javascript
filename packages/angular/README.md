@@ -30,7 +30,7 @@ bootstrapApplication(AppComponent, {
   providers: [
     provideAtlas({
       publishableKey: 'pk_test_…',
-      // frontendApi: 'https://fapi.your-instance.atlasauth.net', // omit for same-origin
+      frontendApi: 'https://fapi.your-instance.atlasauth.net', // required; 'same-origin' behind a reverse proxy
       // appearance: { baseTheme: 'dark', elements: { formButtonPrimary: 'rounded-xl' } },
       // localization: myCatalog,
     }),

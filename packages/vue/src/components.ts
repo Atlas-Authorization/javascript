@@ -1,5 +1,12 @@
 import { defineComponent, h, reactive, ref, type PropType, type VNode } from 'vue';
-import { nextStep, type AttemptView, type FieldError } from '@atlasauth/js';
+import {
+  nextStep,
+  type AttemptView,
+  type CaptchaController,
+  type FieldError,
+  type InstanceSettings,
+  type PublicSignUpField,
+} from '@atlasauth/js';
 import { useAtlas } from './context';
 import { useAuth, useOrganization, useUser } from './composables';
 import { useFlow } from './flow';
@@ -106,6 +113,35 @@ export const Protect = defineComponent({
 });
 
 /**
+ * The element a flow's captcha widget draws into (see `createCaptchaController`
+ * in `@atlasauth/js`). Renders nothing when the flow needs no captcha.
+ */
+function captchaSlot(controller: CaptchaController | null | undefined): VNode | null {
+  if (!controller?.needed) return null;
+  return h('div', {
+    key: 'captcha',
+    class: 'atlas-captcha',
+    'data-atlas-captcha': '',
+    ref: slotRef(controller),
+  });
+}
+
+/**
+ * One stable ref callback per controller: Vue re-invokes a CHANGED function
+ * ref with null and then the element, which would tear down and redraw the
+ * widget on every render (losing a solved token).
+ */
+const slotRefs = new WeakMap<CaptchaController, (el: unknown) => void>();
+function slotRef(controller: CaptchaController): (el: unknown) => void {
+  let ref = slotRefs.get(controller);
+  if (!ref) {
+    ref = (el: unknown) => controller.attach((el as HTMLElement | null) ?? null);
+    slotRefs.set(controller, ref);
+  }
+  return ref;
+}
+
+/**
  * The server-driven flow shell.
  *
  * Every branch comes from `nextStep`, which is exhaustive — including the
@@ -119,6 +155,12 @@ const AttemptFlow = defineComponent({
     errors: { type: Array as PropType<FieldError[]>, default: () => [] },
     titleKey: { type: String, required: true },
     onSubmit: { type: Function as PropType<(values: Record<string, string>) => void>, required: true },
+    /**
+     * The sign-in captcha, drawn above the submit button on the identifier step
+     * (an always-on sign-in captcha) and on the challenge step the server
+     * demands with `needs_captcha`.
+     */
+    captcha: { type: Object as PropType<CaptchaController | null>, default: null },
   },
   setup(props) {
     const t = useText();
@@ -131,6 +173,7 @@ const AttemptFlow = defineComponent({
         h('input', {
           class: cls('formFieldInput', 'atlas-input'),
           type,
+          name,
           value: values[name] ?? '',
           onInput: (event: Event) => {
             values[name] = (event.target as HTMLInputElement).value;
@@ -162,6 +205,10 @@ const AttemptFlow = defineComponent({
           return [field('code', 'signIn.emailCodeLabel')];
         case 'collect_new_password':
           return [field('password', 'reset.newPasswordLabel', 'password')];
+        case 'collect_captcha':
+          // §5 the server withheld the attempt until a captcha clears. Solving
+          // the widget resubmits the identifier on its own; the button retries.
+          return [h('p', { key: 'captcha-prompt', class: 'atlas-text' }, t('captcha.prompt'))];
         case 'await_oauth':
           return [h('p', { key: 'oauth' }, t('signIn.magicLinkSent'))];
         case 'done':
@@ -205,6 +252,9 @@ const AttemptFlow = defineComponent({
           },
           [
             ...fields(step.kind),
+            step.kind === 'collect_identifier' || step.kind === 'collect_captcha'
+              ? captchaSlot(props.captcha)
+              : null,
             step.kind !== 'done' && step.kind !== 'await_oauth'
               ? h(
                   'button',
@@ -230,33 +280,270 @@ export const SignIn = defineComponent({
     afterUrl: { type: String, default: undefined },
   },
   setup() {
-    const { state, submit } = useFlow();
-    return () =>
-      h(AttemptFlow, {
+    const { state, submit, captcha, settings } = useFlow();
+    return () => {
+      // Read the settings so the form re-renders (drawing the captcha slot)
+      // once the instance's captcha config has loaded; the controller is passed
+      // only while it draws, so the child sees a changed prop.
+      void settings.value;
+      return h(AttemptFlow, {
         attempt: state.value.attempt,
         busy: state.value.busy,
         errors: state.value.errors,
         titleKey: 'signIn.title',
         onSubmit: submit,
+        captcha: captcha.needed ? captcha : null,
       });
+    };
   },
 });
 
+/**
+ * The create-account step: the instance's configured extra fields, email +
+ * password, the legal-consent row and — when the instance requires one on
+ * sign-up — the captcha widget. Values live in local state so a refused submit
+ * never clears them.
+ */
+const SignUpForm = defineComponent({
+  name: 'SignUpForm',
+  props: {
+    settings: { type: Object as PropType<InstanceSettings | null>, default: null },
+    busy: { type: Boolean, default: false },
+    errors: { type: Array as PropType<FieldError[]>, default: () => [] },
+    captcha: { type: Object as PropType<CaptchaController | null>, default: null },
+    onSubmit: {
+      type: Function as PropType<(values: Record<string, string>, consent: boolean) => void>,
+      required: true,
+    },
+  },
+  setup(props) {
+    const t = useText();
+    const cls = useClass();
+    const values = reactive<Record<string, string>>({});
+    const agreed = ref(false);
+
+    const fieldErrors = (name: string) =>
+      props.errors
+        .filter((error) => error.param === name)
+        .map((error) =>
+          h('span', { class: cls('formFieldError', 'atlas-error'), key: error.code }, error.message),
+        );
+
+    const label = (f: PublicSignUpField) =>
+      f.required ? f.label : t('signUp.optionalField', { label: f.label });
+
+    const control = (f: PublicSignUpField): VNode => {
+      const value = values[f.key] ?? '';
+      const set = (v: string) => {
+        values[f.key] = v;
+      };
+      switch (f.type) {
+        case 'checkbox':
+          return h('input', {
+            type: 'checkbox',
+            name: f.key,
+            checked: value === 'true',
+            onChange: (e: Event) => set((e.target as HTMLInputElement).checked ? 'true' : ''),
+          });
+        case 'select':
+          return h(
+            'select',
+            {
+              class: cls('formFieldInput', 'atlas-input'),
+              name: f.key,
+              value,
+              required: f.required,
+              onChange: (e: Event) => set((e.target as HTMLSelectElement).value),
+            },
+            [
+              h('option', { value: '' }, f.placeholder ?? t('signUp.selectPlaceholder')),
+              ...f.options.map((o) => h('option', { key: o, value: o }, o)),
+            ],
+          );
+        case 'textarea':
+          return h('textarea', {
+            class: cls('formFieldInput', 'atlas-input'),
+            name: f.key,
+            rows: 3,
+            value,
+            required: f.required,
+            placeholder: f.placeholder ?? undefined,
+            onInput: (e: Event) => set((e.target as HTMLTextAreaElement).value),
+          });
+        case 'radio':
+        case 'multiselect': {
+          // Same encoding as React, the embed widget and the hosted page: one
+          // value, or a comma-joined list for multiselect.
+          const picked = value ? value.split(', ') : [];
+          return h(
+            'span',
+            { class: 'atlas-choices' },
+            f.options.map((o) =>
+              h('label', { key: o, class: 'atlas-choice' }, [
+                h('input', {
+                  type: f.type === 'radio' ? 'radio' : 'checkbox',
+                  name: f.key,
+                  value: o,
+                  checked: picked.includes(o),
+                  onChange: (e: Event) => {
+                    if (f.type === 'radio') set(o);
+                    else {
+                      const on = (e.target as HTMLInputElement).checked;
+                      set((on ? [...picked, o] : picked.filter((p) => p !== o)).join(', '));
+                    }
+                  },
+                }),
+                o,
+              ]),
+            ),
+          );
+        }
+        default: {
+          const type = ['email', 'tel', 'url', 'number', 'date'].includes(f.type) ? f.type : 'text';
+          return h('input', {
+            class: cls('formFieldInput', 'atlas-input'),
+            type,
+            name: f.key,
+            value,
+            required: f.required,
+            placeholder: f.placeholder ?? undefined,
+            onInput: (e: Event) => set((e.target as HTMLInputElement).value),
+          });
+        }
+      }
+    };
+
+    const textField = (name: string, labelKey: string, type: string, autocomplete: string) =>
+      h('label', { key: name, class: cls('formField', 'atlas-field') }, [
+        h('span', { class: cls('formFieldLabel', 'atlas-field-label') }, t(labelKey)),
+        h('input', {
+          class: cls('formFieldInput', 'atlas-input'),
+          type,
+          name,
+          autocomplete,
+          required: true,
+          value: values[name] ?? '',
+          onInput: (e: Event) => {
+            values[name] = (e.target as HTMLInputElement).value;
+          },
+        }),
+        ...fieldErrors(name),
+      ]);
+
+    return () => {
+      const legal = props.settings?.legal;
+      const showLegal = !!legal && (!!legal.termsUrl || !!legal.privacyUrl);
+      const consentOk = !legal?.required || agreed.value;
+      const links = showLegal
+        ? [
+            legal!.termsUrl
+              ? h('a', { key: 'terms', class: 'atlas-link', href: legal!.termsUrl, target: '_blank', rel: 'noopener noreferrer' }, t('signUp.terms'))
+              : null,
+            legal!.privacyUrl
+              ? h('a', { key: 'privacy', class: 'atlas-link', href: legal!.privacyUrl, target: '_blank', rel: 'noopener noreferrer' }, t('signUp.privacy'))
+              : null,
+          ].filter((x): x is VNode => x !== null)
+        : [];
+
+      return h('div', { class: cls('card', 'atlas-card') }, [
+        h('h1', { class: cls('headerTitle', 'atlas-title') }, t('signUp.title')),
+        ...props.errors
+          .filter((error) => !error.param)
+          .map((error) =>
+            h('p', { class: cls('formFieldError', 'atlas-error'), role: 'alert', key: error.code }, error.message),
+          ),
+        h(
+          'form',
+          {
+            onSubmit: (event: Event) => {
+              event.preventDefault();
+              if (!consentOk) return;
+              props.onSubmit({ ...values }, legal?.required ? agreed.value : true);
+            },
+          },
+          [
+            ...(props.settings?.signUpFields ?? []).map((f) =>
+              h(
+                // A choice group holds several inputs, so it can't sit inside one <label>.
+                f.type === 'radio' || f.type === 'multiselect' ? 'div' : 'label',
+                { key: f.key, class: cls('formField', 'atlas-field') },
+                [
+                  h('span', { class: cls('formFieldLabel', 'atlas-field-label') }, label(f)),
+                  control(f),
+                  ...fieldErrors(f.key),
+                ],
+              ),
+            ),
+            textField('email', 'signUp.emailLabel', 'email', 'email'),
+            textField('password', 'signUp.passwordLabel', 'password', 'new-password'),
+            showLegal
+              ? h('label', { key: 'consent', class: cls('formField', 'atlas-consent') }, [
+                  legal!.required
+                    ? h('input', {
+                        type: 'checkbox',
+                        name: 'consent',
+                        checked: agreed.value,
+                        onChange: (e: Event) => {
+                          agreed.value = (e.target as HTMLInputElement).checked;
+                        },
+                      })
+                    : null,
+                  h('span', { class: 'atlas-text' }, [
+                    t(legal!.required ? 'signUp.consentAgree' : 'signUp.consentNotice'),
+                    ' ',
+                    ...links.flatMap((link, i) => (i > 0 ? [` ${t('signUp.and')} `, link] : [link])),
+                    '.',
+                  ]),
+                  ...fieldErrors('consent'),
+                ])
+              : null,
+            captchaSlot(props.captcha),
+            h(
+              'button',
+              {
+                class: cls('formButtonPrimary', 'atlas-button'),
+                disabled: props.busy || !consentOk,
+                type: 'submit',
+              },
+              t('signUp.submit'),
+            ),
+          ],
+        ),
+      ]);
+    };
+  },
+});
+
+/**
+ * §10.2 `<SignUp/>` — creates an account. The first step is the create-account
+ * form, which POSTs `/v1/client/sign_ups`; from there the flow is server-driven
+ * exactly like `<SignIn>` (the emailed-code step, then the ticket exchange).
+ * Fields, consent and captcha come from the instance's settings, so turning
+ * them on in the dashboard needs no code change.
+ */
 export const SignUp = defineComponent({
   name: 'SignUp',
   props: {
     afterUrl: { type: String, default: undefined },
   },
   setup() {
-    const { state, submit } = useFlow();
+    const { state, submit, create, settings, signUpCaptcha } = useFlow();
     return () =>
-      h(AttemptFlow, {
-        attempt: state.value.attempt,
-        busy: state.value.busy,
-        errors: state.value.errors,
-        titleKey: 'signUp.title',
-        onSubmit: submit,
-      });
+      state.value.attempt
+        ? h(AttemptFlow, {
+            attempt: state.value.attempt,
+            busy: state.value.busy,
+            errors: state.value.errors,
+            titleKey: 'signUp.title',
+            onSubmit: submit,
+          })
+        : h(SignUpForm, {
+            settings: settings.value,
+            busy: state.value.busy,
+            errors: state.value.errors,
+            captcha: signUpCaptcha.needed ? signUpCaptcha : null,
+            onSubmit: create,
+          });
   },
 });
 

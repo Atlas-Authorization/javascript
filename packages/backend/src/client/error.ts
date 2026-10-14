@@ -66,7 +66,13 @@ export const AtlasErrorCodes = {
   NOT_FOUND: 'NOT_FOUND',
   VALIDATION_FAILED: 'VALIDATION_FAILED',
   RATE_LIMITED: 'RATE_LIMITED',
+  /** An idempotency key was reused with a different request (e.g. another unit or amount). */
   IDEMPOTENCY_CONFLICT: 'IDEMPOTENCY_CONFLICT',
+  /** A usage debit would exceed an API key's spend cap (`allowed: false` on the debit). */
+  LIMIT_EXCEEDED: 'LIMIT_EXCEEDED',
+  SESSION_REVOKED: 'SESSION_REVOKED',
+  SESSION_IDLE_EXPIRED: 'SESSION_IDLE_EXPIRED',
+  SESSION_EXPIRED: 'SESSION_EXPIRED',
   SCOPE_MISSING: 'SCOPE_MISSING',
   FORBIDDEN: 'FORBIDDEN',
   CONFLICT: 'CONFLICT',

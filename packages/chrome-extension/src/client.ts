@@ -1,4 +1,10 @@
-import { FapiClient, msUntilRefresh, readExpiry, type ProviderToken } from '@atlasauth/js';
+import {
+  FapiClient,
+  msUntilRefresh,
+  readExpiry,
+  resolveFrontendApi,
+  type ProviderToken,
+} from '@atlasauth/js';
 import { StorageCache, type TokenStore } from './storage';
 
 /**
@@ -131,11 +137,18 @@ export interface AtlasClient {
 export function createAtlasClient(
   options: CreateAtlasClientOptions & { background?: boolean },
 ): AtlasClient {
+  // Throws an `AtlasConfigError` on a missing/invalid value. An extension's own
+  // origin (chrome-extension://…) is not where the Frontend API lives, so
+  // "same-origin" / a bare path is refused too.
+  const baseUrl = resolveFrontendApi(options.frontendApi, {
+    component: 'createAtlasClient()',
+    allowSameOrigin: false,
+  });
   const store = options.store ?? new StorageCache();
   const fetchImpl = options.fetchImpl ?? fetch;
   const fapi = new FapiClient({
     publishableKey: options.publishableKey,
-    baseUrl: options.frontendApi,
+    baseUrl,
     fetchImpl: bearerFetch(fetchImpl, store),
   });
 

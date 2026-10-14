@@ -46,8 +46,10 @@ describe('backward compatibility (no design anywhere)', () => {
     expect(classFor('card', undefined, 'atlas-card')).toBe('atlas-card');
   });
 
-  it('leaves the base stylesheet byte-identical to the pre-design-system release', () => {
-    // FNV-1a of ATLAS_BASE_CSS as shipped in @atlasauth/react 0.3.1.
+  it('pins the base stylesheet (changes only deliberately)', () => {
+    // FNV-1a of ATLAS_BASE_CSS. Byte-identical from 0.3.1 until 0.5.0, where it
+    // changed deliberately for accessibility: text-on-primary contrast, a
+    // visible focus ring, 16px inputs.
     expect(designKey(ATLAS_BASE_CSS)).toBe(BASE_CSS_HASH);
   });
 
@@ -182,4 +184,4 @@ describe('element keys', () => {
   });
 });
 
-const BASE_CSS_HASH = '1pre2y9';
+const BASE_CSS_HASH = 'cvzs6e';

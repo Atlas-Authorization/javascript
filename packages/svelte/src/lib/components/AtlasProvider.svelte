@@ -32,7 +32,7 @@
    * @atlasauth/react. Without any design this is exactly the token variables.
    */
   let instanceDesign: InstanceDesign | null = null;
-  $: rendered = renderAppearance(appearance, instanceDesign, { frontendApi });
+  $: rendered = renderAppearance(appearance, instanceDesign, { frontendApi: client.frontendApi });
 
   // Tokens land as CSS variables on a host-DOM element — no iframe.
   $: style = Object.entries(rendered.style)

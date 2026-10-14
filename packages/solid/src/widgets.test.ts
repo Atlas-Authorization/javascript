@@ -60,7 +60,7 @@ describe('mountable widgets', () => {
     );
 
     const { container } = render(() =>
-      h(AtlasProvider, { publishableKey: 'pk_test', fetchImpl }, h(UserButton, {})),
+      h(AtlasProvider, { publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl }, h(UserButton, {})),
     );
 
     // Signed out at first: the button renders nothing.

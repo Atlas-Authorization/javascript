@@ -73,7 +73,11 @@ export function useSession(): { isLoaded: boolean; session: AtlasSession | null 
 }
 
 export function useSignIn(): {
-  signInWithPassword(input: { identifier: string; password: string }): Promise<FlowResult>;
+  signInWithPassword(input: {
+    identifier: string;
+    password: string;
+    captchaToken?: string;
+  }): Promise<FlowResult>;
   attemptSecondFactor(input: {
     attemptId: string;
     status: string;
@@ -103,6 +107,9 @@ export function useSignUp(): {
     password: string;
     firstName?: string;
     lastName?: string;
+    fields?: Record<string, string>;
+    consent?: boolean;
+    captchaToken?: string;
   }): Promise<FlowResult>;
   verifyEmailCode(input: { attemptId: string; code: string }): Promise<FlowResult>;
 } {

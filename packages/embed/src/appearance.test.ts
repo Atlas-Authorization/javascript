@@ -6,8 +6,10 @@ import {
   providerLabel,
   resolveInteraction,
   resolveTokens,
+  textOnPrimary,
   type PublicAppearance,
 } from './appearance';
+import { EMBED_CSS } from './styles';
 
 const appearance = (over: Partial<PublicAppearance> = {}): PublicAppearance => ({
   applicationName: 'Acme',
@@ -48,6 +50,30 @@ describe('resolving theme tokens', () => {
     const vars = cssVariables(resolveTokens(appearance()));
     expect(vars['--atlas-embed-color-primary']).toBe('#111111');
     expect(vars['--atlas-embed-border-radius']).toBe('6px');
+  });
+});
+
+describe('accessibility of the base styles', () => {
+  it('picks the primary button label for contrast', () => {
+    expect(textOnPrimary('#5b5bd6')).toBe('#ffffff');
+    expect(textOnPrimary('#ffe600')).toBe('#111111');
+    expect(textOnPrimary('var(--brand)')).toBe('#ffffff');
+  });
+
+  it('labels the primary button from the contrast variable, not a fixed white', () => {
+    const button = EMBED_CSS.slice(EMBED_CSS.indexOf('.atlas-embed-button {'));
+    expect(button.slice(0, button.indexOf('}'))).toContain('color: var(--_on-primary)');
+  });
+
+  it('gives buttons a solid :focus-visible outline', () => {
+    expect(EMBED_CSS).toMatch(/\.atlas-embed-button:focus-visible[^{]*\{\s*outline: 2px solid var\(--_focus\)/);
+  });
+
+  it('never sizes a text field below 16px', () => {
+    for (const cls of ['.atlas-embed-input {', '.atlas-embed-social-search {']) {
+      const rule = EMBED_CSS.slice(EMBED_CSS.indexOf(cls));
+      expect(rule.slice(0, rule.indexOf('}')), cls).toContain('font-size: 16px');
+    }
   });
 });
 

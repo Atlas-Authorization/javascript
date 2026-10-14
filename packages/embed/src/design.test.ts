@@ -83,6 +83,16 @@ describe('<atlas-sign-in> with the design system', () => {
     expect(root.hasAttribute('data-atlas-design')).toBe(false);
   });
 
+  it('sets the primary button label colour from the primary contrast', async () => {
+    const root = document.createElement('div');
+    await new AtlasWidget(root, {
+      ...OPTS,
+      appearance: { variables: { colorPrimary: '#ffe600' } },
+      fetchImpl: fetchWith(envelope()),
+    }).mount();
+    expect(root.style.getPropertyValue('--atlas-embed-color-text-on-primary')).toBe('#111111');
+  });
+
   it('design: null from the server themes exactly as before', async () => {
     const root = document.createElement('div');
     await new AtlasWidget(root, { ...OPTS, fetchImpl: fetchWith(envelope({ design: null })) }).mount();

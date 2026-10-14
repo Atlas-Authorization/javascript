@@ -15,6 +15,7 @@
 import {
   NativeSessionManager,
   parseNativeSession,
+  resolveFrontendApi,
   serializeNativeSession,
   type NativeSession,
 } from '@atlasauth/js';
@@ -54,11 +55,17 @@ export interface NativeSessionOptions {
 export async function createNativeSessionManager(
   options: NativeSessionOptions,
 ): Promise<NativeSessionManager> {
+  // An extension's own origin (chrome-extension://…) is not where the Frontend
+  // API lives, so "same-origin" / a bare path is refused along with a missing value.
+  const baseUrl = resolveFrontendApi(options.frontendApi, {
+    component: 'createNativeSessionManager()',
+    allowSameOrigin: false,
+  });
   const store = options.store ?? new StorageCache({ key: DEFAULT_NATIVE_SESSION_KEY });
   const initial = parseNativeSession(await store.getToken()) ?? undefined;
 
   return new NativeSessionManager({
-    baseUrl: options.frontendApi,
+    baseUrl,
     publishableKey: options.publishableKey,
     clientId: options.clientId,
     initial,

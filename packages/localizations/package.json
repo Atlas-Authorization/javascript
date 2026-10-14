@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/localizations",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "i18n string bundles for the Atlas hosted pages and @atlasauth/react components — the Atlas peer of @clerk/localizations.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -52,6 +52,7 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ]
 }

@@ -1,11 +1,11 @@
-import type { Localization } from './types';
+import type { LocalizationResource } from './types';
 
 /**
- * French (France). A `DeepPartial` override of `en-US`; any key left out falls
- * back to English at render time. `{application}` / `{provider}` placeholders
- * are preserved verbatim.
+ * French (France). A COMPLETE bundle: typed as the full `LocalizationResource`,
+ * so a key added to `en-US` and not translated here is a compile error.
+ * `{application}` / `{provider}` placeholders are preserved verbatim.
  */
-export const frFR: Localization = {
+export const frFR: LocalizationResource = {
   locale: 'fr-FR',
 
   'signIn.title': 'Se connecter',
@@ -27,6 +27,18 @@ export const frFR: Localization = {
   'signUp.submit': 'Continuer',
   'signUp.haveAccount': 'Vous avez déjà un compte ?',
   'signUp.signInLink': 'Se connecter',
+  'signUp.emailLabel': 'Adresse e-mail',
+  'signUp.passwordLabel': 'Mot de passe',
+  'signUp.optionalField': '{label} (facultatif)',
+  'signUp.selectPlaceholder': 'Sélectionner…',
+  'signUp.consentAgree': 'J’accepte les',
+  'signUp.consentNotice': 'En continuant, vous acceptez les',
+  'signUp.terms': 'Conditions d’utilisation',
+  'signUp.privacy': 'Politique de confidentialité',
+  'signUp.and': 'et',
+  'captcha.prompt': 'Effectuez la vérification de sécurité pour continuer.',
+  'captcha.required': 'Veuillez effectuer la vérification de sécurité, puis réessayer.',
+  'captcha.failed': 'La vérification de sécurité a échoué. Veuillez réessayer.',
 
   'mfa.title': 'Vérification en deux étapes',
   'mfa.subtitle': "Saisissez le code de votre application d'authentification.",
@@ -87,6 +99,38 @@ export const frFR: Localization = {
 
   'error.generic': "Une erreur s'est produite. Veuillez réessayer.",
   'error.network': 'Impossible de joindre le serveur. Vérifiez votre connexion.',
+  'apiKeys.title': 'Clés d’API',
+  'apiKeys.subtitle': 'Les clés permettent à des scripts et intégrations d’agir en votre nom. Traitez-les comme des mots de passe.',
+  'apiKeys.organizationSubtitle': 'Les clés permettent à des scripts et intégrations d’agir au nom de cette organisation. Traitez-les comme des mots de passe.',
+  'apiKeys.empty': 'Aucune clé d’API pour le moment.',
+  'apiKeys.disabled': 'Les clés d’API ne sont pas disponibles pour ce compte.',
+  'apiKeys.create': 'Créer une clé',
+  'apiKeys.nameLabel': 'Nom',
+  'apiKeys.namePlaceholder': 'p. ex. pipeline CI',
+  'apiKeys.expiresLabel': 'Expiration',
+  'apiKeys.expiresNever': 'Jamais',
+  'apiKeys.expiresDays': 'Dans {days} jours',
+  'apiKeys.scopesLabel': 'Portées',
+  'apiKeys.submit': 'Créer la clé',
+  'apiKeys.cancel': 'Annuler',
+  'apiKeys.secretTitle': 'Copiez votre nouvelle clé',
+  'apiKeys.secretHint': 'Elle ne sera affichée qu’une seule fois. Si vous la perdez, révoquez-la et créez-en une autre.',
+  'apiKeys.copy': 'Copier',
+  'apiKeys.copied': 'Copiée',
+  'apiKeys.done': 'Terminé',
+  'apiKeys.rename': 'Renommer',
+  'apiKeys.save': 'Enregistrer',
+  'apiKeys.revoke': 'Révoquer',
+  'apiKeys.revokeConfirm': 'Révoquer cette clé ? Tout ce qui l’utilise cessera de fonctionner.',
+  'apiKeys.revokeConfirmButton': 'Oui, révoquer',
+  'apiKeys.unnamed': 'Clé sans nom',
+  'apiKeys.revoked': 'Révoquée',
+  'apiKeys.expired': 'Expirée',
+  'apiKeys.lastUsed': 'Dernière utilisation : {date}',
+  'apiKeys.neverUsed': 'Jamais utilisée',
+  'apiKeys.expiresOn': 'Expire le {date}',
+  'apiKeys.limits': 'Limites',
+  'apiKeys.limitReached': 'Vous avez atteint le maximum de {max} clés actives. Révoquez-en une pour en créer une autre.',
 };
 
 export default frFR;

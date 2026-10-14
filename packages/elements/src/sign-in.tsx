@@ -44,11 +44,11 @@
 import { type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { useFlowContext } from './context';
 import { Slot } from './primitives';
-import { Action, Step, Strategy, makeOauthButton, makeRoot } from './flow-parts';
+import { Action, Captcha, Step, Strategy, makeOauthButton, makeRoot } from './flow-parts';
 import { strategyAvailable } from './machine';
 
 export const Root = makeRoot('sign-in');
-export { Step, Action, Strategy };
+export { Step, Action, Strategy, Captcha };
 
 /** A per-provider social sign-in button (the `oauth_<provider>` strategy). */
 export const Connection = makeOauthButton();

@@ -35,7 +35,7 @@ createApp(App)
   .use(
     createAtlas({
       publishableKey: 'pk_live_…',
-      // frontendApi: 'https://your-instance-fapi.atlasauth.net', // optional FAPI origin
+      frontendApi: 'https://your-instance-fapi.atlasauth.net', // required; 'same-origin' behind a reverse proxy
       // appearance: { baseTheme: 'dark', elements: { formButtonPrimary: 'rounded-xl' } },
       // localization: myCatalog,
     }),

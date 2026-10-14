@@ -29,15 +29,19 @@ import { frFR } from '@atlasauth/localizations/fr-FR';
 
 ## Available locales
 
-| Export | Locale               | Coverage        |
-| ------ | -------------------- | --------------- |
-| `enUS` | English (US) `en-US` | complete (base) |
-| `frFR` | French `fr-FR`       | common keys     |
-| `esES` | Spanish `es-ES`      | common keys     |
-| `deDE` | German `de-DE`       | common keys     |
-| `ptBR` | Portuguese `pt-BR`   | common keys     |
-| `jaJP` | Japanese `ja-JP`     | common keys     |
-| `nlNL` | Dutch `nl-NL`        | common keys     |
+| Export | Locale               | Coverage                       |
+| ------ | -------------------- | ------------------------------ |
+| `enUS` | English (US) `en-US` | complete (base)                |
+| `frFR` | French `fr-FR`       | complete (type-checked)        |
+| `esES` | Spanish `es-ES`      | complete (type-checked)        |
+| `deDE` | German `de-DE`       | complete (type-checked)        |
+| `ptBR` | Portuguese `pt-BR`   | complete (type-checked)        |
+| `jaJP` | Japanese `ja-JP`     | all keys today, typed partial  |
+| `nlNL` | Dutch `nl-NL`        | all keys today, typed partial  |
+
+"Type-checked" bundles are typed as the full `LocalizationResource`, so a key
+added to `en-US` and not yet translated there fails the build. Partial-typed
+bundles fall back to English for any key they lack.
 
 Export names follow Clerk's convention (`enUS`, `frFR`, …).
 
@@ -67,6 +71,24 @@ render time; translations must keep them verbatim.
 - `Localization` = `DeepPartial<LocalizationResource>` — a non-base bundle. Any
   key may be omitted; Atlas's `withFallback()` layers the bundle over `en-US`
   at render time, so a partial translation still renders every surface.
+
+## Coverage and locale resolution
+
+```ts
+import { LOCALIZATION_KEYS, missingKeys, resolveLocale, enUS } from '@atlasauth/localizations';
+
+LOCALIZATION_KEYS;          // every UI string key (excludes the `locale` tag)
+missingKeys(myBundle);      // keys absent or empty in myBundle; [] when complete
+resolveLocale('fr-CA');     // frFR
+resolveLocale('pt_BR');     // ptBR (case-insensitive, `_` accepted)
+resolveLocale('it') ?? enUS; // unknown language → undefined; pick your fallback
+```
+
+`resolveLocale` tries the exact tag, then its language subtag alone, so any
+regional variant (`es-AR`, `en-AU`, `de-CH`, …) reaches its language's bundle.
+`pt-PT` resolves to the Brazilian Portuguese bundle, the closest one shipped.
+`LOCALES` maps each canonical tag to its bundle, and `SupportedLocale` is the
+union of canonical and short tags (`'fr'`, `'fr-FR'`, …) for autocompletion.
 
 ## Contributing a locale
 

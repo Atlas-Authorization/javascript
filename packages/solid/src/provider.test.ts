@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@solidjs/testing-library';
 import { h } from './h';
-import { AtlasProvider } from './provider';
+import { AtlasProvider, createAtlasClient } from './provider';
 import { useAtlas } from './context';
 import { useAuth, useUser } from './accessors';
 
@@ -49,6 +49,17 @@ const SIGNED_IN = {
 afterEach(cleanup);
 
 describe('AtlasProvider', () => {
+  it('throws a clear config error when frontendApi is missing', () => {
+    let caught: unknown;
+    try {
+      createAtlasClient({ publishableKey: 'pk_test' });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { name?: string }).name).toBe('AtlasConfigError');
+    expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
+  });
+
   it('provides the client through context', () => {
     const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ session: null, user: null }));
     const Probe = () => {
@@ -57,7 +68,7 @@ describe('AtlasProvider', () => {
     };
 
     const { getByTestId } = render(() =>
-      h(AtlasProvider, { publishableKey: 'pk_test', fetchImpl }, h(Probe, {})),
+      h(AtlasProvider, { publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl }, h(Probe, {})),
     );
 
     expect(getByTestId('pk').textContent).toBe('pk_test');
@@ -84,7 +95,7 @@ describe('AtlasProvider', () => {
     };
 
     const { getByTestId } = render(() =>
-      h(AtlasProvider, { publishableKey: 'pk_test', fetchImpl }, h(Probe, {})),
+      h(AtlasProvider, { publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl }, h(Probe, {})),
     );
 
     // Boot has not resolved yet: the accessor reports loading, not a false

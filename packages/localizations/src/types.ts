@@ -18,7 +18,9 @@
  * `Catalog` is a `locale` field, matching Clerk's convention of tagging each
  * bundle with its own BCP-47 locale.
  *
- * `DeepPartial` makes every non-base locale a partial override: a community
+ * Bundles shipped complete (`en-US`, `es-ES`, `fr-FR`, `de-DE`, `pt-BR`) are
+ * typed as the full `LocalizationResource`, so a new key they lack is a compile
+ * error. `DeepPartial` (`Localization`) is for every other bundle: a community
  * translation may fill as few or as many keys as it likes, and Atlas's
  * `withFallback(locale)` layers it over `en-US` so a partial bundle still
  * renders every surface.
@@ -65,6 +67,19 @@ export interface LocalizationResource {
   'signUp.submit': string;
   'signUp.haveAccount': string;
   'signUp.signInLink': string;
+  'signUp.emailLabel': string;
+  'signUp.passwordLabel': string;
+  'signUp.optionalField': string;
+  'signUp.selectPlaceholder': string;
+  'signUp.consentAgree': string;
+  'signUp.consentNotice': string;
+  'signUp.terms': string;
+  'signUp.privacy': string;
+  'signUp.and': string;
+
+  'captcha.prompt': string;
+  'captcha.required': string;
+  'captcha.failed': string;
 
   // --- Multi-factor ----------------------------------------------------------
   'mfa.title': string;
@@ -131,13 +146,51 @@ export interface LocalizationResource {
   'reverification.submit': string;
   'reverification.cancel': string;
 
+  // --- API keys (end-user self-service) -------------------------------------
+  'apiKeys.title': string;
+  'apiKeys.subtitle': string;
+  'apiKeys.organizationSubtitle': string;
+  'apiKeys.empty': string;
+  'apiKeys.disabled': string;
+  'apiKeys.create': string;
+  'apiKeys.nameLabel': string;
+  'apiKeys.namePlaceholder': string;
+  'apiKeys.expiresLabel': string;
+  'apiKeys.expiresNever': string;
+  /** Contains `{days}`. */
+  'apiKeys.expiresDays': string;
+  'apiKeys.scopesLabel': string;
+  'apiKeys.submit': string;
+  'apiKeys.cancel': string;
+  'apiKeys.secretTitle': string;
+  'apiKeys.secretHint': string;
+  'apiKeys.copy': string;
+  'apiKeys.copied': string;
+  'apiKeys.done': string;
+  'apiKeys.rename': string;
+  'apiKeys.save': string;
+  'apiKeys.revoke': string;
+  'apiKeys.revokeConfirm': string;
+  'apiKeys.revokeConfirmButton': string;
+  'apiKeys.unnamed': string;
+  'apiKeys.revoked': string;
+  'apiKeys.expired': string;
+  /** Contains `{date}`. */
+  'apiKeys.lastUsed': string;
+  'apiKeys.neverUsed': string;
+  /** Contains `{date}`. */
+  'apiKeys.expiresOn': string;
+  'apiKeys.limits': string;
+  /** Contains `{max}`. */
+  'apiKeys.limitReached': string;
+
   // --- Errors ----------------------------------------------------------------
   'error.generic': string;
   'error.network': string;
 }
 
 /**
- * A community / non-base bundle: any subset of {@link LocalizationResource},
+ * A partial / community bundle: any subset of {@link LocalizationResource},
  * normally carrying its own `locale`. Layered over `en-US` at render time.
  */
 export type Localization = DeepPartial<LocalizationResource>;

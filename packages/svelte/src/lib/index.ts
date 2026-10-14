@@ -60,3 +60,14 @@ export { default as UserButton } from './components/UserButton.svelte';
 export { default as UserProfile } from './components/UserProfile.svelte';
 export { default as OrganizationSwitcher } from './components/OrganizationSwitcher.svelte';
 export { default as OrganizationProfile } from './components/OrganizationProfile.svelte';
+
+// The instance's public sign-in / sign-up settings the prebuilt forms read
+// (`signUp().settings`), and the captcha types they render.
+export type {
+  InstanceSettings,
+  PublicSignUpField,
+  CaptchaController,
+  CaptchaFlowKey,
+  CaptchaWidgetMode,
+  FlowCaptcha,
+} from '@atlasauth/js';

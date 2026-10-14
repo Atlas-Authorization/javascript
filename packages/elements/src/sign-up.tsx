@@ -11,6 +11,7 @@
  *     <SignUp.Step name="start">
  *       <Field name="email"><Field.Label>Email</Field.Label><Field.Input /><Field.Error /></Field>
  *       <Field name="password"><Field.Label>Password</Field.Label><Field.Input /><Field.Error /></Field>
+ *       <SignUp.Captcha />
  *       <SignUp.Action action="submit">Create account</SignUp.Action>
  *       <SignUp.Connection provider="google">Sign up with Google</SignUp.Connection>
  *     </SignUp.Step>
@@ -25,10 +26,10 @@
  * ```
  */
 
-import { Action, Step, Strategy, makeOauthButton, makeRoot } from './flow-parts';
+import { Action, Captcha, Step, Strategy, makeOauthButton, makeRoot } from './flow-parts';
 
 export const Root = makeRoot('sign-up');
-export { Step, Action, Strategy };
+export { Step, Action, Strategy, Captcha };
 
 /** A per-provider social sign-up button (the `oauth_<provider>` strategy). */
 export const Connection = makeOauthButton();

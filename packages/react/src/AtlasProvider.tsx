@@ -10,18 +10,25 @@ import {
 } from 'react';
 import {
   FapiClient,
+  SessionTombstones,
+  SignOutError,
   TokenCache,
   bestChannel,
   getProviderToken as fetchProviderToken,
   msUntilRefresh,
   readExpiry,
   readRedirectResult,
+  resolveFrontendApi,
+  revokeSession,
   stripRedirectParams,
   type Channel,
   type ProviderToken,
+  type RevokeSessionOutcome,
   type SignOutOptions,
+  type SignOutResult,
   runFrontChannelLogoutFromResponse,
 } from '@atlasauth/js';
+import { resolveLocale, type SupportedLocale } from '@atlasauth/localizations';
 import {
   classFor,
   instanceDesignFrom,
@@ -31,6 +38,7 @@ import {
 } from './appearance';
 import { ATLAS_STYLES_CSS, ATLAS_STYLE_ELEMENT_ID } from './styles';
 import { EN_US, withFallback, type Catalog } from './i18n';
+import { instanceSettingsFrom, type InstanceSettings } from './instance-settings';
 import type {
   AtlasOrganizationMembership,
   AtlasSession,
@@ -65,6 +73,13 @@ interface AtlasContextValue {
   claims: SessionClaims | null;
   memberships: AtlasOrganizationMembership[];
   appearance?: Appearance;
+  /**
+   * The instance's public sign-in / sign-up settings (per-flow captcha, sign-up
+   * fields, legal consent) from `GET /v1/appearance`. Null until loaded, or when
+   * the server could not be reached — the components then fall back to their
+   * defaults and the server still enforces every gate.
+   */
+  instanceSettings: InstanceSettings | null;
   /** §oauth popup mode — app-wide default for social/OIDC sign-in (see AtlasProviderProps). */
   oauthMode?: 'popup' | 'redirect';
   catalog: Catalog;
@@ -83,7 +98,24 @@ interface AtlasContextValue {
    * server refreshes a stale token on read; the refresh token is never exposed.
    */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(options?: SignOutOptions): Promise<void>;
+  /**
+   * Sign out of the active session: revoke it on the Frontend API (retried
+   * once), run front-channel logout, drop local state and sign sibling tabs out.
+   *
+   * Resolves `{ revoked, activeSessionId? }`. `revoked: false` means the server
+   * could not confirm the revoke; the user is still signed out locally and this
+   * browser never re-adopts that session. `activeSessionId` is set when another
+   * account signed in on this browser was promoted (multi-session) — the
+   * provider adopts it. With `{ strict: true }` a failed revoke rejects with a
+   * `SignOutError` (after the local sign-out).
+   */
+  signOut(options?: SignOutOptions): Promise<SignOutResult>;
+  /**
+   * Tell other tabs of this app that auth changed here, so they re-check.
+   * `reload()` deliberately does not do this (a received signal must not loop);
+   * call it after completing a sign-in yourself.
+   */
+  broadcastSessionChange(): void;
   setActiveOrganization(organizationId: string | null): Promise<void>;
   /**
    * §L1 switch which signed-in account is active on this browser (Clerk
@@ -100,6 +132,13 @@ const AtlasContext = createContext<AtlasContextValue | null>(null);
  *  a receiving tab re-boots from the shared cookies, never from the channel. */
 const SESSION_SIGNAL = 'atlas:session';
 
+/** The cross-tab signal. `signedOut` carries session ids (never tokens) a tab
+ *  signed out of, so siblings refuse to re-adopt them on their re-check. */
+interface SessionSignal {
+  type: typeof SESSION_SIGNAL;
+  signedOut?: string[];
+}
+
 export interface AtlasProviderProps {
   publishableKey: string;
   /**
@@ -114,15 +153,30 @@ export interface AtlasProviderProps {
    *   - on the hosted fleet, before you verify a custom domain, the shared host
    *     `https://atlasauth.net` (FAPI resolves the instance from the key);
    *   - once a custom domain is verified, that host, e.g. `https://auth.acme.com`;
-   *   - `""` for a same-origin / reverse-proxy setup where you serve FAPI under
-   *     your own origin (requests then go to relative paths).
+   *   - `"same-origin"` (or a path such as `"/atlas"`) for a reverse-proxy setup
+   *     where you serve FAPI under your own origin (requests then go to
+   *     relative paths).
    *
-   * It is required (not optional) so that omitting it is a COMPILE error rather
-   * than a silent fall-through to relative URLs that hit the app's own origin and
-   * fail. Pass `""` deliberately for the same-origin case.
+   * `""` is the deprecated same-origin spelling: it still works, with a
+   * one-time console warning. Missing or malformed values throw an `AtlasConfigError`
+   * (`code: 'FRONTEND_API_REQUIRED'` / `'FRONTEND_API_INVALID'`) when the
+   * provider renders, instead of silently sending requests to the app's own
+   * origin. Plain `http:` is accepted only for localhost and local development
+   * hosts.
    */
   frontendApi: string;
   appearance?: Appearance;
+  /**
+   * The UI language, as a BCP-47 tag: `"en"`, `"en-US"`, `"es"`, `"es-ES"`,
+   * `"fr"`, `"fr-FR"`, `"de"`, `"de-DE"`, `"pt-BR"`, `"ja"`, `"nl"`, … A region
+   * the catalogs don't have falls back to its language (`"es-MX"` → Spanish);
+   * an unknown language falls back to English. Defaults to English.
+   */
+  locale?: SupportedLocale | (string & {});
+  /**
+   * String overrides, key by key (`{ 'signIn.title': 'Welcome back' }`), or a
+   * whole bundle from `@atlasauth/localizations`. Applied on top of `locale`.
+   */
   localization?: Catalog;
   /**
    * §oauth popup mode — the app-wide default for social/OIDC sign-in. `"popup"`
@@ -144,8 +198,13 @@ export interface AtlasProviderProps {
 }
 
 export function AtlasProvider(props: AtlasProviderProps) {
-  const { publishableKey, children, appearance, localization } = props;
-  const baseUrl = props.frontendApi ?? '';
+  const { publishableKey, children, appearance, localization, locale } = props;
+  // Throws an AtlasConfigError at render for a missing/malformed value — the
+  // old silent `?? ''` fallback sent every request to the app's own origin.
+  const baseUrl = useMemo(
+    () => resolveFrontendApi(props.frontendApi, { component: '<AtlasProvider>' }),
+    [props.frontendApi],
+  );
   const doFetch = props.fetchImpl ?? fetch;
 
   const [status, setStatus] = useState<AuthStatus>('loading');
@@ -154,6 +213,8 @@ export function AtlasProvider(props: AtlasProviderProps) {
   const [sessions, setSessions] = useState<AtlasSessionResource[]>([]);
   const [claims, setClaims] = useState<SessionClaims | null>(null);
   const [memberships, setMemberships] = useState<AtlasOrganizationMembership[]>([]);
+  // Filled from GET /v1/appearance (see the effect beside the dashboard design).
+  const [instanceSettings, setInstanceSettings] = useState<InstanceSettings | null>(null);
 
   const cache = useRef(new TokenCache());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -162,6 +223,11 @@ export function AtlasProvider(props: AtlasProviderProps) {
   const channel = useRef<Channel | null>(null);
   const statusRef = useRef<AuthStatus>('loading');
   const reloadRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  // Sessions this tab signed out of: never re-adopted from a still-valid
+  // refresh cookie, even when the revoke did not reach the server.
+  const tombstones = useRef<SessionTombstones | null>(null);
+  if (!tombstones.current) tombstones.current = new SessionTombstones();
+  const sessionIdRef = useRef<string | null>(null);
 
   /**
    * Captured synchronously during the first render (not in an effect) so it is
@@ -194,6 +260,9 @@ export function AtlasProvider(props: AtlasProviderProps) {
   );
 
   const applyToken = useCallback((jwt: string, sessionId: string) => {
+    // A refresh that was in flight when the user signed out must not put the
+    // signed-out session's token back.
+    if (tombstones.current?.has(sessionId)) return;
     const expiresAt = readExpiry(jwt);
     if (!expiresAt) return;
 
@@ -214,7 +283,17 @@ export function AtlasProvider(props: AtlasProviderProps) {
         organization_memberships?: AtlasOrganizationMembership[];
       };
 
-      if (!body.session || !body.user) {
+      const tombstoned = body.session ? tombstones.current?.has(body.session.id) : false;
+      if (tombstoned && body.session) {
+        // The browser still holds a refresh cookie for a session this tab signed
+        // out of (the revoke never landed). Stay signed out, and try the revoke
+        // again in the background — when it lands the server clears the cookies
+        // (or promotes a parked account, which the next re-check adopts).
+        void revokeSession(call, body.session.id, { retries: 0 });
+      }
+
+      if (!body.session || !body.user || tombstoned) {
+        sessionIdRef.current = null;
         cache.current.clear();
         setStatus('signed_out');
         setUser(null);
@@ -225,6 +304,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
         return;
       }
 
+      sessionIdRef.current = body.session.id;
       setUser(body.user);
       setSession(body.session);
       // §L1 the multi-session list, active first. Older servers omit it; fall
@@ -286,9 +366,13 @@ export function AtlasProvider(props: AtlasProviderProps) {
   }, [status, claims, refresh]);
 
   /** §R3.2 tell sibling tabs that auth changed here, so they re-check. */
-  const announceSessionChange = useCallback(() => {
-    channel.current?.post({ type: SESSION_SIGNAL });
+  const announceSessionChange = useCallback((signedOut?: string[]) => {
+    const message: SessionSignal = signedOut?.length
+      ? { type: SESSION_SIGNAL, signedOut }
+      : { type: SESSION_SIGNAL };
+    channel.current?.post(message);
   }, []);
+  const broadcastSessionChange = useCallback(() => announceSessionChange(), [announceSessionChange]);
 
   // Keep refs current for the once-mounted tab-propagation effect below, so it
   // reads live `status`/`reload` without re-subscribing every render.
@@ -321,7 +405,16 @@ export function AtlasProvider(props: AtlasProviderProps) {
     const ch = bestChannel('atlas-session');
     channel.current = ch;
     const unsub = ch?.subscribe((msg) => {
-      if ((msg as { type?: unknown } | null)?.type === SESSION_SIGNAL) void reloadRef.current();
+      const signal = msg as Partial<SessionSignal> | null;
+      if (signal?.type !== SESSION_SIGNAL) return;
+      // Learn the sessions a sibling signed out of BEFORE re-checking, so this
+      // tab cannot re-adopt one from a refresh cookie the revoke did not clear.
+      if (Array.isArray(signal.signedOut)) {
+        const ids = signal.signedOut.filter((id): id is string => typeof id === 'string');
+        tombstones.current?.add(...ids);
+        if (sessionIdRef.current && ids.includes(sessionIdRef.current)) cache.current.clear();
+      }
+      void reloadRef.current();
     });
     const onVisible = () => {
       if (document.visibilityState === 'visible' && statusRef.current !== 'signed_in') {
@@ -396,26 +489,61 @@ export function AtlasProvider(props: AtlasProviderProps) {
     [fapiClient],
   );
 
-  const signOut = useCallback(async (options?: SignOutOptions) => {
-    const current = cache.current.peek();
-    if (current) {
-      const revoked = await call(`/v1/client/sessions/${current.sessionId}/revoke`, {
-        method: 'POST',
-      }).catch(() => undefined);
-      // OIDC Front-Channel Logout: let the apps signed in through this session
-      // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
-      if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(revoked);
-    }
-    cache.current.clear();
-    setStatus('signed_out');
-    setUser(null);
-    setSession(null);
-    setClaims(null);
-    setMemberships([]);
-    // §R3.2 sign every sibling tab out too, so a shared device doesn't leave a
-    // live-looking session in another tab after the user signed out here.
-    announceSessionChange();
-  }, [announceSessionChange, call]);
+  const signOut = useCallback(
+    async (options?: SignOutOptions): Promise<SignOutResult> => {
+      // The session to end: from the token cache, else the booted session, else
+      // (no state yet — e.g. called before boot finished) whatever session the
+      // browser's cookies carry. The revoke route works from the cookies, so a
+      // missing in-memory token never skips the server-side sign-out.
+      let sessionId = cache.current.peek()?.sessionId ?? sessionIdRef.current;
+      let outcome: RevokeSessionOutcome = { revoked: true, status: 200 };
+      if (!sessionId) {
+        try {
+          const response = await call('/v1/client');
+          if (!response.ok) throw new Error('boot failed');
+          const body = (await response.json()) as { session?: { id?: string } | null };
+          sessionId = body.session?.id ?? null;
+        } catch {
+          outcome = { revoked: false, status: 0 };
+        }
+      }
+      if (sessionId) {
+        // Remember it first: from here on nothing in this tab may re-adopt it.
+        tombstones.current?.add(sessionId);
+        outcome = await revokeSession(call, sessionId);
+        // OIDC Front-Channel Logout: let the apps signed in through this session
+        // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
+        if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(outcome.response);
+      }
+
+      sessionIdRef.current = null;
+      cache.current.clear();
+      setStatus('signed_out');
+      setUser(null);
+      setSession(null);
+      setSessions([]);
+      setClaims(null);
+      setMemberships([]);
+
+      // §L1 the server promoted another account signed in on this browser: adopt
+      // it deliberately (the revoke response already set its cookies).
+      if (outcome.activeSessionId && !tombstones.current?.has(outcome.activeSessionId)) {
+        await reload();
+      }
+
+      // §R3.2 sign every sibling tab out too, so a shared device doesn't leave a
+      // live-looking session in another tab after the user signed out here.
+      announceSessionChange(sessionId ? [sessionId] : undefined);
+
+      if (!outcome.revoked && options?.strict) {
+        throw new SignOutError(sessionId ?? '', outcome.status);
+      }
+      return outcome.activeSessionId
+        ? { revoked: outcome.revoked, activeSessionId: outcome.activeSessionId }
+        : { revoked: outcome.revoked };
+    },
+    [announceSessionChange, call, reload],
+  );
 
   const setActiveOrganization = useCallback(
     async (organizationId: string | null) => {
@@ -455,10 +583,13 @@ export function AtlasProvider(props: AtlasProviderProps) {
     [announceSessionChange, applyToken, call, reload],
   );
 
-  const catalog = useMemo(
-    () => (localization ? withFallback(localization) : EN_US),
-    [localization],
-  );
+  const catalog = useMemo(() => {
+    // A built-in language bundle, then the app's own overrides key by key.
+    const base = locale ? resolveLocale(locale) : undefined;
+    if (locale && !base) warnUnknownLocale(locale);
+    if (!base && !localization) return EN_US;
+    return withFallback({ ...(base as unknown as Catalog | undefined), ...localization });
+  }, [locale, localization]);
 
   // §onSignedIn: fire once on a genuine signed_out → signed_in transition (a NEW
   // sign-in, including the post-popup re-boot), never on a cached-boot load. Uses
@@ -486,18 +617,22 @@ export function AtlasProvider(props: AtlasProviderProps) {
       claims,
       memberships,
       appearance,
+      instanceSettings,
       catalog,
       pendingAttempt,
       getToken,
       getProviderToken,
       signOut,
+      broadcastSessionChange,
       setActiveOrganization,
       setActiveSession,
       reload,
     }),
     [
       appearance,
+      instanceSettings,
       baseUrl,
+      broadcastSessionChange,
       publishableKey,
       props.oauthMode,
       catalog,
@@ -525,16 +660,20 @@ export function AtlasProvider(props: AtlasProviderProps) {
   const [instanceDesign, setInstanceDesign] = useState<InstanceDesign | null>(null);
   const wantsInstanceDesign = appearance?.instanceDesign !== false;
   useEffect(() => {
-    if (!wantsInstanceDesign) return;
     let alive = true;
     void (async () => {
       try {
         const response = await call('/v1/appearance');
         if (!response.ok) return;
-        const design = instanceDesignFrom(await response.json());
-        if (alive) setInstanceDesign(design);
+        const body: unknown = await response.json();
+        if (!alive) return;
+        // The sign-in / sign-up settings (captcha, fields, consent) are read even
+        // when the app opted out of the dashboard DESIGN: they are behaviour, not
+        // styling, and the server enforces them either way.
+        setInstanceSettings(instanceSettingsFrom(body));
+        if (wantsInstanceDesign) setInstanceDesign(instanceDesignFrom(body));
       } catch {
-        // No dashboard design is the safe fallback.
+        // No dashboard design / default settings are the safe fallback.
       }
     })();
     return () => {
@@ -596,6 +735,13 @@ export function useAtlas(): AtlasContextValue {
     throw new Error('Atlas hooks must be used inside <AtlasProvider>.');
   }
   return value;
+}
+
+const warnedLocales = new Set<string>();
+function warnUnknownLocale(locale: string): void {
+  if (warnedLocales.has(locale) || typeof console === 'undefined') return;
+  warnedLocales.add(locale);
+  console.warn(`[Atlas] No built-in strings for locale "${locale}"; falling back to English.`);
 }
 
 function decodeClaims(jwt: string): SessionClaims | null {

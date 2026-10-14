@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { nextStep, type AttemptView, type FieldError } from '@atlasauth/js';
+  import { nextStep, type AttemptView, type CaptchaController, type FieldError } from '@atlasauth/js';
   import { useAtlas } from '../context';
   import { classFor, type ElementKey } from '../appearance';
   import { translate } from '../i18n';
+  import CaptchaSlot from './CaptchaSlot.svelte';
 
   /**
    * The server-driven flow shell — the Svelte peer of React's `AttemptFlow`.
@@ -17,6 +18,12 @@
   export let errors: FieldError[] = [];
   export let titleKey: string;
   export let onSubmit: (values: Record<string, string>) => void;
+  /**
+   * The sign-in captcha, drawn above the submit button on the identifier step
+   * (an always-on sign-in captcha) and on the challenge step the server demands
+   * with `needs_captcha`. Null when the flow draws none.
+   */
+  export let captcha: CaptchaController | null = null;
 
   const atlas = useAtlas();
   const cls = (key: ElementKey, base: string) => classFor(key, atlas.appearance, base);
@@ -66,6 +73,7 @@
         return t('signIn.checkOtherTab');
       case 'restart':
         return t('error.generic');
+      case 'collect_captcha':
       case 'collect_identifier':
       case 'collect_first_factor':
       case 'collect_second_factor':
@@ -80,6 +88,7 @@
   })();
 
   $: showSubmit = step.kind !== 'done' && step.kind !== 'await_oauth' && message === null;
+  $: showCaptcha = !!captcha && (step.kind === 'collect_identifier' || step.kind === 'collect_captcha');
 
   function handleSubmit(event: Event) {
     event.preventDefault();
@@ -98,12 +107,18 @@
     {#if message !== null}
       <p>{message}</p>
     {:else}
+      {#if step.kind === 'collect_captcha'}
+        <!-- §5 the server withheld the attempt until a captcha clears. Solving
+             the widget resubmits the identifier on its own; the button retries. -->
+        <p class="atlas-text">{t('captcha.prompt')}</p>
+      {/if}
       {#each fields as f (f.name)}
         <label class="atlas-field">
           <span>{t(f.labelKey)}</span>
           <input
             class={cls('formFieldInput', 'atlas-input')}
             type={f.type}
+            name={f.name}
             value={values[f.name] ?? ''}
             on:input={(e) => (values[f.name] = e.currentTarget.value)}
           />
@@ -112,6 +127,10 @@
           {/each}
         </label>
       {/each}
+    {/if}
+
+    {#if showCaptcha && captcha}
+      <CaptchaSlot controller={captcha} />
     {/if}
 
     {#if showSubmit}

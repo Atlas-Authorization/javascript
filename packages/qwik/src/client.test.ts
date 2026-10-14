@@ -42,6 +42,17 @@ const signedInBody = (jwt: string) => ({
 });
 
 describe('createAtlasClient boots the session', () => {
+  it('throws a clear config error when frontendApi is missing', () => {
+    let caught: unknown;
+    try {
+      createAtlasClient({ publishableKey: 'pk_test' });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { name?: string }).name).toBe('AtlasConfigError');
+    expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
+  });
+
   it('resolves to signed_out when /v1/client has no session', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ session: null, user: null }));
     const client = createAtlasClient({

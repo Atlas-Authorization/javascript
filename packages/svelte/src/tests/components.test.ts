@@ -29,7 +29,7 @@ async function signedInClient() {
       organization_memberships: [],
     }),
   ) as unknown as typeof fetch;
-  const client = createAtlasClient({ publishableKey: 'pk_test', fetchImpl, manualBoot: true });
+  const client = createAtlasClient({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl, manualBoot: true });
   await client.reload();
   return client;
 }
@@ -38,7 +38,7 @@ async function signedOutClient() {
   const fetchImpl = vi.fn(async () =>
     jsonResponse({ session: null, user: null }),
   ) as unknown as typeof fetch;
-  const client = createAtlasClient({ publishableKey: 'pk_test', fetchImpl, manualBoot: true });
+  const client = createAtlasClient({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl, manualBoot: true });
   await client.reload();
   return client;
 }
@@ -70,7 +70,7 @@ describe('<SignedIn> / <SignedOut>', () => {
 
   it('renders neither branch while the SDK is still loading', () => {
     // A fresh client with no reload is in `loading`; both gates must be empty.
-    const loading = createAtlasClient({ publishableKey: 'pk_test', manualBoot: true });
+    const loading = createAtlasClient({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', manualBoot: true });
     const inTree = render(SignedInHarness, ctx(loading));
     expect(inTree.queryByTestId('in')).toBeNull();
     const outTree = render(SignedOutHarness, ctx(loading));

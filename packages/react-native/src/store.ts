@@ -1,9 +1,16 @@
 import {
   advance,
+  fetchInstanceSettings,
   getProviderToken as fetchProviderToken,
   initialFlow,
+  isCaptchaError,
+  nextStep,
   readRedirectResult,
+  resolveFrontendApi,
+  startSignUp,
+  type CaptchaFlowKey,
   type FapiClient,
+  type FlowCaptcha,
   type FlowState,
   type ProviderToken,
 } from '@atlasauth/js';
@@ -40,13 +47,46 @@ export interface AtlasStoreState {
 
 export interface AtlasStoreConfig {
   publishableKey: string;
-  /** The instance's FAPI origin. */
+  /**
+   * The instance's Frontend API as an absolute URL, e.g.
+   * `"https://auth.example.com"`. Required at runtime — a missing or malformed
+   * value throws an `AtlasConfigError` (`FRONTEND_API_REQUIRED` /
+   * `FRONTEND_API_INVALID`). A native app has no origin of its own, so
+   * `"same-origin"` / a bare path is refused too. Optional in the type only so
+   * existing call sites keep compiling.
+   */
   frontendApi?: string;
   /** Where the session token lives. Defaults to non-persistent in-memory. */
   storage?: TokenStorage;
   /** Injectable for tests; defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
+  /**
+   * §5 supply a captcha token when the instance requires one. Captcha providers
+   * draw their challenge in a browser, so this SDK renders none itself: render
+   * the provider's widget your own way (its React Native SDK, or a WebView
+   * loading the provider script with `captcha.siteKey`) and resolve the solved
+   * token, or null to give up. Called only when a token is needed — the
+   * sign-up / sign-in was refused with `CAPTCHA_REQUIRED` / `CAPTCHA_FAILED`, or
+   * the server answered with a `needs_captcha` challenge — and the request is
+   * then retried once with it. A `captchaToken` passed to the call itself is
+   * used first. Without either, the call returns the `CAPTCHA_REQUIRED` error.
+   */
+  getCaptchaToken?: (request: CaptchaTokenRequest) => Promise<string | null>;
 }
+
+/** What {@link AtlasStoreConfig.getCaptchaToken} is asked for. */
+export interface CaptchaTokenRequest {
+  /** Which flow needs the token. */
+  flow: Extract<CaptchaFlowKey, 'signUp' | 'signIn'>;
+  /**
+   * The instance's public captcha settings for that flow (provider, site key,
+   * widget mode) from `GET /v1/appearance`; null if they could not be read.
+   */
+  captcha: FlowCaptcha | null;
+}
+
+/** The end-user message for a captcha that has to be completed first. */
+const CAPTCHA_REQUIRED_MESSAGE = 'Please complete the security check, then try again.';
 
 const attemptId = (flow: FlowState): string =>
   (flow.attempt as { id?: string } | null)?.id ?? '';
@@ -62,13 +102,18 @@ export class AtlasStore {
   private readonly listeners = new Set<() => void>();
   private readonly storage: TokenStorage;
   private readonly client: FapiClient;
+  private readonly getCaptchaToken?: AtlasStoreConfig['getCaptchaToken'];
 
   constructor(config: AtlasStoreConfig) {
     this.storage = config.storage ?? createInMemoryStorage();
+    this.getCaptchaToken = config.getCaptchaToken;
     const fetchImpl = config.fetchImpl ?? fetch;
     this.client = createNativeClient({
       publishableKey: config.publishableKey,
-      frontendApi: config.frontendApi ?? '',
+      frontendApi: resolveFrontendApi(config.frontendApi, {
+        component: '<AtlasProvider> / createAtlasStore()',
+        allowSameOrigin: false,
+      }),
       fetchImpl,
       getToken: () => this.storage.getToken(),
     });
@@ -145,15 +190,43 @@ export class AtlasStore {
   signInWithPassword = async (input: {
     identifier: string;
     password: string;
+    /** §5 a solved captcha token, when the instance always requires one on sign-in. */
+    captchaToken?: string;
   }): Promise<FlowResult> => {
-    const values = { identifier: input.identifier, password: input.password };
+    const values: Record<string, string> = { identifier: input.identifier, password: input.password };
+    if (input.captchaToken) values.captcha_token = input.captchaToken;
 
     let flow = await advance(this.client, initialFlow, values);
     if (flow.errors.length) return { status: 'error', errors: flow.errors };
 
+    // §5 the server withheld the attempt until a captcha clears (an always-on
+    // sign-in gate, or a risk-triggered challenge): get a token from the app and
+    // re-issue the identifier with it.
+    if (flow.attempt && nextStep(flow.attempt).kind === 'collect_captcha') {
+      const token = await this.captchaTokenFor('signIn');
+      if (!token) return captchaRequired();
+      flow = await advance(this.client, flow, { identifier: input.identifier, captcha_token: token });
+      if (flow.errors.length) return { status: 'error', errors: flow.errors };
+      // A rejected token comes back as the same challenge.
+      if (flow.attempt && nextStep(flow.attempt).kind === 'collect_captcha') {
+        return { status: 'error', errors: [{ code: 'CAPTCHA_FAILED', message: CAPTCHA_REQUIRED_MESSAGE }] };
+      }
+    }
+
     flow = await advance(this.client, flow, values);
     return this.completeFlow(flow);
   };
+
+  /** Ask the app for a captcha token (see {@link AtlasStoreConfig.getCaptchaToken}). */
+  private async captchaTokenFor(flow: CaptchaTokenRequest['flow']): Promise<string | null> {
+    if (!this.getCaptchaToken) return null;
+    const settings = await fetchInstanceSettings(this.client);
+    try {
+      return (await this.getCaptchaToken({ flow, captcha: settings?.captchaFlows[flow] ?? null })) || null;
+    } catch {
+      return null;
+    }
+  }
 
   /** Submit a second-factor / MFA code against a pending sign-in attempt. */
   attemptSecondFactor = async (input: {
@@ -218,39 +291,47 @@ export class AtlasStore {
   // ── sign-up ──────────────────────────────────────────────────────────────
 
   /**
-   * Create an account with an email + password. If the instance completes
-   * sign-up immediately, the token is persisted; otherwise it returns
-   * `needs_more` (typically an email code) — pass the code to `verifyEmailCode`.
+   * Create an account with an email + password (`POST /v1/client/sign_ups`).
+   * If the instance completes sign-up immediately, the session ticket is
+   * exchanged for a token and persisted; otherwise it returns `needs_more`
+   * (typically an email code) — pass the code to `verifyEmailCode`.
+   *
+   * `fields` carries the instance's configured sign-up fields by key
+   * (`firstName` / `lastName` are shorthands for the `first_name` / `last_name`
+   * fields); `consent` is the legal-consent tick when the instance requires
+   * agreement. When the instance requires a captcha on sign-up, pass
+   * `captchaToken`, or give the provider a `getCaptchaToken` callback.
    */
   signUpWithPassword = async (input: {
     emailAddress: string;
     password: string;
     firstName?: string;
     lastName?: string;
+    fields?: Record<string, string>;
+    consent?: boolean;
+    captchaToken?: string;
   }): Promise<FlowResult> => {
-    const response = await this.client.post<{
-      id?: string;
-      status?: string;
-      ticket?: string;
-    }>('/v1/client/sign_ups', {
-      email_address: input.emailAddress,
-      password: input.password,
-      ...(input.firstName ? { first_name: input.firstName } : {}),
-      ...(input.lastName ? { last_name: input.lastName } : {}),
-    });
+    const fields: Record<string, string> = { ...input.fields };
+    if (input.firstName) fields.first_name = input.firstName;
+    if (input.lastName) fields.last_name = input.lastName;
+    const create = (captchaToken?: string) =>
+      startSignUp(this.client, {
+        email: input.emailAddress,
+        password: input.password,
+        fields,
+        ...(input.consent ? { consent: true } : {}),
+        ...(captchaToken ? { captchaToken } : {}),
+      });
 
-    if (!response.ok || !response.data) return { status: 'error', errors: response.errors };
-
-    if (response.data.ticket) {
-      await this.setSessionToken(response.data.ticket);
-      return { status: 'complete', errors: [] };
+    let flow = await create(input.captchaToken);
+    // §5 the instance requires a captcha on sign-up: get a token from the app
+    // and retry once. Nothing was created by the refused request.
+    if (flow.errors.some(isCaptchaError)) {
+      const token = await this.captchaTokenFor('signUp');
+      if (!token) return captchaRequired(flow.errors);
+      flow = await create(token);
     }
-    return {
-      status: 'needs_more',
-      attemptStatus: response.data.status,
-      attemptId: response.data.id,
-      errors: [],
-    };
+    return this.completeFlow(flow);
   };
 
   /** Verify a sign-up email code and, on completion, persist the token. */
@@ -288,6 +369,21 @@ export class AtlasStore {
       errors: [],
     };
   }
+}
+
+/** The `CAPTCHA_REQUIRED` result: the app supplied no captcha token. */
+function captchaRequired(errors: FlowResult['errors'] = []): FlowResult {
+  const fromServer = errors.find(isCaptchaError);
+  return {
+    status: 'error',
+    errors: [
+      {
+        code: 'CAPTCHA_REQUIRED',
+        message: fromServer?.code === 'CAPTCHA_REQUIRED' ? fromServer.message : CAPTCHA_REQUIRED_MESSAGE,
+        ...(fromServer?.param ? { param: fromServer.param } : {}),
+      },
+    ],
+  };
 }
 
 export function createAtlasStore(config: AtlasStoreConfig): AtlasStore {

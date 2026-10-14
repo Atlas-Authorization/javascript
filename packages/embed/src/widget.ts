@@ -7,6 +7,7 @@ import {
 } from '@atlasauth/js';
 import {
   cssVariables,
+  textOnPrimary,
   orderedProviders,
   resolveSocialButtons,
   resolveCodeInput,
@@ -237,6 +238,8 @@ export class AtlasWidget {
     const tokens = this.design?.tokens ?? resolveTokens(this.appearance, this.options.appearance);
     const vars = cssVariables(tokens);
     for (const [key, value] of Object.entries(vars)) this.root.style.setProperty(key, value);
+    // Derived, not a token: the primary button's label follows the primary's contrast.
+    this.root.style.setProperty('--atlas-embed-color-text-on-primary', textOnPrimary(tokens.colorPrimary));
     if (this.design) {
       this.appliedDesign = applyAppearanceToDom(
         this.root.ownerDocument ?? document,

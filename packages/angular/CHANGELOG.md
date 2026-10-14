@@ -1,5 +1,36 @@
 # @atlasauth/angular changelog
 
+## 0.3.0
+- **`<atlas-sign-up>` now creates accounts.** Its first step is a create-account form (the instance's
+  configured sign-up fields, email, password and the legal-consent row) that posts
+  `POST /v1/client/sign_ups`; the emailed-code step and the ticket exchange then run through the shared
+  flow engine. Previously it rendered the sign-in identifier step and could not create an account.
+- **Captcha renders automatically.** When the instance turns captcha on for a flow, `<atlas-sign-up>` and
+  `<atlas-sign-in>` show the provider's widget (Turnstile, hCaptcha, reCAPTCHA v2/v3/Enterprise) in the
+  configured mode (`visible`, `managed`, or `invisible` — run on submit), send its token as
+  `captcha_token`, answer the sign-in `needs_captcha` step (continuing as soon as it is solved), and on
+  `CAPTCHA_REQUIRED` / `CAPTCHA_FAILED` show a localized message and a fresh widget.
+- **Added to `AtlasFlowController`:** `create(values, consent?)`, `loadSettings()`,
+  `settings: WritableSignal<InstanceSettings | null>`, `captcha` / `signUpCaptcha: CaptchaController`,
+  `captchaDrawn` / `signUpCaptchaDrawn: WritableSignal<boolean>`, and an optional 4th constructor
+  argument `t: (key: string) => string` for the captcha messages (defaults to en-US). `destroy()` now
+  also removes the captcha widgets.
+- **Added** `SignUpFormComponent` (`<atlas-sign-up-form>`, output `submitSignUp: SignUpFormSubmit`),
+  the `SignUpFormSubmit` type, the `AtlasCaptchaSlotDirective` (`[atlasCaptchaSlot]`), the
+  `AttemptFlowComponent` input `captcha`, and type re-exports `InstanceSettings`, `PublicSignUpField`,
+  `CaptchaController`, `CaptchaFlowKey`, `CaptchaWidgetMode`, `FlowCaptcha` from `@atlasauth/js`.
+- **Added catalog keys** (en-US): `signUp.emailLabel`, `signUp.passwordLabel`, `signUp.optionalField`,
+  `signUp.selectPlaceholder`, `signUp.consentAgree`, `signUp.consentNotice`, `signUp.terms`,
+  `signUp.privacy`, `signUp.and`, `captcha.prompt`, `captcha.required`, `captcha.failed`.
+- New element classes `atlas-captcha`, `atlas-consent`, `atlas-choices`, `atlas-choice`, `atlas-text`,
+  `atlas-link`; the flow's inputs now carry `name` attributes.
+- **`frontendApi` is validated at `provideAtlas()` / `AtlasModule.forRoot()`.** A missing (or non-string) or malformed value now throws an
+  `AtlasConfigError` (from `@atlasauth/js`; `code: 'FRONTEND_API_REQUIRED'` or `'FRONTEND_API_INVALID'`)
+  instead of silently sending requests to relative URLs on the app's own origin. Accepted: an absolute
+  `https:` URL (`http:` only for localhost / local development hosts), or `"same-origin"` / a root-relative path such as `"/atlas"` for a reverse proxy.
+- **Deprecated:** `frontendApi: ""` (the original same-origin spelling) still works as same-origin, with a
+  one-time console warning; use `"same-origin"` instead.
+
 ## 0.2.1
 - **Front-channel logout on sign-out.** `signOut()` now loads the `frontchannel_logout_urls` the
   Frontend API returns (apps signed in with "Sign in with Atlas" through this session) in hidden,
@@ -23,4 +54,14 @@
 
 ## 0.1.2
 - **Docs fix.** README now references the real published packages `@atlasauth/react` / `@atlasauth/js` (were shown as `@atlas/*`).
+
+## 0.1.1
+- First published release.
+- **Setup.** `provideAtlas({ publishableKey, frontendApi, ... })` (or `AtlasModule`) configures the SDK; options are injectable through `ATLAS_OPTIONS`. Requires Angular 17 or later.
+- **`AtlasService`.** Signals and observables for `status`, `user`, `session`, `claims`, `memberships`, `organization`, `isLoaded` and `isSignedIn`, plus `getToken()`, `getProviderToken()`, `has()`, `signOut()`, `setActiveOrganization()` and `reload()`.
+- **Directives.** `*atlasSignedIn`, `*atlasSignedOut`, `*atlasLoading`, `*atlasLoaded` and `*atlasProtect` structural directives, and the `atlasRoot` theming host.
+- **Components.** Sign-in, sign-up, user button, organization switcher, user profile and organization profile components, plus `AttemptFlowComponent` / `AtlasFlowController` for custom flows.
+- `ATLAS_UI` bundles the directives and components for standalone imports.
+- **Route guards.** `atlasGuard` and `atlasChildGuard` protect routes by sign-in state and the same role / permission conditions as `has()`; `AtlasGuardOptions` adds `redirectTo` and `preserveReturnUrl`.
+- Appearance, localization and authorization helpers shared with the other Atlas UI SDKs.
 

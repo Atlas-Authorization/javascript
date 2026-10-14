@@ -8,6 +8,7 @@ import {
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { FapiClient, type FlowState } from './fapi';
+import { CaptchaSlot } from './captcha';
 import {
   AttemptFlow,
   SocialSignInButtons,
@@ -20,7 +21,7 @@ import {
 } from './flow';
 
 export function SignIn(props: FlowProps = {}) {
-  const { state, submit, client, finish } = useFlow({ afterUrl: props.afterUrl });
+  const { state, submit, client, finish, captcha } = useFlow({ afterUrl: props.afterUrl });
 
   return (
     <>
@@ -31,6 +32,7 @@ export function SignIn(props: FlowProps = {}) {
         titleKey="signIn.title"
         hideTitle={props.hideTitle}
         onSubmit={submit}
+        captcha={<CaptchaSlot controller={captcha} />}
       />
       {/* Social buttons belong on the first step, not mid-flow (e.g. during a
           second factor). `!state.attempt` is exactly the initial identifier step. */}

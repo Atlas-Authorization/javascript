@@ -20,12 +20,14 @@
 
 import {
   renderDesignAppearance,
+  warnOnce,
   type AppearanceRender,
   type AtlasDesign,
   type DesignWarn,
   type InstanceDesign,
   type PresetId,
 } from '@atlasauth/design/runtime';
+import { textOnPrimary } from './contrast';
 
 export { instanceDesignFrom, warnOnce } from '@atlasauth/design/runtime';
 export type { AppearanceRender, AtlasDesign, InstanceDesign, PresetId } from '@atlasauth/design/runtime';
@@ -39,6 +41,20 @@ export interface DesignTokens {
   borderRadius?: string;
   fontFamily?: string;
   spacingUnit?: string;
+  /**
+   * Text and icon colour on a `colorPrimary` fill (the primary button label,
+   * the avatar initials). Defaults to white or near-black, whichever contrasts
+   * more with the resolved `colorPrimary`. With a design active, an explicit
+   * value overrides the design's primary ink.
+   */
+  colorTextOnPrimary?: string;
+  /**
+   * The keyboard focus ring (a solid 2px outline on `:focus-visible`). Defaults
+   * to the resolved `colorPrimary`; pick a colour with at least 3:1 contrast
+   * against `colorBackground`. With a design active, an explicit value replaces
+   * the design's ring colour.
+   */
+  colorFocusRing?: string;
 }
 
 /**
@@ -157,6 +173,9 @@ export const DEFAULT_TOKENS: Required<DesignTokens> = {
   borderRadius: '8px',
   fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
   spacingUnit: '4px',
+  // Both derived from colorPrimary by resolveTokens unless set explicitly.
+  colorTextOnPrimary: '#ffffff',
+  colorFocusRing: '#5b5bd6',
 };
 
 /**
@@ -173,10 +192,14 @@ export const THEMES = {
     colorBackground: '#14171c',
     colorBorder: '#242932',
     colorPrimary: '#6ea8fe',
+    colorTextOnPrimary: textOnPrimary('#6ea8fe'),
+    colorFocusRing: '#6ea8fe',
   },
   neobrutalist: {
     ...DEFAULT_TOKENS,
     colorPrimary: '#ffe600',
+    colorTextOnPrimary: textOnPrimary('#ffe600'),
+    colorFocusRing: '#000000',
     colorText: '#000000',
     colorBackground: '#ffffff',
     colorBorder: '#000000',
@@ -191,6 +214,13 @@ export const THEMES = {
  * Later wins, and `undefined` never overwrites. A customer setting one variable
  * on the dark theme expects the other eleven to stay dark, not silently revert
  * to the light defaults.
+ *
+ * `colorTextOnPrimary` and `colorFocusRing` follow the RESOLVED `colorPrimary`
+ * unless set explicitly in `variables` (a theme's own values are for its own
+ * primary): the label flips to whichever of white / near-black contrasts more,
+ * and the focus ring takes the primary. A base theme whose primary would make a
+ * poor ring on its own background (neobrutalist yellow on white) keeps its ring
+ * while its primary is unchanged.
  */
 export function resolveTokens(appearance?: Appearance): Required<DesignTokens> {
   const base = appearance?.baseTheme ? THEMES[appearance.baseTheme] : DEFAULT_TOKENS;
@@ -199,6 +229,13 @@ export function resolveTokens(appearance?: Appearance): Required<DesignTokens> {
   const resolved = { ...DEFAULT_TOKENS, ...base };
   for (const [key, value] of Object.entries(overrides)) {
     if (value !== undefined) resolved[key as keyof DesignTokens] = value;
+  }
+  const primaryChanged = resolved.colorPrimary !== base.colorPrimary;
+  if (overrides.colorTextOnPrimary === undefined) {
+    resolved.colorTextOnPrimary = textOnPrimary(resolved.colorPrimary);
+  }
+  if (overrides.colorFocusRing === undefined && primaryChanged) {
+    resolved.colorFocusRing = resolved.colorPrimary;
   }
   return resolved;
 }
@@ -261,10 +298,41 @@ export function renderAppearance(
   instanceDesign: InstanceDesign | null | undefined,
   options: { frontendApi?: string; warn?: DesignWarn } = {},
 ): AppearanceRender {
-  return renderDesignAppearance(appearance, instanceDesign, {
+  const out = renderDesignAppearance(appearance, instanceDesign, {
     tokens: explicitTokens(appearance),
     legacyStyle: () => cssVariables(resolveTokens(appearance)),
     frontendApi: options.frontendApi,
     warn: options.warn,
   });
+  if (!out.attributes['data-atlas-design']) return out;
+  return { ...out, style: { ...out.style, ...designAccessibilityVariables(appearance, options.warn ?? warnOnce) } };
+}
+
+/** Characters an inline token may never contain (mirrors the design system's raw-token guard). */
+const UNSAFE_INLINE = /[;{}<>\\]|\/\*|url\s*\(|expression\s*\(|@import|javascript:/i;
+
+/**
+ * With a design active, the design supplies the primary ink and the focus ring,
+ * and the token defaults are not emitted. An EXPLICIT `colorTextOnPrimary` /
+ * `colorFocusRing` in `variables` still wins: they go inline on the root. The
+ * ring also sets `--atlas-focus-outline-color`, which the design-mode focus
+ * outline reads before falling back to the (solid) primary — the design's own
+ * `--atlas-color-focus-ring` is translucent, a glow colour, not an outline one.
+ */
+function designAccessibilityVariables(appearance: Appearance | undefined, warn: DesignWarn): Record<string, string> {
+  const vars: Record<string, string> = {};
+  const safe = (key: keyof DesignTokens, value: string | undefined): value is string => {
+    if (value === undefined) return false;
+    if (typeof value === 'string' && value.length <= 200 && !UNSAFE_INLINE.test(value)) return true;
+    warn(`appearance.variables.${key} is not a safe CSS value; ignored.`);
+    return false;
+  };
+  const ink = appearance?.variables?.colorTextOnPrimary;
+  if (safe('colorTextOnPrimary', ink)) vars['--atlas-color-text-on-primary'] = ink;
+  const ring = appearance?.variables?.colorFocusRing;
+  if (safe('colorFocusRing', ring)) {
+    vars['--atlas-color-focus-ring'] = ring;
+    vars['--atlas-focus-outline-color'] = ring;
+  }
+  return vars;
 }

@@ -73,6 +73,12 @@ function makePlugins(
 }
 
 describe('createAtlasCapacitor', () => {
+  it('refuses a missing frontendApi with a clear config error', async () => {
+    await expect(
+      createAtlasCapacitor({ publishableKey: 'pk_test' } as unknown as Parameters<typeof createAtlasCapacitor>[0]),
+    ).rejects.toMatchObject({ name: 'AtlasConfigError', code: 'FRONTEND_API_REQUIRED' });
+  });
+
   it('signs in through the browser, stores the session, and reads it back', async () => {
     const app = fakeApp();
     const browser: BrowserPlugin = {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createFapiClient } from './client';
 import {
   authenticateWithPasskey,
   registerPasskey,
@@ -126,5 +127,18 @@ describe('authenticateWithPasskey', () => {
 
     expect(result.status).toBe('needs_more');
     expect(result.ticket).toBeUndefined();
+  });
+});
+
+describe('createFapiClient config', () => {
+  it('throws a clear config error when frontendApi is missing', () => {
+    let caught: unknown;
+    try {
+      createFapiClient({ publishableKey: 'pk_test' } as unknown as Parameters<typeof createFapiClient>[0]);
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { name?: string }).name).toBe('AtlasConfigError');
+    expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
   });
 });

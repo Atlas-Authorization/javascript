@@ -6,7 +6,12 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { AtlasStore, createAtlasStore, type AtlasStoreState } from './store';
+import {
+  AtlasStore,
+  createAtlasStore,
+  type AtlasStoreConfig,
+  type AtlasStoreState,
+} from './store';
 import type { TokenStorage } from './storage';
 
 /**
@@ -20,7 +25,11 @@ const AtlasContext = createContext<AtlasStore | null>(null);
 
 export interface AtlasProviderProps {
   publishableKey: string;
-  /** The instance's FAPI origin. */
+  /**
+   * The instance's Frontend API as an absolute URL, e.g.
+   * `"https://auth.example.com"`. Required at runtime — the provider throws an
+   * `AtlasConfigError` on its first render when it is missing or malformed.
+   */
   frontendApi?: string;
   /**
    * Where the session token is kept. Defaults to a non-persistent in-memory
@@ -30,6 +39,12 @@ export interface AtlasProviderProps {
   storage?: TokenStorage;
   /** Injectable for tests; defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
+  /**
+   * §5 supply a captcha token when the instance requires one (this SDK draws no
+   * captcha itself — see `AtlasStoreConfig.getCaptchaToken`). Read once, when
+   * the store is created.
+   */
+  getCaptchaToken?: AtlasStoreConfig['getCaptchaToken'];
   children: ReactNode;
 }
 
@@ -42,6 +57,7 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
       frontendApi: props.frontendApi,
       storage: props.storage,
       fetchImpl: props.fetchImpl,
+      getCaptchaToken: props.getCaptchaToken,
     }),
   );
 

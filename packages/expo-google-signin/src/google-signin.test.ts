@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createFapiClient } from './client';
 import { extractIdToken, signInWithGoogle } from './index';
 import type { GoogleSignin } from './google-native';
 
@@ -81,5 +82,18 @@ describe('signInWithGoogle', () => {
       useNonce: true,
     });
     expect(result).toMatchObject({ status: 'needs_more', attemptId: 'att_2', attemptStatus: 'needs_second_factor' });
+  });
+});
+
+describe('createFapiClient config', () => {
+  it('throws a clear config error when frontendApi is missing', () => {
+    let caught: unknown;
+    try {
+      createFapiClient({ publishableKey: 'pk_test' } as unknown as Parameters<typeof createFapiClient>[0]);
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { name?: string }).name).toBe('AtlasConfigError');
+    expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
   });
 });

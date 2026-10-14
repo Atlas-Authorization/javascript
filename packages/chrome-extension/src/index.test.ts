@@ -174,6 +174,17 @@ describe('decodeTokenClaims', () => {
 // ── client + background sync ────────────────────────────────────────────────
 
 describe('createAtlasClient', () => {
+  it('throws a clear config error when frontendApi is missing', () => {
+    let caught: unknown;
+    try {
+      createAtlasClient({ publishableKey: 'pk_test' } as unknown as Parameters<typeof createAtlasClient>[0]);
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { name?: string }).name).toBe('AtlasConfigError');
+    expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
+  });
+
   it('sends the stored token as a bearer on FAPI calls', async () => {
     const store = new StorageCache({ area: createMemoryStorageArea() });
     await store.setToken(makeJwt({ sid: 'sess_1', exp: Date.now() / 1000 + 3600 }));

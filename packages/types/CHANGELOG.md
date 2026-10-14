@@ -1,0 +1,26 @@
+# @atlasauth/types changelog
+
+## 0.2.0
+
+### Added
+
+- `WebhookEvent` gains `api_key.created`, `api_key.updated` and
+  `api_key.limit_reached`.
+- `WebhookEvent` gains `entitlement.override.created`,
+  `entitlement.override.deleted` and `entitlement.override.expired`, which the
+  server already emitted but the union was missing.
+- `DesignTokens` gains optional `colorTextOnPrimary` and `colorFocusRing` (mirrors `@atlasauth/react` 0.5.0).
+
+## 0.1.0
+
+First published release.
+
+### Added
+- Dependency-free, runtime-free shared TypeScript types for Atlas integrators; every export is type-only, so importing them adds nothing to a bundle.
+- Session: `SessionClaims`, including the `orgs` entries' optional `settings_partial` flag, set when some organization settings could not be included in the token and should be fetched instead.
+- Authorization: `AuthzClaims`, `ProtectCondition`, `ProtectOutcome`, `ProtectReason`.
+- Verification: `VerifiedSessionClaims`, `AuthorizedSession`, `VerifyResult`.
+- Backend API resources: `User`, `EmailAddress`, `Session`, `Organization`, `OrganizationMembership`, `Invitation`, `ApiKey`, `ApiKeySubjectType`, `ApiKeyVerification`, and the `Metadata`, `CursorPage`, `DataList`, `CursorParams` and `DeletedObject` envelopes.
+- Webhooks: `WebhookEvent`, `WebhookPayload`, `WebhookVerifyResult`, `WebhookVerifyFailure`.
+- Theming and localization: `Appearance`, `DesignTokens`, `ElementKey`, `LocalizationResource`, `Localization`, `DeepPartial`.
+

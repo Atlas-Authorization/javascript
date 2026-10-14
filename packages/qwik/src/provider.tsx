@@ -6,6 +6,7 @@ import {
   useStore,
   useVisibleTask$,
 } from '@builder.io/qwik';
+import { resolveFrontendApi } from '@atlasauth/js';
 import { createAtlasClient } from './client';
 import { AtlasContextId } from './context';
 import { applySnapshot, initialStore, type AtlasStore } from './store';
@@ -13,7 +14,15 @@ import { applySnapshot, initialStore, type AtlasStore } from './store';
 export interface AtlasProviderProps {
   /** Publishable key (`pk_…`) identifying the instance. */
   publishableKey: string;
-  /** The instance's FAPI origin the client calls cross-origin. */
+  /**
+   * The instance's Frontend API: an absolute URL such as
+   * `"https://auth.example.com"`, or `"same-origin"` / a path such as `"/atlas"`
+   * behind a reverse proxy on the app's own origin. Required at runtime — the
+   * provider throws an `AtlasConfigError` (`FRONTEND_API_REQUIRED` /
+   * `FRONTEND_API_INVALID`) while rendering, on the server as well, when it is
+   * missing or malformed. Optional in the type only so existing call sites keep
+   * compiling.
+   */
   frontendApi?: string;
 }
 
@@ -36,9 +45,11 @@ export interface AtlasProviderProps {
  * behind.
  */
 export const AtlasProvider = component$<AtlasProviderProps>((props) => {
-  const store = useStore<AtlasStore>(
-    initialStore(props.publishableKey, props.frontendApi ?? ''),
-  );
+  // Validated at render — including the SSR render — so a missing value fails
+  // loudly instead of booting a client that calls relative paths on the app's
+  // origin. The store carries the resolved base the widgets read.
+  const frontendApi = resolveFrontendApi(props.frontendApi, { component: '<AtlasProvider>' });
+  const store = useStore<AtlasStore>(initialStore(props.publishableKey, frontendApi));
   useContextProvider(AtlasContextId, store);
 
   // eslint-disable-next-line qwik/no-use-visible-task -- the Atlas client is a

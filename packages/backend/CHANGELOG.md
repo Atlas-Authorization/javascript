@@ -1,5 +1,15 @@
 # @atlasauth/backend changelog
 
+## 0.7.0
+- **API key spend caps.** `apiKeys.create` and `apiKeys.update` accept `limits` (`ApiKeyLimit[]`: `{ unit, amount, period: 'request' | 'day' | 'month' | 'total' }`, or `null` to clear). `ApiKey` gains `limits` and `usage` (`ApiKeyLimitState[]`: `{ unit, period, amount, used, remaining, window_start, resets_at }`).
+- **Usage metering.** `apiKeys.recordUsage(id, { amount, unit, idempotency_key? })` returns `ApiKeyUsageDebit` (`key_id`, `unit`, `amount`, `allowed`, `code`, `exceeded`, `usage`, `counters`, `idempotent_replay`); a refusal resolves with `allowed: false`. `apiKeys.getUsage(id)` returns `ApiKeyUsage` (`key_id`, `limits`, `usage`, `counters`). New types: `ApiKeyLimit`, `ApiKeyLimitPeriod`, `ApiKeyLimitState`, `ApiKeyUsageCounter`, `RecordApiKeyUsageBody`, `ApiKeyUsageDebit`, `ApiKeyUsage`.
+- **Verify.** A valid `ApiKeyVerification` gains `name`, `scopes`, `constraints`, `limits`, `usage` and `expires_at`.
+- **Session keep-alive.** `sessions.touch(id)` returns `TouchedSession` (the session plus `extended`). `Session` gains `idle_expires_at`.
+- **Users.** `CreateUserBody` and `ImportUsersBody` accept `notify` (boolean; `false`, the default, sends nothing to the user).
+- **Error codes.** `AtlasErrorCodes` adds `LIMIT_EXCEEDED`, `SESSION_REVOKED`, `SESSION_IDLE_EXPIRED` and `SESSION_EXPIRED`.
+- **Docs.** `AtlasIdAppCopy.sign_in_title` / `sign_up_title` comments state the current defaults ("Sign in", "Create your Atlas Account"); no type change.
+- **Compatible.** New fields are optional on existing types; no signatures changed.
+
 ## 0.6.0
 - **Full Backend API and Platform API coverage.** Every secret-key and platform-key operation in the public API reference now has a typed method.
 - **Platform client.** `createAtlasPlatformClient({ platformKey })` manages apps and their instances (create, update, archive, transfer, claim, rotate secrets, list secret keys), accountless apps, Sign in with Atlas apps (`atlasIdApps`, including logout URIs, branding and design preview), and platform design images.
@@ -38,9 +48,37 @@
 - **Compatible.** The old untyped `MessagingProviderInput` (`transport: string`, `config: Record<string, unknown>`) still compiles through a `@deprecated` overload.
 
 
+## 0.3.0
+- **Machines.** New `machines` namespace: `list` (filter by owner, organization or metadata, cursor-paginated), `create` (returns the secret once), `get`, `rename`, `patchMetadata`, `approve`, `revoke`, `rotateSecret`, `rotateKey`, `delete` and `organizationMemberships`. Enrolment tokens: `createEnrolmentToken`, `listEnrolmentTokens`, `deleteEnrolmentToken`. `verifyM2mToken(token)` checks a machine token and resolves to `{ valid: false }` on any failure. New types include `Machine`, `MachineWithSecret`, `MachineEnrolmentToken` and `M2mTokenVerification`.
+- **API keys.** `apiKeys.mintToken({ secret, ... })` exchanges an API key secret for a short-lived signed token (`ApiKeyToken`), and `apiKeys.listRevoked({ since, limit })` pages through revoked keys (`RevokedApiKeyRef`).
+
+## 0.2.0
+- **CAPTCHA verification.** New `captcha.verify(token, { action, remote_ip })` checks a CAPTCHA token server-side against the provider configured for the instance (or for the named action), so your server never holds the CAPTCHA secret. Returns a `CaptchaVerification` (`success`, `action`, `provider`).
+
 ## 0.1.7
 - **Metadata.** Added `repository` (monorepo + package directory), `homepage`, and `bugs` so the npm page links back to source.
 
 ## 0.1.6
 - **Optional `audience` verification.** `verifySessionToken(..., { audience })` now enforces the session token's `aud` claim when you pass an expected audience (string or array); omit it and verification is unchanged. Pairs with Atlas sessions now carrying `aud` (the instance id) and `azp`. Backwards compatible.
 
+## 0.1.5
+- **Fixed: default Backend API host.** `DEFAULT_API_URL` (the `apiUrl` used when you don't pass one) is now `https://api.atlasauth.net`. The previous default did not resolve, so clients without an explicit `apiUrl` could not reach the API.
+
+## 0.1.4
+- **OAuth callback forwarding.** `AtlasBackend#oauthCallbackForwardUrl(provider, incoming)` builds Atlas's OAuth callback URL from your configured issuer, so an app that keeps its own registered callback can forward to Atlas in one line (`res.redirect(302, atlas.oauthCallbackForwardUrl('github', req.url))`). It accepts `req.url`, a full URL, a query string, a parsed query object or `URLSearchParams`, keeps only the OAuth callback parameters (`code`, `state`, `error`, ...), and rejects provider keys that are not a plain slug.
+
+## 0.1.3
+- **Offline verification for tests and CI.** `AtlasBackend` accepts a static `jwks` instead of `jwksUrl` (pass exactly one); with `jwks` it never fetches keys. All other checks are unchanged.
+- New `createTestIssuer()` returns `{ issuer, jwks, kid, mintSession(claims?) }`, so tests can mint session tokens and verify them with no network. New types `TestIssuer`, `CreateTestIssuerOptions`.
+
+## 0.1.2
+- **Webhook verification.** New `verifyWebhook({ body, headers, secret })` verifies an incoming Atlas webhook (HMAC-SHA256 signature over the raw body, constant-time compare, 5-minute replay window by default, override with `toleranceMs`). It never throws on a bad signature: it returns `{ verified, reason?, event? }`, with `reason` one of `missing_headers`, `malformed_signature`, `stale_timestamp` or `signature_mismatch`. Also exports `ATLAS_WEBHOOK_HEADERS` (`atlas-id`, `atlas-timestamp`, `atlas-signature`) and the `WebhookVerifyResult` / `VerifyWebhookInput` types.
+
+## 0.1.1
+- First published release.
+- **Session verification.** `AtlasBackend` verifies Atlas session JWTs locally against a cached JWKS (`verify()`, `verifyOnline()`, `authenticateRequest()`), checking signature, issuer and expiry, with an optional `authorizedParties` allowlist for the `azp` claim. `SessionClaims` carries roles, permissions, active plan and features, and an `actor` claim on impersonation sessions.
+- **Authorization helpers.** `has()`, `protect()`, `hasRole()` and `hasPermission()` check roles, permissions, `plan` and `feature` against verified claims.
+- **Cross-domain sign-in handshake.** `redeemHandshake()`, `readHandshakeParams()` and `createPkcePair()` let a satellite domain exchange a PKCE-bound handshake nonce for a first-party session, without a token in the URL.
+- **Backend API client.** `createAtlasClient({ secretKey, apiUrl? })` is a typed client for the secret-key Backend API, with namespaces for users, sessions (including minting a session with `sessions.create`), organizations, roles and permissions, invitations, OAuth clients and providers, SSO and SCIM, domains, allowlist / blocklist / waitlist, webhooks, API keys, JWT templates, fine-grained authorization (`fga`), attack protection, branding, email and SMS templates, billing, messaging, import / export, data subject requests, audit logs and instance settings.
+- `users.connectExternalAccount()` links a new sign-in provider to an existing user from your server.
+- Errors are thrown as `AtlasApiError`; `paginate()` and `collect()` walk paginated lists.

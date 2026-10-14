@@ -10,7 +10,7 @@
  * the only thing that decides what shows.
  */
 
-import { type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useCallback, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { FlowProvider, useFlowContext, useFlowDriver, type FlowContextValue } from './context';
 import { Slot } from './primitives';
 import {
@@ -173,4 +173,37 @@ export function makeOauthButton() {
   }
   OauthButton.displayName = 'Connection';
   return OauthButton;
+}
+
+export interface CaptchaProps {
+  /** Render onto your own element instead of a bare `<div>`. */
+  asChild?: boolean;
+  children?: ReactNode;
+}
+
+/**
+ * Where the instance's captcha widget draws (Turnstile, hCaptcha, reCAPTCHA), in
+ * the mode the dashboard configured. Renders a bare `<div>` only while the
+ * current step needs one — the sign-up create step when sign-up captcha is on,
+ * the sign-in start step when sign-in captcha is always on, and the
+ * `needs_captcha` challenge (solving it continues the sign-in on its own). Its
+ * token is sent as `captcha_token` with the next submit; a refused token draws a
+ * fresh widget. Place it inside the `start` step, before the submit `<Action>`.
+ */
+export function Captcha({ asChild, children }: CaptchaProps) {
+  const flow = useFlowContext();
+  const controller = flow.captcha;
+  const ref = useCallback(
+    (el: HTMLElement | null) => {
+      controller?.attach(el);
+    },
+    [controller],
+  );
+  if (!controller || !flow.captchaNeeded) return null;
+  const props = { ref, 'data-atlas-captcha': '' } as Record<string, unknown>;
+  return (
+    <Slot asChild={asChild} props={props} defaultElement={(p) => <div {...p} />}>
+      {children}
+    </Slot>
+  );
 }

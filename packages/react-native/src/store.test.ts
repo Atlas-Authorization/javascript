@@ -271,3 +271,26 @@ describe('AtlasStore provider token', () => {
     expect(seenAuth).toBe(`Bearer ${jwt}`);
   });
 });
+
+describe('AtlasStore config', () => {
+  it('throws a clear config error when frontendApi is missing', () => {
+    let caught: unknown;
+    try {
+      createAtlasStore({ publishableKey: 'pk_test_123' });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { name?: string }).name).toBe('AtlasConfigError');
+    expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
+  });
+
+  it('refuses "same-origin": a native app has no origin', () => {
+    let caught: unknown;
+    try {
+      createAtlasStore({ publishableKey: 'pk_test_123', frontendApi: 'same-origin' });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { code?: string }).code).toBe('FRONTEND_API_INVALID');
+  });
+});

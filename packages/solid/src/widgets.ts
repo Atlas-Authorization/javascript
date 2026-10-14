@@ -1,14 +1,30 @@
-import { Show, createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import {
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  type JSX,
+} from 'solid-js';
 import { isServer, render } from 'solid-js/web';
 import { h } from './h';
 import {
   FapiClient,
-  advance,
+  advanceWithCaptcha,
+  createCaptchaController,
+  createSignUp,
+  fetchInstanceSettings,
   flowFromPending,
+  flowNeedsCaptcha,
   nextStep,
   pollAttempt,
   shouldKeepPolling,
+  signInCaptchaOptions,
+  type CaptchaController,
   type FlowState,
+  type InstanceSettings,
+  type PublicSignUpField,
 } from '@atlasauth/js';
 import { useAtlas } from './context';
 import type { AtlasClient } from './provider';
@@ -42,11 +58,54 @@ function field(name: string, label: string, type = 'text'): JSX.Element {
   ]);
 }
 
-/** Form-level (non-field) errors, rendered as an alert. */
+/** The flow's errors, rendered as alerts. Field-scoped ones (e.g. a rejected
+ * password) are included: these forms have no per-field error slot, and an
+ * error the user never sees is a form they cannot get past. */
 function renderErrors(errors: FlowErrors): JSX.Element {
-  return errors
-    .filter((error) => !error.param)
-    .map((error) => h('p', { class: 'atlas-error', role: 'alert' }, error.message));
+  return errors.map((error) => h('p', { class: 'atlas-error', role: 'alert' }, error.message));
+}
+
+/**
+ * The en-US strings of the create-account form and the captcha, under the same
+ * catalog keys `@atlasauth/react` uses (`@atlasauth/localizations`).
+ */
+export const SIGN_UP_TEXT: Record<string, string> = {
+  'signUp.title': 'Sign up',
+  'signUp.submit': 'Continue',
+  'signUp.emailLabel': 'Email address',
+  'signUp.passwordLabel': 'Password',
+  'signUp.optionalField': '{label} (optional)',
+  'signUp.selectPlaceholder': 'Select…',
+  'signUp.consentAgree': 'I agree to the',
+  'signUp.consentNotice': 'By continuing you agree to the',
+  'signUp.terms': 'Terms of Service',
+  'signUp.privacy': 'Privacy Policy',
+  'signUp.and': 'and',
+  'captcha.prompt': 'Complete the security check to continue.',
+  'captcha.required': 'Please complete the security check, then try again.',
+  'captcha.failed': "The security check didn't pass. Please try again.",
+};
+
+const t = (key: string, vars: Record<string, string> = {}) =>
+  (SIGN_UP_TEXT[key] ?? key).replace(/\{(\w+)\}/g, (m, name: string) => vars[name] ?? m);
+
+/**
+ * The element a flow's captcha widget draws into, while `drawn()` says the flow
+ * needs one (see `createCaptchaController` in `@atlasauth/js`). The controller is
+ * attached once the element is in the document and detached when it leaves.
+ */
+function captchaSlot(controller: CaptchaController, drawn: () => boolean): JSX.Element {
+  return (() => {
+    if (!drawn()) return null;
+    const el = document.createElement('div');
+    el.className = 'atlas-captcha';
+    el.setAttribute('data-atlas-captcha', '');
+    queueMicrotask(() => {
+      if (el.isConnected) controller.attach(el);
+    });
+    onCleanup(() => controller.attach(null));
+    return el;
+  }) as unknown as JSX.Element;
 }
 
 /** The fields for the current server-driven step. The `unknown`/default branch
@@ -70,6 +129,10 @@ function renderFields(kind: string): JSX.Element {
       return [field('code', 'Email code')];
     case 'collect_new_password':
       return [field('password', 'New password', 'password')];
+    case 'collect_captcha':
+      // §5 the server withheld the attempt until a captcha clears. Solving the
+      // widget resubmits the identifier on its own; the button retries.
+      return [h('p', { class: 'atlas-text' }, t('captcha.prompt'))];
     case 'await_oauth':
       return [h('p', 'Continue in the window that opened.')];
     case 'done':
@@ -84,38 +147,193 @@ function renderSubmit(kind: string, busy: boolean): JSX.Element {
   return h('button', { class: 'atlas-button', type: 'submit', disabled: busy }, 'Continue');
 }
 
+/** One configured sign-up field's control (uncontrolled — read from `FormData`). */
+function signUpControl(f: PublicSignUpField): JSX.Element {
+  switch (f.type) {
+    case 'checkbox':
+      return h('input', { type: 'checkbox', name: f.key, value: 'true' });
+    case 'select':
+      return h('select', { class: 'atlas-input', name: f.key, required: f.required }, [
+        h('option', { value: '' }, f.placeholder ?? t('signUp.selectPlaceholder')),
+        ...f.options.map((o) => h('option', { value: o }, o)),
+      ]);
+    case 'textarea':
+      return h('textarea', {
+        class: 'atlas-input',
+        name: f.key,
+        rows: 3,
+        required: f.required,
+        placeholder: f.placeholder ?? undefined,
+      });
+    case 'radio':
+    case 'multiselect':
+      return h(
+        'span',
+        { class: 'atlas-choices' },
+        f.options.map((o) =>
+          h('label', { class: 'atlas-choice' }, [
+            h('input', { type: f.type === 'radio' ? 'radio' : 'checkbox', name: f.key, value: o }),
+            o,
+          ]),
+        ),
+      );
+    default: {
+      const type = ['email', 'tel', 'url', 'number', 'date'].includes(f.type) ? f.type : 'text';
+      return h('input', {
+        class: 'atlas-input',
+        type,
+        name: f.key,
+        required: f.required,
+        placeholder: f.placeholder ?? undefined,
+      });
+    }
+  }
+}
+
+/**
+ * The create-account step's fields: the instance's configured extra fields,
+ * email + password, and the legal-consent row. Re-rendered only when the
+ * settings change, so what the user typed survives a refused submit.
+ */
+function renderSignUpFields(settings: InstanceSettings | null): JSX.Element {
+  const legal = settings?.legal;
+  const showLegal = !!legal && (!!legal.termsUrl || !!legal.privacyUrl);
+  const links: JSX.Element[] = [];
+  if (legal?.termsUrl) {
+    links.push(h('a', { class: 'atlas-link', href: legal.termsUrl, target: '_blank', rel: 'noopener noreferrer' }, t('signUp.terms')));
+  }
+  if (legal?.privacyUrl) {
+    if (links.length) links.push(` ${t('signUp.and')} `);
+    links.push(h('a', { class: 'atlas-link', href: legal.privacyUrl, target: '_blank', rel: 'noopener noreferrer' }, t('signUp.privacy')));
+  }
+  return [
+    ...(settings?.signUpFields ?? []).map((f) =>
+      // A choice group holds several inputs, so it can't sit inside one <label>.
+      h(f.type === 'radio' || f.type === 'multiselect' ? 'div' : 'label', { class: 'atlas-field' }, [
+        h('span', f.required ? f.label : t('signUp.optionalField', { label: f.label })),
+        signUpControl(f),
+      ]),
+    ),
+    h('label', { class: 'atlas-field' }, [
+      h('span', t('signUp.emailLabel')),
+      h('input', { class: 'atlas-input', name: 'email', type: 'email', autocomplete: 'email', required: true }),
+    ]),
+    h('label', { class: 'atlas-field' }, [
+      h('span', t('signUp.passwordLabel')),
+      h('input', { class: 'atlas-input', name: 'password', type: 'password', autocomplete: 'new-password', required: true }),
+    ]),
+    showLegal
+      ? h('label', { class: 'atlas-consent' }, [
+          legal!.required ? h('input', { type: 'checkbox', name: 'consent', value: 'true', required: true }) : null,
+          h('span', { class: 'atlas-text' }, [
+            t(legal!.required ? 'signUp.consentAgree' : 'signUp.consentNotice'),
+            ' ',
+            ...links,
+            '.',
+          ]),
+        ])
+      : null,
+  ] as unknown as JSX.Element;
+}
+
+/** Read a form into values; repeated names (a multiselect) are comma-joined,
+ *  the same encoding as React, the embed widget and the hosted page. */
+function formValues(form: HTMLFormElement): Record<string, string> {
+  const values: Record<string, string> = {};
+  new FormData(form).forEach((value, key) => {
+    values[key] = key in values ? `${values[key]}, ${String(value)}` : String(value);
+  });
+  return values;
+}
+
 /**
  * The server-driven sign-in / sign-up flow. Never decides what comes next: it
  * drives through `advance` (the driver owns the step→endpoint mapping) and
- * renders whatever `status` the server returned. `<SignIn>` and `<SignUp>` are
- * the same driver — only the title differs, exactly as in React and Vue.
+ * renders whatever `status` the server returned. In `sign-up` mode the first
+ * step is the create-account form, which POSTs `/v1/client/sign_ups`; from there
+ * it is the same driver (the emailed-code step, then the ticket exchange). Both
+ * draw the instance's captcha when it is required.
  */
-function Flow(props: { client: AtlasClient; title: string }): JSX.Element {
+function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'sign-up' }): JSX.Element {
   const client = props.client;
   const fapi = new FapiClient({ publishableKey: client.publishableKey, baseUrl: client.frontendApi });
   // Seeded from a redirect that returned mid-flow (OAuth owing a second
   // factor), so the user resumes at the demanded step instead of restarting.
-  const [state, setState] = createSignal<FlowState>(flowFromPending(client.pendingAttempt));
+  const [state, setStateRaw] = createSignal<FlowState>(
+    props.mode === 'sign-in' ? flowFromPending(client.pendingAttempt) : flowFromPending(null),
+  );
+  const [settings, setSettingsRaw] = createSignal<InstanceSettings | null>(null);
+
+  // §5 the per-flow captcha, driven by the instance's settings so turning it on
+  // in the dashboard needs no code change. Configured synchronously with every
+  // state / settings change, before the view reads `drawn`.
+  const captcha = createCaptchaController();
+  const signUpCaptcha = createCaptchaController();
+  const [captchaDrawn, setCaptchaDrawn] = createSignal(false);
+  const [signUpCaptchaDrawn, setSignUpCaptchaDrawn] = createSignal(false);
+  let identifier = '';
+  const syncCaptcha = () => {
+    const current = settings();
+    const flow = state();
+    if (props.mode === 'sign-in') {
+      captcha.configure(signInCaptchaOptions(current?.captchaFlows.signIn, flow, () => submit({})));
+    } else {
+      const signUpFlow = current?.captchaFlows.signUp;
+      signUpCaptcha.configure({ flow: signUpFlow, active: !flow.attempt && flowNeedsCaptcha(signUpFlow) });
+    }
+    setCaptchaDrawn(captcha.needed);
+    setSignUpCaptchaDrawn(signUpCaptcha.needed);
+  };
+  const setState = (next: FlowState | ((s: FlowState) => FlowState)) => {
+    setStateRaw(next as FlowState);
+    syncCaptcha();
+  };
+  if (!isServer) {
+    void fetchInstanceSettings(fapi).then((loaded) => {
+      if (!loaded) return;
+      setSettingsRaw(loaded);
+      syncCaptcha();
+    });
+  }
+  onCleanup(() => {
+    captcha.destroy();
+    signUpCaptcha.destroy();
+  });
+
+  // A completion response carries a one-time ticket (§7.1). FAPI is
+  // cross-origin to the app and cannot set the cookie on its own response,
+  // so exchange the ticket over a request THEN re-boot, so the rest of the
+  // app sees a signed-in user — and no session token ever rode in a URL.
+  const finish = async (next: FlowState) => {
+    setState(next);
+    if (next.attempt?.status === 'complete') {
+      if (next.ticket) {
+        await fapi.post('/v1/client/tickets/exchange', {
+          attempt_id: (next.attempt as { id?: string }).id,
+          ticket: next.ticket,
+        });
+      }
+      await client.reload();
+    }
+  };
 
   const submit = (values: Record<string, string>) => {
     void (async () => {
       setState((s) => ({ ...s, busy: true, errors: [] }));
-      const next = await advance(fapi, state(), values);
-      setState(next);
+      const out = await advanceWithCaptcha(fapi, state(), values, { captcha, identifier, t });
+      identifier = out.identifier;
+      await finish(out.state);
+    })();
+  };
 
-      // A completion response carries a one-time ticket (§7.1). FAPI is
-      // cross-origin to the app and cannot set the cookie on its own response,
-      // so exchange the ticket over a request THEN re-boot, so the rest of the
-      // app sees a signed-in user — and no session token ever rode in a URL.
-      if (next.attempt?.status === 'complete') {
-        if (next.ticket) {
-          await fapi.post('/v1/client/tickets/exchange', {
-            attempt_id: (next.attempt as { id?: string }).id,
-            ticket: next.ticket,
-          });
-        }
-        await client.reload();
-      }
+  const create = (values: Record<string, string>) => {
+    void (async () => {
+      setState((s) => ({ ...s, busy: true, errors: [] }));
+      // The consent box is `required` when the instance requires agreement, so a
+      // submitted form always carries it then; without a requirement it is moot.
+      const { consent, ...rest } = values;
+      const agreed = settings()?.legal.required ? consent === 'true' : true;
+      await finish(await createSignUp(fapi, rest, { consent: agreed, captcha: signUpCaptcha, t }));
     })();
   };
 
@@ -147,10 +365,13 @@ function Flow(props: { client: AtlasClient; title: string }): JSX.Element {
   });
   onCleanup(stopPolling);
 
-  const step = () => {
+  // The step KIND, memoized, so the inputs are re-created only when the step
+  // changes — not on every busy/error update, which would wipe what was typed.
+  const kind = createMemo(() => {
     const attempt = state().attempt;
-    return attempt ? nextStep(attempt) : ({ kind: 'collect_identifier' } as const);
-  };
+    if (!attempt) return props.mode === 'sign-up' ? 'create_account' : 'collect_identifier';
+    return nextStep(attempt).kind;
+  });
 
   return h(
     'form',
@@ -158,19 +379,21 @@ function Flow(props: { client: AtlasClient; title: string }): JSX.Element {
       class: 'atlas-card',
       onSubmit: (event: Event) => {
         event.preventDefault();
-        const form = event.currentTarget as HTMLFormElement;
-        const values: Record<string, string> = {};
-        new FormData(form).forEach((value, key) => {
-          values[key] = String(value);
-        });
-        submit(values);
+        const values = formValues(event.currentTarget as HTMLFormElement);
+        if (kind() === 'create_account') create(values);
+        else submit(values);
       },
     },
     [
       h('h1', { class: 'atlas-title' }, props.title),
       () => renderErrors(state().errors),
-      () => renderFields(step().kind),
-      () => renderSubmit(step().kind, state().busy),
+      () => (kind() === 'create_account' ? renderSignUpFields(settings()) : renderFields(kind())),
+      captchaSlot(signUpCaptcha, () => kind() === 'create_account' && signUpCaptchaDrawn()),
+      captchaSlot(
+        captcha,
+        () => (kind() === 'collect_identifier' || kind() === 'collect_captcha') && captchaDrawn(),
+      ),
+      () => renderSubmit(kind(), state().busy),
     ],
   );
 }
@@ -224,11 +447,11 @@ function UserButtonView(client: AtlasClient): JSX.Element {
 // disposer that `onCleanup` later invokes to tear the nested root down. ---
 
 export function mountSignInWidget(client: AtlasClient, el: HTMLElement): () => void {
-  return render(() => Flow({ client, title: 'Sign in' }), el);
+  return render(() => Flow({ client, title: 'Sign in', mode: 'sign-in' }), el);
 }
 
 export function mountSignUpWidget(client: AtlasClient, el: HTMLElement): () => void {
-  return render(() => Flow({ client, title: 'Sign up' }), el);
+  return render(() => Flow({ client, title: 'Sign up', mode: 'sign-up' }), el);
 }
 
 export function mountUserButtonWidget(client: AtlasClient, el: HTMLElement): () => void {
