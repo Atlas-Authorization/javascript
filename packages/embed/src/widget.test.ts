@@ -1587,3 +1587,42 @@ describe('passkey conditional-UI autofill (§5.5)', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('focus ring contrast', () => {
+  const mountWith = async (over: Partial<PublicAppearance>, options: Record<string, unknown> = {}) => {
+    const { impl } = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...envelope([]), appearance: { ...BASE_APPEARANCE, ...over } } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, ...options, fetchImpl: impl }).mount();
+    await flush();
+    return (root.querySelector('.atlas-embed-root') as HTMLElement | null) ?? root;
+  };
+  const ringOf = (el: HTMLElement): string => {
+    let node: HTMLElement | null = el;
+    while (node) {
+      const v = node.style.getPropertyValue('--atlas-embed-color-focus-ring');
+      if (v) return v.trim();
+      node = node.parentElement;
+    }
+    return '';
+  };
+
+  it('darkens a mint primary to a ring with 3:1 on white', async () => {
+    const root = await mountWith({ colorPrimary: '#22f79a', colorAccent: '#22f79a' });
+    const ring = ringOf(root);
+    expect(ring).toMatch(/^#[0-9a-f]{6}$/);
+    expect(ring).not.toBe('#22f79a');
+    const { contrastRatio } = await import('@atlasauth/design/runtime');
+    expect(contrastRatio(ring, '#ffffff')).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps an explicit colorFocusRing', async () => {
+    const root = await mountWith(
+      { colorPrimary: '#22f79a' },
+      { appearance: { variables: { colorFocusRing: '#22f79a' } } },
+    );
+    expect(ringOf(root)).toBe('#22f79a');
+  });
+});

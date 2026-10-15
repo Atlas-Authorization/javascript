@@ -27,7 +27,7 @@ import {
   type InstanceDesign,
   type PresetId,
 } from '@atlasauth/design/runtime';
-import { textOnPrimary } from './contrast';
+import { focusRingOn, textOnPrimary } from './contrast';
 
 export { instanceDesignFrom, warnOnce } from '@atlasauth/design/runtime';
 export type { AppearanceRender, AtlasDesign, InstanceDesign, PresetId } from '@atlasauth/design/runtime';
@@ -218,9 +218,11 @@ export const THEMES = {
  * `colorTextOnPrimary` and `colorFocusRing` follow the RESOLVED `colorPrimary`
  * unless set explicitly in `variables` (a theme's own values are for its own
  * primary): the label flips to whichever of white / near-black contrasts more,
- * and the focus ring takes the primary. A base theme whose primary would make a
- * poor ring on its own background (neobrutalist yellow on white) keeps its ring
- * while its primary is unchanged.
+ * and the focus ring takes the primary — adjusted in lightness until it has 3:1
+ * contrast against `colorBackground` (WCAG 1.4.11), the way the label is picked
+ * for contrast. A base theme whose primary would make a poor ring on its own
+ * background (neobrutalist yellow on white) keeps its ring while its primary is
+ * unchanged. An explicit `colorFocusRing` is used as given.
  */
 export function resolveTokens(appearance?: Appearance): Required<DesignTokens> {
   const base = appearance?.baseTheme ? THEMES[appearance.baseTheme] : DEFAULT_TOKENS;
@@ -234,8 +236,11 @@ export function resolveTokens(appearance?: Appearance): Required<DesignTokens> {
   if (overrides.colorTextOnPrimary === undefined) {
     resolved.colorTextOnPrimary = textOnPrimary(resolved.colorPrimary);
   }
-  if (overrides.colorFocusRing === undefined && primaryChanged) {
-    resolved.colorFocusRing = resolved.colorPrimary;
+  if (overrides.colorFocusRing === undefined) {
+    resolved.colorFocusRing = focusRingOn(
+      primaryChanged ? resolved.colorPrimary : base.colorFocusRing,
+      resolved.colorBackground,
+    );
   }
   return resolved;
 }

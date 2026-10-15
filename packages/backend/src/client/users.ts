@@ -36,6 +36,10 @@ export interface UserSession {
   last_active_at: number;
   expire_at: number;
   abandon_at: number;
+  /** Epoch ms the session ends from inactivity unless there is activity first (same value as `abandon_at`). */
+  idle_expires_at?: number;
+  last_active_organization_id?: string | null;
+  impersonated_by?: string | null;
   created_at: number;
 }
 

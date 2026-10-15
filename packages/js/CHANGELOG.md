@@ -1,5 +1,41 @@
 # @atlasauth/js changelog
 
+## 0.7.0
+- **Popup OAuth completes when the opener page sends `Cross-Origin-Opener-Policy: same-origin`.** That
+  header puts the provider popup in another browsing-context group: `popup.closed` reads `true` at once and
+  the popup has no `window.opener`, so the result could never be posted back and the flow settled as a
+  cancel while the popup stayed open. Now the popup lands back on your page with the result in the URL
+  fragment (`#atlas_popup_result=…`, never the query string), the SDK there hands it to the opener over
+  `BroadcastChannel('atlas:oauth:<nonce>')` (a `localStorage` `storage` event where BroadcastChannel is
+  missing) and closes the popup.
+- **Changed `startOauthPopup` cancel semantics.** `popup.closed` turning true within 1.5 s of opening means
+  the opener link was severed, not that the user closed it: the flow keeps waiting, probing `GET /v1/client`
+  with back-off, for up to 5 minutes, and settles as `popup_closed` only on that timeout, an explicit error
+  result, `signal` aborting, or a newer popup flow starting. A close after 1.5 s is a cancel after one final
+  session probe (as before).
+- **Changed `startOauthPopup` request.** It now sends `popup_nonce` and `opener_origin`
+  (`window.location.origin`) with `mode: 'popup'`, and opens the popup with the window name `atlas:oauth`.
+- **Added** to `startOauthPopup`: `input.signal?: AbortSignal`, `handlers.onSevered?: () => void`,
+  `PopupStartResult.severed?: boolean`; new `OAuthPopupInput` type; `POPUP_SEVERED_WINDOW_MS` (1500) and
+  `POPUP_SEVERED_TIMEOUT_MS` (300000); `mapOAuthPopupPayload(data)` (the payload half of
+  `parseOAuthPopupMessage`).
+- **Added popup channel helpers:** `completeOAuthPopupLanding({ win?, ackTimeoutMs? })` →
+  `PopupLanding | null` (`{ payload, delivered }`; reads and scrubs the fragment, relays the result and
+  closes once the opener acknowledges — call it on startup), `closeOAuthPopupAfterSignIn({ win?, ackTimeoutMs? })`
+  (a page that finished a sign-in inside the Atlas popup closes itself when an opener is waiting),
+  `listenForPopupResult(nonce, { onResult, onSignedIn? })`, `readPopupLanding(hash)`, `popupChannelName(nonce)`,
+  `createPopupNonce()`, `PopupRelayMessage`, and the constants `OAUTH_POPUP_WINDOW_NAME`
+  (`'atlas:oauth'`), `POPUP_RESULT_FRAGMENT` (`'atlas_popup_result'`), `POPUP_SIGNAL_CHANNEL`.
+- **Sign-out tombstones are shared by every tab.** `SessionTombstones` moved from `sessionStorage` to
+  `localStorage`, so after a failed revoke a newly opened tab no longer re-adopts the session. Entries are
+  `{ id, at }`, at most 20, kept 30 days, pruned on every read, and keyed per Frontend API origin
+  (`atlas:signed-out-sessions:<origin>`). `sessionStorage` is used only when `localStorage` throws; tombstones
+  an earlier version kept in `sessionStorage` are carried over.
+- **Changed** `new SessionTombstones(options?)`: accepts `{ frontendApi?, storageKey?, now? }`
+  (`SessionTombstonesOptions`); a bare storage-key string is still accepted. **Added** `remove(...ids)` (forget
+  a tombstone once a later revoke is confirmed) and `subscribe(listener)` (another tab's changes, via the
+  `storage` event). `has()`/`list()` re-read storage, so other tabs' changes are seen.
+
 ## 0.6.0
 - **Per-flow captcha widget rendering**, shared by the prebuilt sign-in / sign-up UIs:
   `renderCaptchaWidget(flow, container)` → `{ token: Promise<string>, remove() }`,

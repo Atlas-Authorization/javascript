@@ -15,6 +15,11 @@
  */
 
 import type { FapiClient } from './fapi';
+import {
+  OAUTH_POPUP_WINDOW_NAME,
+  createPopupNonce,
+  listenForPopupResult,
+} from './popup-channel';
 
 export const REDIRECT_PARAMS = ['__atlas_attempt', '__atlas_ticket', '__atlas_status'] as const;
 
@@ -75,6 +80,15 @@ export function parseOAuthPopupMessage(
   data: unknown,
 ): PopupOutcome | null {
   if (eventOrigin !== expectedOrigin) return null;
+  return mapOAuthPopupPayload(data);
+}
+
+/**
+ * Pure: map one of the Frontend API's `atlas:oauth:*` result payloads (from a
+ * `postMessage`, or relayed from a severed popup's landing page) to an outcome,
+ * or null when it is not one.
+ */
+export function mapOAuthPopupPayload(data: unknown): PopupOutcome | null {
   if (!data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;
   const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
@@ -100,6 +114,14 @@ export interface OAuthPopupHandlers {
   onError?: (code: string) => void;
   /** Fired when the popup couldn't open; the caller should navigate to the URL. */
   onBlockedFallback?: (authorizationUrl: string) => void;
+  /**
+   * Fired when the popup's link to this page was severed right after opening
+   * (this page, or the provider, sends a Cross-Origin-Opener-Policy): the popup
+   * still works, but closing it can no longer be noticed, so the flow keeps
+   * waiting — up to 5 minutes — for its result. A good moment to show "Finish
+   * signing in in the popup window" with a cancel button that aborts `signal`.
+   */
+  onSevered?: () => void;
 }
 
 export interface PopupStartResult extends PopupOutcome {
@@ -114,7 +136,29 @@ export interface PopupStartResult extends PopupOutcome {
    * cancel.
    */
   sessionDetected?: boolean;
+  /** True when the popup's opener link was severed (see `onSevered`). */
+  severed?: boolean;
 }
+
+/** Input to {@link startOauthPopup}. */
+export interface OAuthPopupInput {
+  provider: string;
+  /**
+   * Where the redirect flow would return to — normally the current page. A
+   * popup whose opener link is severed lands back here (result in the
+   * fragment), so it should be a page on THIS origin that runs the SDK.
+   */
+  redirectUrl: string;
+  /** Abort to give up on the popup (settles as `popup_closed`). */
+  signal?: AbortSignal;
+}
+
+/** `popup.closed` this soon after opening means the opener link was severed, not a user close. */
+export const POPUP_SEVERED_WINDOW_MS = 1_500;
+/** How long a severed popup is waited for before it counts as cancelled. */
+export const POPUP_SEVERED_TIMEOUT_MS = 5 * 60_000;
+/** Back-off between session probes while a severed popup is pending. */
+const SEVERED_PROBE_DELAYS_MS = [2_000, 3_000, 5_000, 8_000, 13_000, 21_000, 30_000];
 
 function centeredPopupFeatures(w: number, h: number): string {
   const dualLeft = (window.screenLeft ?? window.screenX ?? 0) as number;
@@ -126,22 +170,40 @@ function centeredPopupFeatures(w: number, h: number): string {
   return `popup,width=${w},height=${h},left=${Math.round(left)},top=${Math.round(top)}`;
 }
 
+/** The popup flow currently waiting in this page; a new one supersedes it. */
+let cancelActivePopup: (() => void) | null = null;
+
 /**
  * Start a POPUP OAuth sign-in (GSI-style). Opens the provider authorize URL in a
  * popup and resolves when the callback posts back the one-time ticket (complete),
  * an error, or a continuation. Falls back to a full redirect when the popup is
  * blocked — resolves `{ blocked:true, authorizationUrl }` and the caller
  * navigates there, so it is always safe to enable. Browser-only.
+ *
+ * The result arrives by `postMessage` from the Frontend API, or — when a
+ * Cross-Origin-Opener-Policy severed the popup from this page — relayed over
+ * `BroadcastChannel('atlas:oauth:<nonce>')` by the SDK on the page the popup
+ * lands on (see ./popup-channel). Cancel semantics:
+ *   - the popup closes after the first {@link POPUP_SEVERED_WINDOW_MS}: the user
+ *     closed it — one final session probe, then `popup_closed`;
+ *   - `popup.closed` reads true within that window: the link was severed (the
+ *     popup is very much open). Keep waiting for the relayed result, probing
+ *     the session with back-off, and settle as `popup_closed` only after
+ *     {@link POPUP_SEVERED_TIMEOUT_MS}, an explicit error/cancel result,
+ *     `input.signal` aborting, or a newer popup flow starting.
  */
 export async function startOauthPopup(
   client: FapiClient,
-  input: { provider: string; redirectUrl: string },
+  input: OAuthPopupInput,
   handlers: OAuthPopupHandlers = {},
 ): Promise<PopupStartResult> {
+  const nonce = createPopupNonce();
   const res = await client.post<{ authorization_url?: string }>('/v1/client/sign_ins/oauth', {
     provider: input.provider,
     redirect_url: input.redirectUrl,
     mode: 'popup',
+    popup_nonce: nonce,
+    opener_origin: window.location.origin,
   });
   const authorizationUrl = res.ok ? res.data?.authorization_url : undefined;
   if (!authorizationUrl) return { error: 'start_failed' };
@@ -150,7 +212,7 @@ export async function startOauthPopup(
 
   let popup: Window | null = null;
   try {
-    popup = window.open(authorizationUrl, 'atlas:oauth', centeredPopupFeatures(500, 650));
+    popup = window.open(authorizationUrl, OAUTH_POPUP_WINDOW_NAME, centeredPopupFeatures(500, 650));
   } catch {
     popup = null;
   }
@@ -158,45 +220,88 @@ export async function startOauthPopup(
     handlers.onBlockedFallback?.(authorizationUrl);
     return { blocked: true, authorizationUrl };
   }
+  const openedAt = Date.now();
   handlers.onOpen?.();
+  // Only one popup flow at a time: starting another cancels the one waiting.
+  cancelActivePopup?.();
 
   return await new Promise<PopupStartResult>((resolve) => {
     let done = false;
+    let severed = false;
+    let probeTimer: ReturnType<typeof setTimeout> | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const cancel = () => settle({ error: 'popup_closed' });
     const settle = (r: PopupStartResult) => {
       if (done) return;
       done = true;
       window.removeEventListener('message', onMessage);
       clearInterval(timer);
+      clearTimeout(probeTimer);
+      clearTimeout(deadline);
+      stopListening();
+      input.signal?.removeEventListener('abort', cancel);
+      if (cancelActivePopup === cancel) cancelActivePopup = null;
       try {
         if (popup && !popup.closed) popup.close();
       } catch {
         /* cross-origin close can throw; ignore */
       }
-      resolve(r);
+      resolve(severed ? { ...r, severed: true } : r);
     };
-    const onMessage = (ev: MessageEvent) => {
-      const outcome = parseOAuthPopupMessage(ev.origin, expectedOrigin, ev.data);
-      if (!outcome) return;
+    const deliver = (outcome: PopupOutcome) => {
+      if (done) return;
       if (outcome.ticket) handlers.onComplete?.({ ticket: outcome.ticket, attemptId: outcome.attemptId });
       if (outcome.error) handlers.onError?.(outcome.error);
       settle(outcome);
     };
+    const onMessage = (ev: MessageEvent) => {
+      const outcome = parseOAuthPopupMessage(ev.origin, expectedOrigin, ev.data);
+      if (outcome) deliver(outcome);
+    };
+    // A probe that finds a session settles; otherwise `onMiss` decides.
+    const probe = (onMiss: () => void) => {
+      if (done) return;
+      void probeSession(client).then((signedIn) => {
+        if (done) return;
+        if (signedIn) settle({ error: 'popup_closed', sessionDetected: true });
+        else onMiss();
+      });
+    };
+    const scheduleProbe = (attempt: number) => {
+      const delay = SEVERED_PROBE_DELAYS_MS[Math.min(attempt, SEVERED_PROBE_DELAYS_MS.length - 1)]!;
+      probeTimer = setTimeout(() => probe(() => scheduleProbe(attempt + 1)), delay);
+    };
+    const stopListening = listenForPopupResult(nonce, {
+      onResult: (payload) => {
+        const outcome = mapOAuthPopupPayload(payload);
+        if (outcome) deliver(outcome);
+      },
+      // A page in the popup finished the sign-in itself: check now.
+      onSignedIn: () => probe(() => undefined),
+    });
     // The user closing the popup without finishing is a cancellation, not a hang.
-    // But a popup can also close (or look closed to us) after completing the
-    // sign-in itself: when a browser severs `window.opener` (a Cross-Origin-
-    // Opener-Policy on some hop, a privacy feature), the callback page cannot
-    // post back and finishes via the ordinary redirect instead, which sets the
-    // session cookies. So check the session once before calling it a cancel.
-    let probing = false;
+    // But `popup.closed` turning true right after opening is not a close: the
+    // opener link was severed (Cross-Origin-Opener-Policy) and the popup is
+    // still on screen. Then wait for the relayed result instead.
     const timer = setInterval(() => {
-      if (!popup || !popup.closed || probing || done) return;
-      probing = true;
+      if (!popup || !popup.closed || done) return;
       clearInterval(timer);
-      void probeSession(client).then((signedIn) =>
-        settle(signedIn ? { error: 'popup_closed', sessionDetected: true } : { error: 'popup_closed' }),
-      );
-    }, 500);
+      if (Date.now() - openedAt <= POPUP_SEVERED_WINDOW_MS) {
+        severed = true;
+        handlers.onSevered?.();
+        deadline = setTimeout(cancel, POPUP_SEVERED_TIMEOUT_MS);
+        scheduleProbe(0);
+        return;
+      }
+      // A real close. It can still follow a sign-in the popup finished on its
+      // own (an opener the browser severed later, mid-flow), so check the
+      // session once before calling it a cancel.
+      probe(cancel);
+    }, 250);
     window.addEventListener('message', onMessage);
+    input.signal?.addEventListener('abort', cancel);
+    if (input.signal?.aborted) cancel();
+    cancelActivePopup = cancel;
   });
 }
 

@@ -1,5 +1,10 @@
 # @atlasauth/react-router changelog
 
+## 0.1.1
+- Picks up `@atlasauth/react` 0.6.0 / `@atlasauth/js` 0.7.0: popup sign-in completes when the opener page
+  sends `Cross-Origin-Opener-Policy: same-origin`; a tab opened after a failed sign-out stays signed out
+  (sign-out tombstones shared across tabs); the default focus ring keeps 3:1 contrast. No API changes.
+
 ## 0.1.0
 
 First published release.

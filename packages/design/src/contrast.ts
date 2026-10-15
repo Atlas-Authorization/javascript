@@ -173,3 +173,16 @@ export function readableInk(hex: string, papers: readonly string[], target: numb
   }
   return best;
 }
+
+/**
+ * The default keyboard focus-ring colour for `primary`: the primary itself when
+ * it already clears 3:1 (WCAG 1.4.11 non-text contrast) against every colour in
+ * `papers`, else the primary moved along its lightness axis until it does —
+ * the same rule {@link readableInk} applies to text, at the UI-component
+ * threshold. A light brand colour (mint `#22f79a` scores ~1.4:1 on white) gets a
+ * darker shade of itself instead of a ring nobody can see. An unparseable
+ * primary is returned unchanged.
+ */
+export function focusRingColor(primary: string, papers: readonly string[]): string {
+  return readableInk(primary, papers, AA_LARGE);
+}

@@ -20,7 +20,8 @@ export const EMBED_CSS = `
   --_text: var(--atlas-embed-color-text, #1c1c1f);
   --_primary: var(--atlas-embed-color-primary, #5b5bd6);
   --_on-primary: var(--atlas-embed-color-text-on-primary, #ffffff);
-  /* Keyboard focus ring — a solid outline (3:1 on the default background). */
+  /* Keyboard focus ring — a solid outline. The widget sets it to the primary
+     adjusted to 3:1 on the card/background (or the page's explicit ring). */
   --_focus: var(--atlas-embed-color-focus-ring, var(--_primary));
   --_border: var(--atlas-embed-color-border, #e4e4e9);
   --_radius: var(--atlas-embed-border-radius, 10px);

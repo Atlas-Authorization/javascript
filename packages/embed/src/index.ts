@@ -25,6 +25,7 @@ export {
   type DesignTokens,
   type ElementKey,
   type WidgetAppearance,
+  type WidgetVariables,
   type PublicAppearance,
   type PublicStrategies,
   type AppearanceResponse,

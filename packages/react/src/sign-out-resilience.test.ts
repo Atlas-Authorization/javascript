@@ -2,6 +2,7 @@
 import { Component, act, createElement, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SessionTombstones } from '@atlasauth/js';
 import { AtlasProvider, useAtlas } from './AtlasProvider';
 
 type AtlasContextValue = ReturnType<typeof useAtlas>;
@@ -31,7 +32,11 @@ const signedIn = (sid: string) =>
 type Route = (url: string, init?: RequestInit) => Response | Promise<Response> | undefined;
 
 let unmount: (() => void) | null = null;
-beforeEach(() => sessionStorage.clear());
+beforeEach(() => {
+  // Tombstones are shared by every tab (localStorage), so start each test clean.
+  localStorage.clear();
+  sessionStorage.clear();
+});
 afterEach(() => {
   unmount?.();
   unmount = null;
@@ -114,6 +119,58 @@ describe('signOut() resilience', () => {
     expect(ctx().user).toBeNull();
     await vi.waitFor(() => expect(revokes(calls).length).toBeGreaterThan(2));
     cookieStillValid = false;
+  });
+
+  it('a tab opened after a failed revoke is signed out; a later revoke clears the tombstone; a new sign-in is adopted', async () => {
+    let revokeWorks = false;
+    let cookieSession: string | null = 'sess_1';
+    const route: Route = (url) => {
+      if (url.endsWith('/v1/client')) return cookieSession ? signedIn(cookieSession) : json({ session: null, user: null });
+      if (url.endsWith('/sessions/sess_1/revoke')) {
+        if (!revokeWorks) return json({}, 503);
+        cookieSession = null; // the server ended it and cleared the cookies
+        return json({ status: 'revoked' });
+      }
+    };
+    const tab1 = await mount(route);
+    await vi.waitFor(() => expect(tab1.ctx().status).toBe('signed_in'));
+    await act(async () => {
+      await tab1.ctx().signOut({ frontchannel: false });
+    });
+    expect(tab1.ctx().status).toBe('signed_out');
+    unmount?.();
+    unmount = null;
+
+    // (1) A brand-new tab (fresh provider, fresh sessionStorage) boots from the
+    // still-valid cookie session — and refuses it.
+    sessionStorage.clear();
+    const tab2 = await mount(route);
+    await vi.waitFor(() => expect(tab2.calls).toContain('GET https://fapi.example/v1/client'));
+    await vi.waitFor(() => expect(tab2.ctx().status).toBe('signed_out'));
+    expect(tab2.ctx().user).toBeNull();
+    // It retried the revoke in the background (still failing).
+    await vi.waitFor(() => expect(revokes(tab2.calls).length).toBeGreaterThan(0));
+    expect(new SessionTombstones({ frontendApi: 'https://fapi.example' }).has('sess_1')).toBe(true);
+
+    // (2) The server is reachable again: the next re-check's background revoke
+    // lands and the tombstone is cleared.
+    revokeWorks = true;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await vi.waitFor(() => expect(cookieSession).toBeNull());
+    await vi.waitFor(() =>
+      expect(new SessionTombstones({ frontendApi: 'https://fapi.example' }).has('sess_1')).toBe(false),
+    );
+    expect(tab2.ctx().status).toBe('signed_out');
+
+    // (3) Signing in again gives a new session id, which is adopted normally.
+    cookieSession = 'sess_2';
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await vi.waitFor(() => expect(tab2.ctx().status).toBe('signed_in'));
+    expect(tab2.ctx().session?.id).toBe('sess_2');
   });
 
   it('{ strict: true } rejects with a SignOutError after the local sign-out', async () => {

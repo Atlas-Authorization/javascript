@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.7.2
+- **OAuth clients.** `OAuthClient` gains `skip_logout_confirmation` (boolean), and `OAuthClientLogoutFields` (create and update bodies) accepts it. When true, RP-initiated logout with the client's `client_id` and an exactly registered `post_logout_redirect_uri` ends the session and redirects straight back, with no confirmation page. First-party clients only: the API answers `422` (`VALIDATION_FAILED`, `param: skip_logout_confirmation`) on a third-party client.
+- **Cookie consent.** `CookieConsent` gains `settings_link` (`CookieSettingsLink | null`: `label`, `preset`, `attributes`, `rendered_attributes`), and `SetCookieConsentBody` accepts `settings_link` (`CookieSettingsLinkInput | null`: `label`, `preset?`, `attributes?`) for a footer "Cookie settings" link that reopens the consent preferences. New types: `CookieSettingsLink`, `CookieSettingsLinkInput`, `CookieSettingsLinkPreset` (`'cookiemunch' | 'cookiebot' | 'onetrust' | 'custom'`).
+- **Sessions.** `UserSession` (from `users.listSessions`) gains optional `idle_expires_at`, `last_active_organization_id` and `impersonated_by`; every session read now returns `idle_expires_at`.
+- **Compatible.** New fields are optional; no signatures changed.
+
 ## 0.7.1
 - **Email provider removal.** `messaging.deleteChannel(channel, options?)` accepts `{ force?: boolean }` (sent as `?force=true`). Removing the email provider is refused with `409 EMAIL_PROVIDER_IN_USE` while email-dependent features are on and nothing else would deliver for the instance; `meta.features` names them.
 - **Error codes.** `AtlasErrorCodes` adds `EMAIL_PROVIDER_IN_USE`.

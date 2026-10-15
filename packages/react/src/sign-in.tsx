@@ -97,6 +97,8 @@ export function useSignIn() {
       mode?: 'popup' | 'redirect';
       redirectUrl?: string;
       handlers?: OAuthPopupHandlers;
+      /** Popup mode: abort to stop waiting for the popup (e.g. a "Cancel" button). */
+      signal?: AbortSignal;
     }): Promise<void> => {
       if (typeof window === 'undefined') return;
       const redirectUrl = input.redirectUrl ?? window.location.href;
@@ -104,7 +106,7 @@ export function useSignIn() {
       if (input.mode === 'popup') {
         const out = await startOauthPopup(
           client,
-          { provider: input.provider, redirectUrl },
+          { provider: input.provider, redirectUrl, signal: input.signal },
           input.handlers,
         );
         if (out.blocked && out.authorizationUrl) {
@@ -123,6 +125,9 @@ export function useSignIn() {
           window.location.href = out.continuationUrl;
           return;
         }
+        // The popup finished the sign-in itself (its link to this page was
+        // severed): the cookies are set, so re-boot signed-in.
+        if (out.sessionDetected) await reload();
         return;
       }
 

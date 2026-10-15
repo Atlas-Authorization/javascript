@@ -1,5 +1,13 @@
 # @atlasauth/embed changelog
 
+## 0.3.0
+- **The keyboard focus ring has at least 3:1 contrast.** The widget now sets
+  `--atlas-embed-color-focus-ring` to the primary when it clears 3:1 against the card and the page
+  background, otherwise to the primary's hue darkened or lightened until it does (it used to be the primary
+  unchecked — mint `#22f79a` on white is ~1.4:1).
+- **Added** `appearance.variables.colorFocusRing` (new `WidgetVariables` type, exported): an explicit ring
+  colour, used as given.
+
 ## 0.2.2
 - **Email-dependent UI follows the server.** The widget reads the new `email_delivery` block from
   `GET /v1/appearance`. "Forgot password?" is hidden when `password_reset` is false, and the sign-up form

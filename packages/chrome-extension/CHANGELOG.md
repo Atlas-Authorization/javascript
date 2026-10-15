@@ -1,5 +1,10 @@
 # @atlasauth/chrome-extension changelog
 
+## 0.2.2
+- Picks up `@atlasauth/react` 0.6.0 / `@atlasauth/js` 0.7.0: popup sign-in completes when the opener page
+  sends `Cross-Origin-Opener-Policy: same-origin`; a tab opened after a failed sign-out stays signed out
+  (sign-out tombstones shared across tabs); the default focus ring keeps 3:1 contrast. No API changes.
+
 ## 0.2.1
 - **`frontendApi` is validated at start-up.** A missing, empty or malformed value now throws an
   `AtlasConfigError` (from `@atlasauth/js`; `code: 'FRONTEND_API_REQUIRED'` or `'FRONTEND_API_INVALID'`)

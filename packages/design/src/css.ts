@@ -1,4 +1,4 @@
-import { readableInk } from './contrast';
+import { focusRingColor, readableInk } from './contrast';
 import { fontById, fontSheetPath, fontStack } from './fonts';
 import {
   ASSET_ID,
@@ -62,6 +62,7 @@ export const DESIGN_CSS_VARIABLE_NAMES: ReadonlySet<string> = /* @__PURE__ */ ne
   '--atlas-color-input-background',
   '--atlas-color-input-text',
   '--atlas-color-focus-ring',
+  '--atlas-focus-outline-color',
   '--atlas-font-body',
   '--atlas-font-heading',
   '--atlas-font-size-base',
@@ -209,6 +210,12 @@ function paletteVars(p: ResolvedPalette, d: ResolvedDesign, bg: DesignBackground
     ['--atlas-color-input-background', hex(p.inputBackground)],
     ['--atlas-color-input-text', hex(p.inputText)],
     ['--atlas-color-focus-ring', rgbA(primary, 0.35)],
+    // The solid keyboard outline: the primary, darkened/lightened to 3:1 on the
+    // page background and the card (the glow above is translucent, not an outline).
+    [
+      '--atlas-focus-outline-color',
+      primary ? hex(focusRingColor(primary, [hex(p.background), surface].filter((c): c is string => !!c))) : undefined,
+    ],
     ['--atlas-card-background', cardBg],
     ...backgroundVars(bg, p, opts),
     ['--atlas-bg-pattern-color', rgbA(text, 0.08)],

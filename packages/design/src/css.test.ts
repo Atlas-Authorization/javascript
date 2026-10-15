@@ -6,6 +6,8 @@ import {
   FONT_CATALOG,
   PRESET_IDS,
   compileDesignCss,
+  contrastRatio,
+  focusRingColor,
   designDataAttributes,
   designFontSheets,
   fontStack,
@@ -53,6 +55,28 @@ describe('compileDesignCss', () => {
     });
     const v = decls(compileDesignCss(d, { scope: '.atlas', assetUrl }));
     for (const def of DESIGN_CSS_VARIABLES) expect(v.has(def.name), def.name).toBe(true);
+  });
+
+  it('emits a solid focus outline with 3:1 on the background and surface', () => {
+    const v = decls(
+      compileDesignCss(resolveDesign({ palette: { primary: '#22f79a', background: '#ffffff', surface: '#f8fafc' } }), {
+        scope: ':root',
+      }),
+    );
+    const ring = v.get('--atlas-focus-outline-color')?.[0];
+    expect(ring).toBeDefined();
+    expect(ring).not.toBe('#22f79a');
+    expect(contrastRatio(ring!, '#ffffff')).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(ring!, '#f8fafc')).toBeGreaterThanOrEqual(3);
+    // A primary that already passes is the outline as-is.
+    const dflt = decls(compileDesignCss(resolveDesign({ palette: { primary: '#4338ca', background: '#ffffff', surface: '#ffffff' } }), { scope: ':root' }));
+    expect(dflt.get('--atlas-focus-outline-color')?.[0]).toBe('#4338ca');
+  });
+
+  it('focusRingColor keeps the hue and reaches 3:1 either way', () => {
+    expect(contrastRatio(focusRingColor('#22f79a', ['#ffffff']), '#ffffff')).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(focusRingColor('#1e3a8a', ['#0b0b0f']), '#0b0b0f')).toBeGreaterThanOrEqual(3);
+    expect(focusRingColor('#5b5bd6', ['#ffffff'])).toBe('#5b5bd6');
   });
 
   it('compiler names and documented variables are the same set', () => {

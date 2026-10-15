@@ -8,16 +8,20 @@ import { startOauthPopup } from './redirect';
  * cancel, but it can also be a sign-in the popup finished on its own (the
  * browser severed `window.opener`, so the callback page completed via the
  * ordinary redirect and set the session cookies). The opener checks the
- * session once before calling it a cancel.
+ * session once before calling it a cancel. (A popup that reads as closed
+ * within the first 1.5 s is a SEVERED one, not a close — see
+ * popup-severed.test.ts.)
  */
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 function setup(clientBody: unknown) {
   const calls: string[] = [];
-  const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+  const bodies: Record<string, unknown>[] = [];
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push(url);
+    if (init?.body) bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
     if (url.endsWith('/v1/client/sign_ins/oauth')) {
       return json({ authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth?x=1' }, 201);
     }
@@ -31,7 +35,7 @@ function setup(clientBody: unknown) {
     baseUrl: 'https://fapi.example',
     fetchImpl,
   });
-  return { client, popup, calls };
+  return { client, popup, calls, bodies };
 }
 
 afterEach(() => {
@@ -44,7 +48,8 @@ describe('startOauthPopup: popup closed without a message', () => {
     vi.useFakeTimers();
     const { client, popup, calls } = setup({ session: { id: 'sess_1' }, user: { id: 'user_1' } });
     const pending = startOauthPopup(client, { provider: 'google', redirectUrl: 'https://app.example/' });
-    await vi.advanceTimersByTimeAsync(0);
+    // The user closes it after a while (past the severed-detection window).
+    await vi.advanceTimersByTimeAsync(2_000);
     popup.closed = true;
     await vi.advanceTimersByTimeAsync(600);
     await expect(pending).resolves.toEqual({ error: 'popup_closed', sessionDetected: true });
@@ -55,10 +60,28 @@ describe('startOauthPopup: popup closed without a message', () => {
     vi.useFakeTimers();
     const { client, popup } = setup({ session: null, user: null });
     const pending = startOauthPopup(client, { provider: 'google', redirectUrl: 'https://app.example/' });
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2_000);
     popup.closed = true;
     await vi.advanceTimersByTimeAsync(600);
     await expect(pending).resolves.toEqual({ error: 'popup_closed' });
+  });
+
+  it('starts the flow in popup mode with a channel nonce and the opener origin', async () => {
+    vi.useFakeTimers();
+    const { client, popup, bodies } = setup({ session: null, user: null });
+    const pending = startOauthPopup(client, { provider: 'google', redirectUrl: 'https://app.example/' });
+    await vi.advanceTimersByTimeAsync(2_000);
+    popup.closed = true;
+    await vi.advanceTimersByTimeAsync(600);
+    await pending;
+    expect(bodies[0]).toMatchObject({
+      provider: 'google',
+      redirect_url: 'https://app.example/',
+      mode: 'popup',
+      opener_origin: window.location.origin,
+    });
+    expect(bodies[0]!.popup_nonce).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(window.open).toHaveBeenCalledWith(expect.any(String), 'atlas:oauth', expect.any(String));
   });
 
   it('still resolves with the ticket when the popup posts back first', async () => {

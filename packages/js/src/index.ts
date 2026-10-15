@@ -5,6 +5,8 @@ export * from './token-cache';
 export * from './tab-election';
 export * from './attempt';
 export * from './redirect';
+// §oauth popup mode: the same-origin hand-back for a popup whose opener was severed.
+export * from './popup-channel';
 export * from './fapi';
 export * from './native';
 export * from './native-session';

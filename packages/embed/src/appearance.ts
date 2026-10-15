@@ -12,7 +12,7 @@
  *   - an inline `appearance` option the embedding page passes, which wins.
  */
 
-import { contrastRatio, parseCssColor, toHex } from '@atlasauth/design/runtime';
+import { contrastRatio, focusRingColor, parseCssColor, toHex } from '@atlasauth/design/runtime';
 import type { AtlasDesign, InstanceDesign, PresetId } from '@atlasauth/design/runtime';
 
 /** Design tokens a tenant (or the inline override) can set. */
@@ -25,6 +25,15 @@ export interface DesignTokens {
   colorBorder?: string;
   borderRadius?: string;
   fontFamily?: string;
+}
+
+/**
+ * The inline `appearance.variables`: the design tokens, plus the keyboard focus
+ * ring. The ring is derived (the primary, adjusted to 3:1 on the card and
+ * background) unless set here, in which case it is used as given.
+ */
+export interface WidgetVariables extends DesignTokens {
+  colorFocusRing?: string;
 }
 
 /** Every element a page may target with an appended class. */
@@ -244,7 +253,7 @@ export interface WidgetAppearance {
   design?: AtlasDesign;
   /** Apply the design configured in the dashboard (default true). */
   instanceDesign?: boolean;
-  variables?: DesignTokens;
+  variables?: WidgetVariables;
   elements?: Partial<Record<ElementKey, string>>;
   /** How the social buttons look — variant, size, layout, per-provider labels. */
   socialButtons?: SocialButtonsConfig;
@@ -443,6 +452,24 @@ export function textOnPrimary(primary: string): string {
   if (!parsed) return '#ffffff';
   const hex = toHex(parsed);
   return contrastRatio('#ffffff', hex) >= contrastRatio('#111111', hex) ? '#ffffff' : '#111111';
+}
+
+/**
+ * Keyboard focus-ring colour: the primary when it already has 3:1 contrast
+ * against every one of `papers` (the card and the page background), else the
+ * primary's hue darkened or lightened until it does — the same contrast-first
+ * pick as {@link textOnPrimary}. Kept as given when it cannot be evaluated.
+ */
+export function focusRingOn(primary: string, papers: readonly string[]): string {
+  const parsed = parseCssColor(primary);
+  if (!parsed) return primary;
+  const hex = toHex(parsed);
+  const solid = papers
+    .map((p) => parseCssColor(p))
+    .filter((c): c is NonNullable<typeof c> => !!c && c.a > 0)
+    .map(toHex);
+  if (solid.length === 0) return primary;
+  return solid.every((p) => contrastRatio(hex, p) >= 3) ? primary : focusRingColor(hex, solid);
 }
 
 /** Our base class plus the page's override, appended so theirs wins on ties. */

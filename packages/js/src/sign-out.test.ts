@@ -43,33 +43,128 @@ describe('revokeSession', () => {
 });
 
 describe('SessionTombstones', () => {
-  beforeEach(() => sessionStorage.clear());
+  const FAPI = 'https://accounts.acme.test';
+  const KEY = `atlas:signed-out-sessions:${FAPI}`;
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
+  });
 
-  it('remembers signed-out ids across instances in the same tab (sessionStorage)', () => {
-    const a = new SessionTombstones();
+  it('remembers signed-out ids across instances — and so across tabs (localStorage)', () => {
+    const a = new SessionTombstones({ frontendApi: FAPI });
     a.add('sess_1', undefined, '');
     expect(a.has('sess_1')).toBe(true);
     expect(a.has('sess_2')).toBe(false);
     expect(a.has(null)).toBe(false);
-    expect(new SessionTombstones().has('sess_1')).toBe(true);
+    // A tab opened later reads the same store.
+    expect(new SessionTombstones({ frontendApi: FAPI }).has('sess_1')).toBe(true);
+    expect(localStorage.getItem(KEY)).toContain('sess_1');
+    expect(sessionStorage.length).toBe(0);
   });
 
-  it('keeps working in memory when storage throws', () => {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('quota');
-    });
-    const t = new SessionTombstones();
-    t.add('sess_9');
-    expect(t.has('sess_9')).toBe(true);
-    vi.restoreAllMocks();
+  it('is keyed per Frontend API origin', () => {
+    new SessionTombstones({ frontendApi: `${FAPI}/some/path` }).add('sess_1');
+    expect(new SessionTombstones({ frontendApi: FAPI }).has('sess_1')).toBe(true);
+    expect(new SessionTombstones({ frontendApi: 'https://accounts.other.test' }).has('sess_1')).toBe(false);
   });
 
-  it('is bounded', () => {
-    const t = new SessionTombstones();
+  it('sees another tab add and remove ids on the next read', () => {
+    const tabA = new SessionTombstones({ frontendApi: FAPI });
+    const tabB = new SessionTombstones({ frontendApi: FAPI });
+    tabB.add('sess_1');
+    expect(tabA.has('sess_1')).toBe(true);
+    tabB.remove('sess_1');
+    expect(tabA.has('sess_1')).toBe(false);
+    // …and tabA writing later does not resurrect it.
+    tabA.add('sess_2');
+    expect(tabB.list()).toEqual(['sess_2']);
+  });
+
+  it('remove() forgets a tombstone (a later confirmed revoke)', () => {
+    const t = new SessionTombstones({ frontendApi: FAPI });
+    t.add('sess_1', 'sess_2');
+    t.remove('sess_1');
+    expect(t.has('sess_1')).toBe(false);
+    expect(t.has('sess_2')).toBe(true);
+    expect(new SessionTombstones({ frontendApi: FAPI }).list()).toEqual(['sess_2']);
+  });
+
+  it('expires entries after 30 days, pruned on read', () => {
+    let now = Date.UTC(2026, 0, 1);
+    const t = new SessionTombstones({ frontendApi: FAPI, now: () => now });
+    t.add('sess_old');
+    now += 29 * 24 * 3600 * 1000;
+    t.add('sess_new');
+    expect(t.has('sess_old')).toBe(true);
+    now += 2 * 24 * 3600 * 1000;
+    expect(t.has('sess_old')).toBe(false);
+    expect(t.list()).toEqual(['sess_new']);
+  });
+
+  it('is bounded to the 20 most recent', () => {
+    const t = new SessionTombstones({ frontendApi: FAPI });
     for (let i = 0; i < 50; i++) t.add(`sess_${i}`);
     expect(t.list()).toHaveLength(20);
     expect(t.has('sess_49')).toBe(true);
     expect(t.has('sess_0')).toBe(false);
+    expect((JSON.parse(localStorage.getItem(KEY)!) as unknown[]).length).toBe(20);
+  });
+
+  it('falls back to sessionStorage only when localStorage throws', () => {
+    const fail = () => {
+      throw new Error('quota');
+    };
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: fail, removeItem: fail });
+    try {
+      const t = new SessionTombstones({ frontendApi: FAPI });
+      t.add('sess_9');
+      expect(t.has('sess_9')).toBe(true);
+      expect(sessionStorage.getItem(KEY)).toContain('sess_9');
+      // Same tab, new instance: still found (via the sessionStorage copy).
+      expect(new SessionTombstones({ frontendApi: FAPI }).has('sess_9')).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    // Nothing went to sessionStorage while localStorage worked.
+    sessionStorage.clear();
+    new SessionTombstones({ frontendApi: FAPI }).add('sess_10');
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('keeps working in memory when every storage throws', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota');
+    });
+    const t = new SessionTombstones({ frontendApi: FAPI });
+    t.add('sess_9');
+    expect(t.has('sess_9')).toBe(true);
+  });
+
+  it('reports another tab’s change through the storage event', () => {
+    const t = new SessionTombstones({ frontendApi: FAPI });
+    const seen: string[][] = [];
+    const off = t.subscribe((ids) => seen.push(ids));
+    localStorage.setItem(KEY, JSON.stringify([{ id: 'sess_x', at: Date.now() }]));
+    window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'unrelated' }));
+    expect(seen).toEqual([['sess_x']]);
+    off();
+    window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
+    expect(seen).toHaveLength(1);
+  });
+
+  it('carries over tombstones an older SDK kept in sessionStorage', () => {
+    sessionStorage.setItem('atlas:signed-out-sessions', JSON.stringify(['sess_legacy']));
+    const t = new SessionTombstones({ frontendApi: FAPI });
+    expect(t.has('sess_legacy')).toBe(true);
+    expect(localStorage.getItem(KEY)).toContain('sess_legacy');
+    expect(sessionStorage.getItem('atlas:signed-out-sessions')).toBeNull();
+  });
+
+  it('still accepts a bare storage key (earlier constructor signature)', () => {
+    new SessionTombstones('custom-key').add('sess_1');
+    expect(localStorage.getItem('custom-key')).toContain('sess_1');
   });
 });
 

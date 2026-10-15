@@ -9,7 +9,7 @@
  * has to cope with `hsl()` and with values it cannot evaluate (`var(--brand)`).
  */
 
-import { contrastRatio, parseCssColor, toHex } from '@atlasauth/design/runtime';
+import { contrastRatio, focusRingColor, parseCssColor, toHex } from '@atlasauth/design/runtime';
 
 const WHITE = '#ffffff';
 const NEAR_BLACK = '#111111';
@@ -47,4 +47,22 @@ export function textOnPrimary(primary: string): string {
   const hex = parsed ? toHex(parsed) : hslToHex(primary);
   if (!hex) return WHITE;
   return contrastRatio(WHITE, hex) >= contrastRatio(NEAR_BLACK, hex) ? WHITE : NEAR_BLACK;
+}
+
+/**
+ * The default focus ring for `color` (the primary, or a theme's own ring) on
+ * `background`: `color` itself when it already has 3:1 contrast there, else the
+ * same hue darkened (light background) or lightened (dark background) until it
+ * does — so mint `#22f79a` on white gets a deep green ring, not a 1.4:1 one.
+ * A value that cannot be evaluated (`var(--brand)`, a named colour) is kept.
+ */
+export function focusRingOn(color: string, background: string): string {
+  const toHexOrNull = (c: string): string | null => {
+    const parsed = parseCssColor(c);
+    return parsed ? toHex(parsed) : hslToHex(c);
+  };
+  const ring = toHexOrNull(color);
+  const paper = toHexOrNull(background);
+  if (!ring || !paper) return color;
+  return contrastRatio(ring, paper) >= 3 ? color : focusRingColor(ring, [paper]);
 }

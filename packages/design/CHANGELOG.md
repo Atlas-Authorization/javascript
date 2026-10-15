@@ -1,5 +1,13 @@
 # @atlasauth/design
 
+## 0.2.0
+
+- **Added** `focusRingColor(primary, papers)`: the primary when it has 3:1 contrast (WCAG 1.4.11) against
+  every paper, else the primary moved along its lightness axis until it does.
+- **Added CSS variable** `--atlas-focus-outline-color` (per mode) to the compiler output and
+  `DESIGN_CSS_VARIABLES`: the solid keyboard focus outline, the primary adjusted to 3:1 on the background
+  and surface. Hosted pages and the React SDK's design mode use it for `:focus-visible` outlines.
+
 ## 0.1.0
 
 - Initial release: the design schema (`designSchema`, `AtlasDesign`), presets,

@@ -24,6 +24,12 @@ export interface OAuthClient {
   frontchannel_logout_uri: string | null;
   /** Whether `iss` and `sid` are appended to the front-channel logout URL. */
   frontchannel_logout_session_required: boolean;
+  /**
+   * RP-initiated logout with this client's `client_id` and an exactly registered
+   * `post_logout_redirect_uri` ends the session and redirects straight back,
+   * with no "Sign out?" page. First-party clients only.
+   */
+  skip_logout_confirmation?: boolean;
   created_at: number;
   updated_at: number;
 }
@@ -39,6 +45,8 @@ export interface OAuthClientLogoutFields {
   backchannel_logout_session_required?: boolean;
   frontchannel_logout_uri?: string | null;
   frontchannel_logout_session_required?: boolean;
+  /** Skip the logout confirmation page. First-party clients only (`422` otherwise). */
+  skip_logout_confirmation?: boolean;
 }
 
 /** Create/rotate reveal the secret exactly once, alongside the client. */

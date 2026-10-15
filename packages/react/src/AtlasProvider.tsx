@@ -18,6 +18,10 @@ import {
   msUntilRefresh,
   readExpiry,
   readRedirectResult,
+  completeOAuthPopupLanding,
+  closeOAuthPopupAfterSignIn,
+  mapOAuthPopupPayload,
+  type RedirectResult,
   resolveFrontendApi,
   revokeSession,
   stripRedirectParams,
@@ -223,10 +227,11 @@ export function AtlasProvider(props: AtlasProviderProps) {
   const channel = useRef<Channel | null>(null);
   const statusRef = useRef<AuthStatus>('loading');
   const reloadRef = useRef<() => Promise<void>>(() => Promise.resolve());
-  // Sessions this tab signed out of: never re-adopted from a still-valid
-  // refresh cookie, even when the revoke did not reach the server.
+  // Sessions this browser signed out of (shared by every tab, per Frontend
+  // API): never re-adopted from a still-valid refresh cookie, even when the
+  // revoke did not reach the server — not by a reload, nor by a tab opened later.
   const tombstones = useRef<SessionTombstones | null>(null);
-  if (!tombstones.current) tombstones.current = new SessionTombstones();
+  if (!tombstones.current) tombstones.current = new SessionTombstones({ frontendApi: baseUrl });
   const sessionIdRef = useRef<string | null>(null);
 
   /**
@@ -288,8 +293,12 @@ export function AtlasProvider(props: AtlasProviderProps) {
         // The browser still holds a refresh cookie for a session this tab signed
         // out of (the revoke never landed). Stay signed out, and try the revoke
         // again in the background — when it lands the server clears the cookies
-        // (or promotes a parked account, which the next re-check adopts).
-        void revokeSession(call, body.session.id, { retries: 0 });
+        // (or promotes a parked account, which the next re-check adopts), and
+        // the tombstone has done its job.
+        const staleId = body.session.id;
+        void revokeSession(call, staleId, { retries: 0 }).then((outcome) => {
+          if (outcome.revoked) tombstones.current?.remove(staleId);
+        });
       }
 
       if (!body.session || !body.user || tombstoned) {
@@ -416,6 +425,14 @@ export function AtlasProvider(props: AtlasProviderProps) {
       }
       void reloadRef.current();
     });
+    // Another tab signed out of THIS session (its tombstone reached the shared
+    // store before, or without, its broadcast): drop the token and re-check.
+    const unsubTombstones = tombstones.current?.subscribe((ids) => {
+      if (sessionIdRef.current && ids.includes(sessionIdRef.current)) {
+        cache.current.clear();
+        void reloadRef.current();
+      }
+    });
     const onVisible = () => {
       if (document.visibilityState === 'visible' && statusRef.current !== 'signed_in') {
         void reloadRef.current();
@@ -425,6 +442,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
     window.addEventListener('focus', onVisible);
     return () => {
       unsub?.();
+      unsubTombstones?.();
       ch?.close();
       channel.current = null;
       document.removeEventListener('visibilitychange', onVisible);
@@ -438,25 +456,49 @@ export function AtlasProvider(props: AtlasProviderProps) {
    * scrub the URL so a reload can't replay it, THEN boot. A redirect that only
    * carries a `__atlas_status` (a second factor is still owed) has no ticket, so
    * nothing is exchanged and the app boots signed-out — exactly as intended.
+   *
+   * §oauth popup mode: this page may also be running INSIDE the sign-in popup.
+   *   - As the landing of a popup whose opener was severed by a
+   *     Cross-Origin-Opener-Policy (`#atlas_popup_result=…`): relay the result
+   *     to the opener over BroadcastChannel and close. If no opener takes it
+   *     (its tab is gone), finish the sign-in here like a redirect.
+   *   - After finishing a sign-in here (the redirect flow ran in the popup): tell
+   *     the waiting opener and close the popup.
    */
   useEffect(() => {
-    const result =
+    const fromUrl =
       typeof window !== 'undefined' ? readRedirectResult(window.location.search) : null;
 
     void (async () => {
+      let result: RedirectResult | null = fromUrl;
+      const landing = typeof window !== 'undefined' ? await completeOAuthPopupLanding().catch(() => null) : null;
+      if (landing && !landing.delivered) {
+        const outcome = mapOAuthPopupPayload(landing.payload);
+        if (outcome?.ticket && outcome.attemptId) {
+          result = { attemptId: outcome.attemptId, ticket: outcome.ticket };
+        } else if (outcome?.continuationUrl) {
+          // A second factor / connect / provider error: the redirect flow's page.
+          window.location.replace(outcome.continuationUrl);
+          return;
+        }
+      }
+      let exchanged = false;
       if (result?.ticket) {
-        await call('/v1/client/tickets/exchange', {
+        const response = await call('/v1/client/tickets/exchange', {
           method: 'POST',
           body: JSON.stringify({ attempt_id: result.attemptId, ticket: result.ticket }),
         }).catch(() => undefined);
+        exchanged = !!response?.ok;
       }
-      if (result && typeof window !== 'undefined') {
+      if (fromUrl && typeof window !== 'undefined') {
         window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
       }
       await reload();
       // §R3.2 if this was the tab that completed a sign-in, wake any sibling tab
       // (e.g. the one that opened the Google window) so it leaves the form too.
       if (result?.ticket) announceSessionChange();
+      // Signed in inside the Atlas popup: hand back to the opener and close.
+      if (exchanged) void closeOAuthPopupAfterSignIn();
     })();
     // Runs once on mount (empty deps): the redirect is handled exactly once, and
     // re-running would only re-read an already-scrubbed URL. `reload`/`call` are

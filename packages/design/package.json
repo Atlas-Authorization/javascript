@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/design",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The Atlas design system: the structured design schema, presets, resolver, safe CSS compiler, contrast helpers and curated font list shared by Atlas hosted pages and SDK components.",
   "license": "MIT",
   "main": "./dist/index.js",

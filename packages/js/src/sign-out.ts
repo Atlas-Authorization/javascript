@@ -10,9 +10,9 @@
  *
  * These helpers close that gap: {@link revokeSession} retries once and reports
  * what the server did (including the parked session it promoted, if any), and
- * {@link SessionTombstones} remembers the ids of sessions this tab signed out of
- * so a reload never re-adopts one, even when the revoke never reached the
- * server.
+ * {@link SessionTombstones} remembers the ids of sessions this browser signed
+ * out of so a reload — or a tab opened later — never re-adopts one, even when
+ * the revoke never reached the server.
  */
 
 /** What `signOut()` resolves with. */
@@ -105,53 +105,235 @@ export async function revokeSession(
 
 const TOMBSTONE_KEY = 'atlas:signed-out-sessions';
 const TOMBSTONE_LIMIT = 20;
+/** How long a tombstone is kept: longer than any refresh cookie it guards against. */
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Options for {@link SessionTombstones}. */
+export interface SessionTombstonesOptions {
+  /**
+   * The Frontend API URL or origin the sessions belong to. Tombstones are kept
+   * per Frontend API origin, so two Atlas instances used on one site never
+   * share (or clear) each other's.
+   */
+  frontendApi?: string;
+  /** Override the storage key entirely (the Frontend API scope is then not appended). */
+  storageKey?: string;
+  /** Clock, for tests. */
+  now?: () => number;
+}
+
+interface TombstoneEntry {
+  id: string;
+  /** When the session was signed out of (epoch ms). */
+  at: number;
+}
+
+type StorageKind = 'local' | 'session';
 
 /**
- * The ids of sessions this tab signed out of. Held in memory and mirrored to
- * `sessionStorage` (so a page reload in the same tab remembers them); sibling
- * tabs learn them through the SDK's cross-tab session broadcast. Never holds a
- * token — a session id is not a credential.
+ * The ids of sessions this browser signed out of, so a reload — or a tab opened
+ * later — never re-adopts one from a refresh cookie the revoke did not clear.
+ *
+ * Kept in `localStorage` (shared by every tab of the site and surviving a
+ * restart), at most 20 entries, each for 30 days, pruned whenever it is read,
+ * and keyed per Frontend API origin. Tabs see each other's changes on every
+ * read, and {@link SessionTombstones.subscribe} reports them as they happen
+ * (the `storage` event). `sessionStorage` is used only when `localStorage`
+ * throws (storage disabled, sandboxed frames); memory always backs both. A
+ * confirmed revoke may {@link SessionTombstones.remove} its tombstone. Never
+ * holds a token — a session id is not a credential.
  */
 export class SessionTombstones {
-  private readonly ids: string[];
+  private entries: TombstoneEntry[];
+  /** Ids no storage accepted: only memory remembers them, so a sync keeps them. */
+  private unsaved = new Set<string>();
+  private readonly storageKey: string;
+  private readonly now: () => number;
 
-  constructor(private readonly storageKey: string = TOMBSTONE_KEY) {
-    this.ids = readStored(storageKey);
+  constructor(options: string | SessionTombstonesOptions = {}) {
+    const opts: SessionTombstonesOptions = typeof options === 'string' ? { storageKey: options } : options;
+    this.storageKey = opts.storageKey ?? scopedKey(opts.frontendApi);
+    this.now = opts.now ?? Date.now;
+    const stored = readStored(this.storageKey) ?? [];
+    const legacy = readLegacy(this.storageKey, this.now()).filter((l) => !stored.some((e) => e.id === l.id));
+    this.entries = this.prune([...stored, ...legacy]);
+    // Carry an older SDK's per-tab tombstones over into the shared store, once.
+    if (legacy.length) {
+      this.persist();
+      try {
+        storage('session')?.removeItem(TOMBSTONE_KEY);
+      } catch {
+        /* sessionStorage unavailable */
+      }
+    }
   }
 
   has(sessionId: string | null | undefined): boolean {
-    return typeof sessionId === 'string' && this.ids.includes(sessionId);
+    if (typeof sessionId !== 'string' || !sessionId) return false;
+    this.sync();
+    return this.entries.some((e) => e.id === sessionId);
   }
 
   add(...sessionIds: (string | null | undefined)[]): void {
+    this.sync();
     let changed = false;
     for (const id of sessionIds) {
-      if (typeof id !== 'string' || !id || this.ids.includes(id)) continue;
-      this.ids.push(id);
+      if (typeof id !== 'string' || !id || this.entries.some((e) => e.id === id)) continue;
+      this.entries.push({ id, at: this.now() });
       changed = true;
     }
-    if (!changed) return;
-    while (this.ids.length > TOMBSTONE_LIMIT) this.ids.shift();
-    try {
-      globalThis.sessionStorage?.setItem(this.storageKey, JSON.stringify(this.ids));
-    } catch {
-      // Private mode / storage disabled: memory still protects this tab.
-    }
+    if (changed) this.persist();
+  }
+
+  /**
+   * Forget tombstones — called once a later revoke of the session is confirmed
+   * (the server has ended it, so there is nothing left to re-adopt).
+   */
+  remove(...sessionIds: (string | null | undefined)[]): void {
+    this.sync();
+    const before = this.entries.length;
+    this.entries = this.entries.filter((e) => !sessionIds.includes(e.id));
+    if (this.entries.length !== before) this.persist();
   }
 
   list(): string[] {
-    return [...this.ids];
+    this.sync();
+    return this.entries.map((e) => e.id);
+  }
+
+  /**
+   * Call `listener` when another tab adds or removes a tombstone (the `storage`
+   * event). Returns the unsubscribe function; a no-op outside a browser.
+   */
+  subscribe(listener: (ids: string[]) => void): () => void {
+    const target = globalThis as { addEventListener?: Window['addEventListener']; removeEventListener?: Window['removeEventListener'] };
+    if (typeof target.addEventListener !== 'function') return () => undefined;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== this.storageKey && event.key !== null) return;
+      listener(this.list());
+    };
+    target.addEventListener('storage', onStorage);
+    return () => target.removeEventListener?.('storage', onStorage);
+  }
+
+  /**
+   * Re-read storage — the source of truth, so another tab's add or remove is
+   * seen here — keeping only what this tab could not store; then drop expired
+   * entries. With no readable storage, memory is all there is.
+   */
+  private sync(): void {
+    const stored = readStored(this.storageKey);
+    if (!stored) {
+      this.entries = this.prune(this.entries);
+      return;
+    }
+    const known = new Set(stored.map((e) => e.id));
+    this.entries = this.prune([
+      ...stored,
+      ...this.entries.filter((e) => this.unsaved.has(e.id) && !known.has(e.id)),
+    ]);
+  }
+
+  private prune(entries: TombstoneEntry[]): TombstoneEntry[] {
+    const cutoff = this.now() - TOMBSTONE_TTL_MS;
+    const seen = new Set<string>();
+    const fresh = entries
+      .filter((e) => e.at > cutoff && !seen.has(e.id) && seen.add(e.id))
+      .sort((a, b) => a.at - b.at);
+    return fresh.slice(-TOMBSTONE_LIMIT);
+  }
+
+  private persist(): void {
+    this.entries = this.prune(this.entries);
+    const raw = JSON.stringify(this.entries);
+    if (write('local', this.storageKey, raw)) {
+      // Anything parked in sessionStorage by an earlier failed write is now in localStorage.
+      try {
+        storage('session')?.removeItem(this.storageKey);
+      } catch {
+        /* nothing parked, or sessionStorage unavailable */
+      }
+      this.unsaved.clear();
+      return;
+    }
+    // localStorage threw (disabled, sandboxed, full): fall back to this tab's
+    // sessionStorage, and memory still protects this tab if that throws too.
+    this.unsaved = write('session', this.storageKey, raw) ? new Set() : new Set(this.entries.map((e) => e.id));
   }
 }
 
-function readStored(key: string): string[] {
+/** `atlas:signed-out-sessions:<frontend api origin>`. */
+function scopedKey(frontendApi: string | undefined): string {
+  if (!frontendApi) return TOMBSTONE_KEY;
   try {
-    const raw = globalThis.sessionStorage?.getItem(key);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed)
-      ? parsed.filter((v): v is string => typeof v === 'string').slice(-TOMBSTONE_LIMIT)
-      : [];
+    return `${TOMBSTONE_KEY}:${new URL(frontendApi).origin}`;
+  } catch {
+    return `${TOMBSTONE_KEY}:${frontendApi}`;
+  }
+}
+
+function storage(kind: StorageKind): Storage | undefined {
+  // Reading `localStorage` itself throws in some sandboxed contexts.
+  return kind === 'local' ? globalThis.localStorage : globalThis.sessionStorage;
+}
+
+function write(kind: StorageKind, key: string, value: string): boolean {
+  try {
+    const s = storage(kind);
+    if (!s) return false;
+    s.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parseEntries(raw: string | null | undefined, now: number): TombstoneEntry[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const out: TombstoneEntry[] = [];
+    for (const v of parsed) {
+      // Bare ids are the pre-TTL format: date them now.
+      if (typeof v === 'string' && v) out.push({ id: v, at: now });
+      else if (v && typeof v === 'object') {
+        const { id, at } = v as { id?: unknown; at?: unknown };
+        if (typeof id === 'string' && id && typeof at === 'number' && Number.isFinite(at)) out.push({ id, at });
+      }
+    }
+    return out;
   } catch {
     return [];
   }
+}
+
+/**
+ * localStorage (plus anything a failed write parked in sessionStorage), or
+ * sessionStorage alone when localStorage throws; null when neither is readable.
+ */
+function readStored(key: string): TombstoneEntry[] | null {
+  const now = Date.now();
+  try {
+    const s = storage('local');
+    if (s) return [...parseEntries(s.getItem(key), now), ...(readSession(key, now) ?? [])];
+  } catch {
+    /* fall through to sessionStorage */
+  }
+  return readSession(key, now);
+}
+
+function readSession(key: string, now: number): TombstoneEntry[] | null {
+  try {
+    const s = storage('session');
+    return s ? parseEntries(s.getItem(key), now) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Tombstones written by earlier SDK versions: per tab, unscoped, in sessionStorage. */
+function readLegacy(key: string, now: number): TombstoneEntry[] {
+  if (key === TOMBSTONE_KEY) return [];
+  return readSession(TOMBSTONE_KEY, now) ?? [];
 }

@@ -7,6 +7,7 @@ import {
 } from '@atlasauth/js';
 import {
   cssVariables,
+  focusRingOn,
   textOnPrimary,
   orderedProviders,
   resolveSocialButtons,
@@ -248,6 +249,12 @@ export class AtlasWidget {
     for (const [key, value] of Object.entries(vars)) this.root.style.setProperty(key, value);
     // Derived, not a token: the primary button's label follows the primary's contrast.
     this.root.style.setProperty('--atlas-embed-color-text-on-primary', textOnPrimary(tokens.colorPrimary));
+    // Derived too, unless set explicitly: a focus ring with 3:1 on the card/page.
+    this.root.style.setProperty(
+      '--atlas-embed-color-focus-ring',
+      this.options.appearance?.variables?.colorFocusRing ??
+        focusRingOn(tokens.colorPrimary, [tokens.colorCard, tokens.colorBackground]),
+    );
     if (this.design) {
       this.appliedDesign = applyAppearanceToDom(
         this.root.ownerDocument ?? document,

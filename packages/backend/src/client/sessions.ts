@@ -11,7 +11,11 @@ export interface Session {
   last_active_at: number;
   expire_at: number;
   abandon_at: number;
-  /** Epoch ms the session ends from inactivity unless there is activity first (same value as `abandon_at`). */
+  /**
+   * Epoch ms the session ends from inactivity unless there is activity first
+   * (same value as `abandon_at`). Returned by every session read: `sessions.get`,
+   * `sessions.list`, `users.listSessions` and `sessions.touch`.
+   */
   idle_expires_at?: number;
   created_at: number;
 }

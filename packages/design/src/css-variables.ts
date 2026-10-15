@@ -38,6 +38,7 @@ export const DESIGN_CSS_VARIABLES: readonly DesignCssVariable[] = [
   { name: '--atlas-color-input-background', type: 'color', perMode: true, description: 'Text input fill.' },
   { name: '--atlas-color-input-text', type: 'color', perMode: true, description: 'Text input text colour.' },
   { name: '--atlas-color-focus-ring', type: 'color', perMode: true, description: 'Focus ring (primary at 35% alpha).' },
+  { name: '--atlas-focus-outline-color', type: 'color', perMode: true, description: 'Solid keyboard focus outline — the primary adjusted to 3:1 on the background and surface.' },
   { name: '--atlas-font-body', type: 'font-family', perMode: false, description: 'Body font stack.' },
   { name: '--atlas-font-heading', type: 'font-family', perMode: false, description: 'Heading font stack.' },
   { name: '--atlas-font-size-base', type: 'length', perMode: false, description: 'Body text size (px).' },

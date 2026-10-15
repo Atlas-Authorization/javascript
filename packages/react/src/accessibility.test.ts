@@ -1,7 +1,7 @@
-import { resolveDesign } from '@atlasauth/design';
+import { contrastRatio, resolveDesign } from '@atlasauth/design';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TOKENS, cssVariables, renderAppearance, resolveTokens, type InstanceDesign } from './appearance';
-import { textOnPrimary } from './contrast';
+import { focusRingOn, textOnPrimary } from './contrast';
 import { ATLAS_BASE_CSS, ATLAS_DESIGN_CSS } from './styles';
 
 /** The declarations of the first rule (one per line) whose text contains `selector`. */
@@ -64,6 +64,47 @@ describe('the focus ring colour', () => {
   it('an explicit colorFocusRing wins and is emitted as a variable', () => {
     const tokens = resolveTokens({ variables: { colorPrimary: '#0f766e', colorFocusRing: '#000000' } });
     expect(cssVariables(tokens)['--atlas-color-focus-ring']).toBe('#000000');
+  });
+
+  it('darkens a light primary until it has 3:1 on the background (mint on white)', () => {
+    expect(contrastRatio('#22f79a', '#ffffff')).toBeLessThan(1.6);
+    const ring = resolveTokens({ variables: { colorPrimary: '#22f79a' } }).colorFocusRing;
+    expect(ring).not.toBe('#22f79a');
+    expect(contrastRatio(ring, '#ffffff')).toBeGreaterThanOrEqual(3);
+    // Still the brand hue: green dominates.
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(ring.slice(i, i + 2), 16));
+    expect(g).toBeGreaterThan(r!);
+    expect(g).toBeGreaterThan(b!);
+  });
+
+  it('an explicit colorFocusRing still wins, even a low-contrast one', () => {
+    expect(resolveTokens({ variables: { colorPrimary: '#22f79a', colorFocusRing: '#22f79a' } }).colorFocusRing).toBe(
+      '#22f79a',
+    );
+  });
+
+  it('clears 3:1 against colorBackground for any primary', () => {
+    for (const primary of ['#22f79a', '#ffe600', '#fafafa', '#7dd3fc', '#0f766e', '#000000', '#5b5bd6']) {
+      for (const colorBackground of ['#ffffff', '#f4f4f5', '#14171c', '#000000']) {
+        const ring = resolveTokens({ variables: { colorPrimary: primary, colorBackground } }).colorFocusRing;
+        expect(contrastRatio(ring, colorBackground), `${primary} on ${colorBackground}`).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it('reads an hsl() primary', () => {
+    const ring = focusRingOn('hsl(153 93% 55%)', '#ffffff');
+    expect(ring.startsWith('#')).toBe(true);
+    expect(contrastRatio(ring, '#ffffff')).toBeGreaterThanOrEqual(3);
+  });
+
+  it('lightens a dark primary on a dark background', () => {
+    const ring = resolveTokens({ baseTheme: 'dark', variables: { colorPrimary: '#1e3a8a' } }).colorFocusRing;
+    expect(contrastRatio(ring, '#14171c')).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps a primary it cannot evaluate', () => {
+    expect(resolveTokens({ variables: { colorPrimary: 'var(--brand)' } }).colorFocusRing).toBe('var(--brand)');
   });
 });
 

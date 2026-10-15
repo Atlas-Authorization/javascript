@@ -56,6 +56,31 @@ export interface PreflightReport {
   findings: PreflightFinding[];
 }
 
+/** A consent tool whose documented "reopen preferences" trigger Atlas fills in. */
+export type CookieSettingsLinkPreset = 'cookiemunch' | 'cookiebot' | 'onetrust' | 'custom';
+
+/** The footer "Cookie settings" link on the hosted pages, for reopening the consent preferences. */
+export interface CookieSettingsLinkInput {
+  /** The link text, 1-60 characters. */
+  label: string;
+  /** Fills in the consent tool's reopen trigger; `custom` (or none) uses `attributes` only. */
+  preset?: CookieSettingsLinkPreset | null;
+  /**
+   * Extra attributes. Allowed names: `data-*`, `aria-*`, `id`, `class`, and `href`
+   * (an https URL or a `#fragment`); values up to 200 characters. Event handlers
+   * and other names are refused with a 400.
+   */
+  attributes?: Record<string, string>;
+}
+
+export interface CookieSettingsLink {
+  label: string;
+  preset: CookieSettingsLinkPreset | null;
+  attributes: Record<string, string>;
+  /** The attributes the rendered link carries: `attributes` plus the preset's trigger. */
+  rendered_attributes: Record<string, string>;
+}
+
 /** The cookie-consent script injected into the hosted sign-in, sign-up and account pages. */
 export interface CookieConsent {
   object: 'cookie_consent';
@@ -66,6 +91,8 @@ export interface CookieConsent {
   site_id?: string | null;
   blocking_mode?: string | null;
   extra_origins?: string[];
+  /** The footer "Cookie settings" link, or null when none is set. */
+  settings_link?: CookieSettingsLink | null;
 }
 
 export interface SetCookieConsentBody {
@@ -79,6 +106,8 @@ export interface SetCookieConsentBody {
   blocking_mode?: string | null;
   /** Other https URLs the script loads from or calls; each origin is added to the CSP. */
   extra_origins?: string[];
+  /** A footer "Cookie settings" link that reopens the consent preferences; null or omitted for none. */
+  settings_link?: CookieSettingsLinkInput | null;
 }
 
 export function instanceResource(request: RequestFn) {

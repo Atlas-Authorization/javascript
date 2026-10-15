@@ -1,3 +1,4 @@
+import { contrastRatio } from '@atlasauth/design/runtime';
 import { describe, expect, it } from 'vitest';
 import {
   classFor,
@@ -6,6 +7,7 @@ import {
   providerLabel,
   resolveInteraction,
   resolveTokens,
+  focusRingOn,
   textOnPrimary,
   type PublicAppearance,
 } from './appearance';
@@ -63,6 +65,19 @@ describe('accessibility of the base styles', () => {
   it('labels the primary button from the contrast variable, not a fixed white', () => {
     const button = EMBED_CSS.slice(EMBED_CSS.indexOf('.atlas-embed-button {'));
     expect(button.slice(0, button.indexOf('}'))).toContain('color: var(--_on-primary)');
+  });
+
+  it('derives a focus ring with 3:1 on the card and background (mint on white)', () => {
+    const ring = focusRingOn('#22f79a', ['#ffffff', '#ffffff']);
+    expect(ring).not.toBe('#22f79a');
+    expect(contrastRatio(ring, '#ffffff')).toBeGreaterThanOrEqual(3);
+    // A primary that already passes is kept as is.
+    expect(focusRingOn('#5b5bd6', ['#ffffff'])).toBe('#5b5bd6');
+    // Both papers must pass, and a dark card gets a lighter ring.
+    const dark = focusRingOn('#1e3a8a', ['#14171c', '#0b0b0f']);
+    expect(contrastRatio(dark, '#14171c')).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(dark, '#0b0b0f')).toBeGreaterThanOrEqual(3);
+    expect(focusRingOn('var(--brand)', ['#ffffff'])).toBe('var(--brand)');
   });
 
   it('gives buttons a solid :focus-visible outline', () => {

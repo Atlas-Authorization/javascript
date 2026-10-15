@@ -1,5 +1,26 @@
 # @atlasauth/react changelog
 
+## 0.6.0
+- **Popup sign-in works when your page sends `Cross-Origin-Opener-Policy: same-origin`.** `<AtlasProvider>`
+  now finishes a popup that was severed from its opener: when the popup lands back on your page with
+  `#atlas_popup_result=…`, the provider relays the result to the opener (which completes the sign-in) and
+  closes the popup; if no opener takes it (its tab was closed), it completes the sign-in in that window like a
+  redirect. The fragment is removed from the URL first. Social buttons in popup mode keep waiting (up to
+  5 minutes) for a severed popup instead of treating it as cancelled.
+- **A sign-in completed inside the Atlas popup closes the popup** once it has told the waiting opener.
+- **Changed `startOauth({ mode: 'popup' })`** (from `useSignIn()`): accepts `signal?: AbortSignal` and
+  re-boots signed-in when the popup finished the sign-in itself (`sessionDetected`).
+- **A tab opened after a failed sign-out stays signed out.** Sign-out tombstones are now kept in
+  `localStorage` per Frontend API (shared by all tabs, 30 days, at most 20) instead of per-tab
+  `sessionStorage`. A later successful background revoke clears the tombstone, and a new sign-in (new
+  session id) is adopted normally. A tombstone another tab adds for the current session drops this tab's
+  token.
+- **The default focus ring has at least 3:1 contrast against `colorBackground`.** `colorFocusRing` used to
+  default to `colorPrimary` unchecked (mint `#22f79a` on white is ~1.4:1). It is now the primary when that
+  clears 3:1, otherwise the primary's hue darkened (light backgrounds) or lightened (dark backgrounds) until
+  it does. An explicit `colorFocusRing` still wins. With a design active, the focus outline uses the design's
+  new `--atlas-focus-outline-color` (same rule).
+
 ## 0.5.0
 - **`<SignUp>` now creates accounts.** Its first step is a create-account form (the instance's
   configured sign-up fields, email, password and the legal-consent row) that posts
