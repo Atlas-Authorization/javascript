@@ -1,5 +1,8 @@
 # @atlasauth/backend changelog
 
+## 0.7.3
+- **Added** error code constants `CAPTCHA_KEYS_REQUIRED` (422: captcha can only be turned on once its own site key and secret are stored) and `CAPTCHA_IN_USE` (409: removing a key a live captcha flow uses; `meta.flows`).
+
 ## 0.7.2
 - **OAuth clients.** `OAuthClient` gains `skip_logout_confirmation` (boolean), and `OAuthClientLogoutFields` (create and update bodies) accepts it. When true, RP-initiated logout with the client's `client_id` and an exactly registered `post_logout_redirect_uri` ends the session and redirects straight back, with no confirmation page. First-party clients only: the API answers `422` (`VALIDATION_FAILED`, `param: skip_logout_confirmation`) on a third-party client.
 - **Cookie consent.** `CookieConsent` gains `settings_link` (`CookieSettingsLink | null`: `label`, `preset`, `attributes`, `rendered_attributes`), and `SetCookieConsentBody` accepts `settings_link` (`CookieSettingsLinkInput | null`: `label`, `preset?`, `attributes?`) for a footer "Cookie settings" link that reopens the consent preferences. New types: `CookieSettingsLink`, `CookieSettingsLinkInput`, `CookieSettingsLinkPreset` (`'cookiemunch' | 'cookiebot' | 'onetrust' | 'custom'`).

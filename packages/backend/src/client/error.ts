@@ -57,6 +57,10 @@ export const AtlasErrorCodes = {
   EMAIL_PROVIDER_REQUIRED: 'EMAIL_PROVIDER_REQUIRED',
   /** The email provider can't be removed while email-dependent features need it (`meta.features`). */
   EMAIL_PROVIDER_IN_USE: 'EMAIL_PROVIDER_IN_USE',
+  /** 422 — captcha turned on without its own site key and secret (captcha is bring-your-own-keys). */
+  CAPTCHA_KEYS_REQUIRED: 'CAPTCHA_KEYS_REQUIRED',
+  /** 409 — removing a captcha key a live flow uses (`meta.flows`); `force=true` turns those flows off. */
+  CAPTCHA_IN_USE: 'CAPTCHA_IN_USE',
   /** Strict mode: the body had a field this endpoint does not accept (`param` names it). */
   UNKNOWN_FIELD: 'UNKNOWN_FIELD',
   /** The billing plan still has subscribers and cannot be removed. */
