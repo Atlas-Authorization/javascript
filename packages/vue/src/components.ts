@@ -1,11 +1,14 @@
-import { defineComponent, h, reactive, ref, type PropType, type VNode } from 'vue';
+import { defineComponent, h, reactive, ref, watch, type PropType, type VNode } from 'vue';
 import {
   nextStep,
+  offeredFirstFactors,
   type AttemptView,
   type CaptchaController,
+  type EmailDelivery,
   type FieldError,
   type InstanceSettings,
   type PublicSignUpField,
+  type Step,
 } from '@atlasauth/js';
 import { useAtlas } from './context';
 import { useAuth, useOrganization, useUser } from './composables';
@@ -161,11 +164,51 @@ const AttemptFlow = defineComponent({
      * demands with `needs_captcha`.
      */
     captcha: { type: Object as PropType<CaptchaController | null>, default: null },
+    /**
+     * The instance's `emailDelivery` (from its settings). While the app cannot
+     * deliver email, the first-factor step offers no emailed code or link.
+     */
+    emailDelivery: { type: Object as PropType<EmailDelivery | null>, default: null },
+    /**
+     * Email a sign-in code or link (sign-in only). Without it the first-factor
+     * step offers the password alone.
+     */
+    onPrepare: {
+      type: Function as PropType<(strategy: 'email_code' | 'email_link') => Promise<boolean>>,
+      default: undefined,
+    },
   },
   setup(props) {
     const t = useText();
     const cls = useClass();
     const values = reactive<Record<string, string>>({});
+    // The first factor the user picked: the password field by default, or the
+    // code field / "check your email" once an emailed code / link was sent.
+    const factor = ref<'password' | 'email_code' | 'email_link'>('password');
+    watch(
+      () => props.attempt?.id,
+      () => {
+        factor.value = 'password';
+      },
+    );
+
+    const emailChoice = (strategy: 'email_code' | 'email_link', labelKey: string): VNode =>
+      h(
+        'button',
+        {
+          key: strategy,
+          class: cls('formButtonSecondary', 'atlas-button-secondary'),
+          type: 'button',
+          'data-strategy': strategy,
+          disabled: props.busy,
+          onClick: () => {
+            void props.onPrepare?.(strategy).then((sent) => {
+              if (sent) factor.value = strategy;
+            });
+          },
+        },
+        t(labelKey),
+      );
 
     const field = (name: string, labelKey: string, type = 'text'): VNode =>
       h('label', { class: 'atlas-field', key: name }, [
@@ -186,12 +229,24 @@ const AttemptFlow = defineComponent({
           ),
       ]);
 
-    const fields = (kind: string): VNode[] => {
-      switch (kind) {
+    const fields = (step: Step): VNode[] => {
+      switch (step.kind) {
         case 'collect_identifier':
           return [field('identifier', 'signIn.identifierLabel', 'email')];
-        case 'collect_first_factor':
-          return [field('password', 'signIn.passwordLabel', 'password')];
+        case 'collect_first_factor': {
+          if (factor.value === 'email_code') return [field('code', 'signIn.emailCodeLabel')];
+          if (factor.value === 'email_link') {
+            return [h('p', { key: 'link-sent', class: 'atlas-text' }, t('signIn.magicLinkSent'))];
+          }
+          // The server's list, minus email code / link while the app cannot
+          // deliver email (a capability of the app, never of the user).
+          const offered = props.onPrepare ? offeredFirstFactors(step.strategies, props.emailDelivery) : [];
+          return [
+            field('password', 'signIn.passwordLabel', 'password'),
+            offered.includes('email_code') ? emailChoice('email_code', 'signIn.useEmailCode') : null,
+            offered.includes('email_link') ? emailChoice('email_link', 'signIn.useEmailLink') : null,
+          ].filter((node): node is VNode => node !== null);
+        }
         case 'collect_second_factor':
           return [field('code', 'mfa.codeLabel')];
         case 'enroll_second_factor':
@@ -251,11 +306,13 @@ const AttemptFlow = defineComponent({
             },
           },
           [
-            ...fields(step.kind),
+            ...fields(step),
             step.kind === 'collect_identifier' || step.kind === 'collect_captcha'
               ? captchaSlot(props.captcha)
               : null,
-            step.kind !== 'done' && step.kind !== 'await_oauth'
+            step.kind !== 'done' &&
+            step.kind !== 'await_oauth' &&
+            !(step.kind === 'collect_first_factor' && factor.value === 'email_link')
               ? h(
                   'button',
                   {
@@ -280,7 +337,7 @@ export const SignIn = defineComponent({
     afterUrl: { type: String, default: undefined },
   },
   setup() {
-    const { state, submit, captcha, settings } = useFlow();
+    const { state, submit, prepare, captcha, settings } = useFlow();
     return () => {
       // Read the settings so the form re-renders (drawing the captcha slot)
       // once the instance's captcha config has loaded; the controller is passed
@@ -293,6 +350,8 @@ export const SignIn = defineComponent({
         titleKey: 'signIn.title',
         onSubmit: submit,
         captcha: captcha.needed ? captcha : null,
+        emailDelivery: settings.value?.emailDelivery ?? null,
+        onPrepare: prepare,
       });
     };
   },
@@ -444,6 +503,20 @@ const SignUpForm = defineComponent({
               : null,
           ].filter((x): x is VNode => x !== null)
         : [];
+
+      // The app can't deliver the verification email, so an email + password
+      // sign-up could never complete: say so up front instead of a form that
+      // fails on submit.
+      if (props.settings?.emailDelivery?.passwordSignUp === false) {
+        return h('div', { class: cls('card', 'atlas-card') }, [
+          h('h1', { class: cls('headerTitle', 'atlas-title') }, t('signUp.title')),
+          h(
+            'p',
+            { class: cls('formFieldError', 'atlas-error'), role: 'alert', 'data-atlas-email-unavailable': '' },
+            t('signUp.emailUnavailable'),
+          ),
+        ]);
+      }
 
       return h('div', { class: cls('card', 'atlas-card') }, [
         h('h1', { class: cls('headerTitle', 'atlas-title') }, t('signUp.title')),

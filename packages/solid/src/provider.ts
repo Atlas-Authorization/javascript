@@ -4,16 +4,21 @@ import { isServer } from 'solid-js/web';
 import { h } from './h';
 import {
   FapiClient,
+  SignOutGuard,
   TokenCache,
+  closeOAuthPopupAfterSignIn,
+  completeOAuthPopupLanding,
   getProviderToken as fetchProviderToken,
+  mapOAuthPopupPayload,
   msUntilRefresh,
   readExpiry,
   readRedirectResult,
   resolveFrontendApi,
   stripRedirectParams,
   type ProviderToken,
-  runFrontChannelLogoutFromResponse,
+  type RedirectResult,
   type SignOutOptions,
+  type SignOutResult,
 } from '@atlasauth/js';
 import { AtlasContext } from './context';
 import { mountSignInWidget, mountSignUpWidget, mountUserButtonWidget } from './widgets';
@@ -77,7 +82,15 @@ export interface AtlasClient {
    * is never exposed.
    */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(options?: SignOutOptions): Promise<void>;
+  /**
+   * Sign out of the current session. Resolves `{ revoked, activeSessionId? }`:
+   * `revoked: false` means the server never confirmed the revoke (this browser
+   * is signed out regardless, and never re-adopts the session); with
+   * `{ strict: true }` that case rejects with a `SignOutError` instead, after
+   * the local sign-out. `activeSessionId` is a parked session the server
+   * promoted, which is adopted.
+   */
+  signOut(options?: SignOutOptions): Promise<SignOutResult>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
   reload(): Promise<void>;
   /**
@@ -159,7 +172,16 @@ export function createAtlasClient(options: {
       },
     });
 
+  // Sessions this browser signed out of (shared by every tab, per Frontend
+  // API): never re-adopted from a still-valid refresh cookie, even when the
+  // revoke did not reach the server — not by a reload or refresh, nor by a tab
+  // opened later. The guard also re-tries such a revoke in the background.
+  const guard = new SignOutGuard({ request: call, frontendApi: baseUrl });
+
   const applyToken = (jwt: string, sessionId: string) => {
+    // A refresh that was in flight when the user signed out must not put the
+    // signed-out session's token back.
+    if (guard.isSignedOut(sessionId)) return;
     const expiresAt = readExpiry(jwt);
     if (!expiresAt) return;
     cache.set({ jwt, expiresAt, sessionId });
@@ -193,7 +215,11 @@ export function createAtlasClient(options: {
         organization_memberships?: AtlasOrganizationMembership[];
       };
 
-      if (!body.session || !body.user) {
+      // A session this browser signed out of (the revoke never landed, so the
+      // refresh cookie still works): stay signed out; the guard re-tries the
+      // revoke in the background and drops the tombstone once it lands.
+      const refused = !!body.session && guard.refuse(body.session.id);
+      if (!body.session || !body.user || refused) {
         cache.clear();
         setState({ status: 'signed_out', user: null, session: null, claims: null, memberships: [] });
         scheduleRefresh();
@@ -249,19 +275,17 @@ export function createAtlasClient(options: {
   const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch });
   const getProviderToken = (provider: string) => fetchProviderToken(fapiClient, provider);
 
-  const signOut = async (options?: SignOutOptions) => {
-    const current = cache.peek();
-    if (current) {
-      const revoked = await call(`/v1/client/sessions/${current.sessionId}/revoke`, {
-        method: 'POST',
-      }).catch(() => undefined);
-      // OIDC Front-Channel Logout: let the apps signed in through this session
-      // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
-      if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(revoked);
-    }
+  const signOut = async (options?: SignOutOptions): Promise<SignOutResult> => {
+    // Tombstone → revoke (retried once) → front-channel logout. With no cached
+    // token (a boot that carried no JWT) the store's session, or failing that
+    // `GET /v1/client`, names the session — the revoke works from the cookies.
+    const attempt = await guard.revoke(cache.peek()?.sessionId ?? state.session?.id ?? null, options);
     cache.clear();
     setState({ status: 'signed_out', user: null, session: null, claims: null, memberships: [] });
     scheduleRefresh();
+    // The server promoted a parked session on revoke: adopt it.
+    if (guard.promoted(attempt)) await reload();
+    return guard.settle(attempt, options);
   };
 
   const setActiveOrganization = async (organizationId: string | null) => {
@@ -289,21 +313,41 @@ export function createAtlasClient(options: {
    * boots signed-out — exactly as intended.
    */
   const boot = async () => {
-    const result =
-      !isServer && typeof window !== 'undefined'
-        ? readRedirectResult(window.location.search)
-        : null;
+    const browser = !isServer && typeof window !== 'undefined';
+    const fromUrl = browser ? readRedirectResult(window.location.search) : null;
 
+    let result: RedirectResult | null = fromUrl;
+    // This page may be the landing of a sign-in popup whose opener a
+    // Cross-Origin-Opener-Policy severed (`#atlas_popup_result=…`): relay the
+    // result to the opener and close. When no opener takes it (its tab is
+    // gone), finish the sign-in here like a redirect.
+    const landing = browser ? await completeOAuthPopupLanding().catch(() => null) : null;
+    if (landing && !landing.delivered) {
+      const outcome = mapOAuthPopupPayload(landing.payload);
+      if (outcome?.ticket && outcome.attemptId) {
+        result = { attemptId: outcome.attemptId, ticket: outcome.ticket };
+      } else if (outcome?.continuationUrl) {
+        // A second factor / connect / provider error: the redirect flow's page.
+        window.location.replace(outcome.continuationUrl);
+        return;
+      }
+    }
+
+    let exchanged = false;
     if (result?.ticket) {
-      await call('/v1/client/tickets/exchange', {
+      const response = await call('/v1/client/tickets/exchange', {
         method: 'POST',
         body: JSON.stringify({ attempt_id: result.attemptId, ticket: result.ticket }),
       }).catch(() => undefined);
+      exchanged = !!response?.ok;
     }
-    if (result && typeof window !== 'undefined') {
+    if (fromUrl && browser) {
       window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
     }
     await reload();
+    // Signed in inside the Atlas popup: hand back to the waiting opener and
+    // close (a no-op in an ordinary tab).
+    if (exchanged) void closeOAuthPopupAfterSignIn();
   };
 
   // `client` is referenced inside the mount seams; the arrows only run once the
@@ -323,14 +367,27 @@ export function createAtlasClient(options: {
     mountUserButton: (el) => mountUserButtonWidget(client, el),
   };
 
-  // Clear the refresh timer WITHOUT revoking the session — the provider calls
-  // this on unmount. `signOut()` would log the user out server-side, which is
+  // Another tab signed out of THIS session (its tombstone reached the shared
+  // store): drop the token and re-check, which refuses the session.
+  const stopWatching = guard.watch(
+    () => state.session?.id ?? cache.peek()?.sessionId,
+    () => {
+      cache.clear();
+      void reload();
+    },
+  );
+
+  // Clear the refresh timer, the sibling-tab watch and any scheduled background
+  // revoke re-try WITHOUT revoking the session — the provider calls this on
+  // unmount. `signOut()` would log the user out server-side, which is
   // emphatically not what unmounting a React/Vue/Solid tree should do.
   const dispose = () => {
     if (timer) {
       clearTimeout(timer);
       timer = null;
     }
+    stopWatching();
+    guard.dispose();
   };
 
   return { client, boot, dispose };
@@ -353,7 +410,8 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
     onMount(() => {
       void boot();
     });
-    // The client's refresh timer is a resource that outlives a render; drop it
+    // The client's refresh timer, sibling-tab watch and background revoke
+    // re-tries outlive a render; drop them (stop + dispose the sign-out guard)
     // when the provider unmounts so a torn-down app does not keep polling.
     onCleanup(dispose);
   }

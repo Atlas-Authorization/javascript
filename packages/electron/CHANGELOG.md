@@ -1,5 +1,37 @@
 # @atlasauth/electron changelog
 
+## 0.3.0
+- **Added sign-out that revokes the session.** Until now the bridge could only clear the token, so the
+  session stayed alive server-side. New:
+  - Renderer: `signOut(options?: SignOutOptions & { bridge?: AtlasTokenBridge | null }): Promise<SignOutResult>`
+    resolves `{ revoked: boolean; activeSessionId?: string }`; `{ strict: true }` rejects with a real
+    `SignOutError` (`code: 'SIGN_OUT_REVOKE_FAILED'`, `sessionId`, `status`), re-created in the renderer from
+    the main process's reply (an error thrown across IPC loses its class). A bridge from an older preload
+    clears the token and resolves `{ revoked: false }`.
+  - Main: `AtlasBridge.signOut(options?: SignOutOptions): Promise<SignOutResult>` (rejects `SignOutError`
+    under `strict`), and the `ATLAS_TOKEN_CHANNELS.signOut` (`'atlas:token:sign-out'`) IPC handler, which
+    resolves a `SignOutReply` (`{ revoked; activeSessionId?; sessionId: string | null; status: number }`)
+    and never rejects for a failed revoke.
+  - Preload: `exposeAtlasBridge()` publishes `window.atlas.signOut(options?: SignOutRequest)`;
+    `AtlasTokenBridge.signOut?` is optional in the type.
+  - The revoke (`POST /v1/client/sessions/:id/revoke`, retried once) is sent from the main process with the
+    stored token; a token with no `sid` claim is resolved with `GET /v1/client` first. With no stored token
+    there is nothing to revoke (`{ revoked: true }`).
+- **Signed-out sessions are never re-adopted.** The session id is remembered (a tombstone) in the bridge's
+  `storage` before the revoke — session ids only, under `atlas:signed-out-sessions:<frontend api origin>` —
+  so a token for it is refused by `getToken()` (and dropped from storage) on every read, including the first
+  read after a restart, and ignored by `setToken()`. A refused session's revoke is re-tried in the background
+  with its own token and the tombstone is dropped once the server confirms.
+- **Added `CreateAtlasBridgeOptions`:** `frontendApi?: string` (absolute URL, validated like the session
+  manager), `publishableKey?: string`, `fetchImpl?: typeof fetch`, `signOutRetryDelaysMs?: number[]`
+  (default `[15000, 60000, 300000]`). Without `frontendApi` + `publishableKey`, `signOut()` can only clear
+  the token and reports `revoked: false`.
+- `activeSessionId` is reported when the server names a promoted session, but not adopted: a bearer client
+  receives no token for it.
+- `AtlasBridge.cleanup()` also removes the sign-out handler and cancels scheduled background re-tries.
+- **Added types:** `SignOutReply`, `SignOutRequest`; re-exports `SignOutError`, `SignOutOptions`,
+  `SignOutResult` from `@atlasauth/js`.
+
 ## 0.2.1
 - **`frontendApi` is validated at start-up.** A missing (or non-string) or malformed value now throws an
   `AtlasConfigError` (from `@atlasauth/js`; `code: 'FRONTEND_API_REQUIRED'` or `'FRONTEND_API_INVALID'`)

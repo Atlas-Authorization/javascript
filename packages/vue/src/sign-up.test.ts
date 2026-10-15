@@ -75,7 +75,7 @@ function makeClient(): AtlasClient {
     pendingAttempt: null,
     getToken: async () => null,
     getProviderToken: async () => null,
-    signOut: async () => undefined,
+    signOut: async () => ({ revoked: true }),
     setActiveOrganization: async () => undefined,
     reload,
   };
@@ -83,7 +83,7 @@ function makeClient(): AtlasClient {
 
 async function mountFlow(
   component: Component,
-  opts: { captchaFlows?: Record<string, unknown>; routes: Route[] },
+  opts: { captchaFlows?: Record<string, unknown>; emailDelivery?: Record<string, boolean>; routes: Route[] },
 ) {
   vi.stubGlobal(
     'fetch',
@@ -100,6 +100,7 @@ async function mountFlow(
           object: 'appearance',
           appearance: { legal: { termsUrl: null, privacyUrl: null, required: false }, signUpFields: [] },
           captchaFlows: opts.captchaFlows ?? {},
+          ...(opts.emailDelivery ? { email_delivery: opts.emailDelivery } : {}),
         });
       }
       for (const route of opts.routes) {
@@ -303,5 +304,73 @@ describe('<SignIn> captcha', () => {
     });
     await vi.waitFor(() => expect(w.find('[role="alert"]').text()).toBe(EN_US['captcha.failed']));
     await vi.waitFor(() => expect(ts.api.render.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+});
+
+describe('email delivery', () => {
+  const NO_EMAIL = { available: false, password_reset: false, password_sign_up: false };
+  const firstFactor = (c: Call) =>
+    c.path === '/v1/client/sign_ins'
+      ? json(
+          { id: 'sia_9', status: 'needs_first_factor', supported_first_factors: ['password', 'email_code', 'email_link'] },
+          201,
+        )
+      : undefined;
+
+  it('<SignUp> shows the "can\'t send email" notice and no password field when passwordSignUp is false', async () => {
+    const w = await mountFlow(SignUp, { emailDelivery: NO_EMAIL, routes: [] });
+    await vi.waitFor(() => expect(w.find('[data-atlas-email-unavailable]').exists()).toBe(true));
+    expect(w.find('[role="alert"]').text()).toBe(EN_US['signUp.emailUnavailable']);
+    expect(EN_US['signUp.emailUnavailable']).toBe(
+      "This app can't send email right now. Try another sign-in method or contact the app owner.",
+    );
+    expect(w.find('input[name="password"]').exists()).toBe(false);
+    expect(w.find('input[name="email"]').exists()).toBe(false);
+  });
+
+  it('<SignUp> keeps the form when the server omits email_delivery (an older server)', async () => {
+    const w = await mountFlow(SignUp, { routes: [] });
+    expect(w.find('input[name="password"]').exists()).toBe(true);
+    expect(w.find('[data-atlas-email-unavailable]').exists()).toBe(false);
+  });
+
+  it('<SignIn> hides email code / link from the first-factor choice while email is unavailable', async () => {
+    const w = await mountFlow(SignIn, { emailDelivery: NO_EMAIL, routes: [firstFactor] });
+    await setInput(w, 'identifier', 'me@example.com');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('input[name="password"]').exists()).toBe(true));
+    expect(w.find('[data-strategy="email_code"]').exists()).toBe(false);
+    expect(w.find('[data-strategy="email_link"]').exists()).toBe(false);
+  });
+
+  it('<SignIn> offers an emailed code when email works, and posts it as the email_code strategy', async () => {
+    const w = await mountFlow(SignIn, {
+      emailDelivery: { available: true, password_reset: true, password_sign_up: true },
+      routes: [
+        firstFactor,
+        (c) => (c.path === '/v1/client/sign_ins/sia_9/prepare_first_factor' ? json({ status: 'sent' }) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ins/sia_9/attempt_first_factor'
+            ? json({ id: 'sia_9', status: 'complete', ticket: 'tkt_9' })
+            : undefined,
+      ],
+    });
+    await setInput(w, 'identifier', 'me@example.com');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('[data-strategy="email_code"]').exists()).toBe(true));
+    expect(w.find('[data-strategy="email_link"]').exists()).toBe(true);
+
+    await w.find('[data-strategy="email_code"]').trigger('click');
+    await flush();
+    await vi.waitFor(() => expect(w.find('input[name="code"]').exists()).toBe(true));
+    expect(posts('/v1/client/sign_ins/sia_9/prepare_first_factor')[0]!.body).toEqual({ strategy: 'email_code' });
+
+    await setInput(w, 'code', '135790');
+    await submit(w);
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sia_9/attempt_first_factor')).toHaveLength(1));
+    expect(posts('/v1/client/sign_ins/sia_9/attempt_first_factor')[0]!.body).toEqual({
+      strategy: 'email_code',
+      code: '135790',
+    });
   });
 });

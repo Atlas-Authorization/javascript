@@ -1,4 +1,12 @@
-import { hasFromClaims, type ProtectCondition, type ProviderToken } from '@atlasauth/js';
+import { useEffect, useState } from 'react';
+import {
+  hasFromClaims,
+  type EmailDelivery,
+  type ProtectCondition,
+  type ProviderToken,
+  type SignOutOptions,
+  type SignOutResult,
+} from '@atlasauth/js';
 import { useAtlasState, useAtlasStore } from './AtlasProvider';
 import type { AtlasSession, AtlasUser, AuthStatus, FlowResult } from './types';
 
@@ -30,7 +38,12 @@ export function useAuth(): {
   has(condition?: ProtectCondition): boolean;
   getToken(): Promise<string | null>;
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(): Promise<void>;
+  /**
+   * Revoke the session and sign out locally. Resolves `{ revoked, activeSessionId? }`;
+   * `{ strict: true }` rejects with a `SignOutError` (after the local sign-out)
+   * when the server could not confirm the revoke.
+   */
+  signOut(options?: SignOutOptions): Promise<SignOutResult>;
 } {
   const store = useAtlasStore();
   const { status, session, claims } = useAtlasState();
@@ -118,4 +131,27 @@ export function useSignUp(): {
     signUpWithPassword: store.signUpWithPassword,
     verifyEmailCode: store.verifyEmailCode,
   };
+}
+
+/**
+ * Whether the app can deliver email (`InstanceSettings.emailDelivery`), for an
+ * app drawing its own sign-in / sign-up screens: hide "Forgot password?" when
+ * `passwordReset` is false, show `EMAIL_UNAVAILABLE_MESSAGE` instead of the
+ * email + password sign-up form when `passwordSignUp` is false, and pass
+ * `emailDelivery` to `offeredFirstFactors()` to drop email code / link. Null
+ * until loaded; everything reads as available if the settings can't be read.
+ */
+export function useEmailDelivery(): { isLoaded: boolean; emailDelivery: EmailDelivery | null } {
+  const store = useAtlasStore();
+  const [emailDelivery, setEmailDelivery] = useState<EmailDelivery | null>(null);
+  useEffect(() => {
+    let live = true;
+    void store.getEmailDelivery().then((delivery) => {
+      if (live) setEmailDelivery(delivery);
+    });
+    return () => {
+      live = false;
+    };
+  }, [store]);
+  return { isLoaded: emailDelivery !== null, emailDelivery };
 }

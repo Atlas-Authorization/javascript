@@ -8,16 +8,22 @@ import {
 } from 'vue';
 import {
   FapiClient,
+  SignOutGuard,
   TokenCache,
+  closeOAuthPopupAfterSignIn,
+  completeOAuthPopupLanding,
   getProviderToken as fetchProviderToken,
+  mapOAuthPopupPayload,
   msUntilRefresh,
   readExpiry,
+  readPopupLanding,
   readRedirectResult,
   resolveFrontendApi,
   stripRedirectParams,
   type ProviderToken,
-  runFrontChannelLogoutFromResponse,
+  type RedirectResult,
   type SignOutOptions,
+  type SignOutResult,
 } from '@atlasauth/js';
 import { applyAppearanceToDom } from '@atlasauth/design/runtime';
 import { instanceDesignFrom, renderAppearance, type Appearance, type InstanceDesign } from './appearance';
@@ -72,7 +78,15 @@ export interface AtlasClient {
    * server refreshes a stale token on read; the refresh token is never exposed.
    */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(options?: SignOutOptions): Promise<void>;
+  /**
+   * End the session: revoke it on the Frontend API (retried once), sign out
+   * locally, and resolve `{ revoked, activeSessionId? }`. A revoke the server
+   * never confirmed still signs out here, and this browser never re-adopts the
+   * session (it is remembered and the revoke re-tried in the background);
+   * `{ strict: true }` rejects with a `SignOutError` in that case. When the
+   * server promotes another account signed in on this browser, it is adopted.
+   */
+  signOut(options?: SignOutOptions): Promise<SignOutResult>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
   reload(): Promise<void>;
 }
@@ -191,7 +205,24 @@ function createAtlasClient(options: CreateAtlasOptions): {
       },
     });
 
+  // The safer sign-out shared with every framework SDK: tombstones (kept in
+  // localStorage per FAPI origin, so a tab opened later stays signed out), the
+  // retried revoke and front-channel logout, the background re-try.
+  const guard = new SignOutGuard({ request: call, frontendApi: baseUrl });
+
+  const clearState = () => {
+    cache.clear();
+    status.value = 'signed_out';
+    user.value = null;
+    session.value = null;
+    claims.value = null;
+    memberships.value = [];
+  };
+
   const applyToken = (jwt: string, sessionId: string) => {
+    // A refresh that was in flight when the user signed out must not put the
+    // signed-out session's token back.
+    if (guard.isSignedOut(sessionId)) return;
     const expiresAt = readExpiry(jwt);
     if (!expiresAt) return;
     cache.set({ jwt, expiresAt, sessionId });
@@ -210,13 +241,11 @@ function createAtlasClient(options: CreateAtlasOptions): {
         organization_memberships?: AtlasOrganizationMembership[];
       };
 
-      if (!body.session || !body.user) {
-        cache.clear();
-        status.value = 'signed_out';
-        user.value = null;
-        session.value = null;
-        claims.value = null;
-        memberships.value = [];
+      // The browser may still hold a refresh cookie for a session this browser
+      // signed out of (the revoke never landed): stay signed out. The guard
+      // re-tries the revoke in the background and drops the tombstone once it lands.
+      if (!body.session || !body.user || guard.refuse(body.session.id)) {
+        clearState();
         return;
       }
 
@@ -279,22 +308,19 @@ function createAtlasClient(options: CreateAtlasOptions): {
   const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch });
   const getProviderToken = (provider: string) => fetchProviderToken(fapiClient, provider);
 
-  const signOut = async (options?: SignOutOptions) => {
-    const current = cache.peek();
-    if (current) {
-      const revoked = await call(`/v1/client/sessions/${current.sessionId}/revoke`, {
-        method: 'POST',
-      }).catch(() => undefined);
-      // OIDC Front-Channel Logout: let the apps signed in through this session
-      // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
-      if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(revoked);
-    }
-    cache.clear();
-    status.value = 'signed_out';
-    user.value = null;
-    session.value = null;
-    claims.value = null;
-    memberships.value = [];
+  /** The session this client holds: the token cache's, else the booted one. */
+  const currentSessionId = () => cache.peek()?.sessionId ?? session.value?.id ?? null;
+
+  const signOut = async (options?: SignOutOptions): Promise<SignOutResult> => {
+    // Tombstone → revoke (retried once) → front-channel logout. With no session
+    // in memory (e.g. called before boot finished) the guard finds the one the
+    // cookies carry, so a missing token never skips the server-side sign-out.
+    const attempt = await guard.revoke(currentSessionId(), options);
+    clearState();
+    // §L1 the server promoted another account signed in on this browser: adopt
+    // it deliberately (the revoke response already set its cookies).
+    if (guard.promoted(attempt)) await reload();
+    return guard.settle(attempt, options);
   };
 
   const setActiveOrganization = async (organizationId: string | null) => {
@@ -326,27 +352,65 @@ function createAtlasClient(options: CreateAtlasOptions): {
     watch([status, claims], () => scheduleRefresh(), { flush: 'post' });
   });
 
+  // Another tab signed out of THIS session (its tombstone reached the shared
+  // localStorage): drop the token and re-check, which now refuses it. Lives for
+  // the app's lifetime, like the refresh watcher.
+  guard.watch(currentSessionId, () => {
+    cache.clear();
+    void reload();
+  });
+
   /**
    * §6.3 step 3: complete a redirect-based sign-in. An OAuth or hosted-page flow
    * lands back here with a one-time ticket in the URL; exchange it for cookies,
    * scrub the URL so a reload can't replay it, THEN boot. A redirect that only
    * carries a `__atlas_status` (a second factor is still owed) has no ticket, so
    * nothing is exchanged and the app boots signed-out — exactly as intended.
+   *
+   * §oauth popup mode: this page may also be running INSIDE the sign-in popup.
+   *   - As the landing of a popup whose opener was severed by a
+   *     Cross-Origin-Opener-Policy (`#atlas_popup_result=…`): relay the result
+   *     to the opener over BroadcastChannel and close. If no opener takes it
+   *     (its tab is gone), finish the sign-in here like a redirect.
+   *   - After finishing a sign-in here (the redirect flow ran in the popup): tell
+   *     the waiting opener and close the popup.
    */
   const boot = async () => {
-    const result =
+    const fromUrl =
       typeof window !== 'undefined' ? readRedirectResult(window.location.search) : null;
 
+    let result: RedirectResult | null = fromUrl;
+    // Checked synchronously first so an ordinary page load sends the session
+    // request before anything else (the design fetch is deferred behind it).
+    const landing =
+      typeof window !== 'undefined' && readPopupLanding(window.location.hash)
+        ? await completeOAuthPopupLanding().catch(() => null)
+        : null;
+    if (landing && !landing.delivered) {
+      const outcome = mapOAuthPopupPayload(landing.payload);
+      if (outcome?.ticket && outcome.attemptId) {
+        result = { attemptId: outcome.attemptId, ticket: outcome.ticket };
+      } else if (outcome?.continuationUrl) {
+        // A second factor / connect / provider error: the redirect flow's page.
+        window.location.replace(outcome.continuationUrl);
+        return;
+      }
+    }
+
+    let exchanged = false;
     if (result?.ticket) {
-      await call('/v1/client/tickets/exchange', {
+      const response = await call('/v1/client/tickets/exchange', {
         method: 'POST',
         body: JSON.stringify({ attempt_id: result.attemptId, ticket: result.ticket }),
       }).catch(() => undefined);
+      exchanged = !!response?.ok;
     }
-    if (result && typeof window !== 'undefined') {
+    if (fromUrl && typeof window !== 'undefined') {
       window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
     }
     await reload();
+    // Signed in inside the Atlas popup: hand back to the opener and close.
+    if (exchanged) void closeOAuthPopupAfterSignIn();
   };
 
   /** The dashboard design from `GET /v1/appearance`; null on any failure (best-effort). */

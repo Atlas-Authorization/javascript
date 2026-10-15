@@ -1,4 +1,10 @@
-import { FapiClient, resolveFrontendApi } from '@atlasauth/js';
+import {
+  FapiClient,
+  SignOutError,
+  resolveFrontendApi,
+  type SignOutOptions,
+  type SignOutResult,
+} from '@atlasauth/js';
 import { ATLAS_BRIDGE_KEY, type AtlasTokenBridge } from './shared';
 
 /**
@@ -80,3 +86,40 @@ export function createAtlasClient(options: CreateAtlasClientOptions): FapiClient
     fetchImpl: bearerFetch(fetchImpl, getToken),
   });
 }
+
+/**
+ * Sign out from the renderer. The MAIN process revokes the session on the
+ * Frontend API (retried once) with the token it holds, clears the token, and
+ * remembers the session so it is never handed out again (see
+ * `AtlasBridge.signOut`). Resolves `{ revoked, activeSessionId? }`; with
+ * `{ strict: true }` it rejects with a `SignOutError` — after the token is
+ * cleared — when the revoke was not confirmed. The error is re-created here
+ * from the main process's reply, because an error thrown across IPC /
+ * `contextBridge` arrives as a bare `Error` and `instanceof SignOutError`
+ * would fail.
+ *
+ * A bridge from an older preload (no `signOut`) can only clear the token: it
+ * resolves `{ revoked: false }`.
+ */
+export async function signOut(
+  options: SignOutOptions & {
+    /** The token bridge. Defaults to `window.atlas` (via {@link getAtlasBridge}). */
+    bridge?: AtlasTokenBridge | null;
+  } = {},
+): Promise<SignOutResult> {
+  const bridge = options.bridge === undefined ? getAtlasBridge() : options.bridge;
+  if (!bridge) throw new Error('Atlas: signOut() found no token bridge — call exposeAtlasBridge() in the preload.');
+  let reply: { revoked: boolean; activeSessionId?: string; sessionId: string | null; status: number };
+  if (bridge.signOut) {
+    reply = await bridge.signOut(options.frontchannel === undefined ? {} : { frontchannel: options.frontchannel });
+  } else {
+    await bridge.clearToken();
+    reply = { revoked: false, sessionId: null, status: 0 };
+  }
+  if (!reply.revoked && options.strict) throw new SignOutError(reply.sessionId ?? '', reply.status);
+  return reply.activeSessionId
+    ? { revoked: reply.revoked, activeSessionId: reply.activeSessionId }
+    : { revoked: reply.revoked };
+}
+
+export { SignOutError, type SignOutOptions, type SignOutResult } from '@atlasauth/js';

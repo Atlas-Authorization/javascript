@@ -54,7 +54,7 @@ afterEach(() => {
 
 async function mountFlow(
   component: typeof SignIn | typeof SignUp,
-  opts: { captchaFlows?: Record<string, unknown>; routes: Route[] },
+  opts: { captchaFlows?: Record<string, unknown>; emailDelivery?: Record<string, unknown>; routes: Route[] },
 ) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -70,6 +70,7 @@ async function mountFlow(
         object: 'appearance',
         appearance: { legal: { termsUrl: null, privacyUrl: null, required: false }, signUpFields: [] },
         captchaFlows: opts.captchaFlows ?? {},
+        ...(opts.emailDelivery ? { email_delivery: opts.emailDelivery } : {}),
       });
     }
     for (const route of opts.routes) {
@@ -235,5 +236,67 @@ describe('<SignIn> captcha', () => {
       captcha_token: 'tok-si',
     });
     await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+  });
+});
+
+describe('email delivery', () => {
+  const NO_EMAIL = { available: false, password_reset: false, password_sign_up: false };
+
+  it('<SignUp> shows the "can\'t send email" notice instead of the email + password form', async () => {
+    const el = await mountFlow(SignUp, { emailDelivery: NO_EMAIL, routes: [] });
+    await vi.waitFor(() =>
+      expect(el.querySelector('[role="alert"]')?.textContent).toBe(SIGN_UP_TEXT['signUp.emailUnavailable']),
+    );
+    expect(SIGN_UP_TEXT['signUp.emailUnavailable']).toBe(
+      "This app can't send email right now. Try another sign-in method or contact the app owner.",
+    );
+    expect(el.querySelector('input[name="password"]')).toBeNull();
+    expect(el.querySelector('input[name="email"]')).toBeNull();
+    expect(el.querySelector('button[type="submit"]')).toBeNull();
+  });
+
+  it('<SignUp> keeps the form when the server omits email_delivery', async () => {
+    const el = await mountFlow(SignUp, { routes: [] });
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    expect(el.textContent).not.toContain(SIGN_UP_TEXT['signUp.emailUnavailable']);
+  });
+
+  const toFirstFactor: Route = (c) =>
+    c.path === '/v1/client/sign_ins'
+      ? json({ id: 'sia_9', status: 'needs_first_factor', supported_first_factors: ['password', 'email_code'] }, 201)
+      : undefined;
+
+  it('<SignIn> hides email_code from the first-factor choice when email is unavailable', async () => {
+    const el = await mountFlow(SignIn, { emailDelivery: NO_EMAIL, routes: [toFirstFactor] });
+    setInput(el, 'identifier', 'me@example.com');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    expect(el.textContent).not.toContain('Email me a code');
+  });
+
+  it('<SignIn> offers email_code when email can be delivered, and submits the emailed code', async () => {
+    const el = await mountFlow(SignIn, {
+      routes: [
+        toFirstFactor,
+        (c) => (c.path === '/v1/client/sign_ins/sia_9/prepare_first_factor' ? json({}) : undefined),
+      ],
+    });
+    setInput(el, 'identifier', 'me@example.com');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    const button = Array.from(el.querySelectorAll('button')).find((b) => b.textContent === 'Email me a code');
+    expect(button).toBeDefined();
+    button!.click();
+    await vi.waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    expect(posts('/v1/client/sign_ins/sia_9/prepare_first_factor')[0]!.body).toEqual({ strategy: 'email_code' });
+    expect(el.querySelector('input[name="password"]')).toBeNull();
+
+    setInput(el, 'code', '123456');
+    submit(el);
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sia_9/attempt_first_factor')).toHaveLength(1));
+    expect(posts('/v1/client/sign_ins/sia_9/attempt_first_factor')[0]!.body).toEqual({
+      strategy: 'email_code',
+      code: '123456',
+    });
   });
 });

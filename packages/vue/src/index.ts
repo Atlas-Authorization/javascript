@@ -19,3 +19,6 @@ export type {
   CaptchaWidgetMode,
   FlowCaptcha,
 } from '@atlasauth/js';
+
+// What `signOut()` resolves with, and what `signOut({ strict: true })` rejects with.
+export { SignOutError, type SignOutResult } from '@atlasauth/js';

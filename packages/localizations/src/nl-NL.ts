@@ -35,6 +35,7 @@ export const nlNL: Localization = {
   'signUp.terms': 'Servicevoorwaarden',
   'signUp.privacy': 'Privacybeleid',
   'signUp.and': 'en',
+  'signUp.emailUnavailable': 'Deze app kan op dit moment geen e-mail versturen. Probeer een andere manier om in te loggen of neem contact op met de eigenaar van de app.',
   'captcha.prompt': 'Voltooi de beveiligingscontrole om verder te gaan.',
   'captcha.required': 'Voltooi de beveiligingscontrole en probeer het opnieuw.',
   'captcha.failed': 'De beveiligingscontrole is mislukt. Probeer het opnieuw.',

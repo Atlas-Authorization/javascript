@@ -9,7 +9,10 @@ import {
   signInCaptchaOptions,
   flowFromPending,
   initialFlow,
+  nextStep,
+  offeredFirstFactors,
   pollAttempt,
+  prepareFactor,
   shouldKeepPolling,
   type CaptchaController,
   type FlowState,
@@ -47,6 +50,12 @@ export class AtlasFlowController {
   readonly captchaDrawn = signal(false);
   /** Whether {@link signUpCaptcha} currently draws a widget (for templates). */
   readonly signUpCaptchaDrawn = signal(false);
+  /**
+   * The first factor the server was asked to send ({@link prepare}) on the
+   * current `needs_first_factor` step — the form then collects its code. Null
+   * otherwise.
+   */
+  readonly preparedFactor = signal<'email_code' | null>(null);
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private identifier = '';
 
@@ -72,6 +81,46 @@ export class AtlasFlowController {
     }
   }
 
+  /**
+   * The first factors to offer on a `needs_first_factor` step: the server's list
+   * without email code / link while the app cannot deliver email
+   * (`settings.emailDelivery.available === false`). Empty on any other step.
+   */
+  firstFactors(): string[] {
+    const attempt = this.state().attempt;
+    const step = attempt ? nextStep(attempt) : null;
+    return step?.kind === 'collect_first_factor'
+      ? offeredFirstFactors(step.strategies, this.settings()?.emailDelivery)
+      : [];
+  }
+
+  /**
+   * True when email + password sign-up cannot complete because the app cannot
+   * send the verification email (`settings.emailDelivery.passwordSignUp === false`):
+   * `<atlas-sign-up>` shows the "can't send email" notice instead of the form.
+   */
+  signUpEmailUnavailable(): boolean {
+    return this.settings()?.emailDelivery.passwordSignUp === false;
+  }
+
+  /** False when a password reset email cannot be delivered — hide "Forgot password?". */
+  passwordResetAvailable(): boolean {
+    return this.settings()?.emailDelivery.passwordReset !== false;
+  }
+
+  /**
+   * Ask the server to email a sign-in code for the current `needs_first_factor`
+   * step (`POST …/prepare_first_factor`); the form then collects the code, which
+   * {@link submit} posts as the `email_code` strategy.
+   */
+  async prepare(strategy: 'email_code'): Promise<void> {
+    if (!this.firstFactors().includes(strategy)) return;
+    this.state.update((current) => ({ ...current, busy: true, errors: [] }));
+    const next = await prepareFactor(this.client, this.state(), strategy);
+    this.setState(next);
+    if (!next.errors.length) this.preparedFactor.set(strategy);
+  }
+
   /** Keep both captchas in step with the settings and the flow's current step. */
   private syncCaptcha(): void {
     const settings = this.settings();
@@ -90,6 +139,8 @@ export class AtlasFlowController {
 
   private setState(next: FlowState): void {
     this.state.set(next);
+    // A prepared factor belongs to the first-factor step it was sent for.
+    if (next.attempt?.status !== 'needs_first_factor') this.preparedFactor.set(null);
     this.syncCaptcha();
   }
 

@@ -19,7 +19,7 @@ export { diagnoseProvider } from '@atlasauth/js';
 // Provider configuration errors (a missing/invalid `frontendApi`) and the
 // sign-out result/error types, surfaced from @atlasauth/js.
 export { AtlasConfigError, SAME_ORIGIN_FRONTEND_API, SignOutError } from '@atlasauth/js';
-export type { AtlasConfigErrorCode, SignOutOptions, SignOutResult } from '@atlasauth/js';
+export type { AtlasConfigErrorCode, SignOutOptions, SignOutResult, TombstoneStore } from '@atlasauth/js';
 // Built-in UI languages for `<AtlasProvider locale>` + CI coverage helpers.
 export { LOCALIZATION_KEYS, missingKeys, resolveLocale } from '@atlasauth/localizations';
 export type { SupportedLocale } from '@atlasauth/localizations';

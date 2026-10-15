@@ -9,12 +9,14 @@ import {
   signInCaptchaOptions,
   flowFromPending,
   pollAttempt,
+  prepareFactor,
   shouldKeepPolling,
   type CaptchaController,
   type FlowState,
   type InstanceSettings,
   type ProviderToken,
   type SignOutOptions,
+  type SignOutResult,
 } from '@atlasauth/js';
 import { useAtlas, type AuthStatus } from './context';
 import { translate } from './i18n';
@@ -85,7 +87,12 @@ export interface UseAuth {
   getToken(): Promise<string | null>;
   /** §6.6 the user's own live access token at a connected social provider. */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(options?: SignOutOptions): Promise<void>;
+  /**
+   * Revoke the session and drop all in-memory state. Resolves
+   * `{ revoked, activeSessionId? }`; `{ strict: true }` rejects with a
+   * `SignOutError` when the server could not confirm the revoke.
+   */
+  signOut(options?: SignOutOptions): Promise<SignOutResult>;
   /** Mirrors `<Protect>`, for logic that is not a render decision. */
   has(condition: ProtectCondition): boolean;
 }
@@ -138,8 +145,12 @@ export function getToken(): Promise<string | null> {
   return useAtlas().getToken();
 }
 
-/** Revoke the session and drop all in-memory state. */
-export function signOut(options?: SignOutOptions): Promise<void> {
+/**
+ * Revoke the session and drop all in-memory state. Resolves
+ * `{ revoked, activeSessionId? }`; `{ strict: true }` rejects with a
+ * `SignOutError` (after the local sign-out) when the revoke was not confirmed.
+ */
+export function signOut(options?: SignOutOptions): Promise<SignOutResult> {
   return useAtlas().signOut(options);
 }
 
@@ -163,9 +174,15 @@ export interface FlowController {
    */
   create(values: Record<string, string>, consent?: boolean): void;
   /**
+   * Ask the server to email a sign-in code or link on the first-factor step
+   * (`POST …/prepare_first_factor`). Resolves true once it was sent; the code is
+   * then posted with {@link submit}, a link is collected by polling.
+   */
+  prepare(strategy: 'email_code' | 'email_link'): Promise<boolean>;
+  /**
    * The instance's public sign-in / sign-up settings (captcha, sign-up fields,
-   * legal consent) from `GET /v1/appearance`; null until loaded or when the
-   * server could not be reached.
+   * legal consent, email delivery) from `GET /v1/appearance`; null until loaded
+   * or when the server could not be reached.
    */
   settings: Readable<InstanceSettings | null>;
   /** The sign-in captcha (identifier step / `needs_captcha` challenge). */
@@ -270,6 +287,14 @@ function createFlow(): FlowController {
     })();
   }
 
+  async function prepare(strategy: 'email_code' | 'email_link'): Promise<boolean> {
+    state.update((current) => ({ ...current, busy: true, errors: [] }));
+    const next = await prepareFactor(client, get(state), strategy);
+    state.set({ ...next, busy: false });
+    maybeStartPolling();
+    return next.errors.length === 0;
+  }
+
   function destroy(): void {
     stopPolling();
     unsubscribeCaptcha();
@@ -281,6 +306,7 @@ function createFlow(): FlowController {
     state: { subscribe: state.subscribe },
     submit,
     create,
+    prepare,
     settings: { subscribe: settings.subscribe },
     captcha,
     signUpCaptcha,

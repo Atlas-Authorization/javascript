@@ -12,16 +12,21 @@ import { BehaviorSubject, Observable, combineLatest } from 'rxjs';
 import { distinctUntilChanged, map } from 'rxjs/operators';
 import {
   FapiClient,
+  SignOutGuard,
   TokenCache,
+  closeOAuthPopupAfterSignIn,
+  completeOAuthPopupLanding,
   getProviderToken as fetchProviderToken,
+  mapOAuthPopupPayload,
   msUntilRefresh,
   readExpiry,
   readRedirectResult,
   resolveFrontendApi,
   stripRedirectParams,
   type ProviderToken,
-  runFrontChannelLogoutFromResponse,
+  type RedirectResult,
   type SignOutOptions,
+  type SignOutResult,
 } from '@atlasauth/js';
 import { evaluate, type ProtectCondition } from '@atlasauth/authz';
 import { ATLAS_OPTIONS } from './atlas.config';
@@ -74,6 +79,15 @@ export class AtlasService implements OnDestroy {
   private readonly cache = new TokenCache();
   private readonly fapiClient: FapiClient;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * The sessions this browser signed out of (tombstones in localStorage, per
+   * Frontend API origin), the revoke and its background re-tries. Every reload /
+   * refresh asks it before adopting a session, so a sign-out the server never
+   * confirmed is not undone by the still-valid refresh cookie.
+   */
+  private readonly guard: SignOutGuard;
+  private stopWatchingSignOut: (() => void) | null = null;
 
   private readonly catalog: Catalog;
 
@@ -161,6 +175,11 @@ export class AtlasService implements OnDestroy {
       fetchImpl: this.doFetch,
     });
 
+    this.guard = new SignOutGuard({
+      request: (path, init) => this.call(path, init),
+      frontendApi: this.baseUrl,
+    });
+
     // Captured synchronously (not in an async init) so it is available before any
     // flow component reads it: a needs_second_factor redirect carries a status but
     // no ticket, and that is what the 2FA resume seeds from.
@@ -169,11 +188,23 @@ export class AtlasService implements OnDestroy {
     // Boot once, browser only. On the server there is no cookie jar to read a
     // session from, so we leave the state at `loading` and let hydration boot it.
     if (this.isBrowser) {
+      // Another tab signed out of THIS session (its tombstone reached the shared
+      // store): drop the token and re-check, which then refuses the session.
+      this.stopWatchingSignOut = this.guard.watch(
+        () => this.cache.peek()?.sessionId ?? this._session.value?.id,
+        () => {
+          this.cache.clear();
+          void this.reload();
+        },
+      );
       void this.boot();
     }
   }
 
   ngOnDestroy(): void {
+    this.stopWatchingSignOut?.();
+    this.stopWatchingSignOut = null;
+    this.guard.dispose();
     this.clearRefreshTimer();
     this._status.complete();
     this._user.complete();
@@ -263,24 +294,26 @@ export class AtlasService implements OnDestroy {
     return evaluate(this._claims.value, condition).allowed;
   }
 
-  /** Revoke the current session server-side and drop all local auth state. */
-  async signOut(options?: SignOutOptions): Promise<void> {
-    const current = this.cache.peek();
-    if (current) {
-      const revoked = await this.call(`/v1/client/sessions/${current.sessionId}/revoke`, {
-        method: 'POST',
-      }).catch(() => undefined);
-      // OIDC Front-Channel Logout: let the apps signed in through this session
-      // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
-      if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(revoked);
-    }
-    this.clearRefreshTimer();
-    this.cache.clear();
-    this._status.next('signed_out');
-    this._user.next(null);
-    this._session.next(null);
-    this._claims.next(null);
-    this._memberships.next([]);
+  /**
+   * Revoke the current session server-side and drop all local auth state.
+   *
+   * The session id is remembered before the revoke (a tombstone shared by every
+   * tab), so a reload, a token refresh, a sibling tab or a tab opened later never
+   * re-adopts it — even when the revoke failed (it is retried once, then again in
+   * the background) and the refresh cookie is still valid. Resolves
+   * `{ revoked, activeSessionId? }`; with `{ strict: true }` an unconfirmed revoke
+   * rejects with a `SignOutError` instead (after the local sign-out). A parked
+   * session the server promoted on revoke is adopted. Front-channel logout runs
+   * unless `{ frontchannel: false }`.
+   */
+  async signOut(options: SignOutOptions = {}): Promise<SignOutResult> {
+    // With no cached token the guard finds the cookie session itself
+    // (GET /v1/client), so a missing JWT never skips the revoke.
+    const sessionId = this.cache.peek()?.sessionId ?? this._session.value?.id ?? null;
+    const attempt = await this.guard.revoke(sessionId, options);
+    this.clearLocalState();
+    if (this.guard.promoted(attempt)) await this.reload();
+    return this.guard.settle(attempt, options);
   }
 
   /**
@@ -316,14 +349,10 @@ export class AtlasService implements OnDestroy {
         organization_memberships?: AtlasOrganizationMembership[];
       };
 
-      if (!body.session || !body.user) {
-        this.clearRefreshTimer();
-        this.cache.clear();
-        this._status.next('signed_out');
-        this._user.next(null);
-        this._session.next(null);
-        this._claims.next(null);
-        this._memberships.next([]);
+      // A session this browser signed out of is never re-adopted from the
+      // refresh cookie; the guard re-tries its revoke in the background.
+      if (!body.session || !body.user || this.guard.refuse(body.session.id)) {
+        this.clearLocalState();
         return;
       }
 
@@ -351,18 +380,41 @@ export class AtlasService implements OnDestroy {
    * has no ticket, so nothing is exchanged and the app boots signed-out.
    */
   private async boot(): Promise<void> {
-    const result = readRedirectResult(window.location.search);
+    const fromUrl = readRedirectResult(window.location.search);
+    let result: RedirectResult | null = fromUrl;
 
+    // §oauth popup mode: this page may be the landing of a sign-in popup whose
+    // opener a Cross-Origin-Opener-Policy severed (`#atlas_popup_result=…`).
+    // The result is relayed to the opener, which redeems the ticket, and this
+    // window closes. If no opener takes it (its tab is gone), finish here like
+    // a redirect.
+    const landing = await completeOAuthPopupLanding().catch(() => null);
+    if (landing && !landing.delivered) {
+      const outcome = mapOAuthPopupPayload(landing.payload);
+      if (outcome?.ticket && outcome.attemptId) {
+        result = { attemptId: outcome.attemptId, ticket: outcome.ticket };
+      } else if (outcome?.continuationUrl) {
+        // A second factor / connect step / provider error: the redirect flow's page.
+        window.location.replace(outcome.continuationUrl);
+        return;
+      }
+    }
+
+    let exchanged = false;
     if (result?.ticket) {
-      await this.call('/v1/client/tickets/exchange', {
+      const response = await this.call('/v1/client/tickets/exchange', {
         method: 'POST',
         body: JSON.stringify({ attempt_id: result.attemptId, ticket: result.ticket }),
       }).catch(() => undefined);
+      exchanged = !!response?.ok;
     }
-    if (result) {
+    if (fromUrl) {
       window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
     }
     await this.reload();
+    // Signed in inside the Atlas popup (the redirect flow ran in it): hand back
+    // to the waiting opener and close. A no-op in an ordinary tab.
+    if (exchanged) void closeOAuthPopupAfterSignIn();
   }
 
   private readPendingAttempt(): { id: string; status: string } | null {
@@ -387,6 +439,8 @@ export class AtlasService implements OnDestroy {
   }
 
   private applyToken(jwt: string, sessionId: string): void {
+    // An in-flight refresh must not resurrect a session signed out meanwhile.
+    if (this.guard.isSignedOut(sessionId)) return;
     const expiresAt = readExpiry(jwt);
     if (!expiresAt) return;
 
@@ -411,6 +465,16 @@ export class AtlasService implements OnDestroy {
       // The session may genuinely be gone. Re-boot rather than guess.
       await this.reload();
     }
+  }
+
+  private clearLocalState(): void {
+    this.clearRefreshTimer();
+    this.cache.clear();
+    this._status.next('signed_out');
+    this._user.next(null);
+    this._session.next(null);
+    this._claims.next(null);
+    this._memberships.next([]);
   }
 
   /** §7.4: proactive, jittered refresh scheduled from the token's own expiry. */

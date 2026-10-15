@@ -1,6 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAtlasClient } from './client';
 import type { AtlasSnapshot } from './types';
+
+// Sign-out tombstones live in localStorage (shared by every tab): start clean.
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+});
 
 /**
  * The client tests drive the real engine through a mocked `fetch`, so the boot

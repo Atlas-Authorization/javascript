@@ -76,6 +76,7 @@ export interface LocalizationResource {
   'signUp.terms': string;
   'signUp.privacy': string;
   'signUp.and': string;
+  'signUp.emailUnavailable': string;
 
   'captcha.prompt': string;
   'captcha.required': string;

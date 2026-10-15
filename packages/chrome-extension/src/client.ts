@@ -1,11 +1,17 @@
 import {
   FapiClient,
+  SessionTombstones,
+  SignOutGuard,
   msUntilRefresh,
   readExpiry,
   resolveFrontendApi,
+  type FapiRequest,
   type ProviderToken,
+  type SignOutOptions,
+  type SignOutResult,
+  type TombstoneStore,
 } from '@atlasauth/js';
-import { StorageCache, type TokenStore } from './storage';
+import { StorageCache, createChromeTombstoneStore, type TokenStore } from './storage';
 
 /**
  * The extension FAPI layer.
@@ -62,6 +68,122 @@ function urlOf(input: RequestInfo | URL): string {
   return (input as Request).url;
 }
 
+/** The session id in a stored token, or null. */
+function sidOf(token: string | null | undefined): string | null {
+  const sid = token ? decodeTokenClaims(token)?.sid : undefined;
+  return typeof sid === 'string' && sid ? sid : null;
+}
+
+export interface ExtensionSignOutGuardOptions {
+  publishableKey: string;
+  /** The (validated) Frontend API base URL. Tombstones are kept per Frontend API origin. */
+  frontendApi: string;
+  /** Injectable for tests; defaults to the platform `fetch`. */
+  fetchImpl?: typeof fetch;
+  /** Where tombstones live. Defaults to `chrome.storage.local`. */
+  tombstoneStore?: TombstoneStore;
+  /** Delays (ms) between background re-tries of a failed revoke. @default `[15_000, 60_000, 300_000]` */
+  retryDelaysMs?: number[];
+}
+
+/**
+ * The safer sign-out for an extension, where several surfaces (popup, options
+ * page, content scripts, the service worker) share one token in
+ * `chrome.storage` but each has its own memory.
+ *
+ * Wraps `@atlasauth/js`'s {@link SignOutGuard} with tombstones in
+ * `chrome.storage.local`, and re-reads them before every decision — so a surface
+ * that booted before another one signed out still sees the sign-out: it neither
+ * adopts the signed-out session's token ({@link guardStore} `getToken`) nor
+ * writes back a token a refresh rotated for it (`setToken`). Revokes ride on the
+ * very token being dropped ({@link bearerRequest}), so a background re-try can
+ * still authenticate after the store was cleared.
+ */
+export class ExtensionSignOutGuard {
+  readonly guard: SignOutGuard;
+  private readonly baseUrl: string;
+  private readonly publishableKey: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly store: TombstoneStore;
+  /** Tokens dropped at sign-out, by session id, for a revoke re-tried after the store was cleared. */
+  private readonly dropped = new Map<string, string>();
+
+  constructor(options: ExtensionSignOutGuardOptions) {
+    this.baseUrl = options.frontendApi;
+    this.publishableKey = options.publishableKey;
+    this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
+    this.store = options.tombstoneStore ?? createChromeTombstoneStore();
+    this.guard = new SignOutGuard({
+      request: this.bearerRequest(null),
+      frontendApi: options.frontendApi,
+      store: this.store,
+      ...(options.retryDelaysMs ? { retryDelaysMs: options.retryDelaysMs } : {}),
+    });
+  }
+
+  /** A Frontend API request carrying exactly `token` as its bearer (none for null). */
+  bearerRequest(token: string | null): FapiRequest {
+    return (path, init) => {
+      const headers = new Headers(init?.headers);
+      headers.set('x-publishable-key', this.publishableKey);
+      if (token) headers.set('authorization', `Bearer ${token}`);
+      return this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers });
+    };
+  }
+
+  /**
+   * Whether the extension signed out of `sessionId` — on ANY surface: the
+   * tombstones another surface wrote to the shared store are learned first.
+   */
+  async isSignedOut(sessionId: string | null | undefined): Promise<boolean> {
+    if (!sessionId) return false;
+    await this.guard.ready;
+    if (this.guard.isSignedOut(sessionId)) return true;
+    const shared = new SessionTombstones({ frontendApi: this.baseUrl, store: this.store });
+    await shared.ready;
+    this.guard.learn({ signedOut: shared.list() });
+    return this.guard.isSignedOut(sessionId);
+  }
+
+  /** Remember the token of a session being signed out of, for later re-tries of its revoke. */
+  remember(sessionId: string, token: string): void {
+    this.dropped.set(sessionId, token);
+  }
+
+  /** The token a session was signed out with, if this surface dropped it. */
+  droppedToken(sessionId: string): string | null {
+    return this.dropped.get(sessionId) ?? null;
+  }
+
+  /**
+   * Wrap a {@link TokenStore} so it never hands out — nor accepts — a token of
+   * a session the extension signed out of. A refused stored token is removed
+   * and its session revoked again in the background, as itself.
+   */
+  guardStore(store: TokenStore): TokenStore {
+    return {
+      getToken: async () => {
+        const token = await store.getToken();
+        const sid = sidOf(token);
+        if (!token || !sid || !(await this.isSignedOut(sid))) return token;
+        this.guard.refuse(sid, this.bearerRequest(token));
+        // Only if no surface has stored a newer token meanwhile.
+        if ((await store.getToken().catch(() => null)) === token) {
+          await store.removeToken().catch(() => undefined);
+        }
+        return null;
+      },
+      setToken: async (token: string) => {
+        // A refresh that was in flight at sign-out (here or on another surface)
+        // must not write the signed-out session's token back.
+        if (await this.isSignedOut(sidOf(token))) return;
+        await store.setToken(token);
+      },
+      removeToken: () => store.removeToken(),
+    };
+  }
+}
+
 /**
  * A {@link bearerFetch} that ALSO captures a freshly-minted session token out of
  * the response and persists it to the store.
@@ -78,17 +200,59 @@ function urlOf(input: RequestInfo | URL): string {
 export function persistingBearerFetch(
   fetchImpl: typeof fetch,
   store: TokenStore,
+  /**
+   * Make it sign-out safe: a stored token of a signed-out session is never
+   * sent nor written back, and a revoke of the stored token's session
+   * tombstones it and drops the token from `chrome.storage` for every surface.
+   */
+  signOutGuard?: ExtensionSignOutGuard,
 ): typeof fetch {
+  const tokens = signOutGuard ? signOutGuard.guardStore(store) : store;
   return async (input: RequestInfo | URL, init?: RequestInit) => {
-    const token = await store.getToken();
+    let token = await tokens.getToken();
+    const url = urlOf(input);
+    const method = (init?.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase();
+    const revoking = signOutGuard && method === 'POST' ? /\/v1\/client\/sessions\/([^/?#]+)\/revoke(?:[?#]|$)/.exec(url) : null;
+    let dropping: string | null = null;
+    if (signOutGuard && revoking) {
+      const sid = decodeURIComponent(revoking[1]!);
+      if (token && sidOf(token) === sid) {
+        // Signing out of the session this extension is signed in with:
+        // remember it first, so no surface re-adopts it from here on.
+        await signOutGuard.guard.ready;
+        signOutGuard.guard.tombstones.add(sid);
+        signOutGuard.remember(sid, token);
+        dropping = sid;
+      } else if (!token) {
+        // A re-try after the token was dropped: authenticate as that session.
+        token = signOutGuard.droppedToken(sid);
+      }
+    }
     const headers = new Headers(init?.headers);
     if (token) headers.set('authorization', `Bearer ${token}`);
-    const response = await fetchImpl(input, { ...init, headers });
+    const dropped = async (response: Response | null) => {
+      if (!signOutGuard || !dropping || !token) return;
+      // Signed out locally whatever the server said — but only if no surface
+      // stored a newer token meanwhile.
+      if ((await store.getToken().catch(() => null)) === token) await store.removeToken().catch(() => undefined);
+      if (!response || (!response.ok && response.status !== 404)) {
+        // Keep trying in the background (retried once, then on the guard's delays).
+        void signOutGuard.guard.revoke(dropping, { request: signOutGuard.bearerRequest(token), frontchannel: false });
+      }
+    };
+    let response: Response;
+    try {
+      response = await fetchImpl(input, { ...init, headers });
+    } catch (error) {
+      await dropped(null);
+      throw error;
+    }
+    await dropped(response);
 
-    if (response.ok && /\/v1\/client(\/|\?|$)/.test(urlOf(input))) {
+    if (response.ok && /\/v1\/client(\/|\?|$)/.test(url)) {
       try {
         const body = (await response.clone().json()) as { jwt?: unknown };
-        if (typeof body.jwt === 'string') await store.setToken(body.jwt);
+        if (typeof body.jwt === 'string') await tokens.setToken(body.jwt);
       } catch {
         // Not JSON, or no body (a 204 revoke). Nothing to capture.
       }
@@ -105,6 +269,17 @@ export interface CreateAtlasClientOptions {
   store?: TokenStore;
   /** Injectable for tests; defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
+  /**
+   * Where the ids of sessions the extension signed out of are kept, shared by
+   * every surface. Defaults to the {@link StorageCache}'s storage area (else
+   * `chrome.storage.local`).
+   */
+  tombstoneStore?: TombstoneStore;
+  /**
+   * Delays (ms) between background re-tries of a revoke `signOut()` could not
+   * complete. @default `[15_000, 60_000, 300_000]`
+   */
+  signOutRetryDelaysMs?: number[];
 }
 
 /**
@@ -115,7 +290,10 @@ export interface CreateAtlasClientOptions {
 export interface AtlasClient {
   /** The bearer-wired `@atlasauth/js` client for any raw FAPI call. */
   readonly fapi: FapiClient;
-  /** The token store this client reads and writes. */
+  /**
+   * The token store this client reads and writes. It never hands out — nor
+   * writes back — a token of a session the extension signed out of.
+   */
   readonly store: TokenStore;
   /** The current session token, or null when signed out. */
   getToken(): Promise<string | null>;
@@ -125,8 +303,17 @@ export interface AtlasClient {
   getProviderToken(provider: string): Promise<ProviderToken | null>;
   /** Refresh the token if it is near expiry (or `force`) and persist it. */
   syncSessionToken(options?: SyncOptions): Promise<string | null>;
-  /** Revoke the session server-side and clear the stored token. */
-  signOut(): Promise<void>;
+  /**
+   * Sign out: remember the session id in `chrome.storage` (so no surface
+   * re-adopts it, and a refresh in flight anywhere cannot write its token
+   * back), revoke it on the Frontend API with the token being dropped (retried
+   * once, then in the background), and clear the stored token. Resolves
+   * `{ revoked }` — `false` when the server could not be reached (signed out
+   * locally regardless); `{ strict: true }` rejects with a `SignOutError`
+   * instead, after the local sign-out. A promoted `activeSessionId` is only
+   * reported: the bearer revoke returns no credential for it.
+   */
+  signOut(options?: SignOutOptions): Promise<SignOutResult>;
 }
 
 /**
@@ -144,8 +331,18 @@ export function createAtlasClient(
     component: 'createAtlasClient()',
     allowSameOrigin: false,
   });
-  const store = options.store ?? new StorageCache();
+  const rawStore = options.store ?? new StorageCache();
   const fetchImpl = options.fetchImpl ?? fetch;
+  const signOutGuard = new ExtensionSignOutGuard({
+    publishableKey: options.publishableKey,
+    frontendApi: baseUrl,
+    fetchImpl,
+    tombstoneStore:
+      options.tombstoneStore ??
+      (rawStore instanceof StorageCache ? rawStore.tombstoneStore() : createChromeTombstoneStore()),
+    ...(options.signOutRetryDelaysMs ? { retryDelaysMs: options.signOutRetryDelaysMs } : {}),
+  });
+  const store = signOutGuard.guardStore(rawStore);
   const fapi = new FapiClient({
     publishableKey: options.publishableKey,
     baseUrl,
@@ -159,15 +356,20 @@ export function createAtlasClient(
     setToken: (token: string) => store.setToken(token),
     getProviderToken: (provider: string) => getProviderTokenFor(fapi, provider),
     syncSessionToken: (opts?: SyncOptions) => syncSessionToken(client, opts),
-    signOut: async () => {
-      const current = await store.getToken();
-      const sid = current ? decodeTokenClaims(current)?.sid : undefined;
-      if (sid) {
-        // Best-effort server revoke; the local token is cleared regardless so
-        // the extension never keeps showing a signed-in state after sign-out.
-        await fapi.post(`/v1/client/sessions/${sid}/revoke`).catch(() => undefined);
-      }
-      await store.removeToken();
+    signOut: async (opts: SignOutOptions = {}) => {
+      const token = await rawStore.getToken().catch(() => null);
+      await signOutGuard.guard.ready;
+      // Tombstones the session (when the token names it) before anything below
+      // yields; with a token but no `sid`, GET /v1/client finds it. The revoke
+      // rides on the token being dropped, so its background re-try still can.
+      const pending = token
+        ? signOutGuard.guard.revoke(sidOf(token), { ...opts, request: signOutGuard.bearerRequest(token) })
+        : null;
+      // The local token is cleared regardless, so no surface keeps showing a
+      // signed-in state after sign-out (the tombstone covers a failed clear).
+      await rawStore.removeToken().catch(() => undefined);
+      const attempt = pending ? await pending : { sessionId: null, outcome: { revoked: true, status: 200 } };
+      return signOutGuard.guard.settle(attempt, opts);
     },
   };
   return client;
@@ -249,4 +451,4 @@ async function getProviderTokenFor(
   };
 }
 
-export type { ProviderToken };
+export { SignOutError, type ProviderToken, type SignOutOptions, type SignOutResult, type TombstoneStore } from '@atlasauth/js';

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AtlasProvider } from './AtlasProvider';
 import { SignUp } from './sign-up';
 import { SignIn } from './sign-in';
+import { EMAIL_UNAVAILABLE_MESSAGE } from '@atlasauth/js';
 import { EN_US } from './i18n';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -70,7 +71,7 @@ afterEach(() => {
 
 async function mount(
   component: typeof SignUp | typeof SignIn,
-  opts: { captchaFlows?: Record<string, unknown>; routes: Route[] },
+  opts: { captchaFlows?: Record<string, unknown>; emailDelivery?: Record<string, boolean>; routes: Route[] },
 ) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -86,6 +87,7 @@ async function mount(
         object: 'appearance',
         appearance: { legal: { termsUrl: null, privacyUrl: null, required: false }, signUpFields: [] },
         captchaFlows: opts.captchaFlows ?? {},
+        ...(opts.emailDelivery ? { email_delivery: opts.emailDelivery } : {}),
       });
     }
     for (const route of opts.routes) {
@@ -363,5 +365,63 @@ describe('<SignIn> captcha', () => {
       expect(el.querySelector('[role="alert"]')?.textContent).toBe(EN_US['captcha.failed']),
     );
     await vi.waitFor(() => expect(ts.api.render.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+});
+
+describe('email delivery', () => {
+  const NO_EMAIL = { available: false, password_reset: false, password_sign_up: false };
+
+  it('<SignUp> shows the "can\'t send email" notice instead of the form when password sign-up cannot complete', async () => {
+    const el = await mount(SignUp, { emailDelivery: NO_EMAIL, routes: [] });
+    await vi.waitFor(() => expect(el.textContent).toContain(EN_US['signUp.emailUnavailable']));
+    expect(EN_US['signUp.emailUnavailable']).toBe(EMAIL_UNAVAILABLE_MESSAGE);
+    expect(el.querySelector('input[name="password"]')).toBeNull();
+    expect(el.querySelector('input[name="email"]')).toBeNull();
+    expect(el.querySelector('form')).toBeNull();
+    expect(el.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('<SignUp> keeps the form when only email is unavailable but sign-up can still complete', async () => {
+    const el = await mount(SignUp, {
+      emailDelivery: { available: false, password_reset: false, password_sign_up: true },
+      routes: [],
+    });
+    await vi.waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance')).toBe(true));
+    await act(async () => undefined);
+    expect(el.querySelector('input[name="password"]')).not.toBeNull();
+    expect(el.textContent).not.toContain(EN_US['signUp.emailUnavailable']);
+  });
+
+  const firstFactor = (strategies: string[]): Route => (c) =>
+    c.path === '/v1/client/sign_ins'
+      ? json({ id: 'sia_1', status: 'needs_first_factor', supported_first_factors: strategies }, 201)
+      : undefined;
+
+  it('<SignIn> does not offer an email-only first factor when email cannot be delivered', async () => {
+    const el = await mount(SignIn, { emailDelivery: NO_EMAIL, routes: [firstFactor(['email_code', 'email_link'])] });
+    await vi.waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance')).toBe(true));
+    setInput(el, 'identifier', 'me@example.com');
+    await submit(el);
+    await vi.waitFor(() => expect(el.textContent).toContain(EN_US['signUp.emailUnavailable']));
+    expect(el.querySelector('input[name="password"]')).toBeNull();
+    expect(el.querySelector('button[type="submit"]')).toBeNull();
+  });
+
+  it('<SignIn> still collects the password when it is offered beside email code', async () => {
+    const el = await mount(SignIn, { emailDelivery: NO_EMAIL, routes: [firstFactor(['password', 'email_code'])] });
+    await vi.waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance')).toBe(true));
+    setInput(el, 'identifier', 'me@example.com');
+    await submit(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    expect(el.textContent).not.toContain(EN_US['signUp.emailUnavailable']);
+  });
+
+  it('<SignIn> leaves the first factor alone when the server says nothing about email delivery', async () => {
+    const el = await mount(SignIn, { routes: [firstFactor(['email_code'])] });
+    await vi.waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance')).toBe(true));
+    setInput(el, 'identifier', 'me@example.com');
+    await submit(el);
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins')).toHaveLength(1));
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
   });
 });

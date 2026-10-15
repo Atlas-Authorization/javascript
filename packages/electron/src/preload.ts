@@ -4,6 +4,8 @@ import {
   type AtlasTokenBridge,
   type ContextBridgeLike,
   type IpcRendererLike,
+  type SignOutReply,
+  type SignOutRequest,
 } from './shared';
 
 /**
@@ -12,7 +14,7 @@ import {
  * A preload script is the one place that can see both Node/Electron APIs and the
  * renderer's `window`, so it is where the bridge is published. `exposeAtlasBridge`
  * uses `contextBridge` to hang a narrow, promise-only API on `window.atlas`
- * (see {@link ATLAS_BRIDGE_KEY}) — three methods that each forward to an
+ * (see {@link ATLAS_BRIDGE_KEY}) — four methods that each forward to an
  * `ipcMain` handler registered by `createAtlasBridge` in the main process.
  *
  * Using `contextBridge` (rather than assigning `window.atlas` directly) is what
@@ -44,6 +46,13 @@ export function exposeAtlasBridge(options: ExposeAtlasBridgeOptions): void {
     setToken: (token: string) =>
       ipcRenderer.invoke(ATLAS_TOKEN_CHANNELS.set, token) as Promise<void>,
     clearToken: () => ipcRenderer.invoke(ATLAS_TOKEN_CHANNELS.remove) as Promise<void>,
+    // Plain data both ways (the reply never carries a token); the renderer's
+    // `signOut()` turns the reply into a SignOutResult / SignOutError.
+    signOut: (options?: SignOutRequest) =>
+      ipcRenderer.invoke(
+        ATLAS_TOKEN_CHANNELS.signOut,
+        options?.frontchannel === undefined ? {} : { frontchannel: options.frontchannel },
+      ) as Promise<SignOutReply>,
   };
 
   contextBridge.exposeInMainWorld(ATLAS_BRIDGE_KEY, bridge);

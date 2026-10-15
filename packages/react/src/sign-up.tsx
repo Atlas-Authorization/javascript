@@ -19,6 +19,11 @@ import type { InstanceSettings, PublicSignUpField } from './instance-settings';
  *
  * All of it is read from the instance's settings, so a field, a consent policy
  * or a captcha switched on in the dashboard appears here with no code change.
+ *
+ * When the app can't deliver the verification email
+ * (`instanceSettings.emailDelivery.passwordSignUp === false`) the form is
+ * replaced by a "can't send email" notice (`signUp.emailUnavailable`) — the
+ * server would refuse the sign-up anyway.
  */
 export function SignUp(props: FlowProps = {}) {
   const { instanceSettings } = useAtlas();
@@ -29,8 +34,9 @@ export function SignUp(props: FlowProps = {}) {
   });
 
   const signUpFlow = instanceSettings?.captchaFlows.signUp;
+  const emailUnavailable = instanceSettings?.emailDelivery?.passwordSignUp === false;
   const captcha = useCaptcha(signUpFlow, {
-    active: !state.attempt && flowNeedsCaptcha(signUpFlow),
+    active: !state.attempt && !emailUnavailable && flowNeedsCaptcha(signUpFlow),
   });
 
   const create = useCallback(
@@ -73,6 +79,8 @@ export function SignUp(props: FlowProps = {}) {
     );
   }
 
+  if (emailUnavailable) return <SignUpEmailUnavailable hideTitle={props.hideTitle} />;
+
   return (
     <SignUpForm
       settings={instanceSettings}
@@ -82,6 +90,22 @@ export function SignUp(props: FlowProps = {}) {
       captcha={captcha}
       onSubmit={create}
     />
+  );
+}
+
+/** The "can't send email" state shown instead of the create-account form. */
+function SignUpEmailUnavailable({ hideTitle }: { hideTitle?: boolean }) {
+  const t = useText();
+  const cardClass = useClass('card', 'atlas-card');
+  const titleClass = useClass('headerTitle', 'atlas-title');
+  const errorClass = useClass('formFieldError', 'atlas-error');
+  return (
+    <div className={cardClass}>
+      {hideTitle ? null : <h1 className={titleClass}>{t('signUp.title')}</h1>}
+      <p className={errorClass} role="alert" data-atlas-email-unavailable="">
+        {t('signUp.emailUnavailable')}
+      </p>
+    </div>
   );
 }
 

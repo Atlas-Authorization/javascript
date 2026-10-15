@@ -1,5 +1,23 @@
 # @atlasauth/react changelog
 
+## 0.7.0
+- **Added `tombstoneStore?: TombstoneStore` to `AtlasProviderProps`.** Where to keep the ids of sessions
+  this app signed out of on a runtime without `localStorage` (React Native / Expo, Electron's main
+  process, an extension service worker): a `{ getItem(key), setItem(key, value) }` adapter (sync or
+  async) over the platform's persistent store. Without it tombstones stay in `localStorage` per Frontend
+  API as before. Every boot / re-check now waits for the store to be read (immediate for
+  `localStorage`), so a restarted app never re-adopts a session whose revoke failed. `TombstoneStore`
+  is re-exported from the package entry.
+- **`<SignUp>` shows a "can't send email" state** instead of the email + password form when
+  `instanceSettings.emailDelivery.passwordSignUp === false` (the app can't deliver the verification
+  email). New catalog key `signUp.emailUnavailable`, default "This app can't send email right now. Try
+  another sign-in method or contact the app owner." (Language bundles fall back to English until
+  `@atlasauth/localizations` ships it.)
+- **`<SignIn>`'s first-factor step offers `offeredFirstFactors(step.strategies, emailDelivery)`**: email
+  code / link are not offered while `emailDelivery.available === false`; when nothing else is left the
+  step shows the `signUp.emailUnavailable` notice instead of a password field. The prebuilt components
+  have no "Forgot password?" control, so `emailDelivery.passwordReset` needs no handling here.
+
 ## 0.6.0
 - **Popup sign-in works when your page sends `Cross-Origin-Opener-Policy: same-origin`.** `<AtlasProvider>`
   now finishes a popup that was severed from its opener: when the popup lands back on your page with

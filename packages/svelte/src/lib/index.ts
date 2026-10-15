@@ -62,12 +62,17 @@ export { default as OrganizationSwitcher } from './components/OrganizationSwitch
 export { default as OrganizationProfile } from './components/OrganizationProfile.svelte';
 
 // The instance's public sign-in / sign-up settings the prebuilt forms read
-// (`signUp().settings`), and the captcha types they render.
+// (`signUp().settings`, including `emailDelivery`), and the captcha types they render.
 export type {
   InstanceSettings,
+  EmailDelivery,
   PublicSignUpField,
   CaptchaController,
   CaptchaFlowKey,
   CaptchaWidgetMode,
   FlowCaptcha,
 } from '@atlasauth/js';
+
+// What `signOut()` resolves with, and what it rejects with under `{ strict: true }`.
+export { SignOutError } from '@atlasauth/js';
+export type { SignOutOptions, SignOutResult } from '@atlasauth/js';

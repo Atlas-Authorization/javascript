@@ -1,7 +1,11 @@
 import {
   FapiClient,
+  SignOutGuard,
   TokenCache,
+  closeOAuthPopupAfterSignIn,
+  completeOAuthPopupLanding,
   getProviderToken as fetchProviderToken,
+  mapOAuthPopupPayload,
   msUntilRefresh,
   readExpiry,
   readRedirectResult,
@@ -10,8 +14,9 @@ import {
   evaluate,
   type ProtectCondition,
   type ProviderToken,
-  runFrontChannelLogoutFromResponse,
+  type RedirectResult,
   type SignOutOptions,
+  type SignOutResult,
 } from '@atlasauth/js';
 import type {
   AtlasOrganizationMembership,
@@ -68,12 +73,23 @@ export interface AtlasClient {
   getProviderToken(provider: string): Promise<ProviderToken | null>;
   /** Evaluate a role/permission condition against the live claims. */
   has(condition: ProtectCondition): boolean;
-  signOut(options?: SignOutOptions): Promise<void>;
+  /**
+   * Sign out: revoke the session on the Frontend API (retried once), run OIDC
+   * front-channel logout, then drop all local state. Resolves whether the
+   * server confirmed the revoke (`{ revoked, activeSessionId? }`); with
+   * `{ strict: true }` an unconfirmed revoke rejects with a `SignOutError`
+   * AFTER the local sign-out. Either way this browser remembers the session id
+   * and never re-adopts it on a reload, refresh, sibling tab or new tab.
+   */
+  signOut(options?: SignOutOptions): Promise<SignOutResult>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
   reload(): Promise<void>;
-  /** §6.3: complete a redirect-based sign-in, then boot the session. */
+  /**
+   * §6.3: complete a redirect-based sign-in (or, inside the OAuth popup, hand
+   * the result back to the opener), then boot the session.
+   */
   boot(): Promise<void>;
-  /** Tear down the refresh timer and drop all listeners. */
+  /** Tear down the refresh timer, the sibling-tab watch and all listeners. */
   destroy(): void;
 }
 
@@ -145,7 +161,23 @@ export function createAtlasClient(options: CreateAtlasClientOptions): AtlasClien
       },
     });
 
+  // Safer sign-out: tombstones (localStorage, per FAPI origin, shared by every
+  // tab) of the sessions this browser signed out of, the revoke with retry, and
+  // the background re-try of a revoke that did not land.
+  const guard = new SignOutGuard({ request: call, frontendApi: baseUrl });
+
+  const clearLocal = () => {
+    cache.clear();
+    status = 'signed_out';
+    user = null;
+    session = null;
+    claims = null;
+    memberships = [];
+  };
+
   const applyToken = (jwt: string, sessionId: string) => {
+    // An in-flight refresh must not resurrect a session signed out meanwhile.
+    if (guard.isSignedOut(sessionId)) return;
     const expiresAt = readExpiry(jwt);
     if (!expiresAt) return;
     cache.set({ jwt, expiresAt, sessionId });
@@ -164,13 +196,11 @@ export function createAtlasClient(options: CreateAtlasClientOptions): AtlasClien
         organization_memberships?: AtlasOrganizationMembership[];
       };
 
-      if (!body.session || !body.user) {
-        cache.clear();
-        status = 'signed_out';
-        user = null;
-        session = null;
-        claims = null;
-        memberships = [];
+      // A session this browser signed out of is never re-adopted from a refresh
+      // cookie the revoke did not clear; the guard re-tries the revoke.
+      const refused = !!body.session && guard.refuse(body.session.id);
+      if (!body.session || !body.user || refused) {
+        clearLocal();
         emit();
         return;
       }
@@ -239,24 +269,30 @@ export function createAtlasClient(options: CreateAtlasClientOptions): AtlasClien
   const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch });
   const getProviderToken = (provider: string) => fetchProviderToken(fapiClient, provider);
 
-  const signOut = async (options?: SignOutOptions) => {
-    const current = cache.peek();
-    if (current) {
-      const revoked = await call(`/v1/client/sessions/${current.sessionId}/revoke`, {
-        method: 'POST',
-      }).catch(() => undefined);
-      // OIDC Front-Channel Logout: let the apps signed in through this session
-      // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
-      if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(revoked);
-    }
-    cache.clear();
-    status = 'signed_out';
-    user = null;
-    session = null;
-    claims = null;
-    memberships = [];
+  const signOut = async (options?: SignOutOptions): Promise<SignOutResult> => {
+    // The session to end: from the token cache, else the booted session, else
+    // (none known yet) whatever session the cookies carry — the guard looks it
+    // up, so a missing in-memory token never skips the server-side sign-out. It
+    // tombstones the id first, revokes (retried once) and runs OIDC
+    // front-channel logout.
+    const attempt = await guard.revoke(cache.peek()?.sessionId ?? session?.id ?? null, options);
+    clearLocal();
     emit();
+    // §L1 the server promoted another account signed in on this browser: adopt
+    // it deliberately (the revoke response already set its cookies).
+    if (guard.promoted(attempt)) await reload();
+    return guard.settle(attempt, options);
   };
+
+  // Another tab signed out of THIS session (its tombstone reached the shared
+  // store): drop the token and re-check, which refuses the session.
+  const stopWatching = guard.watch(
+    () => cache.peek()?.sessionId ?? session?.id,
+    () => {
+      cache.clear();
+      void reload();
+    },
+  );
 
   const setActiveOrganization = async (organizationId: string | null) => {
     const current = cache.peek();
@@ -275,20 +311,46 @@ export function createAtlasClient(options: CreateAtlasClientOptions): AtlasClien
     await reload();
   };
 
+  /*
+   * §oauth popup mode: this page may also be running INSIDE the sign-in popup.
+   *   - As the landing of a popup whose opener was severed by a
+   *     Cross-Origin-Opener-Policy (`#atlas_popup_result=…`): relay the result
+   *     to the opener over BroadcastChannel and close. If no opener takes it
+   *     (its tab is gone), finish the sign-in here like a redirect.
+   *   - After finishing a sign-in here (the redirect flow ran in the popup): tell
+   *     the waiting opener and close the popup.
+   */
   const boot = async () => {
-    const result =
-      typeof window !== 'undefined' ? readRedirectResult(window.location.search) : null;
+    const browser = typeof window !== 'undefined';
+    const fromUrl = browser ? readRedirectResult(window.location.search) : null;
 
+    let result: RedirectResult | null = fromUrl;
+    const landing = browser ? await completeOAuthPopupLanding().catch(() => null) : null;
+    if (landing && !landing.delivered) {
+      const outcome = mapOAuthPopupPayload(landing.payload);
+      if (outcome?.ticket && outcome.attemptId) {
+        result = { attemptId: outcome.attemptId, ticket: outcome.ticket };
+      } else if (outcome?.continuationUrl) {
+        // A second factor / connect / provider error: the redirect flow's page.
+        window.location.replace(outcome.continuationUrl);
+        return;
+      }
+    }
+    // When the landing was delivered the opener redeems the ticket, not us.
+    let exchanged = false;
     if (result?.ticket) {
-      await call('/v1/client/tickets/exchange', {
+      const response = await call('/v1/client/tickets/exchange', {
         method: 'POST',
         body: JSON.stringify({ attempt_id: result.attemptId, ticket: result.ticket }),
       }).catch(() => undefined);
+      exchanged = !!response?.ok;
     }
-    if (result && typeof window !== 'undefined') {
+    if (fromUrl && browser) {
       window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
     }
     await reload();
+    // Signed in inside the Atlas popup: hand back to the opener and close.
+    if (exchanged) void closeOAuthPopupAfterSignIn();
   };
 
   const destroy = () => {
@@ -296,6 +358,8 @@ export function createAtlasClient(options: CreateAtlasClientOptions): AtlasClien
       clearTimeout(timer);
       timer = null;
     }
+    stopWatching();
+    guard.dispose();
     listeners.clear();
   };
 

@@ -21,6 +21,7 @@
  * interface. See {@link createPreferencesTokenStore} for the drop-in shape.
  */
 
+import type { TombstoneStore } from '@atlasauth/js';
 import type { PreferencesPlugin } from './plugins';
 
 /**
@@ -84,5 +85,30 @@ export function createInMemoryTokenStore(): TokenStore {
     clearToken: () => {
       token = null;
     },
+  };
+}
+
+/**
+ * A {@link TombstoneStore} over `@capacitor/preferences` — where the ids of the
+ * sessions this app signed out of are kept, so a restart never re-adopts one
+ * (see `SignOutGuard` in `@atlasauth/js`). The default when the plugin is
+ * present. Tombstones are session ids, never credentials, so plaintext is fine.
+ */
+export function createPreferencesTombstoneStore(preferences: PreferencesPlugin): TombstoneStore {
+  return {
+    getItem: async (key) => (await preferences.get({ key })).value ?? null,
+    setItem: (key, value) => preferences.set({ key, value }),
+  };
+}
+
+/**
+ * Adapt a single-slot {@link TokenStore} (e.g. a secure-storage-backed one) to
+ * a {@link TombstoneStore}. Give it its OWN slot — never the session's: the
+ * key `SignOutGuard` asks for is ignored, every read and write hits that slot.
+ */
+export function tombstoneStoreFromTokenStore(store: TokenStore): TombstoneStore {
+  return {
+    getItem: () => store.getToken(),
+    setItem: (_key, value) => store.setToken(value),
   };
 }

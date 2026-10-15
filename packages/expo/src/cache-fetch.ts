@@ -18,6 +18,14 @@ import type { TokenCache } from './token-cache';
  *      durable copy native needs. Reading the body is done on a `clone()` so the
  *      provider still gets to consume the original.
  *
+ *   3. SIGN-OUT — a successful `POST /v1/client/sessions/:id/revoke` (2xx, or
+ *      404: already gone) of the session the stored token belongs to clears the
+ *      token, so a sign-out actually drops the credential and a restart boots
+ *      signed out. The clear is awaited before the response is handed back, so
+ *      no later request can still carry the token. A FAILED revoke keeps it: the
+ *      provider remembers the session as signed out (its tombstone) and re-tries
+ *      the revoke in the background, which needs the token to authenticate.
+ *
  * The persist is fire-and-forget: a secure-store write failure must not break a
  * live, already-parsed response.
  */
@@ -34,6 +42,15 @@ export function createCacheFetch(opts: {
     if (token) headers.set('authorization', `Bearer ${token}`);
 
     const response = await fetchImpl(input, { ...init, headers });
+
+    const revoked = revokedSessionId(input, init);
+    if (revoked && token && (response.ok || response.status === 404) && tokenBelongsTo(token, revoked)) {
+      try {
+        await cache.clearToken(key);
+      } catch {
+        // A secure-store failure must not break the sign-out response.
+      }
+    }
 
     // Capture a rotated session token for persistence, without consuming the
     // body the caller still needs.
@@ -54,4 +71,38 @@ export function createCacheFetch(opts: {
 
     return response;
   };
+}
+
+const REVOKE_PATH = /\/v1\/client\/sessions\/([^/?#]+)\/revoke(?:[?#]|$)/;
+
+/** The session id a `POST …/v1/client/sessions/:id/revoke` targets, else null. */
+function revokedSessionId(input: RequestInfo | URL, init?: RequestInit): string | null {
+  const isRequest = typeof Request !== 'undefined' && input instanceof Request;
+  const method = (init?.method ?? (isRequest ? input.method : 'GET')).toUpperCase();
+  if (method !== 'POST') return null;
+  const url = isRequest ? input.url : String(input);
+  const match = REVOKE_PATH.exec(url);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]!);
+  } catch {
+    return match[1]!;
+  }
+}
+
+/**
+ * Whether the stored token is the revoked session's: its `sid` claim matches.
+ * A token whose claims cannot be read is treated as the session's own (the
+ * provider only revokes the session it is signed in to, or one it refuses).
+ */
+function tokenBelongsTo(token: string, sessionId: string): boolean {
+  const payload = token.split('.')[1];
+  const decode = (globalThis as { atob?: (s: string) => string }).atob;
+  if (!payload || !decode) return true;
+  try {
+    const claims = JSON.parse(decode(payload.replace(/-/g, '+').replace(/_/g, '/'))) as { sid?: unknown };
+    return typeof claims.sid !== 'string' || claims.sid === sessionId;
+  } catch {
+    return true;
+  }
 }

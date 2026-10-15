@@ -15,6 +15,8 @@
  * package compiles, typechecks and tests without `expo-secure-store` installed.
  */
 
+import type { TombstoneStore } from '@atlasauth/js';
+
 /**
  * A key→token cache, the shape `<AtlasProvider tokenCache>` and the native
  * session wiring both consume. Mirrors Clerk's Expo `tokenCache` contract
@@ -130,6 +132,27 @@ export function createInMemoryStorage(): TokenStorage {
       token = null;
     },
   };
+}
+
+/**
+ * View a {@link TokenCache} as the `TombstoneStore` `@atlasauth/react` keeps its
+ * sign-out tombstones in (the ids of sessions this app signed out of — never a
+ * token). React Native has no `localStorage`, so without this the tombstones are
+ * memory-only and an app restart could re-adopt a session whose revoke failed.
+ *
+ * The tombstone key (`atlas:signed-out-sessions:<frontend api origin>`) is
+ * rewritten to the characters `expo-secure-store` accepts in a key
+ * (`A–Z a–z 0–9 . - _`), so the same adapter fits every cache.
+ */
+export function tombstoneStoreFor(cache: TokenCache): TombstoneStore {
+  return {
+    getItem: (key) => cache.getToken(storeKey(key)),
+    setItem: (key, value) => cache.saveToken(storeKey(key), value),
+  };
+}
+
+function storeKey(key: string): string {
+  return key.replace(/[^A-Za-z0-9._-]/g, '_');
 }
 
 /** The default cache key the `<AtlasProvider>` session is stored under. */

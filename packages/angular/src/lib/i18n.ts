@@ -24,6 +24,7 @@ export const EN_US: Catalog = {
   'signIn.orDivider': 'or',
   'signIn.socialButton': 'Continue with {provider}',
   'signIn.emailCodeLabel': 'Verification code',
+  'signIn.useEmailCode': 'Email me a code',
   'signIn.magicLinkSent': 'Check your email for a sign-in link.',
   'signIn.checkOtherTab': 'You can close this tab — you are signed in where you started.',
 
@@ -40,6 +41,9 @@ export const EN_US: Catalog = {
   'signUp.terms': 'Terms of Service',
   'signUp.privacy': 'Privacy Policy',
   'signUp.and': 'and',
+  // = EMAIL_UNAVAILABLE_MESSAGE from @atlasauth/js.
+  'signUp.emailUnavailable':
+    "This app can't send email right now. Try another sign-in method or contact the app owner.",
 
   'captcha.prompt': 'Complete the security check to continue.',
   'captcha.required': 'Please complete the security check, then try again.',

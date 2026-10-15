@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/angular",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Official Angular SDK for Atlas \u2014 the Angular peer of @atlasauth/react.",
   "license": "MIT",
   "module": "./dist/fesm2022/atlas-angular.mjs",
@@ -19,7 +19,8 @@
   "sideEffects": false,
   "scripts": {
     "build": "ng-packagr -p ng-package.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@atlasauth/design": "workspace:*",

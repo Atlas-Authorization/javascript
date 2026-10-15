@@ -24,6 +24,8 @@ export const ATLAS_TOKEN_CHANNELS = {
   get: 'atlas:token:get',
   set: 'atlas:token:set',
   remove: 'atlas:token:remove',
+  /** Revoke the session server-side, then clear the token (see {@link SignOutReply}). */
+  signOut: 'atlas:token:sign-out',
 } as const;
 
 /**
@@ -47,6 +49,36 @@ export interface AtlasTokenBridge {
   setToken(token: string): Promise<void>;
   /** Drop the session token (sign-out, or a rejected session). */
   clearToken(): Promise<void>;
+  /**
+   * Revoke the session on the Frontend API from the MAIN process, then clear
+   * the token. Resolves plain data — never rejects for a failed revoke, since
+   * an error crossing IPC / `contextBridge` loses its class. Call it through
+   * the renderer's `signOut()`, which turns the reply into a `SignOutResult` or
+   * a `SignOutError`. Optional so a bridge from an older preload still types.
+   */
+  signOut?(options?: SignOutRequest): Promise<SignOutReply>;
+}
+
+/** What the renderer sends with a sign-out (no `strict`: that is applied renderer-side). */
+export interface SignOutRequest {
+  /** Accepted for parity with `SignOutOptions`; the main process has no DOM to run it in. */
+  frontchannel?: boolean;
+}
+
+/**
+ * The main process's answer to a sign-out, as structured-clone-safe data: the
+ * `SignOutResult` fields plus what the renderer needs to re-create a
+ * `SignOutError` (`sessionId`, `status`).
+ */
+export interface SignOutReply {
+  /** Whether the Frontend API confirmed the revoke. */
+  revoked: boolean;
+  /** A session the server promoted (reported only; see `AtlasBridge.signOut`). */
+  activeSessionId?: string;
+  /** The session signed out of, or null when there was none. */
+  sessionId: string | null;
+  /** The last HTTP status of the revoke (`0`: never reached the server). */
+  status: number;
 }
 
 // ── Structural Electron shapes (see file header) ─────────────────────────────

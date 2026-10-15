@@ -12,6 +12,7 @@ import {
   mintNativeNonce,
   nativeSignIn,
   nextStep,
+  offeredFirstFactors,
   renderGoogleOverlayButton,
   reportProviderUnavailable,
   startOauthRedirect,
@@ -129,6 +130,7 @@ export function AttemptFlow({
   captcha?: ReactNode;
 }) {
   const t = useText();
+  const { instanceSettings } = useAtlas();
   const cardClass = useClass('card', 'atlas-card');
   const titleClass = useClass('headerTitle', 'atlas-title');
   const inputClass = useClass('formFieldInput', 'atlas-input');
@@ -138,6 +140,18 @@ export function AttemptFlow({
 
   const [values, setValues] = useState<Record<string, string>>({});
   const step = attempt ? nextStep(attempt) : { kind: 'collect_identifier' as const };
+  /**
+   * The first factors this form may offer: the server's list, minus email code /
+   * link while the app can't deliver email (a capability of the app, never a
+   * per-identifier filter). When nothing is left there is no factor this form
+   * can collect, so it says why instead of asking for a password.
+   */
+  const firstFactors =
+    step.kind === 'collect_first_factor'
+      ? offeredFirstFactors(step.strategies, instanceSettings?.emailDelivery)
+      : [];
+  const noFirstFactor =
+    step.kind === 'collect_first_factor' && step.strategies.length > 0 && firstFactors.length === 0;
 
   const field = (name: string, labelKey: string, type = 'text') => (
     <label key={name} className={cls('formField', 'atlas-field')}>
@@ -164,6 +178,13 @@ export function AttemptFlow({
       case 'collect_identifier':
         return [field('identifier', 'signIn.identifierLabel', 'email')];
       case 'collect_first_factor':
+        if (noFirstFactor) {
+          return [
+            <p key="email-unavailable" className={errorClass} role="alert" data-atlas-email-unavailable="">
+              {t('signUp.emailUnavailable')}
+            </p>,
+          ];
+        }
         return [field('password', 'signIn.passwordLabel', 'password')];
       case 'collect_second_factor':
         return [field('code', 'mfa.codeLabel')];
@@ -232,7 +253,7 @@ export function AttemptFlow({
       >
         {fields()}
         {step.kind === 'collect_identifier' || step.kind === 'collect_captcha' ? captcha : null}
-        {step.kind !== 'done' && step.kind !== 'await_oauth' ? (
+        {step.kind !== 'done' && step.kind !== 'await_oauth' && !noFirstFactor ? (
           <button className={buttonClass} disabled={busy} type="submit">
             {t('signIn.submit')}
           </button>

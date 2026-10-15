@@ -1,5 +1,36 @@
 # @atlasauth/solid changelog
 
+## 0.3.0
+Requires `@atlasauth/js` 0.8.0.
+- **Safer sign-out.** `signOut(options?: SignOutOptions)` now resolves `SignOutResult`
+  (`{ revoked: boolean; activeSessionId?: string }`) instead of `void` — on `AtlasClient.signOut` and
+  `useAuth().signOut`. Existing `await signOut()` call sites keep working.
+  - The session is tombstoned (in `localStorage`, per Frontend API origin, shared by every tab) BEFORE the
+    revoke, which is retried once; a reload, a token refresh, a sibling tab or a tab opened later never
+    re-adopts a signed-out session from a refresh cookie the revoke did not clear. Such a revoke is re-tried
+    in the background, and the tombstone dropped once it lands.
+  - `revoked: false` — the server never confirmed the revoke; this browser is signed out regardless.
+    `{ strict: true }` rejects with a `SignOutError` (`code: 'SIGN_OUT_REVOKE_FAILED'`, `sessionId`, `status`)
+    in that case, after the local sign-out.
+  - `activeSessionId` — a parked session the server promoted on revoke; it is adopted.
+  - With no cached token the revoke still runs (the current session, or `GET /v1/client`, names it).
+  - Another tab signing out of this session now signs this tab out too.
+  - Built on `SignOutGuard` from `@atlasauth/js`; unmounting `<AtlasProvider>` stops its watch and cancels
+    pending background re-tries (it never revokes).
+- **OAuth popup landing.** On boot the provider completes a popup landing whose opener a
+  Cross-Origin-Opener-Policy severed (`#atlas_popup_result=…`): the result is relayed to the opener and the
+  window closes, or — with no opener listening — its ticket is exchanged here (or the page moves to its
+  `continuationUrl`). After a successful ticket exchange inside the Atlas popup the opener is woken and the
+  popup closes (`closeOAuthPopupAfterSignIn`); an ordinary tab never closes.
+- **Email delivery.** The prebuilt widgets read `emailDelivery` from the instance settings they load:
+  - `<SignUp>` shows a "can't send email" notice (new catalog key `signUp.emailUnavailable`, en-US text
+    "This app can't send email right now. Try another sign-in method or contact the app owner.") instead of
+    the email + password form when `passwordSignUp` is `false`.
+  - `<SignIn>`'s first-factor step now offers the server's strategies through `offeredFirstFactors`: a
+    password field when `password` is offered, and "Email me a code" / "Email me a sign-in link" when
+    `email_code` / `email_link` are offered and email can be delivered (hidden when `available` is `false`).
+- **Added** `SIGN_UP_TEXT['signUp.emailUnavailable']`.
+
 ## 0.2.0
 - **`<SignUp>` now creates accounts.** Its first step is a create-account form (the instance's
   configured sign-up fields, email, password and the legal-consent row) that posts

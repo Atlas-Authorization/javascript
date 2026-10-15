@@ -33,7 +33,10 @@ import { AtlasFlowController } from './flow-controller';
       [errors]="flow.state().errors"
       titleKey="signIn.title"
       [captcha]="flow.captchaDrawn() ? flow.captcha : null"
+      [firstFactors]="flow.firstFactors()"
+      [preparedFactor]="flow.preparedFactor()"
       (submitFlow)="flow.submit($event)"
+      (chooseFactor)="flow.prepare($event)"
     ></atlas-attempt-flow>
   `,
 })
@@ -54,8 +57,9 @@ export class SignInComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     // If seeded from a pending attempt that is already pollable, start polling.
     this.flow.syncPolling();
-    // §5 the instance's captcha settings: switching captcha on in the dashboard
-    // draws it here with no code change.
+    // §5 the instance's captcha settings (switching captcha on in the dashboard
+    // draws it here with no code change) and email delivery (no emailed-code
+    // option while the app cannot send email).
     if (typeof window !== 'undefined') void this.flow.loadSettings();
   }
 

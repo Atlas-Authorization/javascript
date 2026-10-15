@@ -28,7 +28,7 @@ export interface SignOutOptions {
    * Reject with a `SignOutError` when the Frontend API could not revoke the
    * session (after one retry). The local sign-out still happens either way.
    * Default `false`: `signOut()` resolves and reports `revoked: false` instead.
-   * Honoured by `@atlasauth/react`.
+   * Honoured by every framework provider.
    */
   strict?: boolean;
 }

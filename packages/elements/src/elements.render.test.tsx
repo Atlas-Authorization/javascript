@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { AttemptView, FieldError } from '@atlasauth/js';
 import { FlowProvider, type FlowContextValue } from './context';
 import { Field } from './primitives';
-import { Step, Action, Strategy } from './flow-parts';
+import { EMAIL_UNAVAILABLE_MESSAGE } from '@atlasauth/js';
+import { Step, Action, Strategy, EmailUnavailable } from './flow-parts';
 
 /**
  * Render-level proof that the primitives behave as the headless contract
@@ -193,5 +194,89 @@ describe('<Strategy> renders only an available strategy', () => {
     );
     expect(screen.queryByTestId('pw')).not.toBeNull();
     expect(screen.queryByTestId('code')).toBeNull();
+  });
+});
+
+describe('email delivery', () => {
+  const NO_EMAIL = { available: false, passwordReset: false, passwordSignUp: false };
+
+  it('<Strategy> hides email_code and reset_password when the app cannot send email', () => {
+    const flow = makeFlow({
+      attempt: attempt('needs_first_factor', { supported_first_factors: ['password', 'email_code'] }),
+      emailDelivery: NO_EMAIL,
+    });
+    render(
+      <FlowProvider value={flow}>
+        <Strategy name="password">
+          <div data-testid="pw">password form</div>
+        </Strategy>
+        <Strategy name="email_code">
+          <div data-testid="code">code form</div>
+        </Strategy>
+        <Strategy name="reset_password">
+          <a data-testid="forgot">Forgot password?</a>
+        </Strategy>
+      </FlowProvider>,
+    );
+    expect(screen.queryByTestId('pw')).not.toBeNull();
+    expect(screen.queryByTestId('code')).toBeNull();
+    expect(screen.queryByTestId('forgot')).toBeNull();
+  });
+
+  it('<Strategy name="reset_password"> shows beside password when reset emails can be delivered', () => {
+    const flow = makeFlow({
+      attempt: attempt('needs_first_factor', { supported_first_factors: ['password', 'email_code'] }),
+      emailDelivery: { available: true, passwordReset: true, passwordSignUp: true },
+    });
+    render(
+      <FlowProvider value={flow}>
+        <Strategy name="email_code">
+          <div data-testid="code">code form</div>
+        </Strategy>
+        <Strategy name="reset_password">
+          <a data-testid="forgot">Forgot password?</a>
+        </Strategy>
+      </FlowProvider>,
+    );
+    expect(screen.queryByTestId('code')).not.toBeNull();
+    expect(screen.queryByTestId('forgot')).not.toBeNull();
+  });
+
+  it('<EmailUnavailable> shows on the sign-up start step only when password sign-up cannot complete', () => {
+    const { unmount } = render(
+      <FlowProvider value={makeFlow({ mode: 'sign-up', emailDelivery: NO_EMAIL })}>
+        <Step name="start">
+          <EmailUnavailable />
+          <EmailUnavailable>
+            <p data-testid="custom">Custom notice</p>
+          </EmailUnavailable>
+        </Step>
+      </FlowProvider>,
+    );
+    expect(document.body.textContent).toContain(EMAIL_UNAVAILABLE_MESSAGE);
+    expect(screen.queryByTestId('custom')).not.toBeNull();
+    unmount();
+
+    render(
+      <FlowProvider
+        value={makeFlow({ mode: 'sign-up', emailDelivery: { ...NO_EMAIL, passwordSignUp: true } })}
+      >
+        <EmailUnavailable>
+          <p data-testid="custom">Custom notice</p>
+        </EmailUnavailable>
+      </FlowProvider>,
+    );
+    expect(screen.queryByTestId('custom')).toBeNull();
+  });
+
+  it('<EmailUnavailable> renders nothing before the settings load', () => {
+    render(
+      <FlowProvider value={makeFlow({ mode: 'sign-up' })}>
+        <EmailUnavailable>
+          <p data-testid="custom">Custom notice</p>
+        </EmailUnavailable>
+      </FlowProvider>,
+    );
+    expect(screen.queryByTestId('custom')).toBeNull();
   });
 });

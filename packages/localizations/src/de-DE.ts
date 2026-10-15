@@ -36,6 +36,7 @@ export const deDE: LocalizationResource = {
   'signUp.terms': 'Nutzungsbedingungen',
   'signUp.privacy': 'Datenschutzerklärung',
   'signUp.and': 'und',
+  'signUp.emailUnavailable': 'Diese App kann gerade keine E-Mails senden. Versuche es mit einer anderen Anmeldemethode oder wende dich an den Betreiber der App.',
   'captcha.prompt': 'Schließe die Sicherheitsprüfung ab, um fortzufahren.',
   'captcha.required': 'Bitte schließe die Sicherheitsprüfung ab und versuche es erneut.',
   'captcha.failed': 'Die Sicherheitsprüfung ist fehlgeschlagen. Bitte versuche es erneut.',

@@ -1,3 +1,5 @@
+import type { TombstoneStore } from '@atlasauth/js';
+
 /**
  * The RN session store.
  *
@@ -59,3 +61,40 @@ export function createInMemoryStorage(): TokenStorage {
     },
   };
 }
+
+/**
+ * A process-memory {@link TombstoneStore} — the default for
+ * `AtlasStoreConfig.tombstoneStore`. It remembers the sessions this app signed
+ * out of only until the app restarts; pass a persistent adapter so a session
+ * whose revoke never reached the server stays refused after a cold start too.
+ * Tombstones are session ids, never tokens, so an unencrypted store is fine.
+ *
+ * ── @react-native-async-storage/async-storage ─────────────────────────────────
+ *   import AsyncStorage from '@react-native-async-storage/async-storage';
+ *   const tombstoneStore: TombstoneStore = {
+ *     getItem: (key) => AsyncStorage.getItem(key),
+ *     setItem: (key, value) => AsyncStorage.setItem(key, value),
+ *   };
+ *
+ * ── expo-secure-store ─────────────────────────────────────────────────────────
+ *   import * as SecureStore from 'expo-secure-store';
+ *   // SecureStore keys allow only [A-Za-z0-9._-]: map the Atlas key onto one.
+ *   const tombstoneStore: TombstoneStore = {
+ *     getItem: () => SecureStore.getItemAsync('atlas.signed-out-sessions'),
+ *     setItem: (_key, value) => SecureStore.setItemAsync('atlas.signed-out-sessions', value),
+ *   };
+ *
+ * Pass it as `<AtlasProvider tombstoneStore={tombstoneStore}>` (or
+ * `createAtlasStore({ tombstoneStore })`).
+ */
+export function createInMemoryTombstoneStore(): TombstoneStore {
+  const map = new Map<string, string>();
+  return {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => {
+      map.set(key, value);
+    },
+  };
+}
+
+export type { TombstoneStore };

@@ -214,10 +214,19 @@ if (isEmailDeliveryNotConfigured(result)) {
 | `useSession()`  | `isLoaded`, `session`                                                                |
 | `useSignIn()`   | `signInWithPassword`, `attemptSecondFactor`, `startOAuth`, `completeOAuthRedirect`   |
 | `useSignUp()`   | `signUpWithPassword`, `verifyEmailCode`                                              |
+| `useEmailDelivery()` | `isLoaded`, `emailDelivery` (`available`, `passwordReset`, `passwordSignUp`)    |
 
 `getToken()` returns the stored session JWT for attaching to your own API
 requests. `getProviderToken(provider)` returns the signed-in user's own live
 access token at a connected social provider (Google, GitHub, …).
+
+`signOut(options?)` revokes the session on the server, clears the stored token
+and resolves `{ revoked, activeSessionId? }`; `signOut({ strict: true })`
+rejects with a `SignOutError` (after signing out locally) when the server could
+not be reached. A session whose revoke failed is remembered and never
+re-adopted; pass a persistent `tombstoneStore` (AsyncStorage /
+`expo-secure-store`, see `createInMemoryTombstoneStore`) to keep that across
+restarts.
 
 ## Native session (first-party OAuth → session)
 

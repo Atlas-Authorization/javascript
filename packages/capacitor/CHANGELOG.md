@@ -1,5 +1,29 @@
 # @atlasauth/capacitor changelog
 
+## 0.2.0
+
+### Changed
+- **`signOut(options?: SignOutOptions)` now resolves `Promise<SignOutResult>`** (`{ revoked: boolean; activeSessionId?: string }`)
+  instead of `Promise<void>`, and revokes the session on the Frontend API (it used to only clear local state). Existing
+  `await atlas.signOut()` call sites keep working. The revoke is authenticated as the session being dropped, retried once,
+  then re-tried in the background (a 401 from an expired JWT rotates it once with the refresh token). `{ strict: true }`
+  rejects with `SignOutError` (`code: 'SIGN_OUT_REVOKE_FAILED'`, `sessionId`, `status`) after the local sign-out.
+  `activeSessionId` (a server-promoted session) is reported but not adopted: the bearer revoke never returns a credential
+  for it.
+- **A signed-out session is never re-adopted.** Its id is remembered (a tombstone, via `SignOutGuard` from
+  `@atlasauth/js`) in the platform store before the revoke; the next app start refuses a stored session that is tombstoned
+  (and clears it), and a refresh still in flight at sign-out can no longer write the session back or resurrect it in
+  memory. A refused session's revoke is re-tried in the background and its tombstone dropped once the server confirms.
+- `getToken()` / `authHeaders()` return no bearer for a session signed out while a refresh was in flight; `onChange()`
+  listeners are not called for a signed-out session.
+
+### Added
+- `CreateAtlasCapacitorConfig.tombstoneStore?: TombstoneStore` (default: `@capacitor/preferences` when present, else the
+  WebView's `localStorage`) and `CreateAtlasCapacitorConfig.signOutRetryDelaysMs?: number[]`.
+- `createPreferencesTombstoneStore(preferences)` and `tombstoneStoreFromTokenStore(store)` adapters.
+- `NativeSessionConfig.refuse?: (session: NativeSession) => boolean` on `createNativeSessionManager()`.
+- Re-exports `SignOutError`, `SignOutOptions`, `SignOutResult` and `TombstoneStore` from `@atlasauth/js`.
+
 ## 0.1.1
 - **`frontendApi` is validated at `createAtlasCapacitor()`.** A missing, empty or malformed value now throws an
   `AtlasConfigError` (from `@atlasauth/js`; `code: 'FRONTEND_API_REQUIRED'` or `'FRONTEND_API_INVALID'`)

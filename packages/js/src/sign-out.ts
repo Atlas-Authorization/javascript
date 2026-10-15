@@ -120,6 +120,25 @@ export interface SessionTombstonesOptions {
   storageKey?: string;
   /** Clock, for tests. */
   now?: () => number;
+  /**
+   * Where to keep the tombstones instead of `localStorage` — for runtimes
+   * without one (React Native, Expo, Electron's main process, a Capacitor app,
+   * an extension service worker). Pass the platform's persistent store
+   * (AsyncStorage, `expo-secure-store`, `chrome.storage`, Capacitor
+   * Preferences…) through a two-method adapter. Reads may be async: await
+   * {@link SessionTombstones.ready} before trusting `has()` on a cold start.
+   */
+  store?: TombstoneStore;
+}
+
+/**
+ * A key → string store for {@link SessionTombstones} on a platform without
+ * `localStorage`. Either method may be sync or async; errors are swallowed
+ * (memory still protects the running process).
+ */
+export interface TombstoneStore {
+  getItem(key: string): string | null | undefined | Promise<string | null | undefined>;
+  setItem(key: string, value: string): void | Promise<void>;
 }
 
 interface TombstoneEntry {
@@ -149,11 +168,27 @@ export class SessionTombstones {
   private unsaved = new Set<string>();
   private readonly storageKey: string;
   private readonly now: () => number;
+  private readonly store: TombstoneStore | undefined;
+  /** False until a custom store has been read: writing earlier would drop what it holds. */
+  private hydrated = true;
+  /**
+   * Settles once the tombstones a {@link SessionTombstonesOptions.store} holds
+   * have been read (at once for `localStorage`). Never rejects.
+   */
+  readonly ready: Promise<void>;
 
   constructor(options: string | SessionTombstonesOptions = {}) {
     const opts: SessionTombstonesOptions = typeof options === 'string' ? { storageKey: options } : options;
     this.storageKey = opts.storageKey ?? scopedKey(opts.frontendApi);
     this.now = opts.now ?? Date.now;
+    this.store = opts.store;
+    if (this.store) {
+      this.entries = [];
+      this.hydrated = false;
+      this.ready = this.hydrate(this.store);
+      return;
+    }
+    this.ready = Promise.resolve();
     const stored = readStored(this.storageKey) ?? [];
     const legacy = readLegacy(this.storageKey, this.now()).filter((l) => !stored.some((e) => e.id === l.id));
     this.entries = this.prune([...stored, ...legacy]);
@@ -206,6 +241,7 @@ export class SessionTombstones {
    * event). Returns the unsubscribe function; a no-op outside a browser.
    */
   subscribe(listener: (ids: string[]) => void): () => void {
+    if (this.store) return () => undefined;
     const target = globalThis as { addEventListener?: Window['addEventListener']; removeEventListener?: Window['removeEventListener'] };
     if (typeof target.addEventListener !== 'function') return () => undefined;
     const onStorage = (event: StorageEvent) => {
@@ -222,7 +258,8 @@ export class SessionTombstones {
    * entries. With no readable storage, memory is all there is.
    */
   private sync(): void {
-    const stored = readStored(this.storageKey);
+    // A custom store is written through from memory, which is authoritative.
+    const stored = this.store ? null : readStored(this.storageKey);
     if (!stored) {
       this.entries = this.prune(this.entries);
       return;
@@ -243,9 +280,33 @@ export class SessionTombstones {
     return fresh.slice(-TOMBSTONE_LIMIT);
   }
 
+  /** Read a custom store once, merging anything added before it answered. */
+  private async hydrate(store: TombstoneStore): Promise<void> {
+    let raw: string | null | undefined;
+    try {
+      raw = await store.getItem(this.storageKey);
+    } catch {
+      raw = null;
+    }
+    const added = this.entries;
+    this.entries = this.prune([...parseEntries(raw, this.now()), ...added]);
+    this.hydrated = true;
+    if (added.length) this.persist();
+  }
+
   private persist(): void {
     this.entries = this.prune(this.entries);
     const raw = JSON.stringify(this.entries);
+    if (this.store) {
+      if (!this.hydrated) return;
+      const store = this.store;
+      try {
+        void Promise.resolve(store.setItem(this.storageKey, raw)).catch(() => undefined);
+      } catch {
+        /* memory still protects this process */
+      }
+      return;
+    }
     if (write('local', this.storageKey, raw)) {
       // Anything parked in sessionStorage by an earlier failed write is now in localStorage.
       try {

@@ -1,5 +1,37 @@
 # @atlasauth/vue changelog
 
+## 0.4.0
+- **Safer sign-out.** `signOut(options?)` now resolves `SignOutResult` (`{ revoked: boolean; activeSessionId?: string }`)
+  instead of `void` (on `AtlasClient.signOut` and `useAuth().signOut`; existing `await signOut()` call sites keep
+  working). The session is remembered before it is revoked (a tombstone in `localStorage`, per Frontend API origin)
+  and the revoke is retried once; when the server still can't confirm it, the local sign-out happens anyway and
+  `revoked` is `false`. A reload, a token refresh or a tab opened later never re-adopts that session while the
+  browser's cookie still carries it, and the revoke is re-tried in the background (the tombstone is dropped once
+  it lands). A refresh in flight during sign-out can no longer put the token back. With no session in memory the
+  revoke still runs (the session is read from `GET /v1/client`). Built on `SignOutGuard` from `@atlasauth/js`.
+- **`signOut({ strict: true })`** rejects with a `SignOutError` (`code: 'SIGN_OUT_REVOKE_FAILED'`, `sessionId`,
+  `status`) when the revoke was not confirmed — after the local sign-out.
+- **Promoted sessions are adopted.** When the server promotes another account signed in on this browser
+  (`active_session_id` on the revoke), `signOut()` adopts it and resolves `activeSessionId`.
+- **Sibling tabs.** A tab whose session another tab signed out of (the tombstone reaches it through `localStorage`)
+  drops its token and re-checks, so it signs out too.
+- **Popup OAuth landing.** On startup the plugin completes a popup OAuth landing first
+  (`completeOAuthPopupLanding()` from `@atlasauth/js`): the result is relayed to the opener and the window closes,
+  or, when no opener takes it, the ticket is exchanged here (or the page continues to the step's
+  `continuationUrl`). After a ticket exchange inside the Atlas popup the popup hands back to the opener and
+  closes (`closeOAuthPopupAfterSignIn()`); an ordinary tab never closes.
+- **Email delivery in the prebuilt components** (from `settings.emailDelivery`, all `true` when the server omits it):
+  - `<SignUp>` shows a "can't send email" notice instead of the email + password form when
+    `emailDelivery.passwordSignUp` is `false` (new catalog key `signUp.emailUnavailable`, default
+    `"This app can't send email right now. Try another sign-in method or contact the app owner."`).
+  - `<SignIn>`'s first-factor step now offers "Email me a code" / "Email me a sign-in link" for the server's
+    `email_code` / `email_link` strategies, filtered with `offeredFirstFactors()` so they are hidden while the app
+    can't deliver email (new catalog keys `signIn.useEmailCode`, `signIn.useEmailLink`; buttons carry
+    `data-strategy`).
+- **Added to `FlowController`**: `prepare(strategy: 'email_code' | 'email_link'): Promise<boolean>`
+  (`prepare_first_factor`).
+- **Added exports** `SignOutError` and `type SignOutResult` (re-exported from `@atlasauth/js`).
+
 ## 0.3.0
 - **`<SignUp>` now creates accounts.** Its first step is a create-account form (the instance's
   configured sign-up fields, email, password and the legal-consent row) that posts

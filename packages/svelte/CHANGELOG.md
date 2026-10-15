@@ -1,5 +1,36 @@
 # @atlasauth/svelte changelog
 
+## 0.4.0
+- **Safer sign-out.** `signOut(options?)` (on the client, `getAuth()` and the `signOut()` helper) now
+  resolves `SignOutResult` — `{ revoked: boolean; activeSessionId?: string }` — instead of `void`
+  (existing `await signOut()` call sites keep working). The session is revoked on the Frontend API (retried
+  once) even when no token is cached (the session is looked up from the cookies), and is remembered
+  (a tombstone in `localStorage`, per Frontend API) so a reload, a token refresh, a sibling tab or a tab
+  opened later never re-adopts it while the refresh cookie is still valid; a revoke the server did not
+  confirm is re-tried in the background and the tombstone dropped once it lands. A session the server
+  promotes on revoke (`active_session_id`) is adopted. `signOut({ strict: true })` rejects with a
+  `SignOutError` (after the local sign-out) when the revoke was not confirmed. Built on `SignOutGuard`
+  from `@atlasauth/js`.
+- **Sibling-tab sign-out.** A tab signed in to a session another tab signed out of now signs out too.
+- **Popup landing.** On boot the client completes a severed OAuth popup landing
+  (`#atlas_popup_result=…`): it relays the result to the opener and closes when the opener takes it,
+  otherwise exchanges the ticket itself (or follows the continuation URL). After exchanging a redirect
+  ticket inside the Atlas popup window it hands back to the opener and closes the popup.
+- **Email delivery.** The prebuilt components read `settings.emailDelivery`:
+  `<SignUp>` shows a "can't send email" notice (`signUp.emailUnavailable`) instead of the email + password
+  form when `passwordSignUp` is false; `<SignIn>` offers emailed first factors only while `available`.
+- **`<SignIn>` first-factor choice.** When the server offers `email_code` / `email_link`, the first-factor
+  step shows "Email me a code" / "Email me a sign-in link" buttons next to the password field.
+- **Added to `FlowController`:** `prepare(strategy: 'email_code' | 'email_link'): Promise<boolean>`.
+- **Changed types:** `AtlasClient.signOut`, `UseAuth.signOut` and the `signOut()` helper return
+  `Promise<SignOutResult>`.
+- **Added re-exports** from `@atlasauth/js`: `SignOutError` (class), and the types `SignOutResult`,
+  `SignOutOptions`, `EmailDelivery`.
+- **Added catalog keys** (en-US): `signUp.emailUnavailable`, `signIn.emailCodeOption`,
+  `signIn.emailLinkOption`.
+- `destroy()` now also stops the sibling-tab watch and cancels background revoke re-tries.
+- Requires `@atlasauth/js` 0.8.0.
+
 ## 0.3.0
 - **`<SignUp>` now creates accounts.** Its first step is a create-account form (the instance's
   configured sign-up fields, email, password and the legal-consent row) that posts

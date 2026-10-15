@@ -36,6 +36,7 @@ export const ptBR: LocalizationResource = {
   'signUp.terms': 'Termos de Serviço',
   'signUp.privacy': 'Política de Privacidade',
   'signUp.and': 'e',
+  'signUp.emailUnavailable': 'Este app não consegue enviar e-mails no momento. Tente outro método de login ou entre em contato com o responsável pelo app.',
   'captcha.prompt': 'Conclua a verificação de segurança para continuar.',
   'captcha.required': 'Conclua a verificação de segurança e tente novamente.',
   'captcha.failed': 'A verificação de segurança não foi aprovada. Tente novamente.',

@@ -1,4 +1,6 @@
 import {
+  EMAIL_DELIVERY_UNKNOWN,
+  SignOutGuard,
   advance,
   fetchInstanceSettings,
   getProviderToken as fetchProviderToken,
@@ -9,18 +11,25 @@ import {
   resolveFrontendApi,
   startSignUp,
   type CaptchaFlowKey,
+  type EmailDelivery,
   type FapiClient,
+  type FapiRequest,
   type FlowCaptcha,
   type FlowState,
+  type InstanceSettings,
   type ProviderToken,
+  type SignOutOptions,
+  type SignOutResult,
+  type TombstoneStore,
 } from '@atlasauth/js';
 import {
+  bearerFetch,
   createNativeClient,
   exchangeTicketForToken,
   fetchCurrentUser,
   startOAuthSignIn,
 } from './fapi';
-import { createInMemoryStorage, type TokenStorage } from './storage';
+import { createInMemoryStorage, createInMemoryTombstoneStore, type TokenStorage } from './storage';
 import {
   decodeClaims,
   type AtlasSession,
@@ -58,8 +67,23 @@ export interface AtlasStoreConfig {
   frontendApi?: string;
   /** Where the session token lives. Defaults to non-persistent in-memory. */
   storage?: TokenStorage;
+  /**
+   * Where the ids of sessions this app signed out of are remembered, so a
+   * session whose revoke never reached the server (offline, a 5xx) is not
+   * re-adopted from a token the sign-out could not clear. Defaults to
+   * process memory, which does not survive a restart — pass an AsyncStorage /
+   * `expo-secure-store` adapter (see `createInMemoryTombstoneStore`) to keep
+   * them across launches. Holds session ids only, never a token.
+   */
+  tombstoneStore?: TombstoneStore;
   /** Injectable for tests; defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
+  /**
+   * Delays (ms) between background re-tries of a revoke `signOut()` could not
+   * complete. Default `[15_000, 60_000, 300_000]`; `[]` re-tries only on a
+   * later `bootstrap()`.
+   */
+  signOutRetryDelaysMs?: number[];
   /**
    * §5 supply a captcha token when the instance requires one. Captcha providers
    * draw their challenge in a browser, so this SDK renders none itself: render
@@ -103,19 +127,41 @@ export class AtlasStore {
   private readonly storage: TokenStorage;
   private readonly client: FapiClient;
   private readonly getCaptchaToken?: AtlasStoreConfig['getCaptchaToken'];
+  /** Tombstones + revoke (with background re-try) for `signOut()` and `bootstrap()`. */
+  private readonly guard: SignOutGuard;
+  /** A raw FAPI request authenticated with `token` (not the stored one). */
+  private readonly requestWith: (token: string | null) => FapiRequest;
 
   constructor(config: AtlasStoreConfig) {
     this.storage = config.storage ?? createInMemoryStorage();
     this.getCaptchaToken = config.getCaptchaToken;
     const fetchImpl = config.fetchImpl ?? fetch;
+    const frontendApi = resolveFrontendApi(config.frontendApi, {
+      component: '<AtlasProvider> / createAtlasStore()',
+      allowSameOrigin: false,
+    });
     this.client = createNativeClient({
       publishableKey: config.publishableKey,
-      frontendApi: resolveFrontendApi(config.frontendApi, {
-        component: '<AtlasProvider> / createAtlasStore()',
-        allowSameOrigin: false,
-      }),
+      frontendApi,
       fetchImpl,
       getToken: () => this.storage.getToken(),
+    });
+    // The revoke is bound to the token being dropped, not read from storage at
+    // call time: sign-out clears storage, and the background re-try of a failed
+    // revoke must still be able to authenticate as the session it is ending.
+    this.requestWith = (token) => (path, init = {}) => {
+      const headers = new Headers(init.headers);
+      headers.set('x-publishable-key', config.publishableKey);
+      return bearerFetch(fetchImpl, () => token)(`${frontendApi}${path}`, { ...init, headers });
+    };
+    this.guard = new SignOutGuard({
+      request: (path, init) =>
+        Promise.resolve(this.storage.getToken()).then((token) => this.requestWith(token)(path, init)),
+      frontendApi,
+      store: config.tombstoneStore ?? createInMemoryTombstoneStore(),
+      // No DOM: front-channel logout iframes cannot run here.
+      frontChannelLogout: false,
+      ...(config.signOutRetryDelaysMs ? { retryDelaysMs: config.signOutRetryDelaysMs } : {}),
     });
   }
 
@@ -134,6 +180,8 @@ export class AtlasStore {
   }
 
   private async setSessionToken(jwt: string): Promise<void> {
+    // A session this app signed out of is never adopted again.
+    if (this.guard.isSignedOut(decodeClaims(jwt)?.sid)) return;
     await this.storage.setToken(jwt);
     this.setState({ status: 'signed_in', claims: decodeClaims(jwt) });
     // Fill in user/session; a failure here does not undo the sign-in — the token
@@ -150,13 +198,20 @@ export class AtlasStore {
 
   /** Boot from whatever the storage adapter holds. Call once on mount. */
   bootstrap = async (): Promise<void> => {
+    // Persisted tombstones first: a cold start must not re-adopt a session the
+    // app signed out of while its revoke never reached the server.
+    await this.guard.ready;
     const token = await this.storage.getToken();
     if (!token) {
       this.signedOut();
       return;
     }
-    this.setState({ status: 'signed_in', claims: decodeClaims(token) });
+    const claims = decodeClaims(token);
+    if (this.refuse(claims?.sid, token)) return this.dropRefused();
+    this.setState({ status: 'signed_in', claims });
     const { user, session } = await fetchCurrentUser(this.client);
+    // The claims may lack `sid`; the session the server reports is checked too.
+    if (session && this.refuse(session.id, token)) return this.dropRefused();
     if (user) {
       this.setState({ user, session });
     } else {
@@ -174,10 +229,74 @@ export class AtlasStore {
   getProviderToken = (provider: string): Promise<ProviderToken | null> =>
     fetchProviderToken(this.client, provider);
 
-  signOut = async (): Promise<void> => {
-    await this.storage.clearToken();
+  /**
+   * Sign out: revoke the session on the Frontend API (retried once), drop the
+   * stored token, and reset to signed-out. Resolves `{ revoked }` — `false`
+   * when the server could not be reached or refused, in which case the session
+   * id is remembered (see {@link AtlasStoreConfig.tombstoneStore}) so it is
+   * never re-adopted, and the revoke is re-tried in the background with the
+   * dropped token. With `{ strict: true }` an unconfirmed revoke rejects with a
+   * `SignOutError` instead — after the local sign-out.
+   *
+   * `activeSessionId` is reported when the server names a promoted session, but
+   * it is not adopted: promotion swaps browser session cookies, and a bearer
+   * client receives no token for the promoted session (the Frontend API does not
+   * promote on a bearer revoke today). Sign in again to use it.
+   */
+  signOut = async (options: SignOutOptions = {}): Promise<SignOutResult> => {
+    let token: string | null = null;
+    try {
+      token = await this.storage.getToken();
+    } catch {
+      token = null;
+    }
+    const sessionId = (token ? decodeClaims(token)?.sid : null) ?? this.state.session?.id ?? null;
+    const attempt = await this.guard.revoke(sessionId, { ...options, request: this.requestWith(token) });
+    try {
+      await this.storage.clearToken();
+    } catch {
+      // The tombstone still keeps the next bootstrap from re-adopting it.
+    }
     this.signedOut();
+    return this.guard.settle(attempt, options);
   };
+
+  /** Cancel scheduled background revoke re-tries (provider unmount). */
+  dispose = (): void => {
+    this.guard.dispose();
+  };
+
+  /**
+   * The instance's public sign-in / sign-up settings (`GET /v1/appearance`),
+   * or null when they could not be read — for an app drawing its own forms.
+   */
+  getInstanceSettings = (): Promise<InstanceSettings | null> => fetchInstanceSettings(this.client);
+
+  /**
+   * Whether the app can deliver email (`InstanceSettings.emailDelivery`): hide
+   * "Forgot password?" when `passwordReset` is false, show a "can't send email"
+   * state (`EMAIL_UNAVAILABLE_MESSAGE`) instead of email + password sign-up when
+   * `passwordSignUp` is false, and filter sign-in strategies with
+   * `offeredFirstFactors()`. Everything reads as available when the settings
+   * cannot be read — the server still refuses what it cannot deliver.
+   */
+  getEmailDelivery = async (): Promise<EmailDelivery> =>
+    (await this.getInstanceSettings())?.emailDelivery ?? { ...EMAIL_DELIVERY_UNKNOWN };
+
+  /** Whether `sessionId` was signed out of here; re-tries its revoke in the background. */
+  private refuse(sessionId: string | null | undefined, token: string): boolean {
+    return this.guard.refuse(sessionId, this.requestWith(token));
+  }
+
+  /** Boot found a signed-out session's token: drop it and stay signed out. */
+  private async dropRefused(): Promise<void> {
+    try {
+      await this.storage.clearToken();
+    } catch {
+      // The tombstone keeps refusing it.
+    }
+    this.signedOut();
+  }
 
   // ── sign-in ────────────────────────────────────────────────────────────────
 
@@ -403,3 +522,16 @@ function extractSearch(url: string): string {
     return q >= 0 ? url.slice(q) : '';
   }
 }
+
+// The sign-out and email-delivery types the store's surface uses, so an app
+// imports them from this package.
+export {
+  EMAIL_DELIVERY_UNKNOWN,
+  EMAIL_UNAVAILABLE_MESSAGE,
+  SignOutError,
+  offeredFirstFactors,
+  type EmailDelivery,
+  type InstanceSettings,
+  type SignOutOptions,
+  type SignOutResult,
+} from '@atlasauth/js';

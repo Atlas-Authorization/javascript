@@ -17,3 +17,8 @@ export * from './control-components';
 export * from './components';
 export * from './widget';
 export * from './protect';
+
+// The sign-out result and its strict-mode error, so callers need not depend on
+// `@atlasauth/js` directly to name or `instanceof` them.
+export { SignOutError } from '@atlasauth/js';
+export type { SignOutOptions, SignOutResult } from '@atlasauth/js';

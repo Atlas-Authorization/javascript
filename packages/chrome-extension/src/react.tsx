@@ -1,7 +1,8 @@
-import { createElement, useMemo } from 'react';
+import { createElement, useEffect, useMemo } from 'react';
+import { resolveFrontendApi, type TombstoneStore } from '@atlasauth/js';
 import { AtlasProvider as ReactAtlasProvider, type AtlasProviderProps } from '@atlasauth/react';
-import { persistingBearerFetch } from './client';
-import { StorageCache, type TokenStore } from './storage';
+import { ExtensionSignOutGuard, persistingBearerFetch } from './client';
+import { StorageCache, createChromeTombstoneStore, type TokenStore } from './storage';
 
 /**
  * `<AtlasProvider>` for a Chrome/MV3 extension.
@@ -22,6 +23,14 @@ import { StorageCache, type TokenStore } from './storage';
  * `syncSessionToken`, `StorageCache`) from the package root instead and never
  * pulls React in.
  *
+ * Sign-out is `@atlasauth/react`'s (`signOut(options?)` resolving
+ * `SignOutResult`, `{ strict: true }` rejecting with `SignOutError`), made safe
+ * for the surfaces sharing `chrome.storage`: revoking the stored token's session
+ * tombstones it in `chrome.storage.local` and drops the token for every surface,
+ * a stored token of a signed-out session is never sent (so a boot on any surface
+ * stays signed out — its revoke is re-tried in the background) nor written back
+ * by a refresh that was in flight.
+ *
  * The token must already be in the store (seed it with `client.setToken(jwt)`
  * after a hosted sign-in, or let a prior session persist it). This provider does
  * not itself drive the sign-in UI flow.
@@ -31,14 +40,36 @@ export interface ChromeAtlasProviderProps extends Omit<AtlasProviderProps, 'fetc
   store?: TokenStore;
   /** Base `fetch` to wrap (before bearer/persist). Defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
+  /**
+   * Where the ids of sessions the extension signed out of are kept, shared by
+   * every surface. Defaults to the {@link StorageCache}'s area (else `chrome.storage.local`).
+   */
+  tombstoneStore?: TombstoneStore;
 }
 
 export function AtlasProvider(props: ChromeAtlasProviderProps) {
-  const { store, fetchImpl, ...rest } = props;
+  const { store, fetchImpl, tombstoneStore, ...rest } = props;
+
+  const tokenStore = useMemo(() => store ?? new StorageCache(), [store]);
+  const signOutGuard = useMemo(
+    () =>
+      new ExtensionSignOutGuard({
+        publishableKey: rest.publishableKey,
+        // Throws the same AtlasConfigError the React provider would.
+        frontendApi: resolveFrontendApi(rest.frontendApi, { component: '<AtlasProvider>' }),
+        ...(fetchImpl ? { fetchImpl } : {}),
+        tombstoneStore:
+          tombstoneStore ??
+          (tokenStore instanceof StorageCache ? tokenStore.tombstoneStore() : createChromeTombstoneStore()),
+      }),
+    [rest.publishableKey, rest.frontendApi, fetchImpl, tombstoneStore, tokenStore],
+  );
+  // Cancel scheduled background revokes when the provider goes away.
+  useEffect(() => () => signOutGuard.guard.dispose(), [signOutGuard]);
 
   const wrappedFetch = useMemo(
-    () => persistingBearerFetch(fetchImpl ?? fetch, store ?? new StorageCache()),
-    [store, fetchImpl],
+    () => persistingBearerFetch(fetchImpl ?? fetch, tokenStore, signOutGuard),
+    [tokenStore, fetchImpl, signOutGuard],
   );
 
   return createElement(ReactAtlasProvider, { ...rest, fetchImpl: wrappedFetch });

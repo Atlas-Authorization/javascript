@@ -39,6 +39,14 @@ export interface NativeSessionConfig {
   fetchImpl?: typeof fetch;
   /** Injectable clock, epoch ms. Defaults to `Date.now`. */
   now?: () => number;
+  /**
+   * Asked before a session is adopted from the store on boot, and before a
+   * (rotated) session is persisted. Return true for a session the app signed
+   * out of: it is not seeded (and is cleared from the store), nor written back
+   * by a refresh that was still in flight at sign-out. `createAtlasCapacitor`
+   * wires this to its `SignOutGuard`.
+   */
+  refuse?: (session: NativeSession) => boolean;
 }
 
 /**
@@ -59,7 +67,15 @@ export async function createNativeSessionManager(
     allowSameOrigin: false,
   });
   const storage = config.storage ?? createInMemoryTokenStore();
-  const initial = parseNativeSession(await storage.getToken()) ?? undefined;
+  let initial = parseNativeSession(await storage.getToken()) ?? undefined;
+  if (initial && config.refuse?.(initial)) {
+    // A session this app signed out of (the clear never landed, or a refresh
+    // in flight at sign-out wrote it back): boot signed out.
+    initial = undefined;
+    await Promise.resolve()
+      .then(() => storage.clearToken())
+      .catch(() => undefined);
+  }
 
   return new NativeSessionManager({
     baseUrl,
@@ -72,6 +88,7 @@ export async function createNativeSessionManager(
     // the rotated refresh token survives an app restart. Fire-and-forget — the
     // store may be async, and a write failure must not break the live session.
     persist: (session: NativeSession) => {
+      if (config.refuse?.(session)) return;
       void Promise.resolve(storage.setToken(serializeNativeSession(session))).catch(
         () => undefined,
       );

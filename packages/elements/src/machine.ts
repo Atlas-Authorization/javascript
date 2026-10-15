@@ -18,7 +18,14 @@
  * we layer the Clerk-Elements step *names* on top of it here.
  */
 
-import { nextStep, errorsFor, type AttemptView, type FieldError } from '@atlasauth/js';
+import {
+  nextStep,
+  errorsFor,
+  offeredFirstFactors,
+  type AttemptView,
+  type EmailDelivery,
+  type FieldError,
+} from '@atlasauth/js';
 
 /** Which flow a primitive belongs to. */
 export type FlowMode = 'sign-in' | 'sign-up';
@@ -120,18 +127,45 @@ export function fieldError(errors: readonly FieldError[], name: string): FieldEr
  *   a client-side guess, because §13.2 keeps that list uniform for unknown
  *   identifiers and filtering it would reintroduce the enumeration leak.
  *
+ * - The email-delivery facts (`instanceSettings.emailDelivery`, pass them as
+ *   `delivery`) narrow that by what the APP can do, never by the identifier:
+ *   `email_code` / `email_link` are not offered while email can't be delivered
+ *   (`available === false`), and the `reset_password` pseudo-strategy — wrap
+ *   your "Forgot password?" link in `<SignIn.Strategy name="reset_password">` —
+ *   is offered on a first-factor step that lists `password` only while reset
+ *   emails can be delivered (`passwordReset !== false`).
+ *
  * Any other step offers no strategy picker.
  */
-export function strategyAvailable(attempt: AttemptView | null, strategy: string): boolean {
+export function strategyAvailable(
+  attempt: AttemptView | null,
+  strategy: string,
+  delivery?: EmailDelivery | null,
+): boolean {
   const step = attempt ? nextStep(attempt) : ({ kind: 'collect_identifier' } as const);
 
   if (step.kind === 'collect_identifier' || step.kind === 'collect_captcha') {
     return strategy.startsWith('oauth_') || strategy === 'passkey';
   }
   if (step.kind === 'collect_first_factor') {
-    return step.strategies.includes(strategy);
+    if (strategy === RESET_PASSWORD_STRATEGY) {
+      return step.strategies.includes('password') && delivery?.passwordReset !== false;
+    }
+    return offeredFirstFactors(step.strategies, delivery).includes(strategy);
   }
   return false;
+}
+
+/** The pseudo-strategy that gates a "Forgot password?" control (see {@link strategyAvailable}). */
+export const RESET_PASSWORD_STRATEGY = 'reset_password';
+
+/**
+ * Whether email + password sign-up cannot complete because the app can't
+ * deliver the verification email — what `<SignUp.EmailUnavailable>` shows for.
+ * False until the settings have loaded, and on an older server that does not say.
+ */
+export function signUpEmailUnavailable(delivery: EmailDelivery | null | undefined): boolean {
+  return delivery?.passwordSignUp === false;
 }
 
 /** The provider key an `oauth_<provider>` strategy name points at, or `null`. */

@@ -1,5 +1,33 @@
 # @atlasauth/react-native changelog
 
+## 0.4.0
+- **Safer sign-out.** `signOut(options?: SignOutOptions)` (on `AtlasStore` and `useAuth()`) now revokes the
+  session on the Frontend API (`POST /v1/client/sessions/:id/revoke`, retried once) with the token being
+  dropped, then clears the stored token, and resolves `SignOutResult` (`{ revoked: boolean; activeSessionId?: string }`)
+  instead of `void`. Existing `await signOut()` call sites keep working.
+  - `{ strict: true }` rejects with `SignOutError` (`code: 'SIGN_OUT_REVOKE_FAILED'`, `sessionId`, `status`)
+    when the revoke was not confirmed, after the local sign-out.
+  - The session id is remembered (a tombstone) before the revoke, so `bootstrap()` never re-adopts a
+    signed-out session from a token that survived the sign-out; a refused session's revoke is re-tried in
+    the background (bound to its own token) and the tombstone dropped once the server confirms. A token
+    adapter whose `clearToken()` throws no longer makes `signOut()` reject.
+  - `activeSessionId` is reported when the server names a promoted session, but not adopted: a bearer
+    client receives no token for it (the Frontend API does not promote on a bearer revoke today).
+  - A session with no `sid` in the stored token is found with `GET /v1/client` before revoking.
+- **Added `AtlasStoreConfig.tombstoneStore?: TombstoneStore`** / `<AtlasProvider tombstoneStore>`: where the
+  signed-out session ids are kept (session ids only, never tokens). Defaults to memory; pass an AsyncStorage /
+  `expo-secure-store` adapter to keep them across restarts. Added `createInMemoryTombstoneStore()` and the
+  `TombstoneStore` type export.
+- **Added `AtlasStoreConfig.signOutRetryDelaysMs?: number[]`**: delays between background revoke re-tries
+  (default `[15000, 60000, 300000]`).
+- **Added `AtlasStore.dispose()`**: cancels scheduled background re-tries (`<AtlasProvider>` calls it on unmount).
+- **Added email-delivery facts for apps drawing their own screens** (this SDK ships no prebuilt sign-in /
+  sign-up UI): `AtlasStore.getInstanceSettings(): Promise<InstanceSettings | null>`,
+  `AtlasStore.getEmailDelivery(): Promise<EmailDelivery>` (all `true` when unknown) and the
+  `useEmailDelivery(): { isLoaded: boolean; emailDelivery: EmailDelivery | null }` hook.
+- **Re-exported from `@atlasauth/js`:** `SignOutError`, `SignOutResult`, `SignOutOptions`, `EmailDelivery`,
+  `InstanceSettings`, `EMAIL_DELIVERY_UNKNOWN`, `EMAIL_UNAVAILABLE_MESSAGE`, `offeredFirstFactors`.
+
 ## 0.3.0
 - **Fixed: `signUpWithPassword` now creates accounts.** It posted `email_address` (and top-level
   `first_name` / `last_name`), which the Frontend API does not read, so every sign-up was refused for a

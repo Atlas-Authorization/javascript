@@ -5,6 +5,7 @@ import {
   fieldError,
   oauthProviderOf,
   runAction,
+  signUpEmailUnavailable,
   stepForAttempt,
   stepMatches,
   strategyAvailable,
@@ -86,6 +87,37 @@ describe('strategyAvailable — which strategies a Step offers', () => {
   it('offers no strategy picker on a second-factor / verification step', () => {
     expect(strategyAvailable(attempt('needs_second_factor'), 'password')).toBe(false);
     expect(strategyAvailable(attempt('needs_email_verification'), 'email_code')).toBe(false);
+  });
+});
+
+describe('strategyAvailable — email delivery', () => {
+  const NO_EMAIL = { available: false, passwordReset: false, passwordSignUp: false };
+  const ALL = { available: true, passwordReset: true, passwordSignUp: true };
+  const ff = attempt('needs_first_factor', { supported_first_factors: ['password', 'email_code', 'email_link'] });
+
+  it('hides email code / link while the app cannot deliver email', () => {
+    expect(strategyAvailable(ff, 'email_code', NO_EMAIL)).toBe(false);
+    expect(strategyAvailable(ff, 'email_link', NO_EMAIL)).toBe(false);
+    expect(strategyAvailable(ff, 'password', NO_EMAIL)).toBe(true);
+    expect(strategyAvailable(ff, 'email_code', ALL)).toBe(true);
+    // Not loaded yet / an older server: the server's list, unchanged.
+    expect(strategyAvailable(ff, 'email_code')).toBe(true);
+  });
+
+  it('offers reset_password beside password only while reset emails can be delivered', () => {
+    expect(strategyAvailable(ff, 'reset_password', ALL)).toBe(true);
+    expect(strategyAvailable(ff, 'reset_password')).toBe(true);
+    expect(strategyAvailable(ff, 'reset_password', { ...ALL, passwordReset: false })).toBe(false);
+    const codeOnly = attempt('needs_first_factor', { supported_first_factors: ['email_code'] });
+    expect(strategyAvailable(codeOnly, 'reset_password', ALL)).toBe(false);
+    expect(strategyAvailable(null, 'reset_password', ALL)).toBe(false);
+  });
+
+  it('signUpEmailUnavailable reads passwordSignUp, false while unknown', () => {
+    expect(signUpEmailUnavailable(NO_EMAIL)).toBe(true);
+    expect(signUpEmailUnavailable({ ...NO_EMAIL, passwordSignUp: true })).toBe(false);
+    expect(signUpEmailUnavailable(undefined)).toBe(false);
+    expect(signUpEmailUnavailable(null)).toBe(false);
   });
 });
 

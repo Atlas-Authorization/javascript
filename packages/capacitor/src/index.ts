@@ -17,7 +17,16 @@
  * want to drive the pieces themselves.
  */
 
-import { resolveFrontendApi, type NativeSession, type NativeSessionManager } from '@atlasauth/js';
+import {
+  NativeSessionManager,
+  SignOutGuard,
+  resolveFrontendApi,
+  type FapiRequest,
+  type NativeSession,
+  type SignOutOptions,
+  type SignOutResult,
+  type TombstoneStore,
+} from '@atlasauth/js';
 import {
   isNativePlatform,
   loadCapacitorPlugins,
@@ -32,6 +41,7 @@ import {
 import {
   createInMemoryTokenStore,
   createPreferencesTokenStore,
+  createPreferencesTombstoneStore,
   DEFAULT_SESSION_KEY,
   type TokenStore,
 } from './token-store';
@@ -57,6 +67,19 @@ export interface CreateAtlasCapacitorConfig {
   storage?: TokenStore;
   /** Where the transient PKCE material is stashed on the WEB redirect path. */
   pkceStore?: TokenStore;
+  /**
+   * Where the ids of sessions this app signed out of are kept, so a restart
+   * never re-adopts one (even when the revoke never reached the server).
+   * Defaults to `@capacitor/preferences` when present, else the WebView's
+   * `localStorage`. Adapt a secure-storage {@link TokenStore} with
+   * `tombstoneStoreFromTokenStore()` (give it its own slot).
+   */
+  tombstoneStore?: TombstoneStore;
+  /**
+   * Delays (ms) between background re-tries of a revoke `signOut()` could not
+   * complete. @default `[15_000, 60_000, 300_000]`
+   */
+  signOutRetryDelaysMs?: number[];
   /** Inject the Capacitor plugins (tests). Defaults to a lazy, guarded load. */
   plugins?: CapacitorPlugins;
   /** Injectable for tests; defaults to the platform `fetch`. */
@@ -94,8 +117,18 @@ export interface AtlasCapacitor {
    * (or null when there is nothing to complete).
    */
   handleRedirectCallback(url?: string): Promise<NativeSession | null>;
-  /** Forget the session and clear the store (sign-out). */
-  signOut(): Promise<void>;
+  /**
+   * Sign out: remember the session id (so nothing re-adopts it — not a refresh
+   * in flight, not the next app start), revoke it on the Frontend API (retried
+   * once, then in the background, authenticated as the dropped session), and
+   * forget it locally. Resolves `{ revoked }` — `false` when the server could
+   * not be reached (the app is signed out regardless). With `{ strict: true }`
+   * it rejects with a `SignOutError` instead, after the local sign-out.
+   *
+   * A bearer client never gets a server-promoted session's credential back from
+   * the revoke, so `activeSessionId` is reported (when present) but not adopted.
+   */
+  signOut(options?: SignOutOptions): Promise<SignOutResult>;
   /** The current session JWT, auto-refreshed near expiry; null when signed out. */
   getToken(): Promise<string | null>;
   /** The headers an authenticated `/v1/client/me/*` call needs (bearer + pk). */
@@ -153,6 +186,52 @@ export async function createAtlasCapacitor(
       ? createPreferencesTokenStore(plugins.Preferences, PKCE_STASH_KEY)
       : createInMemoryTokenStore());
 
+  const doFetch: typeof fetch = config.fetchImpl ?? ((input, init) => fetch(input, init));
+
+  /**
+   * A Frontend API request authenticated as `session` — and only it. Holds its
+   * own copy (never persisted), so a revoke re-tried after sign-out dropped the
+   * session can still authenticate: a 401 (the short-lived JWT expired) rotates
+   * it once with the refresh token and tries again.
+   */
+  const sessionBoundRequest = (session: NativeSession): FapiRequest => {
+    const holder = new NativeSessionManager({
+      baseUrl: frontendApi,
+      publishableKey: config.publishableKey,
+      initial: session,
+      fetchImpl: config.fetchImpl,
+      now: config.now,
+    });
+    return async (path, init) => {
+      const send = async () =>
+        doFetch(`${frontendApi}${path}`, {
+          ...init,
+          headers: { ...(await holder.authHeaders()), ...(init?.headers as Record<string, string>) },
+        });
+      const response = await send();
+      if (response.status !== 401 || !(await holder.refresh())) return response;
+      return send();
+    };
+  };
+
+  // The sessions this app signed out of, kept in the platform store so a
+  // restart never re-adopts one. Loaded before the stored session is trusted.
+  const tombstoneStore =
+    config.tombstoneStore ??
+    (plugins.Preferences ? createPreferencesTombstoneStore(plugins.Preferences) : undefined);
+  const guard = new SignOutGuard({
+    // Every revoke passes its own session-bound request; this one carries none.
+    request: (path, init) =>
+      doFetch(`${frontendApi}${path}`, {
+        ...init,
+        headers: { 'x-publishable-key': config.publishableKey, ...(init?.headers as Record<string, string>) },
+      }),
+    frontendApi,
+    ...(tombstoneStore ? { store: tombstoneStore } : {}),
+    ...(config.signOutRetryDelaysMs ? { retryDelaysMs: config.signOutRetryDelaysMs } : {}),
+  });
+  await guard.ready;
+
   const manager = await createNativeSessionManager({
     frontendApi,
     publishableKey: config.publishableKey,
@@ -160,7 +239,21 @@ export async function createAtlasCapacitor(
     storage,
     fetchImpl: config.fetchImpl,
     now: config.now,
+    // Never adopt (nor write back) a session this app signed out of; a stored
+    // one is revoked again in the background, as itself.
+    refuse: (session) =>
+      guard.isSignedOut(session.sessionId) && guard.refuse(session.sessionId, sessionBoundRequest(session)),
   });
+  // A refresh still in flight at sign-out must not put the session back in memory.
+  manager.onChange((session) => {
+    if (guard.isSignedOut(session.sessionId)) manager.clear();
+  });
+
+  const getToken = async (): Promise<string | null> => {
+    const token = await manager.getToken();
+    // Signed out while a refresh was in flight: the rotated token is not ours.
+    return token && manager.current ? token : null;
+  };
 
   const requireString = (value: string | undefined, name: string): string => {
     if (!value) throw new Error(`Atlas: \`${name}\` is required to sign in.`);
@@ -209,17 +302,34 @@ export async function createAtlasCapacitor(
       return session;
     },
 
-    async signOut() {
+    async signOut(options = {}) {
+      const session = manager.current;
+      // Tombstones the session synchronously, before anything below can yield;
+      // the revoke itself rides on the session being dropped.
+      const pending = session
+        ? guard.revoke(session.sessionId, { ...options, request: sessionBoundRequest(session) })
+        : null;
       manager.clear();
-      await clearNativeSession(storage);
+      // The tombstone already keeps a restart from re-adopting a session this
+      // clear fails to remove, so a store error does not fail the sign-out.
+      await Promise.resolve()
+        .then(() => clearNativeSession(storage))
+        .catch(() => undefined);
+      // Nothing to revoke when signed out (a bearer client has no cookie to find one by).
+      const attempt = pending ? await pending : { sessionId: null, outcome: { revoked: true, status: 200 } };
+      // A promoted session (`activeSessionId`) comes with cookies only — the
+      // bearer revoke never hands this client a credential for it — so it is
+      // reported, not adopted.
+      return guard.settle(attempt, options);
     },
 
-    getToken() {
-      return manager.getToken();
-    },
+    getToken,
 
-    authHeaders() {
-      return manager.authHeaders();
+    async authHeaders(): Promise<Record<string, string>> {
+      const token = await getToken();
+      return token
+        ? { Authorization: `Bearer ${token}`, 'x-publishable-key': config.publishableKey }
+        : { 'x-publishable-key': config.publishableKey };
     },
 
     getSession() {
@@ -227,12 +337,20 @@ export async function createAtlasCapacitor(
     },
 
     onChange(listener) {
-      return manager.onChange(listener);
+      return manager.onChange((session) => {
+        if (!guard.isSignedOut(session.sessionId)) listener(session);
+      });
     },
   };
 }
 
 // ── Re-exports: the pieces, for apps that drive the flow themselves ──────────
+export {
+  SignOutError,
+  type SignOutOptions,
+  type SignOutResult,
+  type TombstoneStore,
+} from '@atlasauth/js';
 export * from './plugins';
 export * from './pkce';
 export * from './token-store';

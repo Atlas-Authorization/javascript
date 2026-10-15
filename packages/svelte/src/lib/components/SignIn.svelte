@@ -8,6 +8,8 @@
    * server-side attempt status. Contains no decision about what comes next; it
    * renders whatever `status` the server returned. Draws the instance's sign-in
    * captcha when it is required (always-on, or a `needs_captcha` challenge).
+   * Offers emailed first factors (code / link) only while the app can deliver
+   * email (`settings.emailDelivery`).
    */
   export let afterUrl: string | undefined = undefined;
   // Reserved for parity with React's FlowProps; the redirect is handled by the
@@ -34,5 +36,7 @@
   errors={$flowState.errors}
   titleKey="signIn.title"
   onSubmit={flow.submit}
+  onPrepare={flow.prepare}
+  emailDelivery={$settings?.emailDelivery ?? null}
   {captcha}
 />

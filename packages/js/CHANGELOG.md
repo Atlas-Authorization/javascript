@@ -1,5 +1,32 @@
 # @atlasauth/js changelog
 
+## 0.8.0
+- **New: `SignOutGuard`** — the safer sign-out every framework provider now drives, so they all behave like
+  `@atlasauth/react`: `new SignOutGuard({ request, frontendApi?, store?, tombstones?, retryDelaysMs?,
+  frontChannelLogout? })` (`SignOutGuardOptions`). Methods: `revoke(sessionId, { frontchannel?, request? })` →
+  `SignOutAttempt` (`{ sessionId, outcome }`; finds the cookie session with `GET /v1/client` when the id is unknown,
+  tombstones it before revoking, revokes with one retry, runs front-channel logout, and re-tries a failed revoke in
+  the background after 15 s, 1 min and 5 min); `settle(attempt, { strict? })` → `SignOutResult` (throws
+  `SignOutError` under `strict`); `promoted(attempt)` → the server-promoted session id to adopt, or null;
+  `refuse(sessionId)` → whether a booted session must not be adopted (re-tries its revoke in the background and
+  removes the tombstone once it lands); `isSignedOut(id)`; `signal(attempt)` / `learn(message)` for the cross-tab
+  `{ signedOut: string[] }` message; `watch(current, onSignedOut)` (another tab signed out of this session);
+  `ready`; `dispose()`; `tombstones`. **Added types** `FapiRequest`, `SignOutGuardOptions`, `SignOutAttempt`,
+  `SignedOutSignal`.
+- **Tombstones on platforms without `localStorage`.** `SessionTombstonesOptions.store?: TombstoneStore` (new type:
+  `{ getItem(key), setItem(key, value) }`, sync or async) keeps the tombstones in the platform's own store
+  (AsyncStorage, `expo-secure-store`, `chrome.storage`, Capacitor Preferences…). **Added**
+  `SessionTombstones.ready: Promise<void>` (settles once the store has been read; immediate for `localStorage`).
+- **Email delivery.** `InstanceSettings.emailDelivery: EmailDelivery` (new type: `{ available, passwordReset,
+  passwordSignUp }`, read from `email_delivery` on `GET /v1/appearance`; all `true` on a server that does not send
+  it). **New helpers:** `emailDeliveryFrom(body)` (an environment / appearance body or the object itself),
+  `offeredFirstFactors(strategies, delivery)` (drops `email_code` / `email_link` while email can't be delivered),
+  and the constants `EMAIL_DELIVERY_UNKNOWN`, `EMAIL_UNAVAILABLE_MESSAGE`, `EMAIL_FIRST_FACTORS`.
+- **New: typed client environment.** `fetchClientEnvironment(client)` → `ClientEnvironment | null` and
+  `clientEnvironmentFrom(body)` for `GET /v1/client/environment`: `{ firstFactors, strategies, emailDelivery,
+  socialProviders }`, with the new `EnvironmentSocialProvider` type (`provider`, `native`, `mode`, `label`,
+  `display_name`, `icon`, `allow_sign_in`, `allow_sign_up`, `client_id?`, `bot_username?`).
+
 ## 0.7.0
 - **Popup OAuth completes when the opener page sends `Cross-Origin-Opener-Policy: same-origin`.** That
   header puts the provider popup in another browsing-context group: `popup.closed` reads `true` at once and

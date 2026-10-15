@@ -37,6 +37,14 @@ export interface AtlasProviderProps {
    * (see `TokenStorage`).
    */
   storage?: TokenStorage;
+  /**
+   * Where the ids of sessions this app signed out of are remembered (see
+   * `AtlasStoreConfig.tombstoneStore`). Defaults to memory; pass an
+   * AsyncStorage / `expo-secure-store` adapter (see
+   * `createInMemoryTombstoneStore`) so they survive a restart. Read once, when
+   * the store is created.
+   */
+  tombstoneStore?: AtlasStoreConfig['tombstoneStore'];
   /** Injectable for tests; defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
   /**
@@ -56,6 +64,7 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
       publishableKey: props.publishableKey,
       frontendApi: props.frontendApi,
       storage: props.storage,
+      tombstoneStore: props.tombstoneStore,
       fetchImpl: props.fetchImpl,
       getCaptchaToken: props.getCaptchaToken,
     }),
@@ -63,6 +72,8 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
 
   useEffect(() => {
     void store.bootstrap();
+    // Cancel scheduled background revoke re-tries on unmount.
+    return () => store.dispose();
   }, [store]);
 
   return <AtlasContext.Provider value={store}>{props.children}</AtlasContext.Provider>;

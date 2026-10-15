@@ -40,6 +40,7 @@ import {
   type AttemptView,
   type CaptchaController,
   type CaptchaControllerOptions,
+  type EmailDelivery,
   type FieldError,
   type FlowState,
 } from '@atlasauth/js';
@@ -73,6 +74,14 @@ export interface FlowContextValue {
   captcha?: CaptchaController;
   /** Whether the current step draws a captcha widget. */
   captchaNeeded?: boolean;
+  /**
+   * What the app can do given whether it can deliver email
+   * (`instanceSettings.emailDelivery`): `<*.Strategy>` hides email code / link
+   * and `reset_password` by it, and `<SignUp.EmailUnavailable>` shows when
+   * `passwordSignUp` is false. Undefined until the settings load (or in a
+   * hand-built context) — everything is then offered, as before.
+   */
+  emailDelivery?: EmailDelivery;
 }
 
 /** `useLayoutEffect` in the browser, `useEffect` during SSR (no warning). */
@@ -287,6 +296,7 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
       startPasskey,
       captcha,
       captchaNeeded,
+      ...(instanceSettings?.emailDelivery ? { emailDelivery: instanceSettings.emailDelivery } : {}),
     }),
     [
       mode,
@@ -301,6 +311,7 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
       startPasskey,
       captcha,
       captchaNeeded,
+      instanceSettings,
     ],
   );
 }

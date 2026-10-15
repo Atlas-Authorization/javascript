@@ -1,6 +1,8 @@
 // Provider configuration checks (frontendApi) shared by every framework SDK.
 export * from './config';
 export * from './sign-out';
+// The safer sign-out every framework provider drives (tombstones, background revoke).
+export * from './sign-out-guard';
 export * from './token-cache';
 export * from './tab-election';
 export * from './attempt';
@@ -32,6 +34,8 @@ export * from './captcha-widget';
 // sign-in / sign-up settings (`/v1/appearance`) they are driven by.
 export * from './captcha-controller';
 export * from './instance-settings';
+// `GET /v1/client/environment`, typed, and the `email_delivery` facts.
+export * from './environment';
 // Framework-agnostic authorization primitive — `has()`/`evaluate` for any
 // non-React/Next consumer reading org_role/org_permissions off its session.
 export {

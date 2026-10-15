@@ -9,6 +9,9 @@
  * <AtlasProvider publishableKey={pk} frontendApi="https://atlasauth.net">
  *   <SignUp.Root afterUrl="/welcome">
  *     <SignUp.Step name="start">
+ *       <SignUp.EmailUnavailable>
+ *         <p role="alert">This app can't send email right now.</p>
+ *       </SignUp.EmailUnavailable>
  *       <Field name="email"><Field.Label>Email</Field.Label><Field.Input /><Field.Error /></Field>
  *       <Field name="password"><Field.Label>Password</Field.Label><Field.Input /><Field.Error /></Field>
  *       <SignUp.Captcha />
@@ -26,10 +29,10 @@
  * ```
  */
 
-import { Action, Captcha, Step, Strategy, makeOauthButton, makeRoot } from './flow-parts';
+import { Action, Captcha, EmailUnavailable, Step, Strategy, makeOauthButton, makeRoot } from './flow-parts';
 
 export const Root = makeRoot('sign-up');
-export { Step, Action, Strategy, Captcha };
+export { Step, Action, Strategy, Captcha, EmailUnavailable };
 
 /** A per-provider social sign-up button (the `oauth_<provider>` strategy). */
 export const Connection = makeOauthButton();

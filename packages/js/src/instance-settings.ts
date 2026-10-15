@@ -1,4 +1,5 @@
 import type { CaptchaFlowKey, FlowCaptcha } from './captcha-widget';
+import { emailDeliveryFrom, type EmailDelivery } from './environment';
 import type { FapiClient } from './fapi';
 
 /**
@@ -16,6 +17,14 @@ export interface InstanceSettings {
   signUpFields: PublicSignUpField[];
   /** Terms / privacy links and whether agreement is required on sign-up. */
   legal: { termsUrl: string | null; privacyUrl: string | null; required: boolean };
+  /**
+   * Whether the app can deliver email, and what that allows: hide "Forgot
+   * password?" when `passwordReset` is false, email code / link options when
+   * `available` is false, and show a "can't send email" state instead of the
+   * password sign-up form when `passwordSignUp` is false. All true on an older
+   * server that does not say.
+   */
+  emailDelivery: EmailDelivery;
 }
 
 /** One configurable sign-up field, exactly as `/v1/appearance` resolves it. */
@@ -85,7 +94,7 @@ export function instanceSettingsFrom(body: unknown): InstanceSettings {
       }
     : NO_LEGAL;
 
-  return { captchaFlows, signUpFields, legal };
+  return { captchaFlows, signUpFields, legal, emailDelivery: emailDeliveryFrom(root) };
 }
 
 /**

@@ -29,6 +29,9 @@
  *           <Field.Error />
  *         </Field>
  *       </SignIn.Strategy>
+ *       <SignIn.Strategy name="reset_password">
+ *         <a href="/forgot-password">Forgot password?</a>
+ *       </SignIn.Strategy>
  *       <SignIn.Action action="submit">Sign in</SignIn.Action>
  *     </SignIn.Step>
  *

@@ -34,6 +34,7 @@ export const jaJP: Localization = {
   'signUp.terms': '利用規約',
   'signUp.privacy': 'プライバシーポリシー',
   'signUp.and': 'および',
+  'signUp.emailUnavailable': 'このアプリは現在メールを送信できません。別のサインイン方法をお試しいただくか、アプリの管理者にお問い合わせください。',
   'captcha.prompt': '続行するにはセキュリティチェックを完了してください。',
   'captcha.required': 'セキュリティチェックを完了してから、もう一度お試しください。',
   'captcha.failed': 'セキュリティチェックに合格しませんでした。もう一度お試しください。',

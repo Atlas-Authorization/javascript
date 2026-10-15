@@ -21,6 +21,8 @@
  * only through the {@link TokenStore} interface below.
  */
 
+import type { TombstoneStore } from '@atlasauth/js';
+
 /**
  * The minimal, structural shape of the two `chrome.storage.local` methods this
  * package uses. Declared here — rather than pulled from `@types/chrome` — so the
@@ -114,6 +116,37 @@ export class StorageCache implements TokenStore {
   async removeToken(): Promise<void> {
     await this.storage().remove(this.key);
   }
+
+  /**
+   * A {@link TombstoneStore} over this cache's storage area — where the ids of
+   * sessions the extension signed out of are kept, so no surface re-adopts one.
+   */
+  tombstoneStore(): TombstoneStore {
+    return createChromeTombstoneStore(() => this.storage());
+  }
+}
+
+/**
+ * A {@link TombstoneStore} over `chrome.storage.local` (or the given area): the
+ * sign-out tombstones `SignOutGuard` keeps (session ids, never tokens), shared by
+ * every extension surface and surviving the service worker being torn down.
+ * `chrome` is resolved on first use; with none, reads and writes reject (the
+ * guard then falls back to memory).
+ */
+export function createChromeTombstoneStore(
+  area?: ChromeStorageArea | (() => ChromeStorageArea),
+): TombstoneStore {
+  const resolve = (): ChromeStorageArea =>
+    typeof area === 'function' ? area() : (area ?? resolveChromeLocal());
+  return {
+    getItem: async (key) => {
+      const value = (await resolve().get(key))[key];
+      return typeof value === 'string' ? value : null;
+    },
+    setItem: async (key, value) => {
+      await resolve().set({ [key]: value });
+    },
+  };
 }
 
 /**

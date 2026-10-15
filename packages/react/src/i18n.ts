@@ -10,6 +10,8 @@
  * nobody can report; a button reading `signIn.submit` is one anyone can.
  */
 
+import { EMAIL_UNAVAILABLE_MESSAGE } from '@atlasauth/js';
+
 export type Catalog = Record<string, string>;
 
 export const EN_US: Catalog = {
@@ -40,6 +42,9 @@ export const EN_US: Catalog = {
   'signUp.terms': 'Terms of Service',
   'signUp.privacy': 'Privacy Policy',
   'signUp.and': 'and',
+  // Shown instead of the email + password form when the app can't deliver the
+  // verification email (`instanceSettings.emailDelivery.passwordSignUp === false`).
+  'signUp.emailUnavailable': EMAIL_UNAVAILABLE_MESSAGE,
 
   'captcha.prompt': 'Complete the security check to continue.',
   'captcha.required': 'Please complete the security check, then try again.',

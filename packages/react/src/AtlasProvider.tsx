@@ -30,6 +30,7 @@ import {
   type RevokeSessionOutcome,
   type SignOutOptions,
   type SignOutResult,
+  type TombstoneStore,
   runFrontChannelLogoutFromResponse,
 } from '@atlasauth/js';
 import { resolveLocale, type SupportedLocale } from '@atlasauth/localizations';
@@ -199,6 +200,16 @@ export interface AtlasProviderProps {
   onSignedIn?: (user: AtlasUser) => void;
   children: ReactNode;
   fetchImpl?: typeof fetch;
+  /**
+   * Where to keep the ids of sessions this app signed out of, for a runtime
+   * without `localStorage` (React Native / Expo, Electron's main process, an
+   * extension service worker). A two-method adapter over the platform's
+   * persistent store (`getItem` / `setItem`, sync or async). Without it the
+   * tombstones live in `localStorage` per Frontend API (memory only where there
+   * is none, so an app restart could re-adopt a session whose revoke failed).
+   * Read once, on first render.
+   */
+  tombstoneStore?: TombstoneStore;
 }
 
 export function AtlasProvider(props: AtlasProviderProps) {
@@ -231,7 +242,12 @@ export function AtlasProvider(props: AtlasProviderProps) {
   // API): never re-adopted from a still-valid refresh cookie, even when the
   // revoke did not reach the server — not by a reload, nor by a tab opened later.
   const tombstones = useRef<SessionTombstones | null>(null);
-  if (!tombstones.current) tombstones.current = new SessionTombstones({ frontendApi: baseUrl });
+  if (!tombstones.current) {
+    tombstones.current = new SessionTombstones({
+      frontendApi: baseUrl,
+      ...(props.tombstoneStore ? { store: props.tombstoneStore } : {}),
+    });
+  }
   const sessionIdRef = useRef<string | null>(null);
 
   /**
@@ -277,6 +293,9 @@ export function AtlasProvider(props: AtlasProviderProps) {
 
   const reload = useCallback(async () => {
     try {
+      // A custom tombstone store may answer asynchronously: never decide whether
+      // to adopt a session before it has (settled at once for localStorage).
+      await tombstones.current?.ready;
       const response = await call('/v1/client');
       if (!response.ok) throw new Error('boot failed');
 

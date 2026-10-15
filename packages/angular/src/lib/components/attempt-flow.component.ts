@@ -78,6 +78,17 @@ interface StepField {
             {{ t('signIn.submit') }}
           </button>
         }
+
+        @if (showEmailCodeOption()) {
+          <button
+            [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+            [disabled]="busy"
+            type="button"
+            (click)="chooseFactor.emit('email_code')"
+          >
+            {{ t('signIn.useEmailCode') }}
+          </button>
+        }
       </form>
     </div>
   `,
@@ -95,9 +106,19 @@ export class AttemptFlowComponent {
    * with `needs_captcha`. Null when the flow draws none.
    */
   @Input() captcha: CaptchaController | null = null;
+  /**
+   * The first factors to offer on the `needs_first_factor` step — pass
+   * `AtlasFlowController.firstFactors()`, which drops email code / link while the
+   * app cannot deliver email. Null uses the server's list as-is.
+   */
+  @Input() firstFactors: string[] | null = null;
+  /** The first factor already sent (`AtlasFlowController.preparedFactor()`): its code is collected. */
+  @Input() preparedFactor: string | null = null;
 
   /** Emits the collected field values when the form is submitted. */
   @Output() submitFlow = new EventEmitter<Record<string, string>>();
+  /** Emits when the user picks a first factor the server must send first (an emailed code). */
+  @Output() chooseFactor = new EventEmitter<'email_code'>();
 
   protected values: Record<string, string> = {};
 
@@ -135,8 +156,22 @@ export class AttemptFlowComponent {
     return !!this.captcha && (kind === 'collect_identifier' || kind === 'collect_captcha');
   }
 
+  /** The first factors on offer at a `needs_first_factor` step (empty on any other). */
+  private offered(): string[] {
+    const step = this.step();
+    if (step.kind !== 'collect_first_factor') return [];
+    return this.firstFactors ?? step.strategies;
+  }
+
+  protected showEmailCodeOption(): boolean {
+    return this.preparedFactor !== 'email_code' && this.offered().includes('email_code');
+  }
+
   protected showSubmit(): boolean {
     const kind = this.step().kind;
+    // Nothing to submit on a first-factor step that only offers an emailed code
+    // until that code is sent.
+    if (kind === 'collect_first_factor') return this.fields().length > 0;
     return kind !== 'done' && kind !== 'await_oauth';
   }
 
@@ -145,8 +180,17 @@ export class AttemptFlowComponent {
     switch (step.kind) {
       case 'collect_identifier':
         return [{ kind: 'input', name: 'identifier', labelKey: 'signIn.identifierLabel', type: 'email' }];
-      case 'collect_first_factor':
-        return [{ kind: 'input', name: 'password', labelKey: 'signIn.passwordLabel', type: 'password' }];
+      case 'collect_first_factor': {
+        if (this.preparedFactor === 'email_code') {
+          return [{ kind: 'input', name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
+        }
+        // The password field unless the only offer is an emailed code (chosen
+        // with the button below the form).
+        const offered = this.offered();
+        return offered.includes('email_code') && !offered.includes('password')
+          ? []
+          : [{ kind: 'input', name: 'password', labelKey: 'signIn.passwordLabel', type: 'password' }];
+      }
       case 'collect_second_factor':
         return [{ kind: 'input', name: 'code', labelKey: 'mfa.codeLabel', type: 'text' }];
       case 'enroll_second_factor':

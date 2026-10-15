@@ -36,6 +36,7 @@ export const frFR: LocalizationResource = {
   'signUp.terms': 'Conditions d’utilisation',
   'signUp.privacy': 'Politique de confidentialité',
   'signUp.and': 'et',
+  'signUp.emailUnavailable': "Cette application ne peut pas envoyer d'e-mails pour le moment. Veuillez essayer une autre méthode de connexion ou contacter le propriétaire de l'application.",
   'captcha.prompt': 'Effectuez la vérification de sécurité pour continuer.',
   'captcha.required': 'Veuillez effectuer la vérification de sécurité, puis réessayer.',
   'captcha.failed': 'La vérification de sécurité a échoué. Veuillez réessayer.',

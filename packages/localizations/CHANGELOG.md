@@ -1,5 +1,10 @@
 # @atlasauth/localizations changelog
 
+## 0.3.0
+- **Added key** `signUp.emailUnavailable` — the "can't send email" notice the prebuilt sign-up (and sign-in)
+  components show when the app cannot deliver email. Translated in every shipped locale (en-US, es-ES, fr-FR,
+  de-DE, pt-BR, ja-JP, nl-NL).
+
 ## 0.2.0
 - **Added keys** for the create-account form and captcha messages of the prebuilt components:
   `signUp.emailLabel`, `signUp.passwordLabel`, `signUp.optionalField` (keeps the `{label}`

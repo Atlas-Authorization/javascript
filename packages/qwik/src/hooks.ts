@@ -1,4 +1,4 @@
-import type { ProtectCondition, ProviderToken, SignOutOptions } from '@atlasauth/js';
+import type { ProtectCondition, ProviderToken, SignOutOptions, SignOutResult } from '@atlasauth/js';
 import { evaluate } from '@atlasauth/js';
 import { useAtlas } from './context';
 import {
@@ -80,7 +80,11 @@ export function useAuth(): {
   orgRole: string | null;
   getToken: () => Promise<string | null>;
   getProviderToken: (provider: string) => Promise<ProviderToken | null>;
-  signOut: (options?: SignOutOptions) => Promise<void>;
+  /**
+   * Resolves `{ revoked, activeSessionId? }`; `{ strict: true }` rejects with a
+   * `SignOutError` when the server never confirmed the revoke.
+   */
+  signOut: (options?: SignOutOptions) => Promise<SignOutResult>;
   /** Mirrors <Protect>, for logic that is not a render decision. */
   has: (condition: ProtectCondition) => boolean;
 } {
@@ -97,7 +101,9 @@ export function useAuth(): {
     getToken: () => store.client?.getToken() ?? Promise.resolve(null),
     getProviderToken: (provider: string) =>
       store.client?.getProviderToken(provider) ?? Promise.resolve(null),
-    signOut: (options?: SignOutOptions) => store.client?.signOut(options) ?? Promise.resolve(),
+    // No live client yet (SSR / before the visible task): nothing was revoked.
+    signOut: (options?: SignOutOptions) =>
+      store.client?.signOut(options) ?? Promise.resolve<SignOutResult>({ revoked: false }),
     // Evaluate against the store's claims directly so `has()` works even before
     // the client is attached (it is a pure read of the current claims).
     has: (condition: ProtectCondition) => evaluate(store.claims, condition).allowed,

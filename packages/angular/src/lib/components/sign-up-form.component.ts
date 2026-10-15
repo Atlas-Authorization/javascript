@@ -27,7 +27,9 @@ export interface SignUpFormSubmit {
  * The create-account step of `<atlas-sign-up>`: the instance's configured extra
  * fields, email + password, the legal-consent row and — when the instance
  * requires one on sign-up — the captcha widget. Values live on the component so
- * a refused submit never clears them.
+ * a refused submit never clears them. When the app cannot send the verification
+ * email (`settings.emailDelivery.passwordSignUp === false`) it shows the
+ * `signUp.emailUnavailable` notice instead of the form.
  */
 @Component({
   selector: 'atlas-sign-up-form',
@@ -38,6 +40,13 @@ export interface SignUpFormSubmit {
     <div [class]="cls('card', 'atlas-card')">
       <h1 [class]="cls('headerTitle', 'atlas-title')">{{ t('signUp.title') }}</h1>
 
+      @if (emailUnavailable()) {
+        <!-- The app cannot send the verification email, so an email + password
+             sign-up could never complete: say so instead of offering the form. -->
+        <p [class]="cls('formFieldError', 'atlas-error')" role="alert" data-atlas-email-unavailable="">
+          {{ t('signUp.emailUnavailable') }}
+        </p>
+      } @else {
       @for (error of formErrors(); track error.code) {
         <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ error.message }}</p>
       }
@@ -188,6 +197,7 @@ export interface SignUpFormSubmit {
           {{ t('signUp.submit') }}
         </button>
       </form>
+      }
     </div>
   `,
 })
@@ -215,6 +225,11 @@ export class SignUpFormComponent {
 
   protected setValue(name: string, value: string): void {
     this.values = { ...this.values, [name]: value };
+  }
+
+  /** Email + password sign-up cannot complete: the app cannot send the verification email. */
+  protected emailUnavailable(): boolean {
+    return this.settings?.emailDelivery?.passwordSignUp === false;
   }
 
   protected fields(): PublicSignUpField[] {
@@ -264,7 +279,7 @@ export class SignUpFormComponent {
 
   protected onSubmit(event: Event): void {
     event.preventDefault();
-    if (!this.consentOk()) return;
+    if (this.emailUnavailable() || !this.consentOk()) return;
     this.submitSignUp.emit({
       values: { ...this.values },
       consent: this.settings?.legal?.required ? this.agreed : true,

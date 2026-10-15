@@ -38,6 +38,7 @@ export const enUS: LocalizationResource = {
   'signUp.terms': 'Terms of Service',
   'signUp.privacy': 'Privacy Policy',
   'signUp.and': 'and',
+  'signUp.emailUnavailable': "This app can't send email right now. Try another sign-in method or contact the app owner.",
 
   'captcha.prompt': 'Complete the security check to continue.',
   'captcha.required': 'Please complete the security check, then try again.',

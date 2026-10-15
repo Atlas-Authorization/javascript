@@ -1,5 +1,22 @@
 # @atlasauth/elements changelog
 
+## 0.3.0
+- **`<SignIn.Strategy>` / `<SignUp.Strategy>` follow the app's email delivery**
+  (`instanceSettings.emailDelivery` from `@atlasauth/react`): `email_code` / `email_link` are not offered
+  while the app can't deliver email (`available === false`), via `offeredFirstFactors` from
+  `@atlasauth/js`.
+- **Added the `reset_password` strategy name** for a "Forgot password?" control: `<SignIn.Strategy
+  name="reset_password">` renders on a first-factor step that offers `password`, and only while reset
+  emails can be delivered (`passwordReset !== false`). Exported as `RESET_PASSWORD_STRATEGY`.
+- **Added `<SignUp.EmailUnavailable>`** (props type `EmailUnavailableProps`): renders its children (default:
+  the English "This app can't send email right now. Try another sign-in method or contact the app
+  owner.") on the sign-up start step when `emailDelivery.passwordSignUp === false`.
+- **Added `emailDelivery?: EmailDelivery` to `FlowContextValue`** (undefined until the settings load).
+- **Changed `strategyAvailable(attempt, strategy, delivery?)`**: new optional third argument. Added
+  `signUpEmailUnavailable(delivery)`.
+- Social sign-in and sign-out come from `@atlasauth/react` (`useSignIn().startOauth`, `useAtlas()`), so
+  this release picks up its popup and sign-out changes with no code here.
+
 ## 0.2.0
 - **Added `<SignIn.Captcha>` and `<SignUp.Captcha>`** — where the instance's captcha widget draws
   (Turnstile, hCaptcha, reCAPTCHA v2/v3/Enterprise) in the mode the dashboard configured. A bare `<div>`

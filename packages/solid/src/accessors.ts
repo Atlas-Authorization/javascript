@@ -1,4 +1,10 @@
-import { evaluate, type ProtectCondition, type ProviderToken, type SignOutOptions } from '@atlasauth/js';
+import {
+  evaluate,
+  type ProtectCondition,
+  type ProviderToken,
+  type SignOutOptions,
+  type SignOutResult,
+} from '@atlasauth/js';
 import { useAtlas } from './context';
 import type { AuthStatus } from './provider';
 import type { AtlasSession, AtlasUser } from './types';
@@ -58,7 +64,8 @@ export function useAuth(): {
   orgRole: () => string | null;
   getToken: () => Promise<string | null>;
   getProviderToken: (provider: string) => Promise<ProviderToken | null>;
-  signOut: (options?: SignOutOptions) => Promise<void>;
+  /** Resolves `{ revoked, activeSessionId? }`; see `AtlasClient.signOut`. */
+  signOut: (options?: SignOutOptions) => Promise<SignOutResult>;
   /** Mirrors `<Protect>`, for logic that is not a render decision. */
   has: (condition: ProtectCondition) => boolean;
 } {

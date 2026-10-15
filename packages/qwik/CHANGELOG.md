@@ -1,5 +1,31 @@
 # @atlasauth/qwik changelog
 
+## 0.2.0
+
+### Changed
+- **`signOut()` now resolves a `SignOutResult`** (`{ revoked: boolean; activeSessionId?: string }`) instead of `void`, on
+  `AtlasClient.signOut` and `useAuth().signOut`. Existing `await signOut()` / `signOut().then(…)` call sites keep working.
+  `revoked: false` means the local sign-out happened but the Frontend API never confirmed the revoke (it is retried once,
+  then in the background). Before the live client exists (SSR / first paint) `useAuth().signOut()` resolves `{ revoked: false }`.
+- **Signed-out sessions are never re-adopted.** `signOut()` records the session id (a tombstone in `localStorage`, per
+  Frontend API origin, shared by every tab) before revoking, and `reload()`, token refresh, `boot()` in a tab opened later,
+  and a sibling tab all refuse that session even while the refresh cookie still returns it. A refused session's revoke is
+  re-tried in the background and its tombstone cleared once the server confirms. Built on `SignOutGuard` from `@atlasauth/js`.
+- `signOut()` revokes the cookie session even when no token is cached (it looks the session up with `GET /v1/client`).
+- When another tab signs out of the current session, this tab signs out too (the tombstone reaches it via the `storage` event).
+- `boot()` completes the OAuth popup flow when the page is running inside the sign-in popup: on a severed-popup landing
+  (`#atlas_popup_result=…`) it relays the result to the opener and closes (the opener redeems the ticket), or — when no opener
+  takes it — exchanges the ticket itself (or follows the continuation URL); after a sign-in completed inside the popup it
+  wakes the opener and closes the popup.
+
+### Added
+- `signOut({ strict: true })` (`SignOutOptions.strict`) rejects with a `SignOutError` (`code: 'SIGN_OUT_REVOKE_FAILED'`,
+  `sessionId`, `status`) when the revoke was not confirmed — after the local sign-out.
+- A parked session the server promoted on revoke (`activeSessionId`) is adopted.
+- The package entry re-exports `SignOutError` and the `SignOutOptions` / `SignOutResult` types from `@atlasauth/js`.
+- Tests covering `<SignIn>` / `<SignUp>` (the `@atlasauth/embed` widget) when the instance cannot send email: the sign-up form
+  is replaced by the "can't send email" notice and "Forgot password?" is hidden, following `email_delivery`.
+
 ## 0.1.3
 - **`frontendApi` is validated at `<AtlasProvider>` render (including SSR) and `createAtlasClient()`.** A missing (or non-string) or malformed value now throws an
   `AtlasConfigError` (from `@atlasauth/js`; `code: 'FRONTEND_API_REQUIRED'` or `'FRONTEND_API_INVALID'`)

@@ -1,5 +1,46 @@
 # @atlasauth/angular changelog
 
+## 0.4.0
+- **Safer sign-out.** `AtlasService.signOut(options?: SignOutOptions)` now returns
+  `Promise<SignOutResult>` (`{ revoked: boolean; activeSessionId?: string }`; was `Promise<void>` —
+  existing `await signOut()` / `.then()` call sites keep working). It runs through the shared
+  `SignOutGuard` from `@atlasauth/js`: the session id is recorded as a tombstone (localStorage, per
+  Frontend API origin) before the revoke, the revoke is retried once, and a reload, token refresh, a
+  sibling tab or a tab opened later never re-adopts a signed-out session — even when the revoke failed
+  and the refresh cookie is still valid. A refused session's revoke is retried in the background and
+  its tombstone dropped once the server confirms. With no cached token the cookie session is found via
+  `GET /v1/client`, so the revoke is never skipped. A parked session the server promoted on revoke
+  (`active_session_id`) is adopted. New option `signOut({ strict: true })` rejects with a
+  `SignOutError` (`code: 'SIGN_OUT_REVOKE_FAILED'`, `sessionId`, `status`) after the local sign-out
+  when the revoke was never confirmed. Another tab signing out of the same session now signs this tab
+  out too. `ngOnDestroy()` also stops the cross-tab watch and cancels background re-tries.
+- **Popup OAuth landing.** On startup (browser only), before the redirect-ticket exchange, the service
+  calls `completeOAuthPopupLanding()`: on the landing page of a sign-in popup whose opener was severed
+  by a Cross-Origin-Opener-Policy (`#atlas_popup_result=…`) it scrubs the fragment, relays the result
+  to the opener and closes the window — without redeeming the ticket itself. When no opener takes it,
+  it exchanges the ticket like a redirect result (or follows the payload's `continuationUrl`). After a
+  successful ticket exchange inside the Atlas popup it calls `closeOAuthPopupAfterSignIn()`, which
+  wakes the waiting opener and closes the popup (a no-op in an ordinary tab).
+- **Email delivery in the prebuilt components** (`InstanceSettings.emailDelivery` from
+  `GET /v1/appearance`; everything reads as available when the server omits it):
+  - `<atlas-sign-up-form>` shows a `signUp.emailUnavailable` notice (`role="alert"`,
+    `data-atlas-email-unavailable`) instead of the email + password form when
+    `emailDelivery.passwordSignUp` is `false`.
+  - `<atlas-sign-in>`'s first-factor step offers `offeredFirstFactors(strategies, emailDelivery)`:
+    an "Email me a code" option when `email_code` is offered (hidden while the app cannot send email),
+    and the password field unless an emailed code is the only offer.
+- **Added to `AtlasFlowController`:** `firstFactors(): string[]`, `signUpEmailUnavailable(): boolean`,
+  `passwordResetAvailable(): boolean`, `prepare(strategy: 'email_code'): Promise<void>` and
+  `preparedFactor: WritableSignal<'email_code' | null>`.
+- **Added to `AttemptFlowComponent`:** inputs `firstFactors: string[] | null` and
+  `preparedFactor: string | null`, output `chooseFactor: EventEmitter<'email_code'>`; new element class
+  `atlas-button-secondary` (`formButtonSecondary`).
+- **Added catalog keys** (en-US): `signUp.emailUnavailable` ("This app can't send email right now. Try
+  another sign-in method or contact the app owner." — `EMAIL_UNAVAILABLE_MESSAGE`), `signIn.useEmailCode`.
+- **Added re-exports** from `@atlasauth/js`: `SignOutError` (class) and the types `SignOutResult`,
+  `SignOutOptions`, `EmailDelivery`.
+- Requires `@atlasauth/js` 0.8.0.
+
 ## 0.3.0
 - **`<atlas-sign-up>` now creates accounts.** Its first step is a create-account form (the instance's
   configured sign-up fields, email, password and the legal-consent row) that posts

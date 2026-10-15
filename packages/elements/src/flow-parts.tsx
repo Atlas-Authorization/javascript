@@ -11,11 +11,13 @@
  */
 
 import { useCallback, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { EMAIL_UNAVAILABLE_MESSAGE } from '@atlasauth/js';
 import { FlowProvider, useFlowContext, useFlowDriver, type FlowContextValue } from './context';
 import { Slot } from './primitives';
 import {
   oauthProviderOf,
   runAction,
+  signUpEmailUnavailable,
   stepMatches,
   strategyAvailable,
   type ActionName,
@@ -115,7 +117,7 @@ export function Action({
 }
 
 export interface StrategyProps {
-  /** `password`, `email_code`, `passkey`, or `oauth_<provider>`. */
+  /** `password`, `email_code`, `email_link`, `passkey`, `reset_password`, or `oauth_<provider>`. */
   name: string;
   children?: ReactNode;
 }
@@ -126,11 +128,35 @@ export interface StrategyProps {
  * social / passkey strategies on the start screen. Wraps an `oauth_*` / `passkey`
  * strategy's children in a boundary that also begins the ceremony when activated:
  * put an `<Action>` or your own button inside and call the provided starter.
+ *
+ * Email code / link are hidden while the app can't deliver email, and
+ * `reset_password` (wrap your "Forgot password?" link in it) shows on a
+ * first-factor step that offers `password` only while reset emails can be
+ * delivered — see `machine.strategyAvailable`.
  */
 export function Strategy({ name, children }: StrategyProps) {
   const flow = useFlowContext();
-  if (!strategyAvailable(flow.attempt, name)) return null;
+  if (!strategyAvailable(flow.attempt, name, flow.emailDelivery)) return null;
   return <>{children}</>;
+}
+
+export interface EmailUnavailableProps {
+  /** What to show; defaults to the English "can't send email" message. */
+  children?: ReactNode;
+}
+
+/**
+ * Renders its children only when email + password sign-up cannot complete
+ * because the app can't deliver the verification email
+ * (`instanceSettings.emailDelivery.passwordSignUp === false`). Put it in the
+ * `start` step and hide your form with `flow.emailDelivery` (render-prop) when it
+ * shows — the server refuses that sign-up anyway. Without children it renders
+ * the default English message as text (no element of its own).
+ */
+export function EmailUnavailable({ children }: EmailUnavailableProps) {
+  const flow = useFlowContext('sign-up');
+  if (flow.attempt || !signUpEmailUnavailable(flow.emailDelivery)) return null;
+  return <>{children ?? EMAIL_UNAVAILABLE_MESSAGE}</>;
 }
 
 /**

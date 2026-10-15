@@ -1,8 +1,11 @@
 import {
   advance,
+  closeOAuthPopupAfterSignIn,
+  completeOAuthPopupLanding,
   flowFromPending,
   initialFlow,
   initialResetFlow,
+  mapOAuthPopupPayload,
   nativeSignInBody,
   nextStep,
   parseNativeSignInResponse,
@@ -13,6 +16,7 @@ import {
   startPasswordReset,
   advancePasswordReset,
   stripRedirectParams,
+  type PopupLanding,
 } from '@atlasauth/js';
 import { validateRedirect } from '../redirect';
 import type { AtlasWidget } from '../widget';
@@ -54,17 +58,62 @@ async function captchaToken(
 
 // ---- redirect landing (OAuth / hosted completion) ------------------------
 
+/**
+ * §oauth popup mode — the severed-popup landing, read once per page. Several
+ * widgets may mount on the same page; the first to ask runs
+ * `completeOAuthPopupLanding` (which scrubs the fragment and relays the result
+ * to the opener) and owns the result, the others share the same answer so none
+ * of them redeems the one-time ticket a second time. The entry is dropped once
+ * it settles, so a later landing on the same window is read afresh.
+ */
+const popupLandings = new WeakMap<Window, Promise<PopupLanding | null>>();
+
+async function claimPopupLanding(win: Window): Promise<(PopupLanding & { owner: boolean }) | null> {
+  const pending = popupLandings.get(win);
+  if (pending) {
+    const shared = await pending;
+    return shared ? { ...shared, owner: false } : null;
+  }
+  const landing = completeOAuthPopupLanding({ win }).catch(() => null);
+  popupLandings.set(win, landing);
+  void landing.finally(() => popupLandings.delete(win));
+  const own = await landing;
+  return own ? { ...own, owner: true } : null;
+}
+
 export async function handleRedirectLanding(w: AtlasWidget): Promise<boolean> {
   const win = w.root.ownerDocument?.defaultView ?? (typeof window !== 'undefined' ? window : null);
   if (!win) return false;
+
+  // This page may be the landing of a sign-in popup (started by an Atlas SDK on
+  // this site) whose opener was severed by a Cross-Origin-Opener-Policy: the
+  // result arrives in `#atlas_popup_result=…`. When the opener took it, it
+  // finishes the sign-in and this window is closing — never redeem the ticket
+  // here too. When nobody took it (the opener tab is gone), finish here like a
+  // redirect.
+  const popup = await claimPopupLanding(win);
+  if (popup?.delivered) {
+    renderNote(w, 'Signed in. You can close this window.');
+    return true;
+  }
+  if (popup?.owner) {
+    const outcome = mapOAuthPopupPayload(popup.payload);
+    if (outcome?.ticket && outcome.attemptId) {
+      await finishLanding(w, win, outcome.attemptId, outcome.ticket);
+      return true;
+    }
+    if (outcome?.continuationUrl) {
+      // A second factor / connect / provider error: the redirect flow's page.
+      win.location.replace(outcome.continuationUrl);
+      return true;
+    }
+  }
 
   const result = readRedirectResult(win.location.search);
   if (!result) return false;
 
   if (result.ticket) {
-    await exchange(w, result.attemptId, result.ticket);
-    scrubUrl(w, win);
-    await complete(w, result.attemptId);
+    await finishLanding(w, win, result.attemptId, result.ticket, () => scrubUrl(w, win));
     return true;
   }
 
@@ -77,6 +126,24 @@ export async function handleRedirectLanding(w: AtlasWidget): Promise<boolean> {
   return false;
 }
 
+/**
+ * Redeem a landed ticket and finish. When this page is running inside the Atlas
+ * sign-in popup (the redirect flow ran in it), hand back to the waiting opener
+ * and close instead of navigating here.
+ */
+async function finishLanding(
+  w: AtlasWidget,
+  win: Window,
+  attemptId: string,
+  ticket: string,
+  afterExchange?: () => void,
+): Promise<void> {
+  const exchanged = await exchange(w, attemptId, ticket);
+  afterExchange?.();
+  if (exchanged && (await closeOAuthPopupAfterSignIn({ win }).catch(() => false))) return;
+  await complete(w, attemptId);
+}
+
 function scrubUrl(w: AtlasWidget, win: Window): void {
   try {
     win.history.replaceState({}, win.document.title, stripRedirectParams(win.location.href));
@@ -87,17 +154,19 @@ function scrubUrl(w: AtlasWidget, win: Window): void {
 
 // ---- completion ----------------------------------------------------------
 
-export async function exchange(w: AtlasWidget, attemptId: string, ticket: string): Promise<void> {
+/** Redeem a ticket for the session cookies. Resolves whether a session was set. */
+export async function exchange(w: AtlasWidget, attemptId: string, ticket: string): Promise<boolean> {
   // Preview: the flow ran end-to-end, but we deliberately do NOT redeem the
   // ticket — no session cookie is set, so the host page's session is untouched.
-  if (w.options.preview) return;
+  if (w.options.preview) return false;
   // §7.5 carry the Remember-me choice so the server can make the refresh cookie
   // persistent (default) or a session cookie (unticked).
-  await w.client.post('/v1/client/tickets/exchange', {
+  const response = await w.client.post('/v1/client/tickets/exchange', {
     attempt_id: attemptId,
     ticket,
     remember: w.remember,
   });
+  return response.ok;
 }
 
 /**

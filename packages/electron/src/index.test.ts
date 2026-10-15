@@ -1,6 +1,15 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createAtlasBridge } from './main';
-import { ATLAS_TOKEN_CHANNELS, DEFAULT_TOKEN_KEY, type IpcMainInvokeEventLike, type IpcMainLike } from './shared';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SignOutError } from '@atlasauth/js';
+import { createAtlasBridge, type AtlasBridge } from './main';
+import { exposeAtlasBridge } from './preload';
+import { signOut } from './renderer';
+import {
+  ATLAS_TOKEN_CHANNELS,
+  DEFAULT_TOKEN_KEY,
+  type AtlasTokenBridge,
+  type IpcMainInvokeEventLike,
+  type IpcMainLike,
+} from './shared';
 import {
   createInMemoryTokenStorage,
   createTokenStorage,
@@ -174,6 +183,7 @@ describe('createAtlasBridge', () => {
     expect(handlers.has(ATLAS_TOKEN_CHANNELS.get)).toBe(true);
     expect(handlers.has(ATLAS_TOKEN_CHANNELS.set)).toBe(true);
     expect(handlers.has(ATLAS_TOKEN_CHANNELS.remove)).toBe(true);
+    expect(handlers.has(ATLAS_TOKEN_CHANNELS.signOut)).toBe(true);
   });
 
   it('reads/writes/clears the token through storage via IPC', async () => {
@@ -242,5 +252,222 @@ describe('createAtlasBridge', () => {
     await invoke(ATLAS_TOKEN_CHANNELS.set, 'jwt');
     expect(store.data.get(DEFAULT_TOKEN_KEY)).toBe('enc:XjwtX');
     expect(await invoke(ATLAS_TOKEN_CHANNELS.get)).toBe('jwt');
+  });
+});
+
+// ── sign-out (main revokes; renderer re-creates SignOutError) ────────────────
+
+const FRONTEND = 'https://fapi.example.test';
+const b64 = (o: unknown) =>
+  btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+const jwtFor = (sid: string) => `${b64({ alg: 'none' })}.${b64({ sid, sub: 'user_1', exp: 9999999999 })}.sig`;
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+type Call = { method: string; path: string; auth: string | null; pk: string | null };
+
+const bridges: AtlasBridge[] = [];
+afterEach(() => {
+  for (const b of bridges.splice(0)) b.cleanup();
+});
+
+/**
+ * A main-process bridge with a fake FAPI, plus the renderer's view of it: the
+ * real preload over a fake `ipcRenderer` that structured-clones like Electron
+ * (so a thrown error would lose its class, exactly as in the real app).
+ */
+function signOutRig(
+  route: (method: string, path: string, auth: string | null) => Response | undefined,
+  storage: TokenStorage = createInMemoryTokenStorage(),
+  extra: { signOutRetryDelaysMs?: number[]; frontendApi?: string | undefined } = {},
+) {
+  const calls: Call[] = [];
+  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = (init?.method ?? 'GET').toUpperCase();
+    const headers = new Headers(init?.headers);
+    const auth = headers.get('authorization');
+    calls.push({ method, path: url.pathname, auth, pk: headers.get('x-publishable-key') });
+    return route(method, url.pathname, auth) ?? json(null, 404);
+  }) as typeof fetch;
+  const { ipcMain, invoke } = fakeIpcMain();
+  const main = createAtlasBridge({
+    ipcMain,
+    storage,
+    publishableKey: 'pk_test_123',
+    frontendApi: 'frontendApi' in extra ? extra.frontendApi : FRONTEND,
+    fetchImpl,
+    ...(extra.signOutRetryDelaysMs ? { signOutRetryDelaysMs: extra.signOutRetryDelaysMs } : {}),
+  });
+  bridges.push(main);
+  let bridge = null as AtlasTokenBridge | null;
+  exposeAtlasBridge({
+    contextBridge: {
+      exposeInMainWorld: (_key, api) => {
+        bridge = api as AtlasTokenBridge;
+      },
+    },
+    ipcRenderer: {
+      invoke: async (channel, ...args) => {
+        try {
+          return structuredClone(await invoke(channel, ...structuredClone(args)));
+        } catch (e) {
+          // Electron delivers only the message of an error thrown in a handler.
+          throw new Error(`Error invoking remote method '${channel}': ${String(e)}`);
+        }
+      },
+    },
+  });
+  return { main, bridge: bridge!, calls, storage };
+}
+
+const revokes = (calls: Call[]) => calls.filter((c) => c.path.endsWith('/revoke'));
+
+describe('sign-out', () => {
+  it('revokes with the stored token, clears it, and resolves { revoked: true } in the renderer', async () => {
+    const token = jwtFor('sess_1');
+    const rig = signOutRig((method, path) =>
+      method === 'POST' && path === '/v1/client/sessions/sess_1/revoke' ? json({ status: 'revoked' }) : undefined,
+    );
+    await rig.bridge.setToken(token);
+
+    await expect(signOut({ bridge: rig.bridge })).resolves.toEqual({ revoked: true });
+
+    expect(revokes(rig.calls)).toHaveLength(1);
+    expect(revokes(rig.calls)[0]).toMatchObject({ auth: `Bearer ${token}`, pk: 'pk_test_123' });
+    expect(await rig.bridge.getToken()).toBeNull();
+  });
+
+  it('a failed revoke (503 twice) still clears the token, resolves { revoked: false }, and the token is never handed out again', async () => {
+    const token = jwtFor('sess_1');
+    const rig = signOutRig(
+      (method, path) => (path.endsWith('/revoke') ? json({}, 503) : undefined),
+      createInMemoryTokenStorage(),
+      { signOutRetryDelaysMs: [5] },
+    );
+    await rig.bridge.setToken(token);
+
+    await expect(signOut({ bridge: rig.bridge })).resolves.toEqual({ revoked: false });
+    expect(revokes(rig.calls)).toHaveLength(2);
+    expect(await rig.bridge.getToken()).toBeNull();
+    // The background re-try authenticates with the token sign-out dropped.
+    await expect.poll(() => revokes(rig.calls).length).toBe(3);
+    expect(revokes(rig.calls)[2]?.auth).toBe(`Bearer ${token}`);
+
+    // A late write (an in-flight refresh) does not resurrect it…
+    await rig.bridge.setToken(token);
+    expect(await rig.bridge.getToken()).toBeNull();
+    // …nor does a token that reached storage some other way.
+    await rig.storage.set(DEFAULT_TOKEN_KEY, token);
+    expect(await rig.bridge.getToken()).toBeNull();
+    expect(await rig.storage.get(DEFAULT_TOKEN_KEY)).toBeNull();
+    // A new sign-in (another session) is accepted.
+    await rig.bridge.setToken(jwtFor('sess_2'));
+    expect(await rig.bridge.getToken()).toBe(jwtFor('sess_2'));
+  });
+
+  it('after a restart the persisted tombstone refuses the token; its background revoke clears the tombstone', async () => {
+    const token = jwtFor('sess_1');
+    const store = fakeStore();
+    const storage = createTokenStorage({ store, cipher: reversibleCipher });
+    let revokeWorks = false;
+    const route = (method: string, path: string) =>
+      path.endsWith('/sessions/sess_1/revoke') ? (revokeWorks ? json({ status: 'revoked' }) : json({}, 503)) : undefined;
+    const first = signOutRig(route, storage);
+    await first.bridge.setToken(token);
+    await signOut({ bridge: first.bridge });
+    first.main.cleanup();
+
+    // Relaunch with the token back in storage (a clear that never reached disk).
+    await storage.set(DEFAULT_TOKEN_KEY, token);
+    revokeWorks = true;
+    const relaunched = signOutRig(route, storage);
+    expect(await relaunched.bridge.getToken()).toBeNull();
+    await expect.poll(() => revokes(relaunched.calls).length).toBe(1);
+    expect(revokes(relaunched.calls)[0]?.auth).toBe(`Bearer ${token}`);
+    await expect
+      .poll(async () => JSON.parse((await storage.get(`atlas:signed-out-sessions:${FRONTEND}`)) ?? '[]').length)
+      .toBe(0);
+
+    // Tombstone gone: a third launch accepts the token again.
+    await storage.set(DEFAULT_TOKEN_KEY, token);
+    const third = signOutRig(route, storage);
+    expect(await third.bridge.getToken()).toBe(token);
+  });
+
+  it('{ strict: true } rejects with a real SignOutError in the renderer, after the token is cleared', async () => {
+    const rig = signOutRig((method, path) => (path.endsWith('/revoke') ? json({}, 503) : undefined));
+    await rig.bridge.setToken(jwtFor('sess_1'));
+
+    const error = await signOut({ bridge: rig.bridge, strict: true }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(SignOutError);
+    expect(error).toMatchObject({ code: 'SIGN_OUT_REVOKE_FAILED', sessionId: 'sess_1', status: 503 });
+    expect(await rig.bridge.getToken()).toBeNull();
+  });
+
+  it('main-side signOut({ strict: true }) rejects with SignOutError too', async () => {
+    const rig = signOutRig(() => json({}, 503));
+    await rig.main.setToken(jwtFor('sess_1'));
+    await expect(rig.main.signOut({ strict: true })).rejects.toBeInstanceOf(SignOutError);
+    expect(await rig.main.getToken()).toBeNull();
+  });
+
+  it('reports a promoted active_session_id across IPC', async () => {
+    const rig = signOutRig((method, path) =>
+      path.endsWith('/sessions/sess_1/revoke') ? json({ status: 'revoked', active_session_id: 'sess_2' }) : undefined,
+    );
+    await rig.bridge.setToken(jwtFor('sess_1'));
+    await expect(signOut({ bridge: rig.bridge })).resolves.toEqual({ revoked: true, activeSessionId: 'sess_2' });
+  });
+
+  it('finds the session with GET /v1/client when the token carries no sid', async () => {
+    const token = `${b64({ alg: 'none' })}.${b64({ sub: 'user_1' })}.sig`;
+    const rig = signOutRig((method, path, auth) => {
+      if (path === '/v1/client') return json({ session: auth ? { id: 'sess_9' } : null, user: null });
+      if (path === '/v1/client/sessions/sess_9/revoke') return json({ status: 'revoked' });
+    });
+    await rig.bridge.setToken(token);
+    await expect(signOut({ bridge: rig.bridge })).resolves.toEqual({ revoked: true });
+    expect(revokes(rig.calls).map((c) => c.path)).toEqual(['/v1/client/sessions/sess_9/revoke']);
+  });
+
+  it('with no token there is nothing to revoke', async () => {
+    const rig = signOutRig(() => undefined);
+    await expect(signOut({ bridge: rig.bridge })).resolves.toEqual({ revoked: true });
+    expect(rig.calls).toHaveLength(0);
+  });
+
+  it('without frontendApi it can only clear the token, and reports revoked: false', async () => {
+    const rig = signOutRig(() => undefined, createInMemoryTokenStorage(), { frontendApi: undefined });
+    await rig.bridge.setToken(jwtFor('sess_1'));
+    await expect(signOut({ bridge: rig.bridge })).resolves.toEqual({ revoked: false });
+    expect(rig.calls).toHaveLength(0);
+    expect(await rig.bridge.getToken()).toBeNull();
+  });
+
+  it('a bridge from an older preload (no signOut) clears the token and resolves { revoked: false }', async () => {
+    let token: string | null = 'jwt';
+    const legacy: AtlasTokenBridge = {
+      getToken: async () => token,
+      setToken: async (t) => {
+        token = t;
+      },
+      clearToken: async () => {
+        token = null;
+      },
+    };
+    await expect(signOut({ bridge: legacy })).resolves.toEqual({ revoked: false });
+    expect(token).toBeNull();
+    await expect(signOut({ bridge: legacy, strict: true })).rejects.toBeInstanceOf(SignOutError);
+  });
+
+  it('enforces validateSender on the sign-out channel', async () => {
+    const { ipcMain, invoke } = fakeIpcMain();
+    createAtlasBridge({ ipcMain, storage: createInMemoryTokenStorage(), validateSender: () => false });
+    await expect(invoke(ATLAS_TOKEN_CHANNELS.signOut)).rejects.toThrow(/validateSender/);
   });
 });

@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { nextStep, type AttemptView, type CaptchaController, type FieldError } from '@atlasauth/js';
+  import {
+    nextStep,
+    offeredFirstFactors,
+    type AttemptView,
+    type CaptchaController,
+    type EmailDelivery,
+    type FieldError,
+  } from '@atlasauth/js';
   import { useAtlas } from '../context';
   import { classFor, type ElementKey } from '../appearance';
   import { translate } from '../i18n';
@@ -24,6 +31,18 @@
    * with `needs_captcha`. Null when the flow draws none.
    */
   export let captcha: CaptchaController | null = null;
+  /**
+   * The instance's email-delivery facts (`settings.emailDelivery`). While the app
+   * cannot send email the first-factor step offers no email code / link option.
+   */
+  export let emailDelivery: EmailDelivery | null = null;
+  /**
+   * Ask the server to email a sign-in code or link (`FlowController.prepare`).
+   * Without it the first-factor step offers the password only.
+   */
+  export let onPrepare: ((strategy: EmailStrategy) => Promise<boolean>) | null = null;
+
+  type EmailStrategy = 'email_code' | 'email_link';
 
   const atlas = useAtlas();
   const cls = (key: ElementKey, base: string) => classFor(key, atlas.appearance, base);
@@ -39,13 +58,42 @@
 
   $: step = attempt ? nextStep(attempt) : ({ kind: 'collect_identifier' } as const);
 
+  // The first factors to offer: the server's list, minus email code / link when
+  // the app cannot deliver email (a capability of the app, never of the user).
+  const strategyName = (s: unknown): string =>
+    typeof s === 'string' ? s : String((s as { strategy?: unknown } | null)?.strategy ?? '');
+  $: offered =
+    step.kind === 'collect_first_factor'
+      ? offeredFirstFactors(step.strategies.map(strategyName), emailDelivery)
+      : [];
+  $: emailOptions = onPrepare
+    ? offered.filter((s): s is EmailStrategy => s === 'email_code' || s === 'email_link')
+    : [];
+  // The password field stays unless the server offers only emailed factors.
+  $: showPassword = offered.includes('password') || emailOptions.length === 0;
+
+  // Which emailed factor was sent, for which attempt (a new attempt starts over).
+  let prepared: { strategy: EmailStrategy; attemptId: string | null } | null = null;
+  $: sent = prepared && prepared.attemptId === (attempt?.id ?? null) ? prepared.strategy : null;
+
+  async function prepare(strategy: EmailStrategy) {
+    if (!onPrepare) return;
+    const attemptId = attempt?.id ?? null;
+    if (await onPrepare(strategy)) prepared = { strategy, attemptId };
+  }
+
   // The step → fields mapping, mirroring the React switch exactly.
   $: fields = ((): Field[] => {
     switch (step.kind) {
       case 'collect_identifier':
         return [{ name: 'identifier', labelKey: 'signIn.identifierLabel', type: 'email' }];
       case 'collect_first_factor':
-        return [{ name: 'password', labelKey: 'signIn.passwordLabel', type: 'password' }];
+        if (sent === 'email_code') {
+          return [{ name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
+        }
+        return showPassword
+          ? [{ name: 'password', labelKey: 'signIn.passwordLabel', type: 'password' }]
+          : [];
       case 'collect_second_factor':
         return [{ name: 'code', labelKey: 'mfa.codeLabel', type: 'text' }];
       case 'enroll_second_factor':
@@ -73,9 +121,10 @@
         return t('signIn.checkOtherTab');
       case 'restart':
         return t('error.generic');
+      case 'collect_first_factor':
+        return sent === 'email_link' ? t('signIn.magicLinkSent') : null;
       case 'collect_captcha':
       case 'collect_identifier':
-      case 'collect_first_factor':
       case 'collect_second_factor':
       case 'enroll_second_factor':
       case 'collect_email_code':
@@ -87,7 +136,14 @@
     }
   })();
 
-  $: showSubmit = step.kind !== 'done' && step.kind !== 'await_oauth' && message === null;
+  $: showSubmit =
+    step.kind !== 'done' &&
+    step.kind !== 'await_oauth' &&
+    message === null &&
+    // Only emailed factors on offer: the option buttons are the way forward.
+    (step.kind !== 'collect_first_factor' || fields.length > 0);
+  $: showEmailOptions =
+    step.kind === 'collect_first_factor' && message === null && sent === null && emailOptions.length > 0;
   $: showCaptcha = !!captcha && (step.kind === 'collect_identifier' || step.kind === 'collect_captcha');
 
   function handleSubmit(event: Event) {
@@ -127,6 +183,19 @@
           {/each}
         </label>
       {/each}
+      {#if showEmailOptions}
+        {#each emailOptions as strategy (strategy)}
+          <button
+            class={cls('formButtonSecondary', 'atlas-button-secondary')}
+            type="button"
+            data-strategy={strategy}
+            disabled={busy}
+            on:click={() => void prepare(strategy)}
+          >
+            {t(strategy === 'email_code' ? 'signIn.emailCodeOption' : 'signIn.emailLinkOption')}
+          </button>
+        {/each}
+      {/if}
     {/if}
 
     {#if showCaptcha && captcha}

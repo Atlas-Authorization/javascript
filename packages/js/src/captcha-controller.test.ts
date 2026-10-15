@@ -166,6 +166,7 @@ describe('sign-in / sign-up helpers', () => {
       captchaFlows: {},
       signUpFields: [],
       legal: { termsUrl: null, privacyUrl: null, required: false },
+      emailDelivery: { available: true, passwordReset: true, passwordSignUp: true },
     });
     const { client } = scripted(() => ({
       body: {

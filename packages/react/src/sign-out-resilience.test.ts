@@ -2,7 +2,7 @@
 import { Component, act, createElement, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SessionTombstones } from '@atlasauth/js';
+import { SessionTombstones, type TombstoneStore } from '@atlasauth/js';
 import { AtlasProvider, useAtlas } from './AtlasProvider';
 
 type AtlasContextValue = ReturnType<typeof useAtlas>;
@@ -43,7 +43,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function mount(route: Route) {
+async function mount(route: Route, extra: { tombstoneStore?: TombstoneStore } = {}) {
   const calls: string[] = [];
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -68,6 +68,7 @@ async function mount(route: Route) {
         frontendApi: 'https://fapi.example',
         fetchImpl,
         appearance: { instanceDesign: false },
+        ...extra,
         children: createElement(Probe),
       }),
     );
@@ -227,6 +228,67 @@ describe('signOut() resilience', () => {
       await ctx().signOut({ frontchannel: false });
     });
     expect(revokes(calls)).toEqual(['POST https://fapi.example/v1/client/sessions/sess_7/revoke']);
+  });
+});
+
+describe('<AtlasProvider tombstoneStore>', () => {
+  /** A slow async key/value store, like expo-secure-store / AsyncStorage. */
+  function fakeStore() {
+    const data = new Map<string, string>();
+    const store: TombstoneStore = {
+      getItem: (key) => new Promise((resolve) => setTimeout(() => resolve(data.get(key) ?? null), 20)),
+      setItem: async (key, value) => {
+        data.set(key, value);
+      },
+    };
+    return { store, data };
+  }
+
+  it('keeps tombstones in the given store, and a restarted app waits for it before adopting a session', async () => {
+    const { store, data } = fakeStore();
+    let revokeWorks = false;
+    let cookieSession: string | null = 'sess_1';
+    const route: Route = (url) => {
+      if (url.endsWith('/v1/client')) return cookieSession ? signedIn(cookieSession) : json({ session: null, user: null });
+      if (url.endsWith('/sessions/sess_1/revoke')) {
+        if (!revokeWorks) return json({}, 503);
+        cookieSession = null;
+        return json({ status: 'revoked' });
+      }
+    };
+    const app1 = await mount(route, { tombstoneStore: store });
+    await vi.waitFor(() => expect(app1.ctx().status).toBe('signed_in'));
+    let result: unknown;
+    await act(async () => {
+      result = await app1.ctx().signOut({ frontchannel: false });
+    });
+    expect(result).toEqual({ revoked: false });
+    // Written to the custom store (keyed per Frontend API), not localStorage.
+    await vi.waitFor(() => expect([...data.values()].join()).toContain('sess_1'));
+    expect([...data.keys()][0]).toContain('https://fapi.example');
+    expect(new SessionTombstones({ frontendApi: 'https://fapi.example' }).has('sess_1')).toBe(false);
+    unmount?.();
+    unmount = null;
+
+    // The app restarts: nothing in memory or localStorage, only the store. The
+    // boot must not adopt the still-valid session before the store has answered.
+    localStorage.clear();
+    sessionStorage.clear();
+    const app2 = await mount(route, { tombstoneStore: store });
+    await vi.waitFor(() => expect(app2.calls).toContain('GET https://fapi.example/v1/client'));
+    await vi.waitFor(() => expect(app2.ctx().status).toBe('signed_out'));
+    expect(app2.ctx().user).toBeNull();
+    await vi.waitFor(() => expect(revokes(app2.calls).length).toBeGreaterThan(0));
+
+    // Back online: the next re-check's background revoke lands and the store's
+    // tombstone is cleared.
+    revokeWorks = true;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await vi.waitFor(() => expect(cookieSession).toBeNull());
+    await vi.waitFor(() => expect([...data.values()].join()).not.toContain('sess_1'));
+    expect(app2.ctx().status).toBe('signed_out');
   });
 });
 

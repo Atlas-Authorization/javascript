@@ -1158,6 +1158,29 @@ describe('email-dependent UI follows email_delivery from /v1/appearance', () => 
     expect(calls.some((c) => c.path === '/v1/client/sign_ups')).toBe(false);
   });
 
+  it('offers no email code / link first factor when email cannot be delivered', async () => {
+    // The widget draws no first-factor choice at all — the first factor is the
+    // password field — so an email strategy the server still lists is never shown.
+    const { impl } = makeFetch({
+      'GET /v1/appearance': () => ({
+        body: { ...noEmail(), strategies: { ...noEmail().strategies, password: false } },
+      }),
+      'POST /v1/client/sign_ins': () => ({
+        status: 201,
+        body: { id: 'sia_e', status: 'needs_first_factor', supported_first_factors: ['email_code', 'email_link', 'password'] },
+      }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    (root.querySelector('input[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await flush();
+    expect(root.querySelector('input[name="password"]')).toBeTruthy();
+    expect(root.querySelector('[data-atlas-strategy]')).toBeNull();
+    expect(root.textContent ?? '').not.toMatch(/email (code|link)|magic link|send (me )?a (code|link)/i);
+  });
+
   it('draws the sign-up form when verification is not required', async () => {
     const { impl } = makeFetch({
       'GET /v1/appearance': () => ({ body: noEmail({ password_sign_up: true }) }),

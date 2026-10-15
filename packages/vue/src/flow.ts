@@ -13,6 +13,7 @@ import {
   FapiClient,
   flowFromPending,
   pollAttempt,
+  prepareFactor,
   shouldKeepPolling,
   type FlowState,
 } from './fapi';
@@ -42,9 +43,15 @@ export interface FlowController {
    */
   create(values: Record<string, string>, consent?: boolean): void;
   /**
+   * Ask the server to email a sign-in code or link for the current first-factor
+   * step (`prepare_first_factor`). Resolves whether it was sent; the code is then
+   * posted with {@link submit}, and a link is collected by the poll.
+   */
+  prepare(strategy: 'email_code' | 'email_link'): Promise<boolean>;
+  /**
    * The instance's public sign-in / sign-up settings (captcha, sign-up fields,
-   * legal consent) from `GET /v1/appearance`; null until loaded or when the
-   * server could not be reached.
+   * legal consent, `emailDelivery`) from `GET /v1/appearance`; null until loaded
+   * or when the server could not be reached.
    */
   settings: ShallowRef<InstanceSettings | null>;
   /** The sign-in captcha (identifier step / `needs_captcha` challenge). */
@@ -106,6 +113,13 @@ export function useFlow(): FlowController {
     })();
   };
 
+  const prepare = async (strategy: 'email_code' | 'email_link') => {
+    state.value = { ...state.value, busy: true, errors: [] };
+    const next = await prepareFactor(client, state.value, strategy);
+    state.value = { ...next, busy: false };
+    return next.errors.length === 0;
+  };
+
   // Keep both captchas in step with the settings and the flow's current step.
   watch(
     [settings, state],
@@ -164,7 +178,7 @@ export function useFlow(): FlowController {
 
   onScopeDispose(stopPolling);
 
-  return { state, submit, create, settings, captcha, signUpCaptcha };
+  return { state, submit, create, prepare, settings, captcha, signUpCaptcha };
 }
 
 /** §10.2 `useSignIn()` — drive a sign-in attempt. */

@@ -1,5 +1,5 @@
 import { computed, type ComputedRef, type ShallowRef } from 'vue';
-import type { ProviderToken, SignOutOptions } from '@atlasauth/js';
+import type { ProviderToken, SignOutOptions, SignOutResult } from '@atlasauth/js';
 import { useAtlas } from './context';
 import type { AuthStatus } from './plugin';
 import { evaluate, type ProtectCondition } from './protect';
@@ -61,7 +61,8 @@ export function useAuth(): {
   orgRole: ComputedRef<string | null>;
   getToken(): Promise<string | null>;
   getProviderToken(provider: string): Promise<ProviderToken | null>;
-  signOut(options?: SignOutOptions): Promise<void>;
+  /** Resolves `{ revoked, activeSessionId? }`; `{ strict: true }` rejects with `SignOutError` (see `AtlasClient.signOut`). */
+  signOut(options?: SignOutOptions): Promise<SignOutResult>;
   has(condition: ProtectCondition): boolean;
 } {
   const { status, session, claims, getToken, getProviderToken, signOut } = useAtlas();

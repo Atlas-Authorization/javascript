@@ -1,5 +1,20 @@
 # @atlasauth/embed changelog
 
+## 0.4.0
+- **Completes a severed sign-in popup.** When the widget's page is the landing of a sign-in popup started by
+  an Atlas SDK on the same site whose `window.opener` was cut by a Cross-Origin-Opener-Policy
+  (`#atlas_popup_result=…` in the URL), the widget now calls `completeOAuthPopupLanding()` on mount: the
+  result is relayed to the opener (which redeems the ticket) and the popup closes; when no opener takes it,
+  the widget redeems the ticket itself like a redirect result (or follows the payload's `continuationUrl`).
+  This runs once per page however many widgets mount, and the fragment is scrubbed.
+- **Hands back to the opener after a sign-in inside the popup.** After the widget redeems a redirect ticket in
+  a window named `atlas:oauth`, it calls `closeOAuthPopupAfterSignIn()`; when the opener acknowledges (or is
+  still open) the popup closes instead of navigating. Ordinary tabs are unaffected.
+- **Changed** `exchange()` (widget flow module) resolves `boolean` — whether the ticket exchange set a session
+  (`false` in preview mode) — instead of `void`.
+- **Changed** `EMAIL_UNAVAILABLE_MESSAGE` is now re-exported from `@atlasauth/js` (same text, same export).
+- Requires `@atlasauth/js` 0.8.0.
+
 ## 0.3.0
 - **The keyboard focus ring has at least 3:1 contrast.** The widget now sets
   `--atlas-embed-color-focus-ring` to the primary when it clears 3:1 against the card and the page

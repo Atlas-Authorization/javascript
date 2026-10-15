@@ -1,4 +1,4 @@
-import { passkeysSupported, resetStep, type FieldError } from '@atlasauth/js';
+import { EMAIL_UNAVAILABLE_MESSAGE, passkeysSupported, resetStep, type FieldError } from '@atlasauth/js';
 import type { AtlasWidget } from '../widget';
 import { COPY } from './constants';
 import { cls, doc, el, submitButton } from './dom';
@@ -409,9 +409,8 @@ export function renderLegalConsent(
  * /v1/client/sign_ups; the server then emails a code and the shared flow drives
  * verification to completion.
  */
-/** The end-user words the API uses for EMAIL_DELIVERY_NOT_CONFIGURED. */
-export const EMAIL_UNAVAILABLE_MESSAGE =
-  "This app can't send email right now. Try another sign-in method or contact the app owner.";
+/** The end-user words the API uses for EMAIL_DELIVERY_NOT_CONFIGURED (shared with every SDK). */
+export { EMAIL_UNAVAILABLE_MESSAGE };
 
 export function renderSignUpForm(w: AtlasWidget): HTMLElement {
   const form = doc(w).createElement('form');

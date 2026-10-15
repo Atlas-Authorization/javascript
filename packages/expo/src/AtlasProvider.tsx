@@ -7,6 +7,7 @@ import { createCacheFetch } from './cache-fetch';
 import {
   createInMemoryTokenCache,
   DEFAULT_SESSION_KEY,
+  tombstoneStoreFor,
   type TokenCache,
 } from './token-cache';
 
@@ -20,6 +21,12 @@ import {
  * {@link createCacheFetch} that bearer-authenticates from, and persists rotated
  * tokens into, an `expo-secure-store`-backed {@link TokenCache}.
  *
+ * Sign-out: a confirmed revoke clears the stored token (see
+ * {@link createCacheFetch}), and the sessions this app signed out of are kept in
+ * the same token cache (`tombstoneStore`), so after an app restart a session
+ * whose revoke failed is still refused — and its revoke re-tried — rather than
+ * re-adopted from the token the failed revoke left behind.
+ *
  * Expo Router friendly: mount it once at the app root (e.g. in `app/_layout.tsx`)
  * and read auth anywhere with `useAuth()` / `useUser()` / `<SignedIn>` — the
  * token cache, not a cookie, is what carries the session across a cold start.
@@ -28,6 +35,8 @@ import {
 /**
  * Props mirror `@atlasauth/react`'s provider (publishableKey, frontendApi,
  * appearance, localization, oauthMode, onSignedIn) and add the two Expo knobs.
+ * `tombstoneStore` defaults to the token cache; pass one to keep sign-out
+ * tombstones elsewhere.
  * `fetchImpl` is replaced by the cache-backed fetch, so it is not forwardable.
  */
 export interface AtlasProviderProps extends Omit<ReactAtlasProviderProps, 'fetchImpl'> {
@@ -49,13 +58,18 @@ export function AtlasProvider(props: AtlasProviderProps): ReactElement {
   // Built exactly once — the initializer runs on first render only, so the cache
   // (and the default in-memory one, when no adapter is passed) survives
   // re-renders rather than being re-created and losing the session every render.
-  const [cacheFetch] = useState(() =>
-    createCacheFetch({
-      cache: tokenCache ?? createInMemoryTokenCache(),
-      key: tokenKey,
-      fetchImpl: fetchImpl ?? fetch,
-    }),
-  );
+  const [wiring] = useState(() => {
+    const cache = tokenCache ?? createInMemoryTokenCache();
+    return {
+      cacheFetch: createCacheFetch({ cache, key: tokenKey, fetchImpl: fetchImpl ?? fetch }),
+      // Sign-out tombstones persist beside the token (there is no localStorage).
+      tombstoneStore: tombstoneStoreFor(cache),
+    };
+  });
 
-  return createElement(ReactAtlasProvider, { ...rest, fetchImpl: cacheFetch });
+  return createElement(ReactAtlasProvider, {
+    ...rest,
+    tombstoneStore: rest.tombstoneStore ?? wiring.tombstoneStore,
+    fetchImpl: wiring.cacheFetch,
+  });
 }

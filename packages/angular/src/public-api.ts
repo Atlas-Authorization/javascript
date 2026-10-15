@@ -57,4 +57,11 @@ export type {
   CaptchaFlowKey,
   CaptchaWidgetMode,
   FlowCaptcha,
+  EmailDelivery,
+  SignOutOptions,
+  SignOutResult,
 } from '@atlasauth/js';
+
+// `AtlasService.signOut()` resolves a `SignOutResult`; `{ strict: true }`
+// rejects with a `SignOutError` when the revoke was never confirmed.
+export { SignOutError } from '@atlasauth/js';

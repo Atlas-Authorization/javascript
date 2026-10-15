@@ -10,6 +10,7 @@ import {
 import { isServer, render } from 'solid-js/web';
 import { h } from './h';
 import {
+  EMAIL_UNAVAILABLE_MESSAGE,
   FapiClient,
   advanceWithCaptcha,
   createCaptchaController,
@@ -18,7 +19,9 @@ import {
   flowFromPending,
   flowNeedsCaptcha,
   nextStep,
+  offeredFirstFactors,
   pollAttempt,
+  prepareFactor,
   shouldKeepPolling,
   signInCaptchaOptions,
   type CaptchaController,
@@ -81,6 +84,7 @@ export const SIGN_UP_TEXT: Record<string, string> = {
   'signUp.terms': 'Terms of Service',
   'signUp.privacy': 'Privacy Policy',
   'signUp.and': 'and',
+  'signUp.emailUnavailable': EMAIL_UNAVAILABLE_MESSAGE,
   'captcha.prompt': 'Complete the security check to continue.',
   'captcha.required': 'Please complete the security check, then try again.',
   'captcha.failed': "The security check didn't pass. Please try again.",
@@ -142,8 +146,51 @@ function renderFields(kind: string): JSX.Element {
   }
 }
 
-function renderSubmit(kind: string, busy: boolean): JSX.Element {
-  if (kind === 'done' || kind === 'await_oauth') return null;
+/** The "this app can't send email" state, in place of a form that would need it. */
+function emailUnavailable(): JSX.Element {
+  return h('p', { class: 'atlas-error', role: 'alert' }, t('signUp.emailUnavailable'));
+}
+
+/** A first factor's strategy name — the server sends plain names; tolerate `{ strategy }` entries too. */
+function strategyNames(strategies: readonly unknown[]): string[] {
+  return strategies
+    .map((s) => (typeof s === 'string' ? s : (s as { strategy?: unknown } | null)?.strategy))
+    .filter((s): s is string => typeof s === 'string');
+}
+
+/** An emailed first factor the user asked for: a code to type, or a link to open. */
+type EmailFactor = 'email_code' | 'email_link';
+
+/**
+ * The first-factor step: the factors this app can actually offer
+ * (`offeredFirstFactors` — no email code / link while it cannot deliver email).
+ * A password field when `password` is offered (or the server sent no list), a
+ * button per emailed factor, and the "can't send email" notice when nothing is
+ * left. Once a code was sent only the code field remains, so the submit is
+ * the email-code attempt.
+ */
+function renderFirstFactor(
+  offered: string[],
+  listed: boolean,
+  sent: EmailFactor | null,
+  send: (strategy: EmailFactor) => void,
+): JSX.Element {
+  if (sent === 'email_code') return [field('code', 'Email code')];
+  if (sent === 'email_link') return [h('p', { class: 'atlas-text' }, 'Check your email for a sign-in link.')];
+  const out: JSX.Element[] = [];
+  if (!listed || offered.includes('password')) out.push(field('password', 'Password', 'password'));
+  if (offered.includes('email_code')) {
+    out.push(h('button', { class: 'atlas-link', type: 'button', onClick: () => send('email_code') }, 'Email me a code'));
+  }
+  if (offered.includes('email_link')) {
+    out.push(h('button', { class: 'atlas-link', type: 'button', onClick: () => send('email_link') }, 'Email me a sign-in link'));
+  }
+  if (!out.length) out.push(emailUnavailable());
+  return out;
+}
+
+function renderSubmit(kind: string, busy: boolean, hidden = false): JSX.Element {
+  if (hidden || kind === 'done' || kind === 'await_oauth') return null;
   return h('button', { class: 'atlas-button', type: 'submit', disabled: busy }, 'Continue');
 }
 
@@ -373,6 +420,34 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     return nextStep(attempt).kind;
   });
 
+  // §email delivery: the first factors this app can offer, keyed as a string so
+  // the inputs are re-created only when the offer itself changes.
+  const firstFactor = createMemo(() => {
+    const attempt = state().attempt;
+    const step = attempt ? nextStep(attempt) : null;
+    if (step?.kind !== 'collect_first_factor') return '';
+    const listed = strategyNames(step.strategies ?? []);
+    const offered = offeredFirstFactors(listed, settings()?.emailDelivery);
+    return `${listed.length ? 'listed' : 'unlisted'}:${offered.join(',')}`;
+  });
+  const [emailSent, setEmailSent] = createSignal<EmailFactor | null>(null);
+  createEffect(() => {
+    kind();
+    setEmailSent(null);
+  });
+  const sendEmailFactor = (strategy: EmailFactor) => {
+    void (async () => {
+      setState((s) => ({ ...s, busy: true, errors: [] }));
+      const next = await prepareFactor(fapi, state(), strategy);
+      setState(next);
+      if (!next.errors.length) setEmailSent(strategy);
+    })();
+  };
+  // §email delivery: a password sign-up needs a verification email; when the
+  // app cannot send one, say so instead of a form that cannot finish.
+  const signUpBlocked = () =>
+    kind() === 'create_account' && settings()?.emailDelivery?.passwordSignUp === false;
+
   return h(
     'form',
     {
@@ -387,13 +462,20 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     [
       h('h1', { class: 'atlas-title' }, props.title),
       () => renderErrors(state().errors),
-      () => (kind() === 'create_account' ? renderSignUpFields(settings()) : renderFields(kind())),
-      captchaSlot(signUpCaptcha, () => kind() === 'create_account' && signUpCaptchaDrawn()),
+      () => {
+        if (kind() === 'create_account') return signUpBlocked() ? emailUnavailable() : renderSignUpFields(settings());
+        if (kind() === 'collect_first_factor') {
+          const [listed, offered] = firstFactor().split(':') as [string, string];
+          return renderFirstFactor(offered ? offered.split(',') : [], listed === 'listed', emailSent(), sendEmailFactor);
+        }
+        return renderFields(kind());
+      },
+      captchaSlot(signUpCaptcha, () => kind() === 'create_account' && !signUpBlocked() && signUpCaptchaDrawn()),
       captchaSlot(
         captcha,
         () => (kind() === 'collect_identifier' || kind() === 'collect_captcha') && captchaDrawn(),
       ),
-      () => renderSubmit(kind(), state().busy),
+      () => renderSubmit(kind(), state().busy, signUpBlocked() || emailSent() === 'email_link'),
     ],
   );
 }
