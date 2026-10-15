@@ -30,6 +30,7 @@ import {
   flowNeedsCaptcha,
   isRenderableCaptcha,
   localizeCaptchaErrors,
+  localizedErrorMessage,
   signInCaptchaOptions,
   startSignUp,
   advance,
@@ -118,7 +119,7 @@ export function useFlowContext(expected?: FlowMode): FlowContextValue {
  * developer composes the primitives.
  */
 export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}): FlowContextValue {
-  const { publishableKey, frontendApi, reload, pendingAttempt, instanceSettings, catalog } =
+  const { publishableKey, frontendApi, reload, pendingAttempt, instanceSettings, catalog, errorCatalog, locale } =
     useAtlas();
   // Reuse the React SDK's imperative OAuth starter (popup/redirect + ticket
   // exchange + re-boot) rather than re-implementing it, so social sign-in behaves
@@ -126,8 +127,8 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
   const { startOauth: startOauthImpl } = useSignIn();
 
   const client = useMemo(
-    () => new FapiClient({ publishableKey, baseUrl: frontendApi }),
-    [frontendApi, publishableKey],
+    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale }),
+    [frontendApi, publishableKey, locale],
   );
 
   // Seed from a redirect that returned mid-flow (e.g. OAuth owing a second
@@ -282,11 +283,23 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
     });
   }, [client, finish, state.pollSecret]);
 
+  // Server errors in the app's language: each `message` becomes the catalog's
+  // `error.<reason>` (else the server's own message), so `<Field.Error>` and any
+  // custom error renderer show the localised text. `reason` stays on the error.
+  const errors = useMemo(
+    () =>
+      state.errors.map((error) => ({
+        ...error,
+        message: localizedErrorMessage(error, errorCatalog ?? catalog, catalog),
+      })),
+    [state.errors, errorCatalog, catalog],
+  );
+
   return useMemo<FlowContextValue>(
     () => ({
       mode,
       attempt: state.attempt,
-      errors: state.errors,
+      errors,
       busy: state.busy,
       values,
       setValue,
@@ -301,7 +314,7 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
     [
       mode,
       state.attempt,
-      state.errors,
+      errors,
       state.busy,
       values,
       setValue,

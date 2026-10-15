@@ -1,5 +1,15 @@
 # @atlasauth/solid changelog
 
+## 0.4.0
+Requires `@atlasauth/js` 0.9.0.
+- **Server errors render in the app's language.** New `AtlasProviderProps.localization?: ErrorStrings` (a bundle
+  from `@atlasauth/localizations`, e.g. `esES`, or a flat `{ 'error.<reason>': '…' }` catalog): `<SignIn>` /
+  `<SignUp>` show an error's `error.<reason>` string from it, else the server's message.
+- **New `AtlasProviderProps.locale?: string`**, sent as `Accept-Language` on every Frontend API request
+  (defaults to the `localization` bundle's `locale` tag), so the server localises `message` too.
+- `AtlasClient` gains `localization?: ErrorStrings` and `locale?: string`; `createAtlasClient` accepts both.
+
+
 ## 0.3.0
 Requires `@atlasauth/js` 0.8.0.
 - **Safer sign-out.** `signOut(options?: SignOutOptions)` now resolves `SignOutResult`

@@ -33,6 +33,16 @@ export interface MountWidgetOptions {
   /** Where to go on success. Validated same-origin / absolute-https by the widget. */
   redirect?: string;
   /**
+   * The UI language as a BCP-47 tag (`"es"`), sent to the Frontend API as
+   * `Accept-Language` so its error messages come back in that language.
+   */
+  locale?: string;
+  /**
+   * Strings for server errors, keyed `error.<reason>` — e.g. `esES` from
+   * `@atlasauth/localizations`. Its `locale` tag is used when `locale` is unset.
+   */
+  localization?: WidgetOptions['localization'];
+  /**
    * The mount function to use. Defaults to the `@atlasauth/embed` imperative
    * mount for the mode; injected by tests so the helper can be exercised without
    * the real widget or a network.
@@ -58,6 +68,8 @@ export function mountAtlasWidget(
     frontendApi: options.frontendApi,
   };
   if (options.redirect) overrides.redirect = options.redirect;
+  if (options.locale) overrides.locale = options.locale;
+  if (options.localization) overrides.localization = options.localization;
 
   mounter(host, overrides);
 

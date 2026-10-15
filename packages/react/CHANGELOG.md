@@ -1,5 +1,20 @@
 # @atlasauth/react changelog
 
+## 0.8.0
+- **Server errors render in the app's language.** `<SignIn>`, `<SignUp>`, the flow panels, `<ApiKeys/>` (and
+  `useApiKeys().error`), `<Waitlist>`, `<ManageMfa>`, `<ManagePasskeys>`, `<EmbeddedCheckout>` and the
+  Sign in with Atlas SSO button show the catalog string `error.<reason>` for an error's `reason`, falling back to
+  the server's message, then `error.generic`. With `<AtlasProvider locale="es">` a refused password now reads
+  "Esas credenciales son incorrectas." instead of the server's English sentence.
+- **`Accept-Language`.** Every Frontend API request the components make carries the provider's `locale` (or the
+  `locale` tag of a `localization` bundle), so the server localises `message` too — the fallback for a reason the
+  catalog has no string for.
+- Reason strings are looked up in the language layer only (the `locale` bundle plus `localization`), never in the
+  English defaults beneath it, so an unsupported `locale` shows the server's localised message rather than English.
+- **Added 38 `error.<reason>` keys** to the built-in `EN_US` catalog (see `@atlasauth/localizations` 0.4.0).
+- `useAtlas()` gains `locale?: string` and `errorCatalog?: Catalog`.
+
+
 ## 0.7.0
 - **Added `tombstoneStore?: TombstoneStore` to `AtlasProviderProps`.** Where to keep the ids of sessions
   this app signed out of on a runtime without `localStorage` (React Native / Expo, Electron's main

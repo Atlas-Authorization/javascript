@@ -13,6 +13,8 @@ export interface ScriptDefaults {
   publishableKey?: string;
   frontendApi?: string;
   redirect?: string;
+  /** `data-atlas-locale`: the UI language sent as `Accept-Language`. */
+  locale?: string;
 }
 
 let scriptDefaults: ScriptDefaults = {};
@@ -33,6 +35,7 @@ export function readScriptTag(script: HTMLScriptElement | null | undefined): Scr
   if (d.atlasKey) out.publishableKey = d.atlasKey;
   if (d.atlasFapi) out.frontendApi = d.atlasFapi;
   if (d.atlasRedirect) out.redirect = d.atlasRedirect;
+  if (d.atlasLocale) out.locale = d.atlasLocale;
   return out;
 }
 
@@ -56,6 +59,8 @@ export function optionsFromElement(
 
   const options: WidgetOptions = { publishableKey, frontendApi, mode };
   if (redirect) options.redirect = redirect;
+  const locale = dataset.atlasLocale ?? attr('locale') ?? scriptDefaults.locale;
+  if (locale) options.locale = locale;
   // `data-atlas-preset="midnight"` — a design preset straight from markup. Any
   // value is passed through; the design system ignores (and warns on) unknown ids.
   const preset = dataset.atlasPreset ?? attr('preset');
@@ -77,6 +82,7 @@ export function optionsFromApi(
     publishableKey,
     frontendApi,
     redirect: overrides.redirect ?? scriptDefaults.redirect,
+    ...(overrides.locale ?? scriptDefaults.locale ? { locale: overrides.locale ?? scriptDefaults.locale } : {}),
     mode,
   };
 }

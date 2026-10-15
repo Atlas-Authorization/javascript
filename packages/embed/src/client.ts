@@ -35,6 +35,8 @@ export interface WidgetClientOptions {
   /** The instance's FAPI origin, e.g. `https://accounts.acme.com`. */
   frontendApi: string;
   fetchImpl?: typeof fetch;
+  /** Sent as `Accept-Language` (see `FapiClientOptions.locale`). */
+  locale?: string;
 }
 
 /** A FAPI client wired for the widget: shared @atlasauth/js driver, pk in the query. */
@@ -44,6 +46,7 @@ export function createClient(options: WidgetClientOptions): FapiClient {
     publishableKey: options.publishableKey,
     baseUrl: options.frontendApi.replace(/\/$/, ''),
     fetchImpl: widgetFetch(options.publishableKey, base),
+    locale: options.locale,
   });
 }
 

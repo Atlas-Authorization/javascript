@@ -132,6 +132,19 @@ export interface FieldError {
   code: string;
   message: string;
   param?: string;
+  /**
+   * The server's stable, machine-readable reason for this error
+   * (`form_password_incorrect`, `too_many_attempts`, …), finer-grained than
+   * `code`. Prebuilt UIs look it up as the catalog key `error.<reason>` to show
+   * the message in the app's language; see `localizedErrorMessage`. Absent on
+   * servers that predate it and on errors raised client-side.
+   */
+  reason?: string;
+  /**
+   * Extra machine-readable detail the server attached (`min_length`,
+   * `providers`, …); also the interpolation values for `error.<reason>`.
+   */
+  meta?: Record<string, unknown>;
 }
 
 export function fieldErrors(body: unknown): FieldError[] {
@@ -143,7 +156,14 @@ export function fieldErrors(body: unknown): FieldError[] {
     .filter((error): error is FieldError => {
       return Boolean(error) && typeof (error as FieldError).message === 'string';
     })
-    .map((error) => ({ code: error.code, message: error.message, param: error.param }));
+    .map((error) => {
+      const out: FieldError = { code: error.code, message: error.message, param: error.param };
+      const reason = (error as { reason?: unknown }).reason;
+      if (typeof reason === 'string' && reason !== '') out.reason = reason;
+      const meta = (error as { meta?: unknown }).meta;
+      if (meta && typeof meta === 'object' && !Array.isArray(meta)) out.meta = meta as Record<string, unknown>;
+      return out;
+    });
 }
 
 /** Errors for one field, so a form can render them inline. */

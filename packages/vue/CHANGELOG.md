@@ -1,5 +1,18 @@
 # @atlasauth/vue changelog
 
+## 0.5.0
+Requires `@atlasauth/js` 0.9.0.
+- **Server errors render in the app's language.** `<SignIn>` / `<SignUp>` show the catalog string
+  `error.<reason>` for an error's `reason` (placeholders filled from its `meta`), falling back to the server's
+  message, then `error.generic`. With `createAtlas({ localization: esES })` a refused password reads
+  "Esas credenciales son incorrectas." instead of the server's English sentence.
+- **`Accept-Language`.** The flows' Frontend API requests carry the `locale` tag of the `localization` bundle, so
+  the server localises `message` too — the fallback for a reason the bundle has no string for.
+- **Added 38 `error.<reason>` keys** to the built-in `EN_US` catalog (see `@atlasauth/localizations` 0.4.0).
+- `AtlasClient` (and `useAtlas()`) gains `errorCatalog?: Catalog` (the `localization` bundle alone, `EN_US` when
+  none) and `locale?: string`.
+
+
 ## 0.4.0
 - **Safer sign-out.** `signOut(options?)` now resolves `SignOutResult` (`{ revoked: boolean; activeSessionId?: string }`)
   instead of `void` (on `AtlasClient.signOut` and `useAuth().signOut`; existing `await signOut()` call sites keep

@@ -4,7 +4,7 @@ import { useAtlas } from './AtlasProvider';
 import { FapiClient, type FlowState } from './fapi';
 import { AttemptFlow, useFlow, type FlowProps } from './flow';
 import { CaptchaSlot, localizeCaptchaErrors, useCaptcha, type CaptchaController } from './captcha';
-import { useClass, useClasses, useText } from './components-shared';
+import { useClass, useClasses, useErrorText, useText } from './components-shared';
 import type { InstanceSettings, PublicSignUpField } from './instance-settings';
 
 /**
@@ -126,6 +126,7 @@ function SignUpForm({
   onSubmit(values: Record<string, string>, consent: boolean): void;
 }) {
   const t = useText();
+  const errorText = useErrorText();
   const cardClass = useClass('card', 'atlas-card');
   const titleClass = useClass('headerTitle', 'atlas-title');
   const inputClass = useClass('formFieldInput', 'atlas-input');
@@ -146,7 +147,7 @@ function SignUpForm({
       .filter((error) => error.param === name)
       .map((error) => (
         <span key={error.code} className={errorClass}>
-          {error.message}
+          {errorText(error)}
         </span>
       ));
 
@@ -273,7 +274,7 @@ function SignUpForm({
         .filter((error) => !error.param)
         .map((error) => (
           <p key={error.code} className={errorClass} role="alert">
-            {error.message}
+            {errorText(error)}
           </p>
         ))}
 
@@ -347,10 +348,10 @@ function SignUpForm({
  * when a sign-up completes with a session ticket.
  */
 export function useSignUp() {
-  const { publishableKey, frontendApi, reload } = useAtlas();
+  const { publishableKey, frontendApi, locale, reload } = useAtlas();
   const client = useMemo(
-    () => new FapiClient({ publishableKey, baseUrl: frontendApi }),
-    [frontendApi, publishableKey],
+    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale }),
+    [frontendApi, publishableKey, locale],
   );
   const create = useCallback(
     async (input: {

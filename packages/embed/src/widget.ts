@@ -4,6 +4,10 @@ import {
   type FapiClient,
   type FlowState,
   type ResetFlowState,
+  catalogLocale,
+  localizedErrorMessage,
+  type ErrorLike,
+  type ErrorStrings,
 } from '@atlasauth/js';
 import {
   cssVariables,
@@ -59,6 +63,18 @@ export interface WidgetOptions {
   preview?: boolean;
   /** Inline appearance override, merged over the tenant's public appearance. */
   appearance?: WidgetAppearance;
+  /**
+   * The UI language as a BCP-47 tag (`"es"`), sent to the Frontend API as
+   * `Accept-Language` so its error messages come back in that language.
+   * Defaults to `localization`'s own `locale` tag. Markup: `data-atlas-locale`.
+   */
+  locale?: string;
+  /**
+   * Strings for server errors, keyed `error.<reason>` — a bundle from
+   * `@atlasauth/localizations` (e.g. `esES`) or your own flat catalog. An error
+   * whose reason has no string here shows the server's message.
+   */
+  localization?: ErrorStrings;
   /** Injected in tests; defaults to the global fetch. */
   fetchImpl?: typeof fetch;
 }
@@ -157,7 +173,13 @@ export class AtlasWidget {
       publishableKey: options.publishableKey,
       frontendApi: options.frontendApi,
       fetchImpl: options.fetchImpl,
+      locale: options.locale ?? catalogLocale(options.localization),
     });
+  }
+
+  /** A server error in the app's language: `error.<reason>` from `localization`, else the server's message. */
+  errorText(error: ErrorLike): string {
+    return localizedErrorMessage(error, this.options.localization);
   }
 
   /** Boot: handle any redirect landing, fetch appearance, then render. */

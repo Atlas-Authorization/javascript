@@ -6,6 +6,8 @@ export * from './sign-out-guard';
 export * from './token-cache';
 export * from './tab-election';
 export * from './attempt';
+// Server errors in the app's language (`error.<reason>` catalog keys).
+export * from './errors';
 export * from './redirect';
 // §oauth popup mode: the same-origin hand-back for a popup whose opener was severed.
 export * from './popup-channel';

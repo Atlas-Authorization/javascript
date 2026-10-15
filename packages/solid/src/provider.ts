@@ -4,6 +4,8 @@ import { isServer } from 'solid-js/web';
 import { h } from './h';
 import {
   FapiClient,
+  catalogLocale,
+  type ErrorStrings,
   SignOutGuard,
   TokenCache,
   closeOAuthPopupAfterSignIn,
@@ -63,6 +65,14 @@ export interface AtlasClient {
   publishableKey: string;
   /** The instance's FAPI origin. */
   frontendApi: string;
+  /**
+   * The app's strings (a bundle from `@atlasauth/localizations`, or any flat
+   * catalog). The widgets show a server error as its `error.<reason>` string
+   * from here, else the server's own message.
+   */
+  localization?: ErrorStrings;
+  /** Sent to the Frontend API as `Accept-Language`: the `locale` prop, else the bundle's `locale` tag. */
+  locale?: string;
   /** The reactive auth state; read fields off it inside a tracking scope. */
   state: AtlasState;
   /**
@@ -117,6 +127,18 @@ export interface AtlasProviderProps {
    * only so existing call sites keep compiling.
    */
   frontendApi?: string;
+  /**
+   * The app's strings: a bundle from `@atlasauth/localizations` (e.g. `esES`)
+   * or a flat `{ 'error.too_many_attempts': '…' }` catalog. Server errors render
+   * as their `error.<reason>` string from here.
+   */
+  localization?: ErrorStrings;
+  /**
+   * The UI language as a BCP-47 tag (`"es"`), sent as `Accept-Language` so the
+   * server localises its error messages. Defaults to `localization`'s own
+   * `locale` tag.
+   */
+  locale?: string;
   /** Injected in tests to drive the client through a mocked network. */
   fetchImpl?: typeof fetch;
   children?: JSX.Element;
@@ -131,6 +153,8 @@ export function createAtlasClient(options: {
   publishableKey: string;
   frontendApi?: string;
   fetchImpl?: typeof fetch;
+  localization?: ErrorStrings;
+  locale?: string;
 }): { client: AtlasClient; boot: () => Promise<void>; dispose: () => void } {
   const publishableKey = options.publishableKey;
   // Throws on a missing/invalid value rather than quietly sending every request
@@ -272,7 +296,8 @@ export function createAtlasClient(options: {
 
   // The FAPI client for the token-vault read. Reuses the same publishable key
   // and fetch so `@atlasauth/js` stays the single implementation.
-  const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch });
+  const locale = options.locale ?? catalogLocale(options.localization);
+  const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale });
   const getProviderToken = (provider: string) => fetchProviderToken(fapiClient, provider);
 
   const signOut = async (options?: SignOutOptions): Promise<SignOutResult> => {
@@ -355,6 +380,8 @@ export function createAtlasClient(options: {
   const client: AtlasClient = {
     publishableKey,
     frontendApi: baseUrl,
+    localization: options.localization,
+    locale,
     state,
     pendingAttempt,
     getToken,
@@ -404,6 +431,8 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
     publishableKey: props.publishableKey,
     frontendApi: props.frontendApi,
     fetchImpl: props.fetchImpl,
+    localization: props.localization,
+    locale: props.locale,
   });
 
   if (!isServer) {

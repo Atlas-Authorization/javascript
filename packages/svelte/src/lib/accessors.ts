@@ -198,6 +198,7 @@ function createFlow(): FlowController {
   const client = new FapiClient({
     publishableKey: atlas.publishableKey,
     baseUrl: atlas.frontendApi,
+    locale: atlas.locale,
   });
 
   // Seeded from a redirect that came back mid-flow (e.g. OAuth needing a second

@@ -57,7 +57,13 @@ export interface FlowResult {
   attemptStatus?: string;
   /** The attempt id, so a follow-up call (2FA, verification) targets it. */
   attemptId?: string;
-  errors: Array<{ code: string; message: string; param?: string }>;
+  /**
+   * The server's refusals. `reason` is its stable, finer-grained reason
+   * (`form_password_incorrect`, …) — look it up as `error.<reason>` in a
+   * `@atlasauth/localizations` bundle, or pass the bundle to
+   * `firstErrorMessage(result, bundle)`. `meta` carries its interpolation values.
+   */
+  errors: Array<{ code: string; message: string; param?: string; reason?: string; meta?: Record<string, unknown> }>;
 }
 
 /** Read the (unverified) claims out of a JWT — a display/routing hint only. */

@@ -1,5 +1,17 @@
 # @atlasauth/svelte changelog
 
+## 0.5.0
+Requires `@atlasauth/js` 0.9.0.
+- **Server errors render in the app's language.** `<SignIn>` / `<SignUp>` show the catalog string
+  `error.<reason>` for an error's `reason` (placeholders filled from its `meta`), falling back to the server's
+  message, then `error.generic`. With `localization: esES` a refused password reads
+  "Esas credenciales son incorrectas." instead of the server's English sentence.
+- **`Accept-Language`.** The client's and the flows' Frontend API requests carry the `locale` tag of the
+  `localization` bundle, so the server localises `message` too.
+- **Added 38 `error.<reason>` keys** to the built-in `EN_US` catalog (see `@atlasauth/localizations` 0.4.0).
+- `AtlasClient` gains `errorCatalog?: Catalog` and `locale?: string`.
+
+
 ## 0.4.0
 - **Safer sign-out.** `signOut(options?)` (on the client, `getAuth()` and the `signOut()` helper) now
   resolves `SignOutResult` — `{ revoked: boolean; activeSessionId?: string }` — instead of `void`

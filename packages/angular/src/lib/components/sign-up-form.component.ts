@@ -6,11 +6,12 @@ import {
   Output,
   inject,
 } from '@angular/core';
-import type {
-  CaptchaController,
-  FieldError,
-  InstanceSettings,
-  PublicSignUpField,
+import {
+  localizedErrorMessage,
+  type CaptchaController,
+  type FieldError,
+  type InstanceSettings,
+  type PublicSignUpField,
 } from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
 import { classFor, type ElementKey } from '../appearance';
@@ -48,7 +49,7 @@ export interface SignUpFormSubmit {
         </p>
       } @else {
       @for (error of formErrors(); track error.code) {
-        <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ error.message }}</p>
+        <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ errorText(error) }}</p>
       }
 
       <form (submit)="onSubmit($event)">
@@ -71,7 +72,7 @@ export interface SignUpFormSubmit {
                 }
               </span>
               @for (error of fieldErrorsFor(f.key); track error.code) {
-                <span [class]="cls('formFieldError', 'atlas-error')">{{ error.message }}</span>
+                <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
               }
             </div>
           } @else {
@@ -119,7 +120,7 @@ export interface SignUpFormSubmit {
                 />
               }
               @for (error of fieldErrorsFor(f.key); track error.code) {
-                <span [class]="cls('formFieldError', 'atlas-error')">{{ error.message }}</span>
+                <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
               }
             </label>
           }
@@ -137,7 +138,7 @@ export interface SignUpFormSubmit {
             (input)="setValue('email', $any($event.target).value)"
           />
           @for (error of fieldErrorsFor('email'); track error.code) {
-            <span [class]="cls('formFieldError', 'atlas-error')">{{ error.message }}</span>
+            <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
           }
         </label>
 
@@ -153,7 +154,7 @@ export interface SignUpFormSubmit {
             (input)="setValue('password', $any($event.target).value)"
           />
           @for (error of fieldErrorsFor('password'); track error.code) {
-            <span [class]="cls('formFieldError', 'atlas-error')">{{ error.message }}</span>
+            <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
           }
         </label>
 
@@ -180,7 +181,7 @@ export interface SignUpFormSubmit {
               }.
             </span>
             @for (error of fieldErrorsFor('consent'); track error.code) {
-              <span [class]="cls('formFieldError', 'atlas-error')">{{ error.message }}</span>
+              <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
             }
           </label>
         }
@@ -217,6 +218,13 @@ export class SignUpFormComponent {
 
   protected t(key: string, vars?: Record<string, string>): string {
     return translate(this.atlas.localization, key, vars);
+  }
+
+  /** A server error in the app's language (`error.<reason>`, else the server's message). */
+  protected errorText(error: FieldError): string {
+    // `errorLocalization` is read defensively: a stand-in service may lack it.
+    const layer = (this.atlas as { errorLocalization?: Record<string, string> }).errorLocalization;
+    return localizedErrorMessage(error, layer ?? this.atlas.localization, this.atlas.localization);
   }
 
   protected cls(key: ElementKey, base: string): string {

@@ -39,6 +39,8 @@ export function createNativeClient(opts: {
   frontendApi: string;
   fetchImpl: typeof fetch;
   getToken: () => string | null | Promise<string | null>;
+  /** Sent as `Accept-Language`, so the server's error messages come back in that language. */
+  locale?: string;
 }): FapiClient {
   return new FapiClient({
     publishableKey: opts.publishableKey,
@@ -49,6 +51,7 @@ export function createNativeClient(opts: {
       allowSameOrigin: false,
     }),
     fetchImpl: bearerFetch(opts.fetchImpl, opts.getToken),
+    locale: opts.locale,
   });
 }
 

@@ -59,10 +59,10 @@ export function SignIn(props: FlowProps = {}) {
  * the caller can react to `needs_second_factor` etc.
  */
 export function useSignIn() {
-  const { publishableKey, frontendApi, reload } = useAtlas();
+  const { publishableKey, frontendApi, locale, reload } = useAtlas();
   const client = useMemo(
-    () => new FapiClient({ publishableKey, baseUrl: frontendApi }),
-    [frontendApi, publishableKey],
+    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale }),
+    [frontendApi, publishableKey, locale],
   );
 
   const mintNonce = useCallback(

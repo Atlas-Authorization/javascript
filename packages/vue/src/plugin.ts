@@ -24,6 +24,7 @@ import {
   type RedirectResult,
   type SignOutOptions,
   type SignOutResult,
+  catalogLocale,
 } from '@atlasauth/js';
 import { applyAppearanceToDom } from '@atlasauth/design/runtime';
 import { instanceDesignFrom, renderAppearance, type Appearance, type InstanceDesign } from './appearance';
@@ -55,6 +56,14 @@ export interface AtlasClient {
   frontendApi: string;
   appearance?: Appearance;
   catalog: Catalog;
+  /**
+   * The language layer of `catalog` (the `localization` bundle, without the
+   * English defaults underneath; `EN_US` when none is set). Server errors are
+   * looked up here as `error.<reason>`, falling back to the server's message.
+   */
+  errorCatalog?: Catalog;
+  /** Sent to the Frontend API as `Accept-Language`: the `locale` tag of the `localization` bundle. */
+  locale?: string;
   status: ShallowRef<AuthStatus>;
   user: ShallowRef<AtlasUser | null>;
   session: ShallowRef<AtlasSession | null>;
@@ -305,7 +314,8 @@ function createAtlasClient(options: CreateAtlasOptions): {
   // The FAPI client for the token-vault read. Reuses the same publishable key
   // and fetch so the framework-agnostic `@atlasauth/js` helper is the single
   // implementation the Vue SDK surfaces.
-  const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch });
+  const locale = catalogLocale(options.localization);
+  const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale });
   const getProviderToken = (provider: string) => fetchProviderToken(fapiClient, provider);
 
   /** The session this client holds: the token cache's, else the booted one. */
@@ -341,6 +351,7 @@ function createAtlasClient(options: CreateAtlasOptions): {
   };
 
   const catalog = options.localization ? withFallback(options.localization) : EN_US;
+  const errorCatalog = options.localization ?? EN_US;
 
   // §7.4 the refresh timer is driven off the reactive state. Any change to
   // status or claims (a new token has new claims and a new expiry) reschedules
@@ -432,6 +443,8 @@ function createAtlasClient(options: CreateAtlasOptions): {
       frontendApi: baseUrl,
       appearance: options.appearance,
       catalog,
+      errorCatalog,
+      locale,
       status,
       user,
       session,

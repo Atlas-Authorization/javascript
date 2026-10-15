@@ -1,5 +1,16 @@
 # @atlasauth/embed changelog
 
+## 0.5.0
+Requires `@atlasauth/js` 0.9.0.
+- **Server errors render in the app's language.** New `WidgetOptions.localization?: ErrorStrings` (a bundle from
+  `@atlasauth/localizations`, e.g. `esES`, or a flat `{ 'error.<reason>': '…' }` catalog): form and field errors
+  show the `error.<reason>` string for the error's `reason`, else the server's message.
+- **New `WidgetOptions.locale?: string`** (markup: `data-atlas-locale` / `locale` on the element, or
+  `data-atlas-locale` on the script tag), sent as `Accept-Language` so the server localises `message`; defaults
+  to the `localization` bundle's `locale` tag. `WidgetClientOptions.locale` and `ScriptDefaults.locale` added.
+- `AtlasWidget.errorText(error)` added.
+
+
 ## 0.4.0
 - **Completes a severed sign-in popup.** When the widget's page is the landing of a sign-in popup started by
   an Atlas SDK on the same site whose `window.opener` was cut by a Cross-Origin-Opener-Policy

@@ -1,5 +1,17 @@
 # @atlasauth/angular changelog
 
+## 0.5.0
+Requires `@atlasauth/js` 0.9.0.
+- **Server errors render in the app's language.** `<atlas-sign-in>` / `<atlas-sign-up>` (the attempt flow and
+  the sign-up form) show the catalog string `error.<reason>` for an error's `reason`, falling back to the
+  server's message, then `error.generic`.
+- **`Accept-Language`.** `AtlasService`'s Frontend API client and `createFapiClient()` send the `locale` tag of
+  the `localization` bundle, so the server localises `message` too.
+- **Added 38 `error.<reason>` keys** to the built-in `EN_US` catalog (see `@atlasauth/localizations` 0.4.0).
+- `AtlasService` gains `errorText(error)`, the `locale` getter (`string | undefined`) and the
+  `errorLocalization` getter (`Catalog`).
+
+
 ## 0.4.0
 - **Safer sign-out.** `AtlasService.signOut(options?: SignOutOptions)` now returns
   `Promise<SignOutResult>` (`{ revoked: boolean; activeSessionId?: string }`; was `Promise<void>` —

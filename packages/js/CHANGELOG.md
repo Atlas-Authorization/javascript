@@ -1,5 +1,25 @@
 # @atlasauth/js changelog
 
+## 0.9.0
+- **Added `reason?: string` and `meta?: Record<string, unknown>` to `FieldError`**, parsed from the Frontend API
+  error envelope (`{ code, message, reason?, param?, meta? }`). `code` is unchanged. A network failure now carries
+  the client-side reason `network`.
+- **Added `reason?: string` and `meta?: Record<string, unknown>` to `ApiKeyRequestError`** (new optional
+  constructor arguments `reason`, `meta` after `param`). `reauthenticate()` errors carry `.reason` too.
+- **New: `localizedErrorMessage(error, strings?, fallback?)`** → the text to show for a server error: the catalog
+  string `error.<reason>` (placeholders filled from `meta`), else the server's `message`, else `error.generic`,
+  else an English generic sentence — never blank. `strings` is a flat catalog or a `(key) => string | undefined`
+  lookup (a lookup that echoes the key counts as missing). `ErrorStrings` accepts any object, so an
+  `interface`-typed bundle such as `esES` from `@atlasauth/localizations` passes without a cast.
+- **New: `ERROR_REASONS`** (the 38 reasons the shipped catalogs translate), type **`ErrorReason`**,
+  **`errorReasonKey(reason)`** (`error.<reason>`), types **`ErrorLike`** and **`ErrorStrings`**, and
+  **`catalogLocale(catalog)`** (a bundle's own `locale` tag).
+- **New: `FapiClientOptions.locale?: string`** — sent as `Accept-Language` on every request so the server's
+  `message` comes back in that language; `FapiClient.locale` getter and **`acceptLanguageFor(tag)`** (normalises
+  `pt_BR` → `pt-BR`, rejects anything that is not a plain BCP-47 tag). **`ReauthOptions.locale?: string`** does the
+  same for `reauthenticate()`.
+
+
 ## 0.8.0
 - **New: `SignOutGuard`** — the safer sign-out every framework provider now drives, so they all behave like
   `@atlasauth/react`: `new SignOutGuard({ request, frontendApi?, store?, tombstones?, retryDelaysMs?,

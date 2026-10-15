@@ -86,6 +86,74 @@ describe('placeholders', () => {
   });
 });
 
+describe('server error reasons', () => {
+  /** The `reason` values the Frontend API sends on its errors (`error.<reason>` keys). */
+  const REASONS = [
+  'form_password_incorrect',
+  'form_code_incorrect',
+  'form_code_already_used',
+  'form_code_expired',
+  'form_code_max_attempts',
+  'form_link_invalid',
+  'form_identifier_not_found',
+  'form_identifier_exists',
+  'form_password_pwned',
+  'form_password_too_short',
+  'form_password_too_long',
+  'form_password_requires_uppercase',
+  'form_password_requires_lowercase',
+  'form_password_requires_number',
+  'form_password_requires_symbol',
+  'form_password_not_allowed',
+  'form_password_contains_identifier',
+  'form_password_same_as_current',
+  'form_password_reused',
+  'password_expired',
+  'email_not_verified',
+  'sign_in_token_invalid',
+  'too_many_attempts',
+  'too_many_requests',
+  'captcha_required',
+  'captcha_failed',
+  'captcha_unavailable',
+  'email_delivery_unavailable',
+  'strategy_disabled',
+  'sign_up_restricted',
+  'waitlisted',
+  'identifier_not_allowed',
+  'disposable_email_blocked',
+  'sso_required',
+  'sign_ins_disabled',
+  'sign_ups_disabled',
+  'high_risk_blocked',
+  'sms_region_blocked',
+  ];
+
+  it.each(Object.entries(LOCALES))('%s translates every reason', (tag, bundle) => {
+    const translated = bundle as Record<string, unknown>;
+    for (const reason of REASONS) {
+      const value = translated[`error.${reason}`];
+      expect(typeof value === 'string' && value.trim() !== '', `${tag} error.${reason}`).toBe(true);
+    }
+  });
+
+  it('every shipped bundle is complete, ja-JP and nl-NL included', () => {
+    for (const [tag, bundle] of Object.entries(LOCALES)) {
+      expect(missingKeys(bundle), tag).toEqual([]);
+    }
+    expect(missingKeys(resolveLocale('es')!, enUS)).toEqual([]);
+  });
+
+  it('only the en-US bundle is in English', () => {
+    for (const [tag, bundle] of Object.entries(LOCALES)) {
+      if (tag === 'en-US') continue;
+      const translated = bundle as Record<string, unknown>;
+      const english = REASONS.filter((r) => translated[`error.${r}`] === (enUS as unknown as Record<string, unknown>)[`error.${r}`]);
+      expect(english, tag).toEqual([]);
+    }
+  });
+});
+
 describe('LOCALES', () => {
   it('keys every shipped bundle by its own locale tag', () => {
     for (const [tag, bundle] of Object.entries(LOCALES)) {

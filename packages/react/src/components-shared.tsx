@@ -1,4 +1,5 @@
-import { Children, isValidElement, useMemo, type ReactElement, type ReactNode } from 'react';
+import { Children, isValidElement, useCallback, useMemo, type ReactElement, type ReactNode } from 'react';
+import { localizedErrorMessage, type ErrorLike } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { FapiClient } from './fapi';
 import { classFor, type ElementKey } from './appearance';
@@ -27,14 +28,32 @@ export function useText() {
   return (key: string, vars?: Record<string, string>) => translate(catalog, key, vars);
 }
 
+/**
+ * The text to show for a server error, in the app's language: the catalog's
+ * `error.<reason>`, else the server's own message, else `error.generic`. See
+ * `localizedErrorMessage` in `@atlasauth/js`.
+ */
+export function useErrorText(): (error: ErrorLike | string | null | undefined) => string {
+  const { catalog, errorCatalog } = useAtlas();
+  return useCallback(
+    (error) => localizedErrorMessage(error, errorCatalog ?? catalog, catalog),
+    [catalog, errorCatalog],
+  );
+}
+
+/** A FapiClient bound to this instance and the app's language (`Accept-Language`). */
+export function useFapiClient(): FapiClient {
+  const { publishableKey, frontendApi, locale } = useAtlas();
+  return useMemo(
+    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale }),
+    [publishableKey, frontendApi, locale],
+  );
+}
+
 /** §2 A FapiClient bound to this instance, for the `/v1/client/me` + session
  *  account-management calls (all cookie-authenticated, credentials:'include'). */
 export function useMeClient(): FapiClient {
-  const { publishableKey, frontendApi } = useAtlas();
-  return useMemo(
-    () => new FapiClient({ publishableKey, baseUrl: frontendApi }),
-    [publishableKey, frontendApi],
-  );
+  return useFapiClient();
 }
 
 /** Navigate the whole document. Guarded for SSR; `replace` for redirect helpers. */

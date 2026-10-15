@@ -48,6 +48,11 @@ export interface AtlasProviderProps {
   /** Injectable for tests; defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
   /**
+   * The app's UI language (`"es"`), sent as `Accept-Language` so server error
+   * messages are localised. Read once, when the store is created.
+   */
+  locale?: string;
+  /**
    * §5 supply a captcha token when the instance requires one (this SDK draws no
    * captcha itself — see `AtlasStoreConfig.getCaptchaToken`). Read once, when
    * the store is created.
@@ -66,6 +71,7 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
       storage: props.storage,
       tombstoneStore: props.tombstoneStore,
       fetchImpl: props.fetchImpl,
+      locale: props.locale,
       getCaptchaToken: props.getCaptchaToken,
     }),
   );

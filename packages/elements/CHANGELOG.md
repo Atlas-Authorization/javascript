@@ -1,5 +1,14 @@
 # @atlasauth/elements changelog
 
+## 0.4.0
+Requires `@atlasauth/react` 0.8.0.
+- **Server errors render in the app's language.** The flow's `errors` (and so `<Field.Error>`) carry the catalog
+  string `error.<reason>` as their `message` — from the provider's `locale` / `localization` — else the server's
+  message; `reason` stays on each error. The flow's Frontend API client sends the provider's `locale` as
+  `Accept-Language`.
+- `<Field.Error>`'s render-prop argument gains `reason?: string`.
+
+
 ## 0.3.0
 - **`<SignIn.Strategy>` / `<SignUp.Strategy>` follow the app's email delivery**
   (`instanceSettings.emailDelivery` from `@atlasauth/react`): `email_code` / `email_link` are not offered

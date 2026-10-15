@@ -68,13 +68,30 @@ export class ApiKeyRequestError extends Error {
   readonly code: string;
   readonly status: number;
   readonly param?: string;
+  /**
+   * The server's stable reason (`too_many_attempts`, …), when it sent one: the
+   * catalog key `error.<reason>` a UI shows instead of `message`. See
+   * `localizedErrorMessage`.
+   */
+  readonly reason?: string;
+  /** The server's `meta` detail for this error, when it sent one. */
+  readonly meta?: Record<string, unknown>;
 
-  constructor(status: number, code: string, message: string, param?: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    param?: string,
+    reason?: string,
+    meta?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'ApiKeyRequestError';
     this.status = status;
     this.code = code;
     this.param = param;
+    if (reason) this.reason = reason;
+    if (meta) this.meta = meta;
   }
 
   /** True when the action needs a fresh re-authentication first. */
@@ -94,6 +111,8 @@ async function call<T>(client: FapiClient, path: string, init: RequestInit = {})
       first?.code ?? 'UNKNOWN',
       first?.message ?? 'The request failed.',
       first?.param,
+      first?.reason,
+      first?.meta,
     );
   }
   return res.data;

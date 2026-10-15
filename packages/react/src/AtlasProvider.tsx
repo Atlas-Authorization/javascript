@@ -11,6 +11,7 @@ import {
 import {
   FapiClient,
   SessionTombstones,
+  catalogLocale,
   SignOutError,
   TokenCache,
   bestChannel,
@@ -88,6 +89,19 @@ interface AtlasContextValue {
   /** §oauth popup mode — app-wide default for social/OIDC sign-in (see AtlasProviderProps). */
   oauthMode?: 'popup' | 'redirect';
   catalog: Catalog;
+  /**
+   * The language layer of `catalog` — the `locale` bundle plus `localization`,
+   * WITHOUT the English defaults underneath (en-US itself when neither is set).
+   * Server errors are looked up here (`error.<reason>`), so a key the app's
+   * language lacks falls back to the server's own (localised) message rather
+   * than to an English catalog string.
+   */
+  errorCatalog?: Catalog;
+  /**
+   * The tag sent to the Frontend API as `Accept-Language`: the `locale` prop,
+   * else the `locale` a `localization` bundle declares. Undefined sends none.
+   */
+  locale?: string;
   /**
    * §5.3: a sign-in attempt handed back by an OAuth redirect that still needs a
    * second factor (no session was issued). Null in the ordinary case. The
@@ -214,6 +228,9 @@ export interface AtlasProviderProps {
 
 export function AtlasProvider(props: AtlasProviderProps) {
   const { publishableKey, children, appearance, localization, locale } = props;
+  // What the Frontend API is told the UI language is, so its error messages
+  // match the components'.
+  const requestLocale = locale ?? catalogLocale(localization);
   // Throws an AtlasConfigError at render for a missing/malformed value — the
   // old silent `?? ''` fallback sent every request to the app's own origin.
   const baseUrl = useMemo(
@@ -541,8 +558,8 @@ export function AtlasProvider(props: AtlasProviderProps) {
    * single implementation the React SDK surfaces.
    */
   const fapiClient = useMemo(
-    () => new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch }),
-    [publishableKey, baseUrl, doFetch],
+    () => new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale: requestLocale }),
+    [publishableKey, baseUrl, doFetch, requestLocale],
   );
 
   const getProviderToken = useCallback(
@@ -652,6 +669,12 @@ export function AtlasProvider(props: AtlasProviderProps) {
     return withFallback({ ...(base as unknown as Catalog | undefined), ...localization });
   }, [locale, localization]);
 
+  const errorCatalog = useMemo<Catalog>(() => {
+    const base = locale ? resolveLocale(locale) : undefined;
+    if (!locale && !localization) return EN_US;
+    return { ...(base as unknown as Catalog | undefined), ...localization };
+  }, [locale, localization]);
+
   // §onSignedIn: fire once on a genuine signed_out → signed_in transition (a NEW
   // sign-in, including the post-popup re-boot), never on a cached-boot load. Uses
   // a ref for the callback so a new function identity each render can't re-fire it.
@@ -680,6 +703,8 @@ export function AtlasProvider(props: AtlasProviderProps) {
       appearance,
       instanceSettings,
       catalog,
+      errorCatalog,
+      locale: requestLocale,
       pendingAttempt,
       getToken,
       getProviderToken,
@@ -697,6 +722,8 @@ export function AtlasProvider(props: AtlasProviderProps) {
       publishableKey,
       props.oauthMode,
       catalog,
+      errorCatalog,
+      requestLocale,
       claims,
       getToken,
       getProviderToken,

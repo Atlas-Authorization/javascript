@@ -29,7 +29,7 @@ import {
   shouldKeepPolling,
   type FlowState,
 } from './fapi';
-import { useClass, useClasses, useText } from './components-shared';
+import { useClass, useClasses, useErrorText, useText } from './components-shared';
 import { localizeCaptchaErrors, useCaptcha } from './captcha';
 
 /**
@@ -130,6 +130,7 @@ export function AttemptFlow({
   captcha?: ReactNode;
 }) {
   const t = useText();
+  const errorText = useErrorText();
   const { instanceSettings } = useAtlas();
   const cardClass = useClass('card', 'atlas-card');
   const titleClass = useClass('headerTitle', 'atlas-title');
@@ -167,7 +168,7 @@ export function AttemptFlow({
         .filter((error) => error.param === name)
         .map((error) => (
           <span key={error.code} className={errorClass}>
-            {error.message}
+            {errorText(error)}
           </span>
         ))}
     </label>
@@ -241,7 +242,7 @@ export function AttemptFlow({
         .filter((error) => !error.param)
         .map((error) => (
           <p key={error.code} className={errorClass} role="alert">
-            {error.message}
+            {errorText(error)}
           </p>
         ))}
 
@@ -307,7 +308,7 @@ export function useFlow({
    */
   signInCaptcha?: boolean;
 } = {}) {
-  const { publishableKey, frontendApi, reload, pendingAttempt, instanceSettings, broadcastSessionChange } = useAtlas();
+  const { publishableKey, frontendApi, locale, reload, pendingAttempt, instanceSettings, broadcastSessionChange } = useAtlas();
   const t = useText();
   // Seeded from a redirect that came back mid-flow (e.g. OAuth needing a second
   // factor), so the user resumes at the demanded step instead of starting over.
@@ -334,8 +335,8 @@ export function useFlow({
   });
 
   const client = useMemo(
-    () => new FapiClient({ publishableKey, baseUrl: frontendApi }),
-    [frontendApi, publishableKey],
+    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale }),
+    [frontendApi, publishableKey, locale],
   );
 
   // Apply a driver result to the UI, and — on completion — exchange the one-time
@@ -982,6 +983,7 @@ export function SocialSignInButtons({
   const socialButtonClass = useClass('socialButton', 'atlas-social-button');
   const cls = useClasses();
   const { oauthMode: providerOauthMode } = useAtlas();
+  const errorText = useErrorText();
   const effectiveMode = oauthMode ?? providerOauthMode ?? 'redirect';
   const [redirectProviders, setRedirectProviders] = useState<
     Array<{
@@ -1021,12 +1023,12 @@ export function SocialSignInButtons({
         });
         const url = res.data?.authorization_url;
         if (url) window.location.assign(url);
-        else setAtlasError(res.errors?.[0]?.message ?? 'Could not start Sign in with Atlas.');
+        else setAtlasError(res.errors?.[0] ? errorText(res.errors[0]) : 'Could not start Sign in with Atlas.');
       } catch {
         setAtlasError('Could not start Sign in with Atlas.');
       }
     })();
-  }, [client, atlasConnection]);
+  }, [client, atlasConnection, errorText]);
 
   useEffect(() => {
     let alive = true;

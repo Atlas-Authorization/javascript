@@ -21,7 +21,7 @@ export function renderReset(w: AtlasWidget): HTMLElement {
   const errors = flow.errors;
   const inputs = new Map<string, HTMLInputElement>();
   const formError = errors.find((e) => !e.param);
-  if (formError) form.appendChild(el(w, 'div', 'atlas-embed-form-error', formError.message));
+  if (formError) form.appendChild(el(w, 'div', 'atlas-embed-form-error', w.errorText(formError)));
 
   let subtitle: string | null = null;
   let submitLabel = 'Continue';
@@ -128,7 +128,7 @@ export function fieldInto(
   }
 
   for (const err of errors.filter((e) => e.param === name)) {
-    field.appendChild(el(w, 'span', cls(w, 'error', 'atlas-embed-error'), err.message));
+    field.appendChild(el(w, 'span', cls(w, 'error', 'atlas-embed-error'), w.errorText(err)));
   }
   inputs.set(name, input);
   form.appendChild(field);
@@ -210,7 +210,7 @@ export function codeFieldInto(
   field.appendChild(group);
   field.appendChild(hidden);
   for (const err of errors.filter((e) => e.param === name)) {
-    field.appendChild(el(w, 'span', cls(w, 'error', 'atlas-embed-error'), err.message));
+    field.appendChild(el(w, 'span', cls(w, 'error', 'atlas-embed-error'), w.errorText(err)));
   }
   form.appendChild(field);
 }
@@ -220,7 +220,7 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
 
   const formError = w.state.errors.find((e) => !e.param);
   if (formError) {
-    form.appendChild(el(w, 'div', 'atlas-embed-form-error', formError.message));
+    form.appendChild(el(w, 'div', 'atlas-embed-form-error', w.errorText(formError)));
   }
 
   const inputs = new Map<string, HTMLInputElement>();
@@ -422,7 +422,7 @@ export function renderSignUpForm(w: AtlasWidget): HTMLElement {
   }
 
   const formError = w.state.errors.find((e) => !e.param);
-  if (formError) form.appendChild(el(w, 'div', 'atlas-embed-form-error', formError.message));
+  if (formError) form.appendChild(el(w, 'div', 'atlas-embed-form-error', w.errorText(formError)));
 
   // Each field registers a reader that produces its string value at submit —
   // this is what lets one loop collect text, dropdowns, checkboxes, radio and
@@ -518,7 +518,7 @@ export function renderSignUpForm(w: AtlasWidget): HTMLElement {
     }
 
     for (const err of w.state.errors.filter((e) => e.param === name)) {
-      field.appendChild(el(w, 'span', cls(w, 'error', 'atlas-embed-error'), err.message));
+      field.appendChild(el(w, 'span', cls(w, 'error', 'atlas-embed-error'), w.errorText(err)));
     }
     form.appendChild(field);
   };

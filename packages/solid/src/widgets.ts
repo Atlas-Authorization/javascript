@@ -12,6 +12,8 @@ import { h } from './h';
 import {
   EMAIL_UNAVAILABLE_MESSAGE,
   FapiClient,
+  localizedErrorMessage,
+  type ErrorStrings,
   advanceWithCaptcha,
   createCaptchaController,
   createSignUp,
@@ -64,8 +66,12 @@ function field(name: string, label: string, type = 'text'): JSX.Element {
 /** The flow's errors, rendered as alerts. Field-scoped ones (e.g. a rejected
  * password) are included: these forms have no per-field error slot, and an
  * error the user never sees is a form they cannot get past. */
-function renderErrors(errors: FlowErrors): JSX.Element {
-  return errors.map((error) => h('p', { class: 'atlas-error', role: 'alert' }, error.message));
+function renderErrors(errors: FlowErrors, strings?: ErrorStrings): JSX.Element {
+  // A server error in the app's language: `error.<reason>` from the client's
+  // `localization`, else the server's (Accept-Language-localised) message.
+  return errors.map((error) =>
+    h('p', { class: 'atlas-error', role: 'alert' }, localizedErrorMessage(error, strings)),
+  );
 }
 
 /**
@@ -303,7 +309,11 @@ function formValues(form: HTMLFormElement): Record<string, string> {
  */
 function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'sign-up' }): JSX.Element {
   const client = props.client;
-  const fapi = new FapiClient({ publishableKey: client.publishableKey, baseUrl: client.frontendApi });
+  const fapi = new FapiClient({
+    publishableKey: client.publishableKey,
+    baseUrl: client.frontendApi,
+    locale: client.locale,
+  });
   // Seeded from a redirect that returned mid-flow (OAuth owing a second
   // factor), so the user resumes at the demanded step instead of restarting.
   const [state, setStateRaw] = createSignal<FlowState>(
@@ -461,7 +471,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     },
     [
       h('h1', { class: 'atlas-title' }, props.title),
-      () => renderErrors(state().errors),
+      () => renderErrors(state().errors, client.localization),
       () => {
         if (kind() === 'create_account') return signUpBlocked() ? emailUnavailable() : renderSignUpFields(settings());
         if (kind() === 'collect_first_factor') {

@@ -20,6 +20,26 @@ export interface FapiClientOptions {
   /** The instance's FAPI origin. Empty for same-origin. */
   baseUrl?: string;
   fetchImpl?: typeof fetch;
+  /**
+   * The app's UI language as a BCP-47 tag (`"es"`, `"pt-BR"`). When set, every
+   * request carries it as `Accept-Language`, so the server writes its error
+   * `message`s in that language — the fallback a prebuilt form shows for an
+   * error whose `reason` its catalog has no string for. Unset sends no header
+   * (the browser's own `Accept-Language` applies). A malformed tag is ignored.
+   */
+  locale?: string;
+}
+
+/**
+ * A locale tag normalised for the `Accept-Language` header (`pt_BR` → `pt-BR`),
+ * or null when it is not a plausible BCP-47 tag. Restricting it to letters,
+ * digits and hyphens keeps the header CORS-safelisted, so sending it never adds
+ * a preflight to a cross-origin Frontend API call.
+ */
+export function acceptLanguageFor(locale: string | null | undefined): string | null {
+  if (typeof locale !== 'string') return null;
+  const tag = locale.trim().replace(/_/g, '-');
+  return /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/.test(tag) ? tag : null;
 }
 
 export interface FapiResponse<T> {
@@ -31,6 +51,11 @@ export interface FapiResponse<T> {
 
 export class FapiClient {
   constructor(private readonly options: FapiClientOptions) {}
+
+  /** The `Accept-Language` this client sends, or null when it sends none. */
+  get locale(): string | null {
+    return acceptLanguageFor(this.options.locale);
+  }
 
   /**
    * The origin FAPI serves from — where an OAuth popup's callback page lives, so
@@ -50,6 +75,7 @@ export class FapiClient {
   async request<T>(path: string, init: RequestInit = {}): Promise<FapiResponse<T>> {
     const doFetch = this.options.fetchImpl ?? fetch;
 
+    const language = this.locale;
     let response: Response;
     try {
       response = await doFetch(`${this.options.baseUrl ?? ''}${path}`, {
@@ -59,6 +85,7 @@ export class FapiClient {
         credentials: 'include',
         headers: {
           'x-publishable-key': this.options.publishableKey,
+          ...(language ? { 'accept-language': language } : {}),
           ...(init.body ? { 'content-type': 'application/json' } : {}),
           ...init.headers,
         },
@@ -73,7 +100,7 @@ export class FapiClient {
         ok: false,
         status: 0,
         data: null,
-        errors: [{ code: 'NETWORK', message: 'We could not reach the server.' }],
+        errors: [{ code: 'NETWORK', reason: 'network', message: 'We could not reach the server.' }],
       };
     }
 

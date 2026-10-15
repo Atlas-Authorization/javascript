@@ -1,9 +1,10 @@
 <script lang="ts">
-  import type {
-    CaptchaController,
-    FieldError,
-    InstanceSettings,
-    PublicSignUpField,
+  import {
+    localizedErrorMessage,
+    type CaptchaController,
+    type FieldError,
+    type InstanceSettings,
+    type PublicSignUpField,
   } from '@atlasauth/js';
   import { useAtlas } from '../context';
   import { classFor, type ElementKey } from '../appearance';
@@ -29,6 +30,8 @@
   const atlas = useAtlas();
   const cls = (key: ElementKey, base: string) => classFor(key, atlas.appearance, base);
   const t = (key: string, vars?: Record<string, string>) => translate(atlas.catalog, key, vars);
+  const errorText = (error: FieldError) =>
+    localizedErrorMessage(error, atlas.errorCatalog ?? atlas.catalog, atlas.catalog);
 
   let values: Record<string, string> = {};
   let agreed = false;
@@ -65,7 +68,7 @@
   <h1 class={cls('headerTitle', 'atlas-title')}>{t('signUp.title')}</h1>
 
   {#each errors.filter((e) => !e.param) as error (error.code)}
-    <p class={cls('formFieldError', 'atlas-error')} role="alert">{error.message}</p>
+    <p class={cls('formFieldError', 'atlas-error')} role="alert">{errorText(error)}</p>
   {/each}
 
   {#if emailUnavailable}
@@ -92,7 +95,7 @@
               {/each}
             </span>
             {#each errors.filter((e) => e.param === f.key) as error (error.code)}
-              <span class={cls('formFieldError', 'atlas-error')}>{error.message}</span>
+              <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
             {/each}
           </div>
         {:else}
@@ -140,7 +143,7 @@
               />
             {/if}
             {#each errors.filter((e) => e.param === f.key) as error (error.code)}
-              <span class={cls('formFieldError', 'atlas-error')}>{error.message}</span>
+              <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
             {/each}
           </label>
         {/if}
@@ -158,7 +161,7 @@
           on:input={(e) => (values.email = e.currentTarget.value)}
         />
         {#each errors.filter((e) => e.param === 'email') as error (error.code)}
-          <span class={cls('formFieldError', 'atlas-error')}>{error.message}</span>
+          <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
         {/each}
       </label>
 
@@ -174,7 +177,7 @@
           on:input={(e) => (values.password = e.currentTarget.value)}
         />
         {#each errors.filter((e) => e.param === 'password') as error (error.code)}
-          <span class={cls('formFieldError', 'atlas-error')}>{error.message}</span>
+          <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
         {/each}
       </label>
 
@@ -194,7 +197,7 @@
               >{/if}.
           </span>
           {#each errors.filter((e) => e.param === 'consent') as error (error.code)}
-            <span class={cls('formFieldError', 'atlas-error')}>{error.message}</span>
+            <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
           {/each}
         </label>
       {/if}

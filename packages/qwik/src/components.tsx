@@ -1,5 +1,6 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik';
 import { useAtlas } from './context';
+import type { WidgetOptions } from '@atlasauth/embed';
 import { mountAtlasWidget } from './widget';
 
 /**
@@ -21,6 +22,10 @@ import { mountAtlasWidget } from './widget';
 export interface SignInProps {
   /** Where to send the user once the flow completes. */
   redirect?: string;
+  /** The UI language (`"es"`), sent as `Accept-Language` so server errors come back localised. */
+  locale?: string;
+  /** Strings for server errors (`error.<reason>`), e.g. `esES` from `@atlasauth/localizations`. */
+  localization?: WidgetOptions['localization'];
 }
 
 export const SignIn = component$<SignInProps>((props) => {
@@ -36,6 +41,8 @@ export const SignIn = component$<SignInProps>((props) => {
       publishableKey: store.publishableKey,
       frontendApi: store.frontendApi,
       redirect: props.redirect,
+      locale: props.locale,
+      localization: props.localization,
     });
     cleanup(teardown);
   });
@@ -55,6 +62,8 @@ export const SignUp = component$<SignInProps>((props) => {
       publishableKey: store.publishableKey,
       frontendApi: store.frontendApi,
       redirect: props.redirect,
+      locale: props.locale,
+      localization: props.localization,
     });
     cleanup(teardown);
   });

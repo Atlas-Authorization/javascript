@@ -188,6 +188,50 @@ export interface LocalizationResource {
   // --- Errors ----------------------------------------------------------------
   'error.generic': string;
   'error.network': string;
+
+  // --- Server errors, by reason ---------------------------------------------
+  // `error.<reason>`: the stable `reason` on a Frontend API error. Prebuilt
+  // forms show this string instead of the server's `message`. `{methods}`,
+  // `{min_length}`, `{max_length}` and `{history_count}` are filled from the
+  // error's `meta` and MUST be kept verbatim.
+  'error.form_password_incorrect': string;
+  'error.form_code_incorrect': string;
+  'error.form_code_already_used': string;
+  'error.form_code_expired': string;
+  'error.form_code_max_attempts': string;
+  'error.form_link_invalid': string;
+  'error.form_identifier_not_found': string;
+  'error.form_identifier_exists': string;
+  'error.form_password_pwned': string;
+  'error.form_password_too_short': string;
+  'error.form_password_too_long': string;
+  'error.form_password_requires_uppercase': string;
+  'error.form_password_requires_lowercase': string;
+  'error.form_password_requires_number': string;
+  'error.form_password_requires_symbol': string;
+  'error.form_password_not_allowed': string;
+  'error.form_password_contains_identifier': string;
+  'error.form_password_same_as_current': string;
+  'error.form_password_reused': string;
+  'error.password_expired': string;
+  'error.email_not_verified': string;
+  'error.sign_in_token_invalid': string;
+  'error.too_many_attempts': string;
+  'error.too_many_requests': string;
+  'error.captcha_required': string;
+  'error.captcha_failed': string;
+  'error.captcha_unavailable': string;
+  'error.email_delivery_unavailable': string;
+  'error.strategy_disabled': string;
+  'error.sign_up_restricted': string;
+  'error.waitlisted': string;
+  'error.identifier_not_allowed': string;
+  'error.disposable_email_blocked': string;
+  'error.sso_required': string;
+  'error.sign_ins_disabled': string;
+  'error.sign_ups_disabled': string;
+  'error.high_risk_blocked': string;
+  'error.sms_region_blocked': string;
 }
 
 /**

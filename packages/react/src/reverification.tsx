@@ -22,7 +22,7 @@ export function useReverification(): {
   completeReverification(input: ReauthInput): Promise<void>;
   cancelReverification(): void;
 } {
-  const { publishableKey, frontendApi } = useAtlas();
+  const { publishableKey, frontendApi, locale } = useAtlas();
   const [needsReverification, setNeedsReverification] = useState(false);
   const pending = useRef<{
     action: () => unknown | Promise<unknown>;
@@ -62,7 +62,7 @@ export function useReverification(): {
     async (input: ReauthInput): Promise<void> => {
       // Throws on a bad credential; the parked call is left intact so the prompt
       // can retry, and we neither clear it nor drop the flag until this resolves.
-      await reauthenticate(input, { api: frontendApi, publishableKey });
+      await reauthenticate(input, { api: frontendApi, publishableKey, locale });
       const job = pending.current;
       pending.current = null;
       setNeedsReverification(false);
@@ -73,7 +73,7 @@ export function useReverification(): {
         job.reject(err);
       }
     },
-    [frontendApi, publishableKey],
+    [frontendApi, publishableKey, locale],
   );
 
   const cancelReverification = useCallback(() => {

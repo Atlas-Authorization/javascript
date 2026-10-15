@@ -1,5 +1,14 @@
 # @atlasauth/qwik changelog
 
+## 0.3.0
+
+### Added
+- **Server errors in the app's language.** `<SignIn>` / `<SignUp>` take `locale?: string` (sent as
+  `Accept-Language`) and `localization?` (strings keyed `error.<reason>`, e.g. `esES` from
+  `@atlasauth/localizations`); both pass through to the embed widget, as do the new `MountWidgetOptions.locale`
+  and `MountWidgetOptions.localization`. Requires `@atlasauth/embed` 0.5.0.
+
+
 ## 0.2.0
 
 ### Changed

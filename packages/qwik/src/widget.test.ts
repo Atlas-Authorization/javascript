@@ -193,3 +193,72 @@ describe('mountAtlasWidget honours the instance email delivery', () => {
     expect(hasForgot(host)).toBe(true);
   });
 });
+
+/**
+ * Server errors in the app's language: `locale` / `localization` pass through to
+ * the embed widget, which shows the `error.<reason>` string and sends
+ * `Accept-Language`.
+ */
+describe('mountAtlasWidget localises server errors', () => {
+  const ES = { locale: 'es-ES', 'error.form_password_incorrect': 'Esas credenciales son incorrectas.' };
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('passes locale and localization through only when set', () => {
+    const mounter = vi.fn();
+    mountAtlasWidget(document.createElement('div'), 'sign-in', {
+      publishableKey: 'pk_test',
+      frontendApi: 'https://fapi.example',
+      locale: 'es',
+      localization: ES,
+      mounter,
+    });
+    expect(mounter.mock.calls[0]![1]).toMatchObject({ locale: 'es', localization: ES });
+  });
+
+  it('renders the Spanish string for a refused sign-in', async () => {
+    const headers: Record<string, string>[] = [];
+    const impl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/v1/appearance') {
+        return new Response(
+          JSON.stringify({
+            object: 'appearance',
+            appearance: { applicationName: 'Acme', colorPrimary: '#5b5bd6', theme: 'light', providerOrder: [], providerHidden: [] },
+            providers: [],
+            strategies: { password: true, emailCode: true, emailLink: true, passkey: false, phoneCode: false, siwe: false },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.pathname === '/v1/client/sign_ins') {
+        headers.push({ ...((init?.headers as Record<string, string>) ?? {}) });
+        return new Response(
+          JSON.stringify({
+            errors: [{ code: 'VERIFICATION_FAILED', message: 'Those credentials are incorrect.', reason: 'form_password_incorrect' }],
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    mountAtlasWidget(host, 'sign-in', {
+      publishableKey: 'pk_test',
+      frontendApi: 'https://fapi.example',
+      localization: ES,
+      mounter: (h, overrides) => mountSignIn(h, { ...overrides, fetchImpl: impl }),
+    });
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+    (host.querySelector('input[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    host.querySelector('form')!.dispatchEvent(new Event('submit'));
+    for (let i = 0; i < 8; i++) await new Promise((r) => setTimeout(r, 0));
+
+    expect(host.textContent).toContain('Esas credenciales son incorrectas.');
+    expect(host.textContent).not.toContain('Those credentials are incorrect.');
+    expect(headers[0]!['accept-language']).toBe('es-ES');
+  });
+});

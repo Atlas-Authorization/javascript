@@ -295,7 +295,7 @@ export function renderHandlePrompt(w: AtlasWidget, provider: string): HTMLElemen
   form.setAttribute('novalidate', 'true');
 
   for (const err of w.state.errors.filter((e) => !e.param)) {
-    form.appendChild(el(w, 'div', 'atlas-embed-form-error', err.message));
+    form.appendChild(el(w, 'div', 'atlas-embed-form-error', w.errorText(err)));
   }
 
   const field = el(w, 'label', cls(w, 'field', 'atlas-embed-field'));

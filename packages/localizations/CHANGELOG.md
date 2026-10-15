@@ -1,5 +1,26 @@
 # @atlasauth/localizations changelog
 
+## 0.4.0
+- **Added 38 keys `error.<reason>`** — one per stable `reason` the Frontend API now sends on its errors, so the
+  prebuilt components show server errors in the app's language instead of the server's English `message`.
+  Translated in every shipped locale (en-US, es-ES, fr-FR, de-DE, pt-BR, ja-JP, nl-NL): `error.form_password_incorrect`,
+  `error.form_code_incorrect`, `error.form_code_already_used`, `error.form_code_expired`,
+  `error.form_code_max_attempts`, `error.form_link_invalid`, `error.form_identifier_not_found`,
+  `error.form_identifier_exists` (`{methods}`), `error.form_password_pwned`, `error.form_password_too_short`
+  (`{min_length}`), `error.form_password_too_long` (`{max_length}`), `error.form_password_requires_uppercase`,
+  `error.form_password_requires_lowercase`, `error.form_password_requires_number`,
+  `error.form_password_requires_symbol`, `error.form_password_not_allowed`,
+  `error.form_password_contains_identifier`, `error.form_password_same_as_current`, `error.form_password_reused`
+  (`{history_count}`), `error.password_expired`, `error.email_not_verified`, `error.sign_in_token_invalid`,
+  `error.too_many_attempts`,
+  `error.too_many_requests`, `error.captcha_required`, `error.captcha_failed`, `error.captcha_unavailable`,
+  `error.email_delivery_unavailable`, `error.strategy_disabled`, `error.sign_up_restricted`, `error.waitlisted`,
+  `error.identifier_not_allowed`, `error.disposable_email_blocked`, `error.sso_required`, `error.sign_ins_disabled`,
+  `error.sign_ups_disabled`, `error.high_risk_blocked`, `error.sms_region_blocked`.
+- `LocalizationResource` gains the same 38 members, so the complete bundles (`esES`, `frFR`, `deDE`, `ptBR`) fail
+  to compile without them; `jaJP` and `nlNL` cover them too. `missingKeys(resolveLocale('es'), enUS)` stays `[]`.
+
+
 ## 0.3.0
 - **Added key** `signUp.emailUnavailable` — the "can't send email" notice the prebuilt sign-up (and sign-in)
   components show when the app cannot deliver email. Translated in every shipped locale (en-US, es-ES, fr-FR,

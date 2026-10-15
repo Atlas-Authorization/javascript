@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useAtlas } from './AtlasProvider';
-import { currentUrl, navigateTo, useClass, useClasses, useMeClient, useText } from './components-shared';
+import { currentUrl, navigateTo, useClass, useClasses, useErrorText, useMeClient, useText } from './components-shared';
 import type {
   AtlasBillingInvoice,
   AtlasBillingPlan,
@@ -285,6 +285,7 @@ export function EmbeddedCheckout({
   const client = useMeClient();
   const { checkout } = useBilling({ orgId });
   const t = useText();
+  const errorText = useErrorText();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -314,7 +315,7 @@ export function EmbeddedCheckout({
         },
       );
       if (!res.ok || !res.data?.client_secret) {
-        if (!cancelled) setError(res.errors[0]?.message ?? t('error.generic'));
+        if (!cancelled) setError(res.errors[0] ? errorText(res.errors[0]) : t('error.generic'));
         return;
       }
       // 3) Mount Stripe's Embedded Checkout.
@@ -345,7 +346,7 @@ export function EmbeddedCheckout({
       }
     };
     // planId/orgId/returnUrl identify the session to create; client is stable.
-  }, [client, planId, orgId, returnUrl, t]);
+  }, [client, planId, orgId, returnUrl, t, errorText]);
 
   if (unavailable) {
     return (

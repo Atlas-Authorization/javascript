@@ -1,5 +1,15 @@
 # @atlasauth/react-native changelog
 
+## 0.5.0
+Requires `@atlasauth/js` 0.9.0.
+- **New `locale?: string`** on `AtlasProviderProps` and `AtlasStoreConfig`: sent as `Accept-Language` on every
+  Frontend API request, so error `message`s come back in the app's language.
+- **`FlowResult.errors[]` gains `reason?: string` and `meta?: Record<string, unknown>`** (the server's stable
+  reason, e.g. `form_password_incorrect`, and its interpolation values).
+- **`firstErrorMessage(result, strings?)`** — pass a `@atlasauth/localizations` bundle (e.g. `esES`) or your own
+  `{ 'error.<reason>': '…' }` catalog to get the error's `error.<reason>` string, else the server's message.
+
+
 ## 0.4.0
 - **Safer sign-out.** `signOut(options?: SignOutOptions)` (on `AtlasStore` and `useAuth()`) now revokes the
   session on the Frontend API (`POST /v1/client/sessions/:id/revoke`, retried once) with the token being

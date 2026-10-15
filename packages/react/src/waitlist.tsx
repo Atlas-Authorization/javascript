@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useClass, useClasses, useMeClient, useText } from './components-shared';
+import { useClass, useClasses, useErrorText, useMeClient, useText } from './components-shared';
 
 /**
  * Clerk-parity `useWaitlist()`. Headless join: `join(email)` posts the address to
@@ -24,6 +24,7 @@ export function useWaitlist() {
 export function Waitlist() {
   const { join } = useWaitlist();
   const t = useText();
+  const errorText = useErrorText();
   const cardClass = useClass('card', 'atlas-card');
   const cls = useClasses();
   const titleClass = useClass('headerTitle', 'atlas-title');
@@ -45,7 +46,7 @@ export function Waitlist() {
       setJoined(true);
       return;
     }
-    setError(res.errors[0]?.message ?? t('error.generic'));
+    setError(res.errors[0] ? errorText(res.errors[0]) : t('error.generic'));
   };
 
   return (

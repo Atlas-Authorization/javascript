@@ -6,7 +6,13 @@ import {
   Output,
   inject,
 } from '@angular/core';
-import { nextStep, type AttemptView, type CaptchaController, type FieldError } from '@atlasauth/js';
+import {
+  localizedErrorMessage,
+  nextStep,
+  type AttemptView,
+  type CaptchaController,
+  type FieldError,
+} from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
 import { AtlasCaptchaSlotDirective } from '../directives/captcha-slot.directive';
 import { classFor, type ElementKey } from '../appearance';
@@ -45,7 +51,7 @@ interface StepField {
       <h1 [class]="cls('headerTitle', 'atlas-title')">{{ t(titleKey) }}</h1>
 
       @for (error of formErrors(); track error.code) {
-        <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ error.message }}</p>
+        <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ errorText(error) }}</p>
       }
 
       <form (submit)="onSubmit($event)">
@@ -61,7 +67,7 @@ interface StepField {
                 (input)="setValue(f.name, $any($event.target).value)"
               />
               @for (error of fieldErrorsFor(f.name); track error.code) {
-                <span [class]="cls('formFieldError', 'atlas-error')">{{ error.message }}</span>
+                <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
               }
             </label>
           } @else {
@@ -124,6 +130,13 @@ export class AttemptFlowComponent {
 
   protected t(key: string, vars?: Record<string, string>): string {
     return translate(this.atlas.localization, key, vars);
+  }
+
+  /** A server error in the app's language (`error.<reason>`, else the server's message). */
+  protected errorText(error: FieldError): string {
+    // `errorLocalization` is read defensively: a stand-in service may lack it.
+    const layer = (this.atlas as { errorLocalization?: Record<string, string> }).errorLocalization;
+    return localizedErrorMessage(error, layer ?? this.atlas.localization, this.atlas.localization);
   }
 
   protected cls(key: ElementKey, base: string): string {

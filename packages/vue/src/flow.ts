@@ -71,6 +71,7 @@ export function useFlow(): FlowController {
   const client = new FapiClient({
     publishableKey: atlas.publishableKey,
     baseUrl: atlas.frontendApi,
+    locale: atlas.locale,
   });
 
   // §5 the per-flow captcha, driven by the instance's settings so turning it on

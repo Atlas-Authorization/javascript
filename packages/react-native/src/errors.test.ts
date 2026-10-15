@@ -36,3 +36,31 @@ describe('error codes', () => {
     expect(hasErrorCode([{ code: 'SOMETHING_NEW', message: 'x' }], 'SOMETHING_NEW')).toBe(true);
   });
 });
+
+describe('firstErrorMessage in the app language', () => {
+  const ES = {
+    'error.form_password_incorrect': 'Esas credenciales son incorrectas.',
+    'error.form_password_too_short': 'La contraseña debe tener al menos {min_length} caracteres.',
+  };
+
+  it('uses the error.<reason> string, with placeholders from meta', () => {
+    expect(
+      firstErrorMessage(
+        [{ code: 'VERIFICATION_FAILED', message: 'Those credentials are incorrect.', reason: 'form_password_incorrect' }],
+        ES,
+      ),
+    ).toBe('Esas credenciales son incorrectas.');
+    expect(
+      firstErrorMessage(
+        [{ code: 'PASSWORD_POLICY', message: 'x', reason: 'form_password_too_short', meta: { min_length: 12 } }],
+        ES,
+      ),
+    ).toBe('La contraseña debe tener al menos 12 caracteres.');
+  });
+
+  it('falls back to the server message for an unknown reason', () => {
+    expect(firstErrorMessage([{ code: 'X', message: 'Mensaje del servidor.', reason: 'brand_new' }], ES)).toBe(
+      'Mensaje del servidor.',
+    );
+  });
+});

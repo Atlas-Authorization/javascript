@@ -17,6 +17,7 @@ import {
   type RedirectResult,
   type SignOutOptions,
   type SignOutResult,
+  catalogLocale,
 } from '@atlasauth/js';
 import { EN_US, withFallback, type Catalog } from './i18n';
 import { instanceDesignFrom, type Appearance, type InstanceDesign } from './appearance';
@@ -91,6 +92,14 @@ export interface AtlasClient extends AtlasStores {
   frontendApi: string;
   appearance?: Appearance;
   catalog: Catalog;
+  /**
+   * The language layer of `catalog` (the `localization` bundle, without the
+   * English defaults underneath; `EN_US` when none is set). Server errors are
+   * looked up here as `error.<reason>`, falling back to the server's message.
+   */
+  errorCatalog?: Catalog;
+  /** Sent to the Frontend API as `Accept-Language`: the `locale` tag of the `localization` bundle. */
+  locale?: string;
   /**
    * §5.3: a sign-in attempt handed back by an OAuth redirect that still needs a
    * second factor (no session was issued). Null in the ordinary case. `<SignIn>`
@@ -167,6 +176,8 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
   });
   const doFetch = options.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : undefined);
   const catalog = options.localization ? withFallback(options.localization) : EN_US;
+  const errorCatalog = options.localization ?? EN_US;
+  const locale = catalogLocale(options.localization);
 
   const status = writable<AuthStatus>('loading');
   const user = writable<AtlasUser | null>(null);
@@ -311,7 +322,7 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
     return cache.get(5_000)?.jwt ?? null;
   }
 
-  const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch });
+  const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale });
 
   function getProviderToken(provider: string): Promise<ProviderToken | null> {
     return fetchProviderToken(fapiClient, provider);
@@ -426,6 +437,8 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
     frontendApi: baseUrl,
     appearance: options.appearance,
     catalog,
+    errorCatalog,
+    locale,
     pendingAttempt,
     status: { subscribe: status.subscribe },
     user: { subscribe: user.subscribe },

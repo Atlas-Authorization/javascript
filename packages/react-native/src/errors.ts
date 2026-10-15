@@ -1,3 +1,4 @@
+import { localizedErrorMessage, type ErrorStrings } from '@atlasauth/js';
 import type { FlowResult } from './types';
 
 /**
@@ -70,9 +71,17 @@ export function isCaptchaRequired(
   );
 }
 
-/** The first server message — written for end users, so show it verbatim. */
+/**
+ * The first server message, written for end users. Pass `strings` — a
+ * `@atlasauth/localizations` bundle such as `esES`, or your own
+ * `{ 'error.<reason>': '…' }` catalog — to get the error in the app's language:
+ * its `error.<reason>` string, else the server's message.
+ */
 export function firstErrorMessage(
   input: ErrorList | Pick<FlowResult, 'errors'> | null | undefined,
+  strings?: ErrorStrings,
 ): string | null {
-  return listOf(input)[0]?.message ?? null;
+  const first = listOf(input)[0];
+  if (!first) return null;
+  return strings ? localizedErrorMessage(first, strings) : first.message;
 }

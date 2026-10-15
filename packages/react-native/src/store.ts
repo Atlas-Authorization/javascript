@@ -79,6 +79,11 @@ export interface AtlasStoreConfig {
   /** Injectable for tests; defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
   /**
+   * The app's UI language as a BCP-47 tag (`"es"`), sent to the Frontend API as
+   * `Accept-Language` so every error `message` comes back in that language.
+   */
+  locale?: string;
+  /**
    * Delays (ms) between background re-tries of a revoke `signOut()` could not
    * complete. Default `[15_000, 60_000, 300_000]`; `[]` re-tries only on a
    * later `bootstrap()`.
@@ -145,6 +150,7 @@ export class AtlasStore {
       frontendApi,
       fetchImpl,
       getToken: () => this.storage.getToken(),
+      locale: config.locale,
     });
     // The revoke is bound to the token being dropped, not read from storage at
     // call time: sign-out clears storage, and the background re-try of a failed

@@ -1,5 +1,6 @@
 import { defineComponent, h, reactive, ref, watch, type PropType, type VNode } from 'vue';
 import {
+  localizedErrorMessage,
   nextStep,
   offeredFirstFactors,
   type AttemptView,
@@ -42,6 +43,12 @@ function useClass() {
 function useText() {
   const { catalog } = useAtlas();
   return (key: string, vars?: Record<string, string>) => translate(catalog, key, vars);
+}
+
+/** The text for a server error: `error.<reason>`, else the server's message, else `error.generic`. */
+function useErrorText() {
+  const { catalog, errorCatalog } = useAtlas();
+  return (error: FieldError) => localizedErrorMessage(error, errorCatalog ?? catalog, catalog);
 }
 
 export const SignedIn = defineComponent({
@@ -180,6 +187,7 @@ const AttemptFlow = defineComponent({
   },
   setup(props) {
     const t = useText();
+    const errorText = useErrorText();
     const cls = useClass();
     const values = reactive<Record<string, string>>({});
     // The first factor the user picked: the password field by default, or the
@@ -225,7 +233,7 @@ const AttemptFlow = defineComponent({
         ...props.errors
           .filter((error) => error.param === name)
           .map((error) =>
-            h('span', { class: cls('formFieldError', 'atlas-error'), key: error.code }, error.message),
+            h('span', { class: cls('formFieldError', 'atlas-error'), key: error.code }, errorText(error)),
           ),
       ]);
 
@@ -293,7 +301,7 @@ const AttemptFlow = defineComponent({
             h(
               'p',
               { class: cls('formFieldError', 'atlas-error'), role: 'alert', key: error.code },
-              error.message,
+              errorText(error),
             ),
           ),
 
@@ -377,6 +385,7 @@ const SignUpForm = defineComponent({
   },
   setup(props) {
     const t = useText();
+    const errorText = useErrorText();
     const cls = useClass();
     const values = reactive<Record<string, string>>({});
     const agreed = ref(false);
@@ -385,7 +394,7 @@ const SignUpForm = defineComponent({
       props.errors
         .filter((error) => error.param === name)
         .map((error) =>
-          h('span', { class: cls('formFieldError', 'atlas-error'), key: error.code }, error.message),
+          h('span', { class: cls('formFieldError', 'atlas-error'), key: error.code }, errorText(error)),
         );
 
     const label = (f: PublicSignUpField) =>
@@ -523,7 +532,7 @@ const SignUpForm = defineComponent({
         ...props.errors
           .filter((error) => !error.param)
           .map((error) =>
-            h('p', { class: cls('formFieldError', 'atlas-error'), role: 'alert', key: error.code }, error.message),
+            h('p', { class: cls('formFieldError', 'atlas-error'), role: 'alert', key: error.code }, errorText(error)),
           ),
         h(
           'form',

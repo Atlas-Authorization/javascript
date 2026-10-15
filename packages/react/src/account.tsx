@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { createPasskey, passkeysSupported } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { useUser } from './hooks';
-import { collectByType, useClass, useClasses, useMeClient, useText } from './components-shared';
+import { collectByType, useClass, useClasses, useErrorText, useMeClient, useText } from './components-shared';
 
 interface DeviceSession {
   id: string;
@@ -155,6 +155,7 @@ interface MfaFactor {
  */
 export function ManageMfa() {
   const client = useMeClient();
+  const errorText = useErrorText();
   const cardClass = useClass('card', 'atlas-card');
   const cls = useClasses();
   const [factors, setFactors] = useState<MfaFactor[]>([]);
@@ -189,7 +190,7 @@ export function ManageMfa() {
     );
     setBusy(false);
     if (!res.ok || !res.data) {
-      setError(res.errors[0]?.message ?? 'Could not start enrollment.');
+      setError(res.errors[0] ? errorText(res.errors[0]) : 'Could not start enrollment.');
       return;
     }
     const required = res.data.required_codes || 1;
@@ -207,7 +208,7 @@ export function ManageMfa() {
     );
     setBusy(false);
     if (!res.ok) {
-      setError(res.errors[0]?.message ?? 'That code was not accepted.');
+      setError(res.errors[0] ? errorText(res.errors[0]) : 'That code was not accepted.');
       return;
     }
     setBackupCodes(res.data?.backup_codes ?? []);
@@ -297,6 +298,7 @@ interface Passkey {
  */
 export function ManagePasskeys() {
   const client = useMeClient();
+  const errorText = useErrorText();
   const cardClass = useClass('card', 'atlas-card');
   const cls = useClasses();
   const [passkeys, setPasskeys] = useState<Passkey[]>([]);
@@ -319,13 +321,13 @@ export function ManagePasskeys() {
     try {
       const begin = await client.post<Record<string, unknown>>('/v1/client/me/passkeys/begin');
       if (!begin.ok || !begin.data) {
-        setError(begin.errors[0]?.message ?? 'Could not start passkey setup.');
+        setError(begin.errors[0] ? errorText(begin.errors[0]) : 'Could not start passkey setup.');
         return;
       }
       const body = await createPasskey(begin.data, { name: name.trim() || undefined });
       const finish = await client.post('/v1/client/me/passkeys/finish', body);
       if (!finish.ok) {
-        setError(finish.errors[0]?.message ?? 'Could not save the passkey.');
+        setError(finish.errors[0] ? errorText(finish.errors[0]) : 'Could not save the passkey.');
         return;
       }
       setName('');

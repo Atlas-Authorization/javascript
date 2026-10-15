@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    localizedErrorMessage,
     nextStep,
     offeredFirstFactors,
     type AttemptView,
@@ -47,6 +48,8 @@
   const atlas = useAtlas();
   const cls = (key: ElementKey, base: string) => classFor(key, atlas.appearance, base);
   const t = (key: string, vars?: Record<string, string>) => translate(atlas.catalog, key, vars);
+  const errorText = (error: FieldError) =>
+    localizedErrorMessage(error, atlas.errorCatalog ?? atlas.catalog, atlas.catalog);
 
   interface Field {
     name: string;
@@ -156,7 +159,7 @@
   <h1 class={cls('headerTitle', 'atlas-title')}>{t(titleKey)}</h1>
 
   {#each errors.filter((e) => !e.param) as error (error.code)}
-    <p class={cls('formFieldError', 'atlas-error')} role="alert">{error.message}</p>
+    <p class={cls('formFieldError', 'atlas-error')} role="alert">{errorText(error)}</p>
   {/each}
 
   <form on:submit={handleSubmit}>
@@ -179,7 +182,7 @@
             on:input={(e) => (values[f.name] = e.currentTarget.value)}
           />
           {#each errors.filter((e) => e.param === f.name) as error (error.code)}
-            <span class={cls('formFieldError', 'atlas-error')}>{error.message}</span>
+            <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
           {/each}
         </label>
       {/each}

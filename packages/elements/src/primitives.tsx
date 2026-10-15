@@ -189,7 +189,7 @@ export function FieldInput({ asChild, children, ...rest }: FieldInputProps) {
 export interface FieldErrorProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
   asChild?: boolean;
   /** Render-prop form: receive the `{ code, message }` and render your own node. */
-  children?: ReactNode | ((error: { code: string; message: string }) => ReactNode);
+  children?: ReactNode | ((error: { code: string; message: string; reason?: string }) => ReactNode);
 }
 
 /**
@@ -203,7 +203,7 @@ export function FieldError({ asChild, children, ...rest }: FieldErrorProps) {
 
   const content =
     typeof children === 'function'
-      ? children({ code: field.error.code, message: field.error.message })
+      ? children({ code: field.error.code, message: field.error.message, reason: field.error.reason })
       : (children ?? field.error.message);
 
   const props: HTMLAttributes<HTMLElement> = {

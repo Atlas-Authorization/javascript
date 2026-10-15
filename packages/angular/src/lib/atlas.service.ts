@@ -13,6 +13,9 @@ import { distinctUntilChanged, map } from 'rxjs/operators';
 import {
   FapiClient,
   SignOutGuard,
+  catalogLocale,
+  localizedErrorMessage,
+  type ErrorLike,
   TokenCache,
   closeOAuthPopupAfterSignIn,
   completeOAuthPopupLanding,
@@ -90,6 +93,10 @@ export class AtlasService implements OnDestroy {
   private stopWatchingSignOut: (() => void) | null = null;
 
   private readonly catalog: Catalog;
+  /** The language layer of `catalog` (the `localization` bundle alone; `EN_US` when none). */
+  private readonly errorCatalog: Catalog;
+  /** Sent to the Frontend API as `Accept-Language`: the `localization` bundle's `locale` tag. */
+  private readonly requestLocale: string | undefined;
 
   /**
    * A sign-in attempt handed back by an OAuth redirect that still needs a second
@@ -168,11 +175,14 @@ export class AtlasService implements OnDestroy {
     this.doFetch = options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
 
     this.catalog = options.localization ? withFallback(options.localization) : EN_US;
+    this.errorCatalog = options.localization ?? EN_US;
+    this.requestLocale = catalogLocale(options.localization);
 
     this.fapiClient = new FapiClient({
       publishableKey: this.publishableKey,
       baseUrl: this.baseUrl,
       fetchImpl: this.doFetch,
+      locale: this.requestLocale,
     });
 
     this.guard = new SignOutGuard({
@@ -227,6 +237,25 @@ export class AtlasService implements OnDestroy {
     return this.baseUrl;
   }
 
+  /** The `Accept-Language` sent to the Frontend API: the `localization` bundle's `locale` tag, if any. */
+  get locale(): string | undefined {
+    return this.requestLocale;
+  }
+
+  /**
+   * The text to show for a server error, in the app's language: the catalog's
+   * `error.<reason>` (looked up in the `localization` bundle, or `EN_US` when
+   * none is set), else the server's message, else `error.generic`.
+   */
+  errorText(error: ErrorLike | string | null | undefined): string {
+    return localizedErrorMessage(error, this.errorCatalog, this.catalog);
+  }
+
+  /** The catalog server errors are looked up in (see {@link errorText}). */
+  get errorLocalization(): Catalog {
+    return this.errorCatalog;
+  }
+
   /** Tokens as CSS custom properties, for a host element to inherit. */
   appearanceVariables(): Record<string, string> {
     return cssVariables(resolveTokens(this.options.appearance));
@@ -261,7 +290,11 @@ export class AtlasService implements OnDestroy {
 
   /** A fresh {@link FapiClient} for driving a sign-in/sign-up flow. */
   createFapiClient(): FapiClient {
-    return new FapiClient({ publishableKey: this.publishableKey, baseUrl: this.baseUrl });
+    return new FapiClient({
+      publishableKey: this.publishableKey,
+      baseUrl: this.baseUrl,
+      locale: this.requestLocale,
+    });
   }
 
   // --- Imperative API (mirrors the React hooks' actions) ----------------------

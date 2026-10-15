@@ -10,7 +10,7 @@ import {
   type UserApiKey,
 } from '@atlasauth/js';
 import { useReverification } from './reverification';
-import { useClass, useClasses, useMeClient, useText } from './components-shared';
+import { useClass, useClasses, useErrorText, useMeClient, useText } from './components-shared';
 
 /**
  * End-user API key self-service — the signed-in user's OWN `ak_` keys (or, with
@@ -45,6 +45,7 @@ export interface UseApiKeysResult {
 export function useApiKeys(options: { organizationId?: string } = {}): UseApiKeysResult {
   const { organizationId } = options;
   const client = useMeClient();
+  const errorText = useErrorText();
   const reverification = useReverification();
   const { withReverification } = reverification;
   const [status, setStatus] = useState<ApiKeysStatus>('loading');
@@ -68,13 +69,13 @@ export function useApiKeys(options: { organizationId?: string } = {}): UseApiKey
       // lacks the permission) — render nothing actionable rather than an error.
       if (err instanceof ApiKeyRequestError && err.status === 403) {
         setStatus('disabled');
-        setError(err.message);
+        setError(errorText(err));
         return;
       }
       setStatus('error');
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? errorText(err) : String(err));
     }
-  }, [client, organizationId]);
+  }, [client, errorText, organizationId]);
 
   useEffect(() => {
     void reload();
@@ -165,6 +166,7 @@ export function ApiKeys(props: ApiKeysProps) {
   const renderClaims = props.renderClaimsFields ?? props.claimsForm;
   const api = useApiKeys({ organizationId });
   const t = useText();
+  const errorText = useErrorText();
   const cardClass = useClass('card', 'atlas-card');
   const cls = useClasses();
 
@@ -235,7 +237,7 @@ export function ApiKeys(props: ApiKeysProps) {
     } catch (err) {
       // A cancelled reverification is not an error worth showing.
       if (!(err instanceof Error && err.message === 'Reverification cancelled.')) {
-        setFormError(err instanceof Error ? err.message : t('error.generic'));
+        setFormError(err instanceof Error ? errorText(err) : t('error.generic'));
       }
     } finally {
       setBusy(false);
@@ -248,7 +250,7 @@ export function ApiKeys(props: ApiKeysProps) {
       await api.reverification.completeReverification({ strategy: 'password', password });
       setPassword('');
     } catch (err) {
-      setReauthError(err instanceof Error ? err.message : t('error.generic'));
+      setReauthError(err instanceof Error ? errorText(err) : t('error.generic'));
     }
   };
 
@@ -269,7 +271,7 @@ export function ApiKeys(props: ApiKeysProps) {
       await api.renameKey(renaming.id, renaming.name.trim() || null);
       setRenaming(null);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : t('error.generic'));
+      setFormError(err instanceof Error ? errorText(err) : t('error.generic'));
     } finally {
       setBusy(false);
     }
@@ -281,7 +283,7 @@ export function ApiKeys(props: ApiKeysProps) {
       await api.revokeKey(id);
       setConfirmRevoke(null);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : t('error.generic'));
+      setFormError(err instanceof Error ? errorText(err) : t('error.generic'));
     } finally {
       setBusy(false);
     }
