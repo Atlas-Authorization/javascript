@@ -332,11 +332,11 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
 
   // §5.4 "Forgot password?" — start the reset sub-flow. Shown wherever a password
   // is being asked for (the single-screen box, or a dedicated password step), and
-  // only when password sign-in is actually on.
+  // only when password sign-in is actually on and the app can email the reset code.
   const passwordStep =
     (stepKind === 'collect_identifier' && w.mode === 'sign-in' && w.passwordEnabled) ||
     stepKind === 'collect_first_factor';
-  if (passwordStep) {
+  if (passwordStep && w.passwordResetEnabled) {
     const forgot = el(w, 'button', 'atlas-embed-step-back', 'Forgot password?');
     (forgot as HTMLButtonElement).type = 'button';
     forgot.addEventListener('click', () => startReset(w));
@@ -409,8 +409,18 @@ export function renderLegalConsent(
  * /v1/client/sign_ups; the server then emails a code and the shared flow drives
  * verification to completion.
  */
+/** The end-user words the API uses for EMAIL_DELIVERY_NOT_CONFIGURED. */
+export const EMAIL_UNAVAILABLE_MESSAGE =
+  "This app can't send email right now. Try another sign-in method or contact the app owner.";
+
 export function renderSignUpForm(w: AtlasWidget): HTMLElement {
   const form = doc(w).createElement('form');
+  // A sign-up that must verify by email on an app that can't send email would
+  // only be refused: say so instead of drawing the form.
+  if (!w.passwordSignUpEnabled) {
+    form.appendChild(el(w, 'div', 'atlas-embed-form-error', EMAIL_UNAVAILABLE_MESSAGE));
+    return form;
+  }
 
   const formError = w.state.errors.find((e) => !e.param);
   if (formError) form.appendChild(el(w, 'div', 'atlas-embed-form-error', formError.message));

@@ -1,5 +1,10 @@
 # @atlasauth/backend changelog
 
+## 0.7.1
+- **Email provider removal.** `messaging.deleteChannel(channel, options?)` accepts `{ force?: boolean }` (sent as `?force=true`). Removing the email provider is refused with `409 EMAIL_PROVIDER_IN_USE` while email-dependent features are on and nothing else would deliver for the instance; `meta.features` names them.
+- **Error codes.** `AtlasErrorCodes` adds `EMAIL_PROVIDER_IN_USE`.
+- **Compatible.** The new argument is optional; no signatures changed.
+
 ## 0.7.0
 - **API key spend caps.** `apiKeys.create` and `apiKeys.update` accept `limits` (`ApiKeyLimit[]`: `{ unit, amount, period: 'request' | 'day' | 'month' | 'total' }`, or `null` to clear). `ApiKey` gains `limits` and `usage` (`ApiKeyLimitState[]`: `{ unit, period, amount, used, remaining, window_start, resets_at }`).
 - **Usage metering.** `apiKeys.recordUsage(id, { amount, unit, idempotency_key? })` returns `ApiKeyUsageDebit` (`key_id`, `unit`, `amount`, `allowed`, `code`, `exceeded`, `usage`, `counters`, `idempotent_replay`); a refusal resolves with `allowed: false`. `apiKeys.getUsage(id)` returns `ApiKeyUsage` (`key_id`, `limits`, `usage`, `counters`). New types: `ApiKeyLimit`, `ApiKeyLimitPeriod`, `ApiKeyLimitState`, `ApiKeyUsageCounter`, `RecordApiKeyUsageBody`, `ApiKeyUsageDebit`, `ApiKeyUsage`.

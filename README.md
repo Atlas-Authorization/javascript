@@ -21,7 +21,7 @@ their source: one pnpm workspace, `pnpm install && pnpm -r build`.
 | [`@atlasauth/react-router`](https://www.npmjs.com/package/@atlasauth/react-router) | 0.1.0 | `npm i @atlasauth/react-router` |
 | [`@atlasauth/tanstack-react-start`](https://www.npmjs.com/package/@atlasauth/tanstack-react-start) | 0.1.0 | `npm i @atlasauth/tanstack-react-start` |
 | [`@atlasauth/elements`](https://www.npmjs.com/package/@atlasauth/elements) | 0.2.0 | `npm i @atlasauth/elements` |
-| [`@atlasauth/embed`](https://www.npmjs.com/package/@atlasauth/embed) | 0.2.1 | `npm i @atlasauth/embed` |
+| [`@atlasauth/embed`](https://www.npmjs.com/package/@atlasauth/embed) | 0.2.2 | `npm i @atlasauth/embed` |
 | [`@atlasauth/lock`](https://www.npmjs.com/package/@atlasauth/lock) | 0.1.1 | `npm i @atlasauth/lock` |
 | [`@atlasauth/themes`](https://www.npmjs.com/package/@atlasauth/themes) | 0.1.0 | `npm i @atlasauth/themes` |
 | [`@atlasauth/design`](https://www.npmjs.com/package/@atlasauth/design) | 0.1.0 | `npm i @atlasauth/design` |
@@ -44,7 +44,7 @@ their source: one pnpm workspace, `pnpm install && pnpm -r build`.
 
 | Package | Version | Install |
 |---|---|---|
-| [`@atlasauth/backend`](https://www.npmjs.com/package/@atlasauth/backend) | 0.7.0 | `npm i @atlasauth/backend` |
+| [`@atlasauth/backend`](https://www.npmjs.com/package/@atlasauth/backend) | 0.7.1 | `npm i @atlasauth/backend` |
 | [`@atlasauth/express`](https://www.npmjs.com/package/@atlasauth/express) | 0.2.0 | `npm i @atlasauth/express` |
 | [`@atlasauth/fastify`](https://www.npmjs.com/package/@atlasauth/fastify) | 0.2.0 | `npm i @atlasauth/fastify` |
 | [`@atlasauth/hono`](https://www.npmjs.com/package/@atlasauth/hono) | 0.2.0 | `npm i @atlasauth/hono` |

@@ -1119,6 +1119,57 @@ describe('single-screen sign-in never loses the email field on a wrong credentia
   });
 });
 
+describe('email-dependent UI follows email_delivery from /v1/appearance', () => {
+  const noEmail = (over: Partial<NonNullable<AppearanceResponse['email_delivery']>> = {}): AppearanceResponse => ({
+    ...envelope([]),
+    strategies: { ...envelope([]).strategies, emailCode: false, emailLink: false },
+    email_delivery: { available: false, password_reset: false, password_sign_up: false, ...over },
+  });
+  const hasForgot = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('.atlas-embed-step-back')).some((b) => (b.textContent ?? '').includes('Forgot'));
+
+  it('hides "Forgot password?" when the reset email cannot be delivered', async () => {
+    const { impl } = makeFetch({ 'GET /v1/appearance': () => ({ body: noEmail() }) });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+    expect(root.querySelector('input[name="password"]')).toBeTruthy();
+    expect(hasForgot(root)).toBe(false);
+  });
+
+  it('keeps "Forgot password?" when the server omits the block (older servers)', async () => {
+    const { impl } = makeFetch({ 'GET /v1/appearance': () => ({ body: envelope([]) }) });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+    expect(hasForgot(root)).toBe(true);
+  });
+
+  it('replaces the sign-up form with the message when sign-up could only be refused', async () => {
+    const { impl, calls } = makeFetch({ 'GET /v1/appearance': () => ({ body: noEmail() }) });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, mode: 'sign-up', fetchImpl: impl }).mount();
+    await flush();
+    expect(root.querySelector('input[type="password"]')).toBeNull();
+    expect(root.textContent).toContain("This app can't send email right now.");
+    expect(calls.some((c) => c.path === '/v1/client/sign_ups')).toBe(false);
+  });
+
+  it('draws the sign-up form when verification is not required', async () => {
+    const { impl } = makeFetch({
+      'GET /v1/appearance': () => ({ body: noEmail({ password_sign_up: true }) }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, mode: 'sign-up', fetchImpl: impl }).mount();
+    await flush();
+    expect(root.querySelector('input[type="password"]')).toBeTruthy();
+  });
+});
+
 describe('forgot password (§5.4) — the reset sub-flow in the panel', () => {
   const clickForgot = (root: HTMLElement) => {
     const forgot = Array.from(root.querySelectorAll('.atlas-embed-step-back')).find((b) =>

@@ -28,6 +28,7 @@ export {
   type PublicAppearance,
   type PublicStrategies,
   type AppearanceResponse,
+  type EmailDeliveryAvailability,
   type SocialButtonsConfig,
   type SocialButtonVariant,
   type SocialButtonSize,

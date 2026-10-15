@@ -101,6 +101,10 @@ export class AtlasWidget {
   passwordEnabled = true;
   /** §5.5 whether the instance offers passkeys — gates the "Sign in with a passkey" button. */
   passkeyEnabled = false;
+  /** Whether "Forgot password?" can work (the app can deliver the reset email). */
+  passwordResetEnabled = true;
+  /** Whether the email + password sign-up form can complete (verification email deliverable, or not required). */
+  passwordSignUpEnabled = true;
   /** §5.5 aborts the background conditional-UI passkey ceremony when the user acts otherwise. */
   conditionalAbort?: AbortController;
   /** §7.5 whether the instance offers a "Remember me" checkbox at sign-in. */
@@ -190,6 +194,10 @@ export class AtlasWidget {
       // sign-in). Default true when we can't tell — password is the common case.
       this.passwordEnabled = data.strategies?.password ?? true;
       this.passkeyEnabled = data.strategies?.passkey ?? false;
+      // An app that cannot send email can't send a reset code or a sign-up
+      // verification code: hide what would only end in an error.
+      this.passwordResetEnabled = data.email_delivery?.password_reset ?? true;
+      this.passwordSignUpEnabled = data.email_delivery?.password_sign_up ?? true;
       this.signInWithAtlas = data.sign_in_with_atlas ?? { enabled: false };
       this.rememberMeEnabled = data.rememberMe === true;
       this.trustedDeviceEnabled = data.rememberDevice === true;

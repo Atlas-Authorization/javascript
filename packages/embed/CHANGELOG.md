@@ -1,5 +1,14 @@
 # @atlasauth/embed changelog
 
+## 0.2.2
+- **Email-dependent UI follows the server.** The widget reads the new `email_delivery` block from
+  `GET /v1/appearance`. "Forgot password?" is hidden when `password_reset` is false, and the sign-up form
+  is replaced by "This app can't send email right now…" when `password_sign_up` is false (the app has no
+  email provider and requires email verification). Older servers that omit the block behave as before.
+- **Types.** `AppearanceResponse` gains optional `email_delivery` (`EmailDeliveryAvailability`:
+  `available`, `password_reset`, `password_sign_up`). `AtlasWidget` gains `passwordResetEnabled` and
+  `passwordSignUpEnabled`. `EMAIL_UNAVAILABLE_MESSAGE` is exported from the widget forms module.
+
 ## 0.2.1
 - The widget's captcha loader/renderer now comes from `@atlasauth/js` (the same one the React
   components use). No behaviour change; a failed provider script load is now retried on the next

@@ -55,6 +55,8 @@ export const AtlasErrorCodes = {
   EMAIL_DELIVERY_NOT_CONFIGURED: 'EMAIL_DELIVERY_NOT_CONFIGURED',
   /** This setting needs your own email provider configured first. */
   EMAIL_PROVIDER_REQUIRED: 'EMAIL_PROVIDER_REQUIRED',
+  /** The email provider can't be removed while email-dependent features need it (`meta.features`). */
+  EMAIL_PROVIDER_IN_USE: 'EMAIL_PROVIDER_IN_USE',
   /** Strict mode: the body had a field this endpoint does not accept (`param` names it). */
   UNKNOWN_FIELD: 'UNKNOWN_FIELD',
   /** The billing plan still has subscribers and cannot be removed. */

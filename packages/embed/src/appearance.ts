@@ -264,6 +264,16 @@ export interface PublicStrategies {
   siwe: boolean;
 }
 
+/** `GET /v1/appearance` `email_delivery`: what works without/with email delivery. */
+export interface EmailDeliveryAvailability {
+  /** The app can send email. */
+  available: boolean;
+  /** "Forgot password?" can work: password is on and reset emails can be delivered. */
+  password_reset: boolean;
+  /** The email + password sign-up form can complete. */
+  password_sign_up: boolean;
+}
+
 /**
  * The tenant's public appearance, exactly the shape `GET /v1/appearance`
  * returns under `appearance`. Every value is already resolved and sanitised
@@ -335,6 +345,13 @@ export interface AppearanceResponse {
    */
   provider_scopes?: Record<string, { sign_in: boolean; sign_up: boolean }>;
   strategies: PublicStrategies;
+  /**
+   * Whether the app can deliver email, and what that allows. `password_reset`
+   * false hides "Forgot password?"; `password_sign_up` false replaces the
+   * sign-up form with a message (it could only be refused). Absent on older
+   * servers — treated as all true.
+   */
+  email_delivery?: EmailDeliveryAvailability;
   /**
    * "Sign in with Atlas" — the preset OIDC connection's state. When enabled, the
    * widget renders a "Sign in with Atlas" button that starts the SSO flow for

@@ -372,8 +372,22 @@ export function messagingResource(request: RequestFn) {
      * secrets — keep their stored values.
      */
     setSms,
-    deleteChannel(channel: 'email' | 'sms'): Promise<DeletedMessagingProvider> {
-      return request({ method: 'DELETE', path: `/v1/messaging_providers/${enc(channel)}` });
+    /**
+     * Remove a channel's provider. Removing the email provider is refused with
+     * `409 EMAIL_PROVIDER_IN_USE` (`meta.features` names them) while
+     * email-dependent features are on and nothing else would deliver for the
+     * instance; pass `{ force: true }` to remove it anyway — those features then
+     * stop being offered until a provider is configured again.
+     */
+    deleteChannel(
+      channel: 'email' | 'sms',
+      options: { force?: boolean } = {},
+    ): Promise<DeletedMessagingProvider> {
+      return request({
+        method: 'DELETE',
+        path: `/v1/messaging_providers/${enc(channel)}`,
+        ...(options.force ? { query: { force: 'true' } } : {}),
+      });
     },
     /** Send a fixed, clearly-marked test message through the channel's provider. */
     test(channel: 'email' | 'sms', body: { to: string }): Promise<MessagingTestResult> {

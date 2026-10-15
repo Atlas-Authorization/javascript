@@ -45,6 +45,14 @@ describe('messaging providers: request shape', () => {
     });
   });
 
+  it('deleteChannel DELETEs, with ?force=true only when asked', async () => {
+    const { c, calls } = setup();
+    await c.messaging.deleteChannel('email');
+    await c.messaging.deleteChannel('email', { force: true });
+    expect(calls[0]).toMatchObject({ url: `${API_URL}/v1/messaging_providers/email`, method: 'DELETE' });
+    expect(calls[1]).toMatchObject({ url: `${API_URL}/v1/messaging_providers/email?force=true`, method: 'DELETE' });
+  });
+
   it('setSms PUTs to /v1/messaging_providers/sms', async () => {
     const { c, calls } = setup();
     await c.messaging.setSms({
