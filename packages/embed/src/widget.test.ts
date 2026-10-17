@@ -402,6 +402,66 @@ describe('email-code sign-in with no password on offer', () => {
   });
 });
 
+describe('the combined email + password box with email code also on', () => {
+  const handlers = () => ({
+    'GET /v1/appearance': () => ({
+      body: { ...envelope([]), strategies: { password: true, emailCode: true, emailLink: false, passkey: false, phoneCode: false, siwe: false } },
+    }),
+    'POST /v1/client/sign_ins': () => ({
+      status: 201,
+      body: { id: 'sia_b', status: 'needs_first_factor', identifier: 'ada@example.com', supported_first_factors: ['password', 'email_code'] },
+    }),
+    'POST /v1/client/sign_ins/sia_b/prepare_first_factor': () => ({ body: { id: 'sia_b', status: 'needs_first_factor' } }),
+  });
+  const instead = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('button')).find((b) => b.textContent === 'Email me a code instead') as HTMLButtonElement | undefined;
+
+  it('offers "Email me a code instead", which sends the code and shows the code step', async () => {
+    const { impl, calls } = makeFetch(handlers());
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+
+    expect(root.querySelector('input[name="password"]')).toBeTruthy();
+    (root.querySelector('input[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    instead(root)!.click();
+    await flush();
+
+    expect(calls.filter((c) => c.path === '/v1/client/sign_ins').map((c) => c.body?.identifier)).toEqual(['ada@example.com']);
+    expect(calls.filter((c) => c.path.endsWith('/prepare_first_factor')).map((c) => c.body)).toEqual([{ strategy: 'email_code' }]);
+    expect(calls.some((c) => c.path.endsWith('/attempt_first_factor'))).toBe(false);
+    expect(root.querySelector('[data-atlas-code-sent]')?.textContent).toContain('ada@example.com');
+    expect(root.querySelector('input[name="password"]')).toBeNull();
+  });
+
+  it('asks for the email first and sends nothing while it is empty', async () => {
+    const { impl, calls } = makeFetch(handlers());
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+    instead(root)!.click();
+    await flush();
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
+  it('is not offered when the app cannot send email', async () => {
+    const h = handlers();
+    const { impl } = makeFetch({
+      ...h,
+      'GET /v1/appearance': () => ({
+        body: { ...(h['GET /v1/appearance']().body as object), email_delivery: { available: false, password_reset: false, password_sign_up: false } },
+      }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+    expect(instead(root)).toBeUndefined();
+  });
+});
+
 describe('driving the password sign-in flow', () => {
   it('posts a password to attempt_first_factor and exchanges the completion ticket', async () => {
     const { impl, calls } = makeFetch({

@@ -1,3 +1,5 @@
+'use client';
+
 import { Children, isValidElement, useCallback, useMemo, type ReactElement, type ReactNode } from 'react';
 import { localizedErrorMessage, type ErrorLike } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';

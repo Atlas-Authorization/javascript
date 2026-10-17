@@ -1,3 +1,5 @@
+'use client';
+
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { useAuth, useSession, useSessionList, useUser } from './hooks';
 import { collectByType, useClass, useClasses, useText } from './components-shared';

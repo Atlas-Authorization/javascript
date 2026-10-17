@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useMemo, useState } from 'react';
 import { flowNeedsCaptcha, startSignUp, type FieldError } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';

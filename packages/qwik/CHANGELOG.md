@@ -1,5 +1,9 @@
 # @atlasauth/qwik changelog
 
+## 0.3.2
+- Depends on `@atlasauth/embed` ^0.5.2 (a range, not one exact version): "Email me a code instead" on the email +
+  password box.
+
 ## 0.3.1
 - Depends on `@atlasauth/embed` 0.5.1: email-code sign-in works on instances without password sign-in (the code is sent after the email step and collected on the next screen).
 

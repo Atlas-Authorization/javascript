@@ -1,5 +1,9 @@
 # @atlasauth/lock changelog
 
+## 0.1.3
+- Depends on `@atlasauth/embed` ^0.5.2 (a range, not one exact version): "Email me a code instead" on the email +
+  password box.
+
 ## 0.1.2
 - Depends on `@atlasauth/embed` 0.5.1: email-code sign-in works on instances without password sign-in.
 

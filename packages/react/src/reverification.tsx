@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useRef, useState } from 'react';
 import { reauthenticate, type ReauthInput } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';

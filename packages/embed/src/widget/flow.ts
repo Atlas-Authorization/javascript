@@ -221,7 +221,11 @@ export function beacon(w: AtlasWidget, attemptId?: string | null): void {
   });
 }
 
-export async function submit(w: AtlasWidget, values: Record<string, string>): Promise<void> {
+export async function submit(
+  w: AtlasWidget,
+  values: Record<string, string>,
+  emailInstead?: 'email_code' | 'email_link',
+): Promise<void> {
   if (w.busy) return;
   // The user is signing in by other means — stand down the background passkey
   // autofill ceremony so it cannot resolve underneath them.
@@ -258,7 +262,15 @@ export async function submit(w: AtlasWidget, values: Record<string, string>): Pr
   // now so it's one click, not two screens. Only when the server actually
   // asked for the first factor and the identifier step raised no error.
   const step = w.state.attempt ? nextStep(w.state.attempt) : null;
-  if (step?.kind === 'collect_first_factor' && values.password && w.state.errors.length === 0) {
+  // §5.3 "Email me a code instead" on the combined box: send the code (or link)
+  // for this attempt rather than a password.
+  if (emailInstead && step?.kind === 'collect_first_factor' && w.state.errors.length === 0) {
+    if (step.strategies.includes(emailInstead)) {
+      await sendEmailFactor(w, emailInstead, false);
+    } else {
+      w.state = { ...w.state, errors: [{ code: 'STRATEGY_DISABLED', message: 'That sign-in method is not available for this account.' }] };
+    }
+  } else if (step?.kind === 'collect_first_factor' && values.password && w.state.errors.length === 0) {
     w.state = await advance(w.client, w.state, { password: values.password });
   }
   w.busy = false;
@@ -270,7 +282,7 @@ export async function submit(w: AtlasWidget, values: Record<string, string>): Pr
   // again" in the same box. The next submit starts a fresh attempt — cheaper than
   // stranding the user on a field-less screen.
   const endStep = w.state.attempt ? nextStep(w.state.attempt) : null;
-  if (w.mode === 'sign-in' && w.passwordEnabled && endStep?.kind === 'collect_first_factor') {
+  if (w.mode === 'sign-in' && w.passwordEnabled && endStep?.kind === 'collect_first_factor' && !w.state.prepared) {
     w.state = { ...initialFlow, errors: w.state.errors };
   }
 

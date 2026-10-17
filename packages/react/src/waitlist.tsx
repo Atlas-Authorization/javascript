@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useState } from 'react';
 import { useClass, useClasses, useErrorText, useMeClient, useText } from './components-shared';
 

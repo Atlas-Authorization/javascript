@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useMemo, useRef, type ReactNode, type ButtonHTMLAttributes } from 'react';
 import {
   mintNativeNonce,

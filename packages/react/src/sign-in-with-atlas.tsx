@@ -1,3 +1,5 @@
+'use client';
+
 import { createElement, type CSSProperties } from 'react';
 
 export interface AtlasIdOptions {

@@ -1,3 +1,5 @@
+'use client';
+
 import { useEffect, type ReactNode } from 'react';
 import { useAuth } from './hooks';
 import { navigateTo, useText, withRedirect } from './components-shared';

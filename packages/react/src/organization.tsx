@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useState } from 'react';
 import { useAtlas } from './AtlasProvider';
 import { useOrganization } from './hooks';

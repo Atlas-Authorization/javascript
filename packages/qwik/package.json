@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/qwik",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@atlasauth/js": "workspace:*",
-    "@atlasauth/embed": "workspace:*"
+    "@atlasauth/embed": "workspace:^"
   },
   "peerDependencies": {
     "@builder.io/qwik": ">=1.5",

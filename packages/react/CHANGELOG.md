@@ -1,5 +1,11 @@
 # @atlasauth/react changelog
 
+## 0.9.1
+- Every component and hook module is marked `'use client'`, so `<AtlasProvider>`, `<SignIn>`, `<UserButton>` and the
+  rest can be rendered straight from a Next.js App Router server layout or page. You no longer need your own
+  `'use client'` wrapper unless you pass the provider a function (`onSignedIn`, `fetchImpl`). The package entry and
+  `fetchAtlasInitialState()` stay unmarked, so the latter is still callable on the server.
+
 ## 0.9.0
 - **New `<AtlasProvider initialState>`**: the instance's public sign-in data, fetched on the server with
   `fetchAtlasInitialState()` (re-exported here) or `getAtlasInitialState()` from `@atlasauth/nextjs/server`. With it,

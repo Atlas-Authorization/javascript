@@ -1,5 +1,10 @@
 # @atlasauth/embed changelog
 
+## 0.5.2
+- The single-screen email + password sign-in box offers "Email me a code instead" (or "Email me a sign-in link
+  instead") when the instance also has email code (or link) sign-in and can send email. It starts the sign-in with
+  the email typed so far, sends the code and shows the code step; with the email empty it asks for it first.
+
 ## 0.5.1
 - **Fixed: email-code sign-in on instances without password sign-in.** After the email step the sign-in form now
   sends the code itself (`prepare_first_factor`), shows "We sent a code to …" with the code field and a

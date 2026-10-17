@@ -253,6 +253,26 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
       // Omitted when password isn't enabled (a passwordless instance branches).
       if (w.mode === 'sign-in' && w.passwordEnabled) {
         addField('password', 'Password', 'password', 'current-password');
+        // §5.3 with an emailed code (or link) also on, it is one click away.
+        const instead: ('email_code' | 'email_link')[] = [];
+        if (w.emailDeliveryAvailable && w.emailCodeEnabled) instead.push('email_code');
+        else if (w.emailDeliveryAvailable && w.emailLinkEnabled) instead.push('email_link');
+        for (const strategy of instead) {
+          const b = el(w, 'button', 'atlas-embed-step-back', strategy === 'email_code' ? 'Email me a code instead' : 'Email me a sign-in link instead');
+          (b as HTMLButtonElement).type = 'button';
+          b.setAttribute('data-strategy', strategy);
+          (b as HTMLButtonElement).disabled = w.busy;
+          b.addEventListener('click', () => {
+            const id = inputs.get('identifier')!;
+            if (!id.value.trim()) {
+              id.reportValidity?.();
+              id.focus();
+              return;
+            }
+            void submit(w, { identifier: id.value }, strategy);
+          });
+          trailing.push(b);
+        }
       }
       // §7.5 Remember me — ticked keeps a persistent session; unticked makes it a
       // browser-session cookie. Its value is read live via `this.remember`, so it

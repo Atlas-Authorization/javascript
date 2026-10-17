@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPasskey, passkeysSupported } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';

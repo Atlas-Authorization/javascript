@@ -116,6 +116,9 @@ export class AtlasWidget {
   signUpFields: PublicSignUpField[] = [];
   /** Whether password is an enabled first factor — drives single-screen sign-in. */
   passwordEnabled = true;
+  /** Emailed sign-in code / link switched on (offered beside the password box). */
+  emailCodeEnabled = false;
+  emailLinkEnabled = false;
   /** Whether the app can deliver email (`email_delivery.available`); unknown → true. */
   emailDeliveryAvailable = true;
   /** §5.5 whether the instance offers passkeys — gates the "Sign in with a passkey" button. */
@@ -221,6 +224,8 @@ export class AtlasWidget {
       // sign-in). Default true when we can't tell — password is the common case.
       this.passwordEnabled = data.strategies?.password ?? true;
       this.passkeyEnabled = data.strategies?.passkey ?? false;
+      this.emailCodeEnabled = data.strategies?.emailCode ?? false;
+      this.emailLinkEnabled = data.strategies?.emailLink ?? false;
       // An app that cannot send email can't send a reset code or a sign-up
       // verification code: hide what would only end in an error.
       this.passwordResetEnabled = data.email_delivery?.password_reset ?? true;

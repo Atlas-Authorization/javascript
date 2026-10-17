@@ -3,11 +3,30 @@ export * from './styles';
 export * from './protect';
 export * from './i18n';
 export * from './types';
-export * from './AtlasProvider';
-export * from './hooks';
+// 'use client' modules are re-exported by name: `export *` compiles to a loop
+// over the module's keys, and a React Server Components client reference has
+// none, so every export would arrive `undefined` in a server layout.
+export type * from './AtlasProvider';
+export { AtlasProvider, useAtlas } from './AtlasProvider';
+export type * from './hooks';
+export {
+  authFromContext,
+  useAuth,
+  useOrganization,
+  useSession,
+  useSessionList,
+  useSilentAuth,
+  useUser,
+} from './hooks';
 export * from './fapi';
 export * from './components';
-export * from './sign-in-with-atlas';
+export type * from './sign-in-with-atlas';
+export {
+  buildAtlasAuthorizeUrl,
+  completeSignInWithAtlas,
+  signInWithAtlasPopup,
+  SignInWithAtlasButton,
+} from './sign-in-with-atlas';
 // Cross-property SSO: the browser silent-check (hidden-iframe OIDC prompt=none),
 // surfaced first-class here from @atlasauth/js.
 export { checkSession, handleSilentCallback } from '@atlasauth/js';
