@@ -226,5 +226,69 @@ export async function currentUser(): Promise<CurrentUser | null> {
   return helper(await edgeRequestFromContext());
 }
 
+/**
+ * The instance's public sign-in data for `<AtlasProvider initialState>`: the
+ * dashboard design and sign-in settings (`/v1/appearance`) and the sign-in
+ * methods and social buttons (`/v1/client/environment`), fetched on the server so
+ * the sign-in panel renders fully styled, with its social buttons, in the first
+ * HTML. Call it in a Server Component (e.g. the root layout) and pass the result
+ * to the client component that renders `<AtlasProvider>`.
+ *
+ * Both responses are public and the same for every visitor, so they are cached
+ * with Next's data cache (`revalidate`, default 60 s). Never throws: a part that
+ * can't be fetched within `timeoutMs` is left out and the browser fetches it.
+ *
+ * Reads `ATLAS_PUBLISHABLE_KEY` / `NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY` and
+ * `ATLAS_FRONTEND_API` / `NEXT_PUBLIC_ATLAS_FRONTEND_API` unless given.
+ */
+export interface AtlasInitialState {
+  appearance?: unknown;
+  environment?: unknown;
+}
+
+export async function getAtlasInitialState(
+  options: {
+    publishableKey?: string;
+    frontendApi?: string;
+    /** Seconds Next may cache the responses. Default 60; `false` disables caching. */
+    revalidate?: number | false;
+    timeoutMs?: number;
+    fetchImpl?: typeof fetch;
+  } = {},
+  env: Env = readEnv(),
+): Promise<AtlasInitialState> {
+  const publishableKey =
+    options.publishableKey ?? pick(env, 'ATLAS_PUBLISHABLE_KEY', 'NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY');
+  const frontendApi = options.frontendApi ?? pick(env, 'ATLAS_FRONTEND_API', 'NEXT_PUBLIC_ATLAS_FRONTEND_API');
+  const doFetch = options.fetchImpl ?? (typeof fetch === 'function' ? fetch : undefined);
+  if (!publishableKey || !frontendApi || !doFetch) return {};
+  const base = frontendApi.replace(/\/+$/, '');
+  const revalidate = options.revalidate ?? 60;
+  const timeoutMs = options.timeoutMs ?? 1500;
+
+  const get = async (path: string): Promise<unknown> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await doFetch(`${base}${path}`, {
+        headers: { accept: 'application/json', 'x-publishable-key': publishableKey },
+        signal: controller.signal,
+        ...(revalidate === false ? { cache: 'no-store' as const } : { next: { revalidate } }),
+      } as RequestInit);
+      return res.ok ? ((await res.json()) as unknown) : undefined;
+    } catch {
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const [appearance, environment] = await Promise.all([get('/v1/appearance'), get('/v1/client/environment')]);
+  const state: AtlasInitialState = {};
+  if (appearance && typeof appearance === 'object') state.appearance = appearance;
+  if (environment && typeof environment === 'object') state.environment = environment;
+  return state;
+}
+
 export type { AtlasClient, AtlasClientConfig } from '@atlasauth/backend';
 export type { AuthState, CurrentUser, EdgeRequest } from './middleware';

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { AtlasBackend } from '@atlasauth/backend';
 import { resolveAuth } from './middleware';
@@ -7,6 +7,7 @@ import {
   backendConfigFromEnv,
   buildEdgeRequest,
   configFromEnv,
+  getAtlasInitialState,
 } from './server';
 
 /**
@@ -164,5 +165,54 @@ describe('buildEdgeRequest', () => {
     const state = await resolveAuth(backend, req);
     expect(state.userId).toBe('user_1');
     expect(state.sessionId).toBe('sess_1');
+  });
+});
+
+describe('getAtlasInitialState', () => {
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+  it('fetches both public documents from the env-configured Frontend API, cached for 60 s', async () => {
+    const calls: { url: string; init: Record<string, unknown> }[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init: init as unknown as Record<string, unknown> });
+      return json(String(input).endsWith('/v1/appearance') ? { design: null } : { social_providers: [] });
+    }) as unknown as typeof fetch;
+
+    const state = await getAtlasInitialState(
+      { fetchImpl },
+      { NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY: 'pk_live_x', NEXT_PUBLIC_ATLAS_FRONTEND_API: 'https://auth.example.com/' },
+    );
+
+    expect(state).toEqual({ appearance: { design: null }, environment: { social_providers: [] } });
+    expect(calls.map((c) => c.url).sort()).toEqual([
+      'https://auth.example.com/v1/appearance',
+      'https://auth.example.com/v1/client/environment',
+    ]);
+    for (const c of calls) {
+      expect(new Headers(c.init.headers as HeadersInit).get('x-publishable-key')).toBe('pk_live_x');
+      expect(c.init.next).toEqual({ revalidate: 60 });
+    }
+  });
+
+  it('revalidate:false opts out of caching', async () => {
+    const inits: Record<string, unknown>[] = [];
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      inits.push(init as unknown as Record<string, unknown>);
+      return json({});
+    }) as unknown as typeof fetch;
+    await getAtlasInitialState({ fetchImpl, revalidate: false, publishableKey: 'pk', frontendApi: 'https://a.example' }, {});
+    expect(inits.every((i) => i.cache === 'no-store' && i.next === undefined)).toBe(true);
+  });
+
+  it('returns {} without config, and when the API fails, instead of throwing', async () => {
+    const failing = vi.fn(async () => {
+      throw new Error('down');
+    }) as unknown as typeof fetch;
+    expect(await getAtlasInitialState({ fetchImpl: failing }, {})).toEqual({});
+    expect(failing).not.toHaveBeenCalled();
+    expect(
+      await getAtlasInitialState({ fetchImpl: failing, publishableKey: 'pk', frontendApi: 'https://a.example' }, {}),
+    ).toEqual({});
   });
 });

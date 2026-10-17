@@ -20,6 +20,10 @@ export { diagnoseProvider } from '@atlasauth/js';
 // sign-out result/error types, surfaced from @atlasauth/js.
 export { AtlasConfigError, SAME_ORIGIN_FRONTEND_API, SignOutError } from '@atlasauth/js';
 export type { AtlasConfigErrorCode, SignOutOptions, SignOutResult, TombstoneStore } from '@atlasauth/js';
+// Server-side prefetch for `<AtlasProvider initialState>`: the panel renders styled,
+// with its social buttons, in the server HTML.
+export { fetchAtlasInitialState } from '@atlasauth/js';
+export type { AtlasInitialState, FetchInitialStateOptions } from '@atlasauth/js';
 // Built-in UI languages for `<AtlasProvider locale>` + CI coverage helpers.
 export { LOCALIZATION_KEYS, missingKeys, resolveLocale } from '@atlasauth/localizations';
 export type { SupportedLocale } from '@atlasauth/localizations';

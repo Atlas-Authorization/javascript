@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/react-router",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@atlasauth/backend": "workspace:*",
-    "@atlasauth/react": "workspace:*"
+    "@atlasauth/react": "workspace:^"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

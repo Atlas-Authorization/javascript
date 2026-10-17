@@ -804,7 +804,14 @@ export function useGoogleNativeOverlay(
   },
 ): { active: boolean; configured: boolean } {
   const { client, onCredential, oneTap, enabled = true, visible = false } = opts;
-  const [clientId, setClientId] = useState<string | null>(null);
+  const { environment, loadEnvironment } = useAtlas();
+  // The Google client_id, from the provider's shared environment (server-seeded
+  // or fetched once for every button) — null until known, or when not native.
+  const clientId = useMemo(() => {
+    if (!enabled) return null;
+    const providers = (environment as { social_providers?: EnvSocialProvider[] } | null)?.social_providers;
+    return providers?.find(usesNativeGoogle)?.client_id ?? null;
+  }, [enabled, environment]);
   // Kept in a ref so passing an inline `onUnavailable` doesn't re-run the overlay
   // effect (which would re-init GSI) on every render.
   const onUnavailableRef = useRef(opts.onUnavailable);
@@ -820,22 +827,8 @@ export function useGoogleNativeOverlay(
   // A `mode:"redirect"` Google is skipped here, so the GSI library never loads for
   // it and it renders as an ordinary redirect button instead.
   useEffect(() => {
-    if (!enabled) {
-      setClientId(null);
-      return;
-    }
-    let alive = true;
-    void (async () => {
-      const res = await client.get<{ social_providers?: EnvSocialProvider[] }>(
-        '/v1/client/environment',
-      );
-      const google = res.data?.social_providers?.find(usesNativeGoogle);
-      if (alive) setClientId(google?.client_id ?? null);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [client, enabled]);
+    if (enabled && environment == null) void loadEnvironment();
+  }, [enabled, environment, loadEnvironment]);
 
   // Overlay Google's invisible button on the caller's node once client_id is known.
   useEffect(() => {
@@ -1157,32 +1150,17 @@ export function SocialSignInButtons({
   const { oauthMode: providerOauthMode } = useAtlas();
   const errorText = useErrorText();
   const effectiveMode = oauthMode ?? providerOauthMode ?? 'redirect';
-  const [redirectProviders, setRedirectProviders] = useState<
-    Array<{
-      provider: string;
-      label?: string | null;
-      icon?: { type: 'svg' | 'url'; value: string } | null;
-    }>
-  >([]);
-  const [atlasConnection, setAtlasConnection] = useState<string | null>(null);
+  const { environment, loadEnvironment, appearanceData } = useAtlas();
+  // From the provider's own `/v1/appearance` (server-seeded or fetched once); no
+  // Atlas button until it is known.
+  const atlasConnection = useMemo(
+    () =>
+      appearanceData && typeof appearanceData === 'object'
+        ? atlasSsoTarget(appearanceData as { sign_in_with_atlas?: { enabled: boolean; connection_id?: string } })
+        : null,
+    [appearanceData],
+  );
   const [atlasError, setAtlasError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const appearance = await client.get<{
-          sign_in_with_atlas?: { enabled: boolean; connection_id?: string };
-        }>('/v1/appearance');
-        if (alive && appearance.data) setAtlasConnection(atlasSsoTarget(appearance.data));
-      } catch {
-        // No Atlas button is the safe fallback when appearance can't be read.
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [client]);
 
   const startAtlas = useCallback(() => {
     void (async () => {
@@ -1202,31 +1180,27 @@ export function SocialSignInButtons({
     })();
   }, [client, atlasConnection, errorText]);
 
+  // The redirect buttons, from the provider's shared environment: in the server
+  // HTML when it was fetched there, else as soon as the one shared request lands.
+  const redirectProviders = useMemo(() => {
+    const list = ((environment as { social_providers?: EnvSocialProvider[] } | null)?.social_providers ?? [])
+      .filter((p) => p.allow_sign_in !== false)
+      // Google renders as the native GSI button below — UNLESS the instance
+      // resolved it to redirect mode (§2.1a), in which case it needs an ordinary
+      // redirect button here (GoogleSignInButton renders nothing for a non-native
+      // Google). Any other native provider gets its own in-page button in a later
+      // pass; the rest use redirect.
+      .filter((p) => p.provider !== 'google' || p.mode === 'redirect')
+      // Carry the per-instance branding label override (e.g. "Continue with
+      // Discord") and the resolved icon (built-in brand SVG or a tenant
+      // override URL) through to the button — so github (native) and a custom
+      // provider both render their mark, not label-only.
+      .map((p) => ({ provider: p.provider, label: p.label, icon: p.icon }));
+    return list;
+  }, [environment]);
   useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const res = await client.get<{ social_providers?: EnvSocialProvider[] }>(
-        '/v1/client/environment',
-      );
-      const list = (res.data?.social_providers ?? [])
-        .filter((p) => p.allow_sign_in !== false)
-        // Google renders as the native GSI button below — UNLESS the instance
-        // resolved it to redirect mode (§2.1a), in which case it needs an ordinary
-        // redirect button here (GoogleSignInButton renders nothing for a non-native
-        // Google). Any other native provider gets its own in-page button in a later
-        // pass; the rest use redirect.
-        .filter((p) => p.provider !== 'google' || p.mode === 'redirect')
-        // Carry the per-instance branding label override (e.g. "Continue with
-        // Discord") and the resolved icon (built-in brand SVG or a tenant
-        // override URL) through to the button — so github (native) and a custom
-        // provider both render their mark, not label-only.
-        .map((p) => ({ provider: p.provider, label: p.label, icon: p.icon }));
-      if (alive) setRedirectProviders(list);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [client]);
+    if (environment == null) void loadEnvironment();
+  }, [environment, loadEnvironment]);
 
   const startSocial = useCallback(
     (provider: string) => {

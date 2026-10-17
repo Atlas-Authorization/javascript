@@ -8,9 +8,9 @@ their source: one pnpm workspace, `pnpm install && pnpm -r build`.
 
 | Package | Version | Install |
 |---|---|---|
-| [`@atlasauth/js`](https://www.npmjs.com/package/@atlasauth/js) | 0.10.0 | `npm i @atlasauth/js` |
-| [`@atlasauth/react`](https://www.npmjs.com/package/@atlasauth/react) | 0.8.1 | `npm i @atlasauth/react` |
-| [`@atlasauth/nextjs`](https://www.npmjs.com/package/@atlasauth/nextjs) | 0.2.0 | `npm i @atlasauth/nextjs` |
+| [`@atlasauth/js`](https://www.npmjs.com/package/@atlasauth/js) | 0.11.0 | `npm i @atlasauth/js` |
+| [`@atlasauth/react`](https://www.npmjs.com/package/@atlasauth/react) | 0.9.0 | `npm i @atlasauth/react` |
+| [`@atlasauth/nextjs`](https://www.npmjs.com/package/@atlasauth/nextjs) | 0.3.0 | `npm i @atlasauth/nextjs` |
 | [`@atlasauth/vue`](https://www.npmjs.com/package/@atlasauth/vue) | 0.5.1 | `npm i @atlasauth/vue` |
 | [`@atlasauth/nuxt`](https://www.npmjs.com/package/@atlasauth/nuxt) | 0.1.4 | `npm i @atlasauth/nuxt` |
 | [`@atlasauth/angular`](https://www.npmjs.com/package/@atlasauth/angular) | 0.5.1 | `npm i @atlasauth/angular` |
@@ -18,9 +18,9 @@ their source: one pnpm workspace, `pnpm install && pnpm -r build`.
 | [`@atlasauth/solid`](https://www.npmjs.com/package/@atlasauth/solid) | 0.4.1 | `npm i @atlasauth/solid` |
 | [`@atlasauth/qwik`](https://www.npmjs.com/package/@atlasauth/qwik) | 0.3.1 | `npm i @atlasauth/qwik` |
 | [`@atlasauth/astro`](https://www.npmjs.com/package/@atlasauth/astro) | 0.1.0 | `npm i @atlasauth/astro` |
-| [`@atlasauth/react-router`](https://www.npmjs.com/package/@atlasauth/react-router) | 0.1.1 | `npm i @atlasauth/react-router` |
-| [`@atlasauth/tanstack-react-start`](https://www.npmjs.com/package/@atlasauth/tanstack-react-start) | 0.1.1 | `npm i @atlasauth/tanstack-react-start` |
-| [`@atlasauth/elements`](https://www.npmjs.com/package/@atlasauth/elements) | 0.4.0 | `npm i @atlasauth/elements` |
+| [`@atlasauth/react-router`](https://www.npmjs.com/package/@atlasauth/react-router) | 0.1.2 | `npm i @atlasauth/react-router` |
+| [`@atlasauth/tanstack-react-start`](https://www.npmjs.com/package/@atlasauth/tanstack-react-start) | 0.1.2 | `npm i @atlasauth/tanstack-react-start` |
+| [`@atlasauth/elements`](https://www.npmjs.com/package/@atlasauth/elements) | 0.4.1 | `npm i @atlasauth/elements` |
 | [`@atlasauth/embed`](https://www.npmjs.com/package/@atlasauth/embed) | 0.5.1 | `npm i @atlasauth/embed` |
 | [`@atlasauth/lock`](https://www.npmjs.com/package/@atlasauth/lock) | 0.1.2 | `npm i @atlasauth/lock` |
 | [`@atlasauth/themes`](https://www.npmjs.com/package/@atlasauth/themes) | 0.1.0 | `npm i @atlasauth/themes` |
@@ -32,13 +32,13 @@ their source: one pnpm workspace, `pnpm install && pnpm -r build`.
 | Package | Version | Install |
 |---|---|---|
 | [`@atlasauth/react-native`](https://www.npmjs.com/package/@atlasauth/react-native) | 0.5.0 | `npm i @atlasauth/react-native` |
-| [`@atlasauth/expo`](https://www.npmjs.com/package/@atlasauth/expo) | 0.2.0 | `npm i @atlasauth/expo` |
+| [`@atlasauth/expo`](https://www.npmjs.com/package/@atlasauth/expo) | 0.2.1 | `npm i @atlasauth/expo` |
 | [`@atlasauth/expo-biometrics`](https://www.npmjs.com/package/@atlasauth/expo-biometrics) | 0.1.0 | `npm i @atlasauth/expo-biometrics` |
 | [`@atlasauth/expo-google-signin`](https://www.npmjs.com/package/@atlasauth/expo-google-signin) | 0.1.1 | `npm i @atlasauth/expo-google-signin` |
 | [`@atlasauth/expo-passkeys`](https://www.npmjs.com/package/@atlasauth/expo-passkeys) | 0.1.1 | `npm i @atlasauth/expo-passkeys` |
 | [`@atlasauth/capacitor`](https://www.npmjs.com/package/@atlasauth/capacitor) | 0.2.0 | `npm i @atlasauth/capacitor` |
 | [`@atlasauth/electron`](https://www.npmjs.com/package/@atlasauth/electron) | 0.3.0 | `npm i @atlasauth/electron` |
-| [`@atlasauth/chrome-extension`](https://www.npmjs.com/package/@atlasauth/chrome-extension) | 0.3.0 | `npm i @atlasauth/chrome-extension` |
+| [`@atlasauth/chrome-extension`](https://www.npmjs.com/package/@atlasauth/chrome-extension) | 0.3.1 | `npm i @atlasauth/chrome-extension` |
 
 ## Backend & server frameworks (secret key)
 

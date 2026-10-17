@@ -1,5 +1,10 @@
 # @atlasauth/tanstack-react-start changelog
 
+## 0.1.2
+- **Fixed:** depends on `@atlasauth/react` `^0.9.0` instead of one exact version. With an exact pin, an app that also
+  installed a newer `@atlasauth/react` got two copies, and hooks from one couldn't see the other's
+  `<AtlasProvider>` ("Atlas hooks must be used inside <AtlasProvider>").
+
 ## 0.1.1
 - Picks up `@atlasauth/react` 0.6.0 / `@atlasauth/js` 0.7.0: popup sign-in completes when the opener page
   sends `Cross-Origin-Opener-Policy: same-origin`; a tab opened after a failed sign-out stays signed out

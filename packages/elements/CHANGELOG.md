@@ -1,5 +1,10 @@
 # @atlasauth/elements changelog
 
+## 0.4.1
+- **Fixed:** depends on `@atlasauth/react` `^0.9.0` instead of one exact version. With an exact pin, an app that also
+  installed a newer `@atlasauth/react` got two copies, and hooks from one couldn't see the other's
+  `<AtlasProvider>` ("Atlas hooks must be used inside <AtlasProvider>").
+
 ## 0.4.0
 Requires `@atlasauth/react` 0.8.0.
 - **Server errors render in the app's language.** The flow's `errors` (and so `<Field.Error>`) carry the catalog

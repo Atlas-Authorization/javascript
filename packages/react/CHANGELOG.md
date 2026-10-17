@@ -1,5 +1,20 @@
 # @atlasauth/react changelog
 
+## 0.9.0
+- **New `<AtlasProvider initialState>`**: the instance's public sign-in data, fetched on the server with
+  `fetchAtlasInitialState()` (re-exported here) or `getAtlasInitialState()` from `@atlasauth/nextjs/server`. With it,
+  `<SignIn>` / `<SignUp>` render in the server HTML with the dashboard design, the sign-in settings and the social
+  buttons (including the Google button), and the browser doesn't request `/v1/appearance` or
+  `/v1/client/environment`. Without it nothing changes.
+- **Fewer requests without it too**: the client environment is fetched once per provider and shared. Before, the
+  social buttons and the Google button each requested it. The "Sign in with Atlas" button reads the provider's
+  appearance instead of requesting `/v1/appearance` a second time.
+- The provider renders `<link rel="preconnect">` to the Frontend API and, when the instance uses native Google
+  sign-in, `<link rel="preload" as="script">` for Google's sign-in script.
+- `useAtlas()` adds `environment` (the raw `/v1/client/environment` body or null), `appearanceData` (the raw
+  `/v1/appearance` body or null) and `loadEnvironment()`.
+- New exports: `fetchAtlasInitialState`, `AtlasInitialState`, `FetchInitialStateOptions`.
+
 ## 0.8.1
 - **Fixed: `<SignIn>` can complete an email-code sign-in.** On an instance without password sign-in, the
   first-factor step showed a password field and posted `strategy: "password"`, which the server refused

@@ -92,6 +92,18 @@ const user = await currentUser(); // from the verified session claims, no networ
 
 These read `ATLAS_JWKS_URL` and `ATLAS_ISSUER` (or their `NEXT_PUBLIC_` forms) from the environment.
 
+## Sign-in panel ready on first paint
+
+```tsx
+// app/layout.tsx (a Server Component)
+import { getAtlasInitialState } from '@atlasauth/nextjs/server';
+
+const initialState = await getAtlasInitialState();
+// …pass it to the client component that renders <AtlasProvider initialState={initialState}>
+```
+
+`getAtlasInitialState()` fetches the instance's public sign-in data (`/v1/appearance` and `/v1/client/environment`) on the server, cached for 60 seconds (`revalidate`). With it, `<SignIn />` renders styled and with its social buttons in the server HTML. It reads `ATLAS_PUBLISHABLE_KEY` and `ATLAS_FRONTEND_API` (or their `NEXT_PUBLIC_` forms) and never throws: anything it can't fetch within `timeoutMs` (1500 ms) is left for the browser.
+
 ## Routing rules
 
 - Routes are protected unless they match `publicRoutes`. `protectedRoutes` wins over `publicRoutes`.

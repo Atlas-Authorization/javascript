@@ -1,5 +1,15 @@
 # @atlasauth/nextjs changelog
 
+## 0.3.0
+### Added
+- **`getAtlasInitialState(options?)`** in `@atlasauth/nextjs/server` → `Promise<AtlasInitialState>`: the instance's
+  public sign-in data for `<AtlasProvider initialState>`, so the sign-in panel is styled and has its social buttons in
+  the server HTML. Cached in Next's data cache for `revalidate` seconds (default 60; `false` disables caching). Reads
+  `ATLAS_PUBLISHABLE_KEY` / `NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY` and `ATLAS_FRONTEND_API` /
+  `NEXT_PUBLIC_ATLAS_FRONTEND_API`, or `{ publishableKey, frontendApi }`. Never throws; gives up after `timeoutMs`
+  (default 1500).
+- New type `AtlasInitialState`.
+
 ## 0.2.0
 
 ### Added

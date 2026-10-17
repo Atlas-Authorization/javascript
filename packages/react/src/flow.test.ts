@@ -12,8 +12,19 @@ import {
   type EnvSocialProvider,
 } from './flow';
 
+// The provider's shared data (`appearanceData`, `environment`) is set per test.
+const atlasCtx = vi.hoisted(() => ({
+  value: {} as Record<string, unknown>,
+}));
 vi.mock('./AtlasProvider', () => ({
-  useAtlas: () => ({ oauthMode: 'redirect', appearance: undefined }),
+  useAtlas: () => ({
+    oauthMode: 'redirect',
+    appearance: undefined,
+    environment: null,
+    appearanceData: null,
+    loadEnvironment: async () => null,
+    ...atlasCtx.value,
+  }),
 }));
 
 /**
@@ -138,6 +149,7 @@ describe('SocialSignInButtons "Sign in with Atlas"', () => {
   afterEach(() => {
     mounted.splice(0).forEach((f) => f());
     vi.restoreAllMocks();
+    atlasCtx.value = {};
   });
 
   async function mount(
@@ -145,13 +157,9 @@ describe('SocialSignInButtons "Sign in with Atlas"', () => {
     post: (path: string, body: unknown) => Promise<unknown> = async () => ({}),
   ) {
     const postFn = vi.fn(post);
-    const client = {
-      get: vi.fn(async (path: string) => {
-        if (path === '/v1/appearance') return { data: { sign_in_with_atlas: sso } };
-        return { data: { social_providers: [] } };
-      }),
-      post: postFn,
-    } as unknown as FapiClient;
+    // The provider already holds the appearance and environment.
+    atlasCtx.value = { appearanceData: { sign_in_with_atlas: sso }, environment: { social_providers: [] } };
+    const client = { get: vi.fn(), post: postFn } as unknown as FapiClient;
     const el = document.createElement('div');
     document.body.appendChild(el);
     const root = createRoot(el);

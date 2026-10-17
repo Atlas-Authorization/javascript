@@ -1,5 +1,13 @@
 # @atlasauth/js changelog
 
+## 0.11.0
+- **New: `fetchAtlasInitialState({ publishableKey, frontendApi, fetchImpl?, init?, timeoutMs? })`** →
+  `Promise<AtlasInitialState>` (`{ appearance?: unknown; environment?: unknown }`). Fetches `/v1/appearance` and
+  `/v1/client/environment` in parallel on the server, for a provider's `initialState`. Never throws: a part that
+  fails or takes longer than `timeoutMs` (default 1500) is left out. `init` is passed to both requests (for example
+  `{ next: { revalidate: 60 } }`).
+- New types `AtlasInitialState` and `FetchInitialStateOptions`.
+
 ## 0.10.0
 - **New: `planFirstFactor(offered)`** → `{ password: boolean; email: ('email_code' | 'email_link')[]; autoSend: 'email_code' | 'email_link' | null }`.
   The rule every prebuilt sign-in form follows: a password field only when the server offers `password`; with no

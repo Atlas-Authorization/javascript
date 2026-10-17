@@ -7,6 +7,7 @@ export * from './token-cache';
 export * from './tab-election';
 export * from './attempt';
 export * from './first-factor';
+export * from './initial-state';
 // Server errors in the app's language (`error.<reason>` catalog keys).
 export * from './errors';
 export * from './redirect';

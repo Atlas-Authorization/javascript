@@ -1,5 +1,10 @@
 # @atlasauth/expo changelog
 
+## 0.2.1
+- **Fixed:** depends on `@atlasauth/react` `^0.9.0` instead of one exact version. With an exact pin, an app that also
+  installed a newer `@atlasauth/react` got two copies, and hooks from one couldn't see the other's
+  `<AtlasProvider>` ("Atlas hooks must be used inside <AtlasProvider>").
+
 ## 0.2.0
 - **Signing out clears the stored session token.** `createCacheFetch()` now clears the token in the
   `TokenCache` when `POST /v1/client/sessions/:id/revoke` succeeds (2xx, or 404 — already gone) for the

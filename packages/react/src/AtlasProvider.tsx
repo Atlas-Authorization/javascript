@@ -32,6 +32,7 @@ import {
   type SignOutOptions,
   type SignOutResult,
   type TombstoneStore,
+  type AtlasInitialState,
   runFrontChannelLogoutFromResponse,
 } from '@atlasauth/js';
 import { resolveLocale, type SupportedLocale } from '@atlasauth/localizations';
@@ -86,6 +87,19 @@ interface AtlasContextValue {
    * defaults and the server still enforces every gate.
    */
   instanceSettings: InstanceSettings | null;
+  /**
+   * The raw `GET /v1/client/environment` body (sign-in methods, social buttons),
+   * or null until loaded. Seeded from `initialState` when the server fetched it.
+   */
+  environment: unknown;
+  /** The raw `GET /v1/appearance` body, or null until loaded (seeded from `initialState`). */
+  appearanceData: unknown;
+  /**
+   * Fetch the client environment once for the whole provider and share it: the
+   * social buttons and the Google button read the same response instead of each
+   * requesting it. Resolves null when the server can't be reached.
+   */
+  loadEnvironment(): Promise<unknown>;
   /** §oauth popup mode — app-wide default for social/OIDC sign-in (see AtlasProviderProps). */
   oauthMode?: 'popup' | 'redirect';
   catalog: Catalog;
@@ -224,6 +238,14 @@ export interface AtlasProviderProps {
    * Read once, on first render.
    */
   tombstoneStore?: TombstoneStore;
+  /**
+   * The instance's public sign-in data, fetched on the server with
+   * `fetchAtlasInitialState()` (or `getAtlasInitialState()` from
+   * `@atlasauth/nextjs/server`). With it the panel renders fully styled, with its
+   * social buttons, in the server HTML, and the browser skips those requests.
+   * Without it everything is fetched in the browser, as before.
+   */
+  initialState?: AtlasInitialState;
 }
 
 export function AtlasProvider(props: AtlasProviderProps) {
@@ -246,7 +268,14 @@ export function AtlasProvider(props: AtlasProviderProps) {
   const [claims, setClaims] = useState<SessionClaims | null>(null);
   const [memberships, setMemberships] = useState<AtlasOrganizationMembership[]>([]);
   // Filled from GET /v1/appearance (see the effect beside the dashboard design).
-  const [instanceSettings, setInstanceSettings] = useState<InstanceSettings | null>(null);
+  // Read once: a server-fetched `initialState` seeds the first render, so the
+  // server HTML and the hydrating client agree, and the browser skips the fetch.
+  const [initial] = useState(() => props.initialState ?? {});
+  const [instanceSettings, setInstanceSettings] = useState<InstanceSettings | null>(() =>
+    initial.appearance ? instanceSettingsFrom(initial.appearance) : null,
+  );
+  const [environment, setEnvironment] = useState<unknown>(initial.environment ?? null);
+  const [appearanceData, setAppearanceData] = useState<unknown>(initial.appearance ?? null);
 
   const cache = useRef(new TokenCache());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -689,6 +718,24 @@ export function AtlasProvider(props: AtlasProviderProps) {
     }
   }, [status, user]);
 
+  const environmentRequest = useRef<Promise<unknown> | null>(
+    initial.environment ? Promise.resolve(initial.environment) : null,
+  );
+  const loadEnvironment = useCallback((): Promise<unknown> => {
+    if (!environmentRequest.current) {
+      environmentRequest.current = call('/v1/client/environment')
+        .then(async (response) => (response.ok ? ((await response.json()) as unknown) : null))
+        .catch(() => null)
+        .then((body) => {
+          // A failure is not cached, so a later mount can try again.
+          if (body) setEnvironment(body);
+          else environmentRequest.current = null;
+          return body;
+        });
+    }
+    return environmentRequest.current;
+  }, [call]);
+
   const value = useMemo<AtlasContextValue>(
     () => ({
       publishableKey,
@@ -702,6 +749,9 @@ export function AtlasProvider(props: AtlasProviderProps) {
       memberships,
       appearance,
       instanceSettings,
+      environment,
+      appearanceData,
+      loadEnvironment,
       catalog,
       errorCatalog,
       locale: requestLocale,
@@ -717,6 +767,9 @@ export function AtlasProvider(props: AtlasProviderProps) {
     [
       appearance,
       instanceSettings,
+      environment,
+      appearanceData,
+      loadEnvironment,
       baseUrl,
       broadcastSessionChange,
       publishableKey,
@@ -745,9 +798,13 @@ export function AtlasProvider(props: AtlasProviderProps) {
    * Best-effort: a failure (older server, network) leaves it null and the
    * components render exactly as before. Skipped when the app opted out.
    */
-  const [instanceDesign, setInstanceDesign] = useState<InstanceDesign | null>(null);
   const wantsInstanceDesign = appearance?.instanceDesign !== false;
+  const [instanceDesign, setInstanceDesign] = useState<InstanceDesign | null>(() =>
+    initial.appearance && wantsInstanceDesign ? instanceDesignFrom(initial.appearance) : null,
+  );
   useEffect(() => {
+    // Already in hand from the server: nothing to fetch.
+    if (initial.appearance) return;
     let alive = true;
     void (async () => {
       try {
@@ -758,6 +815,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
         // The sign-in / sign-up settings (captcha, fields, consent) are read even
         // when the app opted out of the dashboard DESIGN: they are behaviour, not
         // styling, and the server enforces them either way.
+        setAppearanceData(body);
         setInstanceSettings(instanceSettingsFrom(body));
         if (wantsInstanceDesign) setInstanceDesign(instanceDesignFrom(body));
       } catch {
@@ -767,7 +825,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
     return () => {
       alive = false;
     };
-  }, [call, wantsInstanceDesign]);
+  }, [call, wantsInstanceDesign, initial]);
 
   const rendered = useMemo(
     () => renderAppearance(appearance, instanceDesign, { frontendApi: baseUrl }),
@@ -797,6 +855,13 @@ export function AtlasProvider(props: AtlasProviderProps) {
       {rendered.css ? (
         <style data-atlas-design={rendered.key} dangerouslySetInnerHTML={{ __html: rendered.css }} />
       ) : null}
+      {/*
+        Connection hints, in the server HTML: open the connection to the Frontend
+        API early, and start downloading Google's sign-in script before the
+        component asks for it when the instance uses native Google sign-in.
+      */}
+      <link rel="preconnect" href={baseUrl} crossOrigin="use-credentials" />
+      {usesNativeGoogleEnv(environment) ? <link rel="preload" as="script" href={GSI_SCRIPT_URL} /> : null}
       {rendered.fontStylesheets.map((href) => (
         <link key={href} rel="stylesheet" href={href} data-atlas-font="" />
       ))}
@@ -840,4 +905,23 @@ function decodeClaims(jwt: string): SessionClaims | null {
   } catch {
     return null;
   }
+}
+
+const GSI_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
+
+/** Whether the environment lists Google as a native (GSI) provider with a client id. */
+function usesNativeGoogleEnv(environment: unknown): boolean {
+  const providers = (environment as { social_providers?: unknown } | null)?.social_providers;
+  if (!Array.isArray(providers)) return false;
+  return providers.some((p) => {
+    const entry = p as { provider?: unknown; native?: unknown; mode?: unknown; client_id?: unknown; allow_sign_in?: unknown } | null;
+    return (
+      entry?.provider === 'google' &&
+      entry.native === true &&
+      entry.mode !== 'redirect' &&
+      entry.allow_sign_in !== false &&
+      typeof entry.client_id === 'string' &&
+      entry.client_id !== ''
+    );
+  });
 }
