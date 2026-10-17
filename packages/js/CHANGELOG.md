@@ -1,5 +1,19 @@
 # @atlasauth/js changelog
 
+## 0.10.0
+- **New: `planFirstFactor(offered)`** → `{ password: boolean; email: ('email_code' | 'email_link')[]; autoSend: 'email_code' | 'email_link' | null }`.
+  The rule every prebuilt sign-in form follows: a password field only when the server offers `password`; with no
+  password on offer, send the emailed code (else link) straight away.
+- **New: `retryAfterSeconds(errors)`** → the `retry_after` seconds of a 429, or `null`, so a "Resend" button can wait it out.
+- **New: `EmailFactor` type** (`'email_code' | 'email_link'`) and `FirstFactorPlan`.
+- **Added `FlowState.prepared?: 'email_code' | 'email_link' | null`**: the emailed factor `prepareFactor` sent for the
+  current attempt. `advance` keeps it while the attempt and status are unchanged (a wrong code) and clears it otherwise.
+- **Changed `prepareFactor`**: keeps `poll_secret` only for `email_link`. A code is typed into this tab, so there is
+  nothing to poll for.
+
+## 0.9.1
+- **Fixed** the invisible Google sign-in overlay: Google gives its button frame a -10px side margin, which left a strip on the right of the host button where clicks missed Google's button. The margin is now zeroed so the overlay covers the button exactly.
+
 ## 0.9.0
 - **Added `reason?: string` and `meta?: Record<string, unknown>` to `FieldError`**, parsed from the Frontend API
   error envelope (`{ code, message, reason?, param?, meta? }`). `code` is unchanged. A network failure now carries

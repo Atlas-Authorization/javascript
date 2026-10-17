@@ -3,6 +3,7 @@
     localizedErrorMessage,
     nextStep,
     offeredFirstFactors,
+    planFirstFactor,
     type AttemptView,
     type CaptchaController,
     type EmailDelivery,
@@ -72,7 +73,8 @@
   $: emailOptions = onPrepare
     ? offered.filter((s): s is EmailStrategy => s === 'email_code' || s === 'email_link')
     : [];
-  // The password field stays unless the server offers only emailed factors.
+  // A password field only when the server offers `password` (planFirstFactor).
+  $: plan = planFirstFactor(offered);
   $: showPassword = offered.includes('password') || emailOptions.length === 0;
 
   // Which emailed factor was sent, for which attempt (a new attempt starts over).
@@ -85,6 +87,28 @@
     if (await onPrepare(strategy)) prepared = { strategy, attemptId };
   }
 
+  // With no password on offer, email the code (or link) as soon as the step
+  // appears — once per attempt, so a failed send waits for the user's retry.
+  let autoSentFor: string | null = null;
+  $: if (
+    step.kind === 'collect_first_factor' &&
+    onPrepare &&
+    plan.autoSend &&
+    attempt?.id &&
+    autoSentFor !== attempt.id &&
+    sent === null
+  ) {
+    autoSentFor = attempt.id;
+    void prepare(plan.autoSend);
+  }
+  $: sending = step.kind === 'collect_first_factor' && sent === null && !!onPrepare && !plan.password && emailOptions.length > 0;
+  $: identifier = attempt?.identifier ?? '';
+
+  function usePassword() {
+    prepared = null;
+    values = {};
+  }
+
   // The step → fields mapping, mirroring the React switch exactly.
   $: fields = ((): Field[] => {
     switch (step.kind) {
@@ -94,6 +118,7 @@
         if (sent === 'email_code') {
           return [{ name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
         }
+        if (sending || sent === 'email_link') return [];
         return showPassword
           ? [{ name: 'password', labelKey: 'signIn.passwordLabel', type: 'password' }]
           : [];
@@ -125,7 +150,7 @@
       case 'restart':
         return t('error.generic');
       case 'collect_first_factor':
-        return sent === 'email_link' ? t('signIn.magicLinkSent') : null;
+        return null;
       case 'collect_captcha':
       case 'collect_identifier':
       case 'collect_second_factor':
@@ -146,11 +171,17 @@
     // Only emailed factors on offer: the option buttons are the way forward.
     (step.kind !== 'collect_first_factor' || fields.length > 0);
   $: showEmailOptions =
-    step.kind === 'collect_first_factor' && message === null && sent === null && emailOptions.length > 0;
+    step.kind === 'collect_first_factor' && message === null && sent === null && emailOptions.length > 0 && !(sending && busy);
   $: showCaptcha = !!captcha && (step.kind === 'collect_identifier' || step.kind === 'collect_captcha');
 
   function handleSubmit(event: Event) {
     event.preventDefault();
+    // The first-factor step sends only what is on screen, so a stale value from
+    // the other method never picks the strategy.
+    if (step.kind === 'collect_first_factor') {
+      onSubmit(sent === 'email_code' ? { code: values.code ?? '' } : { password: values.password ?? '' });
+      return;
+    }
     onSubmit(values);
   }
 </script>
@@ -171,6 +202,15 @@
              the widget resubmits the identifier on its own; the button retries. -->
         <p class="atlas-text">{t('captcha.prompt')}</p>
       {/if}
+      {#if step.kind === 'collect_first_factor' && sent === 'email_code'}
+        <p class="atlas-text" data-atlas-code-sent>{t('signIn.codeSentTo', { email: identifier })}</p>
+      {/if}
+      {#if step.kind === 'collect_first_factor' && sent === 'email_link'}
+        <p class="atlas-text" data-atlas-link-sent>{t('signIn.linkSentTo', { email: identifier })}</p>
+      {/if}
+      {#if sending}
+        <p class="atlas-text" aria-live="polite">{t('signIn.sending')}</p>
+      {/if}
       {#each fields as f (f.name)}
         <label class="atlas-field">
           <span>{t(f.labelKey)}</span>
@@ -186,6 +226,28 @@
           {/each}
         </label>
       {/each}
+      {#if step.kind === 'collect_first_factor' && sent !== null}
+        <button
+          class={cls('formButtonSecondary', 'atlas-button-secondary')}
+          type="button"
+          data-atlas-resend
+          disabled={busy}
+          on:click={() => void prepare(sent)}
+        >
+          {t(sent === 'email_code' ? 'signIn.resendCode' : 'signIn.resendLink')}
+        </button>
+        {#if plan.password}
+          <button
+            class={cls('formButtonSecondary', 'atlas-button-secondary')}
+            type="button"
+            data-strategy="password"
+            disabled={busy}
+            on:click={usePassword}
+          >
+            {t('signIn.passwordOption')}
+          </button>
+        {/if}
+      {/if}
       {#if showEmailOptions}
         {#each emailOptions as strategy (strategy)}
           <button

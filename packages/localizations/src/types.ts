@@ -61,6 +61,15 @@ export interface LocalizationResource {
   'signIn.emailCodeLabel': string;
   'signIn.magicLinkSent': string;
   'signIn.checkOtherTab': string;
+  'signIn.codeSentTo': string;
+  'signIn.linkSentTo': string;
+  'signIn.sending': string;
+  'signIn.resendCode': string;
+  'signIn.resendLink': string;
+  'signIn.resendIn': string;
+  'signIn.emailCodeOption': string;
+  'signIn.emailLinkOption': string;
+  'signIn.passwordOption': string;
 
   // --- Sign up ---------------------------------------------------------------
   'signUp.title': string;

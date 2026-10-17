@@ -22,6 +22,15 @@ export const deDE: LocalizationResource = {
   'signIn.magicLinkSent': 'Prüfen Sie Ihre E-Mails auf einen Anmeldelink.',
   'signIn.checkOtherTab':
     'Sie können diesen Tab schließen — Sie sind dort angemeldet, wo Sie begonnen haben.',
+  'signIn.codeSentTo': 'Wir haben einen Code an {email} gesendet. Gib ihn unten ein.',
+  'signIn.linkSentTo': 'Wir haben einen Anmeldelink an {email} gesendet. Öffne ihn auf einem beliebigen Gerät, um fortzufahren.',
+  'signIn.sending': 'Wird gesendet…',
+  'signIn.resendCode': 'Code erneut senden',
+  'signIn.resendLink': 'Link erneut senden',
+  'signIn.resendIn': 'Erneut senden in {seconds} s',
+  'signIn.emailCodeOption': 'Stattdessen Code per E-Mail senden',
+  'signIn.emailLinkOption': 'Stattdessen Anmeldelink per E-Mail senden',
+  'signIn.passwordOption': 'Stattdessen Passwort verwenden',
 
   'signUp.title': 'Konto erstellen',
   'signUp.submit': 'Weiter',

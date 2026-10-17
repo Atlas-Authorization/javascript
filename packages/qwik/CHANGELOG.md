@@ -1,5 +1,8 @@
 # @atlasauth/qwik changelog
 
+## 0.3.1
+- Depends on `@atlasauth/embed` 0.5.1: email-code sign-in works on instances without password sign-in (the code is sent after the email step and collected on the next screen).
+
 ## 0.3.0
 
 ### Added

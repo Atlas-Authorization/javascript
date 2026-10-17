@@ -361,6 +361,47 @@ describe('Sign in with Atlas (preset OIDC connection)', () => {
   });
 });
 
+describe('email-code sign-in with no password on offer', () => {
+  const boxes = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('.atlas-embed-code-box')) as HTMLInputElement[];
+  const type = (box: HTMLInputElement, v: string) => {
+    box.value = v;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  it('emails the code itself after the email step, collects it, and completes', async () => {
+    const { impl, calls } = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...envelope([]), appearance: BASE_APPEARANCE, strategies: { password: false, passkey: true } } }),
+      'POST /v1/client/sign_ins': () => ({
+        status: 201,
+        body: { id: 'sia_e', status: 'needs_first_factor', identifier: 'ada@example.com', supported_first_factors: ['email_code', 'passkey'] },
+      }),
+      'POST /v1/client/sign_ins/sia_e/prepare_first_factor': () => ({ body: { id: 'sia_e', status: 'needs_first_factor' } }),
+      'POST /v1/client/sign_ins/sia_e/attempt_first_factor': () => ({ body: { id: 'sia_e', status: 'complete', ticket: 'tk_e' } }),
+      'POST /v1/client/tickets/exchange': () => ({ body: { object: 'session' } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+    (root.querySelector('input[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await flush();
+
+    expect(calls.filter((c) => c.path.endsWith('/prepare_first_factor')).map((c) => c.body)).toEqual([{ strategy: 'email_code' }]);
+    expect(root.querySelector('input[name="password"]')).toBeNull();
+    expect(root.querySelector('[data-atlas-code-sent]')?.textContent).toContain('ada@example.com');
+    expect(root.querySelector('[data-atlas-resend]')).toBeTruthy();
+
+    const bs = boxes(root);
+    for (let i = 0; i < 6; i++) type(bs[i]!, String(i + 1));
+    await flush();
+    const attempt = calls.find((c) => c.path.endsWith('/attempt_first_factor'));
+    expect(attempt?.body).toEqual({ strategy: 'email_code', code: '123456' });
+    expect(calls.some((c) => c.path === '/v1/client/tickets/exchange')).toBe(true);
+  });
+});
+
 describe('driving the password sign-in flow', () => {
   it('posts a password to attempt_first_factor and exchanges the completion ticket', async () => {
     const { impl, calls } = makeFetch({

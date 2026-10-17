@@ -189,6 +189,12 @@ export interface FlowState {
    * for cookies and then it is gone.
    */
   ticket: string | null;
+  /**
+   * §5.3 the emailed factor this attempt has been sent (`prepareFactor`), so a
+   * form draws the code field or the "check your email" step. Cleared when the
+   * server returns a new attempt.
+   */
+  prepared?: 'email_code' | 'email_link' | null;
 }
 
 export const initialFlow: FlowState = {
@@ -197,6 +203,7 @@ export const initialFlow: FlowState = {
   busy: false,
   pollSecret: null,
   ticket: null,
+  prepared: null,
 };
 
 /**
@@ -358,6 +365,7 @@ export async function advance(
     return { ...state, busy: false, errors: response.errors };
   }
 
+  const sameAttempt = response.data.id === state.attempt?.id && response.data.status === state.attempt?.status;
   return {
     attempt: response.data,
     errors: [],
@@ -365,6 +373,7 @@ export async function advance(
     pollSecret: state.pollSecret,
     // A completion response carries the ticket to exchange for cookies.
     ticket: response.data.ticket ?? null,
+    prepared: sameAttempt ? (state.prepared ?? null) : null,
   };
 }
 
@@ -431,8 +440,10 @@ export async function prepareFactor(
     busy: false,
     errors: [],
     // Held in memory only. It is what lets THIS tab collect a sign-in completed
-    // by a link opened on another device.
-    pollSecret: response.data?.poll_secret ?? null,
+    // by a link opened on another device. A code is typed into this tab, so
+    // there is nothing to poll for.
+    pollSecret: strategy === 'email_link' ? (response.data?.poll_secret ?? null) : null,
+    prepared: strategy,
   };
 }
 

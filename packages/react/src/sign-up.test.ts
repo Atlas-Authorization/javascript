@@ -422,6 +422,9 @@ describe('email delivery', () => {
     setInput(el, 'identifier', 'me@example.com');
     await submit(el);
     await vi.waitFor(() => expect(posts('/v1/client/sign_ins')).toHaveLength(1));
-    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    // Not filtered out: the offered email code is sent, and never a password box.
+    await vi.waitFor(() => expect(calls.some((c) => c.path.endsWith('/prepare_first_factor'))).toBe(true));
+    expect(el.querySelector('[data-atlas-email-unavailable]')).toBeNull();
+    expect(el.querySelector('input[name="password"]')).toBeNull();
   });
 });

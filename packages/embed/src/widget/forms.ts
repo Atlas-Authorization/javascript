@@ -1,9 +1,9 @@
-import { EMAIL_UNAVAILABLE_MESSAGE, passkeysSupported, resetStep, type FieldError } from '@atlasauth/js';
+import { EMAIL_UNAVAILABLE_MESSAGE, nextStep, passkeysSupported, planFirstFactor, resetStep, type FieldError } from '@atlasauth/js';
 import type { AtlasWidget } from '../widget';
 import { COPY } from './constants';
 import { cls, doc, el, submitButton } from './dom';
 import { render } from './render';
-import { startReset, submit, submitReset, submitSignUp } from './flow';
+import { sendEmailFactor, startReset, submit, submitReset, submitSignUp } from './flow';
 
 /**
  * §5.4 the reset sub-flow panel: email → emailed code → (2FA) → new password →
@@ -231,6 +231,8 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
     codeFieldInto(w, form, inputs, errors, name, label, autofocus);
 
   let showSubmit = true;
+  // Secondary actions drawn under the submit button (resend, other factors).
+  const trailing: HTMLElement[] = [];
   switch (stepKind) {
     case 'collect_identifier':
       // §5.5 the `webauthn` autocomplete token opts this field into passkey
@@ -269,9 +271,51 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
         form.appendChild(row);
       }
       break;
-    case 'collect_first_factor':
-      addField('password', 'Password', 'password', 'current-password');
+    case 'collect_first_factor': {
+      // §5.3 a password field only when the server offers `password`; an emailed
+      // code (or link) is sent by `submit()` when it isn't.
+      const strategies = w.state.attempt ? (nextStep(w.state.attempt) as { strategies?: string[] }).strategies ?? [] : [];
+      const plan = planFirstFactor(
+        w.emailDeliveryAvailable ? strategies : strategies.filter((s) => s !== 'email_code' && s !== 'email_link'),
+      );
+      const sent = w.state.prepared ?? null;
+      const who = w.enteredIdentifier ?? (w.state.attempt as { identifier?: string | null } | null)?.identifier ?? '';
+      const action = (strategy: 'email_code' | 'email_link', label: string, attr: string) => {
+        const b = el(w, 'button', 'atlas-embed-step-back', label);
+        (b as HTMLButtonElement).type = 'button';
+        b.setAttribute(attr, attr === 'data-strategy' ? strategy : '');
+        (b as HTMLButtonElement).disabled = w.busy;
+        b.addEventListener('click', () => void sendEmailFactor(w, strategy));
+        return b;
+      };
+      if (sent === 'email_code') {
+        const note = el(w, 'p', 'atlas-embed-note', who ? `We sent a code to ${who}. Enter it below.` : 'We sent you a code. Enter it below.');
+        note.setAttribute('data-atlas-code-sent', '');
+        form.appendChild(note);
+        addCodeField('code', 'Verification code', true);
+        trailing.push(action('email_code', 'Resend code', 'data-atlas-resend'));
+      } else if (sent === 'email_link') {
+        showSubmit = false;
+        const note = el(w, 'p', 'atlas-embed-note', who ? `We sent a sign-in link to ${who}. Open it on any device to continue.` : 'Check your email for a sign-in link.');
+        note.setAttribute('data-atlas-link-sent', '');
+        form.appendChild(note);
+        trailing.push(action('email_link', 'Resend link', 'data-atlas-resend'));
+      } else if (!plan.password && plan.email.length > 0) {
+        // The automatic send failed (its error is shown above): retry here.
+        showSubmit = false;
+        for (const strategy of plan.email) {
+          trailing.push(action(strategy, strategy === 'email_code' ? 'Email me a code' : 'Email me a sign-in link', 'data-strategy'));
+        }
+      } else {
+        addField('password', 'Password', 'password', 'current-password');
+        for (const strategy of plan.email) {
+          trailing.push(
+            action(strategy, strategy === 'email_code' ? 'Email me a code instead' : 'Email me a sign-in link instead', 'data-strategy'),
+          );
+        }
+      }
       break;
+    }
     case 'collect_second_factor':
       // A recovery/backup code is alphanumeric + variable-length, so it can't go
       // in fixed digit boxes — the "use a backup code" toggle swaps to a single
@@ -312,6 +356,7 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
   if (showSubmit) {
     form.appendChild(submitButton(w, COPY[w.mode].submit));
   }
+  for (const node of trailing) form.appendChild(node);
 
   // §5.3 2FA fallback: let the user swap between the authenticator boxes and a
   // free-text backup-code field.
@@ -335,7 +380,7 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
   // only when password sign-in is actually on and the app can email the reset code.
   const passwordStep =
     (stepKind === 'collect_identifier' && w.mode === 'sign-in' && w.passwordEnabled) ||
-    stepKind === 'collect_first_factor';
+    (stepKind === 'collect_first_factor' && inputs.has('password'));
   if (passwordStep && w.passwordResetEnabled) {
     const forgot = el(w, 'button', 'atlas-embed-step-back', 'Forgot password?');
     (forgot as HTMLButtonElement).type = 'button';

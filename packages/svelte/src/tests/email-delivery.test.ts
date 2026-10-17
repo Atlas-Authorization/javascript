@@ -153,3 +153,26 @@ describe('<SignIn> first-factor choice', () => {
     expect(el.querySelector('[data-strategy]')).toBeNull();
   });
 });
+
+describe('<SignIn> with no password on offer', () => {
+  it('emails the code by itself, never shows a password field, and posts the code', async () => {
+    const el = await mountFlow(SignIn, { available: true, password_reset: true, password_sign_up: true }, ['email_code', 'passkey']);
+    const input = el.querySelector('input[name="identifier"]') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'me@example.com' } });
+    await fireEvent.submit(el.querySelector('form')!);
+
+    await waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    expect(el.querySelector('input[name="password"]')).toBeNull();
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_first_factor')).toHaveLength(1);
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_first_factor')[0]!.body).toEqual({ strategy: 'email_code' });
+    expect(el.querySelector('[data-atlas-resend]')).not.toBeNull();
+
+    await fireEvent.input(el.querySelector('input[name="code"]')!, { target: { value: '123456' } });
+    await fireEvent.submit(el.querySelector('form')!);
+    await waitFor(() => expect(posts('/v1/client/sign_ins/sia_1/attempt_first_factor')).toHaveLength(1));
+    expect(posts('/v1/client/sign_ins/sia_1/attempt_first_factor')[0]!.body).toEqual({
+      strategy: 'email_code',
+      code: '123456',
+    });
+  });
+});

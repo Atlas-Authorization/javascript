@@ -22,6 +22,15 @@ export const frFR: LocalizationResource = {
   'signIn.magicLinkSent': 'Vérifiez votre e-mail pour un lien de connexion.',
   'signIn.checkOtherTab':
     'Vous pouvez fermer cet onglet — vous êtes connecté là où vous avez commencé.',
+  'signIn.codeSentTo': 'Nous avons envoyé un code à {email}. Saisissez-le ci-dessous.',
+  'signIn.linkSentTo': 'Nous avons envoyé un lien de connexion à {email}. Ouvrez-le sur n\'importe quel appareil pour continuer.',
+  'signIn.sending': 'Envoi…',
+  'signIn.resendCode': 'Renvoyer le code',
+  'signIn.resendLink': 'Renvoyer le lien',
+  'signIn.resendIn': 'Renvoyer dans {seconds} s',
+  'signIn.emailCodeOption': 'M\'envoyer plutôt un code par e-mail',
+  'signIn.emailLinkOption': 'M\'envoyer plutôt un lien de connexion',
+  'signIn.passwordOption': 'Utiliser mon mot de passe',
 
   'signUp.title': 'Créer votre compte',
   'signUp.submit': 'Continuer',

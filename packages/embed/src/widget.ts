@@ -116,6 +116,8 @@ export class AtlasWidget {
   signUpFields: PublicSignUpField[] = [];
   /** Whether password is an enabled first factor — drives single-screen sign-in. */
   passwordEnabled = true;
+  /** Whether the app can deliver email (`email_delivery.available`); unknown → true. */
+  emailDeliveryAvailable = true;
   /** §5.5 whether the instance offers passkeys — gates the "Sign in with a passkey" button. */
   passkeyEnabled = false;
   /** Whether "Forgot password?" can work (the app can deliver the reset email). */
@@ -124,6 +126,8 @@ export class AtlasWidget {
   passwordSignUpEnabled = true;
   /** §5.5 aborts the background conditional-UI passkey ceremony when the user acts otherwise. */
   conditionalAbort?: AbortController;
+  /** §5.3 the email-link poll, while this tab waits for the link to be opened. */
+  linkPoll: ReturnType<typeof setInterval> | null = null;
   /** §7.5 whether the instance offers a "Remember me" checkbox at sign-in. */
   rememberMeEnabled = false;
   /** The current Remember-me choice — ticked by default (persistent session). */
@@ -220,6 +224,8 @@ export class AtlasWidget {
       // An app that cannot send email can't send a reset code or a sign-up
       // verification code: hide what would only end in an error.
       this.passwordResetEnabled = data.email_delivery?.password_reset ?? true;
+      // An emailed sign-in code / link is neither offered nor sent while email can't be delivered.
+      this.emailDeliveryAvailable = data.email_delivery?.available ?? true;
       this.passwordSignUpEnabled = data.email_delivery?.password_sign_up ?? true;
       this.signInWithAtlas = data.sign_in_with_atlas ?? { enabled: false };
       this.rememberMeEnabled = data.rememberMe === true;

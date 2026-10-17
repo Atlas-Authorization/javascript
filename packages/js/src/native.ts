@@ -405,7 +405,12 @@ export async function renderGoogleOverlayButton(opts: {
   // present now AND re-apply whenever GSI mutates the subtree (observer after draw()).
   const applyStretch = (): void => {
     stretchToFill(overlay.firstElementChild);
-    stretchToFill(overlay.querySelector('iframe'));
+    const frame = overlay.querySelector('iframe');
+    stretchToFill(frame);
+    // GSI gives its iframe a -10px side margin, which shifts it off the host
+    // button's right edge and leaves a strip where clicks miss Google's button.
+    const fs = (frame as HTMLElement | null)?.style;
+    if (fs && fs.margin !== '0px') fs.margin = '0';
   };
 
   const draw = (): void => {

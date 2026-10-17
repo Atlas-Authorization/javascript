@@ -374,3 +374,47 @@ describe('email delivery', () => {
     });
   });
 });
+
+describe('email-code-only sign-in (no password on offer)', () => {
+  it('<SignIn> emails the code by itself, never shows a password field, and the code signs in', async () => {
+    const w = await mountFlow(SignIn, {
+      emailDelivery: { available: true, password_reset: true, password_sign_up: true },
+      routes: [
+        (c) =>
+          c.path === '/v1/client/sign_ins'
+            ? json(
+                {
+                  id: 'sia_c',
+                  status: 'needs_first_factor',
+                  identifier: 'me@example.com',
+                  supported_first_factors: ['email_code', 'passkey'],
+                },
+                201,
+              )
+            : undefined,
+        (c) => (c.path === '/v1/client/sign_ins/sia_c/prepare_first_factor' ? json({ status: 'needs_first_factor' }) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ins/sia_c/attempt_first_factor'
+            ? json({ id: 'sia_c', status: 'complete', ticket: 'tkt_c' })
+            : undefined,
+      ],
+    });
+    await setInput(w, 'identifier', 'me@example.com');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('input[name="code"]').exists()).toBe(true));
+    expect(w.find('input[name="password"]').exists()).toBe(false);
+    expect(posts('/v1/client/sign_ins/sia_c/prepare_first_factor')).toHaveLength(1);
+    expect(posts('/v1/client/sign_ins/sia_c/prepare_first_factor')[0]!.body).toEqual({ strategy: 'email_code' });
+    expect(w.find('[data-atlas-code-sent]').text()).toContain('me@example.com');
+    expect(w.find('[data-atlas-resend]').exists()).toBe(true);
+
+    await setInput(w, 'code', '135790');
+    await submit(w);
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sia_c/attempt_first_factor')).toHaveLength(1));
+    expect(posts('/v1/client/sign_ins/sia_c/attempt_first_factor')[0]!.body).toEqual({
+      strategy: 'email_code',
+      code: '135790',
+    });
+  });
+});
+

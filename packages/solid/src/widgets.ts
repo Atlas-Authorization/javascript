@@ -24,6 +24,7 @@ import {
   offeredFirstFactors,
   pollAttempt,
   prepareFactor,
+  planFirstFactor,
   shouldKeepPolling,
   signInCaptchaOptions,
   type CaptchaController,
@@ -181,9 +182,21 @@ function renderFirstFactor(
   sent: EmailFactor | null,
   send: (strategy: EmailFactor) => void,
 ): JSX.Element {
-  if (sent === 'email_code') return [field('code', 'Email code')];
-  if (sent === 'email_link') return [h('p', { class: 'atlas-text' }, 'Check your email for a sign-in link.')];
+  const resend = (strategy: EmailFactor) =>
+    h('button', { class: 'atlas-link', type: 'button', 'data-atlas-resend': '', onClick: () => send(strategy) },
+      strategy === 'email_code' ? 'Resend code' : 'Resend link');
+  if (sent === 'email_code') {
+    return [h('p', { class: 'atlas-text', 'data-atlas-code-sent': '' }, 'We sent you a code. Enter it below.'), field('code', 'Email code'), resend('email_code')];
+  }
+  if (sent === 'email_link') {
+    return [h('p', { class: 'atlas-text', 'data-atlas-link-sent': '' }, 'Check your email for a sign-in link.'), resend('email_link')];
+  }
   const out: JSX.Element[] = [];
+  // No password on offer: the emailed factor is being sent on its own; the
+  // buttons below are the retry if that send failed.
+  if (listed && !offered.includes('password') && (offered.includes('email_code') || offered.includes('email_link'))) {
+    out.push(h('p', { class: 'atlas-text', 'aria-live': 'polite' }, 'Sending…'));
+  }
   if (!listed || offered.includes('password')) out.push(field('password', 'Password', 'password'));
   if (offered.includes('email_code')) {
     out.push(h('button', { class: 'atlas-link', type: 'button', onClick: () => send('email_code') }, 'Email me a code'));
@@ -453,6 +466,24 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
       if (!next.errors.length) setEmailSent(strategy);
     })();
   };
+  // With no password on offer, email the code (or link) as soon as the step
+  // appears — once per attempt, so a failed send waits for the user's retry.
+  let autoSentFor: string | null = null;
+  createEffect(() => {
+    const offer = firstFactor();
+    const id = state().attempt?.id ?? null;
+    if (!offer.startsWith('listed:') || !id || autoSentFor === id) return;
+    const strategy = planFirstFactor(offer.slice('listed:'.length).split(',')).autoSend;
+    if (!strategy) return;
+    autoSentFor = id;
+    sendEmailFactor(strategy);
+  });
+  // Nothing to submit while only an emailed factor is on offer and not yet sent.
+  const awaitingEmail = () => {
+    if (kind() !== 'collect_first_factor' || emailSent() === 'email_code') return false;
+    const offer = firstFactor();
+    return emailSent() === 'email_link' || (offer.startsWith('listed:') && planFirstFactor(offer.slice(7).split(',')).autoSend !== null);
+  };
   // §email delivery: a password sign-up needs a verification email; when the
   // app cannot send one, say so instead of a form that cannot finish.
   const signUpBlocked = () =>
@@ -485,7 +516,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         captcha,
         () => (kind() === 'collect_identifier' || kind() === 'collect_captcha') && captchaDrawn(),
       ),
-      () => renderSubmit(kind(), state().busy, signUpBlocked() || emailSent() === 'email_link'),
+      () => renderSubmit(kind(), state().busy, signUpBlocked() || awaitingEmail()),
     ],
   );
 }

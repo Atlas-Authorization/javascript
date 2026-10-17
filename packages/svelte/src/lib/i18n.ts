@@ -29,6 +29,12 @@ export const EN_US: Catalog = {
   'signIn.emailCodeOption': 'Email me a code',
   'signIn.emailLinkOption': 'Email me a sign-in link',
   'signIn.magicLinkSent': 'Check your email for a sign-in link.',
+  'signIn.codeSentTo': 'We sent a code to {email}. Enter it below.',
+  'signIn.linkSentTo': 'We sent a sign-in link to {email}. Open it on any device to continue.',
+  'signIn.sending': 'Sending…',
+  'signIn.resendCode': 'Resend code',
+  'signIn.resendLink': 'Resend link',
+  'signIn.passwordOption': 'Use your password instead',
   'signIn.checkOtherTab': 'You can close this tab — you are signed in where you started.',
 
   'signUp.title': 'Create your account',

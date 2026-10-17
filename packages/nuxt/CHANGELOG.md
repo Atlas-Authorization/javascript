@@ -1,5 +1,8 @@
 # @atlasauth/nuxt changelog
 
+## 0.1.4
+- Depends on `@atlasauth/vue` 0.5.1: email-code sign-in works on instances without password sign-in.
+
 ## 0.1.3
 - **`frontendApi` is validated at plugin start-up.** A missing (or non-string) or malformed value now throws an
   `AtlasConfigError` (from `@atlasauth/js`; `code: 'FRONTEND_API_REQUIRED'` or `'FRONTEND_API_INVALID'`)

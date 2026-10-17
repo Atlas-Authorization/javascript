@@ -49,7 +49,8 @@ describe('backward compatibility (no design anywhere)', () => {
   it('pins the base stylesheet (changes only deliberately)', () => {
     // FNV-1a of ATLAS_BASE_CSS. Byte-identical from 0.3.1 until 0.5.0, where it
     // changed deliberately for accessibility: text-on-primary contrast, a
-    // visible focus ring, 16px inputs.
+    // visible focus ring, 16px inputs. 0.8.1 adds the link-style buttons of the
+    // first-factor step ("Email me a code instead", "Resend code").
     expect(designKey(ATLAS_BASE_CSS)).toBe(BASE_CSS_HASH);
   });
 
@@ -184,4 +185,4 @@ describe('element keys', () => {
   });
 });
 
-const BASE_CSS_HASH = 'cvzs6e';
+const BASE_CSS_HASH = '823it9';

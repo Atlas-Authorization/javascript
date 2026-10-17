@@ -1,5 +1,14 @@
 # @atlasauth/vue changelog
 
+## 0.5.1
+- **Fixed: email-code sign-in on instances without password sign-in.** After the email step the sign-in form now
+  sends the code itself (`prepare_first_factor`), shows "We sent a code to …" with the code field and a
+  "Resend code" action, and completes with `attempt_first_factor { strategy: "email_code", code }`. A password field
+  is drawn only when the server offers `password`; when it is offered, password stays the default and the emailed
+  code is one click away. If the automatic send is refused (a 429, or the app can't send email), the step shows the
+  server's error and a button to try again.
+- New catalog keys: `signIn.codeSentTo`, `signIn.linkSentTo`, `signIn.sending`, `signIn.resendCode`, `signIn.resendLink`, `signIn.passwordOption` ("Use your password instead", on the code step when password is also offered).
+
 ## 0.5.0
 Requires `@atlasauth/js` 0.9.0.
 - **Server errors render in the app's language.** `<SignIn>` / `<SignUp>` show the catalog string

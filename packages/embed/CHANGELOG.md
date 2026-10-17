@@ -1,5 +1,16 @@
 # @atlasauth/embed changelog
 
+## 0.5.1
+- **Fixed: email-code sign-in on instances without password sign-in.** After the email step the sign-in form now
+  sends the code itself (`prepare_first_factor`), shows "We sent a code to …" with the code field and a
+  "Resend code" action, and completes with `attempt_first_factor { strategy: "email_code", code }`. A password field
+  is drawn only when the server offers `password`; when it is offered, password stays the default and the emailed
+  code is one click away. If the automatic send is refused (a 429, or the app can't send email), the step shows the
+  server's error and a button to try again.
+- `email_link` as the only factor: the link is sent, and the widget polls with `poll_secret` and signs in once the link is opened on any device. "Resend link" on that step.
+- Emailed factors are not offered or sent while `email_delivery.available` is false.
+- "Forgot password?" shows on the first-factor step only when it asks for a password.
+
 ## 0.5.0
 Requires `@atlasauth/js` 0.9.0.
 - **Server errors render in the app's language.** New `WidgetOptions.localization?: ErrorStrings` (a bundle from

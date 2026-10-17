@@ -274,3 +274,35 @@ describe('first-factor choice and email delivery', () => {
     flow.destroy();
   });
 });
+
+describe('first factor with no password on offer', () => {
+  it('emails the code by itself and collects it, never asking for a password', async () => {
+    const flow = await controller({ available: true, password_reset: true, password_sign_up: true }, [
+      (path) =>
+        path === '/v1/client/sign_ins'
+          ? json(
+              { id: 'sia_1', status: 'needs_first_factor', identifier: 'me@example.com', supported_first_factors: ['email_code', 'passkey'] },
+              201,
+            )
+          : undefined,
+      (path) => (path === '/v1/client/sign_ins/sia_1/prepare_first_factor' ? json({ status: 'needs_first_factor' }) : undefined),
+    ]);
+    await flow.submit({ identifier: 'me@example.com' });
+    await vi.waitFor(() => expect(flow.preparedFactor()).toBe('email_code'));
+    expect(calls.filter((c) => c.path.endsWith('/prepare_first_factor')).map((c) => c.body)).toEqual([
+      { strategy: 'email_code' },
+    ]);
+
+    const ref = render(AttemptFlowComponent, {
+      attempt: flow.state().attempt,
+      firstFactors: flow.firstFactors(),
+      preparedFactor: flow.preparedFactor(),
+    });
+    const el = ref.location.nativeElement as HTMLElement;
+    expect(el.querySelector('input[name="code"]')).not.toBeNull();
+    expect(el.querySelector('input[type="password"]')).toBeNull();
+    expect(el.querySelector('[data-atlas-code-sent]')?.textContent).toContain('me@example.com');
+    expect(el.querySelector('[data-atlas-resend]')?.textContent?.trim()).toBe(EN_US['signIn.resendCode']);
+    flow.destroy();
+  });
+});

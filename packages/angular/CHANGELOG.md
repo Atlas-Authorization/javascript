@@ -1,5 +1,14 @@
 # @atlasauth/angular changelog
 
+## 0.5.1
+- **Fixed: email-code sign-in on instances without password sign-in.** After the email step the sign-in form now
+  sends the code itself (`prepare_first_factor`), shows "We sent a code to …" with the code field and a
+  "Resend code" action, and completes with `attempt_first_factor { strategy: "email_code", code }`. A password field
+  is drawn only when the server offers `password`; when it is offered, password stays the default and the emailed
+  code is one click away. If the automatic send is refused (a 429, or the app can't send email), the step shows the
+  server's error and a button to try again.
+- `AtlasFlowController` sends the code automatically when `planFirstFactor(firstFactors()).autoSend` is `email_code`. `<atlas-attempt-flow>` shows the "code sent to" line and turns "Email me a code" into "Resend code" once sent. New catalog keys: `signIn.codeSentTo`, `signIn.resendCode`.
+
 ## 0.5.0
 Requires `@atlasauth/js` 0.9.0.
 - **Server errors render in the app's language.** `<atlas-sign-in>` / `<atlas-sign-up>` (the attempt flow and

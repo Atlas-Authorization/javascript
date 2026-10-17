@@ -1,5 +1,8 @@
 # @atlasauth/lock changelog
 
+## 0.1.2
+- Depends on `@atlasauth/embed` 0.5.1: email-code sign-in works on instances without password sign-in.
+
 ## 0.1.1
 
 ### Changed

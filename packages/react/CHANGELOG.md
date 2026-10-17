@@ -1,5 +1,23 @@
 # @atlasauth/react changelog
 
+## 0.8.1
+- **Fixed: `<SignIn>` can complete an email-code sign-in.** On an instance without password sign-in, the
+  first-factor step showed a password field and posted `strategy: "password"`, which the server refused
+  (`STRATEGY_DISABLED`); no code was ever sent. It now calls `prepare_first_factor` itself, shows "We sent a code to …"
+  with a code field (`autocomplete="one-time-code"`), and completes with `attempt_first_factor { strategy: "email_code", code }`.
+- **Email link**: when `email_link` is the only factor, the link is sent and the tab polls with `poll_secret` until
+  it is opened, then signs in.
+- **Password and email code both on**: password stays the default, with "Email me a code instead" (and "Email me a
+  sign-in link instead" when offered) under it; the code step has "Use your password instead".
+- **"Resend code" / "Resend link"** on the sent step. A 429 shows its message and the button counts down the
+  server's `retry_after` ("Resend in 30s").
+- A password field is never drawn unless the server offers `password`.
+- New `AttemptFlow` props: `prepared`, `onPrepare(strategy)`, `onUsePassword()`. `useFlow()` also returns
+  `prepare(strategy)` and `usePassword()`.
+- All new strings come from the catalog (`signIn.codeSentTo`, `signIn.resendCode`, …), translated in every
+  `@atlasauth/localizations` bundle.
+- Base stylesheet: link-style buttons for these actions (`.atlas-alternatives`, `button.atlas-link`).
+
 ## 0.8.0
 - **Server errors render in the app's language.** `<SignIn>`, `<SignUp>`, the flow panels, `<ApiKeys/>` (and
   `useApiKeys().error`), `<Waitlist>`, `<ManageMfa>`, `<ManagePasskeys>`, `<EmbeddedCheckout>` and the

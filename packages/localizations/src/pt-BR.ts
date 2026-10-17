@@ -22,6 +22,15 @@ export const ptBR: LocalizationResource = {
   'signIn.magicLinkSent': 'Verifique seu e-mail para encontrar o link de acesso.',
   'signIn.checkOtherTab':
     'Você pode fechar esta aba — você já está conectado onde começou.',
+  'signIn.codeSentTo': 'Enviamos um código para {email}. Digite-o abaixo.',
+  'signIn.linkSentTo': 'Enviamos um link de acesso para {email}. Abra-o em qualquer dispositivo para continuar.',
+  'signIn.sending': 'Enviando…',
+  'signIn.resendCode': 'Reenviar código',
+  'signIn.resendLink': 'Reenviar link',
+  'signIn.resendIn': 'Reenviar em {seconds} s',
+  'signIn.emailCodeOption': 'Enviar um código por e-mail',
+  'signIn.emailLinkOption': 'Enviar um link de acesso por e-mail',
+  'signIn.passwordOption': 'Usar minha senha',
 
   'signUp.title': 'Crie sua conta',
   'signUp.submit': 'Continuar',

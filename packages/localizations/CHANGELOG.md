@@ -1,5 +1,11 @@
 # @atlasauth/localizations changelog
 
+## 0.5.0
+- **Added 9 keys for the emailed sign-in factor**, in every shipped locale (en-US, es-ES, fr-FR, de-DE, pt-BR, ja-JP,
+  nl-NL): `signIn.codeSentTo` (`{email}`), `signIn.linkSentTo` (`{email}`), `signIn.sending`, `signIn.resendCode`,
+  `signIn.resendLink`, `signIn.resendIn` (`{seconds}`), `signIn.emailCodeOption`, `signIn.emailLinkOption`,
+  `signIn.passwordOption`.
+
 ## 0.4.0
 - **Added 38 keys `error.<reason>`** — one per stable `reason` the Frontend API now sends on its errors, so the
   prebuilt components show server errors in the app's language instead of the server's English `message`.

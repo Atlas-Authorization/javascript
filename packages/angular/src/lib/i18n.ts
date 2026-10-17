@@ -25,6 +25,8 @@ export const EN_US: Catalog = {
   'signIn.socialButton': 'Continue with {provider}',
   'signIn.emailCodeLabel': 'Verification code',
   'signIn.useEmailCode': 'Email me a code',
+  'signIn.codeSentTo': 'We sent a code to {email}. Enter it below.',
+  'signIn.resendCode': 'Resend code',
   'signIn.magicLinkSent': 'Check your email for a sign-in link.',
   'signIn.checkOtherTab': 'You can close this tab — you are signed in where you started.',
 

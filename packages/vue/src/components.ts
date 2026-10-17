@@ -3,6 +3,7 @@ import {
   localizedErrorMessage,
   nextStep,
   offeredFirstFactors,
+  planFirstFactor,
   type AttemptView,
   type CaptchaController,
   type EmailDelivery,
@@ -200,6 +201,33 @@ const AttemptFlow = defineComponent({
       },
     );
 
+    // The first factors on offer for the current step, and the plan for them:
+    // a password field only when the server offers `password` (planFirstFactor).
+    const firstFactorPlan = () => {
+      const step = props.attempt ? nextStep(props.attempt) : null;
+      if (step?.kind !== 'collect_first_factor' || !props.onPrepare) return null;
+      return planFirstFactor(offeredFirstFactors(step.strategies, props.emailDelivery));
+    };
+    const send = (strategy: 'email_code' | 'email_link') =>
+      props.onPrepare?.(strategy).then((sent) => {
+        if (sent) factor.value = strategy;
+      });
+
+    // With no password on offer, email the code (or link) as soon as the step
+    // appears — once per attempt, so a failed send waits for the user's retry.
+    let autoSentFor: string | null = null;
+    watch(
+      () => [props.attempt?.id, props.attempt?.status, props.emailDelivery] as const,
+      () => {
+        const plan = firstFactorPlan();
+        const id = props.attempt?.id ?? null;
+        if (!plan?.autoSend || !id || autoSentFor === id) return;
+        autoSentFor = id;
+        void send(plan.autoSend);
+      },
+      { immediate: true },
+    );
+
     const emailChoice = (strategy: 'email_code' | 'email_link', labelKey: string): VNode =>
       h(
         'button',
@@ -210,9 +238,9 @@ const AttemptFlow = defineComponent({
           'data-strategy': strategy,
           disabled: props.busy,
           onClick: () => {
-            void props.onPrepare?.(strategy).then((sent) => {
-              if (sent) factor.value = strategy;
-            });
+            delete values.password;
+            delete values.code;
+            void send(strategy);
           },
         },
         t(labelKey),
@@ -242,13 +270,58 @@ const AttemptFlow = defineComponent({
         case 'collect_identifier':
           return [field('identifier', 'signIn.identifierLabel', 'email')];
         case 'collect_first_factor': {
-          if (factor.value === 'email_code') return [field('code', 'signIn.emailCodeLabel')];
-          if (factor.value === 'email_link') {
-            return [h('p', { key: 'link-sent', class: 'atlas-text' }, t('signIn.magicLinkSent'))];
+          const identifier = props.attempt?.identifier ?? '';
+          const plan = firstFactorPlan();
+          const usePassword =
+            plan?.password && props.onPrepare
+              ? h(
+                  'button',
+                  {
+                    key: 'use-password',
+                    class: cls('formButtonSecondary', 'atlas-button-secondary'),
+                    type: 'button',
+                    'data-strategy': 'password',
+                    disabled: props.busy,
+                    onClick: () => {
+                      delete values.code;
+                      factor.value = 'password';
+                    },
+                  },
+                  t('signIn.passwordOption'),
+                )
+              : null;
+          if (factor.value === 'email_code' || factor.value === 'email_link') {
+            const sent = factor.value;
+            return [
+              sent === 'email_code'
+                ? h('p', { key: 'code-sent', class: 'atlas-text', 'data-atlas-code-sent': '' }, t('signIn.codeSentTo', { email: identifier }))
+                : h('p', { key: 'link-sent', class: 'atlas-text', 'data-atlas-link-sent': '' }, t('signIn.linkSentTo', { email: identifier })),
+              sent === 'email_code' ? field('code', 'signIn.emailCodeLabel') : null,
+              h(
+                'button',
+                {
+                  key: 'resend',
+                  class: cls('formButtonSecondary', 'atlas-button-secondary'),
+                  type: 'button',
+                  'data-atlas-resend': '',
+                  disabled: props.busy,
+                  onClick: () => void props.onPrepare?.(sent),
+                },
+                t(sent === 'email_code' ? 'signIn.resendCode' : 'signIn.resendLink'),
+              ),
+              usePassword,
+            ].filter((node): node is VNode => node !== null);
           }
           // The server's list, minus email code / link while the app cannot
           // deliver email (a capability of the app, never of the user).
-          const offered = props.onPrepare ? offeredFirstFactors(step.strategies, props.emailDelivery) : [];
+          const offered = plan ? plan.email : [];
+          if (plan && !plan.password && offered.length > 0) {
+            // Sending on its own; if that failed, these are the retry.
+            return [
+              h('p', { key: 'sending', class: 'atlas-text', 'aria-live': 'polite' }, t('signIn.sending')),
+              ...(props.busy ? [] : offered.map((s) => emailChoice(s, s === 'email_code' ? 'signIn.useEmailCode' : 'signIn.useEmailLink'))),
+            ];
+          }
           return [
             field('password', 'signIn.passwordLabel', 'password'),
             offered.includes('email_code') ? emailChoice('email_code', 'signIn.useEmailCode') : null,
@@ -310,6 +383,13 @@ const AttemptFlow = defineComponent({
           {
             onSubmit: (event: Event) => {
               event.preventDefault();
+              // The first-factor step sends only what is on screen, so a stale
+              // value from the other method never picks the strategy.
+              const current = props.attempt ? nextStep(props.attempt) : null;
+              if (current?.kind === 'collect_first_factor') {
+                props.onSubmit(factor.value === 'email_code' ? { code: values.code ?? '' } : { password: values.password ?? '' });
+                return;
+              }
               props.onSubmit({ ...values });
             },
           },
@@ -320,7 +400,8 @@ const AttemptFlow = defineComponent({
               : null,
             step.kind !== 'done' &&
             step.kind !== 'await_oauth' &&
-            !(step.kind === 'collect_first_factor' && factor.value === 'email_link')
+            !(step.kind === 'collect_first_factor' && factor.value === 'email_link') &&
+            !(step.kind === 'collect_first_factor' && factor.value === 'password' && firstFactorPlan()?.password === false && (firstFactorPlan()?.email.length ?? 0) > 0)
               ? h(
                   'button',
                   {

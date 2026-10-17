@@ -55,6 +55,9 @@ interface StepField {
       }
 
       <form (submit)="onSubmit($event)">
+        @if (codeSentText(); as sentText) {
+          <p class="atlas-text" data-atlas-code-sent="">{{ sentText }}</p>
+        }
         @for (f of fields(); track $index) {
           @if (f.kind === 'input') {
             <label class="atlas-field">
@@ -90,9 +93,11 @@ interface StepField {
             [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
             [disabled]="busy"
             type="button"
+            [attr.data-strategy]="preparedFactor === 'email_code' ? null : 'email_code'"
+            [attr.data-atlas-resend]="preparedFactor === 'email_code' ? '' : null"
             (click)="chooseFactor.emit('email_code')"
           >
-            {{ t('signIn.useEmailCode') }}
+            {{ t(preparedFactor === 'email_code' ? 'signIn.resendCode' : 'signIn.useEmailCode') }}
           </button>
         }
       </form>
@@ -177,7 +182,15 @@ export class AttemptFlowComponent {
   }
 
   protected showEmailCodeOption(): boolean {
-    return this.preparedFactor !== 'email_code' && this.offered().includes('email_code');
+    // Before the code is sent: the choice (or the retry of a failed automatic
+    // send). After: "Resend code".
+    return this.offered().includes('email_code');
+  }
+
+  /** The "we sent a code to …" line on the code step. */
+  protected codeSentText(): string | null {
+    if (this.step().kind !== 'collect_first_factor' || this.preparedFactor !== 'email_code') return null;
+    return this.t('signIn.codeSentTo', { email: this.attempt?.identifier ?? '' });
   }
 
   protected showSubmit(): boolean {

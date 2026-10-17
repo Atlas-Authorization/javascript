@@ -21,6 +21,15 @@ export const nlNL: Localization = {
   'signIn.magicLinkSent': 'Controleer je e-mail voor een inloglink.',
   'signIn.checkOtherTab':
     'Je kunt dit tabblad sluiten — je bent ingelogd waar je begon.',
+  'signIn.codeSentTo': 'We hebben een code naar {email} gestuurd. Vul die hieronder in.',
+  'signIn.linkSentTo': 'We hebben een inloglink naar {email} gestuurd. Open die op een willekeurig apparaat om verder te gaan.',
+  'signIn.sending': 'Bezig met verzenden…',
+  'signIn.resendCode': 'Code opnieuw sturen',
+  'signIn.resendLink': 'Link opnieuw sturen',
+  'signIn.resendIn': 'Opnieuw sturen over {seconds} s',
+  'signIn.emailCodeOption': 'Stuur me liever een code',
+  'signIn.emailLinkOption': 'Stuur me liever een inloglink',
+  'signIn.passwordOption': 'Gebruik liever mijn wachtwoord',
 
   'signUp.title': 'Maak je account aan',
   'signUp.submit': 'Doorgaan',

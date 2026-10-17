@@ -13,6 +13,7 @@ import {
   offeredFirstFactors,
   pollAttempt,
   prepareFactor,
+  planFirstFactor,
   shouldKeepPolling,
   type CaptchaController,
   type FlowState,
@@ -142,6 +143,21 @@ export class AtlasFlowController {
     // A prepared factor belongs to the first-factor step it was sent for.
     if (next.attempt?.status !== 'needs_first_factor') this.preparedFactor.set(null);
     this.syncCaptcha();
+    this.autoSend();
+  }
+
+  private autoSentFor: string | null = null;
+  /**
+   * With no password on offer, email the code as soon as the server asks for a
+   * first factor — once per attempt, so a failed send waits for the user's retry
+   * (the "Email me a code" button) instead of looping.
+   */
+  private autoSend(): void {
+    const id = this.state().attempt?.id ?? null;
+    if (!id || this.autoSentFor === id || this.preparedFactor()) return;
+    if (planFirstFactor(this.firstFactors()).autoSend !== 'email_code') return;
+    this.autoSentFor = id;
+    void this.prepare('email_code');
   }
 
   /**

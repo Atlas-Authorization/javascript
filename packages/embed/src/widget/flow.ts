@@ -9,6 +9,10 @@ import {
   nativeSignInBody,
   nextStep,
   parseNativeSignInResponse,
+  planFirstFactor,
+  pollAttempt,
+  prepareFactor,
+  shouldKeepPolling,
   readRedirectResult,
   resetStep,
   sendTelemetry,
@@ -270,6 +274,14 @@ export async function submit(w: AtlasWidget, values: Record<string, string>): Pr
     w.state = { ...initialFlow, errors: w.state.errors };
   }
 
+  // §5.3 no password on offer: email the code (else link) now, so the next
+  // screen collects it instead of asking for a password the app refuses.
+  const ffStep = w.state.attempt ? nextStep(w.state.attempt) : null;
+  if (ffStep?.kind === 'collect_first_factor' && !w.state.prepared && w.state.errors.length === 0) {
+    const auto = planFirstFactor(w.emailDeliveryAvailable ? ffStep.strategies : ffStep.strategies.filter((s) => s !== 'email_code' && s !== 'email_link')).autoSend;
+    if (auto) await sendEmailFactor(w, auto, false);
+  }
+
   const attempt = w.state.attempt;
   if (attempt?.status === 'complete') {
     const attemptId = (attempt as { id?: string }).id ?? null;
@@ -278,6 +290,54 @@ export async function submit(w: AtlasWidget, values: Record<string, string>): Pr
     return;
   }
   render(w);
+}
+
+/**
+ * §5.3 send (or resend) the emailed code or link for the current first-factor
+ * step. A refusal (a 429, or an app that cannot send email) stays on the step
+ * with the server's error. A link starts the poll that signs this tab in once
+ * the link is opened on any device.
+ */
+export async function sendEmailFactor(
+  w: AtlasWidget,
+  strategy: 'email_code' | 'email_link',
+  rerender = true,
+): Promise<void> {
+  if (rerender) {
+    if (w.busy) return;
+    w.busy = true;
+    render(w);
+  }
+  const before = w.state.prepared ?? null;
+  const next = await prepareFactor(w.client, w.state, strategy);
+  // A failed resend keeps the step the user was on.
+  w.state = next.errors.length > 0 ? { ...next, prepared: before } : next;
+  if (strategy === 'email_link' && next.errors.length === 0) startLinkPoll(w);
+  if (rerender) {
+    w.busy = false;
+    render(w);
+  }
+}
+
+function startLinkPoll(w: AtlasWidget): void {
+  if (w.linkPoll) clearInterval(w.linkPoll);
+  w.linkPoll = setInterval(() => {
+    void (async () => {
+      if (!shouldKeepPolling(w.state)) {
+        if (w.linkPoll) clearInterval(w.linkPoll);
+        w.linkPoll = null;
+        return;
+      }
+      const { state, ticket } = await pollAttempt(w.client, w.state);
+      w.state = state;
+      if (!ticket || !state.attempt) return;
+      if (w.linkPoll) clearInterval(w.linkPoll);
+      w.linkPoll = null;
+      const attemptId = (state.attempt as { id?: string }).id ?? null;
+      if (attemptId) await exchange(w, attemptId, ticket);
+      await complete(w, attemptId);
+    })();
+  }, 2_000);
 }
 
 export async function startOAuth(w: AtlasWidget, provider: string, identifier?: string): Promise<void> {

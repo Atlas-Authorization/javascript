@@ -299,4 +299,31 @@ describe('email delivery', () => {
       code: '123456',
     });
   });
+
+  it('<SignIn> with no password on offer emails the code by itself and never shows a password field', async () => {
+    const el = await mountFlow(SignIn, {
+      routes: [
+        (c) =>
+          c.path === '/v1/client/sign_ins'
+            ? json({ id: 'sia_9', status: 'needs_first_factor', supported_first_factors: ['email_code', 'passkey'] }, 201)
+            : undefined,
+        (c) => (c.path === '/v1/client/sign_ins/sia_9/prepare_first_factor' ? json({}) : undefined),
+      ],
+    });
+    setInput(el, 'identifier', 'me@example.com');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    expect(el.querySelector('input[name="password"]')).toBeNull();
+    expect(posts('/v1/client/sign_ins/sia_9/prepare_first_factor')).toHaveLength(1);
+    expect(posts('/v1/client/sign_ins/sia_9/prepare_first_factor')[0]!.body).toEqual({ strategy: 'email_code' });
+    expect(el.querySelector('[data-atlas-resend]')).not.toBeNull();
+
+    setInput(el, 'code', '123456');
+    submit(el);
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sia_9/attempt_first_factor')).toHaveLength(1));
+    expect(posts('/v1/client/sign_ins/sia_9/attempt_first_factor')[0]!.body).toEqual({
+      strategy: 'email_code',
+      code: '123456',
+    });
+  });
 });

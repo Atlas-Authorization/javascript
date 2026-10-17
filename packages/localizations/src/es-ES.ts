@@ -22,6 +22,15 @@ export const esES: LocalizationResource = {
   'signIn.magicLinkSent': 'Revisa tu correo para encontrar el enlace de acceso.',
   'signIn.checkOtherTab':
     'Puedes cerrar esta pestaña: ya has iniciado sesión donde empezaste.',
+  'signIn.codeSentTo': 'Hemos enviado un código a {email}. Introdúcelo a continuación.',
+  'signIn.linkSentTo': 'Hemos enviado un enlace de inicio de sesión a {email}. Ábrelo en cualquier dispositivo para continuar.',
+  'signIn.sending': 'Enviando…',
+  'signIn.resendCode': 'Reenviar código',
+  'signIn.resendLink': 'Reenviar enlace',
+  'signIn.resendIn': 'Reenviar en {seconds} s',
+  'signIn.emailCodeOption': 'Envíame un código por correo',
+  'signIn.emailLinkOption': 'Envíame un enlace de inicio de sesión',
+  'signIn.passwordOption': 'Usar mi contraseña',
 
   'signUp.title': 'Crea tu cuenta',
   'signUp.submit': 'Continuar',

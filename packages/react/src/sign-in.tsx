@@ -21,7 +21,7 @@ import {
 } from './flow';
 
 export function SignIn(props: FlowProps = {}) {
-  const { state, submit, client, finish, captcha } = useFlow({ afterUrl: props.afterUrl });
+  const { state, submit, client, finish, captcha, prepare, usePassword } = useFlow({ afterUrl: props.afterUrl });
 
   return (
     <>
@@ -33,6 +33,9 @@ export function SignIn(props: FlowProps = {}) {
         hideTitle={props.hideTitle}
         onSubmit={submit}
         captcha={<CaptchaSlot controller={captcha} />}
+        prepared={state.prepared ?? null}
+        onPrepare={prepare}
+        onUsePassword={usePassword}
       />
       {/* Social buttons belong on the first step, not mid-flow (e.g. during a
           second factor). `!state.attempt` is exactly the initial identifier step. */}

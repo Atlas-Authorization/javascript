@@ -13,11 +13,15 @@ import {
   nativeSignIn,
   nextStep,
   offeredFirstFactors,
+  planFirstFactor,
+  prepareFactor,
+  retryAfterSeconds,
   renderGoogleOverlayButton,
   reportProviderUnavailable,
   startOauthRedirect,
   startOauthPopup,
   type AttemptView,
+  type EmailFactor,
   type FieldError,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
@@ -115,6 +119,9 @@ export function AttemptFlow({
   titleKey,
   hideTitle,
   captcha,
+  prepared = null,
+  onPrepare,
+  onUsePassword,
 }: {
   attempt: AttemptView | null;
   onSubmit(values: Record<string, string>): void;
@@ -128,6 +135,18 @@ export function AttemptFlow({
    * the server demands with `needs_captcha`.
    */
   captcha?: ReactNode;
+  /**
+   * §5.3 the emailed factor this attempt was sent (`FlowState.prepared`): the
+   * first-factor step then collects the code, or says to open the link.
+   */
+  prepared?: EmailFactor | null;
+  /**
+   * Send (or resend) an emailed factor (`useFlow().prepare`). Without it the
+   * first-factor step offers the password only.
+   */
+  onPrepare?(strategy: EmailFactor): void;
+  /** Back from the emailed factor to the password field. */
+  onUsePassword?(): void;
 }) {
   const t = useText();
   const errorText = useErrorText();
@@ -153,14 +172,45 @@ export function AttemptFlow({
       : [];
   const noFirstFactor =
     step.kind === 'collect_first_factor' && step.strategies.length > 0 && firstFactors.length === 0;
+  /**
+   * Password only when the server offers it; otherwise `useFlow` has already
+   * emailed the code (or link) and this step collects it. See `planFirstFactor`.
+   */
+  const plan = planFirstFactor(firstFactors);
+  const emailOptions = onPrepare ? plan.email : [];
+  const sent = step.kind === 'collect_first_factor' && !noFirstFactor ? prepared : null;
+  // Sending on its own (no password on offer): nothing to type until it lands.
+  const sending =
+    step.kind === 'collect_first_factor' && !noFirstFactor && sent === null && !plan.password && emailOptions.length > 0;
+  const identifier = (attempt as { identifier?: string | null } | null)?.identifier ?? '';
 
-  const field = (name: string, labelKey: string, type = 'text') => (
+  /**
+   * "Resend" waits out the server's `retry_after` when it answered 429, rather
+   * than letting the user hit the same limit again.
+   */
+  const waitFor = step.kind === 'collect_first_factor' ? retryAfterSeconds(errors) : null;
+  const [cooldown, setCooldown] = useState(0);
+  useEffect(() => {
+    if (!waitFor) return;
+    setCooldown(waitFor);
+    const timer = setInterval(() => setCooldown((s) => (s <= 1 ? 0 : s - 1)), 1_000);
+    return () => clearInterval(timer);
+  }, [waitFor, errors]);
+
+  const field = (
+    name: string,
+    labelKey: string,
+    type = 'text',
+    extra: { autoComplete?: string; inputMode?: 'numeric' } = {},
+  ) => (
     <label key={name} className={cls('formField', 'atlas-field')}>
       <span className={cls('formFieldLabel', 'atlas-field-label')}>{t(labelKey)}</span>
       <input
         className={inputClass}
         type={type}
         name={name}
+        autoComplete={extra.autoComplete}
+        inputMode={extra.inputMode}
         value={values[name] ?? ''}
         onChange={(event) => setValues((v) => ({ ...v, [name]: event.target.value }))}
       />
@@ -186,7 +236,29 @@ export function AttemptFlow({
             </p>,
           ];
         }
-        return [field('password', 'signIn.passwordLabel', 'password')];
+        if (sent === 'email_code') {
+          return [
+            <p key="code-sent" className={cls('text', 'atlas-text')} data-atlas-code-sent="">
+              {t('signIn.codeSentTo', { email: identifier })}
+            </p>,
+            field('code', 'signIn.emailCodeLabel', 'text', { autoComplete: 'one-time-code', inputMode: 'numeric' }),
+          ];
+        }
+        if (sent === 'email_link') {
+          return [
+            <p key="link-sent" className={cls('text', 'atlas-text')} data-atlas-link-sent="">
+              {t('signIn.linkSentTo', { email: identifier })}
+            </p>,
+          ];
+        }
+        if (sending) {
+          return [
+            <p key="sending" className={cls('text', 'atlas-text')} aria-live="polite">
+              {t('signIn.sending')}
+            </p>,
+          ];
+        }
+        return [field('password', 'signIn.passwordLabel', 'password', { autoComplete: 'current-password' })];
       case 'collect_second_factor':
         return [field('code', 'mfa.codeLabel')];
       case 'enroll_second_factor':
@@ -249,15 +321,74 @@ export function AttemptFlow({
       <form
         onSubmit={(event) => {
           event.preventDefault();
+          // The first-factor step sends only what is on screen: a code after an
+          // emailed one, else the password. A stale value from the other method
+          // must never pick the strategy.
+          if (step.kind === 'collect_first_factor') {
+            onSubmit(sent === 'email_code' ? { code: values.code ?? '' } : { password: values.password ?? '' });
+            return;
+          }
           onSubmit(values);
         }}
       >
         {fields()}
         {step.kind === 'collect_identifier' || step.kind === 'collect_captcha' ? captcha : null}
-        {step.kind !== 'done' && step.kind !== 'await_oauth' && !noFirstFactor ? (
+        {step.kind !== 'done' && step.kind !== 'await_oauth' && !noFirstFactor && sent !== 'email_link' && !sending ? (
           <button className={buttonClass} disabled={busy} type="submit">
             {t('signIn.submit')}
           </button>
+        ) : null}
+        {step.kind === 'collect_first_factor' && !noFirstFactor ? (
+          <div className="atlas-alternatives">
+            {sent
+              ? (
+                  <button
+                    type="button"
+                    className={cls('link', 'atlas-link')}
+                    data-atlas-resend=""
+                    disabled={busy || cooldown > 0}
+                    onClick={() => onPrepare?.(sent)}
+                  >
+                    {cooldown > 0
+                      ? t('signIn.resendIn', { seconds: String(cooldown) })
+                      : t(sent === 'email_code' ? 'signIn.resendCode' : 'signIn.resendLink')}
+                  </button>
+                )
+              : null}
+            {emailOptions
+              // While the automatic send is in flight there is nothing to choose; if
+              // it failed, these are the retry.
+              .filter((strategy) => strategy !== sent && !(sending && busy))
+              .map((strategy) => (
+                <button
+                  key={strategy}
+                  type="button"
+                  className={cls('link', 'atlas-link')}
+                  data-strategy={strategy}
+                  disabled={busy || cooldown > 0}
+                  onClick={() => {
+                    setValues({});
+                    onPrepare?.(strategy);
+                  }}
+                >
+                  {t(strategy === 'email_code' ? 'signIn.emailCodeOption' : 'signIn.emailLinkOption')}
+                </button>
+              ))}
+            {sent && plan.password && onUsePassword ? (
+              <button
+                type="button"
+                className={cls('link', 'atlas-link')}
+                data-strategy="password"
+                disabled={busy}
+                onClick={() => {
+                  setValues({});
+                  onUsePassword();
+                }}
+              >
+                {t('signIn.passwordOption')}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </form>
     </div>
@@ -417,6 +548,47 @@ export function useFlow({
   );
   submitRef.current = submit;
 
+  /**
+   * §5.3 send (or resend) an emailed code or link for the current first-factor
+   * step. A refusal — a 429 with `retry_after`, or the app unable to send email —
+   * stays on the step with the server's error, so the form never claims a code is
+   * on its way when none is.
+   */
+  const prepare = useCallback(
+    (strategy: EmailFactor) => {
+      void (async () => {
+        setState((current) => ({ ...current, busy: true, errors: [] }));
+        const next = await prepareFactor(client, { ...state, busy: true }, strategy);
+        // A failed resend keeps the step the user was on.
+        setState(next.errors.length > 0 ? { ...next, prepared: state.prepared ?? null } : next);
+      })();
+    },
+    [client, state],
+  );
+
+  /** Back from the emailed factor to the password field. */
+  const usePassword = useCallback(() => {
+    setState((current) => ({ ...current, prepared: null, pollSecret: null, errors: [] }));
+  }, []);
+
+  /**
+   * With no password on offer, email the code (or link) as soon as the server
+   * asks for a first factor — once per attempt, so a failed send waits for the
+   * user to retry instead of looping.
+   */
+  const step = state.attempt ? nextStep(state.attempt) : null;
+  const autoSend =
+    step?.kind === 'collect_first_factor'
+      ? planFirstFactor(offeredFirstFactors(step.strategies, instanceSettings?.emailDelivery)).autoSend
+      : null;
+  const attemptId = state.attempt?.id ?? null;
+  const autoSentFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!autoSend || !attemptId || state.prepared || autoSentFor.current === attemptId) return;
+    autoSentFor.current = attemptId;
+    prepare(autoSend);
+  }, [autoSend, attemptId, prepare, state.prepared]);
+
   /** §5.3: collect a sign-in completed by a link opened on another device. */
   useEffect(() => {
     if (!shouldKeepPolling(state)) return;
@@ -442,7 +614,7 @@ export function useFlow({
     return () => clearInterval(timer);
   }, [afterUrl, client, reload, state]);
 
-  return { state, setState, submit, client, finish, captcha };
+  return { state, setState, submit, client, finish, captcha, prepare, usePassword };
 }
 
 /** Google's multi-color "G" mark — trusted, static, first-party SVG. */
