@@ -1,5 +1,21 @@
 # @atlasauth/svelte changelog
 
+## 0.6.0
+- **New `initAtlas({ onSignOut })` and `client.onSignOut(listener)`**: `onSignOut({ reason, sessionId })` fired once each time a signed-in user becomes signed out, on every
+  path: `reason` is `user` (this tab), `other_tab`, `session_expired`, `revoked` (the session was ended elsewhere,
+  detected on the next token refresh or re-check) or `unknown`. The same event is dispatched on `window` as
+  `atlas:signout`. Use it to reset an embedded widget (a support chat, a docs reader session).
+- **`getToken({ template })`**: a short-lived token from a named JWT template for the current session (for
+  example `'chatly'`, a support-chat identity token, when the instance has a Chatly connection).
+- **SDK version advisories.** Every Frontend API request carries `X-Atlas-SDK: @atlasauth/svelte/<version>`. When the
+  response carries `Atlas-SDK-Advisory: upgrade; min=<version>; reason=<code>` (a version with a known bug), the SDK
+  logs one console warning per advisory per page load. The Frontend API must allow the header in CORS, which Atlas
+  does; a reverse proxy that forwards a fixed `Access-Control-Allow-Headers` list must add `x-atlas-sdk`.
+- Requires `@atlasauth/js` 0.12.0.
+- The prebuilt forms draw the **Atlas captcha** (provider `atlas`, no keys needed) through `@atlasauth/js` 0.12.0,
+  with its words from the form's catalog. New catalog keys: `captcha.checking`, `captcha.verified`,
+  `captcha.puzzlePrompt`, `captcha.puzzleConfirm`, `captcha.puzzleTile`, `captcha.puzzleAlternative`.
+
 ## 0.5.1
 - **Fixed: email-code sign-in on instances without password sign-in.** After the email step the sign-in form now
   sends the code itself (`prepare_first_factor`), shows "We sent a code to …" with the code field and a

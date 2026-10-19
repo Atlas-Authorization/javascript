@@ -178,6 +178,25 @@ The platform client has these namespaces:
 
 It accepts the same `strict`, `onUnknownFields` and `withOptions` settings.
 
+### Domain moves, logout fan-out and managed email
+
+```ts
+// Move every URL from the old origin to the new one. dry_run first shows the diff.
+const preview = await atlas.instance.moveOrigin({ from: 'https://old.example.com', to: 'https://example.com', dry_run: true });
+for (const c of preview.changes) console.log(c.object, c.field, c.before, '->', c.after);
+
+// Send the same logout_token your OIDC apps get to another service.
+await atlas.logoutNotifyEndpoints.create({ url: 'https://api.example.com/atlas/logout' });
+
+// Send email from your own domain through Atlas, then publish the returned DNS records.
+const managed = await atlas.messaging.managedEmail.create({ from_address: 'Acme <no-reply@example.com>' });
+console.log(managed.records);
+```
+
+On the platform client, `atlasIdApps.findUsers(id, email)` answers a privacy request for one app,
+`atlasIdApps.revokeGrant(id, grantId)` revokes one person's approval, and `atlasIdPublisher` claims and verifies
+the publisher name shown on consent screens.
+
 ## Back-channel logout
 
 When a user signs out of Atlas, Atlas POSTs a `logout_token` to your `backchannel_logout_uri`. Verify it before you end the matching local sessions:
@@ -198,7 +217,13 @@ export async function handleBackchannelLogout(form: URLSearchParams) {
   if (!token) return { status: 400, headers };
 
   const result = await logoutTokens.verify(token);
-  if (!result.ok) return { status: 400, headers };
+  if (!result.ok) {
+    // retryable: our side failed for now (the issuer's keys could not be fetched).
+    // 503 + Retry-After makes Atlas send it again; 400 is final and never retried.
+    return result.retryable
+      ? { status: 503, headers: { ...headers, 'Retry-After': '30' } }
+      : { status: 400, headers };
+  }
 
   const { sid, sub } = result.claims;
   if (sid) await sessions.deleteByAtlasSid(sid); // your session store
@@ -221,6 +246,10 @@ The verifier checks the following:
 For tokens signed by your own instance, `new AtlasBackend({ issuer }).verifyLogoutToken(token, { clientId })` reuses the instance's cached keys.
 
 To refuse replays across several servers, implement `LogoutReplayStore.remember(jti, expiresAtMs)` on a shared store, for example Redis `SET NX PX`.
+
+Atlas retries a delivery that gets a `5xx`, `408`, `429` or no answer, after 5 seconds, 5 minutes, 30 minutes, 2 hours, 5 hours and 10 hours. Any other `4xx` is final. Atlas never follows a redirect: a `3xx` answer is recorded as `backchannel_redirect_not_followed`, so after a domain move update `backchannel_logout_uri` to the final URL. Answer your own transient failures (a database that is down) with `503` too.
+
+To check the route end to end, `oauthClients.testBackchannelLogout(id)` sends a signed test token (`sid` starting `sid_test_`, extra claim `atlas_test: true`) and returns what your route answered; `oauthClients.listBackchannelDeliveries(id)` lists every attempt.
 
 ## Webhooks
 

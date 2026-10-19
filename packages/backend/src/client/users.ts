@@ -17,6 +17,12 @@ export interface User {
   last_sign_in_at: number | null;
   created_at: number;
   updated_at: number;
+  /**
+   * Strictly increases with every change to the user; user webhook payloads
+   * carry the same value. Apply an update only if its version is higher than
+   * the one you hold. (Absent from servers older than this field.)
+   */
+  version?: number;
 }
 
 export interface EmailAddress {
@@ -120,10 +126,19 @@ export function usersResource(request: RequestFn) {
     listSessions(id: string): Promise<ListPage<UserSession>> {
       return request({ method: 'GET', path: `/v1/users/${enc(id)}/sessions` });
     },
+    /**
+     * Revoke every session of the user. `{ revoke_grants: true }` also revokes the
+     * user's OAuth grants, so app refresh tokens stop minting access tokens.
+     */
     revokeSessions(
       id: string,
-    ): Promise<{ object: 'user'; id: string; sessions_revoked: number }> {
-      return request({ method: 'POST', path: `/v1/users/${enc(id)}/sessions/revoke` });
+      options: { revoke_grants?: boolean } = {},
+    ): Promise<{ object: 'user'; id: string; sessions_revoked: number; grants_revoked?: number }> {
+      return request({
+        method: 'POST',
+        path: `/v1/users/${enc(id)}/sessions/revoke`,
+        ...(options.revoke_grants !== undefined ? { body: { revoke_grants: options.revoke_grants } } : {}),
+      });
     },
     addEmail(id: string, body: { email_address: string }): Promise<EmailAddress> {
       return request({ method: 'POST', path: `/v1/users/${enc(id)}/email_addresses`, body });

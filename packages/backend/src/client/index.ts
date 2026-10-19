@@ -54,6 +54,7 @@ import { connectorsResource } from './connectors';
 import { notificationsResource } from './notifications';
 import { auditEventsResource } from './audit-events';
 import { configChangelogResource, eventsResource, usageResource } from './activity';
+import { logoutNotifyEndpointsResource } from './logout-notify-endpoints';
 import { pcaResource } from './pca';
 import { mcpConnectorResource, mcpResource } from './mcp';
 import { legacyAuthConnectionResource } from './legacy-auth';
@@ -160,6 +161,8 @@ function buildNamespaces(request: RequestFn) {
     // Development-instance helpers: the paired test instance, test users, testing tokens.
     testMode: testModeResource(request),
     diagnostics: diagnosticsResource(request),
+    // Downstream services that get the same logout_token as your OIDC apps.
+    logoutNotifyEndpoints: logoutNotifyEndpointsResource(request),
   };
 }
 
@@ -253,4 +256,5 @@ export * from './session-exchange-apps';
 export * from './tickets';
 export * from './test-mode';
 export * from './diagnostics';
+export * from './logout-notify-endpoints';
 export * from './platform';

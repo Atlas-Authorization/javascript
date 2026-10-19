@@ -61,6 +61,12 @@ export interface User {
   last_sign_in_at: number | null;
   created_at: number;
   updated_at: number;
+  /**
+   * Strictly increases with every change to the user; user webhook payloads
+   * carry the same value. Apply an update only if its version is higher than
+   * the one you hold. (Absent from servers older than this field.)
+   */
+  version?: number;
 }
 
 export interface EmailAddress {

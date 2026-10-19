@@ -38,3 +38,5 @@ export {
 } from './appearance';
 export { providerIcon } from './icons';
 export { widgetDesign, type WidgetDesign } from './design';
+
+export { ATLAS_EMBED_SDK, ATLAS_EMBED_VERSION } from './version';

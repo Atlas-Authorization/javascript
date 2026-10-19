@@ -36,7 +36,16 @@ import {
   type TombstoneStore,
   type AtlasInitialState,
   runFrontChannelLogoutFromResponse,
+  SDK_HEADER,
+  SignOutNotifier,
+  getTemplateToken,
+  reportSdkAdvisory,
+  sdkHeaderValue,
+  signOutReasonFromClient,
+  type SignOutEvent,
+  type SignOutListener,
 } from '@atlasauth/js';
+import { ATLAS_REACT_SDK } from './version';
 import { resolveLocale, type SupportedLocale } from '@atlasauth/localizations';
 import {
   classFor,
@@ -125,7 +134,18 @@ interface AtlasContextValue {
    * instead of starting over.
    */
   pendingAttempt: { id: string; status: string } | null;
-  getToken(): Promise<string | null>;
+  /**
+   * The session JWT, or with `{ template }` a short-lived token from a named JWT
+   * template (e.g. `'chatly'` for a support-chat identity). Null when signed out
+   * or the template does not exist.
+   */
+  getToken(options?: { template?: string }): Promise<string | null>;
+  /**
+   * Listen for sign-out on every path (this tab, another tab, session expiry,
+   * a session ended elsewhere detected on the next refresh). Returns the
+   * unsubscribe. `<AtlasProvider onSignOut>` and `useSignOutListener` wrap it.
+   */
+  addSignOutListener(listener: SignOutListener): () => void;
   /**
    * §6.6 the signed-in user's OWN live token at a connected provider (Google,
    * GitHub, …), so the app can call that provider's API. Null when there is no
@@ -228,6 +248,16 @@ export interface AtlasProviderProps {
    * actions (redirect, toast, analytics).
    */
   onSignedIn?: (user: AtlasUser) => void;
+  /**
+   * Fires ONCE when a signed-in user becomes signed out, whatever the path:
+   * `reason` is `user` (this tab signed out), `other_tab`, `session_expired`,
+   * `revoked` (ended elsewhere: another device, an admin, a ban — detected on
+   * the next token refresh, within the token lifetime) or `unknown`. The place
+   * to reset embedded third parties (a chat widget, a docs reader session).
+   * Not fired on a page load that boots signed out. The same event is also
+   * dispatched on `window` as `atlas:signout`.
+   */
+  onSignOut?: (event: SignOutEvent) => void;
   children: ReactNode;
   fetchImpl?: typeof fetch;
   /**
@@ -297,6 +327,11 @@ export function AtlasProvider(props: AtlasProviderProps) {
     });
   }
   const sessionIdRef = useRef<string | null>(null);
+  // ATL-S-30 sign-out events: one notifier per provider; reasons are hinted by
+  // the code path that is about to sign the tab out, and fired on the
+  // signed_in → signed_out transition below.
+  const notifier = useRef<SignOutNotifier | null>(null);
+  if (!notifier.current) notifier.current = new SignOutNotifier();
 
   /**
    * Captured synchronously during the first render (not in an effect) so it is
@@ -313,17 +348,21 @@ export function AtlasProvider(props: AtlasProviderProps) {
 
   const call = useCallback(
     async (path: string, init?: RequestInit) => {
-      return doFetch(`${baseUrl}${path}`, {
+      const response = await doFetch(`${baseUrl}${path}`, {
         ...init,
         // Cookies carry the session; a fetch without this looks identical to
         // being signed out.
         credentials: 'include',
         headers: {
           'x-publishable-key': publishableKey,
+          // Names this SDK so the Frontend API can flag a version with a known bug.
+          [SDK_HEADER]: sdkHeaderValue(ATLAS_REACT_SDK),
           ...(init?.body ? { 'content-type': 'application/json' } : {}),
           ...init?.headers,
         },
       });
+      reportSdkAdvisory(response, ATLAS_REACT_SDK);
+      return response;
     },
     [baseUrl, doFetch, publishableKey],
   );
@@ -369,6 +408,11 @@ export function AtlasProvider(props: AtlasProviderProps) {
       }
 
       if (!body.session || !body.user || tombstoned) {
+        // Why we are signed out, when we were signed in: a path that already
+        // said (this tab, another tab) wins; otherwise the server's reason.
+        if (sessionIdRef.current) {
+          notifier.current?.expect(tombstoned ? 'other_tab' : signOutReasonFromClient(body));
+        }
         sessionIdRef.current = null;
         cache.current.clear();
         setStatus('signed_out');
@@ -381,6 +425,9 @@ export function AtlasProvider(props: AtlasProviderProps) {
       }
 
       sessionIdRef.current = body.session.id;
+      // Still (or newly) signed in: a hint from a signal that did not sign us
+      // out must not be reported by a later, unrelated sign-out.
+      notifier.current?.clear();
       setUser(body.user);
       setSession(body.session);
       // §L1 the multi-session list, active first. Older servers omit it; fall
@@ -488,7 +535,10 @@ export function AtlasProvider(props: AtlasProviderProps) {
       if (Array.isArray(signal.signedOut)) {
         const ids = signal.signedOut.filter((id): id is string => typeof id === 'string');
         tombstones.current?.add(...ids);
-        if (sessionIdRef.current && ids.includes(sessionIdRef.current)) cache.current.clear();
+        if (sessionIdRef.current && ids.includes(sessionIdRef.current)) {
+          notifier.current?.expect('other_tab');
+          cache.current.clear();
+        }
       }
       void reloadRef.current();
     });
@@ -496,6 +546,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
     // store before, or without, its broadcast): drop the token and re-check.
     const unsubTombstones = tombstones.current?.subscribe((ids) => {
       if (sessionIdRef.current && ids.includes(sessionIdRef.current)) {
+        notifier.current?.expect('other_tab');
         cache.current.clear();
         void reloadRef.current();
       }
@@ -572,15 +623,25 @@ export function AtlasProvider(props: AtlasProviderProps) {
     // stable across renders.
   }, []);
 
-  const getToken = useCallback(async () => {
-    // A 5s skew so a token that would die inside the caller's request is
-    // refreshed first rather than handed over.
-    const usable = cache.current.get(5_000);
-    if (usable) return usable.jwt;
+  const getToken = useCallback(
+    async (options?: { template?: string }) => {
+      if (options?.template) {
+        // A named-template token for the current session; minted fresh (never
+        // cached): it is short-lived and usually handed to a third party once.
+        const sessionId = cache.current.peek()?.sessionId ?? sessionIdRef.current;
+        if (!sessionId) return null;
+        return (await getTemplateToken(fapiClientRef.current!, sessionId, options.template))?.jwt ?? null;
+      }
+      // A 5s skew so a token that would die inside the caller's request is
+      // refreshed first rather than handed over.
+      const usable = cache.current.get(5_000);
+      if (usable) return usable.jwt;
 
-    await refresh();
-    return cache.current.get(5_000)?.jwt ?? null;
-  }, [refresh]);
+      await refresh();
+      return cache.current.get(5_000)?.jwt ?? null;
+    },
+    [refresh],
+  );
 
   /**
    * The FAPI client for the token-vault read. Reuses the exact same
@@ -589,9 +650,11 @@ export function AtlasProvider(props: AtlasProviderProps) {
    * single implementation the React SDK surfaces.
    */
   const fapiClient = useMemo(
-    () => new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale: requestLocale }),
+    () => new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale: requestLocale, sdk: ATLAS_REACT_SDK }),
     [publishableKey, baseUrl, doFetch, requestLocale],
   );
+  const fapiClientRef = useRef(fapiClient);
+  fapiClientRef.current = fapiClient;
 
   const getProviderToken = useCallback(
     (provider: string) => fetchProviderToken(fapiClient, provider),
@@ -616,6 +679,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
           outcome = { revoked: false, status: 0 };
         }
       }
+      notifier.current?.expect('user');
       if (sessionId) {
         // Remember it first: from here on nothing in this tab may re-adopt it.
         tombstones.current?.add(sessionId);
@@ -712,13 +776,31 @@ export function AtlasProvider(props: AtlasProviderProps) {
   const onSignedInRef = useRef(props.onSignedIn);
   onSignedInRef.current = props.onSignedIn;
   const prevStatusRef = useRef<AuthStatus>('loading');
+  // ATL-S-30 the session that was signed in, for the sign-out event.
+  const lastSessionRef = useRef<string | null>(null);
   useEffect(() => {
     const was = prevStatusRef.current;
     prevStatusRef.current = status;
     if (was === 'signed_out' && status === 'signed_in' && user) {
       onSignedInRef.current?.(user);
     }
-  }, [status, user]);
+    if (status === 'signed_in') lastSessionRef.current = session?.id ?? lastSessionRef.current;
+    if (was === 'signed_in' && status === 'signed_out') {
+      const ended = lastSessionRef.current;
+      lastSessionRef.current = null;
+      notifier.current?.signedOut(ended);
+    }
+  }, [status, user, session]);
+
+  // `<AtlasProvider onSignOut>`: through a ref, so a new function each render
+  // neither re-subscribes nor fires twice.
+  const onSignOutRef = useRef(props.onSignOut);
+  onSignOutRef.current = props.onSignOut;
+  useEffect(() => notifier.current!.subscribe((event) => onSignOutRef.current?.(event)), []);
+  const addSignOutListener = useCallback(
+    (listener: SignOutListener) => notifier.current!.subscribe(listener),
+    [],
+  );
 
   const environmentRequest = useRef<Promise<unknown> | null>(
     initial.environment ? Promise.resolve(initial.environment) : null,
@@ -759,6 +841,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
       locale: requestLocale,
       pendingAttempt,
       getToken,
+      addSignOutListener,
       getProviderToken,
       signOut,
       broadcastSessionChange,
@@ -781,6 +864,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
       requestLocale,
       claims,
       getToken,
+      addSignOutListener,
       getProviderToken,
       memberships,
       pendingAttempt,

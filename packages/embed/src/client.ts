@@ -1,5 +1,6 @@
 import { FapiClient } from '@atlasauth/js';
 import type { AppearanceResponse } from './appearance';
+import { ATLAS_EMBED_SDK } from './version';
 
 /**
  * The widget talks to FAPI cross-origin, so the browser sends a CORS preflight
@@ -47,6 +48,9 @@ export function createClient(options: WidgetClientOptions): FapiClient {
     baseUrl: options.frontendApi.replace(/\/$/, ''),
     fetchImpl: widgetFetch(options.publishableKey, base),
     locale: options.locale,
+    // Names the widget to the Frontend API, which answers an upgrade advisory
+    // (logged once per page load) for a version with a known bug.
+    sdk: ATLAS_EMBED_SDK,
   });
 }
 

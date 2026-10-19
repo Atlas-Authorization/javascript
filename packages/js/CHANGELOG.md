@@ -1,5 +1,37 @@
 # @atlasauth/js changelog
 
+## 0.12.0
+- **New: SDK identity and advisories.** `FapiClientOptions.sdk?: AtlasSdkInfo` (`{ name, version }`, default
+  `@atlasauth/js`) is sent as `X-Atlas-SDK: <name>/<version>`; an `Atlas-SDK-Advisory` response header is logged once
+  per advisory per page load. New exports: `ATLAS_JS_VERSION`, `ATLAS_JS_SDK`, `AtlasSdkInfo`, `SDK_HEADER`,
+  `SDK_ADVISORY_HEADER`, `sdkHeaderValue()`, `parseSdkAdvisory()`, `reportSdkAdvisory()`, `resetSdkAdvisoryLog()`,
+  `SdkAdvisoryNotice`.
+- **New: sign-out events.** `SignOutNotifier` (`subscribe`, `expect(reason)`, `clear`, `signedOut(sessionId, fallback?)`),
+  `SignOutEvent` (`{ reason, sessionId }`), `SignOutReason` (`'user' | 'other_tab' | 'session_expired' | 'revoked' |
+  'unknown'`), `SignOutListener`, `SIGN_OUT_EVENT` (`'atlas:signout'`), `dispatchSignOutEvent()`, `onAtlasSignOut()` and
+  `signOutReasonFromClient()` (reads the new `signed_out_reason` of a signed-out `GET /v1/client`). Every framework
+  provider drives one.
+- **New: `getTemplateToken(client, sessionId, template)`** → `{ jwt, expiresIn } | null` (`getToken({ template })`), and
+  **`getForumulateReaderToken(client, spaceId?)`** → `{ jwt, expiresIn, orgId, spaceId, redeemUrl } | null`
+  (`GET /v1/client/forumulate/reader_token`).
+- **New: the Atlas captcha (provider `atlas`).** Atlas's own captcha needs no provider account or keys.
+  `renderCaptchaWidget` (and so every prebuilt form using `createCaptchaController`) draws it when a flow's provider is
+  `atlas`: it fetches a challenge, solves the proof of work in Web Workers (on the page when workers are blocked) and
+  shows the shape-matching step only when the server asks for it, with an accessible alternative.
+- **New exports:** `renderAtlasCaptcha(container, { fetchChallenge?, challengeUrl?, mode?, labels?, workers? })` →
+  `{ token: Promise<string>; stale(): boolean; remove(): void }`, `solveAtlasChallenge(challenge, { workers?, cancelled? })`
+  → `Promise<{ n, worker }>`, `searchAtlasRange`, `fetchAtlasChallenge(url, accessible?)`, `encodeAtlasToken(solution)`,
+  `ATLAS_CAPTCHA_LABELS`, types `AtlasChallenge`, `AtlasCaptchaOptions`, `AtlasCaptchaLabels`, `AtlasCaptchaHandle`.
+- **Added `FlowCaptcha.challengeUrl?: string`** (read from `/v1/appearance` `captchaFlows[flow].challengeUrl`).
+- **Added `CaptchaWidgetHandle.stale?(): boolean`**: a solved token about to expire unspent; the captcha controller
+  draws a fresh widget instead of sending it.
+- **Added an optional third argument to `renderCaptchaWidget` / `getCaptchaToken`:** `{ atlas?: { fetchChallenge?, labels?, workers? } }`.
+- `captcha(client).protect(el, action?)` supports `atlas` (the challenge is fetched through the client).
+- **New: `atlasCaptchaLabels(lookup)`** → `Partial<AtlasCaptchaLabels>` from a translator or a flat catalog (keys in
+  `ATLAS_CAPTCHA_LABEL_KEYS`, e.g. `captcha.puzzleTile`); unknown or echoed keys keep the English default.
+- **New: second argument to `createCaptchaController(initial?, settings?)`**: `{ atlasLabels?: () => Partial<AtlasCaptchaLabels> }`,
+  read each time a widget is drawn. New type `CaptchaControllerSettings`.
+
 ## 0.11.0
 - **New: `fetchAtlasInitialState({ publishableKey, frontendApi, fetchImpl?, init?, timeoutMs? })`** →
   `Promise<AtlasInitialState>` (`{ appearance?: unknown; environment?: unknown }`). Fetches `/v1/appearance` and

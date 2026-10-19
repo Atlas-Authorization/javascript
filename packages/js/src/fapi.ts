@@ -1,4 +1,5 @@
 import { fieldErrors, isTerminal, nextStep, type AttemptView, type FieldError } from './attempt';
+import { ATLAS_JS_SDK, SDK_HEADER, reportSdkAdvisory, sdkHeaderValue, type AtlasSdkInfo } from './sdk-advisory';
 
 /**
  * The FAPI client and the sign-in flow driver.
@@ -28,6 +29,12 @@ export interface FapiClientOptions {
    * (the browser's own `Accept-Language` applies). A malformed tag is ignored.
    */
   locale?: string;
+  /**
+   * Which SDK is calling, sent as `X-Atlas-SDK` so the Frontend API can answer
+   * an upgrade advisory (logged once per page load). Framework SDKs pass their
+   * own package; defaults to `@atlasauth/js`.
+   */
+  sdk?: AtlasSdkInfo;
 }
 
 /**
@@ -76,6 +83,7 @@ export class FapiClient {
     const doFetch = this.options.fetchImpl ?? fetch;
 
     const language = this.locale;
+    const sdk = this.options.sdk ?? ATLAS_JS_SDK;
     let response: Response;
     try {
       response = await doFetch(`${this.options.baseUrl ?? ''}${path}`, {
@@ -85,6 +93,7 @@ export class FapiClient {
         credentials: 'include',
         headers: {
           'x-publishable-key': this.options.publishableKey,
+          [SDK_HEADER]: sdkHeaderValue(sdk),
           ...(language ? { 'accept-language': language } : {}),
           ...(init.body ? { 'content-type': 'application/json' } : {}),
           ...init.headers,
@@ -103,6 +112,8 @@ export class FapiClient {
         errors: [{ code: 'NETWORK', reason: 'network', message: 'We could not reach the server.' }],
       };
     }
+
+    reportSdkAdvisory(response, sdk);
 
     let body: unknown = null;
     try {
@@ -175,6 +186,45 @@ export async function getProviderToken(
     expiresAt: response.data.expires_at ?? null,
     scopes: response.data.scopes ?? [],
   };
+}
+
+/**
+ * `getToken({ template })` for a session: a short-lived JWT minted from a named
+ * JWT template (or a built-in preset such as `chatly`, for a support-chat
+ * identity), for the session the browser's cookie carries. The refresh cookie is
+ * presented, never rotated. Null when the instance has no such template or the
+ * session is gone.
+ */
+export async function getTemplateToken(
+  client: FapiClient,
+  sessionId: string,
+  template: string,
+): Promise<{ jwt: string; expiresIn: number } | null> {
+  const response = await client.post<{ jwt: string; expires_in: number }>(
+    `/v1/client/sessions/${encodeURIComponent(sessionId)}/tokens/${encodeURIComponent(template)}`,
+  );
+  if (!response.ok || !response.data?.jwt) return null;
+  return { jwt: response.data.jwt, expiresIn: response.data.expires_in };
+}
+
+/**
+ * The signed-in user's Forumulate reader token for a connected space, and where
+ * the reader's browser redeems it. Null without a session or a connection.
+ */
+export async function getForumulateReaderToken(
+  client: FapiClient,
+  spaceId?: string,
+): Promise<{ jwt: string; expiresIn: number; orgId: string; spaceId: string; redeemUrl: string } | null> {
+  const response = await client.get<{
+    jwt: string;
+    expires_in: number;
+    org_id: string;
+    space_id: string;
+    redeem_url: string;
+  }>(`/v1/client/forumulate/reader_token${spaceId ? `?space_id=${encodeURIComponent(spaceId)}` : ''}`);
+  if (!response.ok || !response.data?.jwt) return null;
+  const d = response.data;
+  return { jwt: d.jwt, expiresIn: d.expires_in, orgId: d.org_id, spaceId: d.space_id, redeemUrl: d.redeem_url };
 }
 
 export interface FlowState {

@@ -25,7 +25,17 @@ import {
   type SignOutOptions,
   type SignOutResult,
   catalogLocale,
+  SDK_HEADER,
+  SignOutNotifier,
+  getTemplateToken,
+  reportSdkAdvisory,
+  sdkHeaderValue,
+  signOutReasonFromClient,
+  type SignOutEvent,
+  type SignOutListener,
+  type SignOutReason,
 } from '@atlasauth/js';
+import { ATLAS_VUE_SDK } from './version';
 import { applyAppearanceToDom } from '@atlasauth/design/runtime';
 import { instanceDesignFrom, renderAppearance, type Appearance, type InstanceDesign } from './appearance';
 import { EN_US, withFallback, type Catalog } from './i18n';
@@ -78,8 +88,17 @@ export interface AtlasClient {
    * status but no ticket, and that is what the 2FA resume seeds from.
    */
   pendingAttempt: { id: string; status: string } | null;
-  /** Always fresh: refreshes first if the cached token is close to expiry. */
-  getToken(): Promise<string | null>;
+  /**
+   * Always fresh: refreshes first if the cached token is close to expiry. With
+   * `{ template }`, a short-lived named-template token (e.g. `'chatly'`).
+   */
+  getToken(options?: { template?: string }): Promise<string | null>;
+  /**
+   * Listen for sign-out on every path: `reason` is `user`, `other_tab`,
+   * `session_expired`, `revoked` (ended elsewhere, seen on the next refresh) or
+   * `unknown`. Returns the unsubscribe. Also dispatched as `atlas:signout` on `window`.
+   */
+  onSignOut(listener: SignOutListener): () => void;
   /**
    * §6.6 the signed-in user's OWN live token at a connected provider (Google,
    * GitHub, …), so the app can call that provider's API. Null when there is no
@@ -114,6 +133,8 @@ export interface CreateAtlasOptions {
   appearance?: Appearance;
   localization?: Catalog;
   fetchImpl?: typeof fetch;
+  /** Called once each time a signed-in user becomes signed out (see `AtlasClient.onSignOut`). */
+  onSignOut?: (event: SignOutEvent) => void;
 }
 
 /**
@@ -201,31 +222,44 @@ function createAtlasClient(options: CreateAtlasOptions): {
       : null;
   })();
 
-  const call = (path: string, init?: RequestInit) =>
-    doFetch(`${baseUrl}${path}`, {
+  const call = async (path: string, init?: RequestInit) => {
+    const response = await doFetch(`${baseUrl}${path}`, {
       ...init,
       // Cookies carry the session; a fetch without this looks identical to
       // being signed out.
       credentials: 'include',
       headers: {
         'x-publishable-key': publishableKey,
+        // Names this SDK so the Frontend API can flag a version with a known bug.
+        [SDK_HEADER]: sdkHeaderValue(ATLAS_VUE_SDK),
         ...(init?.body ? { 'content-type': 'application/json' } : {}),
         ...init?.headers,
       },
     });
+    reportSdkAdvisory(response, ATLAS_VUE_SDK);
+    return response;
+  };
+
+  // ATL-S-30 one sign-out notifier for the app's lifetime.
+  const notifier = new SignOutNotifier();
+  if (options.onSignOut) notifier.subscribe(options.onSignOut);
 
   // The safer sign-out shared with every framework SDK: tombstones (kept in
   // localStorage per FAPI origin, so a tab opened later stays signed out), the
   // retried revoke and front-channel logout, the background re-try.
   const guard = new SignOutGuard({ request: call, frontendApi: baseUrl });
 
-  const clearState = () => {
+  const clearState = (reason?: SignOutReason) => {
+    // A signed-in → signed-out transition tells the sign-out listeners why.
+    const ended = status.value === 'signed_in' ? (session.value?.id ?? cache.peek()?.sessionId ?? null) : undefined;
     cache.clear();
     status.value = 'signed_out';
     user.value = null;
     session.value = null;
     claims.value = null;
     memberships.value = [];
+    if (ended !== undefined) notifier.signedOut(ended, reason);
+    else notifier.clear();
   };
 
   const applyToken = (jwt: string, sessionId: string) => {
@@ -254,9 +288,10 @@ function createAtlasClient(options: CreateAtlasOptions): {
       // signed out of (the revoke never landed): stay signed out. The guard
       // re-tries the revoke in the background and drops the tombstone once it lands.
       if (!body.session || !body.user || guard.refuse(body.session.id)) {
-        clearState();
+        clearState(body.session ? 'other_tab' : signOutReasonFromClient(body));
         return;
       }
+      notifier.clear();
 
       user.value = body.user;
       session.value = body.session;
@@ -302,7 +337,11 @@ function createAtlasClient(options: CreateAtlasOptions): {
     timer = setTimeout(() => void refresh(), delay);
   };
 
-  const getToken = async () => {
+  const getToken = async (opts?: { template?: string }) => {
+    if (opts?.template) {
+      const sessionId = currentSessionId();
+      return sessionId ? ((await getTemplateToken(fapiClient, sessionId, opts.template))?.jwt ?? null) : null;
+    }
     // A 5s skew so a token that would die inside the caller's request is
     // refreshed first rather than handed over.
     const usable = cache.get(5_000);
@@ -315,7 +354,7 @@ function createAtlasClient(options: CreateAtlasOptions): {
   // and fetch so the framework-agnostic `@atlasauth/js` helper is the single
   // implementation the Vue SDK surfaces.
   const locale = catalogLocale(options.localization);
-  const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale });
+  const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale, sdk: ATLAS_VUE_SDK });
   const getProviderToken = (provider: string) => fetchProviderToken(fapiClient, provider);
 
   /** The session this client holds: the token cache's, else the booted one. */
@@ -325,8 +364,9 @@ function createAtlasClient(options: CreateAtlasOptions): {
     // Tombstone → revoke (retried once) → front-channel logout. With no session
     // in memory (e.g. called before boot finished) the guard finds the one the
     // cookies carry, so a missing token never skips the server-side sign-out.
+    notifier.expect('user');
     const attempt = await guard.revoke(currentSessionId(), options);
-    clearState();
+    clearState('user');
     // §L1 the server promoted another account signed in on this browser: adopt
     // it deliberately (the revoke response already set its cookies).
     if (guard.promoted(attempt)) await reload();
@@ -367,6 +407,7 @@ function createAtlasClient(options: CreateAtlasOptions): {
   // localStorage): drop the token and re-check, which now refuses it. Lives for
   // the app's lifetime, like the refresh watcher.
   guard.watch(currentSessionId, () => {
+    notifier.expect('other_tab');
     cache.clear();
     void reload();
   });
@@ -452,6 +493,7 @@ function createAtlasClient(options: CreateAtlasOptions): {
       memberships,
       pendingAttempt,
       getToken,
+      onSignOut: (listener: SignOutListener) => notifier.subscribe(listener),
       getProviderToken,
       signOut,
       setActiveOrganization,

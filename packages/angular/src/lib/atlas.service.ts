@@ -8,7 +8,7 @@ import {
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { BehaviorSubject, Observable, combineLatest } from 'rxjs';
+import { BehaviorSubject, Observable, Subject, combineLatest } from 'rxjs';
 import { distinctUntilChanged, map } from 'rxjs/operators';
 import {
   FapiClient,
@@ -30,6 +30,15 @@ import {
   type RedirectResult,
   type SignOutOptions,
   type SignOutResult,
+  SDK_HEADER,
+  SignOutNotifier,
+  getTemplateToken,
+  reportSdkAdvisory,
+  sdkHeaderValue,
+  signOutReasonFromClient,
+  type SignOutEvent,
+  type SignOutListener,
+  type SignOutReason,
 } from '@atlasauth/js';
 import { evaluate, type ProtectCondition } from '@atlasauth/authz';
 import { ATLAS_OPTIONS } from './atlas.config';
@@ -50,6 +59,7 @@ import type {
   AuthStatus,
   SessionClaims,
 } from './types';
+import { ATLAS_ANGULAR_SDK } from './version';
 
 /**
  * `AtlasService` — the Angular peer of React's `<AtlasProvider>` + hooks.
@@ -113,6 +123,16 @@ export class AtlasService implements OnDestroy {
   private readonly _session = new BehaviorSubject<AtlasSession | null>(null);
   private readonly _claims = new BehaviorSubject<SessionClaims | null>(null);
   private readonly _memberships = new BehaviorSubject<AtlasOrganizationMembership[]>([]);
+  // ATL-S-30 sign-out events, on every path.
+  private readonly notifier = new SignOutNotifier();
+  private readonly _signOut = new Subject<SignOutEvent>();
+  /**
+   * Emits once each time a signed-in user becomes signed out: `reason` is
+   * `user`, `other_tab`, `session_expired`, `revoked` (ended elsewhere, seen on
+   * the next token refresh) or `unknown`. The place to reset an embedded
+   * third party (a chat widget). Also dispatched as `atlas:signout` on `window`.
+   */
+  readonly signOut$: Observable<SignOutEvent> = this._signOut.asObservable();
 
   /** The three-state auth lifecycle: `loading` → `signed_in` | `signed_out`. */
   readonly status$: Observable<AuthStatus> = this._status.asObservable();
@@ -183,7 +203,11 @@ export class AtlasService implements OnDestroy {
       baseUrl: this.baseUrl,
       fetchImpl: this.doFetch,
       locale: this.requestLocale,
+      sdk: ATLAS_ANGULAR_SDK,
     });
+
+    this.notifier.subscribe((event) => this._signOut.next(event));
+    if (options.onSignOut) this.notifier.subscribe(options.onSignOut);
 
     this.guard = new SignOutGuard({
       request: (path, init) => this.call(path, init),
@@ -203,6 +227,7 @@ export class AtlasService implements OnDestroy {
       this.stopWatchingSignOut = this.guard.watch(
         () => this.cache.peek()?.sessionId ?? this._session.value?.id,
         () => {
+          this.notifier.expect('other_tab');
           this.cache.clear();
           void this.reload();
         },
@@ -221,6 +246,7 @@ export class AtlasService implements OnDestroy {
     this._session.complete();
     this._claims.complete();
     this._memberships.complete();
+    this._signOut.complete();
   }
 
   // --- Configuration accessors ------------------------------------------------
@@ -294,6 +320,7 @@ export class AtlasService implements OnDestroy {
       publishableKey: this.publishableKey,
       baseUrl: this.baseUrl,
       locale: this.requestLocale,
+      sdk: ATLAS_ANGULAR_SDK,
     });
   }
 
@@ -303,7 +330,12 @@ export class AtlasService implements OnDestroy {
    * The current session's JWT, always fresh: if the cached token is within 5s of
    * expiry it is refreshed first rather than handed over. Null when signed out.
    */
-  async getToken(): Promise<string | null> {
+  /** The session JWT; with `{ template }` a short-lived named-template token (e.g. `'chatly'`). */
+  async getToken(options?: { template?: string }): Promise<string | null> {
+    if (options?.template) {
+      const sessionId = this.cache.peek()?.sessionId ?? this._session.value?.id ?? null;
+      return sessionId ? ((await getTemplateToken(this.fapiClient, sessionId, options.template))?.jwt ?? null) : null;
+    }
     const usable = this.cache.get(5_000);
     if (usable) return usable.jwt;
 
@@ -318,6 +350,11 @@ export class AtlasService implements OnDestroy {
    * kept none. The server refreshes a stale token on read; the refresh token is
    * never exposed.
    */
+  /** Listen for sign-out on every path (see {@link signOut$}); returns the unsubscribe. */
+  onSignOut(listener: SignOutListener): () => void {
+    return this.notifier.subscribe(listener);
+  }
+
   getProviderToken(provider: string): Promise<ProviderToken | null> {
     return fetchProviderToken(this.fapiClient, provider);
   }
@@ -343,8 +380,9 @@ export class AtlasService implements OnDestroy {
     // With no cached token the guard finds the cookie session itself
     // (GET /v1/client), so a missing JWT never skips the revoke.
     const sessionId = this.cache.peek()?.sessionId ?? this._session.value?.id ?? null;
+    this.notifier.expect('user');
     const attempt = await this.guard.revoke(sessionId, options);
-    this.clearLocalState();
+    this.clearLocalState('user');
     if (this.guard.promoted(attempt)) await this.reload();
     return this.guard.settle(attempt, options);
   }
@@ -385,9 +423,10 @@ export class AtlasService implements OnDestroy {
       // A session this browser signed out of is never re-adopted from the
       // refresh cookie; the guard re-tries its revoke in the background.
       if (!body.session || !body.user || this.guard.refuse(body.session.id)) {
-        this.clearLocalState();
+        this.clearLocalState(body.session ? 'other_tab' : signOutReasonFromClient(body));
         return;
       }
+      this.notifier.clear();
 
       this._user.next(body.user);
       this._session.next(body.session);
@@ -457,18 +496,22 @@ export class AtlasService implements OnDestroy {
       : null;
   }
 
-  private call(path: string, init?: RequestInit): Promise<Response> {
-    return this.doFetch(`${this.baseUrl}${path}`, {
+  private async call(path: string, init?: RequestInit): Promise<Response> {
+    const response = await this.doFetch(`${this.baseUrl}${path}`, {
       ...init,
       // Cookies carry the session; a request without this is indistinguishable
       // from being signed out.
       credentials: 'include',
       headers: {
         'x-publishable-key': this.publishableKey,
+        // Names this SDK so the Frontend API can flag a version with a known bug.
+        [SDK_HEADER]: sdkHeaderValue(ATLAS_ANGULAR_SDK),
         ...(init?.body ? { 'content-type': 'application/json' } : {}),
         ...init?.headers,
       },
     });
+    reportSdkAdvisory(response, ATLAS_ANGULAR_SDK);
+    return response;
   }
 
   private applyToken(jwt: string, sessionId: string): void {
@@ -500,7 +543,12 @@ export class AtlasService implements OnDestroy {
     }
   }
 
-  private clearLocalState(): void {
+  private clearLocalState(reason?: SignOutReason): void {
+    // A signed-in → signed-out transition tells the sign-out listeners why.
+    const ended =
+      this._status.value === 'signed_in'
+        ? (this._session.value?.id ?? this.cache.peek()?.sessionId ?? null)
+        : undefined;
     this.clearRefreshTimer();
     this.cache.clear();
     this._status.next('signed_out');
@@ -508,6 +556,8 @@ export class AtlasService implements OnDestroy {
     this._session.next(null);
     this._claims.next(null);
     this._memberships.next([]);
+    if (ended !== undefined) this.notifier.signedOut(ended, reason);
+    else this.notifier.clear();
   }
 
   /** §7.4: proactive, jittered refresh scheduled from the token's own expiry. */

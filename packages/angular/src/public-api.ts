@@ -65,3 +65,8 @@ export type {
 // `AtlasService.signOut()` resolves a `SignOutResult`; `{ strict: true }`
 // rejects with a `SignOutError` when the revoke was never confirmed.
 export { SignOutError } from '@atlasauth/js';
+
+// `onSignOut({ reason })` event types + the `atlas:signout` window event; this SDK's version.
+export { SIGN_OUT_EVENT, onAtlasSignOut } from '@atlasauth/js';
+export type { SignOutEvent, SignOutReason } from '@atlasauth/js';
+export { ATLAS_ANGULAR_SDK, ATLAS_ANGULAR_VERSION } from './lib/version';

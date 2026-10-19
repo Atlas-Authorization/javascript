@@ -52,6 +52,12 @@ export const enUS: LocalizationResource = {
   'captcha.prompt': 'Complete the security check to continue.',
   'captcha.required': 'Please complete the security check, then try again.',
   'captcha.failed': "The security check didn't pass. Please try again.",
+  'captcha.checking': 'Checking your browser…',
+  'captcha.verified': 'Security check complete.',
+  'captcha.puzzlePrompt': "Select every picture that shows the same shape as this one. Colour and size don't matter.",
+  'captcha.puzzleConfirm': 'Confirm',
+  'captcha.puzzleTile': 'Picture {n}',
+  'captcha.puzzleAlternative': "Can't do the picture check? Use a longer automatic check instead.",
 
   'mfa.title': 'Two-step verification',
   'mfa.subtitle': 'Enter the code from your authenticator app.',

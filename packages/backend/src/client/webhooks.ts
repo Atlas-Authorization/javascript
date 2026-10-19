@@ -29,6 +29,14 @@ export interface WebhookDelivery {
   payload?: unknown;
   status: string;
   http_status: number | null;
+  /**
+   * Why the attempt failed: `webhook_redirect_not_followed` (see `location`),
+   * `webhook_http_error`, `webhook_timeout`, `webhook_network_error` or
+   * `webhook_url_blocked`. Null on success or while pending.
+   */
+  error?: string | null;
+  /** The absolute `Location` of a 3xx answer. Not followed. */
+  location?: string | null;
   response_snippet: string | null;
   next_retry_at: number | null;
   delivered_at: number | null;
@@ -48,6 +56,16 @@ export interface UpdateWebhookEndpointBody {
   active?: boolean;
 }
 
+/** One subscribable event, described. */
+export interface WebhookEventCatalogEntry {
+  name: string;
+  description: string;
+  /** Who should act on it, e.g. `rp_sessions`, `rp_accounts`, `dsar`. Empty: no relying party needs it. */
+  relevant_for: string[];
+  /** Set on a superseded spelling: subscribe to this event instead. */
+  deprecated_alias_of?: string;
+}
+
 /** The endpoint list plus the delivery settings that apply to every endpoint. */
 export interface WebhookEndpointList {
   object?: 'list';
@@ -56,6 +74,10 @@ export interface WebhookEndpointList {
   next_cursor?: string | null;
   /** Every event type an endpoint can subscribe to. */
   available_events?: string[];
+  /** The same events as `available_events`, each described. */
+  event_catalog?: WebhookEventCatalogEntry[];
+  /** Every value `relevant_for` can hold. */
+  event_audiences?: string[];
   /** The delay before each retry, in milliseconds. */
   retry_schedule_ms?: number[];
   /** Delivery attempts per event before it is marked failed. */

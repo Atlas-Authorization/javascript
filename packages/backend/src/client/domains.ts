@@ -14,6 +14,16 @@ export interface CustomDomain {
   failure_reason: string | null;
   certificate_expires_at: number | null;
   cookie_domain: string | null;
+  /** DNS automation: the provider Atlas writes this host's record with (the token is never returned). */
+  dns?: { provider: 'cloudflare'; token_set: boolean } | null;
+}
+
+/** Let Atlas write the domain's DNS record. The token is write-only. */
+export interface CustomDomainDnsInput {
+  provider: 'cloudflare';
+  api_token: string;
+  /** Replace a conflicting existing record. */
+  overwrite?: boolean;
 }
 
 export interface ListDomainsResponse {
@@ -32,7 +42,7 @@ export function domainsResource(request: RequestFn) {
       return request({ method: 'GET', path: '/v1/domains' });
     },
     create(
-      body: { host: string; role?: 'fapi' | 'accounts' },
+      body: { host: string; role?: 'fapi' | 'accounts'; dns?: CustomDomainDnsInput },
       idempotencyKey?: string,
     ): Promise<CustomDomain & { instructions: Record<string, unknown> }> {
       return request({ method: 'POST', path: '/v1/domains', body, idempotencyKey });

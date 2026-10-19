@@ -49,6 +49,12 @@ export const deDE: LocalizationResource = {
   'captcha.prompt': 'Schließe die Sicherheitsprüfung ab, um fortzufahren.',
   'captcha.required': 'Bitte schließe die Sicherheitsprüfung ab und versuche es erneut.',
   'captcha.failed': 'Die Sicherheitsprüfung ist fehlgeschlagen. Bitte versuche es erneut.',
+  'captcha.checking': 'Dein Browser wird geprüft…',
+  'captcha.verified': 'Sicherheitsprüfung abgeschlossen.',
+  'captcha.puzzlePrompt': 'Wähle alle Bilder aus, die dieselbe Form wie dieses zeigen. Farbe und Größe spielen keine Rolle.',
+  'captcha.puzzleConfirm': 'Bestätigen',
+  'captcha.puzzleTile': 'Bild {n}',
+  'captcha.puzzleAlternative': 'Die Bildprüfung klappt nicht? Nutze stattdessen eine längere automatische Prüfung.',
 
   'mfa.title': 'Zwei-Faktor-Authentifizierung',
   'mfa.subtitle': 'Geben Sie den Code aus Ihrer Authenticator-App ein.',

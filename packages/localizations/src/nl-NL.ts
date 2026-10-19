@@ -48,6 +48,12 @@ export const nlNL: Localization = {
   'captcha.prompt': 'Voltooi de beveiligingscontrole om verder te gaan.',
   'captcha.required': 'Voltooi de beveiligingscontrole en probeer het opnieuw.',
   'captcha.failed': 'De beveiligingscontrole is mislukt. Probeer het opnieuw.',
+  'captcha.checking': 'Je browser wordt gecontroleerd…',
+  'captcha.verified': 'Beveiligingscontrole voltooid.',
+  'captcha.puzzlePrompt': 'Selecteer elke afbeelding met dezelfde vorm als deze. Kleur en grootte maken niet uit.',
+  'captcha.puzzleConfirm': 'Bevestigen',
+  'captcha.puzzleTile': 'Afbeelding {n}',
+  'captcha.puzzleAlternative': 'Lukt de afbeeldingencontrole niet? Gebruik dan een langere automatische controle.',
 
   'mfa.title': 'Verificatie in twee stappen',
   'mfa.subtitle': 'Voer de code uit je authenticator-app in.',

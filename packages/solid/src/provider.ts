@@ -21,7 +21,17 @@ import {
   type RedirectResult,
   type SignOutOptions,
   type SignOutResult,
+  SDK_HEADER,
+  SignOutNotifier,
+  getTemplateToken,
+  reportSdkAdvisory,
+  sdkHeaderValue,
+  signOutReasonFromClient,
+  type SignOutEvent,
+  type SignOutListener,
+  type SignOutReason,
 } from '@atlasauth/js';
+import { ATLAS_SOLID_SDK } from './version';
 import { AtlasContext } from './context';
 import { mountSignInWidget, mountSignUpWidget, mountUserButtonWidget } from './widgets';
 import type {
@@ -83,8 +93,17 @@ export interface AtlasClient {
    * it — because such a redirect carries a status but no ticket.
    */
   pendingAttempt: { id: string; status: string } | null;
-  /** Always fresh: refreshes first if the cached token is close to expiry. */
-  getToken(): Promise<string | null>;
+  /**
+   * Always fresh: refreshes first if the cached token is close to expiry. With
+   * `{ template }`, a short-lived named-template token (e.g. `'chatly'`).
+   */
+  getToken(options?: { template?: string }): Promise<string | null>;
+  /**
+   * Listen for sign-out on every path: `reason` is `user`, `other_tab`,
+   * `session_expired`, `revoked` (ended elsewhere, seen on the next refresh) or
+   * `unknown`. Returns the unsubscribe. Also dispatched as `atlas:signout` on `window`.
+   */
+  onSignOut(listener: SignOutListener): () => void;
   /**
    * The signed-in user's OWN live token at a connected provider (Google,
    * GitHub, …), so the app can call that provider's API. Null when there is no
@@ -141,6 +160,11 @@ export interface AtlasProviderProps {
   locale?: string;
   /** Injected in tests to drive the client through a mocked network. */
   fetchImpl?: typeof fetch;
+  /**
+   * Called once each time a signed-in user becomes signed out, on every path
+   * (see `AtlasClient.onSignOut`): the place to reset an embedded chat widget.
+   */
+  onSignOut?: (event: SignOutEvent) => void;
   children?: JSX.Element;
 }
 
@@ -155,6 +179,7 @@ export function createAtlasClient(options: {
   fetchImpl?: typeof fetch;
   localization?: ErrorStrings;
   locale?: string;
+  onSignOut?: (event: SignOutEvent) => void;
 }): { client: AtlasClient; boot: () => Promise<void>; dispose: () => void } {
   const publishableKey = options.publishableKey;
   // Throws on a missing/invalid value rather than quietly sending every request
@@ -183,18 +208,35 @@ export function createAtlasClient(options: {
       : null;
   })();
 
-  const call = (path: string, init?: RequestInit) =>
-    doFetch(`${baseUrl}${path}`, {
+  const call = async (path: string, init?: RequestInit) => {
+    const response = await doFetch(`${baseUrl}${path}`, {
       ...init,
       // Cookies carry the session; a fetch without this is indistinguishable
       // from being signed out.
       credentials: 'include',
       headers: {
         'x-publishable-key': publishableKey,
+        // Names this SDK so the Frontend API can flag a version with a known bug.
+        [SDK_HEADER]: sdkHeaderValue(ATLAS_SOLID_SDK),
         ...(init?.body ? { 'content-type': 'application/json' } : {}),
         ...init?.headers,
       },
     });
+    reportSdkAdvisory(response, ATLAS_SOLID_SDK);
+    return response;
+  };
+
+  // ATL-S-30 one sign-out notifier for the client's lifetime.
+  const notifier = new SignOutNotifier();
+  if (options.onSignOut) notifier.subscribe(options.onSignOut);
+  /** Drop to signed-out; a signed-in → signed-out transition tells the listeners why. */
+  const signedOutState = (reason?: SignOutReason) => {
+    const ended = state.status === 'signed_in' ? (state.session?.id ?? cache.peek()?.sessionId ?? null) : undefined;
+    cache.clear();
+    setState({ status: 'signed_out', user: null, session: null, claims: null, memberships: [] });
+    if (ended !== undefined) notifier.signedOut(ended, reason);
+    else notifier.clear();
+  };
 
   // Sessions this browser signed out of (shared by every tab, per Frontend
   // API): never re-adopted from a still-valid refresh cookie, even when the
@@ -244,11 +286,11 @@ export function createAtlasClient(options: {
       // revoke in the background and drops the tombstone once it lands.
       const refused = !!body.session && guard.refuse(body.session.id);
       if (!body.session || !body.user || refused) {
-        cache.clear();
-        setState({ status: 'signed_out', user: null, session: null, claims: null, memberships: [] });
+        signedOutState(refused ? 'other_tab' : signOutReasonFromClient(body));
         scheduleRefresh();
         return;
       }
+      notifier.clear();
 
       setState({
         status: 'signed_in',
@@ -285,7 +327,11 @@ export function createAtlasClient(options: {
     }
   };
 
-  const getToken = async () => {
+  const getToken = async (opts?: { template?: string }) => {
+    if (opts?.template) {
+      const sessionId = cache.peek()?.sessionId ?? state.session?.id ?? null;
+      return sessionId ? ((await getTemplateToken(fapiClient, sessionId, opts.template))?.jwt ?? null) : null;
+    }
     // A 5s skew so a token that would die inside the caller's request is
     // refreshed first rather than handed over.
     const usable = cache.get(5_000);
@@ -297,16 +343,16 @@ export function createAtlasClient(options: {
   // The FAPI client for the token-vault read. Reuses the same publishable key
   // and fetch so `@atlasauth/js` stays the single implementation.
   const locale = options.locale ?? catalogLocale(options.localization);
-  const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale });
+  const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale, sdk: ATLAS_SOLID_SDK });
   const getProviderToken = (provider: string) => fetchProviderToken(fapiClient, provider);
 
   const signOut = async (options?: SignOutOptions): Promise<SignOutResult> => {
     // Tombstone → revoke (retried once) → front-channel logout. With no cached
     // token (a boot that carried no JWT) the store's session, or failing that
     // `GET /v1/client`, names the session — the revoke works from the cookies.
+    notifier.expect('user');
     const attempt = await guard.revoke(cache.peek()?.sessionId ?? state.session?.id ?? null, options);
-    cache.clear();
-    setState({ status: 'signed_out', user: null, session: null, claims: null, memberships: [] });
+    signedOutState('user');
     scheduleRefresh();
     // The server promoted a parked session on revoke: adopt it.
     if (guard.promoted(attempt)) await reload();
@@ -385,6 +431,7 @@ export function createAtlasClient(options: {
     state,
     pendingAttempt,
     getToken,
+    onSignOut: (listener: SignOutListener) => notifier.subscribe(listener),
     getProviderToken,
     signOut,
     setActiveOrganization,
@@ -399,6 +446,7 @@ export function createAtlasClient(options: {
   const stopWatching = guard.watch(
     () => state.session?.id ?? cache.peek()?.sessionId,
     () => {
+      notifier.expect('other_tab');
       cache.clear();
       void reload();
     },
@@ -433,6 +481,8 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
     fetchImpl: props.fetchImpl,
     localization: props.localization,
     locale: props.locale,
+    // Through a closure so a prop that changes later is still the one called.
+    onSignOut: (event) => props.onSignOut?.(event),
   });
 
   if (!isServer) {

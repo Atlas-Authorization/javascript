@@ -49,6 +49,12 @@ export const esES: LocalizationResource = {
   'captcha.prompt': 'Completa la verificación de seguridad para continuar.',
   'captcha.required': 'Completa la verificación de seguridad e inténtalo de nuevo.',
   'captcha.failed': 'La verificación de seguridad no se superó. Inténtalo de nuevo.',
+  'captcha.checking': 'Comprobando tu navegador…',
+  'captcha.verified': 'Comprobación de seguridad completada.',
+  'captcha.puzzlePrompt': 'Selecciona todas las imágenes con la misma forma que esta. El color y el tamaño no importan.',
+  'captcha.puzzleConfirm': 'Confirmar',
+  'captcha.puzzleTile': 'Imagen {n}',
+  'captcha.puzzleAlternative': '¿No puedes hacer la comprobación con imágenes? Usa una comprobación automática más larga.',
 
   'mfa.title': 'Verificación en dos pasos',
   'mfa.subtitle': 'Introduce el código de tu aplicación de autenticación.',

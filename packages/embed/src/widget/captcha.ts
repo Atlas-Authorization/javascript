@@ -17,4 +17,5 @@ export {
   flowNeedsCaptcha,
   loadCaptchaProvider as loadProvider,
   getCaptchaToken,
+  atlasCaptchaLabels,
 } from '@atlasauth/js';

@@ -105,6 +105,67 @@ export interface ImportedOAuthClient extends OAuthClient {
   client_secret?: string;
 }
 
+/**
+ * One back-channel logout attempt to a client's `backchannel_logout_uri`.
+ * Atlas never follows redirects: a 3xx fails with
+ * `error: 'backchannel_redirect_not_followed'` and the `location` it pointed at.
+ */
+export interface BackchannelLogoutDelivery {
+  object: 'backchannel_logout_delivery';
+  id: string;
+  oauth_client_id: string | null;
+  /** The ended session (`sid_test_…` for a test); null for "sign out everywhere". */
+  sid: string | null;
+  /** Sent by `testBackchannelLogout`; never retried. */
+  test: boolean;
+  status: 'pending' | 'success' | 'failed';
+  attempt_number: number;
+  max_attempts: number;
+  http_status: number | null;
+  latency_ms: number | null;
+  /**
+   * `backchannel_redirect_not_followed`, `backchannel_http_error`,
+   * `backchannel_timeout`, `backchannel_network_error` or `backchannel_url_blocked`.
+   */
+  error: string | null;
+  location: string | null;
+  response_snippet: string | null;
+  next_retry_at: number | null;
+  attempted_at: number | null;
+  delivered_at: number | null;
+  created_at: number;
+}
+
+/** A page of {@link BackchannelLogoutDelivery}, newest first. */
+export interface BackchannelLogoutDeliveryPage extends ListPage<BackchannelLogoutDelivery> {
+  has_more: boolean;
+  /** Pass as `starting_after` for the next page. */
+  next_cursor: string | null;
+}
+
+/** Paging for a delivery log. */
+export interface BackchannelDeliveriesQuery {
+  limit?: number;
+  starting_after?: string;
+}
+
+/** The result of a test back-channel logout (a signed token for `sid_test_…` with `atlas_test: true`). */
+export interface BackchannelLogoutTest {
+  object: 'backchannel_logout_test';
+  delivery_id: string;
+  /** True when the receiver answered 2xx. */
+  ok: boolean;
+  sid: string;
+  status: number | null;
+  latency_ms: number | null;
+  error: string | null;
+  location: string | null;
+  /** Set when nothing was sent because the URI points at a private, loopback or non-https address. */
+  blocked_reason: string | null;
+  /** First 512 characters of the response body. */
+  body_excerpt: string | null;
+}
+
 export function oauthClientsResource(request: RequestFn) {
   return {
     /** Bulk-import OAuth clients for a migration, optionally with pre-hashed secrets. */
@@ -131,6 +192,21 @@ export function oauthClientsResource(request: RequestFn) {
     },
     delete(id: string): Promise<{ object: 'oauth_client'; id: string; deleted: true; note: string }> {
       return request({ method: 'DELETE', path: `/v1/oauth_clients/${enc(id)}` });
+    },
+    /** The client's back-channel logout delivery log, newest first. */
+    listBackchannelDeliveries(
+      id: string,
+      query: BackchannelDeliveriesQuery = {},
+    ): Promise<BackchannelLogoutDeliveryPage> {
+      return request({
+        method: 'GET',
+        path: `/v1/oauth_clients/${enc(id)}/backchannel_deliveries`,
+        query: { ...query },
+      });
+    },
+    /** Send a test back-channel logout now and return what the receiver answered. */
+    testBackchannelLogout(id: string): Promise<BackchannelLogoutTest> {
+      return request({ method: 'POST', path: `/v1/oauth_clients/${enc(id)}/backchannel_logout/test` });
     },
 
     grants: {

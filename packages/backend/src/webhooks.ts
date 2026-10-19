@@ -39,6 +39,13 @@ export interface WebhookVerifyResult<T = unknown> {
   reason?: WebhookVerifyFailure;
   /** The parsed event envelope `{ id, type, timestamp, instance_id, data }` — present only when `verified`. */
   event?: T;
+  /**
+   * The signed `atlas-id` header — present only when `verified`. It is the same
+   * on every retry of one event, so it is the key to deduplicate deliveries on.
+   */
+  deliveryId?: string;
+  /** The signed `atlas-timestamp` header (epoch ms) of this attempt — present only when `verified`. */
+  timestamp?: number;
 }
 
 /** Read a header case-insensitively from a plain object or a Fetch `Headers`. */
@@ -72,16 +79,20 @@ export interface VerifyWebhookInput {
 }
 
 /**
- * Verify and parse an Atlas webhook. Returns `{ verified, reason?, event? }` —
- * it never throws on a bad signature (a thrown verifier is easy to accidentally
- * swallow). On success, `event` is the parsed envelope.
+ * Verify and parse an Atlas webhook. Returns `{ verified, reason?, event?,
+ * deliveryId?, timestamp? }` — it never throws on a bad signature (a thrown
+ * verifier is easy to accidentally swallow). On success, `event` is the parsed
+ * envelope, `deliveryId` the signed `atlas-id` (stable across retries: dedupe on
+ * it) and `timestamp` the signed `atlas-timestamp`.
  *
  * ```ts
  * // Express (raw body):
- * app.post('/webhooks/atlas', express.raw({ type: 'application/json' }), (req, res) => {
- *   const { verified, event } = verifyWebhook({ body: req.body, headers: req.headers, secret });
+ * app.post('/webhooks/atlas', express.raw({ type: 'application/json' }), async (req, res) => {
+ *   const { verified, event, deliveryId } = verifyWebhook({ body: req.body, headers: req.headers, secret });
  *   if (!verified) return res.sendStatus(400);
+ *   if (await seen.has(deliveryId)) return res.sendStatus(200); // a retry we already handled
  *   // handle event.type ...
+ *   await seen.add(deliveryId);
  *   res.sendStatus(200);
  * });
  * ```
@@ -111,9 +122,9 @@ export function verifyWebhook<T = unknown>(input: VerifyWebhookInput): WebhookVe
   if (a.length !== b.length || !timingSafeEqual(a, b)) return { verified: false, reason: 'signature_mismatch' };
 
   try {
-    return { verified: true, event: JSON.parse(raw) as T };
+    return { verified: true, event: JSON.parse(raw) as T, deliveryId: id, timestamp };
   } catch {
     // Signature is valid but the body isn't JSON — surface it as verified with no event.
-    return { verified: true };
+    return { verified: true, deliveryId: id, timestamp };
   }
 }

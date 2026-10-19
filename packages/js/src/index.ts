@@ -14,6 +14,11 @@ export * from './redirect';
 // §oauth popup mode: the same-origin hand-back for a popup whose opener was severed.
 export * from './popup-channel';
 export * from './fapi';
+// SDK version advisories (`X-Atlas-SDK` / `Atlas-SDK-Advisory`).
+export * from './sdk-advisory';
+export * from './version';
+// `onSignOut({ reason })` for every sign-out path, and the `atlas:signout` window event.
+export * from './sign-out-events';
 export * from './native';
 export * from './native-session';
 export * from './passkey';
@@ -33,6 +38,8 @@ export * from './frontchannel-logout';
 export * from './captcha';
 // Per-flow captcha widget rendering shared by the prebuilt sign-in / sign-up UIs.
 export * from './captcha-widget';
+// Atlas's own captcha (provider `atlas`): challenge fetch, proof-of-work solver, puzzle UI.
+export * from './atlas-captcha';
 // The framework-agnostic captcha lifecycle + sign-in / sign-up submit helpers the
 // prebuilt forms of every framework SDK share, and the instance's public
 // sign-in / sign-up settings (`/v1/appearance`) they are driven by.

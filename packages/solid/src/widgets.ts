@@ -15,6 +15,7 @@ import {
   localizedErrorMessage,
   type ErrorStrings,
   advanceWithCaptcha,
+  atlasCaptchaLabels,
   createCaptchaController,
   createSignUp,
   fetchInstanceSettings,
@@ -34,6 +35,7 @@ import {
 } from '@atlasauth/js';
 import { useAtlas } from './context';
 import type { AtlasClient } from './provider';
+import { ATLAS_SOLID_SDK } from './version';
 
 /**
  * The mountable widgets — `<SignIn>`, `<SignUp>`, `<UserButton>`.
@@ -95,6 +97,12 @@ export const SIGN_UP_TEXT: Record<string, string> = {
   'captcha.prompt': 'Complete the security check to continue.',
   'captcha.required': 'Please complete the security check, then try again.',
   'captcha.failed': "The security check didn't pass. Please try again.",
+  'captcha.checking': 'Checking your browser…',
+  'captcha.verified': 'Security check complete.',
+  'captcha.puzzlePrompt': "Select every picture that shows the same shape as this one. Colour and size don't matter.",
+  'captcha.puzzleConfirm': 'Confirm',
+  'captcha.puzzleTile': 'Picture {n}',
+  'captcha.puzzleAlternative': "Can't do the picture check? Use a longer automatic check instead.",
 };
 
 const t = (key: string, vars: Record<string, string> = {}) =>
@@ -326,6 +334,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     publishableKey: client.publishableKey,
     baseUrl: client.frontendApi,
     locale: client.locale,
+    sdk: ATLAS_SOLID_SDK,
   });
   // Seeded from a redirect that returned mid-flow (OAuth owing a second
   // factor), so the user resumes at the demanded step instead of restarting.
@@ -337,8 +346,10 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
   // §5 the per-flow captcha, driven by the instance's settings so turning it on
   // in the dashboard needs no code change. Configured synchronously with every
   // state / settings change, before the view reads `drawn`.
-  const captcha = createCaptchaController();
-  const signUpCaptcha = createCaptchaController();
+  // The Atlas captcha's words follow the form's catalog.
+  const captchaSettings = { atlasLabels: () => atlasCaptchaLabels((key) => t(key)) };
+  const captcha = createCaptchaController(undefined, captchaSettings);
+  const signUpCaptcha = createCaptchaController(undefined, captchaSettings);
   const [captchaDrawn, setCaptchaDrawn] = createSignal(false);
   const [signUpCaptchaDrawn, setSignUpCaptchaDrawn] = createSignal(false);
   let identifier = '';

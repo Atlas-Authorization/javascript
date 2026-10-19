@@ -1,3 +1,4 @@
+import type { SignOutEvent } from '@atlasauth/js';
 import { InjectionToken } from '@angular/core';
 import type { Appearance } from './appearance';
 import type { Catalog } from './i18n';
@@ -28,6 +29,13 @@ export interface AtlasOptions {
    * or tests. Defaults to `globalThis.fetch`.
    */
   fetchImpl?: typeof fetch;
+  /**
+   * Called once each time a signed-in user becomes signed out, on every path:
+   * `reason` is `user`, `other_tab`, `session_expired`, `revoked` (ended
+   * elsewhere, seen on the next refresh) or `unknown`. See also
+   * `AtlasService.signOut$`.
+   */
+  onSignOut?: (event: SignOutEvent) => void;
 }
 
 /**

@@ -1,5 +1,25 @@
 # @atlasauth/react changelog
 
+## 0.10.0
+- **New `<AtlasProvider onSignOut>`, `useSignOutListener(listener)` and `useAtlas().addSignOutListener()`: `onSignOut({ reason, sessionId })`** fired once each time a signed-in user becomes signed out, on every
+  path: `reason` is `user` (this tab), `other_tab`, `session_expired`, `revoked` (the session was ended elsewhere,
+  detected on the next token refresh or re-check) or `unknown`. The same event is dispatched on `window` as
+  `atlas:signout`. Use it to reset an embedded widget (a support chat, a docs reader session).
+- **`getToken({ template })`**: a short-lived token from a named JWT template for the current session (for
+  example `'chatly'`, a support-chat identity token, when the instance has a Chatly connection).
+- **SDK version advisories.** Every Frontend API request carries `X-Atlas-SDK: @atlasauth/react/<version>`. When the
+  response carries `Atlas-SDK-Advisory: upgrade; min=<version>; reason=<code>` (a version with a known bug), the SDK
+  logs one console warning per advisory per page load. The Frontend API must allow the header in CORS, which Atlas
+  does; a reverse proxy that forwards a fixed `Access-Control-Allow-Headers` list must add `x-atlas-sdk`.
+- New exports: `useSignOutListener`, `ATLAS_REACT_SDK`, `ATLAS_REACT_VERSION`, `SIGN_OUT_EVENT`, `onAtlasSignOut`,
+  `SignOutEvent`, `SignOutReason`. Requires `@atlasauth/js` 0.12.0.
+- `<SignIn>` and `<SignUp>` draw the **Atlas captcha** (provider `atlas`, no keys needed) when the instance turns it on,
+  through `@atlasauth/js` 0.12.0. Invisible for most visitors; a shape-matching step only for risky traffic.
+- `useCaptcha().getToken()` draws a fresh widget when the solved one is about to expire (`CaptchaWidgetHandle.stale`).
+- The Atlas captcha's words follow the provider's localization (new catalog keys `captcha.checking`,
+  `captcha.verified`, `captcha.puzzlePrompt`, `captcha.puzzleConfirm`, `captcha.puzzleTile`, `captcha.puzzleAlternative`).
+  `useCaptcha` takes a new `atlasLabels` option.
+
 ## 0.9.1
 - Every component and hook module is marked `'use client'`, so `<AtlasProvider>`, `<SignIn>`, `<UserButton>` and the
   rest can be rendered straight from a Next.js App Router server layout or page. You no longer need your own

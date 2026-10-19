@@ -7,6 +7,13 @@ import {
 } from './request';
 import type { ListPage } from './types';
 import type {
+  BackchannelDeliveriesQuery,
+  BackchannelLogoutDeliveryPage,
+  BackchannelLogoutTest,
+} from './oauth-clients';
+import type { OriginMove, OriginMoveRequest, PreflightFinding } from './instance';
+import type { ConfigChangelogEntry, ListConfigChangelogParams } from './activity';
+import type {
   AtlasDesign,
   AtlasDesignPatch,
   DeletedDesignAsset,
@@ -16,6 +23,17 @@ import type {
   ResolvedAtlasDesign,
   UploadDesignAssetOptions,
 } from './design';
+
+/** `GET /v1/platform/atlas_id_apps/{id}/preflight`. */
+export interface AtlasIdAppPreflight {
+  object: 'preflight';
+  app_id: string;
+  /** True when there are no error-severity findings. */
+  ok: boolean;
+  checked_at: number;
+  user_count: number;
+  findings: PreflightFinding[];
+}
 
 /**
  * The platform client: the platform-key (`psk_...`) surface for provisioning and
@@ -235,12 +253,66 @@ export interface AtlasIdApp {
   updated_at: number;
   /** On `get` only: people who have approved the app. */
   user_count?: number;
+  /** The per-app webhook URL, or null. */
+  webhook_url?: string | null;
+  webhook_events?: Array<'user.updated' | 'user.deleted' | 'grant.revoked'>;
+  /** false once auto-disabled after repeated failures; null without a webhook. */
+  webhook_active?: boolean | null;
 }
 
 /** Create / rotate response: confidential apps carry the client secret exactly once. */
 export interface AtlasIdAppWithSecret extends AtlasIdApp {
   client_secret?: string;
+  /** The per-app webhook signing secret, returned exactly once (first set, or rotated). */
+  webhook_secret?: string;
   note?: string;
+}
+
+/** A person who has approved a Sign in with Atlas app (privacy-request lookup). */
+export interface AtlasIdAppUser {
+  object: 'atlas_id_user';
+  atlas_id_user: true;
+  /** The user id as this app sees it (the id_token `sub`). */
+  sub: string;
+  grant_id: string;
+  scopes: string[];
+  granted_at: number;
+}
+
+/** A revoked grant: the app's refresh tokens for the user stop working. */
+export interface AtlasIdGrantRevocation {
+  object: 'atlas_id_grant';
+  id: string;
+  sub: string;
+  revoked: true;
+  tokens_revoked?: number;
+  backchannel_logouts?: number;
+}
+
+/** The account's Sign in with Atlas publisher (name + DNS-verified domain). */
+export interface AtlasIdPublisher {
+  object: 'atlas_id_publisher';
+  name: string;
+  domain: string;
+  verified: boolean;
+  verified_at?: number | null;
+  /** Publisher-wide consent for verified apps (openid / email / profile only). */
+  skip_consent: boolean;
+  /** The TXT record to publish. */
+  verification: { record_name: string; record_type: 'TXT'; record_value: string };
+  last_checked_at?: number | null;
+  created_at?: number;
+  updated_at?: number;
+  /** On `verify` only: whether the TXT record matched. */
+  record_found?: boolean;
+}
+
+export interface SetAtlasIdPublisherBody {
+  /** Shown on consent screens once verified (up to 100 characters). */
+  name: string;
+  /** The host your apps' homepage_url lives on, e.g. `example.com`. */
+  domain: string;
+  skip_consent?: boolean;
 }
 
 export interface AtlasIdAppList {
@@ -280,6 +352,11 @@ export interface CreateAtlasIdAppBody extends AtlasIdAppFields {
 export interface UpdateAtlasIdAppBody extends AtlasIdAppFields {
   name?: string;
   redirect_uris?: string[];
+  /**
+   * Per-app webhook (public https): user.updated, user.deleted and grant.revoked for
+   * this app's users. Setting it the first time returns `webhook_secret` once; null removes it.
+   */
+  webhook_url?: string | null;
 }
 
 // ---- the client ----------------------------------------------------------------
@@ -441,6 +518,61 @@ function platformNamespaces(request: RequestFn) {
           path: `/v1/platform/atlas_id_apps/${enc(id)}/rotate_secret`,
         });
       },
+      /** The app's back-channel logout delivery log, newest first. */
+      listBackchannelDeliveries(
+        id: string,
+        query: BackchannelDeliveriesQuery = {},
+      ): Promise<BackchannelLogoutDeliveryPage> {
+        return request({
+          method: 'GET',
+          path: `/v1/platform/atlas_id_apps/${enc(id)}/backchannel_deliveries`,
+          query: { ...query },
+        });
+      },
+      /** Send a test back-channel logout to the app now and return what it answered. */
+      testBackchannelLogout(id: string): Promise<BackchannelLogoutTest> {
+        return request({
+          method: 'POST',
+          path: `/v1/platform/atlas_id_apps/${enc(id)}/backchannel_logout/test`,
+        });
+      },
+      /** Check the app's setup (URIs, back-channel delivery, homepage host, legal links, secret age). */
+      preflight(id: string): Promise<AtlasIdAppPreflight> {
+        return request({ method: 'GET', path: `/v1/platform/atlas_id_apps/${enc(id)}/preflight` });
+      },
+      /**
+       * Privacy requests: is this person one of the app's users? Exact match on a
+       * verified email; anyone else gets the same empty list.
+       */
+      findUsers(id: string, email: string): Promise<{ object: 'list'; data: AtlasIdAppUser[] }> {
+        return request({
+          method: 'GET',
+          path: `/v1/platform/atlas_id_apps/${enc(id)}/users`,
+          query: { email },
+        });
+      },
+      /** Revoke one user's grant (grant_id from `findUsers`); the next sign-in asks for consent again. */
+      revokeGrant(id: string, grantId: string): Promise<AtlasIdGrantRevocation> {
+        return request({
+          method: 'DELETE',
+          path: `/v1/platform/atlas_id_apps/${enc(id)}/grants/${enc(grantId)}`,
+        });
+      },
+      /** Move the app's URLs from one origin to another. `dry_run: true` writes nothing. */
+      moveOrigin(id: string, body: OriginMoveRequest): Promise<OriginMove> {
+        return request({
+          method: 'POST',
+          path: `/v1/platform/atlas_id_apps/${enc(id)}/move_origin`,
+          body,
+        });
+      },
+      /** New per-app webhook signing secret (`webhook_secret`), returned once. 409 without a webhook. */
+      rotateWebhookSecret(id: string): Promise<AtlasIdAppWithSecret> {
+        return request({
+          method: 'POST',
+          path: `/v1/platform/atlas_id_apps/${enc(id)}/webhook/rotate_secret`,
+        });
+      },
       /** Preview a design on the Sign in with Atlas page without saving it. */
       previewDesign(design: AtlasDesign): Promise<DesignPreview> {
         return request({
@@ -448,6 +580,39 @@ function platformNamespaces(request: RequestFn) {
           path: '/v1/platform/atlas_id_apps/design/preview',
           body: { design },
         });
+      },
+    },
+    /** The account's Sign in with Atlas publisher name and verified domain. */
+    atlasIdPublisher: {
+      /** 404 until claimed. */
+      get(): Promise<AtlasIdPublisher> {
+        return request({ method: 'GET', path: '/v1/platform/atlas_id_publisher' });
+      },
+      /** Claim a publisher name and domain; returns the TXT record to publish. */
+      set(body: SetAtlasIdPublisherBody): Promise<AtlasIdPublisher> {
+        return request({ method: 'PUT', path: '/v1/platform/atlas_id_publisher', body });
+      },
+      /** Turn publisher-wide consent on or off. */
+      update(body: { skip_consent: boolean }): Promise<AtlasIdPublisher> {
+        return request({ method: 'PATCH', path: '/v1/platform/atlas_id_publisher', body });
+      },
+      delete(): Promise<{ object: 'atlas_id_publisher'; deleted: true }> {
+        return request({ method: 'DELETE', path: '/v1/platform/atlas_id_publisher' });
+      },
+      /** Look up the TXT record now (`record_found`). */
+      verify(): Promise<AtlasIdPublisher> {
+        return request({ method: 'POST', path: '/v1/platform/atlas_id_publisher/verify' });
+      },
+    },
+    /** Config change history for the account's Sign in with Atlas apps. */
+    configChangelog: {
+      list(params: ListConfigChangelogParams = {}): Promise<{
+        object: 'config_changelog';
+        data: ConfigChangelogEntry[];
+        has_more?: boolean;
+        next_cursor?: string | null;
+      }> {
+        return request({ method: 'GET', path: '/v1/platform/config_changelog', query: { ...params } });
       },
     },
     /** Design images owned by the platform's account, for Sign in with Atlas app designs. */

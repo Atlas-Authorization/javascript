@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import {
   isRenderableCaptcha,
   renderCaptchaWidget,
+  type AtlasCaptchaLabels,
   type CaptchaWidgetHandle,
   type FlowCaptcha,
 } from '@atlasauth/js';
@@ -43,6 +44,8 @@ export function useCaptcha(
     eager?: boolean;
     /** Called with the token when an eagerly drawn widget is solved. */
     onSolved?: (token: string) => void;
+    /** The Atlas captcha's words in the form's language (`atlasCaptchaLabels(t)`). */
+    atlasLabels?: Partial<AtlasCaptchaLabels>;
   },
 ): CaptchaController {
   const needed = options.active && !!flow && isRenderableCaptcha(flow.provider);
@@ -54,8 +57,8 @@ export function useCaptcha(
   onSolved.current = options.onSolved;
   // The latest flow/needed, read by the stable callbacks below.
   const flowKey = `${needed}|${flow?.provider ?? ''}|${flow?.siteKey ?? ''}|${flow?.widget ?? ''}|${eager}`;
-  const live = useRef({ flow, needed, eager, flowKey });
-  live.current = { flow, needed, eager, flowKey };
+  const live = useRef({ flow, needed, eager, flowKey, atlasLabels: options.atlasLabels });
+  live.current = { flow, needed, eager, flowKey, atlasLabels: options.atlasLabels };
   // The settings the current widget was drawn with, so a redraw happens only
   // when they actually change.
   const drawnKey = useRef<string | null>(null);
@@ -71,7 +74,7 @@ export function useCaptcha(
     const el = container.current;
     remove();
     if (!n || !f || !el) return null;
-    const h = renderCaptchaWidget(f, el);
+    const h = renderCaptchaWidget(f, el, { atlas: { labels: live.current.atlasLabels } });
     handle.current = h;
     drawnKey.current = live.current.flowKey;
     // Swallow here so a removed / failed widget is never an unhandled
@@ -120,7 +123,7 @@ export function useCaptcha(
   const getToken = useCallback(async (): Promise<string | null> => {
     if (!live.current.needed) return null;
     let h = handle.current;
-    if (!h || spent.current === h) h = mount();
+    if (!h || spent.current === h || h.stale?.()) h = mount();
     if (!h) return null;
     try {
       const token = await h.token;

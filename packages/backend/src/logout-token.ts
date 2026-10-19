@@ -44,6 +44,14 @@ export type LogoutTokenResult =
        */
       reason: 'malformed' | 'no_keys' | 'invalid' | 'replayed';
       detail?: string;
+      /**
+       * True when the failure is on YOUR side and temporary (`no_keys`: the
+       * issuer's keys could not be fetched, e.g. a network error or a JWKS
+       * outage). Answer `503` with `Retry-After` so Atlas retries the delivery.
+       * False for a token that is itself bad: answer `400`, which Atlas never
+       * retries.
+       */
+      retryable: boolean;
     };
 
 /**
@@ -163,27 +171,32 @@ export async function checkLogoutToken(
   options: LogoutTokenCheckOptions,
 ): Promise<LogoutTokenResult> {
   if (typeof token !== 'string' || token.split('.').length !== 3) {
-    return { ok: false, reason: 'malformed' };
+    return { ok: false, reason: 'malformed', retryable: false };
   }
 
   let header: { typ?: unknown };
   try {
     header = decodeProtectedHeader(token);
   } catch {
-    return { ok: false, reason: 'malformed' };
+    return { ok: false, reason: 'malformed', retryable: false };
   }
   if (header.typ !== undefined) {
     const typ = String(header.typ).toLowerCase();
     if (typ !== 'logout+jwt' && typ !== 'application/logout+jwt') {
-      return { ok: false, reason: 'invalid', detail: 'typ is not logout+jwt' };
+      return { ok: false, reason: 'invalid', detail: 'typ is not logout+jwt', retryable: false };
     }
   }
 
-  const keys = await cache.get(readKid(token));
-  if (!keys || keys.keys.length === 0) {
+  const kid = readKid(token);
+  const keys = await cache.get(kid);
+  // No keys at all, or a key Atlas has just rotated to that could not be fetched
+  // because the refetch failed: both are temporary, on the receiver's side.
+  const missingAfterFailedFetch =
+    kid !== undefined && cache.lastOutcome === 'failed' && !keys?.keys.some((k) => k.kid === kid);
+  if (!keys || keys.keys.length === 0 || missingAfterFailedFetch) {
     return cache.lastError
-      ? { ok: false, reason: 'no_keys', detail: cache.lastError }
-      : { ok: false, reason: 'no_keys' };
+      ? { ok: false, reason: 'no_keys', detail: cache.lastError, retryable: true }
+      : { ok: false, reason: 'no_keys', retryable: true };
   }
 
   const nowMs = options.now ? options.now() : Date.now();
@@ -204,6 +217,7 @@ export async function checkLogoutToken(
     return {
       ok: false,
       reason: 'invalid',
+      retryable: false,
       detail:
         code === 'ERR_JWT_EXPIRED'
           ? 'expired'
@@ -215,16 +229,16 @@ export async function checkLogoutToken(
 
   const nowSec = Math.floor(nowMs / 1000);
   const iat = payload.iat;
-  if (typeof iat !== 'number') return { ok: false, reason: 'invalid', detail: 'iat missing' };
+  if (typeof iat !== 'number') return { ok: false, reason: 'invalid', detail: 'iat missing', retryable: false };
   if (iat > nowSec + LOGOUT_TOKEN_CLOCK_SKEW_SECONDS) {
-    return { ok: false, reason: 'invalid', detail: 'iat is in the future' };
+    return { ok: false, reason: 'invalid', detail: 'iat is in the future', retryable: false };
   }
   const maxAge = options.maxAgeSeconds ?? LOGOUT_TOKEN_MAX_AGE_SECONDS;
   if (nowSec - iat > maxAge + LOGOUT_TOKEN_CLOCK_SKEW_SECONDS) {
-    return { ok: false, reason: 'invalid', detail: 'iat is too old' };
+    return { ok: false, reason: 'invalid', detail: 'iat is too old', retryable: false };
   }
   const jti = payload.jti;
-  if (typeof jti !== 'string' || !jti) return { ok: false, reason: 'invalid', detail: 'jti missing' };
+  if (typeof jti !== 'string' || !jti) return { ok: false, reason: 'invalid', detail: 'jti missing', retryable: false };
 
   const events = payload.events;
   const event =
@@ -232,19 +246,19 @@ export async function checkLogoutToken(
       ? (events as Record<string, unknown>)[BACKCHANNEL_LOGOUT_EVENT]
       : undefined;
   if (!event || typeof event !== 'object' || Array.isArray(event)) {
-    return { ok: false, reason: 'invalid', detail: 'back-channel logout event missing' };
+    return { ok: false, reason: 'invalid', detail: 'back-channel logout event missing', retryable: false };
   }
   if ('nonce' in payload) {
-    return { ok: false, reason: 'invalid', detail: 'nonce must not be present' };
+    return { ok: false, reason: 'invalid', detail: 'nonce must not be present', retryable: false };
   }
   const sub = typeof payload.sub === 'string' && payload.sub ? payload.sub : undefined;
   const sid = typeof payload.sid === 'string' && payload.sid ? payload.sid : undefined;
-  if (!sub && !sid) return { ok: false, reason: 'invalid', detail: 'neither sid nor sub present' };
+  if (!sub && !sid) return { ok: false, reason: 'invalid', detail: 'neither sid nor sub present', retryable: false };
 
   if (options.replayStore) {
     const expiresAtMs = (iat + maxAge + LOGOUT_TOKEN_CLOCK_SKEW_SECONDS) * 1000;
     const fresh = await options.replayStore.remember(jti, expiresAtMs);
-    if (!fresh) return { ok: false, reason: 'replayed' };
+    if (!fresh) return { ok: false, reason: 'replayed', retryable: false };
   }
 
   const claims: LogoutTokenClaims = { jti, iat };

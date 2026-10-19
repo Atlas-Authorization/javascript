@@ -18,7 +18,11 @@
  *
  * Everything is SSR-safe: nothing touches `window`/`document` until a call that
  * renders into a DOM element.
+ *
+ * Provider `atlas` is Atlas's own captcha: no vendor script, no site key (see
+ * `atlas-captcha.ts`).
  */
+import { renderAtlasCaptcha, type AtlasCaptchaOptions } from './atlas-captcha';
 
 /** The flows `captchaFlows` covers. */
 export type CaptchaFlowKey = 'signUp' | 'signIn' | 'guest' | 'passwordReset';
@@ -38,10 +42,16 @@ export interface FlowCaptcha {
   provider?: string;
   siteKey?: string | null;
   widget?: CaptchaWidgetMode;
+  /**
+   * Provider `atlas` (Atlas's own captcha, no keys): where the widget fetches
+   * each fresh challenge. Set by `/v1/appearance`.
+   */
+  challengeUrl?: string;
 }
 
 /** The providers the prebuilt UIs can natively render. */
 const RENDERABLE = new Set([
+  'atlas',
   'turnstile',
   'hcaptcha',
   'recaptcha',
@@ -162,6 +172,12 @@ export function loadCaptchaProvider(provider: string, siteKey: string, win: Win)
   return promise;
 }
 
+/** Per-render options. Only Atlas's own captcha reads any today. */
+export interface RenderCaptchaOptions {
+  /** Atlas captcha: a custom challenge fetcher (e.g. through your FAPI proxy) and localised labels. */
+  atlas?: Pick<AtlasCaptchaOptions, 'fetchChallenge' | 'labels' | 'workers'>;
+}
+
 /** A rendered widget's teardown. */
 type Teardown = () => void;
 
@@ -257,6 +273,11 @@ export interface CaptchaWidgetHandle {
   /** Resolves with the solved token; rejects on provider error/timeout or removal. */
   token: Promise<string>;
   /**
+   * True when the solved token is about to expire unspent (Atlas's captcha), so
+   * the caller draws a fresh widget instead of sending it. Absent: never stale.
+   */
+  stale?(): boolean;
+  /**
    * Remove the widget (provider teardown + empty the container). Tokens are
    * single-use, so call this after a submit spent the token and render a fresh
    * widget for the next try.
@@ -270,8 +291,19 @@ export interface CaptchaWidgetHandle {
  * `container` is where a visible/managed widget draws; score providers draw
  * nothing there.
  */
-export function renderCaptchaWidget(flow: FlowCaptcha, container: HTMLElement): CaptchaWidgetHandle {
+export function renderCaptchaWidget(
+  flow: FlowCaptcha,
+  container: HTMLElement,
+  options: RenderCaptchaOptions = {},
+): CaptchaWidgetHandle {
   const provider = flow.provider ?? '';
+  if (provider === 'atlas') {
+    return renderAtlasCaptcha(container, {
+      challengeUrl: flow.challengeUrl,
+      mode: flow.widget ?? 'managed',
+      ...options.atlas,
+    });
+  }
   const siteKey = flow.siteKey ?? '';
   const mode: CaptchaWidgetMode = flow.widget ?? 'managed';
   const win = (container.ownerDocument?.defaultView ?? globalThis) as unknown as Win;
@@ -327,6 +359,10 @@ export function renderCaptchaWidget(flow: FlowCaptcha, container: HTMLElement): 
  * whether to surface it or let the (fail-closed) server reject the tokenless
  * request.
  */
-export async function getCaptchaToken(flow: FlowCaptcha, container: HTMLElement): Promise<string> {
-  return renderCaptchaWidget(flow, container).token;
+export async function getCaptchaToken(
+  flow: FlowCaptcha,
+  container: HTMLElement,
+  options?: RenderCaptchaOptions,
+): Promise<string> {
+  return renderCaptchaWidget(flow, container, options).token;
 }

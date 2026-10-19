@@ -76,3 +76,8 @@ export type {
 // What `signOut()` resolves with, and what it rejects with under `{ strict: true }`.
 export { SignOutError } from '@atlasauth/js';
 export type { SignOutOptions, SignOutResult } from '@atlasauth/js';
+
+// `onSignOut({ reason })` event types + the `atlas:signout` window event; this SDK's version.
+export { SIGN_OUT_EVENT, onAtlasSignOut } from '@atlasauth/js';
+export type { SignOutEvent, SignOutReason } from '@atlasauth/js';
+export { ATLAS_SVELTE_SDK, ATLAS_SVELTE_VERSION } from './version';

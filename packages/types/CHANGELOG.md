@@ -1,5 +1,11 @@
 # @atlasauth/types changelog
 
+## 0.3.0
+
+### Added
+
+- `User.version` (optional): strictly increases with every change to the user; user webhook payloads carry the same value.
+
 ## 0.2.0
 
 ### Added

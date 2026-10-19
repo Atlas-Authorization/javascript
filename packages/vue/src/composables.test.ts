@@ -30,6 +30,7 @@ function makeClient(): AtlasClient {
     signOut: async () => ({ revoked: true }),
     setActiveOrganization: async () => undefined,
     reload: async () => undefined,
+    onSignOut: () => () => undefined,
   };
 }
 

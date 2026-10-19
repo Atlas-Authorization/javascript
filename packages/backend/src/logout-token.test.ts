@@ -145,14 +145,14 @@ describe('logout_token verification', () => {
   });
 
   it('rejects malformed input', async () => {
-    expect(await verifier().verify('not-a-jwt')).toEqual({ ok: false, reason: 'malformed' });
+    expect(await verifier().verify('not-a-jwt')).toEqual({ ok: false, reason: 'malformed', retryable: false });
   });
 
   it('refuses a replayed jti with a replay store', async () => {
     const v = verifier({ replayStore: memoryLogoutReplayStore(now) });
     const token = await mint();
     expect((await v.verify(token)).ok).toBe(true);
-    expect(await v.verify(token)).toEqual({ ok: false, reason: 'replayed' });
+    expect(await v.verify(token)).toEqual({ ok: false, reason: 'replayed', retryable: false });
   });
 
   it('accepts any of several client ids, via the one-off helper', async () => {
@@ -171,6 +171,42 @@ describe('logout_token verification', () => {
     expect(
       await backend.verifyLogoutToken(await mint(), { clientId: 'nope' }),
     ).toMatchObject({ ok: false, reason: 'invalid' });
+  });
+
+  it('an unreachable JWKS is no_keys and retryable (answer 503, Atlas retries)', async () => {
+    const unreachable = (async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+    const v = new LogoutTokenVerifier({
+      issuer: ISSUER,
+      clientId: CLIENT_ID,
+      jwksUrl: 'https://keys.example.com/.well-known/jwks.json',
+      fetchImpl: unreachable,
+      now,
+    });
+    const result = await v.verify(await mint());
+    expect(result).toMatchObject({ ok: false, reason: 'no_keys', retryable: true });
+  });
+
+  it('a JWKS that answers 5xx is retryable too', async () => {
+    const down = (async () => new Response('down', { status: 503 })) as unknown as typeof fetch;
+    const v = new LogoutTokenVerifier({
+      issuer: ISSUER,
+      clientId: CLIENT_ID,
+      jwksUrl: 'https://keys.example.com/.well-known/jwks.json',
+      fetchImpl: down,
+      now,
+    });
+    expect(await v.verify(await mint())).toMatchObject({ ok: false, reason: 'no_keys', retryable: true });
+  });
+
+  it('a bad token is never retryable (answer 400)', async () => {
+    expect(await verifier().verify(await mint({ claims: { aud: 'someone-else' } }))).toMatchObject({
+      ok: false,
+      reason: 'invalid',
+      retryable: false,
+    });
+    expect(await verifier().verify(await mint({ key: other.privateKey }))).toMatchObject({ retryable: false });
   });
 
   it('requires issuer and clientId', () => {

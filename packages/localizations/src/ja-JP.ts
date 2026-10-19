@@ -47,6 +47,12 @@ export const jaJP: Localization = {
   'captcha.prompt': '続行するにはセキュリティチェックを完了してください。',
   'captcha.required': 'セキュリティチェックを完了してから、もう一度お試しください。',
   'captcha.failed': 'セキュリティチェックに合格しませんでした。もう一度お試しください。',
+  'captcha.checking': 'ブラウザを確認しています…',
+  'captcha.verified': 'セキュリティチェックが完了しました。',
+  'captcha.puzzlePrompt': 'この図形と同じ形の画像をすべて選択してください。色や大きさは関係ありません。',
+  'captcha.puzzleConfirm': '確認',
+  'captcha.puzzleTile': '画像 {n}',
+  'captcha.puzzleAlternative': '画像のチェックができない場合は、時間のかかる自動チェックを使用してください。',
 
   'mfa.title': '2 段階認証',
   'mfa.subtitle': '認証アプリのコードを入力してください。',

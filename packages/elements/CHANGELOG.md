@@ -1,5 +1,10 @@
 # @atlasauth/elements changelog
 
+## 0.5.0
+- The prebuilt forms draw the **Atlas captcha** (provider `atlas`, no keys needed) through `@atlasauth/js` 0.12.0,
+  with its words from the form's catalog. New catalog keys: `captcha.checking`, `captcha.verified`,
+  `captcha.puzzlePrompt`, `captcha.puzzleConfirm`, `captcha.puzzleTile`, `captcha.puzzleAlternative`.
+
 ## 0.4.1
 - **Fixed:** depends on `@atlasauth/react` `^0.9.0` instead of one exact version. With an exact pin, an app that also
   installed a newer `@atlasauth/react` got two copies, and hooks from one couldn't see the other's

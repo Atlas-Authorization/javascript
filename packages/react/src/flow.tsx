@@ -11,6 +11,7 @@ import {
 } from 'react';
 import {
   flowNeedsCaptcha,
+  atlasCaptchaLabels,
   mintNativeNonce,
   nativeSignIn,
   nextStep,
@@ -37,6 +38,7 @@ import {
 } from './fapi';
 import { useClass, useClasses, useErrorText, useText } from './components-shared';
 import { localizeCaptchaErrors, useCaptcha } from './captcha';
+import { ATLAS_REACT_SDK } from './version';
 
 /**
  * §10.2 components.
@@ -465,10 +467,12 @@ export function useFlow({
     // invisible one) straight away and continue once it is solved.
     eager: challenged ? true : undefined,
     onSolved: challenged ? () => submitRef.current({}) : undefined,
+
+    atlasLabels: atlasCaptchaLabels(t),
   });
 
   const client = useMemo(
-    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale }),
+    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale, sdk: ATLAS_REACT_SDK }),
     [frontendApi, publishableKey, locale],
   );
 

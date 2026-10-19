@@ -1,5 +1,16 @@
 # @atlasauth/embed changelog
 
+## 0.6.0
+- **SDK version advisories.** Every Frontend API request carries `X-Atlas-SDK: @atlasauth/embed/<version>`. When the
+  response carries `Atlas-SDK-Advisory: upgrade; min=<version>; reason=<code>` (a version with a known bug), the SDK
+  logs one console warning per advisory per page load. The Frontend API must allow the header in CORS, which Atlas
+  does; a reverse proxy that forwards a fixed `Access-Control-Allow-Headers` list must add `x-atlas-sdk`.
+- New exports `ATLAS_EMBED_SDK`, `ATLAS_EMBED_VERSION`. Requires `@atlasauth/js` 0.12.0.
+- The embed widget draws the **Atlas captcha** (provider `atlas`, no keys needed) on sign-up, sign-in and password
+  reset when the instance turns it on. Nothing loads from a third-party domain.
+- The Atlas captcha's words come from the widget's `localization` catalog (the new `captcha.*` keys in
+  `@atlasauth/localizations` 0.6.0).
+
 ## 0.5.2
 - The single-screen email + password sign-in box offers "Email me a code instead" (or "Email me a sign-in link
   instead") when the instance also has email code (or link) sign-in and can send email. It starts the sign-in with

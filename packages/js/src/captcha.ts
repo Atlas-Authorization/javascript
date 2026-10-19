@@ -15,6 +15,7 @@
  * needs the DOM) and the script loaders are one-shot per CDN URL.
  */
 import type { FapiClient } from './fapi';
+import { renderAtlasCaptcha, type AtlasChallenge } from './atlas-captcha';
 
 /** The public widget config `GET /v1/client/captcha` returns. No secrets. */
 export interface CaptchaWidgetConfig {
@@ -189,6 +190,20 @@ export function captcha(client: FapiClient) {
   const protect = async (element: HTMLElement, action?: string): Promise<string> => {
     const cfg = await config(action);
     if (!cfg) throw new Error('Could not load the captcha configuration.');
+    if (cfg.provider === 'atlas') {
+      // Atlas's own captcha: no site key, the challenge comes from this client's FAPI.
+      const path = `/v1/client/captcha/challenge${action ? `?action=${encodeURIComponent(action)}` : ''}`;
+      return renderAtlasCaptcha(element, {
+        mode: cfg.widget_mode,
+        fetchChallenge: async (accessible) => {
+          const res = await client.get<AtlasChallenge>(
+            accessible ? `${path}${action ? '&' : '?'}accessible=true` : path,
+          );
+          if (!res.ok || !res.data) throw new Error('Could not load the captcha challenge.');
+          return res.data;
+        },
+      }).token;
+    }
     if (cfg.provider === 'none' || !cfg.site_key) {
       throw new Error(
         `No renderable captcha provider is configured${action ? ` for "${action}"` : ''}.`,

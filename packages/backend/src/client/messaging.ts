@@ -316,6 +316,80 @@ export interface MessagingProviders {
   object: 'messaging_providers';
   email: EmailProvider | null;
   sms: SmsProvider | null;
+  /** The Atlas-managed sending domain, when one is set up (summary). */
+  managed_email?: {
+    object: 'managed_email';
+    from_address: string;
+    domain: string;
+    status: string;
+    verified: boolean;
+  } | null;
+}
+
+// ── Atlas-managed email ─────────────────────────────────────────────────────
+
+/** A DNS record to publish for the managed sending domain. */
+export interface ManagedEmailRecord {
+  purpose: 'dkim' | 'spf' | 'return_path' | 'other';
+  type: 'TXT' | 'MX' | 'CNAME';
+  /** Fully-qualified record name. */
+  name: string;
+  value: string;
+  priority?: number;
+  status?: string;
+}
+
+/** Atlas-managed email: your own sending domain on Atlas's email account. */
+export interface ManagedEmail {
+  object: 'managed_email';
+  id: string;
+  from_address: string;
+  domain: string;
+  provider: string;
+  region: string | null;
+  /** `not_started` | `pending` | `verified` | `failed` | `temporary_failure`. Email sends only when verified. */
+  status: string;
+  verified: boolean;
+  records: ManagedEmailRecord[];
+  limits: { hourly: number; daily: number };
+  usage: {
+    sent: number;
+    bounces: number;
+    complaints: number;
+    last_bounce_at: number | null;
+    last_complaint_at: number | null;
+  };
+  reputation: 'shared_platform_account';
+  /** DNS automation, when set. The token is never returned. */
+  dns: { provider: string; token_set: boolean } | null;
+  failure_reason: string | null;
+  last_checked_at: number | null;
+  verified_at: number | null;
+  created_at: number;
+  updated_at: number;
+  /** Create only, with `dns`: the zone and the records Atlas wrote. */
+  dns_result?: Record<string, unknown>;
+  next_step?: string;
+}
+
+export interface CreateManagedEmailBody {
+  /** The From address, bare or `"Name <address>"`. Its domain becomes the sending domain. */
+  from_address: string;
+  region?: 'us-east-1' | 'eu-west-1' | 'sa-east-1' | 'ap-northeast-1';
+  /** Let Atlas write the DNS records. The token is write-only. */
+  dns?: {
+    provider: 'cloudflare';
+    /** A DNS API token with Zone Read and DNS Edit on the zone. Write-only. */
+    api_token: string;
+    /** Replace a conflicting existing record. */
+    overwrite?: boolean;
+  };
+}
+
+export interface DeletedManagedEmail {
+  object: 'managed_email';
+  domain: string;
+  deleted: true;
 }
 
 export interface MessagingTestResult {
@@ -388,6 +462,33 @@ export function messagingResource(request: RequestFn) {
         path: `/v1/messaging_providers/${enc(channel)}`,
         ...(options.force ? { query: { force: 'true' } } : {}),
       });
+    },
+    /** Atlas-managed email: send from your own domain without your own email provider. */
+    managedEmail: {
+      /** 404 when none is configured. */
+      get(): Promise<ManagedEmail> {
+        return request({ method: 'GET', path: '/v1/messaging_providers/email/managed' });
+      },
+      /** Register the sending domain; returns the DNS `records` to publish. */
+      create(body: CreateManagedEmailBody): Promise<ManagedEmail> {
+        return request({ method: 'POST', path: '/v1/messaging_providers/email/managed', body });
+      },
+      /** Re-check the DNS records now; `verified` is true once email can be sent. */
+      verify(): Promise<ManagedEmail> {
+        return request({ method: 'POST', path: '/v1/messaging_providers/email/managed/verify' });
+      },
+      /**
+       * Stop using managed email (DNS records are left in place). Refused with
+       * `409 EMAIL_PROVIDER_IN_USE` while it is the only way to send email; pass
+       * `{ force: true }` to remove it anyway.
+       */
+      delete(options: { force?: boolean } = {}): Promise<DeletedManagedEmail> {
+        return request({
+          method: 'DELETE',
+          path: '/v1/messaging_providers/email/managed',
+          ...(options.force ? { query: { force: 'true' } } : {}),
+        });
+      },
     },
     /** Send a fixed, clearly-marked test message through the channel's provider. */
     test(channel: 'email' | 'sms', body: { to: string }): Promise<MessagingTestResult> {

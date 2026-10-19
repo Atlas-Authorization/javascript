@@ -1,6 +1,7 @@
 import { nextStep, type FieldError } from './attempt';
 import { advance, startSignUp, type FapiClient, type FlowState } from './fapi';
 import { toSignUpInput } from './instance-settings';
+import type { AtlasCaptchaLabels } from './atlas-captcha';
 import {
   flowNeedsCaptcha,
   isCaptchaError,
@@ -54,7 +55,20 @@ export interface CaptchaController {
   destroy(): void;
 }
 
-export function createCaptchaController(initial?: CaptchaControllerOptions): CaptchaController {
+/** Settings that hold for the controller's whole life. */
+export interface CaptchaControllerSettings {
+  /**
+   * The Atlas captcha's words in the form's language, read each time a widget
+   * is drawn (so a locale switch applies to the next one). See
+   * `atlasCaptchaLabels(t)`.
+   */
+  atlasLabels?: () => Partial<AtlasCaptchaLabels>;
+}
+
+export function createCaptchaController(
+  initial?: CaptchaControllerOptions,
+  settings: CaptchaControllerSettings = {},
+): CaptchaController {
   let options: CaptchaControllerOptions = initial ?? { flow: undefined, active: false };
   let container: HTMLElement | null = null;
   let handle: CaptchaWidgetHandle | null = null;
@@ -83,7 +97,9 @@ export function createCaptchaController(initial?: CaptchaControllerOptions): Cap
     remove();
     const flow = options.flow;
     if (!needed() || !flow || !container) return null;
-    const h = renderCaptchaWidget(flow, container);
+    const h = renderCaptchaWidget(flow, container, {
+      atlas: settings.atlasLabels ? { labels: settings.atlasLabels() } : undefined,
+    });
     handle = h;
     drawnKey = key();
     // Swallow here so a removed / failed widget is never an unhandled
@@ -121,7 +137,7 @@ export function createCaptchaController(initial?: CaptchaControllerOptions): Cap
     async getToken() {
       if (!needed()) return null;
       let h = handle;
-      if (!h || spent === h) h = mount();
+      if (!h || spent === h || h.stale?.()) h = mount();
       if (!h) return null;
       try {
         const token = await h.token;

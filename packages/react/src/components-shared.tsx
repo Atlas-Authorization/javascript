@@ -6,6 +6,7 @@ import { useAtlas } from './AtlasProvider';
 import { FapiClient } from './fapi';
 import { classFor, type ElementKey } from './appearance';
 import { translate } from './i18n';
+import { ATLAS_REACT_SDK } from './version';
 
 /**
  * Internal helpers shared by more than one component in the @atlasauth/react
@@ -47,7 +48,7 @@ export function useErrorText(): (error: ErrorLike | string | null | undefined) =
 export function useFapiClient(): FapiClient {
   const { publishableKey, frontendApi, locale } = useAtlas();
   return useMemo(
-    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale }),
+    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale, sdk: ATLAS_REACT_SDK }),
     [publishableKey, frontendApi, locale],
   );
 }

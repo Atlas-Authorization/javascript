@@ -1,6 +1,7 @@
 import { onScopeDispose, shallowRef, watch, type ShallowRef } from 'vue';
 import {
   advanceWithCaptcha,
+  atlasCaptchaLabels,
   createCaptchaController,
   createSignUp,
   fetchInstanceSettings,
@@ -19,6 +20,7 @@ import {
 } from './fapi';
 import { useAtlas } from './context';
 import { translate } from './i18n';
+import { ATLAS_VUE_SDK } from './version';
 
 /**
  * §10.2 the server-driven sign-in / sign-up flow, as a composable.
@@ -72,13 +74,16 @@ export function useFlow(): FlowController {
     publishableKey: atlas.publishableKey,
     baseUrl: atlas.frontendApi,
     locale: atlas.locale,
+    sdk: ATLAS_VUE_SDK,
   });
 
   // §5 the per-flow captcha, driven by the instance's settings so turning it on
   // in the dashboard needs no code change. The widgets draw into the slots the
   // components attach.
-  const captcha = createCaptchaController();
-  const signUpCaptcha = createCaptchaController();
+  // The Atlas captcha's words follow the form's catalog.
+  const captchaSettings = { atlasLabels: () => atlasCaptchaLabels(t) };
+  const captcha = createCaptchaController(undefined, captchaSettings);
+  const signUpCaptcha = createCaptchaController(undefined, captchaSettings);
   let identifier = '';
 
   // On completion the response carries a one-time ticket (§7.1). Exchange it

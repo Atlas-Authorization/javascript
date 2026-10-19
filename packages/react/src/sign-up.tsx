@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { flowNeedsCaptcha, startSignUp, type FieldError } from '@atlasauth/js';
+import { atlasCaptchaLabels, flowNeedsCaptcha, startSignUp, type FieldError } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { FapiClient, type FlowState } from './fapi';
 import { AttemptFlow, useFlow, type FlowProps } from './flow';
 import { CaptchaSlot, localizeCaptchaErrors, useCaptcha, type CaptchaController } from './captcha';
 import { useClass, useClasses, useErrorText, useText } from './components-shared';
 import type { InstanceSettings, PublicSignUpField } from './instance-settings';
+import { ATLAS_REACT_SDK } from './version';
 
 /**
  * §10.2 `<SignUp/>` — creates an account.
@@ -39,6 +40,8 @@ export function SignUp(props: FlowProps = {}) {
   const emailUnavailable = instanceSettings?.emailDelivery?.passwordSignUp === false;
   const captcha = useCaptcha(signUpFlow, {
     active: !state.attempt && !emailUnavailable && flowNeedsCaptcha(signUpFlow),
+
+    atlasLabels: atlasCaptchaLabels(t),
   });
 
   const create = useCallback(
@@ -352,7 +355,7 @@ function SignUpForm({
 export function useSignUp() {
   const { publishableKey, frontendApi, locale, reload } = useAtlas();
   const client = useMemo(
-    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale }),
+    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale, sdk: ATLAS_REACT_SDK }),
     [frontendApi, publishableKey, locale],
   );
   const create = useCallback(

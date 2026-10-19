@@ -62,6 +62,8 @@ export interface ConfigChangelogEntry {
   actor: { type: string; id: string | null };
   action: string;
   ip?: string | null;
+  /** The object that changed, e.g. `{ type: 'oauth_client', id }`. */
+  target?: { type: string; id: string | null } | null;
   changes?: Array<{ section: string; before: unknown; after: unknown }>;
   /** Changed field names, when no before/after was recorded. */
   fields?: string[];

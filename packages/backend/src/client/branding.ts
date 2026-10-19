@@ -30,7 +30,7 @@ export interface Branding {
   background?: HostedBackground;
   /** Provider display order + which social providers to hide. */
   providers?: { order?: string[]; hidden?: string[] };
-  copy?: { headline?: string; subheadline?: string; footer?: string };
+  copy?: { eyebrow?: string; headline?: string; subheadline?: string; footer?: string };
   socialButtons?: {
     variant?: 'block' | 'compact' | 'icon';
     size?: 'sm' | 'md' | 'lg';
@@ -117,6 +117,47 @@ export interface ResolvedBranding {
   colorBackground: string;
   colorText: string;
   supportEmail: string | null;
+  // Every writable field, under its input name, with the value in force (a
+  // field you did not set shows its default). Optional in the type so older
+  // servers still type-check; current servers always send them.
+  colorAccent?: string;
+  colorCard?: string;
+  colorBorder?: string;
+  borderRadius?: string;
+  theme?: 'light' | 'dark' | 'auto';
+  /** The font stack name in force (`system` when unset or unknown). */
+  fontFamily?: string;
+  /** The CSS font-family list `fontFamily` resolves to. */
+  fontStack?: string;
+  fontUrl?: string | null;
+  layout?: 'centered' | 'split' | 'wall';
+  background?: Record<string, unknown>;
+  providers?: { order: string[]; hidden: string[] };
+  providerOrder?: string[];
+  providerHidden?: string[];
+  socialButtons?: Record<string, unknown>;
+  codeInput?: 'boxes' | 'single';
+  card?: { width: string; align: string; logoSize: string };
+  typography?: { headingSize: string; headingWeight: string };
+  buttonShape?: string;
+  cardBorder?: string;
+  inputSize?: string;
+  interaction?: Record<string, unknown>;
+  backgroundPattern?: string;
+  cardStyle?: string;
+  textScale?: string;
+  socialPlacement?: 'top' | 'bottom';
+  sectionOrder?: string[];
+  legal?: { termsUrl: string | null; privacyUrl: string | null; required: boolean };
+  signUpFields?: Array<Record<string, unknown>>;
+  copy?: { eyebrow: string | null; headline: string | null; subheadline: string | null; footer: string | null };
+  eyebrow?: string | null;
+  headline?: string | null;
+  subheadline?: string | null;
+  footer?: string | null;
+  customCss?: string;
+  customHtmlHeader?: string;
+  customHtmlFooter?: string;
 }
 
 /**

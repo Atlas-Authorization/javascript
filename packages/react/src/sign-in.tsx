@@ -21,6 +21,7 @@ import {
   type GoogleButtonMode,
   type ProviderUnavailableReason,
 } from './flow';
+import { ATLAS_REACT_SDK } from './version';
 
 export function SignIn(props: FlowProps = {}) {
   const { state, submit, client, finish, captcha, prepare, usePassword } = useFlow({ afterUrl: props.afterUrl });
@@ -66,7 +67,7 @@ export function SignIn(props: FlowProps = {}) {
 export function useSignIn() {
   const { publishableKey, frontendApi, locale, reload } = useAtlas();
   const client = useMemo(
-    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale }),
+    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale, sdk: ATLAS_REACT_SDK }),
     [frontendApi, publishableKey, locale],
   );
 

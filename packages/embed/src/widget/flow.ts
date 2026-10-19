@@ -25,7 +25,7 @@ import {
 import { validateRedirect } from '../redirect';
 import type { AtlasWidget } from '../widget';
 import type { CaptchaFlowKey } from '../appearance';
-import { flowNeedsCaptcha, getCaptchaToken, isRenderable } from './captcha';
+import { atlasCaptchaLabels, flowNeedsCaptcha, getCaptchaToken, isRenderable } from './captcha';
 import { render, renderNote, renderErrors } from './render';
 
 /**
@@ -52,7 +52,10 @@ async function captchaToken(
   host.className = 'atlas-embed-captcha';
   (w.root.parentElement ?? doc.body ?? doc.documentElement).appendChild(host);
   try {
-    return await getCaptchaToken(flow, host);
+    // The Atlas captcha's words come from the widget's `localization` catalog.
+    return await getCaptchaToken(flow, host, {
+      atlas: { labels: atlasCaptchaLabels(w.options.localization as Readonly<Record<string, unknown>> | undefined) },
+    });
   } catch {
     return null;
   } finally {

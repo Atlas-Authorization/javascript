@@ -90,6 +90,12 @@ export interface LocalizationResource {
   'captcha.prompt': string;
   'captcha.required': string;
   'captcha.failed': string;
+  'captcha.checking': string;
+  'captcha.verified': string;
+  'captcha.puzzlePrompt': string;
+  'captcha.puzzleConfirm': string;
+  'captcha.puzzleTile': string;
+  'captcha.puzzleAlternative': string;
 
   // --- Multi-factor ----------------------------------------------------------
   'mfa.title': string;

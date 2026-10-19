@@ -75,6 +75,10 @@ export function instanceSettingsFrom(body: unknown): InstanceSettings {
         ...(flow.widget === 'invisible' || flow.widget === 'managed' || flow.widget === 'visible'
           ? { widget: flow.widget }
           : {}),
+        // Atlas's own captcha: where to fetch each challenge.
+        ...(typeof flow.challengeUrl === 'string' && /^https?:\/\//.test(flow.challengeUrl)
+          ? { challengeUrl: flow.challengeUrl }
+          : {}),
       };
     }
   }

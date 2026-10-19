@@ -2,6 +2,7 @@ import { derived, get, writable, type Readable } from 'svelte/store';
 import {
   FapiClient,
   advanceWithCaptcha,
+  atlasCaptchaLabels,
   createCaptchaController,
   createSignUp,
   fetchInstanceSettings,
@@ -22,6 +23,7 @@ import { useAtlas, type AuthStatus } from './context';
 import { translate } from './i18n';
 import { evaluate, type ProtectCondition } from './protect';
 import type { AtlasOrganizationMembership, AtlasSession, AtlasUser } from './types';
+import { ATLAS_SVELTE_SDK } from './version';
 
 /**
  * §10.1 accessors — the Svelte peer of React's hooks (`useUser`, `useSession`,
@@ -199,6 +201,7 @@ function createFlow(): FlowController {
     publishableKey: atlas.publishableKey,
     baseUrl: atlas.frontendApi,
     locale: atlas.locale,
+    sdk: ATLAS_SVELTE_SDK,
   });
 
   // Seeded from a redirect that came back mid-flow (e.g. OAuth needing a second
@@ -210,8 +213,10 @@ function createFlow(): FlowController {
   // §5 the per-flow captcha, driven by the instance's settings so turning it on
   // in the dashboard needs no code change. Kept in step with the settings and
   // the flow's step synchronously, before the components re-render.
-  const captcha = createCaptchaController();
-  const signUpCaptcha = createCaptchaController();
+  // The Atlas captcha's words follow the form's catalog.
+  const captchaSettings = { atlasLabels: () => atlasCaptchaLabels(t) };
+  const captcha = createCaptchaController(undefined, captchaSettings);
+  const signUpCaptcha = createCaptchaController(undefined, captchaSettings);
   let identifier = '';
   const unsubscribeCaptcha = derived([settings, state], (pair) => pair).subscribe(
     ([current, flow]) => {

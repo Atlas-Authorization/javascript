@@ -25,6 +25,19 @@ describe('verifyWebhook', () => {
     expect(res.event?.type).toBe('user.created');
   });
 
+  it('returns the signed delivery id and timestamp for deduplication (ATL-S-23)', () => {
+    const ts = now.getTime() - 1_000;
+    const headers = sign('evt_1', ts, body);
+    const res = verifyWebhook({ body, headers, secret: SECRET, now });
+    expect(res.verified).toBe(true);
+    expect(res.deliveryId).toBe(headers['atlas-id']);
+    expect(res.timestamp).toBe(ts);
+    // Never on a failed verification.
+    const bad = verifyWebhook({ body: `${body} `, headers, secret: SECRET, now });
+    expect(bad.deliveryId).toBeUndefined();
+    expect(bad.timestamp).toBeUndefined();
+  });
+
   it('rejects a tampered body (signature mismatch)', () => {
     const headers = sign('evt_1', now.getTime(), body);
     const res = verifyWebhook({ body: body.replace('usr_1', 'usr_hacked'), headers, secret: SECRET, now });

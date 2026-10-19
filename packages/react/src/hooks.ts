@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   checkSession,
   type CheckSessionOptions,
   type ProviderToken,
+  type SignOutEvent,
   type SignOutOptions,
   type SignOutResult,
 } from '@atlasauth/js';
@@ -89,7 +90,8 @@ export interface UseAuthReturn {
   orgId: string | null;
   orgRole: string | null;
   /** Always fresh: refreshes first if the cached token is close to expiry. */
-  getToken(): Promise<string | null>;
+  /** The session JWT; with `{ template }` a named-template token (e.g. `'chatly'`). */
+  getToken(options?: { template?: string }): Promise<string | null>;
   /** §6.6 the user's own live access token at a connected social provider. */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
   /**
@@ -185,4 +187,20 @@ export function useSilentAuth(options: CheckSessionOptions | null): {
     };
   }, [key]);
   return state;
+}
+
+/**
+ * Run `listener` whenever the signed-in user becomes signed out, on every path
+ * (this tab, another tab, expiry, a session ended elsewhere). For resetting an
+ * embedded third party, e.g. a support-chat widget:
+ *
+ *   useSignOutListener(({ reason }) => window.Chatly?.('reset'));
+ *
+ * The latest `listener` is always called; it is subscribed once.
+ */
+export function useSignOutListener(listener: (event: SignOutEvent) => void): void {
+  const { addSignOutListener } = useAtlas();
+  const ref = useRef(listener);
+  ref.current = listener;
+  useEffect(() => addSignOutListener((event) => ref.current(event)), [addSignOutListener]);
 }

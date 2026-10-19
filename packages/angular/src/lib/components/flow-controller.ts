@@ -2,6 +2,7 @@ import { WritableSignal, signal } from '@angular/core';
 import {
   FapiClient,
   advanceWithCaptcha,
+  atlasCaptchaLabels,
   createCaptchaController,
   createSignUp,
   fetchInstanceSettings,
@@ -44,9 +45,14 @@ export class AtlasFlowController {
    */
   readonly settings = signal<InstanceSettings | null>(null);
   /** The sign-in captcha (identifier step / `needs_captcha` challenge). */
-  readonly captcha: CaptchaController = createCaptchaController();
+  readonly captcha: CaptchaController = createCaptchaController(undefined, {
+    // The Atlas captcha's words follow the form's catalog (read when drawn).
+    atlasLabels: () => atlasCaptchaLabels(this.t),
+  });
   /** The sign-up captcha (the create-account step). */
-  readonly signUpCaptcha: CaptchaController = createCaptchaController();
+  readonly signUpCaptcha: CaptchaController = createCaptchaController(undefined, {
+    atlasLabels: () => atlasCaptchaLabels(this.t),
+  });
   /** Whether {@link captcha} currently draws a widget (for templates). */
   readonly captchaDrawn = signal(false);
   /** Whether {@link signUpCaptcha} currently draws a widget (for templates). */

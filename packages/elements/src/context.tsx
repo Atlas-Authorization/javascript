@@ -26,6 +26,7 @@ import {
 import {
   FapiClient,
   advanceWithCaptcha,
+  atlasCaptchaLabels,
   createCaptchaController,
   flowNeedsCaptcha,
   isRenderableCaptcha,
@@ -143,7 +144,14 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
   // code change. The shared controller from `@atlasauth/js` owns the lifecycle.
   const t = useCallback((key: string) => catalog[key] ?? key, [catalog]);
   const captchaRef = useRef<CaptchaController | null>(null);
-  if (!captchaRef.current) captchaRef.current = createCaptchaController();
+  // The Atlas captcha's words follow the current catalog (read when a widget is drawn).
+  const tRef = useRef(t);
+  tRef.current = t;
+  if (!captchaRef.current) {
+    captchaRef.current = createCaptchaController(undefined, {
+      atlasLabels: () => atlasCaptchaLabels(tRef.current),
+    });
+  }
   const captcha = captchaRef.current;
   const identifierRef = useRef('');
   const submitRef = useRef<() => Promise<void>>(async () => undefined);

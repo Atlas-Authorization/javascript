@@ -1,5 +1,10 @@
 # @atlasauth/localizations changelog
 
+## 0.6.0
+- **Added 6 keys for the Atlas captcha widget**, in every shipped locale (en-US, es-ES, fr-FR, de-DE, pt-BR, ja-JP,
+  nl-NL): `captcha.checking`, `captcha.verified`, `captcha.puzzlePrompt`, `captcha.puzzleConfirm`,
+  `captcha.puzzleTile` (`{n}` is the tile number) and `captcha.puzzleAlternative`.
+
 ## 0.5.0
 - **Added 9 keys for the emailed sign-in factor**, in every shipped locale (en-US, es-ES, fr-FR, de-DE, pt-BR, ja-JP,
   nl-NL): `signIn.codeSentTo` (`{email}`), `signIn.linkSentTo` (`{email}`), `signIn.sending`, `signIn.resendCode`,

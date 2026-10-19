@@ -49,6 +49,12 @@ export const frFR: LocalizationResource = {
   'captcha.prompt': 'Effectuez la vérification de sécurité pour continuer.',
   'captcha.required': 'Veuillez effectuer la vérification de sécurité, puis réessayer.',
   'captcha.failed': 'La vérification de sécurité a échoué. Veuillez réessayer.',
+  'captcha.checking': 'Vérification de votre navigateur…',
+  'captcha.verified': 'Vérification de sécurité terminée.',
+  'captcha.puzzlePrompt': 'Sélectionnez toutes les images qui montrent la même forme que celle-ci. La couleur et la taille n’ont pas d’importance.',
+  'captcha.puzzleConfirm': 'Confirmer',
+  'captcha.puzzleTile': 'Image {n}',
+  'captcha.puzzleAlternative': 'Impossible de faire la vérification par images ? Utilisez plutôt une vérification automatique plus longue.',
 
   'mfa.title': 'Vérification en deux étapes',
   'mfa.subtitle': "Saisissez le code de votre application d'authentification.",
