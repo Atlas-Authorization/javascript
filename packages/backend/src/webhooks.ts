@@ -8,7 +8,9 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  * and `atlas-timestamp` (epoch ms) headers. The timestamp is INSIDE the signed
  * material — a header-only timestamp would let an attacker replay a captured
  * body under a fresh timestamp — and a delivery older than 5 minutes is rejected
- * so a captured request cannot be replayed later.
+ * so a captured request cannot be replayed later. The header may carry several
+ * space-separated `v1,<base64>` entries (one per secret while a secret rotates
+ * with an overlap); the delivery verifies when any one of them matches.
  *
  * The signing logic is identical to the server's (`@atlas/core` `verifyWebhook`),
  * reimplemented here with zero dependencies so an integrator gets a first-party
@@ -63,6 +65,23 @@ function readHeader(headers: HeadersLike, name: string): string | undefined {
   return Array.isArray(found) ? found[0] : found;
 }
 
+/**
+ * The `v1` signatures in an `atlas-signature` header. The header carries one
+ * `v1,<base64>` entry, or several separated by spaces (while an endpoint
+ * secret rotates, Atlas signs with the old and the new secret). Entries of
+ * another version are skipped, so a future scheme never breaks this verifier.
+ */
+function parseSignatures(header: string): string[] {
+  const out: string[] = [];
+  for (const entry of header.trim().split(/\s+/)) {
+    const comma = entry.indexOf(',');
+    if (comma <= 0) continue;
+    const value = entry.slice(comma + 1);
+    if (entry.slice(0, comma) === SIGNATURE_VERSION && value) out.push(value);
+  }
+  return out;
+}
+
 type HeadersLike = Headers | Record<string, string | string[] | undefined>;
 
 export interface VerifyWebhookInput {
@@ -104,8 +123,8 @@ export function verifyWebhook<T = unknown>(input: VerifyWebhookInput): WebhookVe
   const signature = readHeader(input.headers, ATLAS_WEBHOOK_HEADERS.signature);
   if (!id || !timestampRaw || !signature) return { verified: false, reason: 'missing_headers' };
 
-  const [version, provided] = signature.split(',');
-  if (version !== SIGNATURE_VERSION || !provided) return { verified: false, reason: 'malformed_signature' };
+  const provided = parseSignatures(signature);
+  if (provided.length === 0) return { verified: false, reason: 'malformed_signature' };
 
   const timestamp = Number(timestampRaw);
   const now = (input.now ?? new Date()).getTime();
@@ -116,10 +135,16 @@ export function verifyWebhook<T = unknown>(input: VerifyWebhookInput): WebhookVe
     return { verified: false, reason: 'stale_timestamp' };
   }
 
-  const expected = createHmac('sha256', input.secret).update(`${id}.${timestamp}.${raw}`).digest('base64');
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return { verified: false, reason: 'signature_mismatch' };
+  const expected = Buffer.from(
+    createHmac('sha256', input.secret).update(`${id}.${timestamp}.${raw}`).digest('base64'),
+  );
+  // Compare every entry (no early exit), each in constant time.
+  let matched = false;
+  for (const candidate of provided) {
+    const a = Buffer.from(candidate);
+    if (a.length === expected.length && timingSafeEqual(a, expected)) matched = true;
+  }
+  if (!matched) return { verified: false, reason: 'signature_mismatch' };
 
   try {
     return { verified: true, event: JSON.parse(raw) as T, deliveryId: id, timestamp };

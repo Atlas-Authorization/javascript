@@ -10,6 +10,11 @@ export interface LoginReadinessParams {
 export interface LoginReadinessCheck {
   name: string;
   pass: boolean;
+  /**
+   * `false` when the check does not matter for the assumed integration (it
+   * then never makes `ready` false). Absent from older servers.
+   */
+  applies?: boolean;
   observed: unknown;
   /** What was seen, and the fix when it fails. */
   detail: string;
@@ -20,8 +25,20 @@ export interface LoginReadiness {
   origin: string;
   live: boolean;
   data_region?: string | null;
+  /** Every check that applies to the assumed integration passes. */
   ready: boolean;
+  /** The integration the checks assumed for this origin, and why. */
+  integration?: LoginReadinessIntegration;
   checks: LoginReadinessCheck[];
+}
+
+export interface LoginReadinessIntegration {
+  /** `redirect`: hosted-redirect OIDC, so the `cors` and `session_cookie` checks do not apply. */
+  assumed: 'redirect' | 'embedded';
+  /** `declared` | `embedded_traffic` | `redirect_clients` | `default`. */
+  source: 'declared' | 'embedded_traffic' | 'redirect_clients' | 'default';
+  /** A plain sentence saying why. */
+  reason: string;
 }
 
 export interface RequestInspectorParams {

@@ -25,6 +25,23 @@ describe('verifyWebhook', () => {
     expect(res.event?.type).toBe('user.created');
   });
 
+  it('accepts a header with several signatures when one of them matches (secret rotation)', () => {
+    const ts = now.getTime();
+    const stale = sign('evt_1', ts, body, 'whsec_old_secret')['atlas-signature'];
+    const fresh = sign('evt_1', ts, body)['atlas-signature'];
+    for (const header of [`${stale} ${fresh}`, `${fresh} ${stale}`, `v2,abc ${fresh}`]) {
+      const headers = { ...sign('evt_1', ts, body), 'atlas-signature': header };
+      const res = verifyWebhook({ body, headers, secret: SECRET, now });
+      expect(res.verified).toBe(true);
+    }
+    // Only stale signatures: a mismatch, never a pass.
+    const onlyStale = { ...sign('evt_1', ts, body), 'atlas-signature': `${stale} ${stale}` };
+    expect(verifyWebhook({ body, headers: onlyStale, secret: SECRET, now }).reason).toBe('signature_mismatch');
+    // No v1 entry at all is malformed.
+    const noV1 = { ...sign('evt_1', ts, body), 'atlas-signature': 'v2,abc v0,def' };
+    expect(verifyWebhook({ body, headers: noV1, secret: SECRET, now }).reason).toBe('malformed_signature');
+  });
+
   it('returns the signed delivery id and timestamp for deduplication (ATL-S-23)', () => {
     const ts = now.getTime() - 1_000;
     const headers = sign('evt_1', ts, body);

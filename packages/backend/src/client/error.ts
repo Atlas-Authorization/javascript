@@ -63,6 +63,16 @@ export const AtlasErrorCodes = {
   CAPTCHA_IN_USE: 'CAPTCHA_IN_USE',
   /** Strict mode: the body had a field this endpoint does not accept (`param` names it). */
   UNKNOWN_FIELD: 'UNKNOWN_FIELD',
+  /** 422 — the body set a field that is not writable on this endpoint (`param` names it; the message names the call that changes it). */
+  READ_ONLY_FIELD: 'READ_ONLY_FIELD',
+  /** 409 — the development email sender is not available on a production instance. */
+  DEVELOPMENT_EMAIL_NOT_ALLOWED: 'DEVELOPMENT_EMAIL_NOT_ALLOWED',
+  /** 503 — the development email sender is not available on this deployment. */
+  DEVELOPMENT_EMAIL_UNAVAILABLE: 'DEVELOPMENT_EMAIL_UNAVAILABLE',
+  /** 429 — the development sender's daily or per-recipient hourly cap is spent (`meta.window`, `meta.retry_after_seconds`). */
+  DEVELOPMENT_EMAIL_LIMIT_REACHED: 'DEVELOPMENT_EMAIL_LIMIT_REACHED',
+  /** 422 — the development sender sends only Atlas's own sign-in emails, never custom templates. */
+  DEVELOPMENT_EMAIL_TEMPLATE_NOT_ALLOWED: 'DEVELOPMENT_EMAIL_TEMPLATE_NOT_ALLOWED',
   /** The billing plan still has subscribers and cannot be removed. */
   PLAN_IN_USE: 'PLAN_IN_USE',
   /** The key is valid but for another API surface (e.g. a platform key on the Backend API). */

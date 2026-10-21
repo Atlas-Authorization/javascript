@@ -24,13 +24,34 @@ export interface Instance {
   /** The JWKS holding this instance's signing keys. */
   jwks_uri: string;
   allowed_origins: string[];
+  /**
+   * The declared integration per allowed origin (`redirect` or `embedded`). An
+   * origin not listed is inferred by preflight and login readiness.
+   */
+  allowed_origin_integrations?: Record<string, 'redirect' | 'embedded'>;
   auth_config: Metadata;
   created_at: number;
 }
 
+/**
+ * How an allowed origin signs in: `redirect` (hosted-redirect OIDC: the app
+ * never runs the embedded components), `embedded` (the sign-in components run
+ * on the origin), or `auto` / `null` (clear the hint; Atlas infers it).
+ */
+export type OriginIntegration = 'redirect' | 'embedded' | 'auto';
+
+/** An `allowed_origins` entry that also declares how the origin signs in. */
+export interface AllowedOriginEntry {
+  origin: string;
+  integration?: OriginIntegration | null;
+}
+
+/** An origin string, or `{ origin, integration }`. A plain string keeps the origin's current hint. */
+export type AllowedOriginInput = string | AllowedOriginEntry;
+
 export interface UpdateInstanceBody {
-  /** Exact origins only — a wildcard or a path is rejected (§13.1). */
-  allowed_origins?: string[];
+  /** Exact origins only — a wildcard or a path is rejected (§13.1). The list replaces the stored one. */
+  allowed_origins?: AllowedOriginInput[];
   auth_config?: Record<string, unknown>;
 }
 
@@ -39,6 +60,7 @@ export interface InstanceUpdateResult {
   object: 'instance';
   id: string;
   allowed_origins: string[];
+  allowed_origin_integrations?: Record<string, 'redirect' | 'embedded'>;
   auth_config: Metadata;
 }
 

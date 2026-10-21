@@ -399,3 +399,5 @@ To check the route end to end, `oauthClients.testBackchannelLogout(id)` sends a 
 ## Webhooks
 
 `verifyWebhook` checks the signature on events Atlas sends to your webhook endpoints. You manage endpoints with `atlas.webhooks.endpoints`: create, update, reveal or rotate a secret, send a test event, and redeliver a past delivery.
+
+The `atlas-signature` header can carry more than one signature, separated by spaces (`v1,<sig> v1,<sig>`). While an endpoint secret rotates, Atlas may sign each delivery with the old and the new secret. `verifyWebhook` accepts the delivery when any one signature matches your secret.

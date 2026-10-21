@@ -42,6 +42,13 @@ export interface Branding {
   };
   /** How a verification code is entered — segmented `boxes` (default) or `single`. */
   codeInput?: 'boxes' | 'single';
+  /**
+   * Per-audience branding for the hosted pages, keyed by audience hint
+   * (`[a-z0-9_-]{1,32}`, at most 20). A sign-in started with
+   * `audience_hint=<hint>` uses that entry. An update merges per hint: an entry
+   * replaces that hint, `null` deletes it, `audiences: null` removes them all.
+   */
+  audiences?: Record<string, BrandingAudience | null> | null;
   card?: {
     width?: 'narrow' | 'default' | 'wide';
     align?: 'left' | 'center';
@@ -108,6 +115,18 @@ export interface HostedBackground {
   imageUrl?: string;
 }
 
+/** The hosted-page branding for one audience hint. */
+export interface BrandingAudience {
+  /** Replaces the card heading (up to 120 characters). */
+  heading?: string;
+  /** Replaces the line under the heading (up to 240 characters). */
+  subheading?: string;
+  /** Replaces the logo (https). */
+  logoUrl?: string;
+  /** Replaces the primary colour (hex, rgb() or a CSS colour name). */
+  primaryColor?: string;
+}
+
 /** What the renderers actually use — everything already escaped or dropped. */
 export interface ResolvedBranding {
   applicationName: string;
@@ -137,6 +156,8 @@ export interface ResolvedBranding {
   providerHidden?: string[];
   socialButtons?: Record<string, unknown>;
   codeInput?: 'boxes' | 'single';
+  /** Every audience the hosted page can theme for, as it reads them (invalid values dropped). */
+  audiences?: Record<string, BrandingAudience>;
   card?: { width: string; align: string; logoSize: string };
   typography?: { headingSize: string; headingWeight: string };
   buttonShape?: string;

@@ -11,7 +11,7 @@ import type {
   BackchannelLogoutDeliveryPage,
   BackchannelLogoutTest,
 } from './oauth-clients';
-import type { OriginMove, OriginMoveRequest, PreflightFinding } from './instance';
+import type { AllowedOriginInput, OriginMove, OriginMoveRequest, PreflightFinding } from './instance';
 import type { ConfigChangelogEntry, ListConfigChangelogParams } from './activity';
 import type {
   AtlasDesign,
@@ -76,6 +76,8 @@ export interface PlatformApp {
   /** The JWKS holding this app's signing keys. */
   jwks_uri: string;
   allowed_origins: string[];
+  /** The declared integration per allowed origin. Write `allowed_origins` entries as `{ origin, integration }` to set one. */
+  allowed_origin_integrations?: Record<string, 'redirect' | 'embedded'>;
   /** Housekeeping labels (up to 20, each up to 40 chars). */
   tags: string[];
   /** Hidden from the default listing. A visibility flag only: the app still serves auth. */
@@ -106,7 +108,8 @@ export interface CreatedPlatformApp extends PlatformAppWithSecret {
 export interface CreatePlatformAppBody {
   name?: string;
   environment?: 'production' | 'development';
-  allowed_origins?: string[];
+  /** Origin strings, or `{ origin, integration }` entries (`redirect` | `embedded` | `auto`). */
+  allowed_origins?: AllowedOriginInput[];
   /** Default true: also provision a test-mode sibling instance. */
   create_development_sibling?: boolean;
   tags?: string[];
@@ -114,7 +117,8 @@ export interface CreatePlatformAppBody {
 
 export interface UpdatePlatformAppBody {
   name?: string;
-  allowed_origins?: string[];
+  /** Origin strings, or `{ origin, integration }` entries (`redirect` | `embedded` | `auto`). */
+  allowed_origins?: AllowedOriginInput[];
   tags?: string[];
 }
 
@@ -129,7 +133,8 @@ export interface ListPlatformAppsParams {
 
 export interface CreatePlatformInstanceBody {
   environment?: 'production' | 'development';
-  allowed_origins?: string[];
+  /** Origin strings, or `{ origin, integration }` entries (`redirect` | `embedded` | `auto`). */
+  allowed_origins?: AllowedOriginInput[];
 }
 
 export interface PlatformAppSecretRotation {
@@ -188,7 +193,8 @@ export interface AccountlessApp {
 export interface CreateAccountlessAppBody {
   name?: string;
   environment?: 'production' | 'development';
-  allowed_origins?: string[];
+  /** Origin strings, or `{ origin, integration }` entries (`redirect` | `embedded` | `auto`). */
+  allowed_origins?: AllowedOriginInput[];
 }
 
 // ---- Sign in with Atlas apps --------------------------------------------------
