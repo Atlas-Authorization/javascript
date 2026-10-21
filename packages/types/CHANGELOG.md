@@ -1,5 +1,12 @@
 # @atlasauth/types changelog
 
+## 0.4.0
+
+### Added
+
+- `WebhookEvent` gains `user.referral_attributed` (referral attribution resolved after `user.created` was sent).
+- `User` gains optional `referral` (`UserReferral`: `partner_id`, `referrer_external_id`, `referrer_user_id`, `matched_via`, `status`, `risk_level`, `flagged`), `referral_code` and `referral_link`.
+
 ## 0.3.0
 
 ### Added

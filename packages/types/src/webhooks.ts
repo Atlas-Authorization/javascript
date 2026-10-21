@@ -14,6 +14,7 @@
 export type WebhookEvent =
   | 'user.created'
   | 'user.updated'
+  | 'user.referral_attributed'
   | 'user.deleted'
   | 'user.banned'
   | 'user.unbanned'

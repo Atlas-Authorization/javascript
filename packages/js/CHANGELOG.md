@@ -1,5 +1,10 @@
 # @atlasauth/js changelog
 
+## 0.13.0
+- **New: referral attribution.** A `FapiClient` captures the referral the visitor arrived with and sends it as `referral: { code, click_id, anon_id, consent, captured_at }` on every sign-in / sign-up start (`/v1/client/sign_ups`, `/v1/client/sign_ins`, OAuth / SSO / SAML / native id_token / passkey / wallet starts) and the steps that continue one, when the instance has referrals on. The code comes from the instance's URL parameters (default `ref`, `via`, `aff`) on the current page, the page the SDK loaded on, and their `redirect_url` / `after_url`. The instance's tracking cookie is read only under consent: Cookie Munch on the page decides (the instance's category, else its fallback category); otherwise the new `referralConsent` option (`'granted'` or a function) does. The SDK never writes the cookie. New `FapiClientOptions.referral?: false` (opt out) and `referralConsent?`; page-wide `configureReferralCapture({ referral, referralConsent })`. The config is read from `referrals` in `GET /v1/client/environment` / `GET /v1/appearance` (one read per page; nothing is fetched when there is no query and no config yet).
+- **Referred sign-up challenge.** `fetchInstanceSettings` switches the sign-up and sign-in captcha on when a referral code was captured and the instance's `referrals.challenge_referred_signups` is `always` (as long as a captcha provider is configured). New exports: `referralChallengeRequired`, `withReferralChallenge`, `referralChallengeFlows`, `captureReferral`, `referralConfigFrom`, `parseReferralCookie`, `acceptsReferral`, `seedReferralConfig`, `referralCacheKeyFor`, types `ReferralConfig`, `ReferralCapture`, `ReferralConsent`, `ReferralCaptureOptions`.
+- `FapiClient.post` is now `async` (it already returned a promise).
+
 ## 0.12.0
 - **New: SDK identity and advisories.** `FapiClientOptions.sdk?: AtlasSdkInfo` (`{ name, version }`, default
   `@atlasauth/js`) is sent as `X-Atlas-SDK: <name>/<version>`; an `Atlas-SDK-Advisory` response header is logged once

@@ -24,7 +24,11 @@ import {
 import { ATLAS_REACT_SDK } from './version';
 
 export function SignIn(props: FlowProps = {}) {
-  const { state, submit, client, finish, captcha, prepare, usePassword } = useFlow({ afterUrl: props.afterUrl });
+  const { state, submit, client, finish, captcha, prepare, usePassword } = useFlow({
+    afterUrl: props.afterUrl,
+    referral: props.referral,
+    referralConsent: props.referralConsent,
+  });
 
   return (
     <>

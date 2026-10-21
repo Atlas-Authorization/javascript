@@ -1,5 +1,8 @@
 # @atlasauth/react changelog
 
+## 0.11.0
+- **Referral attribution.** `<SignIn>` / `<SignUp>` send the referral the visitor arrived with on sign-in and sign-up (through `@atlasauth/js` 0.13.0) when the instance has referrals on. New props on `<SignIn>`, `<SignUp>` and `<AtlasProvider>`: `referral?: false` (opt out) and `referralConsent?: 'granted' | 'denied' | boolean | () => …` (the app's own consent for the referral cookie, used when Cookie Munch is not on the page). When the instance requires it (`challenge_referred_signups: 'always'`), a referred sign-up or sign-in shows the captcha even when it is otherwise off.
+
 ## 0.10.1
 - **`<ProfileCard>` can verify an address.** Each unverified email address now has a **Verify** button: it emails a code (`POST /v1/client/me/email_addresses/{id}/prepare_verification`) and shows a field to enter it (`attempt_verification`). This includes the sign-up address on an app that does not require email verification, which now reads unverified until it is proven.
 

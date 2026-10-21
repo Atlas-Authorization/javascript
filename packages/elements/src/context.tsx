@@ -39,6 +39,8 @@ import {
   flowFromPending,
   initialFlow,
   getPasskeyAssertion,
+  referralChallengeFlows,
+  referralChallengeRequired,
   type AttemptView,
   type CaptchaController,
   type CaptchaControllerOptions,
@@ -155,15 +157,32 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
   const captcha = captchaRef.current;
   const identifierRef = useRef('');
   const submitRef = useRef<() => Promise<void>>(async () => undefined);
+  // Referral attribution: a referred sign-up shows the challenge when the
+  // instance asks for it, even with the captcha otherwise off.
+  const [referralChallenge, setReferralChallenge] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void referralChallengeRequired(client).then((on) => {
+      if (alive) setReferralChallenge(on);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [client, instanceSettings]);
   const captchaOptions = useMemo<CaptchaControllerOptions>(() => {
+    const flows = instanceSettings
+      ? referralChallenge
+        ? referralChallengeFlows(instanceSettings.captchaFlows)
+        : instanceSettings.captchaFlows
+      : undefined;
     if (mode === 'sign-up') {
-      const flow = instanceSettings?.captchaFlows.signUp;
+      const flow = flows?.signUp;
       return { flow, active: !state.attempt && flowNeedsCaptcha(flow) };
     }
-    return signInCaptchaOptions(instanceSettings?.captchaFlows.signIn, state, () => {
+    return signInCaptchaOptions(flows?.signIn, state, () => {
       void submitRef.current();
     });
-  }, [instanceSettings, mode, state]);
+  }, [instanceSettings, mode, state, referralChallenge]);
   const captchaNeeded = captchaOptions.active && isRenderableCaptcha(captchaOptions.flow?.provider);
   // A layout effect: a `<*.Captcha>` mounting in this commit has attached its
   // element by now (child refs run first), so `configure` draws straight into it.

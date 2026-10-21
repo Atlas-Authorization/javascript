@@ -8,6 +8,9 @@ import {
   localizedErrorMessage,
   type ErrorLike,
   type ErrorStrings,
+  referralChallengeFlows,
+  referralChallengeRequired,
+  type ReferralConsent,
 } from '@atlasauth/js';
 import {
   cssVariables,
@@ -52,6 +55,17 @@ export interface WidgetOptions {
   /** The instance's FAPI origin the widget calls cross-origin. */
   frontendApi: string;
   mode?: 'sign-in' | 'sign-up';
+  /**
+   * Referral attribution: the widget sends the referral the visitor arrived
+   * with on sign-in / sign-up when the instance has referrals on. `false` turns
+   * that off.
+   */
+  referral?: false;
+  /**
+   * The page's own consent decision for the referral tracking cookie, used only
+   * when Cookie Munch is not on the page (`'granted'` lets the widget read it).
+   */
+  referralConsent?: ReferralConsent;
   /** Where to go on success. Validated: same-origin or an absolute https URL. */
   redirect?: string;
   /**
@@ -181,6 +195,8 @@ export class AtlasWidget {
       frontendApi: options.frontendApi,
       fetchImpl: options.fetchImpl,
       locale: options.locale ?? catalogLocale(options.localization),
+      referral: options.referral,
+      referralConsent: options.referralConsent,
     });
   }
 
@@ -236,6 +252,11 @@ export class AtlasWidget {
       this.rememberMeEnabled = data.rememberMe === true;
       this.trustedDeviceEnabled = data.rememberDevice === true;
       this.captchaFlows = data.captchaFlows ?? {};
+      // Referral attribution: a sign-up carrying a referral code shows the
+      // challenge when the instance asks for it, even with the captcha off.
+      if (await referralChallengeRequired(this.client)) {
+        this.captchaFlows = referralChallengeFlows(this.captchaFlows);
+      }
       this.resolveDesign(instanceDesignFrom(data));
       this.applyTheme();
     }

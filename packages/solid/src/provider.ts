@@ -30,6 +30,8 @@ import {
   type SignOutEvent,
   type SignOutListener,
   type SignOutReason,
+  configureReferralCapture,
+  type ReferralConsent,
 } from '@atlasauth/js';
 import { ATLAS_SOLID_SDK } from './version';
 import { AtlasContext } from './context';
@@ -138,6 +140,18 @@ export interface AtlasClient {
 export interface AtlasProviderProps {
   publishableKey: string;
   /**
+   * Referral attribution: the prebuilt forms send the referral the visitor
+   * arrived with on sign-in / sign-up when the instance has referrals on.
+   * `false` turns that off.
+   */
+  referral?: false;
+  /**
+   * The app's own consent decision for the referral tracking cookie, used only
+   * when Cookie Munch is not on the page: `'granted'` (or a function returning
+   * it) lets the forms read the cookie. Default: the cookie is not read.
+   */
+  referralConsent?: ReferralConsent;
+  /**
    * The instance's Frontend API: an absolute URL such as
    * `"https://auth.example.com"`, or `"same-origin"` / a path such as `"/atlas"`
    * behind a reverse proxy on the app's own origin. Required at runtime — a
@@ -180,6 +194,8 @@ export function createAtlasClient(options: {
   localization?: ErrorStrings;
   locale?: string;
   onSignOut?: (event: SignOutEvent) => void;
+  referral?: false;
+  referralConsent?: ReferralConsent;
 }): { client: AtlasClient; boot: () => Promise<void>; dispose: () => void } {
   const publishableKey = options.publishableKey;
   // Throws on a missing/invalid value rather than quietly sending every request
@@ -343,6 +359,8 @@ export function createAtlasClient(options: {
   // The FAPI client for the token-vault read. Reuses the same publishable key
   // and fetch so `@atlasauth/js` stays the single implementation.
   const locale = options.locale ?? catalogLocale(options.localization);
+  // Referral attribution: app-wide options every FAPI client on the page falls back to.
+  configureReferralCapture({ referral: options.referral, referralConsent: options.referralConsent });
   const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale, sdk: ATLAS_SOLID_SDK });
   const getProviderToken = (provider: string) => fetchProviderToken(fapiClient, provider);
 
@@ -483,6 +501,8 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
     locale: props.locale,
     // Through a closure so a prop that changes later is still the one called.
     onSignOut: (event) => props.onSignOut?.(event),
+    referral: props.referral,
+    referralConsent: props.referralConsent,
   });
 
   if (!isServer) {

@@ -34,6 +34,8 @@ import {
   type SignOutEvent,
   type SignOutListener,
   type SignOutReason,
+  configureReferralCapture,
+  type ReferralConsent,
 } from '@atlasauth/js';
 import { ATLAS_VUE_SDK } from './version';
 import { applyAppearanceToDom } from '@atlasauth/design/runtime';
@@ -121,6 +123,18 @@ export interface AtlasClient {
 
 export interface CreateAtlasOptions {
   publishableKey: string;
+  /**
+   * Referral attribution: the prebuilt forms send the referral the visitor
+   * arrived with on sign-in / sign-up when the instance has referrals on.
+   * `false` turns that off.
+   */
+  referral?: false;
+  /**
+   * The app's own consent decision for the referral tracking cookie, used only
+   * when Cookie Munch is not on the page: `'granted'` (or a function returning
+   * it) lets the forms read the cookie. Default: the cookie is not read.
+   */
+  referralConsent?: ReferralConsent;
   /**
    * The instance's Frontend API: an absolute URL such as
    * `"https://auth.example.com"`, or `"same-origin"` / a path such as `"/atlas"`
@@ -354,6 +368,8 @@ function createAtlasClient(options: CreateAtlasOptions): {
   // and fetch so the framework-agnostic `@atlasauth/js` helper is the single
   // implementation the Vue SDK surfaces.
   const locale = catalogLocale(options.localization);
+  // Referral attribution: app-wide options every FAPI client on the page falls back to.
+  configureReferralCapture({ referral: options.referral, referralConsent: options.referralConsent });
   const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale, sdk: ATLAS_VUE_SDK });
   const getProviderToken = (provider: string) => fetchProviderToken(fapiClient, provider);
 

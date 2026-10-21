@@ -17,8 +17,11 @@ import { AtlasService } from './atlas.service';
  */
 const FAPI = 'https://fapi.example';
 const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+// A fixed exp, so jwtFor(sid) is the same string however slow the run (a
+// per-call Date.now() changed the token when a second ticked mid-test).
+const EXP = Math.floor(Date.now() / 1000) + 3600;
 const jwtFor = (sid: string) =>
-  `${b64({ alg: 'none' })}.${b64({ sid, sub: 'user_1', exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`;
+  `${b64({ alg: 'none' })}.${b64({ sid, sub: 'user_1', exp: EXP })}.sig`;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

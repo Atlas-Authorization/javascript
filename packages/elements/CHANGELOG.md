@@ -1,5 +1,8 @@
 # @atlasauth/elements changelog
 
+## 0.6.0
+- **Referral attribution.** Flows send the referral the visitor arrived with on sign-in and sign-up (through `@atlasauth/js` 0.13.0) when the instance has referrals on, and `<*.Captcha>` draws the challenge for a referred sign-up when the instance requires it (`challenge_referred_signups: 'always'`). Opt out app-wide with `<AtlasProvider referral={false}>`.
+
 ## 0.5.0
 - The prebuilt forms draw the **Atlas captcha** (provider `atlas`, no keys needed) through `@atlasauth/js` 0.12.0,
   with its words from the form's catalog. New catalog keys: `captcha.checking`, `captcha.verified`,

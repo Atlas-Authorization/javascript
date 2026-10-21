@@ -42,6 +42,7 @@ import { radiusClientsResource } from './radius-clients';
 import { ltiPlatformsResource } from './lti-platforms';
 import { instanceResource } from './instance';
 import { instanceSecurityResource } from './instance-security';
+import { referralsResource } from './referrals';
 import { tokensResource } from './tokens';
 import { captchaResource } from './captcha';
 import { designResource } from './design';
@@ -132,6 +133,8 @@ function buildNamespaces(request: RequestFn) {
     ltiPlatforms: ltiPlatformsResource(request),
     instance: instanceResource(request),
     instanceSecurity: instanceSecurityResource(request),
+    // Referral attribution: the instance's referral platform connection and call log.
+    referrals: referralsResource(request),
     tokens: tokensResource(request),
     // §5 "captcha anywhere" — verify any CAPTCHA token against the instance's
     // centrally-configured provider, server-side, with the secret held by Atlas.
@@ -236,6 +239,7 @@ export * from './radius-clients';
 export * from './lti-platforms';
 export * from './instance';
 export * from './instance-security';
+export * from './referrals';
 export * from './tokens';
 export * from './captcha';
 export * from './design';

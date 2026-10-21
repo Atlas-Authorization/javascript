@@ -1,6 +1,7 @@
 import type { CaptchaFlowKey, FlowCaptcha } from './captcha-widget';
 import { emailDeliveryFrom, type EmailDelivery } from './environment';
 import type { FapiClient } from './fapi';
+import { referralChallengeRequired } from './referral';
 
 /**
  * The instance's public sign-in / sign-up settings, read from
@@ -109,7 +110,9 @@ export function instanceSettingsFrom(body: unknown): InstanceSettings {
 export async function fetchInstanceSettings(client: FapiClient): Promise<InstanceSettings | null> {
   try {
     const response = await client.get<unknown>('/v1/appearance');
-    return response.ok ? instanceSettingsFrom(response.data) : null;
+    if (!response.ok) return null;
+    const settings = instanceSettingsFrom(response.data);
+    return (await referralChallengeRequired(client)) ? withReferralChallenge(settings) : settings;
   } catch {
     return null;
   }
@@ -137,4 +140,28 @@ export function toSignUpInput(
   const fields: Record<string, string> = {};
   for (const [key, value] of Object.entries(rest)) if (value) fields[key] = value;
   return { email, password, fields, consent, ...(captchaToken ? { captchaToken } : {}) };
+}
+
+/**
+ * Referral attribution: the instance requires the bot challenge for a sign-up
+ * that carries a referral code, and one was captured on this page. The sign-up
+ * form and the sign-in identifier step (a passwordless sign-in to a new
+ * address creates the account) then always show the captcha, even when it is
+ * otherwise off, as long as the instance has a provider to draw. The server
+ * enforces the same rule.
+ */
+export function withReferralChallenge(settings: InstanceSettings): InstanceSettings {
+  return { ...settings, captchaFlows: referralChallengeFlows(settings.captchaFlows) };
+}
+
+/** {@link withReferralChallenge} on a bare `captchaFlows` map. */
+export function referralChallengeFlows(
+  flows: Partial<Record<CaptchaFlowKey, FlowCaptcha>>,
+): Partial<Record<CaptchaFlowKey, FlowCaptcha>> {
+  const out = { ...flows };
+  for (const key of ['signUp', 'signIn'] as const) {
+    const flow = out[key];
+    if (flow && flow.provider && !flow.enabled) out[key] = { ...flow, enabled: true };
+  }
+  return out;
 }

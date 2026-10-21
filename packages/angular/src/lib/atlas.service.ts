@@ -39,6 +39,7 @@ import {
   type SignOutEvent,
   type SignOutListener,
   type SignOutReason,
+  configureReferralCapture,
 } from '@atlasauth/js';
 import { evaluate, type ProtectCondition } from '@atlasauth/authz';
 import { ATLAS_OPTIONS } from './atlas.config';
@@ -198,6 +199,8 @@ export class AtlasService implements OnDestroy {
     this.errorCatalog = options.localization ?? EN_US;
     this.requestLocale = catalogLocale(options.localization);
 
+    // Referral attribution: app-wide options every FAPI client on the page falls back to.
+    configureReferralCapture({ referral: options.referral, referralConsent: options.referralConsent });
     this.fapiClient = new FapiClient({
       publishableKey: this.publishableKey,
       baseUrl: this.baseUrl,

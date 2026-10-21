@@ -401,3 +401,58 @@ To check the route end to end, `oauthClients.testBackchannelLogout(id)` sends a 
 `verifyWebhook` checks the signature on events Atlas sends to your webhook endpoints. You manage endpoints with `atlas.webhooks.endpoints`: create, update, reveal or rotate a secret, send a test event, and redeliver a past delivery.
 
 The `atlas-signature` header can carry more than one signature, separated by spaces (`v1,<sig> v1,<sig>`). While an endpoint secret rotates, Atlas may sign each delivery with the old and the new secret. `verifyWebhook` accepts the delivery when any one signature matches your secret.
+
+## Referral attribution
+
+With referral attribution on, Atlas reports every interactive sign-up to your referral platform before `user.created` is sent. The answer lands on the user: `referral` (who referred them, or null), `referral_code` and `referral_link` (the user's own code and link, when they are a referrer).
+
+```ts
+await atlas.referrals.update({
+  enabled: true,
+  provider: 'webhook', // the Atlas referral protocol; or a built-in vendor adapter
+  endpoint_url: 'https://referrals.example.com/atlas',
+  signing_secret: process.env.REFERRAL_SIGNING_SECRET,
+  auto_enroll_users: true,
+  link_template: 'https://app.example.com/join?ref={code}',
+  security: { on_high_risk: 'hold' },
+});
+const test = await atlas.referrals.test(); // { ok, http_status, latency_ms, error? }
+const failed = await atlas.referrals.listCalls({ status: 'failed', limit: 20 });
+await atlas.referrals.retryCall(failed.data[0]!.id);
+
+const user = await atlas.users.get('user_123');
+user.referral?.referrer_user_id;
+await atlas.users.update('user_123', { referral_code: 'ada-1' }); // 409 REFERRAL_CODE_TAKEN if held
+await atlas.users.flagReferral('user_123', { reason: 'self-referral' });
+```
+
+Enabling without what the provider needs is `422 REFERRALS_NOT_CONFIGURED`. When the platform answers late, Atlas sends the `user.referral_attributed` webhook (`UserReferralAttributedEvent`). Preflight may report `referrals_enabled_unverified` and `referrals_without_bot_protection`.
+
+### Receive the referral protocol (referral platforms)
+
+A referral platform that implements the Atlas referral protocol verifies Atlas's calls with `verifyReferralRequest`. Every call is a `POST` signed like a webhook, and its JSON body says which operation it is (`op`): `signup`, `erase`, `export`, `partner` or `signal`. Pass the path the call arrived on: a signed body whose `op` does not match the endpoint is refused (`op_mismatch`).
+
+```ts
+import { verifyReferralRequest } from '@atlasauth/backend';
+
+app.post('/atlas/:endpoint', express.raw({ type: '*/*' }), async (req, res) => {
+  const { verified, call } = verifyReferralRequest({
+    body: req.body,
+    headers: req.headers,
+    secret: process.env.REFERRAL_SIGNING_SECRET!,
+    path: req.path, // or expectedOp: 'signup' on a handler for one endpoint
+  });
+  if (!verified || !call) return res.sendStatus(401);
+  switch (call.op) {
+    case 'signup': // ReferralSignupPayload → answer ReferralSignupResponse
+      return res.json({ referral: await match(call.payload), partner: await enroll(call.payload) });
+    case 'export': // the connection test sends test: true
+      return call.test ? res.sendStatus(404) : res.json(await exportFor(call.payload.customerRef));
+    default: // erase, partner, signal
+      await handle(call);
+      return res.sendStatus(204);
+  }
+});
+```
+
+A retry of one call keeps its `atlas-id` (`deliveryId`). Sign-ups are idempotent on `customerRef`: answer a retry the same way.

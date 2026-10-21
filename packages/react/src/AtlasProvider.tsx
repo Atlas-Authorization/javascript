@@ -44,7 +44,12 @@ import {
   signOutReasonFromClient,
   type SignOutEvent,
   type SignOutListener,
+  configureReferralCapture,
+  referralCacheKeyFor,
+  seedReferralConfig,
+  type ReferralConsent,
 } from '@atlasauth/js';
+import { useStableReferralConsent } from './referral';
 import { ATLAS_REACT_SDK } from './version';
 import { resolveLocale, type SupportedLocale } from '@atlasauth/localizations';
 import {
@@ -278,6 +283,19 @@ export interface AtlasProviderProps {
    * Without it everything is fetched in the browser, as before.
    */
   initialState?: AtlasInitialState;
+  /**
+   * Referral attribution, app-wide. The prebuilt forms send the referral the
+   * visitor arrived with on sign-in / sign-up when the instance has referrals
+   * on; `false` turns that off everywhere (a `<SignIn referral>` /
+   * `<SignUp referral>` prop overrides per mount).
+   */
+  referral?: false;
+  /**
+   * The app's own consent decision for the referral tracking cookie, used only
+   * when Cookie Munch is not on the page: `'granted'` (or a function returning
+   * it) lets the forms read the cookie. Default: the cookie is not read.
+   */
+  referralConsent?: ReferralConsent;
 }
 
 export function AtlasProvider(props: AtlasProviderProps) {
@@ -293,6 +311,15 @@ export function AtlasProvider(props: AtlasProviderProps) {
   );
   const doFetch = props.fetchImpl ?? fetch;
 
+  // Referral attribution: the app-wide options every FAPI client on the page
+  // falls back to (set during render, so the first form already sees them).
+  const referralConsent = useStableReferralConsent(props.referralConsent);
+  useMemo(
+    () => configureReferralCapture({ referral: props.referral, referralConsent }),
+    [props.referral, referralConsent],
+  );
+  const referralKey = referralCacheKeyFor(baseUrl, publishableKey);
+
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<AtlasUser | null>(null);
   const [session, setSession] = useState<AtlasSession | null>(null);
@@ -302,7 +329,13 @@ export function AtlasProvider(props: AtlasProviderProps) {
   // Filled from GET /v1/appearance (see the effect beside the dashboard design).
   // Read once: a server-fetched `initialState` seeds the first render, so the
   // server HTML and the hydrating client agree, and the browser skips the fetch.
-  const [initial] = useState(() => props.initialState ?? {});
+  const [initial] = useState(() => {
+    const state = props.initialState ?? {};
+    // A server-fetched environment / appearance carries the referral config.
+    if (state.environment) seedReferralConfig(referralKey, state.environment);
+    if (state.appearance) seedReferralConfig(referralKey, state.appearance);
+    return state;
+  });
   const [instanceSettings, setInstanceSettings] = useState<InstanceSettings | null>(() =>
     initial.appearance ? instanceSettingsFrom(initial.appearance) : null,
   );
@@ -812,13 +845,14 @@ export function AtlasProvider(props: AtlasProviderProps) {
         .catch(() => null)
         .then((body) => {
           // A failure is not cached, so a later mount can try again.
+          if (body) seedReferralConfig(referralKey, body);
           if (body) setEnvironment(body);
           else environmentRequest.current = null;
           return body;
         });
     }
     return environmentRequest.current;
-  }, [call]);
+  }, [call, referralKey]);
 
   const value = useMemo<AtlasContextValue>(
     () => ({
@@ -902,6 +936,8 @@ export function AtlasProvider(props: AtlasProviderProps) {
         // when the app opted out of the dashboard DESIGN: they are behaviour, not
         // styling, and the server enforces them either way.
         setAppearanceData(body);
+        // Carries the referral config too: the forms need no second request.
+        seedReferralConfig(referralKey, body);
         setInstanceSettings(instanceSettingsFrom(body));
         if (wantsInstanceDesign) setInstanceDesign(instanceDesignFrom(body));
       } catch {
@@ -911,7 +947,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
     return () => {
       alive = false;
     };
-  }, [call, wantsInstanceDesign, initial]);
+  }, [call, wantsInstanceDesign, initial, referralKey]);
 
   const rendered = useMemo(
     () => renderAppearance(appearance, instanceDesign, { frontendApi: baseUrl }),

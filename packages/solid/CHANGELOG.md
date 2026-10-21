@@ -1,5 +1,8 @@
 # @atlasauth/solid changelog
 
+## 0.6.0
+- **Referral attribution.** The prebuilt forms send the referral the visitor arrived with on sign-in and sign-up (through `@atlasauth/js` 0.13.0) when the instance has referrals on, and show the captcha for a referred sign-up when the instance requires it. New `<AtlasProvider>` props: `referral?: false` and `referralConsent?`.
+
 ## 0.5.0
 - **New `<AtlasProvider onSignOut>` and `client.onSignOut(listener)`**: `onSignOut({ reason, sessionId })` fired once each time a signed-in user becomes signed out, on every
   path: `reason` is `user` (this tab), `other_tab`, `session_expired`, `revoked` (the session was ended elsewhere,

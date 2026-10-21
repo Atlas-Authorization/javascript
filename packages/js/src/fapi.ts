@@ -1,5 +1,14 @@
 import { fieldErrors, isTerminal, nextStep, type AttemptView, type FieldError } from './attempt';
 import { ATLAS_JS_SDK, SDK_HEADER, reportSdkAdvisory, sdkHeaderValue, type AtlasSdkInfo } from './sdk-advisory';
+import {
+  acceptsReferral,
+  currentReferral,
+  referralCacheKeyFor,
+  rememberReferralLanding,
+  seedReferralConfig,
+  type ReferralCaptureOptions,
+  type ReferralConsent,
+} from './referral';
 
 /**
  * The FAPI client and the sign-in flow driver.
@@ -35,6 +44,19 @@ export interface FapiClientOptions {
    * own package; defaults to `@atlasauth/js`.
    */
   sdk?: AtlasSdkInfo;
+  /**
+   * Referral attribution. By default a client captures the referral the
+   * visitor arrived with (the instance's URL parameters, and its tracking
+   * cookie under consent) and sends it on every sign-in / sign-up start, when
+   * the instance has referrals on. `false` turns that off. See `./referral`.
+   */
+  referral?: false;
+  /**
+   * The app's own consent decision for the referral tracking cookie, used only
+   * when Cookie Munch is not on the page: `'granted'` (or a function returning
+   * it) lets the client read the cookie. Default: the cookie is not read.
+   */
+  referralConsent?: ReferralConsent;
 }
 
 /**
@@ -57,7 +79,21 @@ export interface FapiResponse<T> {
 }
 
 export class FapiClient {
-  constructor(private readonly options: FapiClientOptions) {}
+  constructor(private readonly options: FapiClientOptions) {
+    // Keep the query this page was opened with: a referral code in it must
+    // survive client-side navigation that drops it before the user signs up.
+    rememberReferralLanding();
+  }
+
+  /** Which instance's referral config this client shares (one fetch per page). */
+  get referralCacheKey(): string {
+    return referralCacheKeyFor(this.options.baseUrl, this.options.publishableKey);
+  }
+
+  /** This client's own referral options (page-wide defaults fill the gaps). */
+  get referralOptions(): ReferralCaptureOptions {
+    return { referral: this.options.referral, referralConsent: this.options.referralConsent };
+  }
 
   /** The `Accept-Language` this client sends, or null when it sends none. */
   get locale(): string | null {
@@ -122,6 +158,13 @@ export class FapiClient {
       // A 204, or an error page from a proxy. Neither should crash the parse.
     }
 
+    // Any environment / appearance read also tells referral capture the
+    // instance's config, so a page that already loaded it never fetches it again.
+    const bare = path.split('?')[0];
+    if (response.ok && (init.method ?? 'GET') === 'GET' && (bare === '/v1/client/environment' || bare === '/v1/appearance')) {
+      seedReferralConfig(this.referralCacheKey, body);
+    }
+
     return {
       ok: response.ok,
       status: response.status,
@@ -131,10 +174,23 @@ export class FapiClient {
     };
   }
 
-  post<T>(path: string, body?: unknown) {
+  async post<T>(path: string, body?: unknown): Promise<FapiResponse<T>> {
+    // Referral attribution rides on every sign-in / sign-up start (and on the
+    // steps that continue one: the server keeps the first one it is given).
+    let payload = body;
+    if (
+      payload !== null &&
+      typeof payload === 'object' &&
+      !Array.isArray(payload) &&
+      !('referral' in (payload as Record<string, unknown>)) &&
+      acceptsReferral(path)
+    ) {
+      const referral = await currentReferral(this);
+      if (referral) payload = { ...(payload as Record<string, unknown>), referral };
+    }
     return this.request<T>(path, {
       method: 'POST',
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: payload === undefined ? undefined : JSON.stringify(payload),
     });
   }
 

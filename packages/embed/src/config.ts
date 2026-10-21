@@ -65,6 +65,13 @@ export function optionsFromElement(
   // value is passed through; the design system ignores (and warns on) unknown ids.
   const preset = dataset.atlasPreset ?? attr('preset');
   if (preset) options.appearance = { preset: preset as never };
+  // Referral attribution from markup: `data-atlas-referral="off"` opts out;
+  // `data-atlas-referral-consent="granted"` says the page's own consent manager
+  // allowed the referral cookie (Cookie Munch on the page decides by itself).
+  const referral = dataset.atlasReferral ?? attr('referral');
+  if (referral === 'off' || referral === 'false') options.referral = false;
+  const referralConsent = dataset.atlasReferralConsent ?? attr('referral-consent');
+  if (referralConsent === 'granted' || referralConsent === 'denied') options.referralConsent = referralConsent;
   return options;
 }
 

@@ -1,5 +1,8 @@
 # @atlasauth/angular changelog
 
+## 0.7.0
+- **Referral attribution.** The prebuilt forms send the referral the visitor arrived with on sign-in and sign-up (through `@atlasauth/js` 0.13.0) when the instance has referrals on, and show the captcha for a referred sign-up when the instance requires it. New `AtlasOptions`: `referral?: false` and `referralConsent?`.
+
 ## 0.6.1
 - **`<atlas-user-profile>` can verify an address.** Each unverified email address now has a **Verify** button: it emails a code (`POST /v1/client/me/email_addresses/{id}/prepare_verification`) and shows a field to enter it (`attempt_verification`), then reloads the user. This includes the sign-up address on an app that does not require email verification, which now reads unverified until it is proven. New catalog keys: `userProfile.verify`, `userProfile.verifyConfirm`, `userProfile.verifyCodePlaceholder`, `userProfile.verifySendFailed`, `userProfile.verifyCodeRejected`.
 

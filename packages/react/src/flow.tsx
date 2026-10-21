@@ -26,6 +26,7 @@ import {
   type AttemptView,
   type EmailFactor,
   type FieldError,
+  type ReferralConsent,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import {
@@ -38,6 +39,7 @@ import {
 } from './fapi';
 import { useClass, useClasses, useErrorText, useText } from './components-shared';
 import { localizeCaptchaErrors, useCaptcha } from './captcha';
+import { forceCaptchaFlow, useReferralChallenge, useStableReferralConsent } from './referral';
 import { ATLAS_REACT_SDK } from './version';
 
 /**
@@ -86,6 +88,18 @@ export interface FlowProps {
    * ("Google sign-in is blocked by your browser") without inspecting Atlas's DOM.
    */
   onProviderUnavailable?: (provider: string, reason: ProviderUnavailableReason) => void;
+  /**
+   * Referral attribution. The form sends the referral the visitor arrived with
+   * (the instance's URL parameters, and its tracking cookie under consent) on
+   * sign-in / sign-up, when the instance has referrals on. `false` turns that off.
+   */
+  referral?: false;
+  /**
+   * The app's own consent decision for the referral tracking cookie, used only
+   * when Cookie Munch is not on the page: `'granted'` (or a function returning
+   * it) lets the form read the cookie. Default: the cookie is not read.
+   */
+  referralConsent?: ReferralConsent;
   /**
    * customer spec 4.5 — how the native Google sign-in button is rendered. This is
    * the spec's `appearance:"host"|"google"`; it is named `googleButton` (NOT
@@ -434,8 +448,14 @@ function navigateAfterComplete(afterUrl?: string): void {
 export function useFlow({
   afterUrl,
   signInCaptcha = true,
+  referral,
+  referralConsent,
 }: {
   afterUrl?: string;
+  /** See {@link FlowProps.referral}. */
+  referral?: false;
+  /** See {@link FlowProps.referralConsent}. */
+  referralConsent?: ReferralConsent;
   /**
    * Drive the sign-in captcha (always-on per-flow captcha and the server's
    * `needs_captcha` challenge). `<SignUp>` turns it off: its create step has its
@@ -456,7 +476,24 @@ export function useFlow({
    * when it withheld the attempt (always-on, or risk-triggered) — where solving
    * it resubmits the identifier on its own.
    */
-  const signInFlow = signInCaptcha ? instanceSettings?.captchaFlows.signIn : undefined;
+  const consent = useStableReferralConsent(referralConsent);
+  const client = useMemo(
+    () =>
+      new FapiClient({
+        publishableKey,
+        baseUrl: frontendApi,
+        locale,
+        sdk: ATLAS_REACT_SDK,
+        referral,
+        referralConsent: consent,
+      }),
+    [frontendApi, publishableKey, locale, referral, consent],
+  );
+  // A referred sign-in / sign-up shows the challenge when the instance asks for it.
+  const referralChallenge = useReferralChallenge(client, instanceSettings);
+  const signInFlow = signInCaptcha
+    ? forceCaptchaFlow(instanceSettings?.captchaFlows.signIn, referralChallenge)
+    : undefined;
   const stepKind = state.attempt ? nextStep(state.attempt).kind : 'collect_identifier';
   const challenged = stepKind === 'collect_captcha';
   const identifierRef = useRef('');
@@ -470,11 +507,6 @@ export function useFlow({
 
     atlasLabels: atlasCaptchaLabels(t),
   });
-
-  const client = useMemo(
-    () => new FapiClient({ publishableKey, baseUrl: frontendApi, locale, sdk: ATLAS_REACT_SDK }),
-    [frontendApi, publishableKey, locale],
-  );
 
   // Apply a driver result to the UI, and — on completion — exchange the one-time
   // ticket (§7.1) for cookies over a same-origin request (FAPI is cross-origin

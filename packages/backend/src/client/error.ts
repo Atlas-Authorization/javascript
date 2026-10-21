@@ -73,6 +73,10 @@ export const AtlasErrorCodes = {
   DEVELOPMENT_EMAIL_LIMIT_REACHED: 'DEVELOPMENT_EMAIL_LIMIT_REACHED',
   /** 422 — the development sender sends only Atlas's own sign-in emails, never custom templates. */
   DEVELOPMENT_EMAIL_TEMPLATE_NOT_ALLOWED: 'DEVELOPMENT_EMAIL_TEMPLATE_NOT_ALLOWED',
+  /** 422 — referrals cannot be enabled until the provider's needs are set (`meta` names what is missing). */
+  REFERRALS_NOT_CONFIGURED: 'REFERRALS_NOT_CONFIGURED',
+  /** 409 — another user on the instance already holds that referral code. */
+  REFERRAL_CODE_TAKEN: 'REFERRAL_CODE_TAKEN',
   /** The billing plan still has subscribers and cannot be removed. */
   PLAN_IN_USE: 'PLAN_IN_USE',
   /** The key is valid but for another API surface (e.g. a platform key on the Backend API). */

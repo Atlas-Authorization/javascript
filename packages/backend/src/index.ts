@@ -51,6 +51,9 @@ export type {
 // §12.2 inbound webhook verification for consumers.
 export * from './webhooks';
 
+// The Atlas referral protocol, for a referral platform receiving Atlas's signed calls.
+export * from './referrals';
+
 // The typed management client for the secret-key Backend API.
 export { createAtlasClient } from './client';
 export type { AtlasClient } from './client';

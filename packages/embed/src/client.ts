@@ -1,4 +1,4 @@
-import { FapiClient } from '@atlasauth/js';
+import { FapiClient, type FapiClientOptions } from '@atlasauth/js';
 import type { AppearanceResponse } from './appearance';
 import { ATLAS_EMBED_SDK } from './version';
 
@@ -38,6 +38,10 @@ export interface WidgetClientOptions {
   fetchImpl?: typeof fetch;
   /** Sent as `Accept-Language` (see `FapiClientOptions.locale`). */
   locale?: string;
+  /** See `FapiClientOptions.referral`. */
+  referral?: false;
+  /** See `FapiClientOptions.referralConsent`. */
+  referralConsent?: FapiClientOptions['referralConsent'];
 }
 
 /** A FAPI client wired for the widget: shared @atlasauth/js driver, pk in the query. */
@@ -51,6 +55,8 @@ export function createClient(options: WidgetClientOptions): FapiClient {
     // Names the widget to the Frontend API, which answers an upgrade advisory
     // (logged once per page load) for a version with a known bug.
     sdk: ATLAS_EMBED_SDK,
+    referral: options.referral,
+    referralConsent: options.referralConsent,
   });
 }
 

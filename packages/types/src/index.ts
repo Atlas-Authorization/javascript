@@ -27,6 +27,7 @@ export type {
   CursorParams,
   DeletedObject,
   User,
+  UserReferral,
   EmailAddress,
   Session,
   Organization,

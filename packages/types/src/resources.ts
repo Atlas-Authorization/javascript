@@ -67,6 +67,34 @@ export interface User {
    * the one you hold. (Absent from servers older than this field.)
    */
   version?: number;
+  /**
+   * How the user arrived through a referral program, when the instance has
+   * referral attribution on and the referral platform matched a referrer.
+   * Null otherwise. (Absent from servers older than this field.)
+   */
+  referral?: UserReferral | null;
+  /** The user's own referral code, when they are a referrer. */
+  referral_code?: string | null;
+  /** The user's own referral link, when they are a referrer. */
+  referral_link?: string | null;
+}
+
+/** The inbound referral on a user (snake_case, as the BAPI serves it). */
+export interface UserReferral {
+  /** The referral platform's id for the referring partner. */
+  partner_id: string | null;
+  /** The referrer as the platform knows them (your external id for that user, or their Atlas id). */
+  referrer_external_id: string | null;
+  /** The referrer's Atlas user id, when they are a user of this instance. */
+  referrer_user_id: string | null;
+  /** How the platform matched the referral, e.g. code, click, coupon. */
+  matched_via: string | null;
+  /** The platform's own status for the referral. */
+  status: string | null;
+  /** The risk level Atlas assessed at sign-up, when one was. */
+  risk_level?: 'low' | 'medium' | 'high' | null;
+  /** An admin marked the referral fraudulent. */
+  flagged?: boolean;
 }
 
 export interface EmailAddress {

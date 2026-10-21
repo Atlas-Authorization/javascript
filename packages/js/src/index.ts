@@ -14,6 +14,8 @@ export * from './redirect';
 // §oauth popup mode: the same-origin hand-back for a popup whose opener was severed.
 export * from './popup-channel';
 export * from './fapi';
+// Referral attribution: capture the visitor's referral and send it on sign-up.
+export * from './referral';
 // SDK version advisories (`X-Atlas-SDK` / `Atlas-SDK-Advisory`).
 export * from './sdk-advisory';
 export * from './version';

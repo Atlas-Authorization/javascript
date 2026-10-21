@@ -23,6 +23,76 @@ export interface User {
    * the one you hold. (Absent from servers older than this field.)
    */
   version?: number;
+  /**
+   * How the user arrived through a referral program, when the instance has
+   * referral attribution on and the platform matched a referrer; null when not
+   * referred, not answered yet, or referrals are off. (Absent from servers
+   * older than this field.)
+   */
+  referral?: UserReferral | null;
+  /** The user's own referral code, when they are a referrer. */
+  referral_code?: string | null;
+  /** The user's own referral link, when they are a referrer. */
+  referral_link?: string | null;
+}
+
+/** The inbound referral the referral platform matched for a user. */
+export interface UserReferral {
+  /** The platform's id for the referring partner. */
+  partner_id: string | null;
+  /** The referrer as the platform knows them (your `external_id` for that user, or their Atlas id). */
+  referrer_external_id: string | null;
+  /** The referrer's Atlas user id, when they are a user of this instance. */
+  referrer_user_id: string | null;
+  /** How the platform matched the referral, e.g. `code`, `click`, `coupon`. */
+  matched_via: string | null;
+  /** The platform's own status for the referral. */
+  status: string | null;
+  /** The risk level Atlas assessed at sign-up, when one was. */
+  risk_level?: 'low' | 'medium' | 'high' | null;
+  /** An admin marked the referral fraudulent (`users.flagReferral`). */
+  flagged?: boolean;
+}
+
+/**
+ * An imported referral on `users.create`: how the user arrived. With referral
+ * attribution on, the user is reported to the referral platform. Each id is
+ * 3-64 characters of `A-Z a-z 0-9 _ -`.
+ */
+export interface CreateUserReferralInput {
+  code?: string;
+  click_id?: string;
+  anon_id?: string;
+}
+
+/** `POST /v1/users/:id/referral/flag`. */
+export interface UserReferralFlag {
+  object: 'user_referral';
+  user_id: string;
+  /** `flagged` after this call. */
+  status: string;
+  flagged: boolean;
+  flag_reason: string | null;
+  /** Epoch ms. */
+  flagged_at: number | null;
+  risk_level: 'low' | 'medium' | 'high' | null;
+}
+
+/**
+ * The `data` of a `user.referral_attributed` webhook: the referral platform
+ * answered after `user.created` was sent.
+ */
+export interface UserReferralAttributedEvent {
+  object: 'user_referral';
+  user_id: string;
+  /** `attributed`, `not_referred`, `failed`, … (`not_referred`: the platform found no referrer). */
+  attribution_status: string;
+  referral: UserReferral | null;
+  referral_code: string | null;
+  referral_link: string | null;
+  /** Epoch ms. */
+  signed_up_at: number;
+  updated_at: number;
 }
 
 export interface EmailAddress {
@@ -77,6 +147,13 @@ export interface CreateUserBody {
    * guarantees no email, SMS or push is sent as a consequence of the create.
    */
   notify?: boolean;
+  /**
+   * Import a referral (how the user arrived). With referral attribution on,
+   * the user is reported to the referral platform.
+   */
+  referral?: CreateUserReferralInput;
+  /** The user's own referral code; unique per instance (`409 REFERRAL_CODE_TAKEN`). */
+  referral_code?: string;
 }
 
 export interface UpdateUserBody {
@@ -84,6 +161,8 @@ export interface UpdateUserBody {
   last_name?: string;
   public_metadata?: Metadata;
   private_metadata?: Metadata;
+  /** The user's own referral code; `null` clears. Unique per instance (`409 REFERRAL_CODE_TAKEN`). */
+  referral_code?: string | null;
 }
 
 export interface ReplaceUserMetadataBody {
@@ -122,6 +201,25 @@ export function usersResource(request: RequestFn) {
     },
     unlock(id: string): Promise<User> {
       return request({ method: 'POST', path: `/v1/users/${enc(id)}/unlock` });
+    },
+    /**
+     * `POST /v1/users/:id/referral/flag` — mark the user's referral fraudulent.
+     * The referral reads `flagged: true`, the referral platform is sent a
+     * `fraud_confirmed` signal (when referrals are on) and the action is
+     * audited. The user's account is not changed. 404 when the user has no
+     * referral. `reason` (at most 500 characters) is sent to the platform.
+     */
+    flagReferral(
+      id: string,
+      body: { reason?: string } = {},
+      idempotencyKey?: string,
+    ): Promise<UserReferralFlag> {
+      return request({
+        method: 'POST',
+        path: `/v1/users/${enc(id)}/referral/flag`,
+        body,
+        idempotencyKey,
+      });
     },
     delete(id: string): Promise<DeletedObject> {
       return request({ method: 'DELETE', path: `/v1/users/${enc(id)}` });

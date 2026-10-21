@@ -27,6 +27,8 @@ import {
   type SignOutEvent,
   type SignOutListener,
   type SignOutReason,
+  configureReferralCapture,
+  type ReferralConsent,
 } from '@atlasauth/js';
 import { ATLAS_SVELTE_SDK } from './version';
 import { EN_US, withFallback, type Catalog } from './i18n';
@@ -61,6 +63,18 @@ export const ATLAS_KEY = Symbol('atlas');
 
 export interface AtlasInitOptions {
   publishableKey: string;
+  /**
+   * Referral attribution: the prebuilt forms send the referral the visitor
+   * arrived with on sign-in / sign-up when the instance has referrals on.
+   * `false` turns that off.
+   */
+  referral?: false;
+  /**
+   * The app's own consent decision for the referral tracking cookie, used only
+   * when Cookie Munch is not on the page: `'granted'` (or a function returning
+   * it) lets the forms read the cookie. Default: the cookie is not read.
+   */
+  referralConsent?: ReferralConsent;
   /**
    * The instance's Frontend API: an absolute URL such as
    * `"https://auth.example.com"`, or `"same-origin"` / a path such as `"/atlas"`
@@ -362,6 +376,8 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
     return cache.get(5_000)?.jwt ?? null;
   }
 
+  // Referral attribution: app-wide options every FAPI client on the page falls back to.
+  configureReferralCapture({ referral: options.referral, referralConsent: options.referralConsent });
   const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale, sdk: ATLAS_SVELTE_SDK });
 
   function getProviderToken(provider: string): Promise<ProviderToken | null> {

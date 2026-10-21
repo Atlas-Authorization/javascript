@@ -6,6 +6,7 @@ import { useAtlas } from './AtlasProvider';
 import { FapiClient, type FlowState } from './fapi';
 import { AttemptFlow, useFlow, type FlowProps } from './flow';
 import { CaptchaSlot, localizeCaptchaErrors, useCaptcha, type CaptchaController } from './captcha';
+import { forceCaptchaFlow, useReferralChallenge } from './referral';
 import { useClass, useClasses, useErrorText, useText } from './components-shared';
 import type { InstanceSettings, PublicSignUpField } from './instance-settings';
 import { ATLAS_REACT_SDK } from './version';
@@ -34,9 +35,13 @@ export function SignUp(props: FlowProps = {}) {
   const { state, setState, submit, client, finish } = useFlow({
     afterUrl: props.afterUrl,
     signInCaptcha: false,
+    referral: props.referral,
+    referralConsent: props.referralConsent,
   });
 
-  const signUpFlow = instanceSettings?.captchaFlows.signUp;
+  // A sign-up carrying a referral code shows the challenge when the instance asks for it.
+  const referralChallenge = useReferralChallenge(client, instanceSettings);
+  const signUpFlow = forceCaptchaFlow(instanceSettings?.captchaFlows.signUp, referralChallenge);
   const emailUnavailable = instanceSettings?.emailDelivery?.passwordSignUp === false;
   const captcha = useCaptcha(signUpFlow, {
     active: !state.attempt && !emailUnavailable && flowNeedsCaptcha(signUpFlow),

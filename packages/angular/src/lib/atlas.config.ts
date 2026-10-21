@@ -1,4 +1,4 @@
-import type { SignOutEvent } from '@atlasauth/js';
+import type { ReferralConsent, SignOutEvent } from '@atlasauth/js';
 import { InjectionToken } from '@angular/core';
 import type { Appearance } from './appearance';
 import type { Catalog } from './i18n';
@@ -10,6 +10,18 @@ import type { Catalog } from './i18n';
 export interface AtlasOptions {
   /** The instance's publishable key (`pk_…`). Required. */
   publishableKey: string;
+  /**
+   * Referral attribution: the prebuilt forms send the referral the visitor
+   * arrived with on sign-in / sign-up when the instance has referrals on.
+   * `false` turns that off.
+   */
+  referral?: false;
+  /**
+   * The app's own consent decision for the referral tracking cookie, used only
+   * when Cookie Munch is not on the page: `'granted'` (or a function returning
+   * it) lets the forms read the cookie. Default: the cookie is not read.
+   */
+  referralConsent?: ReferralConsent;
   /**
    * The instance's Frontend API: an absolute URL such as
    * `"https://auth.example.com"`, or `"same-origin"` / a path such as `"/atlas"`

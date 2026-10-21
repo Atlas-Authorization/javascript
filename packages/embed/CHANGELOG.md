@@ -1,5 +1,8 @@
 # @atlasauth/embed changelog
 
+## 0.7.0
+- **Referral attribution.** The widget sends the referral the visitor arrived with on sign-in and sign-up (through `@atlasauth/js` 0.13.0) when the instance has referrals on, and shows the captcha for a referred sign-up when the instance requires it. New `WidgetOptions.referral?: false` / `referralConsent?`, and markup attributes `data-atlas-referral="off"` and `data-atlas-referral-consent="granted"`.
+
 ## 0.6.0
 - **SDK version advisories.** Every Frontend API request carries `X-Atlas-SDK: @atlasauth/embed/<version>`. When the
   response carries `Atlas-SDK-Advisory: upgrade; min=<version>; reason=<code>` (a version with a known bug), the SDK
