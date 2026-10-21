@@ -106,6 +106,13 @@ describe('platform apps', () => {
     expect(json(last(calls).body)).toEqual({ environment: 'development' });
     await p.apps.instances.rotateSecret('ins_1', 'ins_2');
     expect(last(calls).url).toBe(`${API_URL}/v1/platform/apps/ins_1/instances/ins_2/rotate_secret`);
+    await p.apps.instances.rotateSecret('ins_1', 'ins_2', { overlap_seconds: 3600 }, 'idem_1');
+    expect(json(last(calls).body)).toEqual({ overlap_seconds: 3600 });
+    expect(last(calls).headers['idempotency-key']).toBe('idem_1');
+    // The 0.9 signature: the third argument is the idempotency key.
+    await p.apps.instances.rotateSecret('ins_1', 'ins_2', 'idem_2');
+    expect(last(calls).body).toBeUndefined();
+    expect(last(calls).headers['idempotency-key']).toBe('idem_2');
 
     await p.apps.transfer('ins_1');
     expect(last(calls).url).toBe(`${API_URL}/v1/platform/apps/ins_1/transfer`);
@@ -192,6 +199,8 @@ describe('Sign in with Atlas apps', () => {
     ]);
     await p.atlasIdApps.rotateSecret('app_1');
     expect(last(calls).url).toBe(`${API_URL}/v1/platform/atlas_id_apps/app_1/rotate_secret`);
+    await p.atlasIdApps.rotateSecret('app_1', { overlap_seconds: 0 });
+    expect(json(last(calls).body)).toEqual({ overlap_seconds: 0 });
     await p.atlasIdApps.previewDesign({ preset: 'glass' });
     expect(last(calls).url).toBe(`${API_URL}/v1/platform/atlas_id_apps/design/preview`);
     expect(json(last(calls).body)).toEqual({ design: { preset: 'glass' } });

@@ -150,9 +150,33 @@ export interface PlatformAppSecretRotation {
 
 export interface PlatformInstanceSecretRotation {
   object: 'app_secret';
-  id: string;
+  app_id: string;
+  instance_id: string;
+  /** @deprecated Never sent; read `instance_id`. */
+  id?: string;
+  /** The new secret key, revealed exactly once. */
   secret: string;
+  /** The overlap applied, in seconds. */
+  overlap_seconds: number;
+  /** When the prior keys stop working (epoch ms); null on a hard cut. */
+  previous_keys_expire_at: number | null;
   note: string;
+}
+
+/** Body of the platform app and instance rotate_secret calls. */
+export interface RotatePlatformSecretBody {
+  /** How long the prior keys keep working, in seconds. Default 259200 (72 hours). `0` revokes them now. At most 604800 (7 days). */
+  overlap_seconds?: number;
+}
+
+/** Body of the Sign in with Atlas app rotate calls (client secret and webhook secret). */
+export interface RotateAtlasIdAppSecretBody {
+  /**
+   * How long the previous secret keeps working, in seconds; at most 604800 (7
+   * days). Default for the client secret: 86400 (24 hours). Default for the
+   * webhook secret: 0 (it stops signing at once). `0` stops it now.
+   */
+  overlap_seconds?: number;
 }
 
 /** Metadata of a currently-valid secret key. Never the secret itself. */
@@ -275,6 +299,12 @@ export interface AtlasIdApp {
   webhook_events?: Array<'user.updated' | 'user.deleted' | 'grant.revoked'>;
   /** false once auto-disabled after repeated failures; null without a webhook. */
   webhook_active?: boolean | null;
+  /** While a webhook secret rotation overlap is open: when the previous secret stops signing deliveries (epoch ms); else null. */
+  webhook_previous_secret_expires_at?: number | null;
+  /** After a client secret rotation with overlap: when the previous secret stops working (epoch ms); else null. */
+  previous_secret_expires_at?: number | null;
+  /** When the current client secret was issued (epoch ms); null for a public app. */
+  secret_issued_at?: number | null;
 }
 
 /** Create / rotate response: confidential apps carry the client secret exactly once. */
@@ -282,6 +312,8 @@ export interface AtlasIdAppWithSecret extends AtlasIdApp {
   client_secret?: string;
   /** The per-app webhook signing secret, returned exactly once (first set, or rotated). */
   webhook_secret?: string;
+  /** On a rotation: the overlap applied, in seconds. */
+  overlap_seconds?: number;
   note?: string;
 }
 
@@ -418,7 +450,7 @@ function platformNamespaces(request: RequestFn) {
        */
       rotateSecret(
         id: string,
-        body: { overlap_seconds?: number } = {},
+        body: RotatePlatformSecretBody = {},
         idempotencyKey?: string,
       ): Promise<PlatformAppSecretRotation> {
         return request({
@@ -449,16 +481,24 @@ function platformNamespaces(request: RequestFn) {
             idempotencyKey,
           });
         },
-        /** Revoke the instance's prior keys and mint a new one, revealed once. */
+        /**
+         * Mint a new secret key for one instance, revealed once. The prior keys
+         * stay valid for `overlap_seconds` (default 72h, max 7 days; 0 =
+         * immediate cut), like `apps.rotateSecret`. The third argument may also
+         * be the idempotency key (the 0.9 signature).
+         */
         rotateSecret(
           appId: string,
           instanceId: string,
+          bodyOrIdempotencyKey?: RotatePlatformSecretBody | string,
           idempotencyKey?: string,
         ): Promise<PlatformInstanceSecretRotation> {
+          const legacyKey = typeof bodyOrIdempotencyKey === 'string';
           return request({
             method: 'POST',
             path: `/v1/platform/apps/${enc(appId)}/instances/${enc(instanceId)}/rotate_secret`,
-            idempotencyKey,
+            body: legacyKey ? undefined : bodyOrIdempotencyKey,
+            idempotencyKey: legacyKey ? bodyOrIdempotencyKey : idempotencyKey,
           });
         },
       },
@@ -528,11 +568,15 @@ function platformNamespaces(request: RequestFn) {
       delete(id: string): Promise<{ object: 'atlas_id_app'; id: string; deleted: true }> {
         return request({ method: 'DELETE', path: `/v1/platform/atlas_id_apps/${enc(id)}` });
       },
-      /** New client secret, returned exactly once. Public apps have none (409). */
-      rotateSecret(id: string): Promise<AtlasIdAppWithSecret> {
+      /**
+       * New client secret, returned exactly once. The previous one keeps working
+       * for `overlap_seconds` (default 24h; 0 = revoke now). Public apps have none (409).
+       */
+      rotateSecret(id: string, body?: RotateAtlasIdAppSecretBody): Promise<AtlasIdAppWithSecret> {
         return request({
           method: 'POST',
           path: `/v1/platform/atlas_id_apps/${enc(id)}/rotate_secret`,
+          body,
         });
       },
       /** The app's back-channel logout delivery log, newest first. */
@@ -583,11 +627,16 @@ function platformNamespaces(request: RequestFn) {
           body,
         });
       },
-      /** New per-app webhook signing secret (`webhook_secret`), returned once. 409 without a webhook. */
-      rotateWebhookSecret(id: string): Promise<AtlasIdAppWithSecret> {
+      /**
+       * New per-app webhook signing secret (`webhook_secret`), returned once. By
+       * default the previous secret stops at once; for `overlap_seconds` it signs
+       * each delivery too. 409 without a webhook.
+       */
+      rotateWebhookSecret(id: string, body?: RotateAtlasIdAppSecretBody): Promise<AtlasIdAppWithSecret> {
         return request({
           method: 'POST',
           path: `/v1/platform/atlas_id_apps/${enc(id)}/webhook/rotate_secret`,
+          body,
         });
       },
       /** Preview a design on the Sign in with Atlas page without saving it. */

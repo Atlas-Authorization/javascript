@@ -23,6 +23,9 @@ const MOVE = { from: 'https://old.example.com', to: 'https://new.example.com', d
 // [method, path+query, expected JSON body (undefined = none), call]
 const BAPI: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
   ['POST', '/v1/instance/move_origin', MOVE, (c) => c.instance.moveOrigin(MOVE)],
+  ['GET', '/v1/instance/proxy_secret', undefined, (c) => c.instanceSecurity.getProxySecret()],
+  ['POST', '/v1/instance/proxy_secret', { overlap_seconds: 600 }, (c) => c.instanceSecurity.createProxySecret({ overlap_seconds: 600 })],
+  ['DELETE', '/v1/instance/proxy_secret', undefined, (c) => c.instanceSecurity.deleteProxySecret()],
   ['GET', '/v1/instance/connections', undefined, (c) => c.instance.connections()],
   ['GET', '/v1/instance/integrations/chatly', undefined, (c) => c.instance.integrations.chatly.get()],
   ['PUT', '/v1/instance/integrations/chatly', { channel: 'support' }, (c) => c.instance.integrations.chatly.set({ channel: 'support' })],
@@ -77,6 +80,7 @@ const PLATFORM: Array<[string, string, unknown, (c: Plat) => Promise<unknown>]> 
   ['DELETE', '/v1/platform/atlas_id_apps/app_1/grants/gr_1', undefined, (c) => c.atlasIdApps.revokeGrant('app_1', 'gr_1')],
   ['POST', '/v1/platform/atlas_id_apps/app_1/move_origin', MOVE, (c) => c.atlasIdApps.moveOrigin('app_1', MOVE)],
   ['POST', '/v1/platform/atlas_id_apps/app_1/webhook/rotate_secret', undefined, (c) => c.atlasIdApps.rotateWebhookSecret('app_1')],
+  ['POST', '/v1/platform/atlas_id_apps/app_1/webhook/rotate_secret', { overlap_seconds: 600 }, (c) => c.atlasIdApps.rotateWebhookSecret('app_1', { overlap_seconds: 600 })],
   ['PATCH', '/v1/platform/atlas_id_apps/app_1', { webhook_url: null }, (c) => c.atlasIdApps.update('app_1', { webhook_url: null })],
   ['GET', '/v1/platform/atlas_id_publisher', undefined, (c) => c.atlasIdPublisher.get()],
   ['PUT', '/v1/platform/atlas_id_publisher', { name: 'Acme', domain: 'example.com' }, (c) => c.atlasIdPublisher.set({ name: 'Acme', domain: 'example.com' })],

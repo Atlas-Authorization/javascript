@@ -45,6 +45,9 @@ describe('webhook endpoints (complete)', () => {
     ]);
     await c.webhooks.endpoints.rotateSecret('we_1');
     expect(last(calls).url).toBe(`${API_URL}/v1/webhook_endpoints/we_1/rotate_secret`);
+    expect(last(calls).body).toBeUndefined();
+    await c.webhooks.endpoints.rotateSecret('we_1', { overlap_seconds: 0 });
+    expect(json(last(calls).body)).toEqual({ overlap_seconds: 0 });
   });
 
   it('sends a test event and redelivers', async () => {

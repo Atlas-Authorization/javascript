@@ -381,7 +381,7 @@ export interface ManagedEmail {
     last_complaint_at: number | null;
   };
   reputation: 'your_provider_account';
-  /** Brevo, on create: whether the bounce / complaint webhook was registered on your account. */
+  /** On create (Brevo and Resend) and verify (Resend): whether the bounce / complaint webhook was registered on your account. */
   feedback_webhook?: 'registered' | 'not_registered';
   /** DNS automation, when set. The token is never returned. */
   dns: { provider: string; token_set: boolean } | null;

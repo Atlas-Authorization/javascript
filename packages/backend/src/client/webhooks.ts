@@ -9,6 +9,12 @@ export interface WebhookEndpoint {
   /** Start of the current failure streak (epoch ms), or null when the last delivery succeeded. */
   failing_since?: number | null;
   disabled_at: number | null;
+  /**
+   * While a secret rotation overlap is open: when the previous secret stops
+   * signing deliveries (epoch ms). Until then every delivery carries two
+   * signatures, one per secret. Null otherwise.
+   */
+  previous_secret_expires_at?: number | null;
   created_at: number;
 }
 
@@ -88,7 +94,21 @@ export interface WebhookSigningSecret {
   object: 'webhook_secret';
   /** The `whsec_...` signing secret. */
   secret: string;
+  /** On a rotation: the overlap applied, in seconds. */
+  overlap_seconds?: number;
+  /** On a rotation: when the previous secret stops signing deliveries (epoch ms), or null when it already has. */
+  previous_secret_expires_at?: number | null;
   warning?: string;
+}
+
+export interface RotateWebhookSecretBody {
+  /**
+   * How long the previous secret keeps signing deliveries (as a second
+   * `atlas-signature` entry), in seconds. Default 0: it stops at once. At most
+   * 604800 (7 days). Set it only once every receiver verifies with a verifier
+   * that accepts several signatures (this package 0.9.1+).
+   */
+  overlap_seconds?: number;
 }
 
 /** A queued delivery (from `test` or `redeliver`). */
@@ -119,9 +139,13 @@ export function webhooksResource(request: RequestFn) {
       revealSecret(id: string): Promise<WebhookSigningSecret> {
         return request({ method: 'POST', path: `/v1/webhook_endpoints/${enc(id)}/reveal_secret` });
       },
-      /** Rotate the signing secret; the new one is revealed exactly once. */
-      rotateSecret(id: string): Promise<WebhookSigningSecret> {
-        return request({ method: 'POST', path: `/v1/webhook_endpoints/${enc(id)}/rotate_secret` });
+      /**
+       * Rotate the signing secret; the new one is revealed exactly once. By
+       * default the old secret stops signing at once; for `overlap_seconds`
+       * every delivery is signed with both, so a verifier holding either passes.
+       */
+      rotateSecret(id: string, body?: RotateWebhookSecretBody): Promise<WebhookSigningSecret> {
+        return request({ method: 'POST', path: `/v1/webhook_endpoints/${enc(id)}/rotate_secret`, body });
       },
       /** Send a synthetic `webhook.test` event to this endpoint only. */
       test(id: string): Promise<WebhookDeliveryQueued> {

@@ -44,7 +44,7 @@ their source: one pnpm workspace, `pnpm install && pnpm -r build`.
 
 | Package | Version | Install |
 |---|---|---|
-| [`@atlasauth/backend`](https://www.npmjs.com/package/@atlasauth/backend) | 0.9.1 | `npm i @atlasauth/backend` |
+| [`@atlasauth/backend`](https://www.npmjs.com/package/@atlasauth/backend) | 0.10.0 | `npm i @atlasauth/backend` |
 | [`@atlasauth/express`](https://www.npmjs.com/package/@atlasauth/express) | 0.2.0 | `npm i @atlasauth/express` |
 | [`@atlasauth/fastify`](https://www.npmjs.com/package/@atlasauth/fastify) | 0.2.0 | `npm i @atlasauth/fastify` |
 | [`@atlasauth/hono`](https://www.npmjs.com/package/@atlasauth/hono) | 0.2.0 | `npm i @atlasauth/hono` |
