@@ -34,10 +34,39 @@ const OPTIONS = {
   prune: { type: 'boolean' },
   // actions.
   trigger: { type: 'string' },
+  // init / preflight / env / client rotate.
+  product: { type: 'string' },
+  domain: { type: 'string' },
+  'auth-host': { type: 'string' },
+  'instance-env': { type: 'string' },
+  strategies: { type: 'string' },
+  'email-from': { type: 'string' },
+  // The customer's own email provider key: from a file (or '-' for stdin), never argv.
+  'email-provider': { type: 'string' },
+  'email-key-file': { type: 'string' },
+  'client-redirect': { type: 'string', multiple: true },
+  'webhook-url': { type: 'string' },
+  yes: { type: 'boolean', short: 'y' },
+  force: { type: 'boolean' },
+  'rotate-secret': { type: 'boolean' },
+  instance: { type: 'string' },
+  'fail-on': { type: 'string' },
+  now: { type: 'boolean' },
+  overlap: { type: 'string' },
+  // Any command that receives a secret: print it instead of writing a 0600 file.
+  'print-secret': { type: 'boolean' },
+  // webhooks create.
+  events: { type: 'string' },
 } as const;
 
+type OptionValue<O> = O extends { type: 'boolean' }
+  ? boolean
+  : O extends { multiple: true }
+    ? string[]
+    : string;
+
 export type Values = {
-  [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]['type'] extends 'boolean' ? boolean : string;
+  [K in keyof typeof OPTIONS]?: OptionValue<(typeof OPTIONS)[K]>;
 };
 
 export interface ParsedArgs {
@@ -67,6 +96,16 @@ export function parse(argv: string[]): ParsedArgs {
 export function str(values: Values, key: keyof Values): string | undefined {
   const v = values[key];
   return typeof v === 'string' ? v : undefined;
+}
+
+/** A repeatable string flag's values (each may also be comma-separated), or []. */
+export function list(values: Values, key: keyof Values): string[] {
+  const v = values[key];
+  const raw = Array.isArray(v) ? v : typeof v === 'string' ? [v] : [];
+  return raw
+    .flatMap((x) => x.split(','))
+    .map((x) => x.trim())
+    .filter(Boolean);
 }
 
 /** `--limit` as a positive integer, or undefined. Rejects garbage with a clean error. */

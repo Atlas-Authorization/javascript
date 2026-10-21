@@ -13,6 +13,8 @@ import {
   type Step,
 } from '@atlasauth/js';
 import { useAtlas } from './context';
+import { FapiClient } from './fapi';
+import { ATLAS_VUE_SDK } from './version';
 import { useAuth, useOrganization, useUser } from './composables';
 import { useFlow } from './flow';
 import { classFor, type ElementKey } from './appearance';
@@ -789,8 +791,51 @@ export const UserProfile = defineComponent({
   name: 'UserProfile',
   setup() {
     const { user } = useUser();
+    const atlas = useAtlas();
     const t = useText();
     const cls = useClass();
+    // An unverified address (added and never confirmed, or the sign-up address
+    // on an app that did not require verification) can be proven here: send a
+    // code, then enter it.
+    const verifying = ref<string | null>(null);
+    const code = ref('');
+    const busy = ref(false);
+    const verifyError = ref<string | null>(null);
+    const client = new FapiClient({
+      publishableKey: atlas.publishableKey,
+      baseUrl: atlas.frontendApi,
+      locale: atlas.locale,
+      sdk: ATLAS_VUE_SDK,
+    });
+
+    const sendCode = async (id: string) => {
+      verifyError.value = null;
+      busy.value = true;
+      const res = await client.post(`/v1/client/me/email_addresses/${id}/prepare_verification`);
+      busy.value = false;
+      if (!res.ok) {
+        verifyError.value = t('userProfile.verifySendFailed');
+        return;
+      }
+      code.value = '';
+      verifying.value = id;
+    };
+    const confirmCode = async () => {
+      if (!verifying.value) return;
+      verifyError.value = null;
+      busy.value = true;
+      const res = await client.post(
+        `/v1/client/me/email_addresses/${verifying.value}/attempt_verification`,
+        { code: code.value },
+      );
+      busy.value = false;
+      if (!res.ok) {
+        verifyError.value = t('userProfile.verifyCodeRejected');
+        return;
+      }
+      verifying.value = null;
+      await atlas.reload();
+    };
 
     return () => {
       const u = user.value;
@@ -806,9 +851,45 @@ export const UserProfile = defineComponent({
               h('li', { key: email.id }, [
                 email.email_address,
                 email.verified ? null : h('em', ` — ${t('userProfile.unverified')}`),
+                email.verified
+                  ? null
+                  : verifying.value === email.id
+                    ? h('span', { 'data-atlas': 'email-verify' }, [
+                        h('input', {
+                          class: cls('formFieldInput', 'atlas-account-input'),
+                          inputmode: 'numeric',
+                          autocomplete: 'one-time-code',
+                          placeholder: t('userProfile.verifyCodePlaceholder'),
+                          value: code.value,
+                          onInput: (e: Event) => {
+                            code.value = (e.target as HTMLInputElement).value;
+                          },
+                        }),
+                        h(
+                          'button',
+                          {
+                            class: cls('formButtonSecondary', 'atlas-button-secondary'),
+                            type: 'button',
+                            disabled: busy.value,
+                            onClick: () => void confirmCode(),
+                          },
+                          t('userProfile.verifyConfirm'),
+                        ),
+                      ])
+                    : h(
+                        'button',
+                        {
+                          class: cls('formButtonSecondary', 'atlas-button-secondary'),
+                          type: 'button',
+                          disabled: busy.value,
+                          onClick: () => void sendCode(email.id),
+                        },
+                        t('userProfile.verify'),
+                      ),
               ]),
             ),
           ),
+          verifyError.value ? h('p', { role: 'alert' }, verifyError.value) : null,
         ]),
         h('section', [
           h('h2', t('userProfile.securitySection')),

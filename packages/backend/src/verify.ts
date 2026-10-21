@@ -12,6 +12,29 @@ import {
   type LogoutTokenCheckOptions,
   type LogoutTokenResult,
 } from './logout-token';
+import {
+  oidcCallback,
+  oidcClearCookie,
+  oidcLogoutUrl,
+  oidcStart,
+  oidcVerifyIdToken,
+  type OidcCallbackOptions,
+  type OidcLogoutUrlOptions,
+  type OidcStartOptions,
+  type VerifyIdTokenOptions,
+} from './oidc';
+
+/** An `oidc` option set with `issuer` (and `fetchImpl`/`now`) defaulted from the {@link AtlasBackend}. */
+type BoundOidc<T extends { issuer: string }> = Omit<T, 'issuer'> & { issuer?: string };
+
+/** `atlas.oidc`: the relying-party helpers with this backend's issuer, fetch and clock filled in. */
+export interface AtlasBackendOidc {
+  start(options: BoundOidc<OidcStartOptions>): ReturnType<typeof oidcStart>;
+  callback(options: BoundOidc<OidcCallbackOptions>): ReturnType<typeof oidcCallback>;
+  logoutUrl(options: BoundOidc<OidcLogoutUrlOptions>): ReturnType<typeof oidcLogoutUrl>;
+  verifyIdToken(idToken: string, options: BoundOidc<VerifyIdTokenOptions>): ReturnType<typeof oidcVerifyIdToken>;
+  clearCookie: typeof oidcClearCookie;
+}
 
 // Re-export the shared authorization primitive so a backend customer imports
 // `has`, `protect`, `ProtectCondition`, etc. from `@atlasauth/backend` directly —
@@ -211,6 +234,13 @@ export interface AtlasBackendOptions {
 export class AtlasBackend {
   private readonly jwks: JwksCache;
 
+  /**
+   * The server-side OIDC relying party (hosted-redirect sign-in) for this
+   * instance: `start`, `callback`, `logoutUrl`, `verifyIdToken`. `issuer`,
+   * `fetchImpl` and `now` default to this backend's; pass `issuer` to override.
+   */
+  readonly oidc: AtlasBackendOidc;
+
   constructor(private readonly options: AtlasBackendOptions) {
     // Exactly one key source. Two would be ambiguous (which wins?), and zero
     // leaves nothing to verify against — either is a configuration error worth
@@ -241,6 +271,20 @@ export class AtlasBackend {
         now: options.now,
       });
     }
+
+    const bind = <T extends { issuer?: string }>(o: T) => ({
+      fetchImpl: options.fetchImpl,
+      now: options.now,
+      ...o,
+      issuer: o.issuer ?? options.issuer,
+    });
+    this.oidc = {
+      start: (o) => oidcStart(bind(o)),
+      callback: (o) => oidcCallback(bind(o)),
+      logoutUrl: (o) => oidcLogoutUrl(bind(o)),
+      verifyIdToken: (token, o) => oidcVerifyIdToken(token, bind(o)),
+      clearCookie: oidcClearCookie,
+    };
 
     this.jwks = new JwksCache({
       url: hasUrl ? options.jwksUrl : undefined,

@@ -232,6 +232,12 @@ interface ProviderBodyBase<T extends MessagingTransport> {
    * provider accepts. SMS: the sender number in E.164 format, e.g. `+15551234567`.
    */
   from_address?: string;
+  /**
+   * Email only. `development`: a development instance sends without a verified
+   * domain (Atlas sign-in templates only, `[Atlas test] ` subjects, capped);
+   * 409 on a production instance. Omitted on an update: the stored mode is kept.
+   */
+  mode?: 'standard' | 'development';
 }
 
 /**
@@ -295,8 +301,12 @@ type PublicConfigKey<T extends MessagingTransport> = Exclude<
  */
 export interface MessagingProviderOf<C extends 'email' | 'sms', T extends MessagingTransport> {
   object: 'messaging_provider';
+  /** The provider id: pass it as `provider_id` to managed email or the development sender. */
+  id?: string;
   channel: C;
   transport: T;
+  /** How it sends: `standard` | `development` | `managed_domain`. */
+  mode?: 'standard' | 'development' | 'managed_domain';
   from_address: string | null;
   status: string;
   /** Non-secret config only — secret values are never returned. */
@@ -324,13 +334,19 @@ export interface MessagingProviders {
     status: string;
     verified: boolean;
   } | null;
+  /** The email provider in development mode, when it is. */
+  development_email?: {
+    object: 'development_email';
+    enabled: true;
+    from_address: string | null;
+  } | null;
 }
 
 // ── Atlas-managed email ─────────────────────────────────────────────────────
 
 /** A DNS record to publish for the managed sending domain. */
 export interface ManagedEmailRecord {
-  purpose: 'dkim' | 'spf' | 'return_path' | 'other';
+  purpose: 'dkim' | 'spf' | 'return_path' | 'ownership' | 'dmarc' | 'other';
   type: 'TXT' | 'MX' | 'CNAME';
   /** Fully-qualified record name. */
   name: string;
@@ -339,19 +355,24 @@ export interface ManagedEmailRecord {
   status?: string;
 }
 
-/** Atlas-managed email: your own sending domain on Atlas's email account. */
+/** Managed email: Atlas sets your sending domain up on your own Resend or Brevo account and sends through your key. */
 export interface ManagedEmail {
   object: 'managed_email';
   id: string;
   from_address: string;
   domain: string;
   provider: string;
+  /** The email service the domain lives on (your own account there): `resend` | `brevo`. */
+  backend?: 'resend' | 'brevo';
+  /** Your email provider (mode `managed_domain`) that holds the API key. */
+  provider_id?: string | null;
   region: string | null;
   /** `not_started` | `pending` | `verified` | `failed` | `temporary_failure`. Email sends only when verified. */
   status: string;
   verified: boolean;
   records: ManagedEmailRecord[];
-  limits: { hourly: number; daily: number };
+  /** Always null: no Atlas limits apply, your provider account's own do. */
+  limits: null;
   usage: {
     sent: number;
     bounces: number;
@@ -359,7 +380,9 @@ export interface ManagedEmail {
     last_bounce_at: number | null;
     last_complaint_at: number | null;
   };
-  reputation: 'shared_platform_account';
+  reputation: 'your_provider_account';
+  /** Brevo, on create: whether the bounce / complaint webhook was registered on your account. */
+  feedback_webhook?: 'registered' | 'not_registered';
   /** DNS automation, when set. The token is never returned. */
   dns: { provider: string; token_set: boolean } | null;
   failure_reason: string | null;
@@ -375,6 +398,12 @@ export interface ManagedEmail {
 export interface CreateManagedEmailBody {
   /** The From address, bare or `"Name <address>"`. Its domain becomes the sending domain. */
   from_address: string;
+  /** Your own provider account Atlas sets the domain up on. Required with `config` unless `provider_id` is given. */
+  transport?: 'resend' | 'brevo';
+  /** Your provider API key (write-only). */
+  config?: { api_key: string };
+  /** Instead of `transport` + `config`: your configured Resend or Brevo email provider. */
+  provider_id?: string;
   region?: 'us-east-1' | 'eu-west-1' | 'sa-east-1' | 'ap-northeast-1';
   /** Let Atlas write the DNS records. The token is write-only. */
   dns?: {
@@ -390,7 +419,35 @@ export interface DeletedManagedEmail {
   object: 'managed_email';
   domain: string;
   deleted: true;
+  /** Whether the email provider that held the key (mode `managed_domain`) was removed too. */
+  provider_removed?: boolean;
 }
+
+// ── Development email sender ──────────────────────────────────────────────
+
+/** Your own email provider in development mode (development instances, no verified domain). */
+export interface DevelopmentEmail {
+  object: 'development_email';
+  provider_id: string;
+  enabled: true;
+  /** False on a production instance (never sends) or when the provider is disabled. */
+  active: boolean;
+  transport: string;
+  from_address: string | null;
+  subject_prefix: string;
+  footer: string;
+  templates: string[];
+  limits: { daily: number; per_recipient_hourly: number };
+  /** Present for onboarding@resend.dev: Resend delivers it only to your Resend account address. */
+  note?: string;
+  next_step?: string;
+  updated_at: number;
+}
+
+/** `{ provider_id }`, or your provider exactly as `messaging.setEmail` takes it. */
+export type EnableDevelopmentEmailBody =
+  | { provider_id: string; from_address?: string }
+  | { transport: 'resend' | 'ses' | 'smtp' | 'brevo' | 'mailgun'; config?: Record<string, string>; from_address?: string };
 
 export interface MessagingTestResult {
   object: 'messaging_test';
@@ -463,7 +520,25 @@ export function messagingResource(request: RequestFn) {
         ...(options.force ? { query: { force: 'true' } } : {}),
       });
     },
-    /** Atlas-managed email: send from your own domain without your own email provider. */
+    /**
+     * Your own email provider in development mode: a development instance sends
+     * Atlas's sign-in emails without a verified domain ([Atlas test] subjects, capped).
+     */
+    developmentEmail: {
+      /** 404 when the provider is not in development mode. */
+      get(): Promise<DevelopmentEmail> {
+        return request({ method: 'GET', path: '/v1/messaging_providers/email/development' });
+      },
+      /** Turn development mode on. 409 `DEVELOPMENT_EMAIL_NOT_ALLOWED` on a production instance. */
+      enable(body: EnableDevelopmentEmailBody): Promise<DevelopmentEmail> {
+        return request({ method: 'POST', path: '/v1/messaging_providers/email/development', body });
+      },
+      /** Back to standard mode; the provider stays. */
+      disable(): Promise<{ object: 'development_email'; deleted: true; provider_id: string; mode: 'standard' }> {
+        return request({ method: 'DELETE', path: '/v1/messaging_providers/email/development' });
+      },
+    },
+    /** Managed email: Atlas sets your sending domain up on your own Resend or Brevo account. */
     managedEmail: {
       /** 404 when none is configured. */
       get(): Promise<ManagedEmail> {

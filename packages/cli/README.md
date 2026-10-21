@@ -40,10 +40,14 @@ ATLAS_SECRET_KEY=sk_live_... ATLAS_API_URL=https://api.atlasauth.net atlas users
 atlas users    list | get <id> | create --email <e> | delete <id>
 atlas orgs     list | get <id> | members <id>
 atlas api-keys list | create --subject-type <t> --subject-id <id> | revoke <id>
-atlas webhooks list
+atlas webhooks list | create --url <url> [--events a,b]
 atlas sessions revoke <id>
 atlas config   export [--dir <path>] [--format json|yaml]
 atlas config   import [--dir <path>] [--format json|yaml] [--dry-run] [--prune]
+atlas init     --product <name> [--domain <d>] [--instance-env development|production] ...
+atlas preflight [--instance <id> | --product <name>] [--fail-on error|warning]
+atlas env      --product <name> --format dotenv|coolify|vercel
+atlas client   rotate <client-id> [--now | --overlap <seconds>]
 ```
 
 Every command takes `--json` for raw JSON (otherwise a human table). Paginated
@@ -58,6 +62,41 @@ atlas api-keys create --subject-type user --subject-id user_123 --name ci
 
 Run `atlas --help` or `atlas <command> --help` for details, `atlas --version`
 for the version.
+
+## Secrets go to files
+
+Any command that receives a secret (an instance secret key, an OAuth client
+secret, a webhook signing secret, an end-user API key) writes it to a `0600`
+dotenv file under `~/.config/<product>/` (directory `0700`;
+`~/.config/atlasauth/` without `--product`) and prints only the path. An
+existing different file is never overwritten without `--force`.
+`--print-secret` prints it instead, with a warning.
+
+## Set up an app (`atlas init`)
+
+```sh
+export ATLAS_PLATFORM_KEY=psk_...      # or: atlas login --secret-key psk_...
+atlas init --product acme --domain acme.com \
+  --email-provider resend --email-key-file ~/.secrets/resend.key \
+  --strategies password,email_code,passkey \
+  --client-redirect https://app.acme.com/auth/callback \
+  --webhook-url https://app.acme.com/hooks/atlas --yes
+```
+
+Finds or creates the app + instance, sets the strategies, the email sender
+(`--email managed|development|none`, always on your own provider account; the
+key comes from `--email-key-file`, or stdin with `-`, never argv; managed
+prints the DNS records), the custom
+domain (`auth.<domain>`, prints the CNAME), a first-party OAuth client and a
+webhook endpoint. Re-running only fills gaps. Secrets land in
+`~/.config/acme/production*.env`; public values and file paths in
+`~/.config/acme/atlas.json`.
+
+```sh
+atlas preflight --product acme --fail-on warning   # CI gate: exit 1 on findings
+atlas env --product acme --format dotenv           # public values + *_FILE paths
+atlas client rotate oc_123 --product acme --overlap 3600
+```
 
 ## Config-as-code (`atlas config`)
 

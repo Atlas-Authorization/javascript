@@ -16,6 +16,21 @@ Everything here is **fail-soft**: if a token can't be minted, the helpers resolv
 to `null` / no-op rather than throw, so a flaky network never takes your suite
 down before the first test.
 
+## Offline unit tests
+
+For backend unit tests that need no browser and no network, this package also
+exports `createTestIssuer` (from `@atlasauth/backend`). It mints session tokens and
+ID tokens with a throwaway key, serves discovery, the JWKS and a token endpoint
+through its own `fetch`, and forges the six bad tokens a verifier must refuse
+(`TEST_TOKEN_TAMPERS`). See the `@atlasauth/backend` README.
+
+```ts
+import { createTestIssuer } from '@atlasauth/testing';
+
+const fx = await createTestIssuer();
+const token = await fx.mintIdToken({ sub: 'user_1' }, { aud: fx.clientId, nonce: 'n-1' });
+```
+
 ## Install
 
 ```sh

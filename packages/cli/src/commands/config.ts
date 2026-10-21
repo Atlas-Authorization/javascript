@@ -219,11 +219,14 @@ function registry(): ResourceSpec[] {
         }));
       },
       async create(http, config) {
-        await http.post('/v1/resource_servers', compact(config));
+        const body = compact(config);
+        delete body.signing_alg; // read-only (reported, not settable)
+        await http.post('/v1/resource_servers', body);
       },
       async update(http, live, config) {
         const body = compact(config);
         delete body.identifier; // immutable
+        delete body.signing_alg; // read-only
         await http.patch(`/v1/resource_servers/${enc(live.id)}`, body);
       },
       async remove(http, live) {
@@ -333,7 +336,9 @@ function registry(): ResourceSpec[] {
         await http.post('/v1/sso_connections', compact(config));
       },
       async update(http, live, config) {
-        await http.patch(`/v1/sso_connections/${enc(live.id)}`, compact(config));
+        const body = compact(config);
+        delete body.type; // fixed at creation; PATCH does not take it
+        await http.patch(`/v1/sso_connections/${enc(live.id)}`, body);
       },
       async remove(http, live) {
         await http.delete(`/v1/sso_connections/${enc(live.id)}`);

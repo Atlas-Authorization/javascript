@@ -1,5 +1,8 @@
 # @atlasauth/svelte changelog
 
+## 0.6.1
+- **`<UserProfile>` can verify an address.** Each unverified email address now has a **Verify** button: it emails a code (`POST /v1/client/me/email_addresses/{id}/prepare_verification`) and shows a field to enter it (`attempt_verification`), then reloads the user. This includes the sign-up address on an app that does not require email verification, which now reads unverified until it is proven. New catalog keys: `userProfile.verify`, `userProfile.verifyConfirm`, `userProfile.verifyCodePlaceholder`, `userProfile.verifySendFailed`, `userProfile.verifyCodeRejected`.
+
 ## 0.6.0
 - **New `initAtlas({ onSignOut })` and `client.onSignOut(listener)`**: `onSignOut({ reason, sessionId })` fired once each time a signed-in user becomes signed out, on every
   path: `reason` is `user` (this tab), `other_tab`, `session_expired`, `revoked` (the session was ended elsewhere,

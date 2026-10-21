@@ -89,6 +89,11 @@ export const EN_US: Catalog = {
   'userProfile.addEmail': 'Add an email address',
   'userProfile.makePrimary': 'Make primary',
   'userProfile.unverified': 'Unverified',
+  'userProfile.verify': 'Verify',
+  'userProfile.verifyConfirm': 'Confirm',
+  'userProfile.verifyCodePlaceholder': 'Code from the email',
+  'userProfile.verifySendFailed': 'We could not send a code right now. Try again in a minute.',
+  'userProfile.verifyCodeRejected': 'That code was not accepted.',
   'userProfile.revokeDevice': 'Sign out',
   'userProfile.deleteAccount': 'Delete account',
 

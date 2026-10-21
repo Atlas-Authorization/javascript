@@ -94,6 +94,12 @@ export function ProfileCard() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [saving, setSaving] = useState(false);
+  // An unverified address (one added and never confirmed, or the sign-up
+  // address on an app that did not require verification) can be proven here:
+  // send a code, then enter it.
+  const [verifying, setVerifying] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   useEffect(() => {
     setFirstName(user?.first_name ?? '');
@@ -112,6 +118,33 @@ export function ProfileCard() {
       .catch(() => undefined);
     await reload();
     setSaving(false);
+  };
+
+  const sendCode = async (id: string) => {
+    setVerifyError(null);
+    setSaving(true);
+    const res = await client.post(`/v1/client/me/email_addresses/${id}/prepare_verification`);
+    setSaving(false);
+    if (!res.ok) {
+      setVerifyError('We could not send a code right now. Try again in a minute.');
+      return;
+    }
+    setCode('');
+    setVerifying(id);
+  };
+
+  const confirmCode = async () => {
+    if (!verifying) return;
+    setVerifyError(null);
+    setSaving(true);
+    const res = await client.post(`/v1/client/me/email_addresses/${verifying}/attempt_verification`, { code });
+    setSaving(false);
+    if (!res.ok) {
+      setVerifyError('That code was not accepted.');
+      return;
+    }
+    setVerifying(null);
+    await reload();
   };
 
   return (
@@ -134,9 +167,29 @@ export function ProfileCard() {
             {email.email_address}
             {email.verified ? null : <em> — unverified</em>}
             {email.primary ? <em> — primary</em> : null}
+            {email.verified ? null : verifying === email.id ? (
+              <span data-atlas="email-verify">
+                <input
+                  className={cls('formFieldInput', 'atlas-account-input')}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="Code from the email"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+                <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={saving} onClick={() => void confirmCode()}>
+                  Confirm
+                </button>
+              </span>
+            ) : (
+              <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={saving} onClick={() => void sendCode(email.id)}>
+                Verify
+              </button>
+            )}
           </li>
         ))}
       </ul>
+      {verifyError ? <p className={cls('text', 'atlas-text')} role="alert">{verifyError}</p> : null}
     </section>
   );
 }

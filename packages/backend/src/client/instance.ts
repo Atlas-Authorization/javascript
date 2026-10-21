@@ -14,6 +14,15 @@ export interface Instance {
   environment: string;
   publishable_key: string;
   frontend_api_host: string;
+  /**
+   * The `iss` this instance's session tokens carry. It changes when a custom
+   * domain goes active, so read it (and the two URLs below) rather than hard-coding it.
+   */
+  issuer: string;
+  /** The OpenID discovery document whose `issuer` equals {@link issuer}. */
+  discovery_url: string;
+  /** The JWKS holding this instance's signing keys. */
+  jwks_uri: string;
   allowed_origins: string[];
   auth_config: Metadata;
   created_at: number;

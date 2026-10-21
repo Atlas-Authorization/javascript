@@ -3,6 +3,7 @@ import { str, type ParsedArgs } from '../args';
 import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { fmtTime, printJson, renderTable, type Column } from '../output';
+import { productDir, writeSecretFile } from '../secrets';
 import { requireArg, requireClient, wantsJson } from './shared';
 
 const COLUMNS: Column<ApiKey>[] = [
@@ -53,12 +54,32 @@ export async function apiKeys(ctx: RunContext, args: ParsedArgs): Promise<number
         subject_id: subjectId,
         name: str(args.values, 'name'),
       });
+      // The secret is revealed exactly once. By default it goes to a 0600 file
+      // and only the path is printed; --print-secret is the explicit opt-out.
+      const printSecret = args.values['print-secret'] === true;
+      const { secret, ...rest } = key;
+      if (printSecret) {
+        ctx.io.err(
+          'atlas: warning: printing the API key because --print-secret was given. It may end up in your shell history, terminal scrollback or CI logs.',
+        );
+        if (json) printJson(ctx.io, key);
+        else {
+          ctx.io.out(`Created API key ${key.id}.`);
+          ctx.io.out(`Secret (shown once): ${secret}`);
+        }
+        return 0;
+      }
+      const { path } = writeSecretFile(
+        productDir(ctx.env, str(args.values, 'product') ?? 'atlasauth'),
+        `api-key-${key.id}.env`,
+        { ATLAS_API_KEY: secret ?? '' },
+        { force: args.values.force === true, comment: `End-user API key ${key.id} (${subjectType} ${subjectId}).` },
+      );
       if (json) {
-        printJson(ctx.io, key);
+        printJson(ctx.io, { ...rest, secret_file: path });
       } else {
-        // The secret is revealed exactly once — make that unmissable.
         ctx.io.out(`Created API key ${key.id}.`);
-        ctx.io.out(`Secret (shown once): ${key.secret}`);
+        ctx.io.out(`Secret written to ${path} (mode 0600). It is shown nowhere else.`);
       }
       return 0;
     }

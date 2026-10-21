@@ -231,6 +231,8 @@ describe('namespace routing (method + path + payload per namespace)', () => {
     const c = client(impl);
     await c.oauthClients.rotateSecret('c1');
     expect(last(calls).url).toBe(`${API_URL}/v1/oauth_clients/c1/rotate_secret`);
+    await c.oauthClients.rotateSecret('c1', { overlap_seconds: 0 });
+    expect(JSON.parse(last(calls).body!)).toEqual({ overlap_seconds: 0 });
     await c.oauthClients.grants.delete('c1', 'g1');
     expect(last(calls)).toMatchObject({
       method: 'DELETE',

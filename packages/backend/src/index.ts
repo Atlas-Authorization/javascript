@@ -22,6 +22,32 @@ export type {
   LogoutTokenVerifierOptions,
 } from './logout-token';
 
+// Server-side OIDC relying party for the hosted-redirect integration:
+// state + nonce + PKCE flow cookie, code exchange, RS256-pinned ID-token checks.
+export {
+  AtlasOidcError,
+  OIDC_FLOW_COOKIE,
+  OIDC_FLOW_MAX_AGE_SECONDS,
+  oidc,
+  oidcCallback,
+  oidcClearCookie,
+  oidcLogoutUrl,
+  oidcStart,
+  oidcVerifyIdToken,
+  resetOidcCaches,
+} from './oidc';
+export type {
+  AtlasOidc,
+  AtlasOidcErrorCode,
+  OidcCallbackOptions,
+  OidcClientAuth,
+  OidcIdentity,
+  OidcLogoutUrlOptions,
+  OidcStartOptions,
+  OidcStartResult,
+  VerifyIdTokenOptions,
+} from './oidc';
+
 // §12.2 inbound webhook verification for consumers.
 export * from './webhooks';
 
@@ -33,8 +59,15 @@ export * from './client';
 // §1.3(c) dev/test tooling — offline fixtures for verifying Atlas-minted
 // session JWTs with no network call (Clerk's `@clerk/testing` equivalent).
 // Its own module, so it never sits on the hot verification path.
-export { createTestIssuer } from './testing';
-export type { TestIssuer, CreateTestIssuerOptions } from './testing';
+export { createTestIssuer, TEST_TOKEN_TAMPERS } from './testing';
+export type {
+  TestIssuer,
+  CreateTestIssuerOptions,
+  MintIdTokenOptions,
+  TestAuthorizeOptions,
+  TestAuthorizeResult,
+  TestTokenTamper,
+} from './testing';
 
 // Proof-Carrying Authority (agentic auth): offline verifier + framework-agnostic guard,
 // beside the session-token verifier above.

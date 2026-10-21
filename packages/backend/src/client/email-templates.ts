@@ -12,6 +12,7 @@ export type EmailTemplateName =
   | 'new_device_sign_in'
   | 'session_revoked_token_reuse'
   | 'account_locked'
+  | 'account_secured'
   | 'team_member_added'
   | 'team_role_changed';
 

@@ -1,5 +1,10 @@
 # @atlasauth/testing changelog
 
+## 0.2.0
+
+### Added
+- Re-exports `createTestIssuer`, `TEST_TOKEN_TAMPERS` and their types (`TestIssuer`, `CreateTestIssuerOptions`, `MintIdTokenOptions`, `TestAuthorizeOptions`, `TestAuthorizeResult`, `TestTokenTamper`) from `@atlasauth/backend` 0.9.0, so backend unit tests can mint session and ID tokens and run a redirect sign-in offline from the same import as the end-to-end helpers.
+
 ## 0.1.0
 
 First published release.

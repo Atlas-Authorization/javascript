@@ -3,6 +3,7 @@
 Server-side Atlas for Node, Deno, Bun and edge runtimes. It does three things:
 
 - verifies Atlas session tokens, webhooks and back-channel logout tokens
+- runs the server side of a hosted-redirect (OpenID Connect) sign-in
 - gives you a typed client for the Backend API, using your secret key (`sk_...`)
 - gives you a typed client for the Platform API, using your platform key (`psk_...`)
 
@@ -23,6 +24,150 @@ if (result.ok) console.log(result.claims.sub);
 ```
 
 The JWKS is found from the issuer and cached. Instances on the shared host also pass `instanceId` (or `publishableKey`).
+
+## Sign in with a redirect (OpenID Connect)
+
+`oidc` runs the relying-party side of the hosted-redirect integration: state, nonce and PKCE, the flow cookie, the code exchange and the ID-token checks (RS256 only, `iss`, `aud` = your client id, `nonce`, `exp`).
+
+```ts
+import { oidc, AtlasOidcError } from '@atlasauth/backend';
+
+const config = {
+  issuer: 'https://bright-fox-42-fapi.atlasauth.net', // https:// + frontend_api_host
+  clientId: process.env.ATLAS_CLIENT_ID!,
+  redirectUri: 'https://app.example.com/auth/callback',
+  secret: process.env.OIDC_COOKIE_SECRET!, // 32+ random characters; seals the flow cookie
+};
+
+// Start: set the flow cookie, redirect.
+const { url, cookie } = await oidc.start({ ...config, scope: 'openid profile email' });
+
+// Callback: one call does every check.
+const identity = await oidc.callback({
+  ...config,
+  clientSecret: process.env.ATLAS_CLIENT_SECRET!,
+  query: request.url, // or URLSearchParams, or req.query
+  cookie: request.headers.get('cookie'),
+});
+// identity: { sub, namespacedSub, email, emailVerified, name, idToken, accessToken, refreshToken?, expiresAt, claims, clearCookie }
+
+// Sign out: end your session, then end the Atlas one.
+const logout = await oidc.logoutUrl({ ...config, postLogoutRedirectUri: 'https://app.example.com/', idTokenHint });
+```
+
+- The flow cookie is `httpOnly`, `SameSite=Lax`, `Secure` (except on a `http://localhost` callback), scoped to the callback path, and lasts 10 minutes. With `secret` it is encrypted (AES-GCM), so it can't be read or forged. Without `secret` it is only encoded. Always pass one in production.
+- `namespacedSub` is `${issuer}#${sub}`. Key users on it if you accept more than one instance, so two instances' users never collide.
+- `clientAuth` is `client_secret_basic` (default with a secret), `client_secret_post`, or `none` (public client, PKCE only).
+- `new AtlasBackend({ issuer }).oidc` has the same methods with `issuer` filled in.
+- Did your own code exchange? `oidc.verifyIdToken(idToken, { issuer, clientId, nonce })` runs just the token checks.
+
+Failures throw `AtlasOidcError` with a stable `code`:
+
+| `code` | Meaning |
+|---|---|
+| `state_mismatch` | No flow cookie, a different `state`, a cookie from another sign-in or secret, or a flow older than 10 minutes. Start again. |
+| `access_denied` | Atlas redirected back with an OAuth `error`. The exact value is in `oauthError` (`access_denied`, `login_required`, …). |
+| `issuer_mismatch` | The callback's `iss` parameter names a different server. |
+| `invalid_request` | The callback has no `code`. |
+| `token_exchange_failed` | The token endpoint refused the code or client (`oauthError`, `status`). |
+| `invalid_token` | The ID token failed a check: algorithm, signature, `iss`, `aud`/`azp`, `nonce`, `exp`/`iat` or `at_hash`. |
+| `discovery_failed` | The discovery document or the signing keys could not be fetched or don't match the issuer. |
+
+Every error from `callback` carries `clearCookie`: send it with your error page too.
+
+### Next.js (App Router)
+
+```ts
+// app/auth/login/route.ts
+import { oidc } from '@atlasauth/backend';
+import { config } from '@/lib/atlas';
+
+export async function GET() {
+  const { url, cookie } = await oidc.start(config);
+  return new Response(null, { status: 302, headers: { location: url, 'set-cookie': cookie } });
+}
+
+// app/auth/callback/route.ts
+import { oidc, AtlasOidcError } from '@atlasauth/backend';
+import { config } from '@/lib/atlas';
+
+export async function GET(request: Request) {
+  try {
+    const user = await oidc.callback({
+      ...config,
+      clientSecret: process.env.ATLAS_CLIENT_SECRET!,
+      query: request.url,
+      cookie: request.headers.get('cookie'),
+    });
+    const headers = new Headers({ location: '/' });
+    headers.append('set-cookie', user.clearCookie);
+    headers.append('set-cookie', await createAppSession(user)); // your own session cookie
+    return new Response(null, { status: 302, headers });
+  } catch (error) {
+    if (!(error instanceof AtlasOidcError)) throw error;
+    return new Response(`Sign-in failed (${error.code})`, {
+      status: 400,
+      headers: error.clearCookie ? { 'set-cookie': error.clearCookie } : {},
+    });
+  }
+}
+```
+
+### Express
+
+```ts
+import express from 'express';
+import { oidc, AtlasOidcError } from '@atlasauth/backend';
+
+const app = express();
+
+app.get('/auth/login', async (req, res) => {
+  const { url, cookie } = await oidc.start(config);
+  res.append('Set-Cookie', cookie).redirect(url);
+});
+
+app.get('/auth/callback', async (req, res) => {
+  try {
+    const user = await oidc.callback({
+      ...config,
+      clientSecret: process.env.ATLAS_CLIENT_SECRET!,
+      query: req.originalUrl,
+      cookie: req.headers.cookie,
+    });
+    res.append('Set-Cookie', user.clearCookie);
+    await startYourSession(req, res, user.namespacedSub);
+    res.redirect('/');
+  } catch (error) {
+    if (!(error instanceof AtlasOidcError)) throw error;
+    if (error.clearCookie) res.append('Set-Cookie', error.clearCookie);
+    res.status(400).send(`Sign-in failed (${error.code})`);
+  }
+});
+```
+
+## Test offline
+
+`createTestIssuer()` mints session tokens and ID tokens with a throwaway key, and its `fetch` serves discovery, the JWKS and a token endpoint, so a full redirect sign-in runs in a unit test with no network.
+
+```ts
+import { createTestIssuer, oidc, TEST_TOKEN_TAMPERS } from '@atlasauth/backend';
+
+const fx = await createTestIssuer({ clientSecret: 'test-secret' });
+const config = { issuer: fx.issuer, clientId: fx.clientId, redirectUri: 'https://app.example.com/auth/callback', secret: '…32+ chars…', fetchImpl: fx.fetch };
+
+const { url, cookie } = await oidc.start(config);
+const { callbackUrl } = await fx.authorize(url, { sub: 'user_1', claims: { email: 'a@example.com', email_verified: true } });
+const user = await oidc.callback({ ...config, clientSecret: 'test-secret', query: callbackUrl, cookie });
+
+// Negative cases: wrong_aud, wrong_iss, foreign_key, expired, wrong_nonce, alg_none.
+for (const tamper of TEST_TOKEN_TAMPERS) {
+  const { url, cookie } = await oidc.start(config);
+  const { callbackUrl } = await fx.authorize(url, { tamper });
+  await expect(oidc.callback({ ...config, clientSecret: 'test-secret', query: callbackUrl, cookie })).rejects.toMatchObject({ code: 'invalid_token' });
+}
+```
+
+`fx.mintIdToken(claims, { aud, nonce, tamper })` and `fx.mintSession(claims, { tamper })` mint single tokens. `@atlasauth/testing` re-exports `createTestIssuer`.
 
 ## Management client (secret key)
 

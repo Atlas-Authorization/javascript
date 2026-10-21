@@ -255,6 +255,20 @@ describe('config import', () => {
     expect(io.stdout()).toContain('Applied 1 change(s).');
   });
 
+  it('never sends signing_alg (read-only) when creating or updating a resource server', async () => {
+    await run(['config', 'export', '--dir', dir], ctx(captureIO(), new MockApi(seedState())));
+    const servers = JSON.parse(readFileSync(join(dir, 'resource_servers.json'), 'utf8')) as Record<string, unknown>[];
+    servers.push({ identifier: 'https://api.example.com/new', name: 'New API', scopes: ['read'], signing_alg: 'RS256' });
+    servers[0] = { ...servers[0], name: 'Renamed API' };
+    writeFileSync(join(dir, 'resource_servers.json'), JSON.stringify(servers, null, 2) + '\n');
+
+    const api = new MockApi(seedState());
+    expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), api))).toBe(0);
+    const rs = api.writes.filter((w) => w.path.startsWith('/v1/resource_servers'));
+    expect(rs.length).toBe(2);
+    for (const w of rs) expect(w.body).not.toHaveProperty('signing_alg');
+  });
+
   it('does not delete a live-only resource without --prune, but does with it', async () => {
     await run(['config', 'export', '--dir', dir], ctx(captureIO(), new MockApi(seedState())));
     // Drop one redirect URL from the config → it exists live but not in config.

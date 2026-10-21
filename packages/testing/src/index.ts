@@ -17,6 +17,19 @@ import { getTestingToken } from './testing-token';
 export { getTestingToken } from './testing-token';
 export type { GetTestingTokenOptions } from './testing-token';
 
+// Offline token fixtures for backend unit tests: session tokens, ID tokens, a
+// fake token endpoint (`issuer.fetch`) and the six negative cases. The same
+// functions as `@atlasauth/backend`, re-exported so one import covers testing.
+export { createTestIssuer, TEST_TOKEN_TAMPERS } from '@atlasauth/backend';
+export type {
+  CreateTestIssuerOptions,
+  MintIdTokenOptions,
+  TestAuthorizeOptions,
+  TestAuthorizeResult,
+  TestIssuer,
+  TestTokenTamper,
+} from '@atlasauth/backend';
+
 // Framework adapters — re-exported so a consumer can reach everything from the
 // root, while the dedicated subpaths (`@atlasauth/testing/playwright`,
 // `@atlasauth/testing/cypress`) stay available for a tighter import.

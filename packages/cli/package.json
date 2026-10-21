@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "atlas — manage an Atlas instance from the terminal via the Backend API.",
   "bin": {
     "atlas": "dist/cli.js"

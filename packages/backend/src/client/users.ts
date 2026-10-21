@@ -29,7 +29,19 @@ export interface EmailAddress {
   object: 'email_address';
   id: string;
   email_address: string;
+  /**
+   * True only when the address was proven (an emailed code or link, a provider
+   * that vouches for it, or your backend). An address that signed up while
+   * `requireEmailVerification` was false is `false`.
+   */
   verified: boolean;
+  /**
+   * `status` mirrors `verified`. `strategy` says how it was verified
+   * (`email_code`, `email_link`, `oauth`, `admin`, `import`, `scim`, `lti`), or
+   * `skipped` for an address held for sign-in but never proven; `null` when not
+   * verified. (Absent from servers older than this field.)
+   */
+  verification?: { status: 'verified' | 'unverified'; strategy?: string | null };
   primary: boolean;
   created_at: number;
 }

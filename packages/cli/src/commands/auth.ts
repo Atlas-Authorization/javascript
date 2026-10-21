@@ -3,6 +3,7 @@ import { str, type ParsedArgs } from '../args';
 import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { printJson } from '../output';
+import { httpFor } from '../project';
 import { maskSecret, resolveAuth, wantsJson } from './shared';
 
 /**
@@ -27,10 +28,11 @@ export async function login(ctx: RunContext, args: ParsedArgs): Promise<number> 
 
   if (!secretKey) throw new CliError('A secret key is required to log in.');
 
-  // Prove the credential before persisting it.
-  const client = ctx.makeClient({ secretKey, apiUrl });
+  // Prove the credential before persisting it. A platform key (psk_, for
+  // `atlas init`) is proven against the platform API instead.
   try {
-    await client.users.list({ limit: 1 });
+    if (secretKey.startsWith('psk_')) await httpFor(ctx, { secretKey, apiUrl }).get('/v1/platform/apps');
+    else await ctx.makeClient({ secretKey, apiUrl }).users.list({ limit: 1 });
   } catch (err) {
     if (err instanceof AtlasApiError) {
       throw new CliError(

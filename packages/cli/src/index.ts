@@ -29,3 +29,21 @@ export { webhooks } from './commands/webhooks';
 export { sessions } from './commands/sessions';
 export { config } from './commands/config';
 export { actions } from './commands/actions';
+export { init } from './commands/init';
+export { preflight, envCommand, client } from './commands/project-commands';
+export {
+  writeSecretFile,
+  readEnvFile,
+  parseDotenv,
+  renderDotenv,
+  productDir,
+  deliverSecret,
+} from './secrets';
+export {
+  readManifest,
+  writeManifest,
+  manifestPath,
+  type ProjectManifest,
+  type ProjectInstance,
+  type InstanceEnv,
+} from './project';

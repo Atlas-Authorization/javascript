@@ -64,6 +64,17 @@ export interface PlatformApp {
   name: string;
   environment: 'production' | 'development';
   publishable_key: string;
+  /** The Frontend API host: the default per-app host, or the custom domain once it is active. */
+  frontend_api_host: string | null;
+  /**
+   * The `iss` this app's session tokens carry. It changes when a custom domain
+   * goes active, so read it (and the two URLs below) rather than hard-coding it.
+   */
+  issuer: string;
+  /** The OpenID discovery document whose `issuer` equals {@link issuer}. */
+  discovery_url: string;
+  /** The JWKS holding this app's signing keys. */
+  jwks_uri: string;
   allowed_origins: string[];
   /** Housekeeping labels (up to 20, each up to 40 chars). */
   tags: string[];

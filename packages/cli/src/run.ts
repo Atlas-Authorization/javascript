@@ -4,6 +4,8 @@ import { actions } from './commands/actions';
 import { apiKeys } from './commands/api-keys';
 import { login, logout, whoami } from './commands/auth';
 import { config } from './commands/config';
+import { init } from './commands/init';
+import { client, envCommand, preflight } from './commands/project-commands';
 import { orgs } from './commands/orgs';
 import { sessions } from './commands/sessions';
 import { users } from './commands/users';
@@ -28,6 +30,10 @@ const COMMANDS: Record<string, Handler> = {
   sessions,
   config,
   actions,
+  init,
+  preflight,
+  env: envCommand,
+  client,
 };
 
 /**

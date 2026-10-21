@@ -1,5 +1,8 @@
 # @atlasauth/react changelog
 
+## 0.10.1
+- **`<ProfileCard>` can verify an address.** Each unverified email address now has a **Verify** button: it emails a code (`POST /v1/client/me/email_addresses/{id}/prepare_verification`) and shows a field to enter it (`attempt_verification`). This includes the sign-up address on an app that does not require email verification, which now reads unverified until it is proven.
+
 ## 0.10.0
 - **New `<AtlasProvider onSignOut>`, `useSignOutListener(listener)` and `useAtlas().addSignOutListener()`: `onSignOut({ reason, sessionId })`** fired once each time a signed-in user becomes signed out, on every
   path: `reason` is `user` (this tab), `other_tab`, `session_expired`, `revoked` (the session was ended elsewhere,

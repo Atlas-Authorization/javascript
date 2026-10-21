@@ -12,6 +12,11 @@ export interface OAuthClient {
   grant_types: string[];
   token_endpoint_auth_method: 'client_secret_basic' | 'client_secret_post' | 'none';
   secret_prefix: string | null;
+  /**
+   * After a rotation with overlap: when the previous secret stops working (epoch
+   * ms). Null when only the current secret is accepted.
+   */
+  previous_secret_expires_at?: number | null;
   is_public: boolean;
   first_party: boolean;
   /** Where the client may send users after an RP-initiated logout. */
@@ -53,6 +58,23 @@ export interface OAuthClientLogoutFields {
 export interface OAuthClientWithSecret extends OAuthClient {
   client_secret?: string;
   note: string;
+}
+
+export interface RotateOAuthClientSecretBody {
+  /**
+   * How long the previous secret keeps working, in seconds. Default 86400 (24
+   * hours); 0 revokes it now (after a leak); at most 604800 (7 days).
+   */
+  overlap_seconds?: number;
+}
+
+/** The rotate response: the new secret (shown once) and when the old one stops working. */
+export interface OAuthClientSecretRotation extends OAuthClientWithSecret {
+  client_secret: string;
+  /** The overlap applied, in seconds. */
+  overlap_seconds: number;
+  /** When the previous secret stops working (epoch ms), or null when it already has. */
+  previous_secret_expires_at: number | null;
 }
 
 export interface ClientGrant {
@@ -187,8 +209,21 @@ export function oauthClientsResource(request: RequestFn) {
     update(id: string, body: UpdateOAuthClientBody): Promise<OAuthClient> {
       return request({ method: 'PATCH', path: `/v1/oauth_clients/${enc(id)}`, body });
     },
-    rotateSecret(id: string): Promise<OAuthClientWithSecret> {
-      return request({ method: 'POST', path: `/v1/oauth_clients/${enc(id)}/rotate_secret` });
+    /**
+     * Mint a new secret. The previous one keeps working for `overlap_seconds`
+     * (default 24 hours, max 7 days; 0 = revoke it now).
+     */
+    rotateSecret(
+      id: string,
+      body: RotateOAuthClientSecretBody = {},
+      idempotencyKey?: string,
+    ): Promise<OAuthClientSecretRotation> {
+      return request({
+        method: 'POST',
+        path: `/v1/oauth_clients/${enc(id)}/rotate_secret`,
+        body,
+        idempotencyKey,
+      });
     },
     delete(id: string): Promise<{ object: 'oauth_client'; id: string; deleted: true; note: string }> {
       return request({ method: 'DELETE', path: `/v1/oauth_clients/${enc(id)}` });
