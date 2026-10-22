@@ -74,6 +74,7 @@ export type {
 export {
   signAtlasReferralCall,
   signReferallyCall,
+  signReferralUpdatedEvent,
   referallySignature,
   referralEmailHash,
   REFERALLY_API_VERSION,
@@ -82,6 +83,8 @@ export type {
   AtlasReferralCallOptions,
   ReferallyCallOptions,
   ReferallyCallOp,
+  ReferralUpdatedEvent,
+  ReferralUpdatedEventOptions,
   SignedReferralCall,
 } from './referral-test-calls';
 

@@ -1,5 +1,14 @@
 # @atlasauth/cli changelog
 
+## 0.5.0
+
+### Added
+
+- `atlas referrals connect --provider referally` registers a Referally webhook (the `referral.*` topics) that sends referral changes back to Atlas and saves its secret on the instance; `--no-sync` skips it.
+- It requires request-line (v2) signatures on the new connection from the first call.
+- It refuses a test Referally key for a production instance, and a live key for a development one; `--allow-mode-mismatch` goes ahead with a warning.
+- `atlas referrals status` shows two-way sync, the inbound URL and the last event. `connect --provider webhook` prints the inbound URL.
+
 ## 0.4.0
 
 ### Added

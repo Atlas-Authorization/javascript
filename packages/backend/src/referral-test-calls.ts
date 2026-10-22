@@ -131,3 +131,64 @@ export function signReferallyCall(options: ReferallyCallOptions): SignedReferral
   headers['x-referally-signature'] = referallySignature(options.secret, body, t);
   return signed(base, 'POST', headers, body);
 }
+
+/** The fields of a `referral.updated` event; absent fields stay unchanged on the Atlas side. */
+export interface ReferralUpdatedEvent {
+  /** The user's `customerRef` (as Atlas sent it on sign-up). This or `referralId` names the referral. */
+  customerRef?: string;
+  /** The platform's referral id. */
+  referralId?: string;
+  programId?: string;
+  /** The referral's status on the platform (e.g. `qualified`). */
+  status?: string;
+  partnerId?: string;
+  /** The referrer's `customerRef`, when the referrer is an Atlas user. */
+  referrerExternalRef?: string;
+  matchedVia?: string;
+}
+
+export interface ReferralUpdatedEventOptions {
+  /** The instance's inbound URL (`inbound.url` on the referral settings). */
+  inboundUrl: string;
+  /** The inbound secret, or the connection's signing secret when no inbound secret is set. */
+  secret: string;
+  event: ReferralUpdatedEvent;
+  /** When the change happened (ISO 8601 or epoch ms). Default: `now`. Atlas ignores events older than the last one applied. */
+  occurredAt?: string | number;
+  /** The event id (`atlas-id`), the same on every retry. Default: random. */
+  eventId?: string;
+  /** Epoch ms. Default: now. */
+  now?: number;
+}
+
+/**
+ * Two-way sync: a `referral.updated` event from the platform to an Atlas
+ * instance's inbound URL, signed like Atlas webhooks (`atlas-id`,
+ * `atlas-timestamp` in ms, `atlas-signature: v1,<base64 HMAC-SHA256 of
+ * "{id}.{ts}.{body}">`). Use it in a platform built on the Atlas referral
+ * protocol to send referral changes made after sign-up, or in its tests.
+ */
+export function signReferralUpdatedEvent(options: ReferralUpdatedEventOptions): SignedReferralCall {
+  const { event } = options;
+  if (!event.customerRef && !event.referralId) {
+    throw new Error('signReferralUpdatedEvent: the event needs customerRef or referralId.');
+  }
+  const id = options.eventId ?? `rfe_${randomBytes(8).toString('hex')}`;
+  const timestamp = options.now ?? Date.now();
+  const occurred = options.occurredAt ?? timestamp;
+  const body = JSON.stringify({
+    type: 'referral.updated',
+    occurredAt: typeof occurred === 'number' ? new Date(occurred).toISOString() : occurred,
+    ...event,
+  });
+  const signature = createHmac('sha256', options.secret).update(`${id}.${timestamp}.${body}`).digest('base64');
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'atlas-id': id,
+    'atlas-timestamp': String(timestamp),
+    'atlas-signature': `v1,${signature}`,
+    'user-agent': REFERRAL_PROTOCOL_USER_AGENT,
+    [REFERRAL_PROTOCOL_VERSION_HEADER]: REFERRAL_PROTOCOL_VERSION,
+  };
+  return signed(options.inboundUrl, 'POST', headers, body);
+}

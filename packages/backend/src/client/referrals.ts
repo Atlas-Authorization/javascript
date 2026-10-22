@@ -16,8 +16,12 @@ import type { UserReferralResult } from './users';
  * Referally adapter: `endpoint_url` is your Referally base URL, plus
  * `connection_id`, `signing_secret` and optionally `tracking_token`) or
  * another built-in vendor adapter.
- * `signing_secret` and `api_key` are write-only: reads return
- * `signing_secret_set` / `api_key_set`.
+ * `signing_secret`, `api_key` and `inbound_secret` are write-only: reads
+ * return `signing_secret_set` / `api_key_set` / `inbound.secret_set`.
+ *
+ * Two-way sync: a provider with the `inbound` capability sends referral
+ * changes made after sign-up to `inbound.url`; Atlas applies them to the
+ * user's referral and reports the latest one in `inbound.last_event`.
  */
 
 /** What a provider can do. An operation it lacks is recorded as `skipped`. */
@@ -34,6 +38,8 @@ export interface ReferralProviderCapabilities {
   user?: boolean;
   /** Answers a ping (org, program, clock) for the connection test. */
   ping?: boolean;
+  /** Sends referral changes made after sign-up to Atlas (two-way sync). */
+  inbound?: boolean;
 }
 
 /** A referral provider Atlas supports. */
@@ -87,6 +93,27 @@ export interface ReferralConnectionStatus {
    * answered 401: a rotated secret or clock skew) or `connection_paused`.
    */
   alert?: { code: string; message: string; at: number; call_id?: string } | null;
+}
+
+/** What Atlas did with an inbound referral event. */
+export type ReferralInboundOutcome =
+  | 'applied'
+  | 'unchanged'
+  | 'stale'
+  | 'unknown_customer'
+  | 'other_program'
+  | 'ignored';
+
+/** Two-way sync (`inbound` on the settings). */
+export interface ReferralInboundStatus {
+  /** Give this URL to the platform; null when the provider sends no events. */
+  url: string | null;
+  /** Whether an inbound secret is stored (the value is never returned). */
+  secret_set: boolean;
+  /** The platform's id for Atlas's event subscription, kept for reference. */
+  endpoint_id: string | null;
+  /** The latest event received, or null when none yet. */
+  last_event: { at: number; type: string; outcome: ReferralInboundOutcome } | null;
 }
 
 /** What a platform answers to a ping. */
@@ -155,6 +182,8 @@ export interface ReferralSettings {
   /** What the chosen provider still needs before referrals can be enabled. */
   missing?: string[];
   connection?: ReferralConnectionStatus | null;
+  /** Two-way sync: where the platform sends referral changes, and the latest one received. */
+  inbound?: ReferralInboundStatus;
   providers: ReferralProviderInfo[];
   updated_at?: number | null;
 }
@@ -174,6 +203,14 @@ export interface UpdateReferralSettingsBody {
   signing_secret?: string | null;
   /** Write-only vendor API key. */
   api_key?: string | null;
+  /**
+   * Write-only, 16-512 characters. Verifies the platform's events to
+   * `inbound.url`. Optional for the Atlas referral protocol (the signing
+   * secret is used when unset).
+   */
+  inbound_secret?: string | null;
+  /** The platform's id for Atlas's event subscription, kept for reference. */
+  inbound_endpoint_id?: string | null;
   /** 1-10 names of `[A-Za-z0-9_.-]{1,40}`. */
   url_params?: string[];
   context_cookie?: string | null;

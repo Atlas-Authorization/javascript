@@ -19,6 +19,14 @@ type Call = { method: string; path: string; body?: unknown };
 
 const MERCHANT_KEY = 'rk_live_merchant_key_never_printed';
 const CONN_SECRET = 'rcs_connection_secret_never_printed';
+const WEBHOOK_SECRET = 'whsec_webhook_secret_never_printed';
+const INBOUND_URL = 'https://api.atlas.test/v1/webhooks/referrals/ins_1';
+/** The Atlas side of a production instance: the settings PATCH answers with the inbound URL. */
+const ATLAS = {
+  'GET /v1/instance': { id: 'ins_1', environment: 'production' },
+  'PATCH /v1/instance/referrals': { inbound: { url: INBOUND_URL } },
+  'POST /v1/instance/referrals/test': undefined as unknown,
+};
 
 let home: string;
 beforeEach(() => {
@@ -66,12 +74,26 @@ function makeCtx(
   };
 }
 
-function referallyFetch(record: Array<{ url: string; init: RequestInit }>, status = 201, body: unknown = { id: 'conn_1', secret: CONN_SECRET, trackingToken: 'tt_pub_1', signupsUrl: 'x' }) {
+type Remote = Array<{ url: string; init: RequestInit }>;
+
+/** An in-memory Referally merchant API, routed by `METHOD path`; `over` replaces answers (404 for anything unknown). */
+function referallyApi(record: Remote, over: Record<string, { status: number; body: unknown }> = {}) {
+  const routes: Record<string, { status: number; body: unknown }> = {
+    'GET /v1/org': { status: 200, body: { id: 'org_1', livemode: true } },
+    'POST /v1/auth/connections': { status: 201, body: { id: 'conn_1', secret: CONN_SECRET, trackingToken: 'tt_pub_1', signupsUrl: 'x' } },
+    'PATCH /v1/auth/connections/conn_1': { status: 200, body: { id: 'conn_1', signatureVersion: 'v2' } },
+    'POST /v1/webhook-endpoints': { status: 201, body: { id: 'whe_1', url: INBOUND_URL, secret: WEBHOOK_SECRET } },
+    ...over,
+  };
   return (async (url: string | URL, init?: RequestInit) => {
     record.push({ url: String(url), init: init ?? {} });
-    return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    const r = routes[`${init?.method ?? 'GET'} ${new URL(String(url)).pathname}`] ?? { status: 404, body: { error: { message: 'not found' } } };
+    return new Response(JSON.stringify(r.body), { status: r.status, headers: { 'content-type': 'application/json' } });
   }) as unknown as typeof fetch;
 }
+
+const sent = (remote: Remote, method: string, path: string) =>
+  remote.find((r) => (r.init.method ?? 'GET') === method && new URL(r.url).pathname === path);
 
 const PING_OK = {
   ok: true,
@@ -91,15 +113,27 @@ describe('atlas referrals connect --provider referally', () => {
         '--base-url', 'https://referrals.example.com/', '--referally-key', MERCHANT_KEY,
         '--auto-enroll', '--destination', 'https://app.example.com/login', '--enable',
       ],
-      makeCtx(io, calls, { 'GET /v1/instance': { id: 'ins_1' }, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referallyFetch(remote) }),
+      makeCtx(io, calls, { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referallyApi(remote) }),
     );
     expect(code).toBe(0);
-    expect(remote).toHaveLength(1);
-    expect(remote[0]!.url).toBe('https://referrals.example.com/v1/auth/connections');
-    const headers = remote[0]!.init.headers as Record<string, string>;
-    expect(headers.authorization).toBe(`Bearer ${MERCHANT_KEY}`);
-    expect(headers['referally-version']).toBe('2026-10-21');
-    expect(JSON.parse(remote[0]!.init.body as string)).toEqual({
+    expect(remote.map((r) => `${r.init.method ?? 'GET'} ${r.url}`)).toEqual([
+      'GET https://referrals.example.com/v1/org',
+      'POST https://referrals.example.com/v1/auth/connections',
+      'PATCH https://referrals.example.com/v1/auth/connections/conn_1',
+      'POST https://referrals.example.com/v1/webhook-endpoints',
+    ]);
+    for (const r of remote) {
+      const headers = r.init.headers as Record<string, string>;
+      expect(headers.authorization).toBe(`Bearer ${MERCHANT_KEY}`);
+      expect(headers['referally-version']).toBe('2026-10-21');
+    }
+    expect(JSON.parse(sent(remote, 'PATCH', '/v1/auth/connections/conn_1')!.init.body as string)).toEqual({ signatureVersion: 'v2' });
+    expect(JSON.parse(sent(remote, 'POST', '/v1/webhook-endpoints')!.init.body as string)).toEqual({
+      url: INBOUND_URL,
+      topics: ['referral.created', 'referral.held', 'referral.paused', 'referral.resumed', 'referral.approved', 'referral.voided', 'referral.reassigned'],
+      legacySignature: false,
+    });
+    expect(JSON.parse(sent(remote, 'POST', '/v1/auth/connections')!.init.body as string)).toEqual({
       provider: 'atlas',
       instanceId: 'ins_1',
       programId: 'prg_1',
@@ -108,6 +142,7 @@ describe('atlas referrals connect --provider referally', () => {
     });
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
       'GET /v1/instance',
+      'PATCH /v1/instance/referrals',
       'PATCH /v1/instance/referrals',
       'POST /v1/instance/referrals/test',
       'PATCH /v1/instance/referrals',
@@ -121,10 +156,14 @@ describe('atlas referrals connect --provider referally', () => {
       auto_enroll_users: true,
       tracking_token: 'tt_pub_1',
     });
-    expect(calls[3]!.body).toEqual({ enabled: true });
+    expect(calls[2]!.body).toEqual({ inbound_secret: WEBHOOK_SECRET, inbound_endpoint_id: 'whe_1' });
+    expect(calls[4]!.body).toEqual({ enabled: true });
     const all = io.stdout() + io.stderr();
     expect(all).not.toContain(MERCHANT_KEY);
     expect(all).not.toContain(CONN_SECRET);
+    expect(all).not.toContain(WEBHOOK_SECRET);
+    expect(io.stderr()).toBe('');
+    expect(io.stdout()).toContain('Referral changes on Referally sync back to Atlas (webhook whe_1).');
     expect(io.stdout()).toContain('Organization:       Acme');
     expect(io.stdout()).toContain('Program:            Main (prg_1)');
     expect(io.stdout()).toContain('Referral attribution is on.');
@@ -134,8 +173,8 @@ describe('atlas referrals connect --provider referally', () => {
     const io = captureIO();
     const calls: Call[] = [];
     const remote: Array<{ url: string; init: RequestInit }> = [];
-    const ctx = makeCtx(io, calls, { 'GET /v1/instance': { id: 'ins_1' }, 'POST /v1/instance/referrals/test': PING_OK }, {
-      fetch: referallyFetch(remote),
+    const ctx = makeCtx(io, calls, { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, {
+      fetch: referallyApi(remote),
       readFile: () => `# merchant key\nREFERALLY_API_KEY=${MERCHANT_KEY}\n`,
     });
     expect(await run(['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referally-key-file', 'k.env'], ctx)).toBe(0);
@@ -157,7 +196,12 @@ describe('atlas referrals connect --provider referally', () => {
     const remote: Array<{ url: string; init: RequestInit }> = [];
     const code = await run(
       ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referally-key', MERCHANT_KEY],
-      makeCtx(io, [], { 'GET /v1/instance': { id: 'ins_1' } }, { fetch: referallyFetch(remote, 401, { error: { message: 'invalid key' } }) }),
+      makeCtx(io, [], ATLAS, {
+        fetch: referallyApi(remote, {
+          'GET /v1/org': { status: 401, body: { error: { message: 'invalid key' } } },
+          'POST /v1/auth/connections': { status: 401, body: { error: { message: 'invalid key' } } },
+        }),
+      }),
     );
     expect(code).toBe(1);
     expect(io.stderr()).toContain('HTTP 401');
@@ -173,8 +217,8 @@ describe('atlas referrals connect --provider referally', () => {
       makeCtx(
         io,
         [],
-        { 'GET /v1/instance': { id: 'ins_1' }, 'PATCH /v1/instance/referrals': new AtlasApiError(422, [{ code: 'VALIDATION', message: 'bad' } as never]) },
-        { fetch: referallyFetch(remote) },
+        { ...ATLAS, 'PATCH /v1/instance/referrals': new AtlasApiError(422, [{ code: 'VALIDATION', message: 'bad' } as never]) },
+        { fetch: referallyApi(remote) },
       ),
     );
     expect(code).toBe(1);
@@ -193,15 +237,109 @@ describe('atlas referrals connect --provider referally', () => {
         io,
         calls,
         {
-          'GET /v1/instance': { id: 'ins_1' },
+          ...ATLAS,
           'POST /v1/instance/referrals/test': { ok: false, http_status: 401, latency_ms: 10, error: { code: 'signature_rejected', message: 'Signature rejected' } },
         },
-        { fetch: referallyFetch([]) },
+        { fetch: referallyApi([]) },
       ),
     );
     expect(code).toBe(1);
-    expect(calls.filter((c) => c.method === 'PATCH')).toHaveLength(1);
+    // The connection and the webhook secret are saved; referrals are not turned on.
+    expect(calls.filter((c) => c.method === 'PATCH')).toHaveLength(2);
+    expect(calls.some((c) => (c.body as Record<string, unknown> | undefined)?.enabled === true)).toBe(false);
     expect(io.stdout()).toContain('Connection test failed (HTTP 401, 10 ms): Signature rejected.');
+  });
+});
+
+describe('atlas referrals connect --provider referally: test vs live, v2 and sync', () => {
+  const args = ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referally-key', MERCHANT_KEY];
+
+  it('refuses a live key for a development instance before creating anything', async () => {
+    const io = captureIO();
+    const remote: Remote = [];
+    const code = await run(args, makeCtx(io, [], { ...ATLAS, 'GET /v1/instance': { id: 'ins_1', environment: 'development' } }, { fetch: referallyApi(remote) }));
+    expect(code).toBe(1);
+    expect(io.stderr()).toContain('reaches live data but instance ins_1 is development');
+    expect(io.stderr()).toContain('rk_test_');
+    expect(sent(remote, 'POST', '/v1/auth/connections')).toBeUndefined();
+  });
+
+  it('refuses a test org for a production instance; --allow-mode-mismatch goes ahead with a warning', async () => {
+    const remoteOver = { 'GET /v1/org': { status: 200, body: { id: 'org_t', livemode: false } } };
+    const io = captureIO();
+    expect(await run(args, makeCtx(io, [], ATLAS, { fetch: referallyApi([], remoteOver) }))).toBe(1);
+    expect(io.stderr()).toContain('reaches test data but instance ins_1 is production');
+    const io2 = captureIO();
+    const remote: Remote = [];
+    const code = await run([...args, '--allow-mode-mismatch'], makeCtx(io2, [], { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referallyApi(remote, remoteOver) }));
+    expect(code).toBe(0);
+    expect(io2.stderr()).toContain('warning: the Referally key reaches test data');
+    expect(sent(remote, 'POST', '/v1/auth/connections')).toBeDefined();
+  });
+
+  it('falls back to the key prefix when Referally reports no mode: rk_test_ suits a development instance', async () => {
+    const io = captureIO();
+    const remote: Remote = [];
+    const testKey = 'rk_test_merchant_key_never_printed';
+    const code = await run(
+      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referally-key', testKey],
+      makeCtx(io, [], { ...ATLAS, 'GET /v1/instance': { id: 'ins_1', environment: 'development' }, 'POST /v1/instance/referrals/test': PING_OK }, {
+        fetch: referallyApi(remote, { 'GET /v1/org': { status: 200, body: { id: 'org_1' } } }),
+      }),
+    );
+    expect(code).toBe(0);
+    expect(io.stderr()).toBe('');
+  });
+
+  it('--no-sync registers no webhook; a refused webhook or v2 switch is a warning, not a failure', async () => {
+    const io = captureIO();
+    const remote: Remote = [];
+    expect(await run([...args, '--no-sync'], makeCtx(io, [], { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referallyApi(remote) }))).toBe(0);
+    expect(sent(remote, 'POST', '/v1/webhook-endpoints')).toBeUndefined();
+
+    const io2 = captureIO();
+    const calls: Call[] = [];
+    const code = await run(
+      [...args, '--json'],
+      makeCtx(io2, calls, { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, {
+        fetch: referallyApi([], {
+          'PATCH /v1/auth/connections/conn_1': { status: 400, body: { error: { message: 'unknown field signatureVersion' } } },
+          'POST /v1/webhook-endpoints': { status: 403, body: { error: { message: 'admins only' } } },
+        }),
+      }),
+    );
+    expect(code).toBe(0);
+    expect(io2.stderr()).toContain('require v2 signatures on the connection (HTTP 400)');
+    expect(io2.stderr()).toContain('register the referral event webhook (HTTP 403)');
+    expect(JSON.parse(io2.stdout())).toMatchObject({ signature_v2_required: false, sync_endpoint_id: null, livemode: true });
+    expect(calls.filter((c) => c.method === 'PATCH')).toHaveLength(1);
+  });
+
+  it('keeps the webhook secret in a 0600 file when saving it on the instance fails', async () => {
+    const io = captureIO();
+    let patches = 0;
+    const code = await run(
+      args,
+      makeCtx(
+        io,
+        [],
+        {
+          ...ATLAS,
+          'PATCH /v1/instance/referrals': () => {
+            patches += 1;
+            if (patches === 2) throw new AtlasApiError(500, [{ code: 'INTERNAL', message: 'boom' } as never]);
+            return { inbound: { url: INBOUND_URL } };
+          },
+          'POST /v1/instance/referrals/test': PING_OK,
+        },
+        { fetch: referallyApi([]) },
+      ),
+    );
+    expect(code).toBe(0);
+    const file = join(home, 'atlasauth', 'referally-webhook-whe_1.env');
+    expect(readFileSync(file, 'utf8')).toContain(`REFERALLY_WEBHOOK_SECRET=${WEBHOOK_SECRET}`);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(io.stdout() + io.stderr()).not.toContain(WEBHOOK_SECRET);
   });
 });
 
@@ -306,6 +444,12 @@ describe('atlas referrals status', () => {
           signing_secret_set: true,
           forward_lifecycle: true,
           connection: { failed_calls_7d: 2, retrying_calls: 1, alert: { code: 'signature_rejected', message: 'HTTP 401' } },
+          inbound: {
+            url: INBOUND_URL,
+            secret_set: true,
+            endpoint_id: 'whe_1',
+            last_event: { at: Date.parse('2026-10-22T09:00:00Z'), type: 'referral.voided', outcome: 'applied' },
+          },
         },
         'GET /v1/instance/preflight': {
           findings: [
@@ -320,6 +464,9 @@ describe('atlas referrals status', () => {
     expect(out).toContain('Referral attribution: on');
     expect(out).toContain('Connection ID:        conn_1');
     expect(out).toContain('Alert:                signature_rejected: HTTP 401');
+    expect(out).toContain('Two-way sync:         on (webhook whe_1)');
+    expect(out).toContain(`Inbound URL:          ${INBOUND_URL}`);
+    expect(out).toContain('Last event:           referral.voided → applied at 2026-10-22T09:00:00.000Z');
     expect(out).toContain('referrals_clock_skew');
     expect(out).not.toContain('email_sender_unverified');
   });

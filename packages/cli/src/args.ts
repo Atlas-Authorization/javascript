@@ -66,6 +66,8 @@ const OPTIONS = {
   'auto-enroll': { type: 'boolean' },
   destination: { type: 'string' },
   'tracking-token': { type: 'string' },
+  'no-sync': { type: 'boolean' },
+  'allow-mode-mismatch': { type: 'boolean' },
   endpoint: { type: 'string' },
   'secret-file': { type: 'string' },
   enable: { type: 'boolean' },

@@ -54,6 +54,7 @@ Usage:
   atlas referrals connect --provider referally --program <prg_…> --base-url <url>
         [--referally-key-file <path|-> | --referally-key <rk_…>]
         [--auto-enroll] [--destination <url>] [--tracking-token <token>] [--enable]
+        [--no-sync] [--allow-mode-mismatch]
   atlas referrals connect --provider webhook --endpoint <https-url>
         [--secret-file <path|->] [--program <id>] [--auto-enroll] [--enable]
   atlas referrals backfill --since <YYYY-MM-DD> [--map <file.csv>]
@@ -63,8 +64,12 @@ Usage:
 connect --provider referally creates the Atlas connection on Referally with
 your merchant key (bring your own key: used for this one call, never stored or
 printed), saves the connection id and secret on the instance, and runs a ping.
---auto-enroll and --destination are passed to Referally. --enable turns
-referrals on when the ping passes. Prefer --referally-key-file (or
+It requires v2 signatures on the connection from the start and registers a
+Referally webhook that sends referral changes (voided, approved, reassigned…)
+back to Atlas; --no-sync skips the webhook. A test key (rk_test_) belongs with a
+development instance and a live key with production: a mismatch is refused
+unless --allow-mode-mismatch. --auto-enroll and --destination are passed to
+Referally. --enable turns referrals on when the ping passes. Prefer --referally-key-file (or
 REFERALLY_API_KEY) to --referally-key: a key on the command line can end up in
 your shell history.
 

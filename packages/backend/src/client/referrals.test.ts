@@ -32,6 +32,18 @@ const OPS: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
       }),
   ],
   ['PATCH', '/v1/instance/referrals', { link_template: null }, (c) => c.referrals.update({ link_template: null })],
+  [
+    'PATCH',
+    '/v1/instance/referrals',
+    { inbound_secret: 'whsec_' + 'y'.repeat(32), inbound_endpoint_id: 'we_1' },
+    (c) => c.referrals.update({ inbound_secret: 'whsec_' + 'y'.repeat(32), inbound_endpoint_id: 'we_1' }),
+  ],
+  [
+    'PATCH',
+    '/v1/instance/referrals',
+    { inbound_secret: null, inbound_endpoint_id: null },
+    (c) => c.referrals.update({ inbound_secret: null, inbound_endpoint_id: null }),
+  ],
   ['POST', '/v1/instance/referrals/test', undefined, (c) => c.referrals.test()],
   ['GET', '/v1/instance/referrals/calls', undefined, (c) => c.referrals.listCalls()],
   [
@@ -133,11 +145,17 @@ describe('referral attribution operations', () => {
       security: { challenge_referred_signups: 'always', on_high_risk: 'flag', hold_until_email_verified: false, max_referred_signups_per_ip_hour: 5 },
       missing: [],
       connection: { last_test: { ok: true, at: 1, http_status: 404, error: null }, failed_calls_7d: 0, retrying_calls: 0, last_success_at: 1 },
+      inbound: {
+        url: 'https://api.example.test/v1/webhooks/referrals/ins_1',
+        secret_set: false,
+        endpoint_id: null,
+        last_event: { at: 1700000000000, type: 'referral.updated', outcome: 'applied' },
+      },
       providers: [
         {
           id: 'webhook',
           name: 'Atlas referral protocol (any platform)',
-          capabilities: { signup: true, erase: true, export: true, partner: true, auto_enroll: true, signal: true },
+          capabilities: { signup: true, erase: true, export: true, partner: true, auto_enroll: true, signal: true, inbound: true },
           needs: ['endpoint_url', 'signing_secret'],
           default_context_cookie: null,
           docs_url: null,
@@ -149,6 +167,10 @@ describe('referral attribution operations', () => {
     expect(settings.security.on_high_risk).toBe('flag');
     expect(settings.providers[0]!.capabilities.signal).toBe(true);
     expect(settings.connection?.last_test?.http_status).toBe(404);
+    expect(settings.providers[0]!.capabilities.inbound).toBe(true);
+    expect(settings.inbound?.url).toBe('https://api.example.test/v1/webhooks/referrals/ins_1');
+    expect(settings.inbound?.secret_set).toBe(false);
+    expect(settings.inbound?.last_event?.outcome).toBe('applied');
 
     m = mockFetch({
       object: 'referral_call',

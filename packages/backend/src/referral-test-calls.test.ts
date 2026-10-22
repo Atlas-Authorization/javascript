@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { createTestIssuer } from './testing';
 import { verifyReferralRequest } from './referrals';
-import { referralEmailHash, referallySignature, signAtlasReferralCall, signReferallyCall } from './referral-test-calls';
+import { verifyWebhook } from './webhooks';
+import {
+  referralEmailHash,
+  referallySignature,
+  signAtlasReferralCall,
+  signReferallyCall,
+  signReferralUpdatedEvent,
+} from './referral-test-calls';
 
 const SECRET = 'referral_signing_secret_0123456789';
 const NOW = Date.parse('2026-10-21T14:03:11Z');
@@ -84,5 +91,53 @@ describe('createTestIssuer referral calls', () => {
     expect(a.headers['atlas-timestamp']).toBe(String(NOW));
     const b = fx.referallyCall({ baseUrl: 'https://r.example.com', connectionId: 'c', secret: SECRET, op: 'users', body: { customerRef: 'u', status: 'suspended' } });
     expect(b.headers['x-referally-signature']).toMatch(new RegExp(`^t=${NOW / 1000},`));
+  });
+});
+
+describe('signReferralUpdatedEvent', () => {
+  const INBOUND = 'https://api.example.test/v1/webhooks/referrals/ins_1';
+
+  it('signs a referral.updated event like an Atlas webhook, to the inbound URL', () => {
+    const call = signReferralUpdatedEvent({
+      inboundUrl: INBOUND,
+      secret: SECRET,
+      event: { customerRef: 'usr_8812', referralId: 'ref_1', status: 'qualified', partnerId: 'pn_2' },
+      occurredAt: NOW - 1000,
+      eventId: 'rfe_1',
+      now: NOW,
+    });
+    expect(call.url).toBe(INBOUND);
+    expect(call.method).toBe('POST');
+    expect(call.headers['atlas-id']).toBe('rfe_1');
+    expect(call.headers['atlas-timestamp']).toBe(String(NOW));
+    const expected = createHmac('sha256', SECRET).update(`rfe_1.${NOW}.${call.body}`).digest('base64');
+    expect(call.headers['atlas-signature']).toBe(`v1,${expected}`);
+    const r = verifyWebhook<Record<string, unknown>>({ body: call.body!, headers: call.headers, secret: SECRET, now: new Date(NOW) });
+    expect(r.verified).toBe(true);
+    expect(r.event).toEqual({
+      type: 'referral.updated',
+      occurredAt: new Date(NOW - 1000).toISOString(),
+      customerRef: 'usr_8812',
+      referralId: 'ref_1',
+      status: 'qualified',
+      partnerId: 'pn_2',
+    });
+    expect(verifyWebhook({ body: call.body!, headers: call.headers, secret: 'wrong_secret_wrong_secret', now: new Date(NOW) }).verified).toBe(false);
+  });
+
+  it('defaults occurredAt to now, keeps an ISO occurredAt, and needs a referral reference', () => {
+    const a = signReferralUpdatedEvent({ inboundUrl: INBOUND, secret: SECRET, event: { referralId: 'ref_1' }, now: NOW });
+    expect(JSON.parse(a.body!).occurredAt).toBe(new Date(NOW).toISOString());
+    expect(a.headers['atlas-id']).toMatch(/^rfe_[0-9a-f]{16}$/);
+    const b = signReferralUpdatedEvent({ inboundUrl: INBOUND, secret: SECRET, event: { customerRef: 'u' }, occurredAt: '2026-10-20T00:00:00Z', now: NOW });
+    expect(JSON.parse(b.body!).occurredAt).toBe('2026-10-20T00:00:00Z');
+    expect(() => signReferralUpdatedEvent({ inboundUrl: INBOUND, secret: SECRET, event: { status: 'qualified' } })).toThrow(/customerRef or referralId/);
+  });
+
+  it('is on the test issuer with its clock', async () => {
+    const fx = await createTestIssuer({ now: () => NOW });
+    const e = fx.referralUpdatedEvent({ inboundUrl: INBOUND, secret: SECRET, event: { customerRef: 'u' } });
+    expect(e.headers['atlas-timestamp']).toBe(String(NOW));
+    expect(verifyWebhook({ body: e.body!, headers: e.headers, secret: SECRET, now: new Date(NOW) }).verified).toBe(true);
   });
 });

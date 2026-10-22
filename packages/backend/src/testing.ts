@@ -4,8 +4,10 @@ import type { SessionClaims } from './verify';
 import {
   signAtlasReferralCall,
   signReferallyCall,
+  signReferralUpdatedEvent,
   type AtlasReferralCallOptions,
   type ReferallyCallOptions,
+  type ReferralUpdatedEventOptions,
   type SignedReferralCall,
 } from './referral-test-calls';
 
@@ -165,6 +167,11 @@ export interface TestIssuer {
    * `referally` sends it, to run against a local Referally in your tests.
    */
   referallyCall(options: ReferallyCallOptions): SignedReferralCall;
+  /**
+   * A signed `referral.updated` event, as a platform on the Atlas referral
+   * protocol sends it to an instance's inbound URL (two-way sync).
+   */
+  referralUpdatedEvent(options: ReferralUpdatedEventOptions): SignedReferralCall;
   /** The endpoint URLs `fetch` serves (and the discovery document lists). */
   endpoints: {
     discovery: string;
@@ -414,6 +421,7 @@ export async function createTestIssuer(
     mintIdToken,
     referralCall: (o) => signAtlasReferralCall({ ...o, now: o.now ?? clock() }),
     referallyCall: (o) => signReferallyCall({ ...o, now: o.now ?? clock() }),
+    referralUpdatedEvent: (o) => signReferralUpdatedEvent({ ...o, now: o.now ?? clock() }),
     authorize,
     fetch: fakeFetch,
     endpoints,

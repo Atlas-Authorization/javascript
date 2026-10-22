@@ -456,3 +456,25 @@ app.post('/atlas/:endpoint', express.raw({ type: '*/*' }), async (req, res) => {
 ```
 
 A retry of one call keeps its `atlas-id` (`deliveryId`). Sign-ups are idempotent on `customerRef`: answer a retry the same way.
+
+### Two-way sync
+
+A provider with the `inbound` capability can send referral changes made after sign-up back to Atlas. The settings report `inbound.url` (give it to the platform), `inbound.secret_set`, `inbound.endpoint_id` and `inbound.last_event` (`{ at, type, outcome }`). Store the platform's event secret with `inbound_secret` (write-only, 16-512 characters) and its subscription id with `inbound_endpoint_id`:
+
+```ts
+await atlas.referrals.update({ inbound_secret: process.env.REFERRAL_INBOUND_SECRET, inbound_endpoint_id: 'we_123' });
+const { inbound } = await atlas.referrals.get(); // inbound.last_event?.outcome: 'applied', 'stale', …
+```
+
+A platform on the Atlas referral protocol sends a `referral.updated` event to `inbound.url`, signed like an Atlas webhook with the inbound secret (or the connection's signing secret when none is set). `signReferralUpdatedEvent` builds it:
+
+```ts
+import { signReferralUpdatedEvent } from '@atlasauth/backend';
+
+const e = signReferralUpdatedEvent({
+  inboundUrl: settings.inbound.url,
+  secret: process.env.REFERRAL_SIGNING_SECRET!,
+  event: { customerRef: 'user_123', referralId: 'ref_1', status: 'qualified' },
+});
+await fetch(e.request());
+```

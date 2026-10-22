@@ -1,5 +1,12 @@
 # @atlasauth/backend changelog
 
+## 0.13.0
+
+### Added
+
+- **Two-way referral sync.** Referral settings carry two-way sync: `inbound` (`url`, `secret_set`, `endpoint_id`, `last_event`) on reads, write-only `inbound_secret` and `inbound_endpoint_id` on updates (null clears), and provider capability `inbound`.
+- `signReferralUpdatedEvent(...)` (and `referralUpdatedEvent` on `createTestIssuer()`): builds and signs a `referral.updated` event for a referral platform reporting changes to `POST /v1/webhooks/referrals/{instance_id}`.
+
 ## 0.12.0
 - **Referral attribution v2.** `referrals.retryFailed({ kind?, error_code? }, idempotencyKey?)` (`POST /v1/instance/referrals/calls/retry_failed`, `ReferralRetryFailedResult` with `requeued`), `referrals.simulate({ code? })` (`POST /v1/instance/referrals/simulate`, `ReferralSimulateResult`: `call_id`, `customer_ref`, `result`, `response`), `referrals.backfill({ since, codes?, code_metadata_path? }, idempotencyKey?)` and `referrals.getBackfill(id)` (`POST /v1/instance/referrals/backfill`, `GET /v1/instance/referrals/backfill/:id`, `ReferralBackfillJob`: `users_scanned`, `users_skipped`, `calls_queued`, `truncated`, `next_since`, `calls`), and `referrals.getForUser(userId)` (`GET /v1/users/:id/referral`, `UserReferralResult`).
 - **Settings.** `ReferralSettings` and `UpdateReferralSettingsBody` gain `tracking_token`, `code_lookup_url`, `signup_code_field`, `forward_lifecycle`, `mirror_to_public_metadata` and `include_referral_claims`. `provider` can be `referally`. `ReferralProviderCapabilities` gains `alias`, `user` and `ping`; `needs` can list `tracking_token`. `ReferralConnectionStatus` gains `last_ping` (`ReferralPing`) and `alert` (`signature_rejected` or `connection_paused`). `ReferralConnectionTest` gains `ping`, `method` and `warnings`.
