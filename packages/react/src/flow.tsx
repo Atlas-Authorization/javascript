@@ -23,6 +23,7 @@ import {
   reportProviderUnavailable,
   startOauthRedirect,
   startOauthPopup,
+  signUp as hostedSignUp,
   type AttemptView,
   type EmailFactor,
   type FieldError,
@@ -60,6 +61,13 @@ import { ATLAS_REACT_SDK } from './version';
 export interface FlowProps {
   /** Where to send the user once the flow completes. */
   afterUrl?: string;
+  /**
+   * `<SignIn>`: where "No account? Sign up" goes. Default: the instance's hosted
+   * sign-up page (carrying the visitor's referral). `null` hides the link (your
+   * page has its own). It is always shown, never only after a failed sign-in, so
+   * it says nothing about whether an email has an account.
+   */
+  signUpUrl?: string | null;
   /**
    * Also show Google One-Tap above the "Sign in with Google" button. OFF by
    * default: the button alone (a user-initiated popup) converts better and never
@@ -140,6 +148,7 @@ export function AttemptFlow({
   prepared = null,
   onPrepare,
   onUsePassword,
+  sessionKept,
 }: {
   attempt: AttemptView | null;
   onSubmit(values: Record<string, string>): void;
@@ -165,6 +174,8 @@ export function AttemptFlow({
   onPrepare?(strategy: EmailFactor): void;
   /** Back from the emailed factor to the password field. */
   onUsePassword?(): void;
+  /** `FlowState.sessionKept`: whether this browser kept the session the sign-in created. */
+  sessionKept?: boolean;
 }) {
   const t = useText();
   const errorText = useErrorText();
@@ -308,6 +319,11 @@ export function AttemptFlow({
       case 'await_oauth':
         return [<p key="oauth" className={cls('text', 'atlas-text')}>{t('signIn.magicLinkSent')}</p>];
       case 'done':
+        // Say signed in only when this browser holds the session; say so plainly when it
+        // didn't keep it (a blocked cookie). "Check the other tab" is for a sign-in that
+        // completed on another device, where this tab never had a session to keep.
+        if (sessionKept === true) return [<p key="done" className={cls('text', 'atlas-text')}>{t('signIn.signedIn')}</p>];
+        if (sessionKept === false) return [<p key="done" className={errorClass} role="alert">{t('signIn.sessionNotKept')}</p>];
         return [<p key="done" className={cls('text', 'atlas-text')}>{t('signIn.checkOtherTab')}</p>];
       case 'restart':
         return [<p key="restart" className={cls('text', 'atlas-text')}>{t('error.generic')}</p>];
@@ -516,20 +532,28 @@ export function useFlow({
   // sign-in identically.
   const finish = useCallback(
     async (next: FlowState) => {
-      setState(next);
-      if (next.attempt?.status === 'complete') {
-        if (next.ticket) {
-          await client.post('/v1/client/tickets/exchange', {
-            attempt_id: (next.attempt as { id?: string }).id,
-            ticket: next.ticket,
-          });
-        }
-        await reload();
-        // §R3.2 wake sibling tabs now, rather than when they next gain focus.
-        broadcastSessionChange();
-        // §10.2 send the user on once signed-in — no-op when afterUrl is unset.
-        navigateAfterComplete(afterUrl);
+      if (next.attempt?.status !== 'complete') {
+        setState(next);
+        return;
       }
+      // Stay busy until this browser actually holds the session: the completion
+      // alone says nothing about whether the cookie was kept.
+      setState({ ...next, busy: true });
+      let exchanged = true;
+      if (next.ticket) {
+        const res = await client.post('/v1/client/tickets/exchange', {
+          attempt_id: (next.attempt as { id?: string }).id,
+          ticket: next.ticket,
+        });
+        exchanged = res.ok;
+      }
+      const kept = exchanged && (await reload());
+      setState({ ...next, busy: false, sessionKept: kept });
+      if (!kept) return;
+      // §R3.2 wake sibling tabs now, rather than when they next gain focus.
+      broadcastSessionChange();
+      // §10.2 send the user on once signed-in — no-op when afterUrl is unset.
+      navigateAfterComplete(afterUrl);
     },
     [afterUrl, broadcastSessionChange, client, reload],
   );
@@ -639,11 +663,13 @@ export function useFlow({
 
         // The ticket is exchanged by a normal request, so no session token has
         // ever appeared in a URL.
-        await client.post('/v1/client/tickets/exchange', {
+        const res = await client.post('/v1/client/tickets/exchange', {
           attempt_id: (next.attempt as { id?: string }).id,
           ticket,
         });
-        await reload();
+        const kept = res.ok && (await reload());
+        setState((current) => ({ ...current, sessionKept: kept }));
+        if (!kept) return;
         // §10.2 a cross-device sign-in that completes here redirects too.
         navigateAfterComplete(afterUrl);
       })();
@@ -1344,5 +1370,38 @@ export function SocialSignInButtons({
         </div>
       ) : null}
     </>
+  );
+}
+
+/**
+ * "No account? Sign up" under `<SignIn>`. Shown on every step before the
+ * sign-in completes, whatever was typed, so a newcomer on a password-only
+ * instance (who gets the same answer as a wrong password) always has a way in.
+ */
+export function SignUpPrompt({ signUpUrl, afterUrl }: { signUpUrl?: string | null; afterUrl?: string }) {
+  const { frontendApi } = useAtlas();
+  const t = useText();
+  const footerClass = useClass('footerAction', 'atlas-footer');
+  const href = useMemo(() => {
+    if (signUpUrl === null) return null;
+    if (signUpUrl) return signUpUrl;
+    try {
+      return hostedSignUp({
+        frontendApi,
+        redirectUrl: afterUrl ?? (typeof window !== 'undefined' ? window.location.href : undefined),
+        navigate: false,
+      });
+    } catch {
+      return null;
+    }
+  }, [afterUrl, frontendApi, signUpUrl]);
+  if (!href) return null;
+  return (
+    <p className={footerClass} data-atlas-sign-up-prompt="">
+      {t('signIn.noAccount')}{' '}
+      <a className="atlas-link" href={href}>
+        {t('signIn.signUpLink')}
+      </a>
+    </p>
   );
 }

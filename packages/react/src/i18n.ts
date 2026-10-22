@@ -27,6 +27,9 @@ export const EN_US: Catalog = {
   'signIn.socialButton': 'Continue with {provider}',
   'signIn.emailCodeLabel': 'Verification code',
   'signIn.magicLinkSent': 'Check your email for a sign-in link.',
+  'signIn.signedIn': 'You\'re signed in.',
+  'signIn.sessionNotKept':
+    'You signed in, but this browser didn\'t keep the session. If it blocks third-party cookies, allow cookies for this site and try again.',
   'signIn.checkOtherTab': 'You can close this tab — you are signed in where you started.',
   'signIn.codeSentTo': 'We sent a code to {email}. Enter it below.',
   'signIn.linkSentTo': 'We sent a sign-in link to {email}. Open it on any device to continue.',

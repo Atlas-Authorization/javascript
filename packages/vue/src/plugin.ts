@@ -36,6 +36,7 @@ import {
   type SignOutReason,
   configureReferralCapture,
   type ReferralConsent,
+  withDevBrowser,
 } from '@atlasauth/js';
 import { ATLAS_VUE_SDK } from './version';
 import { applyAppearanceToDom } from '@atlasauth/design/runtime';
@@ -118,7 +119,8 @@ export interface AtlasClient {
    */
   signOut(options?: SignOutOptions): Promise<SignOutResult>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
-  reload(): Promise<void>;
+  /** Re-boot from the Frontend API. Resolves true when a session now exists in this browser. */
+  reload(): Promise<boolean>;
 }
 
 export interface CreateAtlasOptions {
@@ -217,7 +219,8 @@ function createAtlasClient(options: CreateAtlasOptions): {
   // Throws (synchronously, from `createAtlas()`) on a missing/invalid value
   // rather than quietly sending every request to a relative path.
   const baseUrl = resolveFrontendApi(options.frontendApi, { component: '`createAtlas()`' });
-  const doFetch = options.fetchImpl ?? fetch;
+  // Development instances keep the session in a header where the browser blocks the cookie.
+  const doFetch = withDevBrowser(options.publishableKey, options.fetchImpl ?? fetch);
 
   const status = shallowRef<AuthStatus>('loading');
   const user = shallowRef<AtlasUser | null>(null);
@@ -286,7 +289,7 @@ function createAtlasClient(options: CreateAtlasOptions): {
     claims.value = decodeClaims(jwt);
   };
 
-  const reload = async () => {
+  const reload = async (): Promise<boolean> => {
     try {
       const response = await call('/v1/client');
       if (!response.ok) throw new Error('boot failed');
@@ -303,7 +306,7 @@ function createAtlasClient(options: CreateAtlasOptions): {
       // re-tries the revoke in the background and drops the tombstone once it lands.
       if (!body.session || !body.user || guard.refuse(body.session.id)) {
         clearState(body.session ? 'other_tab' : signOutReasonFromClient(body));
-        return;
+        return false;
       }
       notifier.clear();
 
@@ -312,11 +315,13 @@ function createAtlasClient(options: CreateAtlasOptions): {
       memberships.value = body.organization_memberships ?? [];
       if (body.jwt) applyToken(body.jwt, body.session.id);
       status.value = 'signed_in';
+      return true;
     } catch {
       // A failed boot is NOT signed-out. Rendering a sign-in form because the
       // network hiccuped throws away a perfectly good session and makes the
       // user re-authenticate for no reason.
       if (status.value === 'loading') status.value = 'signed_out';
+      return false;
     }
   };
 

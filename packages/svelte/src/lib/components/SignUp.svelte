@@ -29,6 +29,7 @@
     attempt={$flowState.attempt}
     busy={$flowState.busy}
     errors={$flowState.errors}
+    sessionKept={$flowState.sessionKept}
     titleKey="signUp.title"
     onSubmit={flow.submit}
   />

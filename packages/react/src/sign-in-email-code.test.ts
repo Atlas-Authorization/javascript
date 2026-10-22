@@ -172,7 +172,7 @@ describe('<SignIn> on an email-code-only instance (no password)', () => {
     });
     // No password strategy is ever posted.
     expect(posts('/v1/client/sign_ins/sia_1/attempt_first_factor').some((c) => c.body?.strategy === 'password')).toBe(false);
-    expect(posts('/v1/client/tickets/exchange')[0]!.body).toEqual({ attempt_id: 'sia_1', ticket: 'tkt_1' });
+    expect(posts('/v1/client/tickets/exchange')[0]!.body).toEqual({ attempt_id: 'sia_1', ticket: 'tkt_1', return_refresh_token: true });
   });
 
   it('sends the code once per attempt, and a wrong code keeps the code step', async () => {
@@ -310,7 +310,7 @@ describe('<SignIn> on an email-link-only instance', () => {
     expect(el.querySelector('button[type="submit"]')).toBeNull();
 
     await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1), { timeout: 8_000, interval: 100 });
-    expect(posts('/v1/client/tickets/exchange')[0]!.body).toEqual({ attempt_id: 'sia_1', ticket: 'tkt_link' });
+    expect(posts('/v1/client/tickets/exchange')[0]!.body).toEqual({ attempt_id: 'sia_1', ticket: 'tkt_link', return_refresh_token: true });
   }, 12_000);
 });
 
@@ -342,5 +342,44 @@ describe('<SignIn> when the app cannot send email', () => {
     await vi.waitFor(() => expect(el.querySelector('[data-atlas-email-unavailable]')).not.toBeNull());
     expect(posts('/v1/client/sign_ins/sia_1/prepare_first_factor')).toHaveLength(0);
     expect(el.querySelector('input[name="password"]')).toBeNull();
+  });
+});
+
+describe('after the sign-in completes', () => {
+  const exchangeRoute: Route = (c) =>
+    c.path === '/v1/client/tickets/exchange' ? json({ object: 'session', id: 'sess_1', jwt: 'x', refresh_token: 'rt_9' }) : undefined;
+
+  async function signInWithPassword(el: HTMLElement) {
+    await enterEmail(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'password', 'correct horse');
+    await submit(el);
+    await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
+  }
+
+  it('says the browser did not keep the session when the boot finds none (never "signed in where you started")', async () => {
+    const el = await mount({ routes: [signInRoute(['password']), attemptRoute, exchangeRoute] });
+    await signInWithPassword(el);
+    await vi.waitFor(() => expect(el.textContent).toContain("didn't keep the session"));
+    expect(el.textContent).not.toContain('signed in where you started');
+    expect(el.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('a development key asks for the refresh token and presents it on the next boot', async () => {
+    const el = await mount({ routes: [signInRoute(['password']), attemptRoute, exchangeRoute] });
+    await signInWithPassword(el);
+    expect(posts('/v1/client/tickets/exchange')[0]!.body).toMatchObject({ return_refresh_token: true });
+    await vi.waitFor(() =>
+      expect(calls.filter((c) => c.path === '/v1/client').some((c) => c.headers['x-refresh-token'] === 'rt_9')).toBe(true),
+    );
+  });
+
+  it('shows "No account? Sign up" on the identifier and password steps, linking to hosted sign-up', async () => {
+    const el = await mount({ routes: [signInRoute(['password']), attemptRoute] });
+    const prompt = () => el.querySelector('[data-atlas-sign-up-prompt] a') as HTMLAnchorElement | null;
+    expect(prompt()?.getAttribute('href')).toMatch(/\/hosted\/sign-up/);
+    await enterEmail(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    expect(prompt()).not.toBeNull();
   });
 });

@@ -60,6 +60,8 @@ export interface LocalizationResource {
   'signIn.socialButton': string;
   'signIn.emailCodeLabel': string;
   'signIn.magicLinkSent': string;
+  'signIn.signedIn': string;
+  'signIn.sessionNotKept': string;
   'signIn.checkOtherTab': string;
   'signIn.codeSentTo': string;
   'signIn.linkSentTo': string;

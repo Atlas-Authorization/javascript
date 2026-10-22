@@ -29,6 +29,7 @@ import {
   type SignOutReason,
   configureReferralCapture,
   type ReferralConsent,
+  withDevBrowser,
 } from '@atlasauth/js';
 import { ATLAS_SVELTE_SDK } from './version';
 import { EN_US, withFallback, type Catalog } from './i18n';
@@ -163,7 +164,8 @@ export interface AtlasClient extends AtlasStores {
    */
   signOut(options?: SignOutOptions): Promise<SignOutResult>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
-  reload(): Promise<void>;
+  /** Re-boot from the Frontend API. Resolves true when a session now exists in this browser. */
+  reload(): Promise<boolean>;
   /**
    * Redirect handling + the first `/v1/client` load. Runs once, in the browser
    * only. {@link initAtlas} calls it automatically unless `manualBoot` is set;
@@ -210,7 +212,9 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
   const baseUrl = resolveFrontendApi(options.frontendApi, {
     component: '<AtlasProvider> / initAtlas()',
   });
-  const doFetch = options.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : undefined);
+  const rawFetch = options.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : undefined);
+  // Development instances keep the session in a header where the browser blocks the cookie.
+  const doFetch = rawFetch ? withDevBrowser(options.publishableKey, rawFetch) : undefined;
   const catalog = options.localization ? withFallback(options.localization) : EN_US;
   const errorCatalog = options.localization ?? EN_US;
   const locale = catalogLocale(options.localization);
@@ -316,7 +320,7 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
     timer = setTimeout(() => void refresh(), delay);
   }
 
-  async function reload(): Promise<void> {
+  async function reload(): Promise<boolean> {
     try {
       const response = await call('/v1/client');
       if (!response.ok) throw new Error('boot failed');
@@ -326,7 +330,7 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
       // refused: stay signed out; the guard re-tries the revoke in the background.
       if (!body.session || !body.user || guard.refuse(body.session.id)) {
         clearSession(body.session ? 'other_tab' : signOutReasonFromClient(body));
-        return;
+        return false;
       }
       notifier.clear();
 
@@ -336,6 +340,7 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
       if (body.jwt) applyToken(body.jwt, body.session.id);
       status.set('signed_in');
       scheduleRefresh();
+      return true;
     } catch {
       /**
        * A failed boot is NOT signed-out. Rendering a sign-in form because the
@@ -343,6 +348,7 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
        * re-authenticate for no reason.
        */
       status.update((current) => (current === 'loading' ? 'signed_out' : current));
+      return false;
     }
   }
 

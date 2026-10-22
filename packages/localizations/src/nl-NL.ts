@@ -19,6 +19,9 @@ export const nlNL: Localization = {
   'signIn.socialButton': 'Doorgaan met {provider}',
   'signIn.emailCodeLabel': 'Verificatiecode',
   'signIn.magicLinkSent': 'Controleer je e-mail voor een inloglink.',
+  'signIn.signedIn': 'Je bent ingelogd.',
+  'signIn.sessionNotKept':
+    'Je bent ingelogd, maar deze browser heeft de sessie niet bewaard. Blokkeert hij cookies van derden, sta dan cookies voor deze site toe en probeer het opnieuw.',
   'signIn.checkOtherTab':
     'Je kunt dit tabblad sluiten — je bent ingelogd waar je begon.',
   'signIn.codeSentTo': 'We hebben een code naar {email} gestuurd. Vul die hieronder in.',

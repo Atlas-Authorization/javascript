@@ -20,6 +20,9 @@ export const esES: LocalizationResource = {
   'signIn.socialButton': 'Continuar con {provider}',
   'signIn.emailCodeLabel': 'Código de verificación',
   'signIn.magicLinkSent': 'Revisa tu correo para encontrar el enlace de acceso.',
+  'signIn.signedIn': 'Has iniciado sesión.',
+  'signIn.sessionNotKept':
+    'Has iniciado sesión, pero este navegador no ha conservado la sesión. Si bloquea las cookies de terceros, permite las cookies de este sitio y vuelve a intentarlo.',
   'signIn.checkOtherTab':
     'Puedes cerrar esta pestaña: ya has iniciado sesión donde empezaste.',
   'signIn.codeSentTo': 'Hemos enviado un código a {email}. Introdúcelo a continuación.',

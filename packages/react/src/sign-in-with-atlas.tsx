@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, type CSSProperties } from 'react';
-import { referralParams, withReferralParams, type ReferralConsent } from '@atlasauth/js';
+import { referralParams, withReferralParams, type ReferralConsent, type ReferralSourceReader } from '@atlasauth/js';
 
 export interface AtlasIdOptions {
   clientId: string;
@@ -9,14 +9,16 @@ export interface AtlasIdOptions {
   issuer?: string;
   scope?: string;
   /**
-   * Referral attribution: the referral the visitor arrived with (the page's
-   * referral script `window.aff`, else `ref` / `via` / `aff` on the URL) rides
-   * on the authorize request (or `loginUri`) as `ref_*` parameters. `false`
-   * turns it off. Default `'auto'`.
+   * Referral attribution: the referral the visitor arrived with (a referral
+   * program's script or cookie on the page, else `ref` / `via` / `aff` on the
+   * URL) rides on the authorize request (or `loginUri`) as `ref_*`
+   * parameters. `false` turns it off. Default `'auto'`.
    */
   referral?: false | 'auto';
-  /** Consent for sending the referral's click and anonymous ids (else Cookie Munch on the page decides; else code only). */
+  /** Consent for sending the referral's click and anonymous ids, when no consent manager is on the page (one there decides). */
   referralConsent?: ReferralConsent;
+  /** Your own reader for a referral program the SDK doesn't know: `() => ({code, clickId, anonId}) | null`. */
+  referralSource?: ReferralSourceReader;
 }
 
 export interface AtlasIdResult {
@@ -75,7 +77,7 @@ function begin(opts: AtlasIdOptions, mode: 'redirect' | 'popup'): Begun {
         code_challenge_method: 'S256',
       });
       if (mode === 'popup') params.set('response_mode', 'web_message');
-      for (const [k, v] of referralParams({ referral: opts.referral, consent: opts.referralConsent })) params.set(k, v);
+      for (const [k, v] of referralParams({ referral: opts.referral, consent: opts.referralConsent, source: opts.referralSource })) params.set(k, v);
       return `${issuer}/oauth2/authorize?${params.toString()}`;
     });
   return { tx, url };
@@ -411,7 +413,7 @@ export function SignInWithAtlasButton(props: SignInWithAtlasButtonProps) {
   const onClick = () => {
     if (props.loginUri !== undefined) {
       const target = safeLoginUri(props.loginUri);
-      if (target) window.location.assign(withReferralParams(target, { referral: props.referral, consent: props.referralConsent }));
+      if (target) window.location.assign(withReferralParams(target, { referral: props.referral, consent: props.referralConsent, source: props.referralSource }));
       else fail(new Error('loginUri must be an https URL or a same-origin path'));
       return;
     }

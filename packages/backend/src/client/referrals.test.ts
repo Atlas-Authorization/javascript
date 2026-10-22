@@ -44,6 +44,13 @@ const OPS: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
     { inbound_secret: null, inbound_endpoint_id: null },
     (c) => c.referrals.update({ inbound_secret: null, inbound_endpoint_id: null }),
   ],
+  [
+    'PATCH',
+    '/v1/instance/referrals',
+    { browser_sources: ['rewardful', 'dub'], consent_provider: 'onetrust' },
+    (c) => c.referrals.update({ browser_sources: ['rewardful', 'dub'], consent_provider: 'onetrust' }),
+  ],
+  ['PATCH', '/v1/instance/referrals', { browser_sources: null }, (c) => c.referrals.update({ browser_sources: null })],
   ['POST', '/v1/instance/referrals/test', undefined, (c) => c.referrals.test()],
   ['GET', '/v1/instance/referrals/calls', undefined, (c) => c.referrals.listCalls()],
   [
@@ -151,6 +158,9 @@ describe('referral attribution operations', () => {
         endpoint_id: null,
         last_event: { at: 1700000000000, type: 'referral.updated', outcome: 'applied' },
       },
+      browser_sources: ['referally', 'rewardful', 'tolt', 'promotekit', 'firstpromoter', 'partnerstack', 'dub'],
+      browser_sources_default: true,
+      consent_provider: 'auto',
       providers: [
         {
           id: 'webhook',
@@ -171,6 +181,9 @@ describe('referral attribution operations', () => {
     expect(settings.inbound?.url).toBe('https://api.example.test/v1/webhooks/referrals/ins_1');
     expect(settings.inbound?.secret_set).toBe(false);
     expect(settings.inbound?.last_event?.outcome).toBe('applied');
+    expect(settings.browser_sources).toHaveLength(7);
+    expect(settings.browser_sources_default).toBe(true);
+    expect(settings.consent_provider).toBe('auto');
 
     m = mockFetch({
       object: 'referral_call',

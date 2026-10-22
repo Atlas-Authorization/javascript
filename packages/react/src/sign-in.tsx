@@ -13,6 +13,7 @@ import { FapiClient, type FlowState } from './fapi';
 import { CaptchaSlot } from './captcha';
 import {
   AttemptFlow,
+  SignUpPrompt,
   SocialSignInButtons,
   resolveGoogleButtonRender,
   useFlow,
@@ -36,6 +37,7 @@ export function SignIn(props: FlowProps = {}) {
         attempt={state.attempt}
         busy={state.busy}
         errors={state.errors}
+        sessionKept={state.sessionKept}
         titleKey="signIn.title"
         hideTitle={props.hideTitle}
         onSubmit={submit}
@@ -46,6 +48,7 @@ export function SignIn(props: FlowProps = {}) {
       />
       {/* Social buttons belong on the first step, not mid-flow (e.g. during a
           second factor). `!state.attempt` is exactly the initial identifier step. */}
+      {state.attempt?.status !== 'complete' ? <SignUpPrompt signUpUrl={props.signUpUrl} afterUrl={props.afterUrl} /> : null}
       {!state.attempt ? (
         <SocialSignInButtons
           client={client}

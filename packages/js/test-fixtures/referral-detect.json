@@ -1,0 +1,734 @@
+{
+  "_comment": "Shared by the JS SDK detector (packages/js/src/referral-detect.ts) and the ES5 copy in the Atlas API (hosted pages, Sign in with Atlas button). `fns` turns a dotted path into a function on the window: most return the value; cmplz_has_consent looks the category up in the value; __tcfapi calls back with it. `cookies` is document.cookie.",
+  "sources": [
+    {
+      "name": "Referally aff.js",
+      "win": {},
+      "fns": {
+        "aff.getReferral": {
+          "code": "WJXQGLBW",
+          "clickId": "clk_123",
+          "anonId": "a_456",
+          "ts": 1792600000
+        }
+      },
+      "sources": [
+        "referally"
+      ],
+      "expect": {
+        "source": "referally",
+        "code": "WJXQGLBW",
+        "clickId": "clk_123",
+        "anonId": "a_456",
+        "capturedAt": "2026-10-21T16:26:40.000Z"
+      }
+    },
+    {
+      "name": "Rewardful referral and affiliate token",
+      "win": {
+        "Rewardful": {
+          "referral": "8a4f0e9c-1b2d-4c3e-9f00-1234567890ab",
+          "affiliate": {
+            "token": "dana"
+          }
+        }
+      },
+      "sources": [
+        "rewardful"
+      ],
+      "expect": {
+        "source": "rewardful",
+        "code": "dana",
+        "clickId": "8a4f0e9c-1b2d-4c3e-9f00-1234567890ab",
+        "anonId": null
+      }
+    },
+    {
+      "name": "Rewardful loaded without a referral",
+      "win": {
+        "Rewardful": {
+          "referral": "",
+          "affiliate": false
+        }
+      },
+      "sources": [
+        "rewardful"
+      ],
+      "expect": null
+    },
+    {
+      "name": "Tolt",
+      "win": {
+        "tolt_referral": "tlt_9f8e7d"
+      },
+      "sources": [
+        "tolt"
+      ],
+      "expect": {
+        "source": "tolt",
+        "code": null,
+        "clickId": "tlt_9f8e7d",
+        "anonId": null
+      }
+    },
+    {
+      "name": "PromoteKit",
+      "win": {
+        "promotekit_referral": "pk_ref_42"
+      },
+      "sources": [
+        "promotekit"
+      ],
+      "expect": {
+        "source": "promotekit",
+        "code": null,
+        "clickId": "pk_ref_42",
+        "anonId": null
+      }
+    },
+    {
+      "name": "FirstPromoter cookies",
+      "win": {},
+      "cookies": "theme=dark; _fprom_tid=tid_abc123; _fprom_ref=jamie",
+      "sources": [
+        "firstpromoter"
+      ],
+      "expect": {
+        "source": "firstpromoter",
+        "code": "jamie",
+        "clickId": "tid_abc123",
+        "anonId": null
+      }
+    },
+    {
+      "name": "PartnerStack cookies",
+      "win": {},
+      "cookies": "ps_partner_key=acme-partner; ps_xid=xid_77",
+      "sources": [
+        "partnerstack"
+      ],
+      "expect": {
+        "source": "partnerstack",
+        "code": "acme-partner",
+        "clickId": "xid_77",
+        "anonId": null
+      }
+    },
+    {
+      "name": "Dub cookie (URL-encoded)",
+      "win": {},
+      "cookies": "dub_id=dub%5F123abc",
+      "sources": [
+        "dub"
+      ],
+      "expect": {
+        "source": "dub",
+        "code": null,
+        "clickId": "dub_123abc",
+        "anonId": null
+      }
+    },
+    {
+      "name": "A source not listed for the instance is never read",
+      "win": {
+        "Rewardful": {
+          "referral": "rw_ref_1"
+        }
+      },
+      "fns": {
+        "aff.getReferral": {
+          "code": "WJXQGLBW"
+        }
+      },
+      "sources": [
+        "referally"
+      ],
+      "expect": {
+        "source": "referally",
+        "code": "WJXQGLBW",
+        "clickId": null,
+        "anonId": null
+      }
+    },
+    {
+      "name": "Order follows the list",
+      "win": {
+        "tolt_referral": "tlt_first",
+        "Rewardful": {
+          "referral": "rw_second"
+        }
+      },
+      "sources": [
+        "tolt",
+        "rewardful"
+      ],
+      "expect": {
+        "source": "tolt",
+        "code": null,
+        "clickId": "tlt_first",
+        "anonId": null
+      }
+    },
+    {
+      "name": "Malformed values are dropped",
+      "win": {
+        "tolt_referral": "has spaces!"
+      },
+      "sources": [
+        "tolt"
+      ],
+      "expect": null
+    },
+    {
+      "name": "Unknown source ids are skipped",
+      "win": {
+        "tolt_referral": "tlt_1x"
+      },
+      "sources": [
+        "nope",
+        "tolt"
+      ],
+      "expect": {
+        "source": "tolt",
+        "code": null,
+        "clickId": "tlt_1x",
+        "anonId": null
+      }
+    },
+    {
+      "name": "A throwing script reads as nothing",
+      "win": {},
+      "fns": {
+        "aff.getReferral": "__throw__"
+      },
+      "sources": [
+        "referally"
+      ],
+      "expect": null
+    }
+  ],
+  "consent": [
+    {
+      "name": "No manager, no app decision",
+      "win": {},
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "none"
+      }
+    },
+    {
+      "name": "Cookie Munch custom category",
+      "win": {
+        "CookieMunch": {
+          "consent": {
+            "marketing": false,
+            "referrals": true
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "cookiemunch"
+      }
+    },
+    {
+      "name": "Cookie Munch falls back to marketing",
+      "win": {
+        "CookieMunch": {
+          "consent": {
+            "marketing": true
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "cookiemunch"
+      }
+    },
+    {
+      "name": "Cookie Munch publishes a Cookiebot alias: still Cookie Munch",
+      "win": {
+        "CookieMunch": {
+          "consent": {
+            "marketing": false
+          }
+        },
+        "Cookiebot": {
+          "consent": {
+            "marketing": true
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "cookiemunch"
+      }
+    },
+    {
+      "name": "OneTrust targeting group",
+      "win": {
+        "OnetrustActiveGroups": ",C0001,C0002,C0004,"
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "onetrust"
+      }
+    },
+    {
+      "name": "OneTrust without targeting",
+      "win": {
+        "OnetrustActiveGroups": ",C0001,C0002,"
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "onetrust"
+      }
+    },
+    {
+      "name": "OneTrust custom group id as the category",
+      "win": {
+        "OnetrustActiveGroups": ",C0001,C0007,"
+      },
+      "categories": [
+        "C0007",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "onetrust"
+      }
+    },
+    {
+      "name": "Cookiebot",
+      "win": {
+        "Cookiebot": {
+          "consent": {
+            "necessary": true,
+            "marketing": true
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "cookiebot"
+      }
+    },
+    {
+      "name": "Didomi purpose 1 enabled",
+      "win": {},
+      "fns": {
+        "Didomi.getUserStatus": {
+          "purposes": {
+            "global": {
+              "enabled": [
+                "cookies"
+              ],
+              "disabled": []
+            }
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "didomi"
+      }
+    },
+    {
+      "name": "Didomi custom purpose disabled",
+      "win": {},
+      "fns": {
+        "Didomi.getUserStatus": {
+          "purposes": {
+            "global": {
+              "enabled": [
+                "cookies"
+              ],
+              "disabled": [
+                "referrals"
+              ]
+            }
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "didomi"
+      }
+    },
+    {
+      "name": "Usercentrics marketing services all consented",
+      "win": {},
+      "fns": {
+        "UC_UI.getServicesBaseInfo": [
+          {
+            "categorySlug": "marketing",
+            "consent": {
+              "status": true
+            }
+          },
+          {
+            "categorySlug": "essential",
+            "consent": {
+              "status": true
+            }
+          }
+        ]
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "usercentrics"
+      }
+    },
+    {
+      "name": "Usercentrics one marketing service refused",
+      "win": {},
+      "fns": {
+        "UC_UI.getServicesBaseInfo": [
+          {
+            "categorySlug": "marketing",
+            "consent": {
+              "status": true
+            }
+          },
+          {
+            "categorySlug": "marketing",
+            "consent": {
+              "status": false
+            }
+          }
+        ]
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "usercentrics"
+      }
+    },
+    {
+      "name": "Osano",
+      "win": {},
+      "fns": {
+        "Osano.cm.getConsent": {
+          "ESSENTIAL": "ACCEPT",
+          "MARKETING": "ACCEPT",
+          "ANALYTICS": "DENY"
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "osano"
+      }
+    },
+    {
+      "name": "CookieYes advertisement",
+      "win": {},
+      "fns": {
+        "getCkyConsent": {
+          "categories": {
+            "necessary": true,
+            "advertisement": false
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "cookieyes"
+      }
+    },
+    {
+      "name": "Complianz",
+      "win": {},
+      "fns": {
+        "cmplz_has_consent": {
+          "marketing": true,
+          "statistics": false
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "complianz"
+      }
+    },
+    {
+      "name": "Klaro service named by the category",
+      "win": {},
+      "fns": {
+        "klaro.getManager": {
+          "consents": {
+            "referrals": true
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "klaro"
+      }
+    },
+    {
+      "name": "IAB TCF purpose 1",
+      "win": {},
+      "fns": {
+        "__tcfapi": {
+          "gdprApplies": true,
+          "purpose": {
+            "consents": {
+              "1": true
+            }
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "tcf"
+      }
+    },
+    {
+      "name": "IAB TCF purpose 1 refused",
+      "win": {},
+      "fns": {
+        "__tcfapi": {
+          "gdprApplies": true,
+          "purpose": {
+            "consents": {
+              "1": false
+            }
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "tcf"
+      }
+    },
+    {
+      "name": "IAB TCF where GDPR doesn't apply",
+      "win": {},
+      "fns": {
+        "__tcfapi": {
+          "gdprApplies": false
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "tcf"
+      }
+    },
+    {
+      "name": "Google Consent Mode ad_storage updated",
+      "win": {
+        "google_tag_data": {
+          "ics": {
+            "entries": {
+              "ad_storage": {
+                "default": false,
+                "update": true
+              }
+            }
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "consent_mode"
+      }
+    },
+    {
+      "name": "A named manager wins over its TCF API",
+      "win": {
+        "OnetrustActiveGroups": ",C0001,"
+      },
+      "fns": {
+        "__tcfapi": {
+          "gdprApplies": true,
+          "purpose": {
+            "consents": {
+              "1": true
+            }
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "onetrust"
+      }
+    },
+    {
+      "name": "provider pins one manager",
+      "win": {
+        "OnetrustActiveGroups": ",C0004,"
+      },
+      "fns": {
+        "__tcfapi": {
+          "gdprApplies": true,
+          "purpose": {
+            "consents": {
+              "1": false
+            }
+          }
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "provider": "tcf",
+      "expect": {
+        "granted": false,
+        "by": "tcf"
+      }
+    },
+    {
+      "name": "A throwing manager reads as no consent",
+      "win": {},
+      "fns": {
+        "getCkyConsent": "__throw__"
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "cookieyes"
+      }
+    },
+    {
+      "name": "A manager on the page wins over the app's own decision",
+      "win": {
+        "OnetrustActiveGroups": ",C0001,"
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "appConsent": "granted",
+      "expect": {
+        "granted": false,
+        "by": "onetrust"
+      }
+    },
+    {
+      "name": "With no manager on the page the app decides",
+      "win": {},
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "appConsent": "granted",
+      "expect": {
+        "granted": true,
+        "by": "app"
+      }
+    },
+    {
+      "name": "provider app: only the app decides, whatever manager is on the page",
+      "win": {
+        "OnetrustActiveGroups": ",C0004,"
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "provider": "app",
+      "appConsent": "denied",
+      "expect": {
+        "granted": false,
+        "by": "app"
+      }
+    },
+    {
+      "name": "provider app with no app decision",
+      "win": {
+        "OnetrustActiveGroups": ",C0004,"
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "provider": "app",
+      "expect": {
+        "granted": false,
+        "by": "none"
+      }
+    }
+  ]
+}

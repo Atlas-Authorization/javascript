@@ -53,6 +53,9 @@ export const ATLAS_BASE_CSS = `
 button.atlas-link{padding:2px 4px;font:inherit;font-size:.875rem;font-weight:500;color:var(--atlas-color-primary,#5b5bd6);background:none;border:0;border-radius:4px;cursor:pointer;}
 button.atlas-link:hover:not(:disabled){text-decoration:underline;}
 button.atlas-link:disabled{opacity:.6;cursor:not-allowed;}
+.atlas-footer{margin:12px 0 0;text-align:center;font-size:.875rem;color:var(--atlas-color-muted,#666);}
+.atlas-footer a.atlas-link{font-weight:500;color:var(--atlas-color-primary,#5b5bd6);text-decoration:none;}
+.atlas-footer a.atlas-link:hover{text-decoration:underline;}
 button.atlas-link:focus-visible{outline:2px solid var(--atlas-color-focus-ring,var(--atlas-color-primary,#5b5bd6));outline-offset:2px;}
 
 .atlas-social-button:hover{filter:brightness(.98);}

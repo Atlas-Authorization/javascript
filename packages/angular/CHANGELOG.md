@@ -1,5 +1,17 @@
 # @atlasauth/angular changelog
 
+## 0.8.0
+
+### Changed
+
+- `@atlasauth/js` 0.15.0: referral capture for any referral program and any consent manager (pass a custom program's reader page-wide with `configureReferralCapture({ referralSource })`).
+
+### Fixed
+
+- Development instances: sign-in from `localhost` keeps working where the browser blocks the instance's cookie as third-party (Chrome, Safari). On a `pk_test_` key the SDK keeps the session's refresh token in `localStorage` and sends it as `x-refresh-token`; production keys never do.
+- After a sign-in completes, the panel says "You're signed in" only once this browser holds the session, and says plainly when the browser didn't keep it, instead of "you are signed in where you started". That message is now shown only for a sign-in completed on another device.
+- `<atlas-sign-in>` shows "No account? Sign up" on every step (`signUpUrl`; default the hosted sign-up page with the visitor's referral, `null` hides it), so a newcomer on a password-only instance always has a way to create an account.
+
 ## 0.7.0
 - **Referral attribution.** The prebuilt forms send the referral the visitor arrived with on sign-in and sign-up (through `@atlasauth/js` 0.13.0) when the instance has referrals on, and show the captcha for a referred sign-up when the instance requires it. New `AtlasOptions`: `referral?: false` and `referralConsent?`.
 

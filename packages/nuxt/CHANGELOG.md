@@ -1,5 +1,11 @@
 # @atlasauth/nuxt changelog
 
+## 0.1.5
+
+### Changed
+
+- `@atlasauth/js` 0.15.0: referral capture for any referral program and any consent manager.
+
 ## 0.1.4
 - Depends on `@atlasauth/vue` 0.5.1: email-code sign-in works on instances without password sign-in.
 

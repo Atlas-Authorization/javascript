@@ -82,6 +82,7 @@ export function SignUp(props: FlowProps = {}) {
         attempt={state.attempt}
         busy={state.busy}
         errors={state.errors}
+        sessionKept={state.sessionKept}
         titleKey="signUp.title"
         hideTitle={props.hideTitle}
         onSubmit={submit}

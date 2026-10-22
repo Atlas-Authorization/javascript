@@ -1,5 +1,18 @@
 # @atlasauth/react changelog
 
+## 0.13.0
+
+### Added
+
+- `@atlasauth/js` 0.15.0: referral capture for any referral program and any consent manager.
+- `<SignInWithAtlas referralSource={…}>`: your own reader for another referral program.
+
+### Fixed
+
+- Development instances: sign-in from `localhost` keeps working where the browser blocks the instance's cookie as third-party (Chrome, Safari). On a `pk_test_` key the SDK keeps the session's refresh token in `localStorage` and sends it as `x-refresh-token`; production keys never do.
+- After a sign-in completes, the panel says "You're signed in" only once this browser holds the session, and says plainly when the browser didn't keep it, instead of "you are signed in where you started". That message is now shown only for a sign-in completed on another device.
+- `<SignIn>` shows "No account? Sign up" on every step (`signUpUrl`; default the hosted sign-up page with the visitor's referral, `null` hides it), so a newcomer on a password-only instance always has a way to create an account.
+
 ## 0.12.0
 - **Sign in with Atlas carries the referral.** `buildAtlasAuthorizeUrl`, `signInWithAtlasPopup` and `<SignInWithAtlasButton>` (including `loginUri`) add the visitor's referral as `ref_*` query parameters (from `window.aff`, else `ref` / `via` / `aff` on the page URL), through `@atlasauth/js` 0.14.0. New `AtlasIdOptions` fields `referral?: false | 'auto'` (default `'auto'`) and `referralConsent?` (ids only with consent).
 

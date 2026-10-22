@@ -35,6 +35,7 @@ import { AtlasFlowController } from './flow-controller';
         [attempt]="flow.state().attempt"
         [busy]="flow.state().busy"
         [errors]="flow.state().errors"
+        [sessionKept]="flow.state().sessionKept"
         titleKey="signUp.title"
         (submitFlow)="flow.submit($event)"
       ></atlas-attempt-flow>

@@ -48,7 +48,7 @@ const slot = () =>
   ({ ownerDocument: undefined, firstChild: null, removeChild: () => undefined }) as unknown as HTMLElement;
 
 let calls: Call[] = [];
-const reload = vi.fn(async () => undefined);
+const reload = vi.fn(async () => true);
 beforeEach(() => {
   calls = [];
   reload.mockClear();

@@ -1,5 +1,11 @@
 # @atlasauth/embed changelog
 
+## 0.8.0
+
+### Changed
+
+- `@atlasauth/js` 0.15.0: referral capture for any referral program and any consent manager (pass a custom program's reader page-wide with `configureReferralCapture({ referralSource })`).
+
 ## 0.7.0
 - **Referral attribution.** The widget sends the referral the visitor arrived with on sign-in and sign-up (through `@atlasauth/js` 0.13.0) when the instance has referrals on, and shows the captcha for a referred sign-up when the instance requires it. New `WidgetOptions.referral?: false` / `referralConsent?`, and markup attributes `data-atlas-referral="off"` and `data-atlas-referral-consent="granted"`.
 

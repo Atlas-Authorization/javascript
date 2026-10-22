@@ -16,6 +16,20 @@ export * from './popup-channel';
 export * from './fapi';
 // Referral attribution: capture the visitor's referral and send it on sign-up.
 export * from './referral';
+// Development instances: sign-in from localhost where the browser blocks the instance's cookie.
+export { devBrowserEnabled, devBrowserToken, forgetDevBrowserToken, withDevBrowser } from './dev-browser';
+export {
+  CONSENT_PROVIDERS,
+  REFERRAL_BROWSER_SOURCES,
+  canonicalCategory,
+  detectConsent,
+  detectConsentProvider,
+  detectReferralSource,
+  type ConsentDecision,
+  type ConsentProvider,
+  type DetectedReferral,
+  type ReferralBrowserSource,
+} from './referral-detect';
 // SDK version advisories (`X-Atlas-SDK` / `Atlas-SDK-Advisory`).
 export * from './sdk-advisory';
 export * from './version';

@@ -24,7 +24,7 @@ function makeClient(): AtlasClient {
     getProviderToken: async () => null,
     signOut: async () => ({ revoked: true }),
     setActiveOrganization: async () => undefined,
-    reload: async () => undefined,
+    reload: async () => true,
     onSignOut: () => () => undefined,
   };
 }

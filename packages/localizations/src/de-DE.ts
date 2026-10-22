@@ -20,6 +20,9 @@ export const deDE: LocalizationResource = {
   'signIn.socialButton': 'Weiter mit {provider}',
   'signIn.emailCodeLabel': 'Bestätigungscode',
   'signIn.magicLinkSent': 'Prüfen Sie Ihre E-Mails auf einen Anmeldelink.',
+  'signIn.signedIn': 'Sie sind angemeldet.',
+  'signIn.sessionNotKept':
+    'Die Anmeldung war erfolgreich, aber dieser Browser hat die Sitzung nicht behalten. Wenn er Drittanbieter-Cookies blockiert, erlauben Sie Cookies für diese Website und versuchen Sie es erneut.',
   'signIn.checkOtherTab':
     'Sie können diesen Tab schließen — Sie sind dort angemeldet, wo Sie begonnen haben.',
   'signIn.codeSentTo': 'Wir haben einen Code an {email} gesendet. Gib ihn unten ein.',

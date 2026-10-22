@@ -48,6 +48,7 @@ import {
   referralCacheKeyFor,
   seedReferralConfig,
   type ReferralConsent,
+  withDevBrowser,
 } from '@atlasauth/js';
 import { useStableReferralConsent } from './referral';
 import { ATLAS_REACT_SDK } from './version';
@@ -183,7 +184,8 @@ interface AtlasContextValue {
    * `useSessionList()`. Re-boots the client and nudges other tabs.
    */
   setActiveSession(session: string | { id: string }): Promise<void>;
-  reload(): Promise<void>;
+  /** Re-boot from the Frontend API. Resolves true when a session now exists in this browser. */
+  reload(): Promise<boolean>;
 }
 
 const AtlasContext = createContext<AtlasContextValue | null>(null);
@@ -309,7 +311,8 @@ export function AtlasProvider(props: AtlasProviderProps) {
     () => resolveFrontendApi(props.frontendApi, { component: '<AtlasProvider>' }),
     [props.frontendApi],
   );
-  const doFetch = props.fetchImpl ?? fetch;
+  // Development instances keep the session in a header where the browser blocks the cookie.
+  const doFetch = useMemo(() => withDevBrowser(publishableKey, props.fetchImpl ?? fetch), [publishableKey, props.fetchImpl]);
 
   // Referral attribution: the app-wide options every FAPI client on the page
   // falls back to (set during render, so the first form already sees them).
@@ -348,7 +351,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
   // without re-subscribing on every render.
   const channel = useRef<Channel | null>(null);
   const statusRef = useRef<AuthStatus>('loading');
-  const reloadRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const reloadRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
   // Sessions this browser signed out of (shared by every tab, per Frontend
   // API): never re-adopted from a still-valid refresh cookie, even when the
   // revoke did not reach the server — not by a reload, nor by a tab opened later.
@@ -411,7 +414,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
     setClaims(decodeClaims(jwt));
   }, []);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (): Promise<boolean> => {
     try {
       // A custom tombstone store may answer asynchronously: never decide whether
       // to adopt a session before it has (settled at once for localStorage).
@@ -454,7 +457,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
         setSessions([]);
         setClaims(null);
         setMemberships([]);
-        return;
+        return false;
       }
 
       sessionIdRef.current = body.session.id;
@@ -479,6 +482,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
       setMemberships(body.organization_memberships ?? []);
       if (body.jwt) applyToken(body.jwt, body.session.id);
       setStatus('signed_in');
+      return true;
     } catch {
       /**
        * A failed boot is NOT signed-out. Rendering a sign-in form because the
@@ -486,6 +490,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
        * user re-authenticate for no reason.
        */
       setStatus((current) => (current === 'loading' ? 'signed_out' : current));
+      return false;
     }
   }, [applyToken, call]);
 

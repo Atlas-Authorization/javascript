@@ -48,7 +48,7 @@ function fakeTurnstile() {
 
 let calls: Call[] = [];
 let wrapper: VueWrapper | null = null;
-const reload = vi.fn(async () => undefined);
+const reload = vi.fn(async () => true);
 
 beforeEach(() => {
   calls = [];
@@ -177,7 +177,7 @@ describe('<SignUp> creates the account', () => {
     await submit(w);
     await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
     expect(posts('/v1/client/sign_ups/sua_1/attempt_verification')[0]!.body).toEqual({ code: '424242' });
-    expect(posts('/v1/client/tickets/exchange')[0]!.body).toEqual({ attempt_id: 'sua_1', ticket: 'tkt_1' });
+    expect(posts('/v1/client/tickets/exchange')[0]!.body).toEqual({ attempt_id: 'sua_1', ticket: 'tkt_1', return_refresh_token: true });
     await vi.waitFor(() => expect(reload).toHaveBeenCalled());
   });
 });

@@ -1,5 +1,8 @@
 # @atlasauth/localizations changelog
 
+## 0.7.0
+- **Added 2 keys**, in every shipped locale: `signIn.signedIn` ("You're signed in.", shown once this browser holds the session after a sign-in) and `signIn.sessionNotKept` (shown when the sign-in completed but the browser didn't keep the session, for example because it blocks third-party cookies).
+
 ## 0.6.0
 - **Added 6 keys for the Atlas captcha widget**, in every shipped locale (en-US, es-ES, fr-FR, de-DE, pt-BR, ja-JP,
   nl-NL): `captcha.checking`, `captcha.verified`, `captcha.puzzlePrompt`, `captcha.puzzleConfirm`,

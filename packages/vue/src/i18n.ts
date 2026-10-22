@@ -35,6 +35,9 @@ export const EN_US: Catalog = {
   'signIn.resendLink': 'Resend link',
   'signIn.passwordOption': 'Use your password instead',
   'signIn.magicLinkSent': 'Check your email for a sign-in link.',
+  'signIn.signedIn': 'You\'re signed in.',
+  'signIn.sessionNotKept':
+    'You signed in, but this browser didn\'t keep the session. If it blocks third-party cookies, allow cookies for this site and try again.',
   'signIn.checkOtherTab': 'You can close this tab — you are signed in where you started.',
 
   'signUp.title': 'Create your account',

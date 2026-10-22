@@ -25,7 +25,7 @@ import { translate } from '../i18n';
  * minor. For a `message` row, `labelKey` carries the message's i18n key.
  */
 interface StepField {
-  kind: 'input' | 'message';
+  kind: 'input' | 'message' | 'alert';
   name: string;
   labelKey: string;
   type: string;
@@ -73,6 +73,8 @@ interface StepField {
                 <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
               }
             </label>
+          } @else if (f.kind === 'alert') {
+            <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ t(f.labelKey) }}</p>
           } @else {
             <p>{{ t(f.labelKey) }}</p>
           }
@@ -110,6 +112,8 @@ export class AttemptFlowComponent {
   @Input() attempt: AttemptView | null = null;
   @Input() busy = false;
   @Input() errors: FieldError[] = [];
+  /** `FlowState.sessionKept`: whether this browser kept the session the sign-in created. */
+  @Input() sessionKept: boolean | undefined = undefined;
   @Input() titleKey = 'signIn.title';
   /**
    * The sign-in captcha, drawn above the submit button on the identifier step
@@ -237,6 +241,10 @@ export class AttemptFlowComponent {
       case 'await_oauth':
         return [msg('signIn.magicLinkSent')];
       case 'done':
+        // Signed in only when this browser holds the session; a blocked cookie is said
+        // plainly. "Check the other tab" is for a sign-in completed on another device.
+        if (this.sessionKept === true) return [msg('signIn.signedIn')];
+        if (this.sessionKept === false) return [{ kind: 'alert', name: '', labelKey: 'signIn.sessionNotKept', type: 'text' }];
         return [msg('signIn.checkOtherTab')];
       case 'restart':
         return [msg('error.generic')];

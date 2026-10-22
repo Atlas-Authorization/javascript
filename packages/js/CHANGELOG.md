@@ -1,5 +1,24 @@
 # @atlasauth/js changelog
 
+## 0.15.0
+
+### Added
+
+- Referral capture works with any referral program and any consent manager: it reads Referally, Rewardful, Tolt, PromoteKit, FirstPromoter, PartnerStack and Dub (the instance's `browser_sources`), and asks Cookie Munch, OneTrust, Cookiebot, Didomi, Usercentrics, Osano, CookieYes, Complianz, Klaro, any IAB TCF v2 manager or Google Consent Mode for consent (the instance's `consent_provider`).
+- `referralSource` (client option, `configureReferralCapture`, and `source` on `signIn` / `referralParams`): your own reader for any other program.
+- `detectConsent`, `detectConsentProvider`, `detectReferralSource`, `REFERRAL_BROWSER_SOURCES` and `CONSENT_PROVIDERS` are exported.
+- A captured referral says where it came from (`source`) and who decided consent (`consent_by`), also as `ref_source` / `ref_consent_by` on redirects, for the delivery log.
+
+### Changed
+
+- A consent manager on the page decides; `referralConsent` applies when there is none (or when the instance's `consent_provider` is `app`).
+
+### Fixed
+
+- Development instances: sign-in from `localhost` keeps working where the browser blocks the instance's cookie as third-party (Chrome, Safari). On a `pk_test_` key the SDK keeps the session's refresh token in `localStorage` and sends it as `x-refresh-token`; production keys never do.
+- After a sign-in completes, the panel says "You're signed in" only once this browser holds the session, and says plainly when the browser didn't keep it, instead of "you are signed in where you started". That message is now shown only for a sign-in completed on another device.
+- `withDevBrowser`, `devBrowserEnabled`, `devBrowserToken` and `forgetDevBrowserToken` are exported for custom fetch layers.
+
 ## 0.14.0
 - **Referral capture v2.** One source per referral, in precedence order and never mixed: the page's referral script (`window.aff.getReferral()` → `{code, clickId, anonId, ts}`), explicit `ref_*` URL parameters (`ref`, `ref_click_id`, `ref_anon_id`, `ref_consent`, `ref_captured_at`), a code in the instance's URL parameters, then the tracking cookie. A URL code no longer travels with the cookie's click id. Click and anonymous ids are sent only with consent (Cookie Munch, `referralConsent`, or `ref_consent=granted` on the URL); without it only the code goes. The cookie may carry `ts` (becomes `captured_at`) and `exp` (an expired cookie is ignored).
 - **New redirect helpers:** `signIn({ url | frontendApi, redirectUrl?, referral?: false | 'auto', consent?, config?, navigate? })` / `signUp(...)` go to the hosted page (or any URL, e.g. `/oauth2/authorize`) with the referral as `ref_*` query parameters; `referralParams(options)` and `withReferralParams(url, options)` for your own redirects.

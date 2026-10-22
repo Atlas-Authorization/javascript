@@ -185,4 +185,4 @@ describe('element keys', () => {
   });
 });
 
-const BASE_CSS_HASH = '823it9';
+const BASE_CSS_HASH = '1j7k6i6';

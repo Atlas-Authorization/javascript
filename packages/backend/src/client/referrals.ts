@@ -116,6 +116,25 @@ export interface ReferralInboundStatus {
   last_event: { at: number; type: string; outcome: ReferralInboundOutcome } | null;
 }
 
+/** A referral program whose script or cookie the browser reads. */
+export type ReferralBrowserSource = 'referally' | 'rewardful' | 'tolt' | 'promotekit' | 'firstpromoter' | 'partnerstack' | 'dub';
+
+/** Which consent manager decides on the tracking cookie's ids: `auto` (any common one), one manager, or `app` (only the app's own decision). */
+export type ReferralConsentProvider =
+  | 'auto'
+  | 'cookiemunch'
+  | 'onetrust'
+  | 'cookiebot'
+  | 'didomi'
+  | 'usercentrics'
+  | 'osano'
+  | 'cookieyes'
+  | 'complianz'
+  | 'klaro'
+  | 'tcf'
+  | 'consent_mode'
+  | 'app';
+
 /** What a platform answers to a ping. */
 export interface ReferralPing {
   ok: boolean;
@@ -173,6 +192,12 @@ export interface ReferralSettings {
   code_lookup_url?: string | null;
   /** Show an optional "Referral code" field on hosted sign-up. */
   signup_code_field?: boolean;
+  /** The referral programs whose script or cookie the browser reads, in order (the provider's default unless set). */
+  browser_sources?: ReferralBrowserSource[];
+  /** Whether `browser_sources` is the provider's default. */
+  browser_sources_default?: boolean;
+  /** Which consent manager decides on the tracking cookie's ids (default `auto`). */
+  consent_provider?: ReferralConsentProvider;
   /** Forward email, name and ban/unban changes to the platform (default true). */
   forward_lifecycle?: boolean;
   /** Mirror the result into `public_metadata.referral` (default false). */
@@ -227,6 +252,9 @@ export interface UpdateReferralSettingsBody {
   /** An https URL containing `{code}`. */
   code_lookup_url?: string | null;
   signup_code_field?: boolean;
+  /** The programs to read, in order; null goes back to the provider's default. */
+  browser_sources?: ReferralBrowserSource[] | null;
+  consent_provider?: ReferralConsentProvider;
   forward_lifecycle?: boolean;
   mirror_to_public_metadata?: boolean;
   include_referral_claims?: boolean;

@@ -25,6 +25,8 @@
   export let attempt: AttemptView | null = null;
   export let busy = false;
   export let errors: FieldError[] = [];
+  /** `FlowState.sessionKept`: whether this browser kept the session the sign-in created. */
+  export let sessionKept: boolean | undefined = undefined;
   export let titleKey: string;
   export let onSubmit: (values: Record<string, string>) => void;
   /**
@@ -146,6 +148,10 @@
       case 'await_oauth':
         return t('signIn.magicLinkSent');
       case 'done':
+        // Signed in only when this browser holds the session; a blocked cookie is
+        // said plainly (below). "Check the other tab" is for another device.
+        if (sessionKept === true) return t('signIn.signedIn');
+        if (sessionKept === false) return t('signIn.sessionNotKept');
         return t('signIn.checkOtherTab');
       case 'restart':
         return t('error.generic');
@@ -195,7 +201,11 @@
 
   <form on:submit={handleSubmit}>
     {#if message !== null}
-      <p>{message}</p>
+      {#if step.kind === 'done' && sessionKept === false}
+        <p class={cls('formFieldError', 'atlas-error')} role="alert">{message}</p>
+      {:else}
+        <p>{message}</p>
+      {/if}
     {:else}
       {#if step.kind === 'collect_captcha'}
         <!-- §5 the server withheld the attempt until a captcha clears. Solving

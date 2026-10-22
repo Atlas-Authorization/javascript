@@ -40,6 +40,7 @@ import {
   type SignOutListener,
   type SignOutReason,
   configureReferralCapture,
+  withDevBrowser,
 } from '@atlasauth/js';
 import { evaluate, type ProtectCondition } from '@atlasauth/authz';
 import { ATLAS_OPTIONS } from './atlas.config';
@@ -193,7 +194,11 @@ export class AtlasService implements OnDestroy {
     this.baseUrl = resolveFrontendApi(options.frontendApi, {
       component: 'provideAtlas() / AtlasModule.forRoot()',
     });
-    this.doFetch = options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+    // Development instances keep the session in a header where the browser blocks the cookie.
+    this.doFetch = withDevBrowser(
+      options.publishableKey,
+      options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args)),
+    );
 
     this.catalog = options.localization ? withFallback(options.localization) : EN_US;
     this.errorCatalog = options.localization ?? EN_US;
@@ -411,7 +416,8 @@ export class AtlasService implements OnDestroy {
   }
 
   /** Re-read `/v1/client`: refresh user, session, memberships and status. */
-  async reload(): Promise<void> {
+  /** Re-boot from the Frontend API. Resolves true when a session now exists in this browser. */
+  async reload(): Promise<boolean> {
     try {
       const response = await this.call('/v1/client');
       if (!response.ok) throw new Error('boot failed');
@@ -427,7 +433,7 @@ export class AtlasService implements OnDestroy {
       // refresh cookie; the guard re-tries its revoke in the background.
       if (!body.session || !body.user || this.guard.refuse(body.session.id)) {
         this.clearLocalState(body.session ? 'other_tab' : signOutReasonFromClient(body));
-        return;
+        return false;
       }
       this.notifier.clear();
 
@@ -437,11 +443,13 @@ export class AtlasService implements OnDestroy {
       if (body.jwt) this.applyToken(body.jwt, body.session.id);
       this._status.next('signed_in');
       this.scheduleRefresh();
+      return true;
     } catch {
       // A failed boot is NOT signed-out. Rendering a sign-in form because the
       // network hiccuped throws away a perfectly good session and forces a
       // needless re-authentication. Only promote loading → signed_out.
       if (this._status.value === 'loading') this._status.next('signed_out');
+      return false;
     }
   }
 

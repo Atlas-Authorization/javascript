@@ -1,5 +1,6 @@
 import { fieldErrors, isTerminal, nextStep, type AttemptView, type FieldError } from './attempt';
 import { ATLAS_JS_SDK, SDK_HEADER, reportSdkAdvisory, sdkHeaderValue, type AtlasSdkInfo } from './sdk-advisory';
+import { withDevBrowser } from './dev-browser';
 import {
   acceptsReferral,
   currentReferral,
@@ -8,6 +9,7 @@ import {
   seedReferralConfig,
   type ReferralCaptureOptions,
   type ReferralConsent,
+  type ReferralSourceReader,
 } from './referral';
 
 /**
@@ -54,10 +56,14 @@ export interface FapiClientOptions {
   referral?: false | 'auto';
   /**
    * The app's own consent decision for referral tracking (click and anonymous
-   * ids), used only when Cookie Munch is not on the page: `'granted'` (or a
-   * function returning it) lets the client send them. Default: code only.
+   * ids): `'granted'` / `'denied'`, a boolean, or a function returning one.
+   * A consent manager on the page decides when there is one; this applies
+   * when there isn't (or when the instance's `consent_provider` is `app`).
+   * Default: code only.
    */
   referralConsent?: ReferralConsent;
+  /** Your own reader for a referral program the SDK doesn't know: `() => ({code, clickId, anonId}) | null`. */
+  referralSource?: ReferralSourceReader;
 }
 
 /**
@@ -93,7 +99,7 @@ export class FapiClient {
 
   /** This client's own referral options (page-wide defaults fill the gaps). */
   get referralOptions(): ReferralCaptureOptions {
-    return { referral: this.options.referral, referralConsent: this.options.referralConsent };
+    return { referral: this.options.referral, referralConsent: this.options.referralConsent, referralSource: this.options.referralSource };
   }
 
   /** The `Accept-Language` this client sends, or null when it sends none. */
@@ -117,7 +123,8 @@ export class FapiClient {
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<FapiResponse<T>> {
-    const doFetch = this.options.fetchImpl ?? fetch;
+    // Development instances keep the session in a header where the browser blocks the cookie (./dev-browser).
+    const doFetch = withDevBrowser(this.options.publishableKey, this.options.fetchImpl ?? fetch);
 
     const language = this.locale;
     const sdk = this.options.sdk ?? ATLAS_JS_SDK;
@@ -302,6 +309,12 @@ export interface FlowState {
    * server returns a new attempt.
    */
   prepared?: 'email_code' | 'email_link' | null;
+  /**
+   * After a sign-in completed here: true when this browser now holds the
+   * session, false when it didn't keep it (its cookie was blocked). Unset while
+   * unknown, and for a sign-in completed on another device.
+   */
+  sessionKept?: boolean;
 }
 
 export const initialFlow: FlowState = {

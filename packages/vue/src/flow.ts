@@ -90,17 +90,24 @@ export function useFlow(): FlowController {
   // for cookies over a same-origin request — FAPI is cross-origin to the app
   // and cannot set the cookie on the completion response itself — THEN
   // re-boot so the rest of the app sees a signed-in user.
+  // Stays busy until this browser actually holds the session: the completion
+  // alone says nothing about whether the cookie was kept.
   const finish = async (next: FlowState) => {
-    state.value = next;
-    if (next.attempt?.status === 'complete') {
-      if (next.ticket) {
-        await client.post('/v1/client/tickets/exchange', {
-          attempt_id: (next.attempt as { id?: string }).id,
-          ticket: next.ticket,
-        });
-      }
-      await atlas.reload();
+    if (next.attempt?.status !== 'complete') {
+      state.value = next;
+      return;
     }
+    state.value = { ...next, busy: true };
+    let exchanged = true;
+    if (next.ticket) {
+      const res = await client.post('/v1/client/tickets/exchange', {
+        attempt_id: (next.attempt as { id?: string }).id,
+        ticket: next.ticket,
+      });
+      exchanged = res.ok;
+    }
+    const kept = exchanged && (await atlas.reload());
+    state.value = { ...next, busy: false, sessionKept: kept };
   };
 
   const submit = (values: Record<string, string>) => {
@@ -171,11 +178,12 @@ export function useFlow(): FlowController {
 
           // The ticket is exchanged by a normal request, so no session token has
           // ever appeared in a URL.
-          await client.post('/v1/client/tickets/exchange', {
+          const res = await client.post('/v1/client/tickets/exchange', {
             attempt_id: (next.attempt as { id?: string }).id,
             ticket,
           });
-          await atlas.reload();
+          const kept = res.ok && (await atlas.reload());
+          state.value = { ...state.value, sessionKept: kept };
         })();
       }, 2_000);
     },

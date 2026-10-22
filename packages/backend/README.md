@@ -426,6 +426,8 @@ await atlas.users.update('user_123', { referral_code: 'ada-1' }); // 409 REFERRA
 await atlas.users.flagReferral('user_123', { reason: 'self-referral' });
 ```
 
+Browser capture: `browser_sources` lists the referral programs whose script or cookie the browser reads (null on update goes back to the provider's default, reported by `browser_sources_default`), and `consent_provider` picks the consent manager that decides (`auto`, one manager, or `app`).
+
 Enabling without what the provider needs is `422 REFERRALS_NOT_CONFIGURED`. When the platform answers late, Atlas sends the `user.referral_attributed` webhook (`UserReferralAttributedEvent`). Preflight may report `referrals_enabled_unverified` and `referrals_without_bot_protection`.
 
 ### Receive the referral protocol (referral platforms)

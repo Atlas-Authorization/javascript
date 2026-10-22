@@ -20,6 +20,9 @@ export const frFR: LocalizationResource = {
   'signIn.socialButton': 'Continuer avec {provider}',
   'signIn.emailCodeLabel': 'Code de vérification',
   'signIn.magicLinkSent': 'Vérifiez votre e-mail pour un lien de connexion.',
+  'signIn.signedIn': 'Vous êtes connecté.',
+  'signIn.sessionNotKept':
+    'Vous vous êtes connecté, mais ce navigateur n\'a pas conservé la session. S\'il bloque les cookies tiers, autorisez les cookies pour ce site et réessayez.',
   'signIn.checkOtherTab':
     'Vous pouvez fermer cet onglet — vous êtes connecté là où vous avez commencé.',
   'signIn.codeSentTo': 'Nous avons envoyé un code à {email}. Saisissez-le ci-dessous.',

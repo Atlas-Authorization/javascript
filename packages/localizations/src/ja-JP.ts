@@ -19,6 +19,9 @@ export const jaJP: Localization = {
   'signIn.socialButton': '{provider} で続行',
   'signIn.emailCodeLabel': '確認コード',
   'signIn.magicLinkSent': 'サインイン用のリンクをメールでご確認ください。',
+  'signIn.signedIn': 'サインインしました。',
+  'signIn.sessionNotKept':
+    'サインインしましたが、このブラウザーはセッションを保持しませんでした。サードパーティ Cookie をブロックしている場合は、このサイトの Cookie を許可してもう一度お試しください。',
   'signIn.checkOtherTab': 'このタブは閉じて構いません。開始した場所でサインイン済みです。',
   'signIn.codeSentTo': '{email} にコードを送信しました。下に入力してください。',
   'signIn.linkSentTo': '{email} にサインインリンクを送信しました。任意のデバイスで開いて続行してください。',

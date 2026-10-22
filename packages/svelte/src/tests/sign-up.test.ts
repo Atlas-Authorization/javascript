@@ -142,7 +142,7 @@ describe('<SignUp> creates the account', () => {
     await submit(el);
     await waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
     expect(posts('/v1/client/sign_ups/sua_1/attempt_verification')[0]!.body).toEqual({ code: '424242' });
-    expect(posts('/v1/client/tickets/exchange')[0]!.body).toEqual({ attempt_id: 'sua_1', ticket: 'tkt_1' });
+    expect(posts('/v1/client/tickets/exchange')[0]!.body).toEqual({ attempt_id: 'sua_1', ticket: 'tkt_1', return_refresh_token: true });
   });
 });
 

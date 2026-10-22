@@ -4,6 +4,7 @@ import {
   nextStep,
   offeredFirstFactors,
   planFirstFactor,
+  signUp as hostedSignUp,
   type AttemptView,
   type CaptchaController,
   type EmailDelivery,
@@ -167,6 +168,9 @@ const AttemptFlow = defineComponent({
     busy: { type: Boolean, default: false },
     errors: { type: Array as PropType<FieldError[]>, default: () => [] },
     titleKey: { type: String, required: true },
+    /** `FlowState.sessionKept`: whether this browser kept the session the sign-in created. */
+    // Untyped on purpose: Vue casts an absent Boolean prop to false, and absent means "unknown" here.
+    sessionKept: { type: null as unknown as PropType<boolean | undefined>, default: undefined },
     onSubmit: { type: Function as PropType<(values: Record<string, string>) => void>, required: true },
     /**
      * The sign-in captcha, drawn above the submit button on the identifier step
@@ -350,6 +354,12 @@ const AttemptFlow = defineComponent({
         case 'await_oauth':
           return [h('p', { key: 'oauth' }, t('signIn.magicLinkSent'))];
         case 'done':
+          // Signed in only when this browser holds the session; a blocked cookie is said
+          // plainly. "Check the other tab" is for a sign-in completed on another device.
+          if (props.sessionKept === true) return [h('p', { key: 'done', class: 'atlas-text' }, t('signIn.signedIn'))];
+          if (props.sessionKept === false) {
+            return [h('p', { key: 'done', class: cls('formFieldError', 'atlas-error'), role: 'alert' }, t('signIn.sessionNotKept'))];
+          }
           return [h('p', { key: 'done' }, t('signIn.checkOtherTab'))];
         case 'restart':
           return [h('p', { key: 'restart' }, t('error.generic'))];
@@ -426,24 +436,56 @@ export const SignIn = defineComponent({
   props: {
     /** Where to send the user once the flow completes. */
     afterUrl: { type: String, default: undefined },
+    /**
+     * Where "No account? Sign up" goes. Default: the instance's hosted sign-up
+     * page (carrying the visitor's referral). `null` hides it. Always shown, never
+     * only after a failed sign-in, so it says nothing about whether an email has an account.
+     */
+    signUpUrl: { type: null as unknown as PropType<string | null | undefined>, default: undefined },
   },
-  setup() {
+  setup(props) {
     const { state, submit, prepare, captcha, settings } = useFlow();
+    const atlas = useAtlas();
+    const t = useText();
+    const cls = useClass();
+    const signUpHref = (): string | null => {
+      if (props.signUpUrl === null) return null;
+      if (props.signUpUrl) return props.signUpUrl;
+      try {
+        return hostedSignUp({
+          frontendApi: atlas.frontendApi,
+          redirectUrl: props.afterUrl ?? (typeof window !== 'undefined' ? window.location.href : undefined),
+          navigate: false,
+        });
+      } catch {
+        return null;
+      }
+    };
     return () => {
       // Read the settings so the form re-renders (drawing the captcha slot)
       // once the instance's captcha config has loaded; the controller is passed
       // only while it draws, so the child sees a changed prop.
       void settings.value;
-      return h(AttemptFlow, {
+      const href = state.value.attempt?.status !== 'complete' ? signUpHref() : null;
+      const flow = h(AttemptFlow, {
         attempt: state.value.attempt,
         busy: state.value.busy,
         errors: state.value.errors,
+        sessionKept: state.value.sessionKept,
         titleKey: 'signIn.title',
         onSubmit: submit,
         captcha: captcha.needed ? captcha : null,
         emailDelivery: settings.value?.emailDelivery ?? null,
         onPrepare: prepare,
       });
+      if (!href) return flow;
+      return [
+        flow,
+        h('p', { key: 'sign-up-prompt', class: cls('footerAction', 'atlas-footer'), 'data-atlas-sign-up-prompt': '' }, [
+          `${t('signIn.noAccount')} `,
+          h('a', { class: 'atlas-link', href }, t('signIn.signUpLink')),
+        ]),
+      ];
     };
   },
 });
@@ -699,6 +741,7 @@ export const SignUp = defineComponent({
             attempt: state.value.attempt,
             busy: state.value.busy,
             errors: state.value.errors,
+            sessionKept: state.value.sessionKept,
             titleKey: 'signUp.title',
             onSubmit: submit,
           })

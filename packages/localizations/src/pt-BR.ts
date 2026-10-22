@@ -20,6 +20,9 @@ export const ptBR: LocalizationResource = {
   'signIn.socialButton': 'Continuar com {provider}',
   'signIn.emailCodeLabel': 'Código de verificação',
   'signIn.magicLinkSent': 'Verifique seu e-mail para encontrar o link de acesso.',
+  'signIn.signedIn': 'Você está conectado.',
+  'signIn.sessionNotKept':
+    'Você entrou, mas este navegador não manteve a sessão. Se ele bloqueia cookies de terceiros, permita cookies para este site e tente de novo.',
   'signIn.checkOtherTab':
     'Você pode fechar esta aba — você já está conectado onde começou.',
   'signIn.codeSentTo': 'Enviamos um código para {email}. Digite-o abaixo.',

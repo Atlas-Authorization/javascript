@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { signUp as hostedSignUp } from '@atlasauth/js';
   import { signIn } from '../accessors';
+  import { useAtlas } from '../context';
+  import { classFor } from '../appearance';
+  import { translate } from '../i18n';
   import AttemptFlow from './AttemptFlow.svelte';
 
   /**
@@ -12,9 +16,29 @@
    * email (`settings.emailDelivery`).
    */
   export let afterUrl: string | undefined = undefined;
-  // Reserved for parity with React's FlowProps; the redirect is handled by the
-  // engine's boot on completion.
-  void afterUrl;
+  /**
+   * Where "No account? Sign up" goes. Default: the instance's hosted sign-up
+   * page (carrying the visitor's referral). `null` hides it. Always shown, never
+   * only after a failed sign-in, so it says nothing about whether an email has an account.
+   */
+  export let signUpUrl: string | null | undefined = undefined;
+
+  const atlas = useAtlas();
+  const t = (key: string) => translate(atlas.catalog, key);
+  function signUpHref(url: string | null | undefined, after: string | undefined): string | null {
+    if (url === null) return null;
+    if (url) return url;
+    try {
+      return hostedSignUp({
+        frontendApi: atlas.frontendApi,
+        redirectUrl: after ?? (typeof window !== 'undefined' ? window.location.href : undefined),
+        navigate: false,
+      });
+    } catch {
+      return null;
+    }
+  }
+  $: promptHref = $flowState.attempt?.status !== 'complete' ? signUpHref(signUpUrl, afterUrl) : null;
 
   const flow = signIn();
   // Named `flowState`, not `state`, so it can never collide with Svelte 5's
@@ -34,9 +58,16 @@
   attempt={$flowState.attempt}
   busy={$flowState.busy}
   errors={$flowState.errors}
+  sessionKept={$flowState.sessionKept}
   titleKey="signIn.title"
   onSubmit={flow.submit}
   onPrepare={flow.prepare}
   emailDelivery={$settings?.emailDelivery ?? null}
   {captcha}
 />
+
+{#if promptHref}
+  <p class={classFor('footerAction', atlas.appearance, 'atlas-footer')} data-atlas-sign-up-prompt="">
+    {t('signIn.noAccount')} <a class="atlas-link" href={promptHref}>{t('signIn.signUpLink')}</a>
+  </p>
+{/if}

@@ -1,5 +1,11 @@
 # @atlasauth/elements changelog
 
+## 0.7.0
+
+### Changed
+
+- `@atlasauth/js` 0.15.0: referral capture for any referral program and any consent manager (pass a custom program's reader page-wide with `configureReferralCapture({ referralSource })`).
+
 ## 0.6.0
 - **Referral attribution.** Flows send the referral the visitor arrived with on sign-in and sign-up (through `@atlasauth/js` 0.13.0) when the instance has referrals on, and `<*.Captcha>` draws the challenge for a referred sign-up when the instance requires it (`challenge_referred_signups: 'always'`). Opt out app-wide with `<AtlasProvider referral={false}>`.
 

@@ -68,7 +68,7 @@ export class AtlasFlowController {
 
   constructor(
     private readonly client: FapiClient,
-    private readonly reload: () => Promise<void>,
+    private readonly reload: () => Promise<boolean>,
     pending: { id: string; status: string } | null,
     /** Resolves the captcha messages' catalog keys. Defaults to en-US. */
     private readonly t: (key: string) => string = (key) => translate(EN_US, key),
@@ -201,17 +201,22 @@ export class AtlasFlowController {
   }
 
   private async finish(next: FlowState): Promise<void> {
-    this.setState(next);
-
     if (next.attempt?.status === 'complete') {
+      // Stays busy until this browser actually holds the session: the completion
+      // alone says nothing about whether the cookie was kept.
+      this.setState({ ...next, busy: true });
+      let exchanged = true;
       if (next.ticket) {
-        await this.client.post('/v1/client/tickets/exchange', {
+        const res = await this.client.post('/v1/client/tickets/exchange', {
           attempt_id: (next.attempt as { id?: string }).id,
           ticket: next.ticket,
         });
+        exchanged = res.ok;
       }
-      await this.reload();
+      const kept = exchanged && (await this.reload());
+      this.setState({ ...next, busy: false, sessionKept: kept });
     } else {
+      this.setState(next);
       // A magic-link step may now be pollable (a link opened on another device).
       this.syncPolling();
     }
@@ -236,11 +241,12 @@ export class AtlasFlowController {
 
         // The ticket is exchanged by a normal request, so no session token ever
         // appears in a URL.
-        await this.client.post('/v1/client/tickets/exchange', {
+        const res = await this.client.post('/v1/client/tickets/exchange', {
           attempt_id: (next.attempt as { id?: string }).id,
           ticket,
         });
-        await this.reload();
+        const kept = res.ok && (await this.reload());
+        this.setState({ ...this.state(), sessionKept: kept });
         this.stopPolling();
       })();
     }, 2_000);

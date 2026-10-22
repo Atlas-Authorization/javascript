@@ -25,6 +25,8 @@ const win = window as unknown as Record<string, unknown>;
 
 const ON: ReferralConfig = {
   enabled: true,
+  sources: ['referally'],
+  consentProvider: 'auto',
   urlParams: ['ref', 'via'],
   contextCookie: 'acme_ref',
   consentCategory: 'referrals',
@@ -152,12 +154,14 @@ describe('referral config + pure capture', () => {
       anon_id: null,
       consent: 'granted',
       captured_at: new Date(1_790_000_000_000).toISOString(),
+      source: 'referally',
+      consent_by: 'app',
     });
     expect(captureReferral(ON, { searches: [''], aff, capturedAt: 't' })).toMatchObject({ code: 'SCRIPT1', click_id: null, consent: 'not_required' });
     // Explicit ref_* params carry their own consent.
     expect(
       captureReferral(ON, { searches: ['?ref=URL001&ref_click_id=k_e&ref_consent=granted'], cookies, capturedAt: 't' }),
-    ).toEqual({ code: 'URL001', click_id: 'k_e', anon_id: null, consent: 'granted', captured_at: 't' });
+    ).toEqual({ code: 'URL001', click_id: 'k_e', anon_id: null, consent: 'granted', captured_at: 't', source: 'url', consent_by: 'url' });
     // A URL code never travels with the cookie's click id.
     expect(captureReferral(ON, { searches: ['?ref=URL001'], cookies, capturedAt: 't' }, 'granted')).toEqual({
       code: 'URL001',
@@ -165,6 +169,7 @@ describe('referral config + pure capture', () => {
       anon_id: null,
       consent: 'not_required',
       captured_at: 't',
+      source: 'url',
     });
     expect(captureReferral(ON, { searches: [''], cookies, capturedAt: 't' }, 'granted')).toMatchObject({
       code: 'COOKIE1',
@@ -182,9 +187,43 @@ describe('referral config + pure capture', () => {
       anon_id: null,
       consent: 'not_required',
       captured_at: 't',
+      source: 'url',
     });
     expect(captureReferral(ON, { searches: [''], cookies: `acme_ref=${encodeURIComponent('{"clickId":"k_9"}')}` })).toBeNull();
     expect(captureReferral({ ...ON, enabled: false }, { searches: ['?ref=URL001'] })).toBeNull();
+  });
+
+  it('any program: the app\'s own reader first, then the listed scripts; program cookies after the URL and the tracking cookie', () => {
+    const cfg = { ...ON, sources: ['rewardful', 'dub'] };
+    const rewardful = { Rewardful: { referral: 'rw_ref_123', affiliate: { token: 'dana' } }, OnetrustActiveGroups: ',C0001,C0004,' };
+    // A custom program's reader wins, and the consent manager on the page (OneTrust) decides its ids.
+    const custom = () => ({ code: 'CUSTOM1', clickId: 'cst_9' });
+    expect(captureReferral(cfg, { searches: ['?ref=URL001'], win: rewardful, capturedAt: 't' }, undefined, custom)).toEqual({
+      code: 'CUSTOM1',
+      click_id: 'cst_9',
+      anon_id: null,
+      consent: 'granted',
+      captured_at: 't',
+      source: 'custom',
+      consent_by: 'onetrust',
+    });
+    expect(captureReferral(cfg, { searches: ['?ref=URL001'], win: rewardful, capturedAt: 't' })).toMatchObject({
+      code: 'dana',
+      click_id: 'rw_ref_123',
+      source: 'rewardful',
+      consent_by: 'onetrust',
+    });
+    // A Dub cookie comes after a URL code (fresher) and after the instance's own tracking cookie.
+    const dub = { cookies: 'dub_id=dub_abc', win: {} };
+    expect(captureReferral(cfg, { searches: ['?ref=URL001'], ...dub, capturedAt: 't' })).toMatchObject({ code: 'URL001', source: 'url' });
+    expect(captureReferral(cfg, { searches: [''], ...dub, capturedAt: 't' })).toBeNull();
+    expect(captureReferral(cfg, { searches: [''], ...dub, capturedAt: 't' }, 'granted')).toMatchObject({
+      click_id: 'dub_abc',
+      source: 'dub',
+      consent_by: 'app',
+    });
+    // A script the instance didn't list is never read.
+    expect(captureReferral({ ...ON, sources: [] }, { searches: [''], win: rewardful, capturedAt: 't' })).toBeNull();
   });
 
   it('only sign-in / sign-up starts and their continuing steps take referral', () => {
@@ -340,6 +379,8 @@ describe('v2 capture on the FapiClient', () => {
       anon_id: null,
       consent: 'not_required',
       captured_at: new Date(1_790_000_000_000).toISOString(),
+      source: 'referally',
+      consent_by: 'none',
     });
     // The consent callback is asked at each start.
     let ok = false;
@@ -360,6 +401,8 @@ describe('v2 capture on the FapiClient', () => {
       anon_id: 'a_9',
       consent: 'granted',
       captured_at: '2026-10-21T10:00:00.000Z',
+      source: 'url',
+      consent_by: 'url',
     });
   });
 
@@ -379,6 +422,7 @@ describe('redirect helpers (ref_* parameters)', () => {
       ['ref', 'PARTNER7'],
       ['ref_consent', 'not_required'],
       ['ref_captured_at', expect.any(String)],
+      ['ref_source', 'url'],
     ]);
     win.aff = { getReferral: () => ({ code: 'SCRIPT1', clickId: 'clk_1', anonId: null, ts: 1_790_000_000 }) };
     expect(referralParams({ consent: () => 'granted' })).toEqual([
@@ -386,6 +430,8 @@ describe('redirect helpers (ref_* parameters)', () => {
       ['ref_click_id', 'clk_1'],
       ['ref_consent', 'granted'],
       ['ref_captured_at', new Date(1_790_000_000_000).toISOString()],
+      ['ref_source', 'referally'],
+      ['ref_consent_by', 'app'],
     ]);
     // Cookie Munch on the page counts as consent.
     win.CookieMunch = { consent: { referrals: true } };
