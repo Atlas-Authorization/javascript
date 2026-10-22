@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { REFERRAL_CONNECTION_TEST_REF, referralOpForPath, verifyReferralRequest } from './referrals';
+import { REFERRAL_CONNECTION_TEST_REF, REFERRAL_PROTOCOL_VERSION, referralOpForPath, verifyReferralRequest } from './referrals';
 
 const SECRET = 'referral_signing_secret_0123456789';
 const now = new Date('2026-10-21T12:00:00Z');
@@ -105,5 +105,33 @@ describe('verifyReferralRequest', () => {
     expect(referralOpForPath('https://x.example.com/base/partners?x=1')).toBe('partner');
     expect(referralOpForPath('/signals/')).toBe('signal');
     expect(referralOpForPath('/nope')).toBeNull();
+  });
+});
+
+describe('referral protocol v2 ops', () => {
+  const alias = JSON.stringify({ op: 'alias', customerRef: 'usr_8812', fromCustomerRef: 'user_1', toCustomerRef: 'usr_8812' });
+  const user = JSON.stringify({ op: 'user', customerRef: 'usr_8812', status: 'suspended' });
+  const ping = JSON.stringify({ op: 'ping', customerRef: REFERRAL_CONNECTION_TEST_REF });
+
+  it('verifies alias, user and ping on their endpoints', () => {
+    const a = verify(alias, '/atlas/aliases');
+    expect(a.verified).toBe(true);
+    expect(a.call).toEqual({ op: 'alias', payload: JSON.parse(alias) });
+    expect(verify(user, '/atlas/users').call?.op).toBe('user');
+    expect(verify(ping, '/atlas/ping').call?.op).toBe('ping');
+    expect(referralOpForPath('/x/aliases')).toBe('alias');
+    expect(referralOpForPath('/x/users')).toBe('user');
+    expect(referralOpForPath('/x/ping')).toBe('ping');
+  });
+
+  it('refuses an alias body replayed against /users', () => {
+    expect(verify(alias, '/atlas/users')).toEqual({ verified: false, reason: 'op_mismatch' });
+    expect(verify(ping, undefined, 'signup')).toEqual({ verified: false, reason: 'op_mismatch' });
+  });
+
+  it('reports the protocol version header', () => {
+    const headers = { ...sign('rfc_2', ping), 'atlas-referrals-version': REFERRAL_PROTOCOL_VERSION };
+    const r = verifyReferralRequest({ body: ping, headers, secret: SECRET, path: '/atlas/ping', now });
+    expect(r.protocolVersion).toBe('2026-10-21');
   });
 });

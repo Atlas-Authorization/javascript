@@ -43,6 +43,7 @@ import { ltiPlatformsResource } from './lti-platforms';
 import { instanceResource } from './instance';
 import { instanceSecurityResource } from './instance-security';
 import { referralsResource } from './referrals';
+import { userHooksResource } from './user-hooks';
 import { tokensResource } from './tokens';
 import { captchaResource } from './captcha';
 import { designResource } from './design';
@@ -135,6 +136,8 @@ function buildNamespaces(request: RequestFn) {
     instanceSecurity: instanceSecurityResource(request),
     // Referral attribution: the instance's referral platform connection and call log.
     referrals: referralsResource(request),
+    // The before_user_create hook (sets external_id before the user exists).
+    userHooks: userHooksResource(request),
     tokens: tokensResource(request),
     // §5 "captcha anywhere" — verify any CAPTCHA token against the instance's
     // centrally-configured provider, server-side, with the secret held by Atlas.
@@ -240,6 +243,7 @@ export * from './lti-platforms';
 export * from './instance';
 export * from './instance-security';
 export * from './referrals';
+export * from './user-hooks';
 export * from './tokens';
 export * from './captcha';
 export * from './design';

@@ -69,8 +69,10 @@ export interface User {
   version?: number;
   /**
    * How the user arrived through a referral program, when the instance has
-   * referral attribution on and the referral platform matched a referrer.
-   * Null otherwise. (Absent from servers older than this field.)
+   * referral attribution on and the user was reported to the referral
+   * platform (`status` says how it stands: `pending` until the platform
+   * answers). Null when the user was never reported. (Absent from servers
+   * older than this field.)
    */
   referral?: UserReferral | null;
   /** The user's own referral code, when they are a referrer. */
@@ -79,18 +81,32 @@ export interface User {
   referral_link?: string | null;
 }
 
+/** Where a user's referral attribution stands. */
+export type UserReferralStatus = 'pending' | 'attributed' | 'none' | 'failed' | 'held' | 'flagged';
+
 /** The inbound referral on a user (snake_case, as the BAPI serves it). */
 export interface UserReferral {
+  /**
+   * Where attribution stands: `pending` (the platform has not answered yet),
+   * `attributed`, `none` (not referred), `failed`, `held` or `flagged`.
+   * Servers before 2026-10-21 sent the platform's own status here; that is
+   * now `referral_status`.
+   */
+  status: UserReferralStatus | string | null;
   /** The referral platform's id for the referring partner. */
   partner_id: string | null;
   /** The referrer as the platform knows them (your external id for that user, or their Atlas id). */
+  partner_external_ref?: string | null;
+  /** Same as `partner_external_ref`. */
   referrer_external_id: string | null;
   /** The referrer's Atlas user id, when they are a user of this instance. */
   referrer_user_id: string | null;
   /** How the platform matched the referral, e.g. code, click, coupon. */
   matched_via: string | null;
-  /** The platform's own status for the referral. */
-  status: string | null;
+  /** The platform's own status for the referral (e.g. active). */
+  referral_status?: string | null;
+  /** The platform's reasoning notes for its answer. */
+  notes?: string[];
   /** The risk level Atlas assessed at sign-up, when one was. */
   risk_level?: 'low' | 'medium' | 'high' | null;
   /** An admin marked the referral fraudulent. */

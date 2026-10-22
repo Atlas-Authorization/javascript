@@ -1,6 +1,13 @@
 import { SignJWT, UnsecuredJWT, exportJWK, generateKeyPair, type KeyLike } from 'jose';
 import type { Jwks } from './jwks-cache';
 import type { SessionClaims } from './verify';
+import {
+  signAtlasReferralCall,
+  signReferallyCall,
+  type AtlasReferralCallOptions,
+  type ReferallyCallOptions,
+  type SignedReferralCall,
+} from './referral-test-calls';
 
 /**
  * §1.3(c) hermetic test fixtures.
@@ -147,6 +154,17 @@ export interface TestIssuer {
    * answers 404, so nothing reaches the network.
    */
   fetch: typeof fetch;
+  /**
+   * A signed call in the Atlas referral protocol, as an instance with
+   * provider `webhook` sends it, for testing your referral platform's
+   * receiver. Uses this issuer's clock unless `now` is given.
+   */
+  referralCall(options: AtlasReferralCallOptions): SignedReferralCall;
+  /**
+   * A signed Referally connection call, as an instance with provider
+   * `referally` sends it, to run against a local Referally in your tests.
+   */
+  referallyCall(options: ReferallyCallOptions): SignedReferralCall;
   /** The endpoint URLs `fetch` serves (and the discovery document lists). */
   endpoints: {
     discovery: string;
@@ -394,6 +412,8 @@ export async function createTestIssuer(
     clientId,
     mintSession,
     mintIdToken,
+    referralCall: (o) => signAtlasReferralCall({ ...o, now: o.now ?? clock() }),
+    referallyCall: (o) => signReferallyCall({ ...o, now: o.now ?? clock() }),
     authorize,
     fetch: fakeFetch,
     endpoints,

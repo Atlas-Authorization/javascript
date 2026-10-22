@@ -441,3 +441,33 @@ describe('signInWithAtlasPopup (response_mode=web_message)', () => {
     expect(new URL(assign.mock.calls[0]![0] as string).searchParams.get('response_mode')).toBeNull();
   });
 });
+
+describe('Sign in with Atlas carries the referral', () => {
+  it('adds ref_* from the page URL to the authorize URL; referral: false opts out', async () => {
+    vi.stubGlobal('window', {
+      location: { href: 'https://site.test/page?via=REACT01', origin: 'https://site.test', search: '?via=REACT01', assign },
+    });
+    let url = new URL(await buildAtlasAuthorizeUrl(opts));
+    expect(url.searchParams.get('ref')).toBe('REACT01');
+    expect(url.searchParams.get('ref_consent')).toBe('not_required');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    url = new URL(await buildAtlasAuthorizeUrl({ ...opts, referral: false }));
+    expect(url.searchParams.get('ref')).toBeNull();
+  });
+
+  it("prefers the page's referral script, with ids under consent", async () => {
+    vi.stubGlobal('window', {
+      location: { href: 'https://site.test/page?ref=URLCODE', origin: 'https://site.test', search: '?ref=URLCODE', assign },
+      aff: { getReferral: () => ({ code: 'SCRIPT1', clickId: 'clk_1', anonId: 'a_1', ts: 1_790_000_000 }) },
+    });
+    const url = new URL(await buildAtlasAuthorizeUrl({ ...opts, referralConsent: 'granted' }));
+    const p = url.searchParams;
+    expect([p.get('ref'), p.get('ref_click_id'), p.get('ref_anon_id'), p.get('ref_consent')]).toEqual([
+      'SCRIPT1',
+      'clk_1',
+      'a_1',
+      'granted',
+    ]);
+    expect(p.get('ref_captured_at')).toBe(new Date(1_790_000_000 * 1000).toISOString());
+  });
+});

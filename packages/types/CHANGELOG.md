@@ -1,5 +1,16 @@
 # @atlasauth/types changelog
 
+## 0.5.0
+
+### Added
+
+- `WebhookEvent` gains `user.referral_resolved` (the final referral attribution, sent after a `user.created` whose `referral.status` was `pending`).
+- `UserReferral` gains `partner_external_ref`, `referral_status` and `notes`; new `UserReferralStatus` type.
+
+### Changed
+
+- `UserReferral.status` is now where attribution stands (`pending`, `attributed`, `none`, `failed`, `held`, `flagged`). The platform's own status moved to `referral_status`. `referral` is non-null for every user reported to the referral platform, not only referred ones.
+
 ## 0.4.0
 
 ### Added

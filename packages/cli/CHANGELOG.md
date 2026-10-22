@@ -1,5 +1,14 @@
 # @atlasauth/cli changelog
 
+## 0.4.0
+
+### Added
+- `atlas referrals connect --provider referally --program <prg_…> --base-url <url> [--referally-key-file <path|-> | --referally-key <key>] [--auto-enroll] [--destination <url>] [--tracking-token <token>] [--enable]`: creates the Atlas connection on Referally with your merchant key (bring your own key: used for one call, never stored or printed), saves `connection_id`, `signing_secret`, `endpoint_url`, `program_id` (and `tracking_token`, `auto_enroll_users`) on the instance, runs the connection test (ping) and prints the organization, program, auto-enroll and clock skew (warning over 60 s). `--enable` turns referrals on only when the test passes. If saving on the instance fails, the shown-once connection secret is written to a 0600 file. `REFERALLY_BASE_URL` and `REFERALLY_API_KEY` are read from the environment.
+- `atlas referrals connect --provider webhook --endpoint <https-url> [--secret-file <path|->]`: the Atlas referral protocol; without `--secret-file` a signing secret is generated and written to a 0600 file.
+- `atlas referrals backfill --since <YYYY-MM-DD> [--map <file.csv>] [--metadata-path <path>] [--wait]`: reports existing users with their real sign-up time; `--map` reads `customerRef,code` lines.
+- `atlas referrals status [--json]`: the connection, its health and alert, and the `referrals_*` preflight findings; exits 1 on an error finding.
+- New flags: `--provider`, `--program`, `--base-url`, `--referally-key`, `--referally-key-file`, `--auto-enroll`, `--destination`, `--tracking-token`, `--endpoint`, `--secret-file`, `--enable`, `--since`, `--map`, `--metadata-path`, `--wait`.
+
 ## 0.3.0
 
 ### Added

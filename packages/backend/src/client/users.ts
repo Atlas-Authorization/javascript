@@ -46,8 +46,19 @@ export interface UserReferral {
   referrer_user_id: string | null;
   /** How the platform matched the referral, e.g. `code`, `click`, `coupon`. */
   matched_via: string | null;
-  /** The platform's own status for the referral. */
+  /**
+   * The attribution status: `pending` (the platform has not answered yet),
+   * `attributed`, `none`, `failed`, `held` or `flagged`. Servers before
+   * referral attribution v2 sent the platform's own status here; that is now
+   * `referral_status`.
+   */
   status: string | null;
+  /** The referrer as the platform knows them. Same value as `referrer_external_id`. */
+  partner_external_ref?: string | null;
+  /** The platform's own status for the referral, e.g. `active`. */
+  referral_status?: string | null;
+  /** The platform's reasoning notes (why it matched, or why not). */
+  notes?: string[] | null;
   /** The risk level Atlas assessed at sign-up, when one was. */
   risk_level?: 'low' | 'medium' | 'high' | null;
   /** An admin marked the referral fraudulent (`users.flagReferral`). */
@@ -90,6 +101,46 @@ export interface UserReferralAttributedEvent {
   referral: UserReferral | null;
   referral_code: string | null;
   referral_link: string | null;
+  /** Epoch ms. */
+  signed_up_at: number;
+  updated_at: number;
+}
+
+/**
+ * The `data` of a `user.referral_resolved` webhook: a referral call that was
+ * still pending when `user.created` was sent has a final result (attributed,
+ * none or failed). `user.referral_attributed` still fires too when attributed.
+ */
+export type UserReferralResolvedEvent = UserReferralAttributedEvent;
+
+/**
+ * `GET /v1/users/:id/referral`: the stored result of the user's referral
+ * calls, with no call to the platform. 404 when the user was never reported.
+ */
+export interface UserReferralResult {
+  object: 'user_referral';
+  user_id: string;
+  /** `pending`, `attributed`, `none`, `failed`, `held` or `flagged`. */
+  status: 'pending' | 'attributed' | 'none' | 'failed' | 'held' | 'flagged';
+  /** The id Atlas reports the user under: their `external_id`, else the Atlas user id. */
+  customer_ref: string;
+  partner_id: string | null;
+  /** The referrer as the platform knows them. */
+  partner_external_ref: string | null;
+  referrer_user_id: string | null;
+  matched_via: string | null;
+  /** The platform's own status for the referral. */
+  referral_status: string | null;
+  /** The platform's reasoning notes. */
+  notes: string[];
+  referral_code: string | null;
+  referral_link: string | null;
+  /** The referral captured at sign-up, as sent (camelCase). */
+  context: Record<string, unknown> | null;
+  risk_level: 'low' | 'medium' | 'high' | null;
+  flagged: boolean;
+  /** Why the call is held, while `held`. */
+  hold_reason: string | null;
   /** Epoch ms. */
   signed_up_at: number;
   updated_at: number;
@@ -159,6 +210,12 @@ export interface CreateUserBody {
 export interface UpdateUserBody {
   first_name?: string;
   last_name?: string;
+  /**
+   * Your own id for the user; `null` clears. With referral attribution on, a
+   * change after sign-up is forwarded to the referral platform as an alias,
+   * so events under the new id still match.
+   */
+  external_id?: string | null;
   public_metadata?: Metadata;
   private_metadata?: Metadata;
   /** The user's own referral code; `null` clears. Unique per instance (`409 REFERRAL_CODE_TAKEN`). */
@@ -185,6 +242,15 @@ export function usersResource(request: RequestFn) {
     },
     update(id: string, body: UpdateUserBody): Promise<User> {
       return request({ method: 'PATCH', path: `/v1/users/${enc(id)}`, body });
+    },
+    /**
+     * Set (or clear with `null`) the user's `external_id`: `PATCH
+     * /v1/users/:id`. With referral attribution on, Atlas forwards the change
+     * to the referral platform as an alias (old id, or the Atlas user id, to
+     * the new one), so billing events under your id earn the referrer.
+     */
+    setExternalId(id: string, externalId: string | null): Promise<User> {
+      return request({ method: 'PATCH', path: `/v1/users/${enc(id)}`, body: { external_id: externalId } });
     },
     /** `PUT /v1/users/:id/metadata` — replaces the named bags wholesale. */
     replaceMetadata(id: string, body: ReplaceUserMetadataBody): Promise<User> {

@@ -8,8 +8,8 @@ their source: one pnpm workspace, `pnpm install && pnpm -r build`.
 
 | Package | Version | Install |
 |---|---|---|
-| [`@atlasauth/js`](https://www.npmjs.com/package/@atlasauth/js) | 0.13.0 | `npm i @atlasauth/js` |
-| [`@atlasauth/react`](https://www.npmjs.com/package/@atlasauth/react) | 0.11.0 | `npm i @atlasauth/react` |
+| [`@atlasauth/js`](https://www.npmjs.com/package/@atlasauth/js) | 0.14.0 | `npm i @atlasauth/js` |
+| [`@atlasauth/react`](https://www.npmjs.com/package/@atlasauth/react) | 0.12.0 | `npm i @atlasauth/react` |
 | [`@atlasauth/nextjs`](https://www.npmjs.com/package/@atlasauth/nextjs) | 0.3.0 | `npm i @atlasauth/nextjs` |
 | [`@atlasauth/vue`](https://www.npmjs.com/package/@atlasauth/vue) | 0.7.0 | `npm i @atlasauth/vue` |
 | [`@atlasauth/nuxt`](https://www.npmjs.com/package/@atlasauth/nuxt) | 0.1.4 | `npm i @atlasauth/nuxt` |
@@ -44,7 +44,7 @@ their source: one pnpm workspace, `pnpm install && pnpm -r build`.
 
 | Package | Version | Install |
 |---|---|---|
-| [`@atlasauth/backend`](https://www.npmjs.com/package/@atlasauth/backend) | 0.11.0 | `npm i @atlasauth/backend` |
+| [`@atlasauth/backend`](https://www.npmjs.com/package/@atlasauth/backend) | 0.12.0 | `npm i @atlasauth/backend` |
 | [`@atlasauth/express`](https://www.npmjs.com/package/@atlasauth/express) | 0.2.0 | `npm i @atlasauth/express` |
 | [`@atlasauth/fastify`](https://www.npmjs.com/package/@atlasauth/fastify) | 0.2.0 | `npm i @atlasauth/fastify` |
 | [`@atlasauth/hono`](https://www.npmjs.com/package/@atlasauth/hono) | 0.2.0 | `npm i @atlasauth/hono` |
@@ -68,13 +68,13 @@ their source: one pnpm workspace, `pnpm install && pnpm -r build`.
 
 | Package | Version | Install |
 |---|---|---|
-| [`@atlasauth/cli`](https://www.npmjs.com/package/@atlasauth/cli) | 0.3.0 | `npm i @atlasauth/cli` |
+| [`@atlasauth/cli`](https://www.npmjs.com/package/@atlasauth/cli) | 0.4.0 | `npm i @atlasauth/cli` |
 | [`@atlasauth/cli-banner`](https://www.npmjs.com/package/@atlasauth/cli-banner) | 0.1.0 | `npm i @atlasauth/cli-banner` |
 | [`@atlasauth/create-atlas-app`](https://www.npmjs.com/package/@atlasauth/create-atlas-app) | 0.2.0 | `npm i @atlasauth/create-atlas-app` |
 | [`@atlasauth/upgrade`](https://www.npmjs.com/package/@atlasauth/upgrade) | 0.1.0 | `npm i @atlasauth/upgrade` |
 | [`@atlasauth/testing`](https://www.npmjs.com/package/@atlasauth/testing) | 0.2.0 | `npm i @atlasauth/testing` |
 | [`@atlasauth/msw`](https://www.npmjs.com/package/@atlasauth/msw) | 0.1.0 | `npm i @atlasauth/msw` |
 | [`@atlasauth/eslint-plugin`](https://www.npmjs.com/package/@atlasauth/eslint-plugin) | 0.1.0 | `npm i @atlasauth/eslint-plugin` |
-| [`@atlasauth/types`](https://www.npmjs.com/package/@atlasauth/types) | 0.4.0 | `npm i @atlasauth/types` |
+| [`@atlasauth/types`](https://www.npmjs.com/package/@atlasauth/types) | 0.5.0 | `npm i @atlasauth/types` |
 
 Docs & guides: https://atlasauth.net/docs

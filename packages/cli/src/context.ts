@@ -42,6 +42,13 @@ export interface RunContext {
    * of touching the disk. Defaults to reading UTF-8 off the real filesystem.
    */
   readFile: (path: string) => string;
+  /**
+   * `fetch` for calls outside the Atlas API (`atlas referrals connect` calls
+   * the referral platform's own API). Optional; defaults to the global fetch.
+   */
+  fetch?: typeof fetch;
+  /** Wait between polls (`--wait`). Optional; defaults to a real timer. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**

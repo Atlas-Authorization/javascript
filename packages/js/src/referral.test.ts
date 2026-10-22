@@ -6,6 +6,11 @@ import {
   configureReferralCapture,
   parseReferralCookie,
   referralChallengeRequired,
+  lookupReferralCode,
+  referralParams,
+  signIn,
+  signUp,
+  withReferralParams,
   referralCodeFromSearch,
   referralConfigFrom,
   referralConsentGranted,
@@ -25,6 +30,8 @@ const ON: ReferralConfig = {
   consentCategory: 'referrals',
   consentFallbackCategory: 'marketing',
   challengeReferredSignups: 'inherit',
+  codeLookupUrl: null,
+  signupCodeField: false,
 };
 
 const ENV = {
@@ -66,10 +73,12 @@ beforeEach(() => {
   setUrl('/');
   clearCookie();
   delete win.CookieMunch;
+  delete win.aff;
 });
 afterEach(() => {
   resetReferralCapture();
   delete win.CookieMunch;
+  delete win.aff;
 });
 
 describe('referral config + pure capture', () => {
@@ -120,16 +129,53 @@ describe('referral config + pure capture', () => {
     })).toBe(false);
   });
 
-  it('captures URL code + consented cookie; the URL code wins', () => {
+  it('reads the cookie format {anonId, code, clickId, ts, exp}; an expired cookie is ignored', () => {
+    const now = Date.parse('2026-10-21T12:00:00Z');
+    const ts = now / 1000 - 60;
+    const v = encodeURIComponent(JSON.stringify({ anonId: 'a_1', code: 'WJXQGLBW', clickId: 'clk_1', ts, exp: ts + 86400 }));
+    expect(parseReferralCookie(v, now)).toEqual({
+      code: 'WJXQGLBW',
+      clickId: 'clk_1',
+      anonId: 'a_1',
+      capturedAt: new Date(ts * 1000).toISOString(),
+    });
+    expect(parseReferralCookie(JSON.stringify({ code: 'WJXQGLBW', exp: ts }), now)).toBeNull();
+  });
+
+  it('precedence: script, explicit params, URL code, cookie; never mixed', () => {
     const cookies = `acme_ref=${encodeURIComponent('{"code":"COOKIE1","clickId":"k_9"}')}`;
-    expect(captureReferral(ON, { searches: ['?ref=URL001'], cookies, capturedAt: 't' }, 'granted')).toEqual({
-      code: 'URL001',
-      click_id: 'k_9',
+    const aff = { getReferral: () => ({ code: 'SCRIPT1', clickId: 'k_s', anonId: null, ts: 1_790_000_000_000 }) };
+    // The script wins over everything, its id only with consent.
+    expect(captureReferral(ON, { searches: ['?ref=URL001'], cookies, aff, capturedAt: 't' }, 'granted')).toEqual({
+      code: 'SCRIPT1',
+      click_id: 'k_s',
       anon_id: null,
       consent: 'granted',
+      captured_at: new Date(1_790_000_000_000).toISOString(),
+    });
+    expect(captureReferral(ON, { searches: [''], aff, capturedAt: 't' })).toMatchObject({ code: 'SCRIPT1', click_id: null, consent: 'not_required' });
+    // Explicit ref_* params carry their own consent.
+    expect(
+      captureReferral(ON, { searches: ['?ref=URL001&ref_click_id=k_e&ref_consent=granted'], cookies, capturedAt: 't' }),
+    ).toEqual({ code: 'URL001', click_id: 'k_e', anon_id: null, consent: 'granted', captured_at: 't' });
+    // A URL code never travels with the cookie's click id.
+    expect(captureReferral(ON, { searches: ['?ref=URL001'], cookies, capturedAt: 't' }, 'granted')).toEqual({
+      code: 'URL001',
+      click_id: null,
+      anon_id: null,
+      consent: 'not_required',
       captured_at: 't',
     });
-    expect(captureReferral(ON, { searches: [''], cookies, capturedAt: 't' }, 'granted')!.code).toBe('COOKIE1');
+    expect(captureReferral(ON, { searches: [''], cookies, capturedAt: 't' }, 'granted')).toMatchObject({
+      code: 'COOKIE1',
+      click_id: 'k_9',
+      consent: 'granted',
+    });
+    // No consent: the cookie's code alone.
+    expect(captureReferral(ON, { searches: [''], cookies, capturedAt: 't' })).toMatchObject({ code: 'COOKIE1', click_id: null });
+    // A broken script falls through to the next source.
+    const broken = { getReferral: () => { throw new Error('x'); } };
+    expect(captureReferral(ON, { searches: ['?via=VIA0001'], aff: broken })!.code).toBe('VIA0001');
     expect(captureReferral(ON, { searches: ['?ref=URL001'], cookies, capturedAt: 't' })).toEqual({
       code: 'URL001',
       click_id: null,
@@ -137,7 +183,7 @@ describe('referral config + pure capture', () => {
       consent: 'not_required',
       captured_at: 't',
     });
-    expect(captureReferral(ON, { searches: [''], cookies })).toBeNull();
+    expect(captureReferral(ON, { searches: [''], cookies: `acme_ref=${encodeURIComponent('{"clickId":"k_9"}')}` })).toBeNull();
     expect(captureReferral({ ...ON, enabled: false }, { searches: ['?ref=URL001'] })).toBeNull();
   });
 
@@ -210,11 +256,12 @@ describe('FapiClient sends the referral', () => {
     expect(sent.find((s) => s.method === 'POST')!.body!.referral).toBeUndefined();
   });
 
-  it('reads the cookie with Cookie Munch consent, or with referralConsent when no CMP is on the page', async () => {
-    setUrl('/?ref=FRIEND10');
-    document.cookie = `acme_ref=${encodeURIComponent('{"clickId":"clk_7"}')}`;
+  it('reads the cookie ids with Cookie Munch consent, or with referralConsent when no CMP is on the page', async () => {
+    document.cookie = `acme_ref=${encodeURIComponent('{"code":"FRIEND10","clickId":"clk_7"}')}`;
 
     let { client: c, sent } = client();
+    // A cookie-only referral is sent once the config is loaded on the page.
+    await c.get('/v1/client/environment');
     await c.post('/v1/client/sign_ups', { email: 'a@example.com', password: 'pw' });
     expect(sent.find((s) => s.method === 'POST')!.body!.referral).toMatchObject({ click_id: null, consent: 'not_required' });
 
@@ -279,5 +326,131 @@ describe('referred sign-up challenge', () => {
 
   it('never invents a provider', () => {
     expect(referralChallengeFlows({ signUp: { enabled: false } })).toEqual({ signUp: { enabled: false } });
+  });
+});
+
+describe('v2 capture on the FapiClient', () => {
+  it("sends the page's referral script (window.aff) with no query and no config loaded yet", async () => {
+    win.aff = { getReferral: () => ({ code: 'WJXQGLBW', clickId: 'clk_1', anonId: 'a_1', ts: 1_790_000_000 }) };
+    let { client: c, sent } = client();
+    await c.post('/v1/client/sign_ups', { email: 'a@example.com', password: 'pw' });
+    expect(sent.find((s) => s.method === 'POST')!.body!.referral).toEqual({
+      code: 'WJXQGLBW',
+      click_id: null,
+      anon_id: null,
+      consent: 'not_required',
+      captured_at: new Date(1_790_000_000_000).toISOString(),
+    });
+    // The consent callback is asked at each start.
+    let ok = false;
+    ({ client: c, sent } = client(ENV, {}, { referralConsent: () => (ok ? 'granted' : 'denied') }));
+    ok = true;
+    await c.post('/v1/client/sign_ups', { email: 'a@example.com', password: 'pw' });
+    expect(sent.find((s) => s.method === 'POST')!.body!.referral).toMatchObject({ click_id: 'clk_1', anon_id: 'a_1', consent: 'granted' });
+  });
+
+  it('explicit ref_* on the page URL win over the cookie, ids by their own consent', async () => {
+    setUrl('/?ref=EXPL001&ref_anon_id=a_9&ref_consent=granted&ref_captured_at=2026-10-21T10:00:00Z');
+    document.cookie = `acme_ref=${encodeURIComponent('{"code":"COOKIE1","clickId":"clk_7"}')}`;
+    const { client: c, sent } = client(ENV, {}, { referral: 'auto' });
+    await c.post('/v1/client/sign_ins', { identifier: 'a@example.com' });
+    expect(sent.find((s) => s.method === 'POST')!.body!.referral).toEqual({
+      code: 'EXPL001',
+      click_id: null,
+      anon_id: 'a_9',
+      consent: 'granted',
+      captured_at: '2026-10-21T10:00:00.000Z',
+    });
+  });
+
+  it('reads code_lookup_url and signup_code_field from the config', () => {
+    const cfg = referralConfigFrom({
+      referrals: { ...ENV.referrals, code_lookup_url: 'https://refs.example.com/t/tok/codes/{code}', signup_code_field: true },
+    });
+    expect(cfg).toMatchObject({ codeLookupUrl: 'https://refs.example.com/t/tok/codes/{code}', signupCodeField: true });
+    expect(referralConfigFrom({ referrals: { ...ENV.referrals, code_lookup_url: 'javascript:{code}' } }).codeLookupUrl).toBeNull();
+  });
+});
+
+describe('redirect helpers (ref_* parameters)', () => {
+  it('referralParams: the script, then the URL; ids only with consent; default auto', () => {
+    setUrl('/pricing?via=PARTNER7');
+    expect(referralParams()).toEqual([
+      ['ref', 'PARTNER7'],
+      ['ref_consent', 'not_required'],
+      ['ref_captured_at', expect.any(String)],
+    ]);
+    win.aff = { getReferral: () => ({ code: 'SCRIPT1', clickId: 'clk_1', anonId: null, ts: 1_790_000_000 }) };
+    expect(referralParams({ consent: () => 'granted' })).toEqual([
+      ['ref', 'SCRIPT1'],
+      ['ref_click_id', 'clk_1'],
+      ['ref_consent', 'granted'],
+      ['ref_captured_at', new Date(1_790_000_000_000).toISOString()],
+    ]);
+    // Cookie Munch on the page counts as consent.
+    win.CookieMunch = { consent: { referrals: true } };
+    expect(referralParams().map(([k]) => k)).toContain('ref_click_id');
+    expect(referralParams({ referral: false })).toEqual([]);
+    configureReferralCapture({ referral: false });
+    expect(referralParams()).toEqual([]);
+  });
+
+  it('withReferralParams keeps the URL and any ref params already there', () => {
+    setUrl('/?ref=FRIEND10');
+    const u = new URL(withReferralParams('https://accounts.example.com/hosted/sign-up?redirect_url=x'));
+    expect(u.searchParams.get('redirect_url')).toBe('x');
+    expect(u.searchParams.get('ref')).toBe('FRIEND10');
+    expect(new URL(withReferralParams('https://a.example.com/x?ref=MINE001')).searchParams.get('ref')).toBe('MINE001');
+    setUrl('/');
+    expect(withReferralParams('https://a.example.com/x')).toBe('https://a.example.com/x');
+  });
+
+  it('signIn / signUp go to the hosted page (or url) with the referral', () => {
+    setUrl('/?ref=FRIEND10');
+    const to = signUp({ frontendApi: 'accounts.example.com', redirectUrl: 'https://app.example.com/home', navigate: false });
+    const u = new URL(to);
+    expect(u.origin + u.pathname).toBe('https://accounts.example.com/hosted/sign-up');
+    expect(u.searchParams.get('redirect_url')).toBe('https://app.example.com/home');
+    expect(u.searchParams.get('ref')).toBe('FRIEND10');
+    const authorize = signIn({ url: 'https://accounts.example.com/oauth2/authorize?client_id=c', navigate: false });
+    expect(new URL(authorize).searchParams.get('ref')).toBe('FRIEND10');
+    expect(new URL(signIn({ frontendApi: 'https://accounts.example.com', referral: false, navigate: false })).search).toBe('');
+    expect(() => signIn({ navigate: false })).toThrow();
+  });
+});
+
+describe('lookupReferralCode', () => {
+  const tpl = 'https://refs.example.com/t/tok/codes/{code}';
+  const answer = (status: number, body: unknown) =>
+    (async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+
+  it('valid / invalid answers', async () => {
+    let seen = '';
+    const f = (async (url: string, init: RequestInit) => {
+      seen = url;
+      expect(init.credentials).toBe('omit');
+      return new Response(JSON.stringify({ valid: true, partnerDisplayName: 'Dana', refereeReward: '2% of your first top-up' }));
+    }) as unknown as typeof fetch;
+    expect(await lookupReferralCode(tpl, 'WJX_1', { fetchImpl: f })).toEqual({
+      valid: true,
+      partnerDisplayName: 'Dana',
+      refereeReward: '2% of your first top-up',
+    });
+    expect(seen).toBe('https://refs.example.com/t/tok/codes/WJX_1');
+    expect(await lookupReferralCode({ codeLookupUrl: tpl }, 'NOPE01', { fetchImpl: answer(200, { valid: false }) })).toEqual({ valid: false });
+  });
+
+  it('is null when there is no lookup, the code is malformed, or the lookup fails / hangs', async () => {
+    expect(await lookupReferralCode(null, 'WJX_1', { fetchImpl: answer(200, { valid: true }) })).toBeNull();
+    expect(await lookupReferralCode(tpl, 'a b', { fetchImpl: answer(200, { valid: true }) })).toBeNull();
+    expect(await lookupReferralCode(tpl, 'WJX_1', { fetchImpl: answer(503, {}) })).toBeNull();
+    expect(await lookupReferralCode(tpl, 'WJX_1', { fetchImpl: answer(200, { nope: 1 }) })).toBeNull();
+    const down = (async () => {
+      throw new TypeError('network');
+    }) as unknown as typeof fetch;
+    expect(await lookupReferralCode(tpl, 'WJX_1', { fetchImpl: down })).toBeNull();
+    const hang = ((_u: string, init: RequestInit) =>
+      new Promise((_r, reject) => init.signal?.addEventListener('abort', () => reject(new Error('aborted'))))) as unknown as typeof fetch;
+    expect(await lookupReferralCode(tpl, 'WJX_1', { fetchImpl: hang, timeoutMs: 20 })).toBeNull();
   });
 });

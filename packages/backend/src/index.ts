@@ -71,6 +71,19 @@ export type {
   TestAuthorizeResult,
   TestTokenTamper,
 } from './testing';
+export {
+  signAtlasReferralCall,
+  signReferallyCall,
+  referallySignature,
+  referralEmailHash,
+  REFERALLY_API_VERSION,
+} from './referral-test-calls';
+export type {
+  AtlasReferralCallOptions,
+  ReferallyCallOptions,
+  ReferallyCallOp,
+  SignedReferralCall,
+} from './referral-test-calls';
 
 // Proof-Carrying Authority (agentic auth): offline verifier + framework-agnostic guard,
 // beside the session-token verifier above.

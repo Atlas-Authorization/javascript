@@ -4,14 +4,21 @@
  * whoever referred them.
  *
  * What is captured, when the instance has referrals on (`referrals` in
- * `GET /v1/client/environment`):
- *  - the referral code from the page URL — the instance's URL parameters
- *    (default `ref`, `via`, `aff`) on the current page, the page the SDK first
- *    loaded on, and the `redirect_url` / `after_url` query of either;
- *  - with consent, the referral platform's first-party tracking cookie (the
- *    instance's `context_cookie`): JSON or URL-encoded JSON
- *    `{code?, clickId?, anonId?}`, or a plain click id. A URL code wins over the
- *    cookie's code.
+ * `GET /v1/client/environment`): ONE source, in precedence order, never
+ * mixing fields across sources:
+ *  1. the page's referral script, `window.aff.getReferral()`
+ *     (`{code, clickId, anonId, ts}`), or explicit `ref_*` parameters
+ *     (`ref`, `ref_click_id`, `ref_anon_id`, `ref_consent`, `ref_captured_at`)
+ *     on the page URL;
+ *  2. the referral code from the page URL — the instance's URL parameters
+ *     (default `ref`, `via`, `aff`) on the current page, the page the SDK first
+ *     loaded on, and the `redirect_url` / `after_url` query of either;
+ *  3. the referral platform's first-party tracking cookie (the instance's
+ *     `context_cookie`): JSON or URL-encoded JSON
+ *     `{code?, clickId?, anonId?, ts?, exp?}`, or a plain click id. An expired
+ *     cookie is ignored.
+ * Click and anonymous ids are sent only with consent; without it only the
+ * code goes.
  *
  * Consent: when Cookie Munch is on the page (`window.CookieMunch`), the cookie
  * is read only when the instance's consent category is granted (else its
@@ -21,7 +28,11 @@
  * cookie. Nothing captured is trusted: the server re-validates every field.
  *
  * Opt out with `referral: false` (per client, or page-wide with
- * {@link configureReferralCapture}).
+ * {@link configureReferralCapture}). `'auto'` is the default.
+ *
+ * Redirects to a hosted page or `/oauth2/authorize` carry the same referral as
+ * `ref_*` query parameters: {@link signIn} / {@link signUp},
+ * {@link withReferralParams} and {@link referralParams}.
  */
 
 /** The instance's public referral settings, camelCased. */
@@ -35,6 +46,10 @@ export interface ReferralConfig {
   consentFallbackCategory: string | null;
   /** `always`: a sign-up carrying a referral code must pass the bot challenge. */
   challengeReferredSignups: 'always' | 'inherit';
+  /** Public "Invited by" lookup URL template with `{code}`, or null. See {@link lookupReferralCode}. */
+  codeLookupUrl: string | null;
+  /** The instance shows an optional "Referral code" field on sign-up. */
+  signupCodeField: boolean;
 }
 
 /** The `referral` object a sign-in / sign-up request carries (snake_case, as the API takes it). */
@@ -60,8 +75,8 @@ export type ReferralConsent =
 
 /** The referral options a FAPI client and the prebuilt components take. */
 export interface ReferralCaptureOptions {
-  /** `false` turns referral capture off. */
-  referral?: false | undefined;
+  /** `false` turns referral capture off; `'auto'` (the default) captures when the instance has referrals on. */
+  referral?: false | 'auto' | undefined;
   /** See {@link ReferralConsent}. */
   referralConsent?: ReferralConsent;
 }
@@ -73,6 +88,8 @@ export const DISABLED_REFERRAL_CONFIG: Readonly<ReferralConfig> = Object.freeze(
   consentCategory: 'referrals',
   consentFallbackCategory: 'marketing',
   challengeReferredSignups: 'inherit',
+  codeLookupUrl: null,
+  signupCodeField: false,
 });
 
 const TOKEN = /^[A-Za-z0-9_-]{3,64}$/;
@@ -111,6 +128,11 @@ export function referralConfigFrom(body: unknown): ReferralConfig {
         ? raw.consent_fallback_category
         : null,
     challengeReferredSignups: raw.challenge_referred_signups === 'always' ? 'always' : 'inherit',
+    codeLookupUrl:
+      typeof raw.code_lookup_url === 'string' && /^https?:\/\//i.test(raw.code_lookup_url) && raw.code_lookup_url.includes('{code}')
+        ? raw.code_lookup_url
+        : null,
+    signupCodeField: raw.signup_code_field === true,
   };
 }
 
@@ -157,13 +179,33 @@ export function referralSearches(searches: readonly string[], base?: string): st
   return out;
 }
 
+/** An ISO time from an ISO string or unix seconds / milliseconds, or null. */
+export function referralTime(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return new Date(value < 1e12 ? value * 1000 : value).toISOString();
+  }
+  if (typeof value !== 'string' || !value || value.length > 40) return null;
+  if (/^\d{9,13}$/.test(value)) return referralTime(Number(value));
+  const t = Date.parse(value);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+
+/** One referral source's raw fields. */
+export interface ReferralSourceFields {
+  code: string | null;
+  clickId: string | null;
+  anonId: string | null;
+  /** ISO 8601, when the source says when it captured the referral. */
+  capturedAt?: string;
+}
+
 /**
  * Parse a tracking-cookie value: JSON or URL-encoded JSON `{code?, clickId?,
- * anonId?}` (snake_case accepted too); a plain value is a click id.
+ * anonId?, ts?, exp?}` (snake_case accepted too); a plain value is a click id.
+ * `ts` (unix seconds or ms) becomes `capturedAt`; a cookie past its `exp` is
+ * ignored.
  */
-export function parseReferralCookie(
-  value: string | null | undefined,
-): { code: string | null; clickId: string | null; anonId: string | null } | null {
+export function parseReferralCookie(value: string | null | undefined, now: number = Date.now()): ReferralSourceFields | null {
   if (typeof value !== 'string' || !value || value.length > 4096) return null;
   let decoded = value;
   try {
@@ -182,11 +224,15 @@ export function parseReferralCookie(
   };
   const obj = json(value.trim()) ?? json(decoded.trim());
   if (obj) {
-    const out = {
+    const exp = referralTime(obj.exp);
+    if (exp && Date.parse(exp) <= now) return null;
+    const out: ReferralSourceFields = {
       code: referralToken(obj.code),
       clickId: referralToken(obj.clickId ?? obj.click_id),
       anonId: referralToken(obj.anonId ?? obj.anon_id),
     };
+    const ts = referralTime(obj.ts);
+    if (ts) out.capturedAt = ts;
     return out.code || out.clickId || out.anonId ? out : null;
   }
   const clickId = referralToken(decoded);
@@ -243,36 +289,110 @@ export interface ReferralPage {
   cookies?: string | null;
   /** `window.CookieMunch`, if any. */
   cookieMunch?: unknown;
+  /** `window.aff`, the page's referral script, if any (`getReferral()` → `{code, clickId, anonId, ts}`). */
+  aff?: unknown;
   /** Base for resolving a relative redirect_url. */
   base?: string;
   /** ISO time of capture. */
   capturedAt?: string;
 }
 
-/** Capture the referral for a request, or null when there is nothing to send. Pure. */
+/** The `ref_*` keys that mark a query as carrying an explicit referral (a bare `?ref=` is a landing code). */
+const EXPLICIT_MARKERS = ['ref_click_id', 'ref_anon_id', 'ref_consent', 'ref_captured_at'];
+
+/** What the page's referral script (`window.aff.getReferral()`) holds, or null. Never throws. */
+export function referralFromScript(aff: unknown): ReferralSourceFields | null {
+  let r: unknown;
+  try {
+    const get = isRecord(aff) || typeof aff === 'function' ? (aff as { getReferral?: unknown }).getReferral : undefined;
+    r = typeof get === 'function' ? (get as () => unknown).call(aff) : null;
+  } catch {
+    return null;
+  }
+  if (!isRecord(r)) return null;
+  const out: ReferralSourceFields = {
+    code: referralToken(r.code),
+    clickId: referralToken(r.clickId ?? r.click_id),
+    anonId: referralToken(r.anonId ?? r.anon_id),
+  };
+  const ts = referralTime(r.ts);
+  if (ts) out.capturedAt = ts;
+  return out.code || out.clickId || out.anonId ? out : null;
+}
+
+/** The explicit `ref_*` referral in a query string, or null. `consent` is whether ids may be kept. */
+export function explicitReferralFromSearch(
+  search: string | null | undefined,
+): (ReferralSourceFields & { consentGranted: boolean }) | null {
+  if (!search) return null;
+  let query: URLSearchParams;
+  try {
+    query = new URLSearchParams(search);
+  } catch {
+    return null;
+  }
+  if (!EXPLICIT_MARKERS.some((k) => query.get(k) !== null)) return null;
+  const granted = query.get('ref_consent') === 'granted';
+  const out: ReferralSourceFields & { consentGranted: boolean } = {
+    code: referralToken(query.get('ref')),
+    clickId: referralToken(query.get('ref_click_id')),
+    anonId: referralToken(query.get('ref_anon_id')),
+    consentGranted: granted,
+  };
+  const at = referralTime(query.get('ref_captured_at'));
+  if (at) out.capturedAt = at;
+  return out.code || out.clickId || out.anonId ? out : null;
+}
+
+/** One source as the API's `referral` object: ids only with consent; null when nothing usable remains. */
+function asCapture(source: ReferralSourceFields, consent: boolean, capturedAt: string): ReferralCapture | null {
+  const ids = consent && !!(source.clickId || source.anonId);
+  const out: ReferralCapture = {
+    code: source.code,
+    click_id: ids ? source.clickId : null,
+    anon_id: ids ? source.anonId : null,
+    consent: ids ? 'granted' : 'not_required',
+    captured_at: source.capturedAt ?? capturedAt,
+  };
+  return out.code || out.click_id || out.anon_id ? out : null;
+}
+
+/**
+ * Capture the referral for a request, or null when there is nothing to send.
+ * Pure. One source wins, in order: the page's referral script, explicit
+ * `ref_*` URL parameters, a code in the instance's URL parameters, the
+ * tracking cookie. Fields are never mixed across sources. Ids need consent
+ * (Cookie Munch, the app's `referralConsent`, or `ref_consent=granted` on an
+ * explicit URL).
+ */
 export function captureReferral(
   config: ReferralConfig,
   page: ReferralPage,
   appConsent?: ReferralConsent,
 ): ReferralCapture | null {
   if (!config.enabled) return null;
-  let code: string | null = null;
-  for (const search of referralSearches(page.searches, page.base)) {
-    code = referralCodeFromSearch(search, config.urlParams);
-    if (code) break;
+  const at = page.capturedAt ?? new Date().toISOString();
+  let consent: boolean | undefined;
+  const consented = () => (consent ??= referralConsentGranted(config, page.cookieMunch, appConsent));
+
+  const script = referralFromScript(page.aff);
+  if (script) {
+    const out = asCapture(script, consented(), at);
+    if (out) return out;
   }
-  const cookie =
-    config.contextCookie && referralConsentGranted(config, page.cookieMunch, appConsent)
-      ? parseReferralCookie(readCookieValue(page.cookies, config.contextCookie))
-      : null;
-  const out: ReferralCapture = {
-    code: code ?? cookie?.code ?? null,
-    click_id: cookie?.clickId ?? null,
-    anon_id: cookie?.anonId ?? null,
-    consent: cookie ? 'granted' : 'not_required',
-    captured_at: page.capturedAt ?? new Date().toISOString(),
-  };
-  return out.code || out.click_id || out.anon_id ? out : null;
+  const searches = referralSearches(page.searches, page.base);
+  for (const search of searches) {
+    const explicit = explicitReferralFromSearch(search);
+    if (!explicit) continue;
+    const out = asCapture(explicit, explicit.consentGranted || consented(), at);
+    if (out) return out;
+  }
+  for (const search of searches) {
+    const code = referralCodeFromSearch(search, config.urlParams);
+    if (code) return { code, click_id: null, anon_id: null, consent: 'not_required', captured_at: at };
+  }
+  const cookie = config.contextCookie ? parseReferralCookie(readCookieValue(page.cookies, config.contextCookie)) : null;
+  return cookie ? asCapture(cookie, consented(), at) : null;
 }
 
 /** The FAPI POST paths that take `referral`: every sign-in / sign-up start and the steps that continue one. */
@@ -307,9 +427,10 @@ export function acceptsReferral(path: string): boolean {
 // ── Page-level state ────────────────────────────────────────────────────────
 
 type BrowserWindow = {
-  location?: { search?: string; href?: string };
+  location?: { search?: string; href?: string; assign?: (url: string) => void };
   document?: { cookie?: string };
   CookieMunch?: unknown;
+  aff?: unknown;
 };
 
 const browser = (): BrowserWindow | null =>
@@ -408,7 +529,13 @@ export function loadReferralConfig(client: ReferralClient): Promise<ReferralConf
  * environment read) has loaded the config.
  */
 function worthAsking(client: ReferralClient): boolean {
-  return configs.has(client.referralCacheKey) || !!browser()?.location?.search || landingSearches.length > 0;
+  const win = browser();
+  return (
+    configs.has(client.referralCacheKey) ||
+    !!win?.location?.search ||
+    landingSearches.length > 0 ||
+    referralFromScript(win?.aff) !== null
+  );
 }
 
 function effectiveOptions(client: ReferralClient): ReferralCaptureOptions {
@@ -436,6 +563,7 @@ export async function currentReferral(client: ReferralClient): Promise<ReferralC
         searches: [current, ...landingSearches],
         cookies: win.document?.cookie ?? null,
         cookieMunch: win.CookieMunch,
+        aff: win.aff,
         base: win.location?.href,
         capturedAt: landingAt ?? undefined,
       },
@@ -460,5 +588,170 @@ export async function referralChallengeRequired(client: ReferralClient): Promise
     return !!ref?.code;
   } catch {
     return false;
+  }
+}
+
+// ── Redirects: the referral as ref_* query parameters ──────────────────────
+
+/** Options for {@link referralParams}, {@link withReferralParams}, {@link signIn} and {@link signUp}. */
+export interface ReferralRedirectOptions {
+  /** `false`: add nothing. `'auto'` (default): capture as described above. */
+  referral?: false | 'auto';
+  /**
+   * The app's consent for referral tracking (click and anonymous ids). When
+   * omitted, the page-wide `referralConsent` applies, else Cookie Munch on the
+   * page (`referrals`, else `marketing`), else no consent (code only).
+   */
+  consent?: ReferralConsent;
+  /** The instance's config, when the app has it; defaults to `ref` / `via` / `aff` and no cookie. */
+  config?: ReferralConfig;
+}
+
+/**
+ * The referral this page would send, as `ref_*` query parameters (`[]` when
+ * there is none). Synchronous: it uses the instance config when one was
+ * loaded on this page (or passed), else the default URL parameters. Consent
+ * comes from `consent`, else Cookie Munch on the page.
+ */
+export function referralParams(options: ReferralRedirectOptions = {}): Array<[string, string]> {
+  const win = browser();
+  if (!win || options.referral === false || pageOptions.referral === false) return [];
+  try {
+    const config: ReferralConfig = options.config?.enabled
+      ? options.config
+      : { ...DISABLED_REFERRAL_CONFIG, enabled: true, urlParams: ['ref', 'via', 'aff'] };
+    const ref = captureReferral(
+      config,
+      {
+        searches: [win.location?.search ?? '', ...landingSearches],
+        cookies: win.document?.cookie ?? null,
+        cookieMunch: win.CookieMunch,
+        aff: win.aff,
+        base: win.location?.href,
+        capturedAt: landingAt ?? undefined,
+      },
+      options.consent ?? pageOptions.referralConsent,
+    );
+    if (!ref) return [];
+    const out: Array<[string, string]> = [];
+    if (ref.code) out.push(['ref', ref.code]);
+    if (ref.click_id) out.push(['ref_click_id', ref.click_id]);
+    if (ref.anon_id) out.push(['ref_anon_id', ref.anon_id]);
+    out.push(['ref_consent', ref.consent]);
+    out.push(['ref_captured_at', ref.captured_at]);
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/** `url` with the page's referral added as `ref_*` parameters (existing ones are kept, never replaced). */
+export function withReferralParams(url: string, options: ReferralRedirectOptions = {}): string {
+  const params = referralParams(options);
+  if (!params.length) return url;
+  let u: URL;
+  try {
+    u = new URL(url, browser()?.location?.href ?? undefined);
+  } catch {
+    return url;
+  }
+  for (const [k, v] of params) if (!u.searchParams.has(k)) u.searchParams.set(k, v);
+  return u.toString();
+}
+
+/** Where {@link signIn} / {@link signUp} go. */
+export interface HostedRedirectOptions extends ReferralRedirectOptions {
+  /**
+   * A full URL to go to: a hosted page, `/oauth2/authorize?...`, or your own
+   * login route. Wins over `frontendApi`.
+   */
+  url?: string;
+  /** The instance's Frontend API host or origin (e.g. `accounts.example.com`), for its hosted page. */
+  frontendApi?: string;
+  /** Where the hosted page sends the user afterwards (`redirect_url`). */
+  redirectUrl?: string;
+  /** `false`: return the URL without navigating. Default true. */
+  navigate?: boolean;
+}
+
+function hostedUrl(page: 'sign-in' | 'sign-up', options: HostedRedirectOptions): string {
+  if (options.url) return options.url;
+  if (!options.frontendApi) throw new Error('signIn/signUp need url or frontendApi');
+  const origin = /^https?:\/\//i.test(options.frontendApi) ? options.frontendApi : `https://${options.frontendApi}`;
+  const u = new URL(`/hosted/${page}`, origin);
+  if (options.redirectUrl) u.searchParams.set('redirect_url', options.redirectUrl);
+  return u.toString();
+}
+
+function go(page: 'sign-in' | 'sign-up', options: HostedRedirectOptions): string {
+  const target = withReferralParams(hostedUrl(page, options), options);
+  if (options.navigate !== false) browser()?.location?.assign?.(target);
+  return target;
+}
+
+/**
+ * Send the visitor to the hosted sign-in page (or `url`), carrying the
+ * referral they arrived with as `ref_*` parameters (`referral: 'auto'`, the
+ * default). Returns the URL it went to.
+ *
+ * ```ts
+ * signIn({ frontendApi: 'accounts.example.com', redirectUrl: location.href, consent: () => cmp.granted('referrals') });
+ * ```
+ */
+export function signIn(options: HostedRedirectOptions): string {
+  return go('sign-in', options);
+}
+
+/** {@link signIn} for the hosted sign-up page. */
+export function signUp(options: HostedRedirectOptions): string {
+  return go('sign-up', options);
+}
+
+// ── "Invited by" ─────────────────────────────────────────────────────────────
+
+/** What a code lookup answers. */
+export interface ReferralCodeLookup {
+  valid: boolean;
+  partnerDisplayName?: string;
+  /** Platform-defined; a string or an object with a `description`. */
+  refereeReward?: unknown;
+}
+
+/**
+ * Ask the instance's public code lookup (`code_lookup_url`) about a code, for
+ * an "X invited you" line. No credentials, `timeoutMs` (default 3000). Null
+ * when there is no lookup, the code is malformed, or the lookup fails: never
+ * block a sign-up on it.
+ */
+export async function lookupReferralCode(
+  config: Pick<ReferralConfig, 'codeLookupUrl'> | string | null | undefined,
+  code: string,
+  options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {},
+): Promise<ReferralCodeLookup | null> {
+  const template = typeof config === 'string' ? config : config?.codeLookupUrl;
+  const token = referralToken(code);
+  const f = options.fetchImpl ?? (typeof fetch === 'function' ? fetch : undefined);
+  if (!template || !token || !f) return null;
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = setTimeout(() => ctrl?.abort(), options.timeoutMs ?? 3000);
+  try {
+    const res = await f(template.split('{code}').join(encodeURIComponent(token)), {
+      method: 'GET',
+      credentials: 'omit',
+      headers: { accept: 'application/json' },
+      signal: ctrl?.signal,
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as unknown;
+    if (!isRecord(body) || typeof body.valid !== 'boolean') return null;
+    return {
+      valid: body.valid,
+      ...(typeof body.partnerDisplayName === 'string' ? { partnerDisplayName: body.partnerDisplayName } : {}),
+      ...(body.refereeReward !== undefined ? { refereeReward: body.refereeReward } : {}),
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

@@ -57,6 +57,22 @@ const OPTIONS = {
   'print-secret': { type: 'boolean' },
   // webhooks create.
   events: { type: 'string' },
+  // referrals connect / backfill.
+  provider: { type: 'string' },
+  program: { type: 'string' },
+  'base-url': { type: 'string' },
+  'referally-key': { type: 'string' },
+  'referally-key-file': { type: 'string' },
+  'auto-enroll': { type: 'boolean' },
+  destination: { type: 'string' },
+  'tracking-token': { type: 'string' },
+  endpoint: { type: 'string' },
+  'secret-file': { type: 'string' },
+  enable: { type: 'boolean' },
+  since: { type: 'string' },
+  map: { type: 'string' },
+  'metadata-path': { type: 'string' },
+  wait: { type: 'boolean' },
 } as const;
 
 type OptionValue<O> = O extends { type: 'boolean' }

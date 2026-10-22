@@ -31,6 +31,7 @@ export { config } from './commands/config';
 export { actions } from './commands/actions';
 export { init } from './commands/init';
 export { preflight, envCommand, client } from './commands/project-commands';
+export { referrals } from './commands/referrals';
 export {
   writeSecretFile,
   readEnvFile,

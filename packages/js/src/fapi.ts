@@ -45,16 +45,17 @@ export interface FapiClientOptions {
    */
   sdk?: AtlasSdkInfo;
   /**
-   * Referral attribution. By default a client captures the referral the
-   * visitor arrived with (the instance's URL parameters, and its tracking
-   * cookie under consent) and sends it on every sign-in / sign-up start, when
-   * the instance has referrals on. `false` turns that off. See `./referral`.
+   * Referral attribution. By default (`'auto'`) a client captures the referral
+   * the visitor arrived with (the page's referral script `window.aff`, explicit
+   * `ref_*` URL parameters, the instance's URL parameters, then its tracking
+   * cookie) and sends it on every sign-in / sign-up start, when the instance
+   * has referrals on. `false` turns that off. See `./referral`.
    */
-  referral?: false;
+  referral?: false | 'auto';
   /**
-   * The app's own consent decision for the referral tracking cookie, used only
-   * when Cookie Munch is not on the page: `'granted'` (or a function returning
-   * it) lets the client read the cookie. Default: the cookie is not read.
+   * The app's own consent decision for referral tracking (click and anonymous
+   * ids), used only when Cookie Munch is not on the page: `'granted'` (or a
+   * function returning it) lets the client send them. Default: code only.
    */
   referralConsent?: ReferralConsent;
 }

@@ -7,6 +7,7 @@ import { config } from './commands/config';
 import { init } from './commands/init';
 import { client, envCommand, preflight } from './commands/project-commands';
 import { orgs } from './commands/orgs';
+import { referrals } from './commands/referrals';
 import { sessions } from './commands/sessions';
 import { users } from './commands/users';
 import { webhooks } from './commands/webhooks';
@@ -34,6 +35,7 @@ const COMMANDS: Record<string, Handler> = {
   preflight,
   env: envCommand,
   client,
+  referrals,
 };
 
 /**

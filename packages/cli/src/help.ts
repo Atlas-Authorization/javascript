@@ -23,6 +23,8 @@ Commands:
   preflight                  Check an instance's setup; non-zero exit on errors (for CI)
   env                        Print deploy variables: public values + secret file paths
   client rotate              Rotate an OAuth client secret straight into its file
+  referrals connect|backfill|status
+                             Connect a referral platform, backfill, check the connection
 
 Global options:
   --profile <name>           Use a named profile (default: active, else "default")
@@ -36,6 +38,8 @@ Environment overrides:
   ATLAS_SECRET_KEY           Secret key to use instead of the stored one
   ATLAS_API_URL              API URL to use instead of the stored one
   ATLAS_PLATFORM_KEY         Platform key (psk_) for atlas init
+  REFERALLY_BASE_URL         Referally base URL for atlas referrals connect
+  REFERALLY_API_KEY          Referally merchant key for atlas referrals connect (never stored)
 
 Secrets: a command that receives a secret writes it to a 0600 file under
 ~/.config/<product>/ and prints only the path. --print-secret prints it instead.
@@ -44,6 +48,38 @@ Run 'atlas <command> --help' for command-specific help.`;
 
 /** Per-command help, keyed by the resource word. */
 export const COMMAND_HELP: Record<string, string> = {
+  referrals: `atlas referrals — referral attribution
+
+Usage:
+  atlas referrals connect --provider referally --program <prg_…> --base-url <url>
+        [--referally-key-file <path|-> | --referally-key <rk_…>]
+        [--auto-enroll] [--destination <url>] [--tracking-token <token>] [--enable]
+  atlas referrals connect --provider webhook --endpoint <https-url>
+        [--secret-file <path|->] [--program <id>] [--auto-enroll] [--enable]
+  atlas referrals backfill --since <YYYY-MM-DD> [--map <file.csv>]
+        [--metadata-path public_metadata.referral_code] [--wait]
+  atlas referrals status
+
+connect --provider referally creates the Atlas connection on Referally with
+your merchant key (bring your own key: used for this one call, never stored or
+printed), saves the connection id and secret on the instance, and runs a ping.
+--auto-enroll and --destination are passed to Referally. --enable turns
+referrals on when the ping passes. Prefer --referally-key-file (or
+REFERALLY_API_KEY) to --referally-key: a key on the command line can end up in
+your shell history.
+
+connect --provider webhook points the instance at a platform that speaks the
+Atlas referral protocol. Without --secret-file, a signing secret is generated
+and written to a 0600 file for you to configure on the platform.
+
+backfill reports users who signed up since the date, with their real sign-up
+time. --map reads customerRef,code lines; --metadata-path reads a stored code.
+
+status prints the connection, its health and the referral preflight findings;
+it exits 1 when one is an error.
+
+All subcommands take --instance <id> or --product <name> like preflight.`,
+
   login: `atlas login — authenticate and store a profile credential
 
 Usage: atlas login [--profile <name>] [--url <api-url>] [--secret-key <sk_...>]

@@ -27,7 +27,7 @@ import { requireArg, resolveAuth, wantsJson } from './shared';
  *  - `--product <name>` [`--instance-env`]: that project's instance;
  *  - otherwise the profile / ATLAS_SECRET_KEY, as every other command.
  */
-function instanceCredential(
+export function instanceCredential(
   ctx: RunContext,
   args: ParsedArgs,
 ): { secretKey: string; apiUrl: string; manifest?: ProjectManifest; instance?: ProjectInstance } {

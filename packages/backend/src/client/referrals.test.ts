@@ -50,6 +50,49 @@ const OPS: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
     (c) => c.users.create({ email_address: 'a@example.com', referral: { code: 'ACME10', click_id: 'clk_123' }, referral_code: 'ada-1' }),
   ],
   ['PATCH', '/v1/users/user_1', { referral_code: null }, (c) => c.users.update('user_1', { referral_code: null })],
+  // v2
+  ['PATCH', '/v1/users/user_1', { external_id: 'usr_8812' }, (c) => c.users.setExternalId('user_1', 'usr_8812')],
+  ['PATCH', '/v1/users/user_1', { external_id: null }, (c) => c.users.setExternalId('user_1', null)],
+  ['GET', '/v1/users/user_1/referral', undefined, (c) => c.referrals.getForUser('user_1')],
+  ['POST', '/v1/instance/referrals/calls/retry_failed', {}, (c) => c.referrals.retryFailed()],
+  ['POST', '/v1/instance/referrals/calls/retry_failed', { error_code: 'signature_rejected' }, (c) => c.referrals.retryFailed({ error_code: 'signature_rejected' })],
+  ['POST', '/v1/instance/referrals/simulate', { code: 'WJXQGLBW' }, (c) => c.referrals.simulate({ code: 'WJXQGLBW' })],
+  ['POST', '/v1/instance/referrals/simulate', {}, (c) => c.referrals.simulate()],
+  [
+    'POST',
+    '/v1/instance/referrals/backfill',
+    { since: '2026-01-01', codes: { usr_1: 'ABC123' }, code_metadata_path: 'public_metadata.referral_code' },
+    (c) => c.referrals.backfill({ since: '2026-01-01', codes: { usr_1: 'ABC123' }, code_metadata_path: 'public_metadata.referral_code' }),
+  ],
+  ['GET', '/v1/instance/referrals/backfill/rbf_1', undefined, (c) => c.referrals.getBackfill('rbf_1')],
+  ['GET', '/v1/instance/hooks/before_user_create', undefined, (c) => c.userHooks.getBeforeUserCreate()],
+  [
+    'PATCH',
+    '/v1/instance/hooks/before_user_create',
+    { enabled: true, url: 'https://app.example.com/hook', timeout_ms: 2000 },
+    (c) => c.userHooks.updateBeforeUserCreate({ enabled: true, url: 'https://app.example.com/hook', timeout_ms: 2000 }),
+  ],
+  ['POST', '/v1/instance/hooks/before_user_create/test', undefined, (c) => c.userHooks.testBeforeUserCreate()],
+  [
+    'GET',
+    '/v1/instance/referrals/calls?limit=1000&kind=alias&starting_after=rfc_9',
+    undefined,
+    (c) => c.referrals.listCalls({ limit: 1000, kind: 'alias', starting_after: 'rfc_9' }),
+  ],
+  [
+    'PATCH',
+    '/v1/instance/referrals',
+    { provider: 'referally', endpoint_url: 'https://referrals.example.com', connection_id: 'conn_1', tracking_token: 'tt_1', forward_lifecycle: true, signup_code_field: true },
+    (c) =>
+      c.referrals.update({
+        provider: 'referally',
+        endpoint_url: 'https://referrals.example.com',
+        connection_id: 'conn_1',
+        tracking_token: 'tt_1',
+        forward_lifecycle: true,
+        signup_code_field: true,
+      }),
+  ],
 ];
 
 describe('referral attribution operations', () => {

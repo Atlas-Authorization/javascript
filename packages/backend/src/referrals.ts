@@ -12,13 +12,17 @@ import type { ReferralRisk } from './client/referrals';
  *   POST {base}/export    { op: 'export', customerRef, test }         → 200 JSON (any shape) | 404
  *   POST {base}/partners  { op: 'partner', customerRef, code, emailHash } → 2xx | 409 code taken | 404/405/501 unsupported
  *   POST {base}/signals   { op: 'signal', customerRef, type, occurredAt, data } → 2xx | 404/405/501 unsupported
+ *   POST {base}/aliases   { op: 'alias', customerRef, fromCustomerRef, toCustomerRef } → 2xx | 409 (permanent)
+ *   POST {base}/users     { op: 'user', customerRef, email?, name?, status? } → 2xx
+ *   POST {base}/ping      { op: 'ping', customerRef: 'atlas_connection_test' } → 200 ReferralPingResponse
  *
  * The connection test is `POST {base}/export` with
  * `{ op: 'export', customerRef: 'atlas_connection_test', test: true }` (answer
  * 2xx or 404). Calls are signed exactly like Atlas webhooks (`atlas-id`,
  * `atlas-timestamp`, `atlas-signature` over `<id>.<timestamp>.<raw body>`),
- * with `Idempotency-Key` and `User-Agent: Atlas-Referrals/1`. `atlas-id` is the
- * call id, the same on every retry of one call.
+ * with `Idempotency-Key`, `User-Agent: Atlas-Referrals/1` and
+ * `Atlas-Referrals-Version: 2026-10-21`. `atlas-id` is the call id, the same on
+ * every retry of one call.
  *
  * The signature covers the body, not the URL, so everything that matters is in
  * the body. Pass the path the request arrived on (or the operation you
@@ -31,6 +35,12 @@ export const REFERRAL_CONNECTION_TEST_REF = 'atlas_connection_test';
 
 /** The `User-Agent` Atlas sends on every referral call. */
 export const REFERRAL_PROTOCOL_USER_AGENT = 'Atlas-Referrals/1';
+
+/** The `Atlas-Referrals-Version` header Atlas sends on every call; shapes only grow, additively, under it. */
+export const REFERRAL_PROTOCOL_VERSION = '2026-10-21';
+
+/** The name of the version header (lower-case). */
+export const REFERRAL_PROTOCOL_VERSION_HEADER = 'atlas-referrals-version';
 
 /** The referral captured at sign-up (from the page URL, or a tracking cookie under consent). Never trusted. */
 export interface ReferralContext {
@@ -83,6 +93,8 @@ export interface ReferralSignupResponse {
   } | null;
   /** The user's own partner record when `autoEnroll` was true. `link` may be omitted: Atlas builds it from its link template. */
   partner?: { id: string | null; code: string | null; link?: string | null } | null;
+  /** Why you matched or did not (shown in the Atlas delivery log and on the user). */
+  notes?: string[];
 }
 
 /** `POST {base}/erase`. */
@@ -126,8 +138,50 @@ export interface ReferralSignalPayload {
   data: Record<string, unknown>;
 }
 
+/**
+ * `POST {base}/aliases`: the user's `external_id` was set or changed after the
+ * sign-up call. Re-key the customer from `fromCustomerRef` (the old value, or
+ * the Atlas user id) to `toCustomerRef`. `customerRef` equals `toCustomerRef`.
+ * A 409 is treated as permanent.
+ */
+export interface ReferralAliasPayload {
+  op: 'alias';
+  customerRef: string;
+  fromCustomerRef: string;
+  toCustomerRef: string;
+}
+
+/**
+ * `POST {base}/users`: a lifecycle change. `email` / `name` when they changed;
+ * `status` `suspended` on a ban, `active` on an unban, `deleted` on deletion
+ * (deletion is also sent to `/erase`).
+ */
+export interface ReferralUserPayload {
+  op: 'user';
+  customerRef: string;
+  email?: string | null;
+  name?: string | null;
+  status?: 'active' | 'suspended' | 'deleted';
+}
+
+/** `POST {base}/ping`: the connection test where the platform supports it. */
+export interface ReferralPingPayload {
+  op: 'ping';
+  customerRef: string;
+}
+
+/** The answer to a ping. Every field but `ok` is optional and shown on the Atlas dashboard. */
+export interface ReferralPingResponse {
+  ok: boolean;
+  programName?: string;
+  orgName?: string;
+  autoEnrollUsers?: boolean;
+  /** ISO 8601. Atlas warns when it is more than 60 seconds off. */
+  serverTime?: string;
+}
+
 /** The operations of the referral protocol (the `op` of every call). */
-export type ReferralOp = 'signup' | 'erase' | 'export' | 'partner' | 'signal';
+export type ReferralOp = 'signup' | 'erase' | 'export' | 'partner' | 'signal' | 'alias' | 'user' | 'ping';
 
 /** The endpoint (last path segment) each operation is sent to. */
 export const REFERRAL_OP_ENDPOINTS: Record<ReferralOp, string> = {
@@ -136,6 +190,9 @@ export const REFERRAL_OP_ENDPOINTS: Record<ReferralOp, string> = {
   export: 'export',
   partner: 'partners',
   signal: 'signals',
+  alias: 'aliases',
+  user: 'users',
+  ping: 'ping',
 };
 
 /** A verified call, by operation. */
@@ -149,7 +206,10 @@ export type ReferralProtocolCall =
       test: boolean;
     }
   | { op: 'partner'; payload: ReferralPartnerPayload }
-  | { op: 'signal'; payload: ReferralSignalPayload };
+  | { op: 'signal'; payload: ReferralSignalPayload }
+  | { op: 'alias'; payload: ReferralAliasPayload }
+  | { op: 'user'; payload: ReferralUserPayload }
+  | { op: 'ping'; payload: ReferralPingPayload };
 
 /**
  * Why a call was refused: a webhook signature failure, or
@@ -176,8 +236,8 @@ export interface VerifyReferralRequestInput {
   secret: string;
   /**
    * The path (or full URL) the request arrived on, e.g. `req.path`. Its last
-   * segment (`signups`, `erase`, `export`, `partners`, `signals`) must match
-   * the signed `op`.
+   * segment (`signups`, `erase`, `export`, `partners`, `signals`, `aliases`,
+   * `users`, `ping`) must match the signed `op`.
    */
   path?: string;
   /** The operation this handler serves; the signed `op` must equal it. */
@@ -196,6 +256,8 @@ export interface ReferralVerifyResult {
   timestamp?: number;
   /** The `Idempotency-Key` header (`signup:<customerRef>` on sign-ups). Not signed. */
   idempotencyKey?: string;
+  /** The `Atlas-Referrals-Version` header, when sent. Not signed. */
+  protocolVersion?: string;
   /** The operation and its payload, present only when `verified`. */
   call?: ReferralProtocolCall;
 }
@@ -237,7 +299,8 @@ export function referralOpForPath(path: string): ReferralOp | null {
  *   if (!verified || !call) return res.sendStatus(401);
  *   if (call.op === 'export' && call.test) return res.sendStatus(404);
  *   if (call.op === 'signup') return res.json(await attribute(call.payload)); // ReferralSignupResponse
- *   // erase, export, partner, signal ...
+ *   if (call.op === 'ping') return res.json({ ok: true, serverTime: new Date().toISOString() });
+ *   // erase, export, partner, signal, alias, user ...
  * });
  * ```
  */
@@ -270,6 +333,7 @@ export function verifyReferralRequest(input: VerifyReferralRequestInput): Referr
     deliveryId: result.deliveryId,
     timestamp: result.timestamp,
     idempotencyKey: header(input.headers, 'idempotency-key'),
+    protocolVersion: header(input.headers, REFERRAL_PROTOCOL_VERSION_HEADER),
     call,
   };
 }

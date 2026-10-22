@@ -28,6 +28,7 @@ export type {
   DeletedObject,
   User,
   UserReferral,
+  UserReferralStatus,
   EmailAddress,
   Session,
   Organization,

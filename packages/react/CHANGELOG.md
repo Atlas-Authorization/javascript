@@ -1,5 +1,8 @@
 # @atlasauth/react changelog
 
+## 0.12.0
+- **Sign in with Atlas carries the referral.** `buildAtlasAuthorizeUrl`, `signInWithAtlasPopup` and `<SignInWithAtlasButton>` (including `loginUri`) add the visitor's referral as `ref_*` query parameters (from `window.aff`, else `ref` / `via` / `aff` on the page URL), through `@atlasauth/js` 0.14.0. New `AtlasIdOptions` fields `referral?: false | 'auto'` (default `'auto'`) and `referralConsent?` (ids only with consent).
+
 ## 0.11.0
 - **Referral attribution.** `<SignIn>` / `<SignUp>` send the referral the visitor arrived with on sign-in and sign-up (through `@atlasauth/js` 0.13.0) when the instance has referrals on. New props on `<SignIn>`, `<SignUp>` and `<AtlasProvider>`: `referral?: false` (opt out) and `referralConsent?: 'granted' | 'denied' | boolean | () => …` (the app's own consent for the referral cookie, used when Cookie Munch is not on the page). When the instance requires it (`challenge_referred_signups: 'always'`), a referred sign-up or sign-in shows the captcha even when it is otherwise off.
 
