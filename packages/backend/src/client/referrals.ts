@@ -392,6 +392,8 @@ export interface ReferralCall {
    * `rate_limited`, `timeout`, `network_error`.
    */
   error_code?: string | null;
+  /** The last attempt's request as the platform received it (method, URL, body; personal data removed). Null until sent. */
+  request?: { method: string; url: string; body: unknown } | null;
   /** The platform's last answer, with personal data removed. */
   response?: unknown;
   /** Sign-up calls: how the platform matched, the referrer and its notes. */

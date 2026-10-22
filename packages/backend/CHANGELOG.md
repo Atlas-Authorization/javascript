@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.14.1
+
+### Added
+
+- `ReferralCall.request`: the last attempt's request as the referral platform received it (`method`, `url`, `body`, personal fields redacted).
+
 ## 0.14.0
 
 ### Added
