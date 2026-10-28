@@ -11,6 +11,7 @@ const CLIENT: OAuthClient = {
   name: 'Acme',
   logo_url: null,
   redirect_uris: ['https://acme.test/cb'],
+  claims_redirect_uris: [],
   allowed_scopes: ['openid'],
   grant_types: ['authorization_code'],
   token_endpoint_auth_method: 'client_secret_basic',

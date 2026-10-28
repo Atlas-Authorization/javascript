@@ -1,0 +1,13 @@
+import { SignInButton, SignOutButton, SignUpButton } from '@atlasauth/react';
+
+export function AuthLinks({ signedIn }: { signedIn: boolean }) {
+  if (signedIn) return <SignOutButton redirectUrl="/goodbye">Sign out</SignOutButton>;
+  return (
+    <nav>
+      <SignInButton redirectUrl="/dashboard">Sign in</SignInButton>
+      <SignUpButton className="cta">
+        Create account
+      </SignUpButton>
+    </nav>
+  );
+}

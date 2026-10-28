@@ -1,4 +1,4 @@
-import { FONT_IDS } from './fonts';
+import { FONT_IDS, isCustomFontId } from './fonts';
 import type { AtlasDesign } from './schema';
 import {
   ASSET_ID,
@@ -80,7 +80,8 @@ function object(fields: Record<string, Check>, required: readonly string[] = [])
   };
 }
 
-const FONT = oneOf(FONT_IDS);
+const FONT_IN_CATALOG = oneOf(FONT_IDS);
+const FONT: Check = (v) => FONT_IN_CATALOG(v) || isCustomFontId(v);
 
 /** Leaf checks per object section. */
 export const DESIGN_SECTION_FIELDS: Record<string, Record<string, Check>> = {

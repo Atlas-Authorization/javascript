@@ -1,0 +1,11 @@
+// TODO(atlas-migrate): FusionAuthClient: manage users, roles and groups with AtlasBackend from @atlasauth/backend; verify sessions with it, or with atlasMiddleware() from @atlasauth/express
+import { FusionAuthClient } from '@fusionauth/typescript-client';
+
+// TODO(atlas-migrate): FUSIONAUTH_API_KEY: server code uses ATLAS_SECRET_KEY (from the Atlas dashboard)
+// TODO(atlas-migrate): FUSIONAUTH_URL: the FusionAuth server URL; the browser uses ATLAS_FRONTEND_API, servers verify tokens with ATLAS_JWKS_URL
+const client = new FusionAuthClient(process.env.FUSIONAUTH_API_KEY!, process.env.FUSIONAUTH_URL!);
+
+export async function findUser(email: string) {
+  const res = await client.retrieveUserByEmail(email);
+  return res.response.user;
+}

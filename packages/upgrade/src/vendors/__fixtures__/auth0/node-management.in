@@ -1,0 +1,7 @@
+import { ManagementClient } from 'auth0';
+
+export const management = new ManagementClient({
+  domain: 'acme.us.auth0.com',
+  clientId: process.env.MGMT_CLIENT_ID!,
+  clientSecret: process.env.MGMT_CLIENT_SECRET!,
+});

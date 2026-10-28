@@ -10,6 +10,9 @@ import { UserButtonComponent } from './components/user-button.component';
 import { OrganizationSwitcherComponent } from './components/organization-switcher.component';
 import { UserProfileComponent } from './components/user-profile.component';
 import { OrganizationProfileComponent } from './components/organization-profile.component';
+import { OrganizationAuditLogComponent } from './components/organization-audit-log.component';
+import { ManageCibaComponent } from './components/manage-ciba.component';
+import { AtlasPoliciesDirective, PolicyAcceptStepComponent, PolicyGateComponent } from './components/policy-host';
 
 /**
  * Every standalone directive and component the SDK ships. Import the array in a
@@ -33,4 +36,9 @@ export const ATLAS_UI = [
   OrganizationSwitcherComponent,
   UserProfileComponent,
   OrganizationProfileComponent,
+  OrganizationAuditLogComponent,
+  ManageCibaComponent,
+  AtlasPoliciesDirective,
+  PolicyAcceptStepComponent,
+  PolicyGateComponent,
 ] as const;

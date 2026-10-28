@@ -1,0 +1,10 @@
+import type { NextRequest } from 'next/server';
+import { kindeWithAuthCompat } from '@atlasauth/nextjs/compat';
+
+export default function middleware(req: NextRequest) {
+  return kindeWithAuthCompat(req);
+}
+
+export const config = {
+  matcher: ['/dashboard/:path*'],
+};

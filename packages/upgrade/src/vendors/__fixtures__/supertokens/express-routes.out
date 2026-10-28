@@ -1,0 +1,11 @@
+import express from 'express';
+// TODO(atlas-migrate): middleware(): Atlas hosts sign-in and session endpoints; delete the SuperTokens middleware and add atlasMiddleware() from @atlasauth/express (or the Fastify / Hono adapter)
+// TODO(atlas-migrate): errorHandler(): delete it together with the SuperTokens middleware
+import { middleware, errorHandler } from 'supertokens-node/framework/express';
+// TODO(atlas-migrate): verifySession(): use requireAuth() from @atlasauth/express (or the Fastify / Hono adapter); read the user with getAuth(req) instead of req.session.getUserId()
+import { verifySession } from 'supertokens-node/recipe/session/framework/express';
+
+export const app = express();
+app.use(middleware());
+app.get('/me', verifySession(), (req, res) => res.json({ ok: true }));
+app.use(errorHandler());

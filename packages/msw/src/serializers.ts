@@ -30,7 +30,7 @@ export function errorBody(
   const item: Record<string, unknown> = { code, message };
   if (param !== undefined) item.param = param;
   if (meta !== undefined) item.meta = meta;
-  item.docs_url = `https://atlasauth.net/docs/errors/${code.toLowerCase()}`;
+  item.docs_url = `https://atlasauth.net/errors/${code.toLowerCase()}`;
   return { errors: [item] };
 }
 

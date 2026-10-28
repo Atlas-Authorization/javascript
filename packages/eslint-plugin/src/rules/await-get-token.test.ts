@@ -1,6 +1,4 @@
 import { TSESLint } from '@typescript-eslint/utils';
-// @ts-expect-error -- see no-leaked-secret-key.test.ts: parser types are
-// "exports"-only and unreadable under classic moduleResolution; value only.
 import * as tsParser from '@typescript-eslint/parser';
 import { describe, it } from 'vitest';
 import rule from './await-get-token';

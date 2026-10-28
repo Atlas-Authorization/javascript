@@ -1,0 +1,15 @@
+import { useOktaAuth } from '@okta/okta-react';
+
+export function Profile() {
+  const { oktaAuth, authState } = useOktaAuth();
+  if (!authState) return <p>Loading…</p>;
+  if (!authState.isAuthenticated) {
+    return <button onClick={() => oktaAuth.signInWithRedirect({ originalUri: '/profile' })}>Sign in</button>;
+  }
+  return (
+    <div>
+      <p>{authState.idToken?.claims.email}</p>
+      <button onClick={() => oktaAuth.signOut()}>Sign out</button>
+    </div>
+  );
+}

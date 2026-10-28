@@ -108,6 +108,22 @@ async function callApi() {
 > **do** — seeing is not doing. The server checking the same condition is what
 > actually stops them. See the next section.
 
+## Policy acceptance (terms of service, privacy)
+
+`<SignIn>` and `<SignUp>` show the instance's policies themselves. For a custom form, `usePolicies()` is auto-imported and
+`<PolicyConsent>`, `<PolicyClickwrap>`, `<PolicyAcceptStep>` and `<PolicyGate>` are registered:
+
+```vue
+<script setup>
+const { controller, build } = usePolicies();
+</script>
+<template>
+  <PolicyConsent :controller="controller" />
+  <button @click="signUp({ policyAcceptances: build() })">Create account</button>
+  <PolicyGate /> <!-- signed-in banner when a policy needs re-accepting -->
+</template>
+```
+
 ## Read auth in a server route
 
 `getAtlasAuth(event)` is auto-imported into every Nitro handler. It returns the

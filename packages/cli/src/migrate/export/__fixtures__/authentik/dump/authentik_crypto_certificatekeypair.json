@@ -1,0 +1,4 @@
+[
+  { "kp_uuid": "dddddddd-0000-4000-8000-000000000001", "name": "authentik Self-signed Certificate", "kid": "6a1e2b3c4d5e6f708192a3b4c5d6e7f8", "certificate_data": "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUSelfSigned\n-----END CERTIFICATE-----\n", "key_data": "-----BEGIN PRIVATE KEY-----\nNEVER-IN-THE-BUNDLE\n-----END PRIVATE KEY-----\n" },
+  { "kp_uuid": "dddddddd-0000-4000-8000-000000000002", "name": "Partner IdP", "kid": "", "certificate_data": "-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIJAKHBfpegPjMCMA0GCSqGSIb3DQEBCwUA\n-----END CERTIFICATE-----\n", "key_data": "" }
+]

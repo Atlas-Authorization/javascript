@@ -127,4 +127,13 @@ describe('<atlas-sign-in> with the design system', () => {
     el.setAttribute('data-atlas-preset', 'glass');
     expect(optionsFromElement(el, 'sign-in')?.appearance?.preset).toBe('glass');
   });
+
+  it('reads the opt-in data-atlas-passkey-prf salt from the element', () => {
+    const el = document.createElement('atlas-sign-in');
+    el.setAttribute('data-atlas-key', 'pk_test_1');
+    el.setAttribute('data-atlas-fapi', 'https://accounts.acme.com');
+    expect(optionsFromElement(el, 'sign-in')?.passkeyPrf).toBeUndefined();
+    el.setAttribute('data-atlas-passkey-prf', 'vault:v1');
+    expect(optionsFromElement(el, 'sign-in')?.passkeyPrf).toEqual({ eval: { first: 'vault:v1' } });
+  });
 });

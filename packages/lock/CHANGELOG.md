@@ -1,5 +1,9 @@
 # @atlasauth/lock changelog
 
+## 0.2.0 — 2026-10-24
+
+- Integrator platform release: see the Atlas changelog for 2026-10-24.
+
 ## 0.1.3
 - Depends on `@atlasauth/embed` ^0.5.2 (a range, not one exact version): "Email me a code instead" on the email +
   password box.

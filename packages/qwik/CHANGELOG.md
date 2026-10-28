@@ -1,5 +1,18 @@
 # @atlasauth/qwik changelog
 
+## 0.5.0 — 2026-10-28
+
+- `ManageCiba` component lists sign-in approvals (approve or deny) and manages the CIBA PIN.
+
+## 0.4.0 — 2026-10-24
+Requires `@atlasauth/js` with policy acceptance.
+- **Policy acceptance** (terms of service, privacy, any policy the app defines). `<SignIn>` / `<SignUp>` already show the
+  policies (they mount the `@atlasauth/embed` widget). For a custom form: `usePolicies()` (controller, `loading`,
+  `canSubmit`), `<PolicyConsent>`, `<PolicyClickwrap>`, `<PolicyAcceptStep>` (the step a sign-in held at
+  `needs_policy_acceptance` shows) and `<PolicyGate>` (signed-in banner plus re-acceptance). The mount helpers behind them
+  (`mountConsent`, `mountClickwrap`, `mountAcceptStep`, `mountPolicyGate`, `loadPolicyController`, `loadPendingController`)
+  are exported too.
+
 ## 0.3.2
 - Depends on `@atlasauth/embed` ^0.5.2 (a range, not one exact version): "Email me a code instead" on the email +
   password box.

@@ -1,0 +1,7 @@
+{
+  // Path aliases are followed by the analyser.
+  "compilerOptions": {
+    "strict": true,
+    "paths": { "@/*": ["./src/*"] },
+  },
+}

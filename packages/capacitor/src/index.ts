@@ -46,6 +46,7 @@ import {
   type TokenStore,
 } from './token-store';
 import { clearNativeSession, createNativeSessionManager } from './native-session';
+import { createPolicyApi, type PolicyApi } from './policies';
 
 export interface CreateAtlasCapacitorConfig {
   /** The instance publishable key (`pk_…`). */
@@ -84,6 +85,11 @@ export interface CreateAtlasCapacitorConfig {
   plugins?: CapacitorPlugins;
   /** Injectable for tests; defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
+  /**
+   * The app's UI language (`"es"`), sent as `Accept-Language` on the policy calls
+   * so the server picks a translated policy version. @default none
+   */
+  locale?: string;
   /** Injectable clock, epoch ms. Defaults to `Date.now`. */
   now?: () => number;
   /** Navigate the page on the web redirect path. @default `window.location.assign` */
@@ -103,7 +109,7 @@ export interface SignInOptions {
  * the manager, {@link getToken} hands out a live (auto-refreshing) JWT, and
  * {@link onChange} fires on every session change.
  */
-export interface AtlasCapacitor {
+export interface AtlasCapacitor extends PolicyApi {
   /**
    * Run the native-session sign-in: open the system browser, catch the deep-link
    * callback, complete PKCE, exchange for a session, and store it. On the web
@@ -260,8 +266,21 @@ export async function createAtlasCapacitor(
     return value;
   };
 
+  // Policy acceptance (terms, privacy, any policy) over the same bearer session.
+  const policyApi = createPolicyApi({
+    publishableKey: config.publishableKey,
+    frontendApi,
+    authHeaders: async (): Promise<Record<string, string>> => {
+      const token = await getToken();
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    },
+    fetchImpl: config.fetchImpl,
+    locale: config.locale,
+  });
+
   return {
     manager,
+    ...policyApi,
 
     async signIn(options = {}) {
       const clientId = requireString(options.clientId ?? config.clientId, 'clientId');
@@ -364,3 +383,6 @@ export {
   type NativeSession,
   type NativeSessionConfig,
 } from './native-session';
+
+// Policy acceptance: the DOM pieces for a WebView screen, the gate banner, and the API builder.
+export * from './policies';

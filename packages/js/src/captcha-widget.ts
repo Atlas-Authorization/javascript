@@ -47,6 +47,13 @@ export interface FlowCaptcha {
    * each fresh challenge. Set by `/v1/appearance`.
    */
   challengeUrl?: string;
+  /**
+   * Provider `vercel_botid`: the route on the app's own Vercel deployment that
+   * runs `checkBotId()` and answers `{ token }` (a signed BotID verdict). The
+   * widget POSTs to it — BotID's client (`initBotId`) must protect this path —
+   * and sends the token as `captcha_token`.
+   */
+  attestationUrl?: string;
 }
 
 /** The providers the prebuilt UIs can natively render. */
@@ -57,16 +64,25 @@ const RENDERABLE = new Set([
   'recaptcha',
   'recaptcha_v3',
   'recaptcha_enterprise',
+  'captchafox',
+  'vercel_botid',
 ]);
 
-/** Whether the prebuilt UIs can draw this provider's widget. */
-export function isRenderableCaptcha(provider?: string | null): boolean {
-  return !!provider && RENDERABLE.has(provider);
+/**
+ * Whether the prebuilt UIs can draw this provider's widget. Vercel BotID draws
+ * nothing — the "widget" fetches a signed verdict from the app's own route — so
+ * it is only obtainable when the flow names that route (`attestationUrl`); pass
+ * the flow to account for it.
+ */
+export function isRenderableCaptcha(provider?: string | null, flow?: Pick<FlowCaptcha, 'attestationUrl'> | null): boolean {
+  if (!provider || !RENDERABLE.has(provider)) return false;
+  if (provider === 'vercel_botid') return !!flow?.attestationUrl;
+  return true;
 }
 
 /** True when this flow always needs a rendered token before its request can proceed. */
 export function flowNeedsCaptcha(flow: FlowCaptcha | null | undefined): flow is FlowCaptcha {
-  return !!flow && flow.enabled === true && isRenderableCaptcha(flow.provider);
+  return !!flow && flow.enabled === true && isRenderableCaptcha(flow.provider, flow);
 }
 
 /** The two captcha error codes the Frontend API answers a gated request with. */
@@ -90,6 +106,12 @@ interface HcaptchaApi {
   render: (el: HTMLElement, opts: Record<string, unknown>) => string;
   execute: (id: string, opts?: Record<string, unknown>) => Promise<{ response: string }> | void;
   remove?: (id: string) => void;
+}
+interface CaptchafoxApi {
+  render: (el: HTMLElement, opts: Record<string, unknown>) => Promise<string> | string;
+  execute?: (id?: string) => Promise<string> | void;
+  remove?: (id?: string) => void;
+  reset?: (id?: string) => void;
 }
 interface GrecaptchaApi {
   render: (el: HTMLElement, opts: Record<string, unknown>) => number;
@@ -119,6 +141,10 @@ const SCRIPTS: Record<string, { src: (siteKey: string) => string; global: string
     src: (siteKey) =>
       `https://www.google.com/recaptcha/enterprise.js?render=${encodeURIComponent(siteKey)}`,
     global: 'grecaptcha',
+  },
+  captchafox: {
+    src: () => 'https://cdn.captchafox.com/api.js?render=explicit',
+    global: 'captchafox',
   },
 };
 
@@ -254,6 +280,55 @@ function recaptchaV2Token(
   });
 }
 
+/** CaptchaFox: `render` resolves the widget id; hidden mode runs on `execute`. */
+function captchafoxToken(
+  api: CaptchafoxApi,
+  el: HTMLElement,
+  siteKey: string,
+  mode: CaptchaWidgetMode,
+  onTeardown: (t: Teardown) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fail = () => reject(new Error('captcha: captchafox error'));
+    Promise.resolve(
+      api.render(el, {
+        sitekey: siteKey,
+        mode: mode === 'invisible' ? 'hidden' : 'inline',
+        onVerify: (token: string) => resolve(token),
+        onError: fail,
+        onFail: fail,
+      }),
+    ).then((id) => {
+      onTeardown(() => api.remove?.(id));
+      if (mode === 'invisible' && api.execute) {
+        Promise.resolve(api.execute(id)).then((token) => {
+          if (typeof token === 'string' && token) resolve(token);
+        }, fail);
+      }
+    }, fail);
+  });
+}
+
+/**
+ * Vercel BotID: no widget. POST the app's own attestation route (same-origin
+ * credentials, so the BotID client that protects it can attach its headers)
+ * and read the signed verdict `{ token }` it answers with.
+ */
+export async function fetchBotIdAttestation(
+  attestationUrl: string,
+  fetchImpl: typeof fetch = (globalThis as { fetch: typeof fetch }).fetch,
+): Promise<string> {
+  const response = await fetchImpl(attestationUrl, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`captcha: BotID attestation route answered ${response.status}`);
+  const body = (await response.json()) as { token?: unknown };
+  if (typeof body.token !== 'string' || !body.token) throw new Error('captcha: BotID attestation missing');
+  return body.token;
+}
+
 /** reCAPTCHA v3 / Enterprise (score): execute programmatically, no visible widget. */
 function recaptchaV3Token(api: GrecaptchaApi, siteKey: string): Promise<string> {
   const run = () => {
@@ -304,6 +379,23 @@ export function renderCaptchaWidget(
       ...options.atlas,
     });
   }
+  if (provider === 'vercel_botid') {
+    let removed = false;
+    const win = (container.ownerDocument?.defaultView ?? globalThis) as unknown as { fetch?: typeof fetch };
+    const token = flow.attestationUrl
+      ? fetchBotIdAttestation(flow.attestationUrl, win.fetch?.bind(win)).then((t) => {
+          if (removed) throw new Error('captcha: widget removed');
+          return t;
+        })
+      : Promise.reject(new Error('captcha: vercel_botid needs an attestationUrl'));
+    token.catch(() => {});
+    return {
+      token,
+      remove() {
+        removed = true;
+      },
+    };
+  }
   const siteKey = flow.siteKey ?? '';
   const mode: CaptchaWidgetMode = flow.widget ?? 'managed';
   const win = (container.ownerDocument?.defaultView ?? globalThis) as unknown as Win;
@@ -330,6 +422,8 @@ export function renderCaptchaWidget(
           case 'recaptcha_v3':
           case 'recaptcha_enterprise':
             return recaptchaV3Token(api as GrecaptchaApi, siteKey);
+          case 'captchafox':
+            return captchafoxToken(api as CaptchafoxApi, container, siteKey, mode, onTeardown);
           default:
             throw new Error(`captcha: ${provider} is not renderable`);
         }

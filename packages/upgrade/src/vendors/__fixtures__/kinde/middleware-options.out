@@ -1,0 +1,13 @@
+import { kindeWithAuthCompat } from '@atlasauth/nextjs/compat';
+
+// TODO(atlas-migrate): withAuth isAuthorized: it now receives the Atlas session claims (permissions and org_code are filled in from Atlas); check the permission names match your Atlas roles
+export default kindeWithAuthCompat(async function middleware(req) {
+  console.log('signed in as', req.kindeAuth.user.id);
+}, {
+  publicPaths: ['/', '/pricing'],
+  isAuthorized: ({ token }) => token.permissions.includes('view:dashboard'),
+});
+
+export const config = {
+  matcher: ['/((?!_next|favicon.ico).*)'],
+};

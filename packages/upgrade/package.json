@@ -1,7 +1,7 @@
 {
   "name": "@atlasauth/upgrade",
-  "version": "0.1.0",
-  "description": "CLI codemods to migrate a Clerk codebase to Atlas and to move across Atlas SDK versions.",
+  "version": "0.6.0",
+  "description": "CLI codemods to migrate a Clerk, Auth.js (NextAuth), Supabase Auth, Auth0, Better Auth, Lucia, Passport.js or iron-session codebase to Atlas, and to move across Atlas SDK versions.",
   "bin": {
     "atlas-upgrade": "dist/cli.js"
   },
@@ -16,7 +16,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
   "dependencies": {
@@ -33,6 +33,7 @@
   },
   "files": [
     "dist",
+    "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
   ]

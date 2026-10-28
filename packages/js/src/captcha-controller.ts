@@ -1,6 +1,9 @@
 import { nextStep, type FieldError } from './attempt';
 import { advance, startSignUp, type FapiClient, type FlowState } from './fapi';
 import { toSignUpInput } from './instance-settings';
+import { registerSignUpPasskey, startPasskeySignUp } from './passkey-sign-up';
+import type { WebAuthnHost } from './passkey';
+import { refreshPoliciesOnRequired, type PolicyAcceptanceController } from './policy-acceptance';
 import type { AtlasCaptchaLabels } from './atlas-captcha';
 import {
   flowNeedsCaptcha,
@@ -80,7 +83,7 @@ export function createCaptchaController(
   let drawnKey: string | null = null;
 
   const needed = () =>
-    options.active && !!options.flow && isRenderableCaptcha(options.flow.provider);
+    options.active && !!options.flow && isRenderableCaptcha(options.flow.provider, options.flow);
   const eager = () => options.eager ?? options.flow?.widget !== 'invisible';
   const key = () => {
     const f = options.flow;
@@ -269,11 +272,58 @@ export async function advanceWithCaptcha(
 export async function createSignUp(
   client: FapiClient,
   values: Record<string, string>,
-  opts: { consent: boolean; captcha?: CaptchaController | null; t: (key: string) => string },
+  opts: { consent: boolean; captcha?: CaptchaController | null; t: (key: string) => string; policies?: PolicyAcceptanceController | null },
 ): Promise<FlowState> {
   const token = opts.captcha ? await opts.captcha.getToken() : null;
-  let next = await startSignUp(client, toSignUpInput(values, opts.consent, token));
+  const policyAcceptances = opts.policies ? opts.policies.build() : [];
+  let next = await startSignUp(client, { ...toSignUpInput(values, opts.consent, token), ...(policyAcceptances.length ? { policyAcceptances } : {}) });
+  // A policy changed while the form was open: reload them so the form asks again.
+  if (opts.policies) await refreshPoliciesOnRequired(client, opts.policies, next.errors);
   next = { ...next, errors: localizeCaptchaErrors(next.errors, opts.t).errors };
   if (next.errors.length > 0 && opts.captcha?.needed) opts.captcha.reset();
   return next;
+}
+
+/**
+ * {@link createSignUp} for a passkey-only sign-up (`account.passkeySignUp`):
+ * POSTs `/v1/client/sign_ups/passkey` with the email (when the form collected
+ * one) and the configured sign-up fields — never a password. No account exists
+ * until {@link finishPasskeySignUp} registers the passkey.
+ */
+export async function createPasskeySignUp(
+  client: FapiClient,
+  values: Record<string, string>,
+  opts: { consent: boolean; captcha?: CaptchaController | null; t: (key: string) => string; policies?: PolicyAcceptanceController | null },
+): Promise<FlowState> {
+  const token = opts.captcha ? await opts.captcha.getToken() : null;
+  const { email, fields, consent } = toSignUpInput(values, opts.consent, token);
+  const policyAcceptances = opts.policies ? opts.policies.build() : [];
+  let next = await startPasskeySignUp(client, {
+    ...(email ? { email } : {}),
+    fields,
+    consent,
+    ...(token ? { captchaToken: token } : {}),
+    ...(policyAcceptances.length ? { policyAcceptances } : {}),
+  });
+  if (opts.policies) await refreshPoliciesOnRequired(client, opts.policies, next.errors);
+  next = { ...next, errors: localizeCaptchaErrors(next.errors, opts.t).errors };
+  if (next.errors.length > 0 && opts.captcha?.needed) opts.captcha.reset();
+  return next;
+}
+
+/**
+ * The passkey-only sign-up's last step, for a prebuilt form: run the browser
+ * ceremony, and the server creates the account when it verifies. A cancelled
+ * prompt reads `signUp.passkeyCancelled` from the form's catalog.
+ */
+export async function finishPasskeySignUp(
+  client: FapiClient,
+  state: FlowState,
+  opts: { t: (key: string) => string; host?: WebAuthnHost },
+): Promise<FlowState> {
+  const next = await registerSignUpPasskey(client, state, opts.host ? { host: opts.host } : {});
+  return {
+    ...next,
+    errors: next.errors.map((e) => (e.code === 'PASSKEY_CANCELLED' ? { ...e, message: opts.t('signUp.passkeyCancelled') } : e)),
+  };
 }

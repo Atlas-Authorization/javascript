@@ -1,0 +1,47 @@
+{
+  "name": "@atlasauth/lit",
+  "version": "0.1.0",
+  "description": "Atlas for web components: Lit elements (provider, signed-in/out gates, permission gate, sign-in and sign-up widgets) over @atlasauth/js. Works in any framework or none.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "./dist/index.js"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@atlasauth/js": "workspace:*",
+    "@atlasauth/embed": "workspace:^",
+    "@lit/context": "^1.1.3"
+  },
+  "peerDependencies": {
+    "lit": ">=3"
+  },
+  "devDependencies": {
+    "happy-dom": "^15.11.0",
+    "lit": "^3.2.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "!dist/*.tsbuildinfo",
+    "README.md",
+    "CHANGELOG.md"
+  ]
+}

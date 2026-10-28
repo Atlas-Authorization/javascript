@@ -1,5 +1,97 @@
 # @atlasauth/js changelog
 
+## 0.26.1 — 2026-10-28
+
+- The SDK reports its own version correctly again (the previous release still identified itself as the release before).
+
+## 0.26.0 — 2026-10-28
+
+- CIBA approvals and PIN (`listCibaRequests`, `decideCibaRequest`, `getCibaPin`, `setCibaPin`, `clearCibaPin`)
+- Cross-device magic link (`prepareFactor(..., { crossDevice: true })`, `previewCrossDeviceLink`, `confirmCrossDeviceLink`)
+- Passkey hints, conditional create and `getClientCapabilities`
+- Resource sharing client and connector directory facets
+
+## 0.25.0 — 2026-10-27
+
+- `signInWithSrp` and `srpClientStart`: SRP-6a password sign-in (RFC 5054, 3072-bit group, SHA-256), so the password never leaves the browser.
+- `listAuthorizedApps`, `disconnectAuthorizedApp` and `revokeAppGrant`: the apps a user authorized, with the OpenID Grant Management grants each holds.
+- Identity governance for the signed-in user: `listAccessCatalog`, `requestAccess`, `listMyAccess`, `listMyAccessRequests`, `getAccessRequest`, `cancelAccessRequest`, `listPendingApprovals`, `decideAccessRequest`, `listAccessReviews`, `decideAccessReview`, `listAccessDelegations`, `delegateApprovals` and `endDelegation`.
+- Connections: `revokeMyConnection` and `revokeOrganizationConnection` return `provider_revoked` (true, false or `'unsupported'`), `provider_status`, `provider_error` and `local_cleared`; `AppConnection.last_error` carries the provider's code and HTTP status and `refresh_failures`.
+- Connections: `setOrganizationConnectionCredentials` takes every credential field (bearer token, basic username and password, custom header value, HMAC secret, signing key, OAuth 1.0a keys), `expiresAt` and `config`; `AppConnection.kind` lists the new kinds and carries `secret_expires_at`. There is still no call that reads a credential back.
+- Connections: `connectMyConnection`, `connectOrganizationConnection`, `revokeOrganizationConnection`, `listOrganizationOAuthClients`, `setOrganizationOAuthClient`, `deleteOrganizationOAuthClient`; `AppConnection` carries `environment`, `external_id`, `host_params`, `scopes`, `metadata` and `last_error`, and its status adds `revoked` and `error`.
+- User-managed access for resource owners: `listUmaResources`, `shareUmaResource`, `unshareUmaResource`, `listUmaAccessRequests` and `decideUmaAccessRequest`, with a typed `UmaError`, plus `umaClaimsUrl` and `parseUmaClaimsRedirect` for the claims-gathering redirect.
+
+## 0.24.0 — 2026-10-26
+
+- Additional factors: `startHotp`, `verifyHotp`, `resyncHotp`; `enrollYubikey`, `looksLikeYubicoOtp`; `startDuoEnrollment`, `finishDuoEnrollment`, `prepareDuo`, `pollDuo`; `getSecurityQuestions`, `setSecurityQuestions`, `removeSecurityQuestions`, `getResetSecurityQuestions`; `signInWithSmartCard`. `advancePasswordReset` and `pollPasswordReset` take `{ askQuestions }` and a reset flow reports `securityQuestions` at the new-password step (send the answers as `securityAnswers`). `account.mfa` reads `hotp`, `yubikey`, `duo`, `securityQuestions` and `smartCard`; `MfaChoices.duo`.
+
+## 0.23.1 — 2026-10-25
+
+- `ATLAS_JS_VERSION` reports 0.23.1 (0.23.0 still reported 0.22.0 to the SDK advisory check).
+
+## 0.23.0 — 2026-10-25
+
+- `stepUp(client, { strategy, … })` and `sendStepUpEmailCode(client)`: re-authenticate the signed-in user in place (`POST /v1/client/me/step_up`) and get a token with a fresh `auth_time`; `authenticatedWithin(claims, maxAgeSeconds)` checks it.
+
+## 0.22.0 — 2026-10-24
+
+- Per-call integration audiences (`getToken({ for, cbid })`), partner platforms, operator tokens for partner products.
+
+## 0.21.0 — 2026-10-24
+
+- SSO organization claims, app adoption, validating dry runs, sealed secrets, consent API adapters; see the Atlas changelog.
+
+## 0.20.0 — 2026-10-24
+
+### Added
+
+- Referral config reads `context_cookies` (a list of tracking cookies tried in order; `contextCookies` on the config) and falls back to the single `context_cookie`.
+
+### Changed
+
+- The `referally` browser source id is read as `referalli`.
+
+- `loadSignInWithAtlas({ version?, integrity?, nonce? })`: load the Sign in with Atlas button script from your bundle; a Content-Security-Policy block is logged as `[Atlas] blocked by CSP: add <origin> to <directive> (…)` and rejects with `csp_blocked`. Plus `signInWithAtlasScriptUrl()` and `cspBlockedMessage()`.
+
+## 0.19.0 — 2026-10-24
+
+### Added
+
+- Policy acceptance (terms of service, privacy, any policy): `getPolicies()`, `buildPolicyAcceptances()`, `acceptAttemptPolicies()` (continue a sign-in at `needs_policy_acceptance`), `getMyPolicies()` and `acceptPolicies()`; `startSignUp({ policyAcceptances })` and `startPasskeySignUp({ policyAcceptances })`.
+- The `needs_policy_acceptance` attempt status and the `accept_policies` step (`pending_policies`, `policy_acceptance_token` on `AttemptView`; `FlowState.policyToken`); `advance` posts the step's acceptances with the held attempt's token. `readRedirectResult` and popup outcomes carry `policyToken` (`__atlas_policy_token`).
+- Policy UI building blocks: `loadPolicies()` / `loadMyPolicies()` (camel-cased `Policy` lists), `PolicyAcceptanceController` (per-policy tick, in-page viewer clock, scroll-to-end, `build()` for the `policy_acceptances` body), `PolicyGateController` for in-app re-acceptance, `observeScrollEnd()`, `trapFocus()`, `mountPolicyConsent()` / `mountPolicyClickwrap()` / `openPolicyModal()` / `mountPolicyAcceptStep()` (the DOM the Vue, Svelte, Angular, Solid and embed UIs host) and `POLICY_STRINGS`.
+
+## 0.18.0 — 2026-10-24
+
+### Added
+
+- Better Auth session bridge for apps whose Better Auth cookie is readable by script: exchanges it once for an Atlas session.
+
+## 0.17.0 — 2026-10-24
+
+### Added
+
+- `@atlasauth/js/compat`: `createAuth0CompatClient` / `Auth0CompatClient`, a drop-in for `@auth0/auth0-spa-js` on Atlas for framework-free browser apps (`loginWithRedirect`, `handleRedirectCallback`, `loginWithPopup`, `isAuthenticated`, `getUser`, `getIdTokenClaims`, `getTokenSilently` incl. templates and `detailedResponse`, `getTokenWithPopup`, `checkSession`, `logout`), with `Auth0CompatError` codes. What `atlas migrate code --from auth0` rewrites auth0-spa-js onto.
+- Device sign-in approval on your own page (RFC 8628): `lookupDeviceAuthorization(client, userCode)`, `approveDeviceAuthorization(client, authorization)` and `denyDeviceAuthorization(...)` over `/v1/client/me/device_authorizations`, with `formatUserCode`, `userCodeFromUrl` and `DeviceAuthorizationError` (`needsReverification` when the app requires a recent re-authentication to approve, `isInvalidCode`).
+- SAML Single Logout on sign-out: when the server returns `saml_logout_url`, `signOut()` sends the browser there after the local sign-out, so the identity provider's session ends too. It does not when another account was promoted. `signOut({ samlLogout: false })` keeps the page, `signOut({ samlLogoutRedirectUrl })` picks where the IdP returns the browser, and `SignOutResult.samlLogoutUrl` reports the URL. Also `safeSamlLogoutUrl`.
+- Upstream (RP-initiated) logout on sign-out: when the session came from a custom OAuth/OIDC provider or an enterprise OIDC connection with RP-initiated logout on, the server returns `upstream_logout_url` and `signOut()` follows it after the local sign-out. `signOut({ upstreamLogout: false })` keeps the page, `signOut({ returnUrl })` picks where the user lands, and `SignOutResult.upstreamLogoutUrl` reports the URL. `SignOutGuard` takes a `navigate` opener (native hosts), used for SAML Single Logout too.
+- A browser follows one logout redirect: if a sign-out returns both `upstream_logout_url` and `saml_logout_url`, the upstream URL is followed and the SAML identity provider is told server-to-server (SOAP back-channel logout, when configured); both URLs are reported. `samlLogoutRedirectUrl` defaults to `returnUrl`.
+- WebAuthn PRF: `getPasskeyAssertion` and passkey registration take `prf` (`PasskeyPrfRequest`: `eval`, `evalByCredential`) and `onExtensionResults` (`PasskeyExtensionResults`); the outputs go to your code only and the `finish` body is unchanged. `passkeyExtensionsInput`, `readExtensionResults`.
+- Check an emailed one-time code without using it up: `checkEmailCode(client, target, code)` (`EmailCodeCheck` with `expires_at` and `attempts_remaining`) for sign-in first and second factor, sign-up verification, step-up and email-address verification; `emailCodeCheckRequest`, `emailCodeTargetForAttempt`.
+- Captcha providers CaptchaFox and Vercel BotID (`attestation_url` / `attestationUrl`, `fetchBotIdAttestation`); `isRenderableCaptcha(provider, flow)` takes the flow.
+
+## 0.16.0 — 2026-10-23
+
+### Added
+
+- `createOrganizationAuditLog(client, { pageSize, action })`: the framework-agnostic pager behind every SDK's `<OrganizationAuditLog/>`, with `organizationAuditLogPath`, `describeAuditAction` and the `OrganizationAuditLogEntry` type.
+- Sign-up starts, and every start that can create an account (social, enterprise SSO and SAML, DiscourseConnect, native id_token, external JWT, LDAP, Telegram and wallet sign-ins), send the stable device id, so an instance's accounts-per-device limit counts devices rather than networks, across email and social sign-ups alike. `DEVICE_ID_ROUTES` lists them.
+- The recovery codes an MFA enrolment completes the sign-in with: `advance` moves `backup_codes` off the attempt into `FlowState.recoveryCodes` (memory only), and the components show them before exchanging the ticket with `pendingRecoveryCodes`, `acknowledgeRecoveryCodes`, `copyRecoveryCodes`, `downloadRecoveryCodes` / `canDownloadRecoveryCodes` (a `recovery-codes.txt` file), `recoveryCodesText` and `recoveryCodesFrom`.
+- The sign-in's MFA steps, shared by every framework SDK: `createMfaEnrollment` (the enrolment step's state and requests: authenticator app with `qrCode`, or a texted code), `prepareMfaEnrollment`, `enrollmentSubmitKey`, `groupSetupKey`, `prepareSecondFactorCode` (`sms` or `email_code`) and `mfaChoicesFrom`.
+- `requestForStep` posts a texted enrolment as `{ factor_id, code }` (values with `enrollStrategy: 'phone_code'`).
+- `AccountUx.mfa` (`{ totp, sms, totpCodes }`), read from `account.mfa` when the server sends it.
+- `beginPasskeySignIn(client, { captcha })`: the passkey sign-in start (`sign_ins/passkey/begin`) with the sign-in captcha folded in. It sends `captcha_token` when the token source has one, and after a `CAPTCHA_REQUIRED` / `CAPTCHA_FAILED` refusal asks once for a fresh token and retries once.
+
 ## 0.15.0
 
 ### Added

@@ -386,6 +386,8 @@ export interface FlowCaptcha {
   provider?: string;
   siteKey?: string | null;
   widget?: CaptchaWidgetMode;
+  /** Vercel BotID: the app's own route that returns a signed BotID verdict. */
+  attestationUrl?: string;
 }
 
 /** The unstyled defaults, so the widget looks right before any fetch resolves. */

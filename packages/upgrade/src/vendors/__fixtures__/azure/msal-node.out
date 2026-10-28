@@ -1,0 +1,9 @@
+// TODO(atlas-migrate): 'ConfidentialClientApplication' from '@azure/msal-node': server-side: Atlas hosts sign-in and callbacks; read the session with auth() from @atlasauth/nextjs/server or verify tokens with AtlasBackend from @atlasauth/backend
+import { ConfidentialClientApplication } from '@azure/msal-node';
+
+// TODO(atlas-migrate): AZURE_AD_CLIENT_SECRET: MSAL configuration; Atlas reads its publishable key and frontend API from the ATLAS_* env vars instead
+const cca = new ConfidentialClientApplication({ auth: { clientId: 'x', clientSecret: process.env.AZURE_AD_CLIENT_SECRET! } });
+
+export async function callback(code: string) {
+  return cca.acquireTokenByCode({ code, scopes: ['openid'], redirectUri: 'https://app.example.com/callback' });
+}

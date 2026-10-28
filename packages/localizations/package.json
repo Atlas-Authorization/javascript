@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/localizations",
-  "version": "0.7.0",
+  "version": "0.11.0",
   "description": "i18n string bundles for the Atlas hosted pages and @atlasauth/react components — the Atlas peer of @clerk/localizations.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -36,11 +36,71 @@
     "./nl-NL": {
       "types": "./dist/nl-NL.d.ts",
       "default": "./dist/nl-NL.js"
+    },
+    "./ar-SA": {
+      "types": "./dist/ar-SA.d.ts",
+      "default": "./dist/ar-SA.js"
+    },
+    "./he-IL": {
+      "types": "./dist/he-IL.d.ts",
+      "default": "./dist/he-IL.js"
+    },
+    "./fa-IR": {
+      "types": "./dist/fa-IR.d.ts",
+      "default": "./dist/fa-IR.js"
+    },
+    "./hi-IN": {
+      "types": "./dist/hi-IN.d.ts",
+      "default": "./dist/hi-IN.js"
+    },
+    "./zh-CN": {
+      "types": "./dist/zh-CN.d.ts",
+      "default": "./dist/zh-CN.js"
+    },
+    "./zh-TW": {
+      "types": "./dist/zh-TW.d.ts",
+      "default": "./dist/zh-TW.js"
+    },
+    "./ko-KR": {
+      "types": "./dist/ko-KR.d.ts",
+      "default": "./dist/ko-KR.js"
+    },
+    "./it-IT": {
+      "types": "./dist/it-IT.d.ts",
+      "default": "./dist/it-IT.js"
+    },
+    "./pl-PL": {
+      "types": "./dist/pl-PL.d.ts",
+      "default": "./dist/pl-PL.js"
+    },
+    "./tr-TR": {
+      "types": "./dist/tr-TR.d.ts",
+      "default": "./dist/tr-TR.js"
+    },
+    "./ru-RU": {
+      "types": "./dist/ru-RU.d.ts",
+      "default": "./dist/ru-RU.js"
+    },
+    "./sv-SE": {
+      "types": "./dist/sv-SE.d.ts",
+      "default": "./dist/sv-SE.js"
+    },
+    "./id-ID": {
+      "types": "./dist/id-ID.d.ts",
+      "default": "./dist/id-ID.js"
+    },
+    "./vi-VN": {
+      "types": "./dist/vi-VN.d.ts",
+      "default": "./dist/vi-VN.js"
+    },
+    "./th-TH": {
+      "types": "./dist/th-TH.d.ts",
+      "default": "./dist/th-TH.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
   "devDependencies": {
@@ -52,6 +112,7 @@
   },
   "files": [
     "dist",
+    "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
   ]

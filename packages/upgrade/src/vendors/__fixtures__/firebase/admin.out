@@ -1,0 +1,10 @@
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+
+export async function handler(token: string) {
+  // TODO(atlas-migrate): Firebase Admin verifyIdToken(): verify the Atlas session token instead: new AtlasBackend({ ... }).verify(token) from @atlasauth/backend (keep accepting Firebase ID tokens during the cutover with legacyIssuers)
+  const decoded = await getAuth().verifyIdToken(token);
+  // TODO(atlas-migrate): Firebase Admin setCustomUserClaims(): custom claims: set users.update({ public_metadata }) from @atlasauth/backend; a JWT template copies them into the session token
+  await getAuth().setCustomUserClaims(decoded.uid, { admin: true });
+  return getFirestore().collection('users').doc(decoded.uid).get();
+}

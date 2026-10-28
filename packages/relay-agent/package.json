@@ -1,0 +1,22 @@
+{
+  "name": "@atlasauth/relay-agent",
+  "version": "0.2.0",
+  "description": "Outbound-only relay agent: lets Atlas reach LDAP / Active Directory (reads and, when allowed, write-back), SQL databases and HTTP targets inside a private network without opening an inbound port.",
+  "license": "MIT",
+  "bin": { "atlas-relay-agent": "./dist/main.js" },
+  "main": "./dist/agent.js",
+  "types": "./dist/agent.d.ts",
+  "files": ["dist", "!dist/*.tsbuildinfo", "Dockerfile", "README.md", "CHANGELOG.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ldapts": "^7.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

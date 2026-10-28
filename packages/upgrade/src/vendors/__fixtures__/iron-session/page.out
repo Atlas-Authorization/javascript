@@ -1,0 +1,8 @@
+import { redirect } from 'next/navigation';
+import { auth } from '@atlasauth/nextjs/server';
+
+export default async function Dashboard() {
+  const session = await auth();
+  if (!session.userId) redirect('/login');
+  return <p>Signed in as {session.userId}</p>;
+}

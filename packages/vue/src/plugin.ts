@@ -8,6 +8,8 @@ import {
 } from 'vue';
 import {
   FapiClient,
+  captureMarketing,
+  flushMarketing,
   SignOutGuard,
   TokenCache,
   closeOAuthPopupAfterSignIn,
@@ -24,6 +26,7 @@ import {
   type RedirectResult,
   type SignOutOptions,
   type SignOutResult,
+  type EndImpersonationResult,
   catalogLocale,
   SDK_HEADER,
   SignOutNotifier,
@@ -90,7 +93,7 @@ export interface AtlasClient {
    * any component reads it — because a `needs_second_factor` redirect carries a
    * status but no ticket, and that is what the 2FA resume seeds from.
    */
-  pendingAttempt: { id: string; status: string } | null;
+  pendingAttempt: { id: string; status: string; policyToken?: string } | null;
   /**
    * Always fresh: refreshes first if the cached token is close to expiry. With
    * `{ template }`, a short-lived named-template token (e.g. `'chatly'`).
@@ -119,6 +122,13 @@ export interface AtlasClient {
    */
   signOut(options?: SignOutOptions): Promise<SignOutResult>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
+  /**
+   * End the active impersonation ("return to admin"): the impersonator's own
+   * session on this browser becomes active again with no sign-in
+   * (`resumed: true`); with none, another account signed in here is adopted,
+   * or this browser is signed out.
+   */
+  endImpersonation(): Promise<EndImpersonationResult>;
   /** Re-boot from the Frontend API. Resolves true when a session now exists in this browser. */
   reload(): Promise<boolean>;
 }
@@ -231,11 +241,11 @@ function createAtlasClient(options: CreateAtlasOptions): {
   const cache = new TokenCache();
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const pendingAttempt: { id: string; status: string } | null = (() => {
+  const pendingAttempt: { id: string; status: string; policyToken?: string } | null = (() => {
     if (typeof window === 'undefined') return null;
     const result = readRedirectResult(window.location.search);
     return result?.status && !result.ticket
-      ? { id: result.attemptId, status: result.status }
+      ? { id: result.attemptId, status: result.status, ...(result.policyToken ? { policyToken: result.policyToken } : {}) }
       : null;
   })();
 
@@ -411,6 +421,18 @@ function createAtlasClient(options: CreateAtlasOptions): {
     await reload();
   };
 
+  const endImpersonation = async (): Promise<EndImpersonationResult> => {
+    const outcome = await guard.endImpersonation(currentSessionId());
+    if (!outcome.ended) return outcome;
+    if (!outcome.activeSessionId) {
+      clearState('user');
+      return outcome;
+    }
+    if (outcome.jwt) applyToken(outcome.jwt, outcome.activeSessionId);
+    await reload();
+    return outcome;
+  };
+
   const catalog = options.localization ? withFallback(options.localization) : EN_US;
   const errorCatalog = options.localization ?? EN_US;
 
@@ -422,6 +444,12 @@ function createAtlasClient(options: CreateAtlasOptions): {
   const scope = effectScope(true);
   scope.run(() => {
     watch([status, claims], () => scheduleRefresh(), { flush: 'post' });
+    // ADM-08 marketing attribution: capture the campaign parameters on arrival (instance
+    // setting + consent decide), then send them for the user once signed in.
+    if (typeof window !== 'undefined') void captureMarketing(fapiClient).catch(() => undefined);
+    watch(status, (s) => {
+      if (s === 'signed_in') void flushMarketing(fapiClient).catch(() => undefined);
+    });
   });
 
   // Another tab signed out of THIS session (its tombstone reached the shared
@@ -518,6 +546,7 @@ function createAtlasClient(options: CreateAtlasOptions): {
       getProviderToken,
       signOut,
       setActiveOrganization,
+      endImpersonation,
       reload,
     },
     boot,

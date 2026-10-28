@@ -1,0 +1,6 @@
+import { getAuth0SessionCompat, withApiAuthRequiredCompat } from '@atlasauth/nextjs/compat';
+
+export const GET = withApiAuthRequiredCompat(async function GET() {
+  const session = await getAuth0SessionCompat();
+  return Response.json({ user: session?.user ?? null });
+});

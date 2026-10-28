@@ -60,7 +60,7 @@ export interface OAuthProvider {
   custom_redirect_uri?: string | null;
   /** The instance's icon override for this provider's button, or null. */
   icon_url?: string | null;
-  /** Wallet providers only (siwe, siws, siwf): the stored verifier settings. */
+  /** Wallet providers only (siwe, siws, siwb, siwf): the stored verifier settings. */
   setting_values?: Record<string, string>;
 }
 
@@ -79,14 +79,14 @@ export interface ListOAuthProvidersParams {
  * clears one; an unknown key is refused.
  */
 export interface OAuthWalletSettings {
-  /** siwe / siws / siwf: the expected domain (`hostname[:port]`). */
+  /** siwe / siws / siwb / siwf: the expected domain (`hostname[:port]`). */
   domain?: string | null;
   /** siwe / siwf: allowed chain ids (positive integers, array or comma list). */
   chain_ids?: number[] | string | null;
   /** siwe: an https RPC URL; enables smart-contract (EIP-1271) wallets. */
   rpc_url?: string | null;
-  /** siws: allowed networks. */
-  networks?: Array<'mainnet' | 'devnet' | 'testnet'> | string | null;
+  /** siws: allowed networks. siwb: allowed Bitcoin networks (`mainnet`, `testnet`, `testnet4`, `signet`, `regtest`). */
+  networks?: Array<'mainnet' | 'devnet' | 'testnet' | 'testnet4' | 'signet' | 'regtest'> | string | null;
   /** siwf: an https Optimism RPC URL, required to verify FID ownership. */
   optimism_rpc_url?: string | null;
   /** siwf: the Farcaster ID registry contract (`0x…`). */

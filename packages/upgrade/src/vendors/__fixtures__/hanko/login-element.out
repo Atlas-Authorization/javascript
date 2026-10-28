@@ -1,0 +1,15 @@
+import { useEffect } from 'react';
+// TODO(atlas-migrate): register(api): delete it; the Hanko web components are replaced by <SignIn /> and <UserProfile /> from @atlasauth/react
+import { register } from '@teamhanko/hanko-elements';
+
+import { SignIn } from '@atlasauth/react';
+
+const hankoApi = process.env.NEXT_PUBLIC_ATLAS_FRONTEND_API!;
+
+export default function LoginPage() {
+  useEffect(() => {
+    register(hankoApi).catch(console.error);
+  }, []);
+
+  return <SignIn />;
+}

@@ -248,6 +248,11 @@ export interface ComposeDesignInput {
   rootClass?: string;
   /** Warning sink. Default: `console.warn` outside production. */
   warn?: DesignWarn;
+  /**
+   * Let the host page's `--atlas-host-*` variables (accent, surface, ink, line, radius,
+   * font, focus ring) restyle the component where the page sets them. Default true.
+   */
+  hostVariables?: boolean;
 }
 
 export interface ComposedDesign {
@@ -349,7 +354,7 @@ export function composeDesign(input: ComposeDesignInput): ComposedDesign {
   const rootClass = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(input.rootClass ?? '') ? input.rootClass! : 'atlas-root';
   const key = designKey(compileDesignCss(resolved, { scope: '.k', assetUrl: input.assetUrl }));
   const scope = `.${rootClass}[data-atlas-design="${key}"]`;
-  const css = compileDesignCss(resolved, { scope, assetUrl: input.assetUrl });
+  const css = compileDesignCss(resolved, { scope, assetUrl: input.assetUrl, hostVariables: input.hostVariables !== false });
   return {
     active: true,
     key,

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { AtlasBackend, hasPermission, hasRole } from './verify';
 import { JwksCache, REFETCH_INTERVAL_MS, readKid } from './jwks-cache';
@@ -6,8 +6,20 @@ import { JwksCache, REFETCH_INTERVAL_MS, readKid } from './jwks-cache';
 const ISSUER = 'https://bright-fox-42.fapi.atlas.dev';
 const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
 
+/**
+ * Two RSA key pairs for the whole file, generated once: RSA key generation takes
+ * a random and, on a loaded machine, multi-second stretch of CPU, which used to
+ * land inside a test's 5 s budget. keyring() alternates between them, so the two
+ * calls of one test (the real key and the impostor) still get different keys.
+ */
+let pairs: Array<Awaited<ReturnType<typeof generateKeyPair>>> = [];
+let next = 0;
+beforeAll(async () => {
+  pairs = await Promise.all([generateKeyPair('RS256'), generateKeyPair('RS256')]);
+}, 60_000);
+
 async function keyring(kid = 'kid-1') {
-  const { privateKey, publicKey } = await generateKeyPair('RS256');
+  const { privateKey, publicKey } = pairs[next++ % pairs.length]!;
   const jwk = { ...(await exportJWK(publicKey)), kid, alg: 'RS256', use: 'sig' };
   return { privateKey, jwks: { keys: [jwk] }, kid };
 }

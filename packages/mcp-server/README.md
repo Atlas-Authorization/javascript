@@ -23,6 +23,24 @@ opt-in, with the exact same contract as `@atlasauth/agent-toolkit`:
   `users:read,organizations:write`. A `:write` grants `:read` too, but the
   irreversible `:delete` is granted **only** by an explicit `:delete` (or `:*`).
 
+## Docs tools
+
+Two read-only tools search and read the public Atlas documentation, so a coding
+agent can look up how to integrate Atlas while it works:
+
+- `search_atlas_docs` `{ query, limit? }` — the best-matching pages, each with its URL and an excerpt.
+- `read_atlas_doc` `{ page }` — one page in full, by URL, slug or title.
+
+They need no key. Without `ATLAS_SECRET_KEY` the server runs in **docs-only**
+mode and exposes just these two. With a key they sit next to the instance
+tools; an `ATLAS_MCP_ALLOWED_TOOLS` allowlist governs them like any other tool.
+
+The quickest setup is the Atlas CLI, which writes the config for your editor:
+
+```bash
+npx @atlasauth/cli mcp install --cursor        # or --claude-code, --codex, --vscode
+```
+
 ## Usage (stdio — Claude Desktop / Cursor)
 
 ```jsonc

@@ -1,0 +1,18 @@
+[
+  {
+    "name": "provider",
+    "path": "app/auth-provider.tsx",
+    "manual": [
+      "removed provider props with no Atlas counterpart: contextOptions, hostedLoginBox"
+    ]
+  },
+  {
+    "name": "env",
+    "path": "lib/frontegg-config.ts",
+    "manual": [
+      "FRONTEGG_CLIENT_SECRET: replace with ATLAS_SECRET_KEY",
+      "FRONTEGG_ENCRYPTION_PASSWORD: remove once the zero-logout bridge is retired",
+      "FRONTEGG_APP_URL: remove"
+    ]
+  }
+]

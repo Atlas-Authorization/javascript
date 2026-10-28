@@ -242,6 +242,34 @@ export interface DesignSettings {
   legacy: boolean;
   /** When `legacy`: the design derived from the older branding settings. */
   legacy_design?: AtlasDesign | null;
+  /** Instance designs: the imported brand document layer (null when none). */
+  brand?: BrandImport | null;
+  /** Instance designs: the layers, lowest first (preset < brand < design < audience). */
+  precedence?: { layer: 'preset' | 'brand' | 'design' | 'audience'; source: string | null }[];
+  /** Instance designs: which layer each field set by the brand or the design comes from. */
+  sources?: Record<string, 'brand' | 'design'>;
+  /** After a brand import: the tokens that were not applied, with the reason. */
+  ignored?: BrandIgnoredToken[];
+}
+
+export interface BrandIgnoredToken {
+  /** The token path in the brand document, e.g. `color.sparkle`. */
+  token: string;
+  reason: string;
+}
+
+/** An imported brand document (design tokens), as its own layer under the instance design. */
+export interface BrandImport {
+  source: 'url' | 'inline';
+  url: string | null;
+  /** Epoch ms. */
+  imported_at: number;
+  document_sha256: string;
+  /** The design overrides the document mapped to. */
+  design: AtlasDesign;
+  mapping: { token: string; to: string; value: string | number }[];
+  ignored: BrandIgnoredToken[];
+  meta: { name: string | null; legalName: string | null; supportEmail: string | null; favicon: string | null };
 }
 
 /** A compiled, unsaved design. Nothing is stored. */
@@ -331,6 +359,15 @@ export function designResource(request: RequestFn) {
     /** Replace the whole instance design. */
     replace(design: AtlasDesign): Promise<DesignSettings> {
       return request({ method: 'PUT', path: '/v1/instance/design', body: { design } });
+    },
+    /**
+     * Import a brand document (W3C design tokens) as its own layer under the
+     * instance design: `{ brandUrl }` fetches it (https), `{ brand }` sends it,
+     * `{ brand: null }` removes it. The result lists `brand.mapping` and `ignored`.
+     */
+    importBrand(input: { brandUrl: string } | { brand: Record<string, unknown> | null }): Promise<DesignSettings> {
+      const body = 'brandUrl' in input ? { brand_url: input.brandUrl } : { brand: input.brand };
+      return request({ method: 'PUT', path: '/v1/instance/design', body });
     },
     /** Change part of the instance design; `null` removes a setting. */
     update(design: AtlasDesignPatch): Promise<DesignSettings> {

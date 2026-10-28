@@ -40,6 +40,55 @@ export interface AtlasClientConfig {
    * newer API version. Not called in strict mode, where the write fails instead.
    */
   onUnknownFields?: (event: UnknownFieldsEvent) => void;
+  /**
+   * Dry run: every write (POST/PUT/PATCH/DELETE) is sent with `?dry_run=true`,
+   * so Atlas validates it and answers with the changes it WOULD make
+   * ({@link DryRunResult}) without changing anything. Use it for a single plan
+   * with `client.withOptions({ dryRun: true })`; the method's declared return
+   * type is then a `DryRunResult` at runtime.
+   */
+  dryRun?: boolean;
+  /**
+   * Sealed secret delivery: an `x25519:<public key>` (see `generateSealKeyPair`
+   * in `@atlasauth/backend`). Sent as `X-Secret-Recipient` on every request, so
+   * every shown-once secret in a response arrives sealed (`sealed_secret`, …)
+   * instead of in plaintext. Open it with `openSealedSecret`.
+   */
+  secretRecipient?: string;
+}
+
+/** One change a write would make (or made), in the config-changelog shape. */
+export interface DryRunChange {
+  section: string;
+  before: unknown;
+  after: unknown;
+}
+
+/** What a write answers with `?dry_run=true` (see {@link AtlasClientConfig.dryRun}). */
+export interface DryRunResult {
+  object: 'dry_run';
+  dry_run: true;
+  /**
+   * `native`: the endpoint's own dry run, validated in full. `rollback`: the
+   * real write ran in a transaction that was rolled back, every side effect
+   * held back, validated in full. `plan`: validation could not run to the end
+   * (a third-party call decided the outcome); see `validation_skipped`.
+   */
+  mode: 'native' | 'rollback' | 'plan';
+  validated: boolean;
+  method: string;
+  path: string;
+  changes: DryRunChange[];
+  /** The same non-fatal warnings the real write returns (e.g. `origin_still_referenced`). */
+  warnings?: Array<{ code: string; message?: string; [key: string]: unknown }>;
+  would_return?: unknown;
+  /** The status the real write would answer with (`rollback` mode). */
+  would_return_status?: number;
+  /** Side effects held back: `email`, `sms`, `voice`, `push`, `outbound_network`, `redis`, `cache`, `file`. */
+  suppressed?: string[];
+  /** `plan` mode: why validation did not run to the end. */
+  validation_skipped?: { reason: 'external_call' | 'database' | 'unsupported_response'; detail: string };
+  note: string;
 }
 
 /** What {@link AtlasClientConfig.onUnknownFields} receives. */
@@ -52,7 +101,7 @@ export interface UnknownFieldsEvent {
 }
 
 /** Per-client settings `withOptions` can override. */
-export type AtlasRequestSettings = Pick<AtlasClientConfig, 'strict' | 'onUnknownFields'>;
+export type AtlasRequestSettings = Pick<AtlasClientConfig, 'strict' | 'onUnknownFields' | 'dryRun'>;
 
 /** A raw (non-JSON) request body, e.g. image bytes for a design-asset upload. */
 export interface RawBody {
@@ -82,6 +131,8 @@ export interface RequestOptions {
   raw?: boolean;
   /** Per-request override of {@link AtlasClientConfig.strict}. */
   strict?: boolean;
+  /** Extra request headers. */
+  headers?: Record<string, string>;
 }
 
 /** Serialize a query object to a string, dropping null/undefined, spreading arrays. */
@@ -125,6 +176,7 @@ export function createRequest(config: AtlasClientConfig): RequestFn {
 export interface KeyedRequestConfig extends AtlasRequestSettings {
   apiUrl?: string;
   fetch?: typeof fetch;
+  secretRecipient?: string;
 }
 
 /**
@@ -141,12 +193,15 @@ export function createKeyedRequest(key: string, config: KeyedRequestConfig): Req
   }
 
   return async function request<T>(options: RequestOptions): Promise<T> {
-    const url = joinUrl(base, options.path) + serializeQuery(options.query);
+    const dryRun = config.dryRun === true && options.method !== 'GET';
+    const url = joinUrl(base, options.path) + serializeQuery(dryRun ? { ...options.query, dry_run: 'true' } : options.query);
 
     const headers: Record<string, string> = {
+      ...(options.headers ?? {}),
       authorization: `Bearer ${key}`,
       accept: 'application/json',
     };
+    if (config.secretRecipient) headers['x-secret-recipient'] = config.secretRecipient;
     let body: RequestInit['body'];
     if (options.rawBody !== undefined) {
       const { data, contentType } = options.rawBody;
@@ -161,7 +216,7 @@ export function createKeyedRequest(key: string, config: KeyedRequestConfig): Req
       headers['content-type'] = 'application/json';
       body = JSON.stringify(options.body);
     }
-    if (options.idempotencyKey) {
+    if (options.idempotencyKey && !dryRun) {
       headers['idempotency-key'] = options.idempotencyKey;
     }
     const strict = options.strict ?? config.strict;

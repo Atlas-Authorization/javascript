@@ -1,0 +1,1 @@
+{ "name": "split-options-app", "dependencies": { "next": "^15.0.0", "better-auth": "^1.3.0", "@better-auth/passkey": "^1.3.0", "@t3-oss/env-nextjs": "^0.12.0" } }

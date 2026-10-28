@@ -24,6 +24,7 @@ function makeClient(): AtlasClient {
     getProviderToken: async () => null,
     signOut: async () => ({ revoked: true }),
     setActiveOrganization: async () => undefined,
+    endImpersonation: async () => ({ ended: false, resumed: false, status: 0 }),
     reload: async () => true,
     onSignOut: () => () => undefined,
   };
@@ -55,6 +56,8 @@ describe('the documented components and composables are all exported', () => {
       'UserProfile',
       'OrganizationSwitcher',
       'OrganizationProfile',
+      'OrganizationAuditLog',
+      'useOrganizationAuditLog',
       'SignedIn',
       'SignedOut',
       'Protect',

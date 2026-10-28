@@ -47,6 +47,10 @@ export interface AtlasSession {
   id: string;
   status: string;
   last_active_organization_id: string | null;
+  /** On an impersonation session: who is acting (the token's `act` claim). */
+  actor?: { sub: string } | null;
+  /** On an impersonation session: the impersonator's own session that "return to admin" resumes, or null. */
+  actor_session_id?: string | null;
 }
 
 /** The three-state auth lifecycle, identical to the React provider's. */

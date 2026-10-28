@@ -23,6 +23,8 @@
 
 import type { SignOutOptions } from './frontchannel-logout';
 import { runFrontChannelLogoutFromResponse } from './frontchannel-logout';
+import { followUpstreamLogout } from './upstream-logout';
+import { endImpersonation, type EndImpersonationResult } from './impersonation';
 import {
   SessionTombstones,
   SignOutError,
@@ -53,6 +55,12 @@ export interface SignOutGuardOptions {
   retryDelaysMs?: number[];
   /** Skip front-channel logout entirely (runtimes without a DOM). */
   frontChannelLogout?: boolean;
+  /**
+   * How to open the upstream end-session URL or the SAML Single Logout URL
+   * (default: `window.location.assign`).
+   * Native SDKs pass their system-browser opener.
+   */
+  navigate?: (href: string) => void;
 }
 
 /** What {@link SignOutGuard.revoke} did on the server. */
@@ -75,6 +83,7 @@ export class SignOutGuard {
   private readonly request: FapiRequest;
   private readonly retryDelaysMs: number[];
   private readonly frontChannelLogout: boolean;
+  private readonly navigate?: (href: string) => void;
   /** Sessions with a background revoke in flight or scheduled. */
   private readonly retrying = new Set<string>();
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
@@ -86,6 +95,7 @@ export class SignOutGuard {
       new SessionTombstones({ frontendApi: options.frontendApi, ...(options.store ? { store: options.store } : {}) });
     this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
     this.frontChannelLogout = options.frontChannelLogout !== false;
+    this.navigate = options.navigate;
   }
 
   /** Settles once persisted tombstones are loaded — await it before the first boot. */
@@ -137,7 +147,14 @@ export class SignOutGuard {
     if (id) {
       // Remember it first: from here on nothing may re-adopt it.
       this.tombstones.add(id);
-      outcome = await revokeSession(request, id);
+      // The upstream (RP-initiated) logout lands on `returnUrl`; SAML Single
+      // Logout returns the browser to `samlLogoutRedirectUrl` once the IdP is
+      // done (else `returnUrl`, else the page that signed out — the server reads
+      // it from the request's Referer / Origin).
+      outcome = await revokeSession(request, id, {
+        ...(options.returnUrl ? { returnUrl: options.returnUrl } : {}),
+        ...(options.samlLogoutRedirectUrl ? { samlLogoutRedirectUrl: options.samlLogoutRedirectUrl } : {}),
+      });
       // OIDC Front-Channel Logout: let the apps signed in through this session
       // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
       if (this.frontChannelLogout && options.frontchannel !== false && typeof document !== 'undefined') {
@@ -146,6 +163,22 @@ export class SignOutGuard {
       if (!outcome.revoked) this.retryInBackground(id, request, this.retryDelaysMs);
     }
     return { sessionId: id, outcome };
+  }
+
+  /**
+   * End the active impersonation ("return to admin") — see
+   * {@link endImpersonation}. The ended session is tombstoned so a stale cookie
+   * can never re-adopt it. The framework SDKs adopt `activeSessionId` (or sign
+   * out locally when there is none) after this resolves.
+   */
+  async endImpersonation(
+    sessionId: string | null | undefined,
+    request?: FapiRequest,
+  ): Promise<EndImpersonationResult> {
+    if (!sessionId) return { ended: false, resumed: false, status: 0 };
+    const outcome = await endImpersonation(request ?? this.request, sessionId);
+    if (outcome.ended) this.tombstones.add(sessionId);
+    return outcome;
   }
 
   /** The parked session the server promoted on revoke, when it should be adopted. */
@@ -162,9 +195,35 @@ export class SignOutGuard {
   settle(attempt: SignOutAttempt, options: SignOutOptions = {}): SignOutResult {
     const { outcome, sessionId } = attempt;
     if (!outcome.revoked && options.strict) throw new SignOutError(sessionId ?? '', outcome.status);
-    return outcome.activeSessionId
-      ? { revoked: outcome.revoked, activeSessionId: outcome.activeSessionId }
-      : { revoked: outcome.revoked };
+    // A browser follows one logout redirect. Upstream (RP-initiated) logout
+    // first: the local sign-out is done, so the browser can now be sent to the
+    // provider's end-session URL (an OpenID provider has no server-to-server
+    // fallback; a SAML IdP is told through SOAP back-channel logout when the
+    // server returned both).
+    const followedUpstream =
+      outcome.upstreamLogoutUrl && options.upstreamLogout !== false
+        ? followUpstreamLogout(outcome.upstreamLogoutUrl, this.navigate)
+        : false;
+    // SAML Single Logout: send the browser to the IdP so its session ends too.
+    // Not when another account was promoted (the user is still signed in here),
+    // and never outside a browser (unless the host supplied `navigate`).
+    if (
+      !followedUpstream &&
+      outcome.samlLogoutUrl &&
+      options.samlLogout !== false &&
+      !outcome.activeSessionId
+    ) {
+      if (this.navigate) this.navigate(outcome.samlLogoutUrl);
+      else if (typeof window !== 'undefined' && typeof window.location?.assign === 'function') {
+        window.location.assign(outcome.samlLogoutUrl);
+      }
+    }
+    return {
+      revoked: outcome.revoked,
+      ...(outcome.activeSessionId ? { activeSessionId: outcome.activeSessionId } : {}),
+      ...(outcome.upstreamLogoutUrl ? { upstreamLogoutUrl: outcome.upstreamLogoutUrl } : {}),
+      ...(outcome.samlLogoutUrl ? { samlLogoutUrl: outcome.samlLogoutUrl } : {}),
+    };
   }
 
   /** The cross-tab message announcing a sign-out (`{}` when there was no session). */

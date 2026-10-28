@@ -1,0 +1,8 @@
+'use client';
+import type { ReactNode } from 'react';
+
+export function Nav({ signedIn, children }: { signedIn: boolean; children: ReactNode }) {
+  if (!children) return null;
+  // TODO(atlas-migrate): /self-service/logout/browser: sign-out is an action in Atlas; use <SignOutButton /> or useAuth().signOut() from @atlasauth/react
+  return signedIn ? <a href="/self-service/logout/browser">Sign out</a> : <a href="/sign-in?redirect_url=%2Fdashboard">Sign in</a>;
+}

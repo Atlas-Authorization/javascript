@@ -1,0 +1,5 @@
+[
+  {"id": "email:ada@example.com", "user_id": "k3v9qz0w1m2n4b7", "hashed_password": "s2:k3v9qz0w1m2n4b7x:4f6ef995aff8c7d00793bbd557e5d454351c6d1fe59761b3ed8d8e29867f8f037b35fd632f5c1dd81a7c412a68cb3ad76b053bf42607f55b20db701742ec0bf2"},
+  {"id": "github:583231", "user_id": "k3v9qz0w1m2n4b7", "hashed_password": null},
+  {"id": "username:grace", "user_id": "p0o9i8u7y6t5r4e", "hashed_password": "unknown-format"}
+]

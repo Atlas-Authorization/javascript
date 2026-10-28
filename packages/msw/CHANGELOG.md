@@ -1,5 +1,9 @@
 # @atlasauth/msw changelog
 
+## 0.2.0 — 2026-10-24
+
+- Integrator platform release: see the Atlas changelog for 2026-10-24.
+
 ## 0.1.0
 
 First published release.

@@ -1,0 +1,15 @@
+import NextAuth from 'next-auth';
+// TODO(atlas-migrate): authentik provider: Atlas hosts sign-in (enable the same OIDC application as an Atlas OAuth provider); remove it from the Auth.js config (run --from authjs for the rest)
+import Authentik from 'next-auth/providers/authentik';
+
+// TODO(atlas-migrate): AUTH_AUTHENTIK_ID: server code identifies the instance with ATLAS_SECRET_KEY; the browser uses NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY
+// TODO(atlas-migrate): AUTH_AUTHENTIK_SECRET: server code uses ATLAS_SECRET_KEY (from the Atlas dashboard)
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  providers: [
+    Authentik({
+      clientId: process.env.AUTH_AUTHENTIK_ID,
+      clientSecret: process.env.AUTH_AUTHENTIK_SECRET,
+      issuer: process.env.ATLAS_ISSUER,
+    }),
+  ],
+});

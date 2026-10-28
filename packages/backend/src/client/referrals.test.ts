@@ -19,6 +19,10 @@ type Bapi = ReturnType<typeof createAtlasClient>;
 // [method, path+query, expected JSON body (undefined = none), call]
 const OPS: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
   ['GET', '/v1/instance/referrals', undefined, (c) => c.referrals.get()],
+  ['POST', '/v1/instance/referrals/referalli/install', { return_to: 'https://dash.example.com/x' }, (c) => c.referrals.install('referalli', { return_to: 'https://dash.example.com/x' })],
+  ['POST', '/v1/instance/referrals/acme/install', {}, (c) => c.referrals.install('acme')],
+  ['PATCH', '/v1/instance/referrals', { context_cookie: ['referalli_ctx', 'referally_ctx'] }, (c) => c.referrals.update({ context_cookie: ['referalli_ctx', 'referally_ctx'] })],
+  ['GET', '/v1/entitlements?subject_type=org&subject_id=org_1', undefined, (c) => c.entitlements.get({ subject_type: 'org', subject_id: 'org_1' })],
   [
     'PATCH',
     '/v1/instance/referrals',
@@ -101,10 +105,10 @@ const OPS: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
   [
     'PATCH',
     '/v1/instance/referrals',
-    { provider: 'referally', endpoint_url: 'https://referrals.example.com', connection_id: 'conn_1', tracking_token: 'tt_1', forward_lifecycle: true, signup_code_field: true },
+    { provider: 'referalli', endpoint_url: 'https://referrals.example.com', connection_id: 'conn_1', tracking_token: 'tt_1', forward_lifecycle: true, signup_code_field: true },
     (c) =>
       c.referrals.update({
-        provider: 'referally',
+        provider: 'referalli',
         endpoint_url: 'https://referrals.example.com',
         connection_id: 'conn_1',
         tracking_token: 'tt_1',
@@ -158,7 +162,7 @@ describe('referral attribution operations', () => {
         endpoint_id: null,
         last_event: { at: 1700000000000, type: 'referral.updated', outcome: 'applied' },
       },
-      browser_sources: ['referally', 'rewardful', 'tolt', 'promotekit', 'firstpromoter', 'partnerstack', 'dub'],
+      browser_sources: ['referalli', 'rewardful', 'tolt', 'promotekit', 'firstpromoter', 'partnerstack', 'dub'],
       browser_sources_default: true,
       consent_provider: 'auto',
       providers: [

@@ -1,0 +1,12 @@
+[
+  {
+    "name": "react",
+    "path": "components/app.tsx",
+    "manual": ["removed provider props with no Atlas counterpart: nhost", "useSignInEmailPassword(): credentials are collected on the Atlas sign-in page"]
+  },
+  {
+    "name": "client-api",
+    "path": "lib/nhost.ts",
+    "manual": ["nhost.auth.signIn(): credentials are collected on the Atlas sign-in page", "nhost.auth.getHasuraClaim(): Hasura claims"]
+  }
+]

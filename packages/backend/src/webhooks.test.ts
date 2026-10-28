@@ -90,3 +90,29 @@ describe('verifyWebhook', () => {
     expect(res.verified).toBe(true);
   });
 });
+
+describe('verifyWebhook v2 (URL-covering) signatures', () => {
+  const now = new Date('2026-10-23T12:00:00Z');
+  const body = JSON.stringify({ id: 'evt_2', type: 'user.created', data: {} });
+  const url = 'https://hooks.example.com/atlas';
+  const v2 = (u: string) =>
+    createHmac('sha256', SECRET).update(`evt_2.${now.getTime()}.${u}.${body}`).digest('base64');
+  const v1 = createHmac('sha256', SECRET).update(`evt_2.${now.getTime()}.${body}`).digest('base64');
+  const headers = (sig: string) => ({ 'atlas-id': 'evt_2', 'atlas-timestamp': String(now.getTime()), 'atlas-signature': sig });
+
+  it('accepts a v2 entry for the right URL', () => {
+    expect(verifyWebhook({ body, headers: headers(`v2,${v2(url)}`), secret: SECRET, now, url }).verified).toBe(true);
+  });
+  it('rejects a v2 entry signed for another URL', () => {
+    const res = verifyWebhook({ body, headers: headers(`v2,${v2('https://other.example.com/x')}`), secret: SECRET, now, url });
+    expect(res.reason).toBe('signature_mismatch');
+  });
+  it('requireV2 ignores the v1 entry', () => {
+    const both = headers(`v1,${v1} v2,${v2('https://other.example.com/x')}`);
+    expect(verifyWebhook({ body, headers: both, secret: SECRET, now }).verified).toBe(true);
+    expect(verifyWebhook({ body, headers: both, secret: SECRET, now, url, requireV2: true }).verified).toBe(false);
+  });
+  it('without url, a v2-only header is malformed (v1 verifiers are unaffected by the extra entry)', () => {
+    expect(verifyWebhook({ body, headers: headers(`v2,${v2(url)}`), secret: SECRET, now }).reason).toBe('malformed_signature');
+  });
+});

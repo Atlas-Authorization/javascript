@@ -1,0 +1,25 @@
+import { Client, Databases, ID } from 'appwrite';
+
+import { AppwriteAccountCompat } from '@atlasauth/react/compat';
+
+export const client = new Client().setEndpoint('https://cloud.appwrite.io/v1').setProject('proj');
+export const account = new AppwriteAccountCompat(client);
+export const databases = new Databases(client);
+
+export async function me() {
+  return account.get();
+}
+
+export async function login(email: string, password: string) {
+  // TODO(atlas-migrate): account.createEmailPasswordSession(): credentials are collected on the Atlas sign-in page now: render <SignIn /> (or send users to /sign-in)
+  return account.createEmailPasswordSession(email, password);
+}
+
+export async function register(email: string, password: string) {
+  // TODO(atlas-migrate): account.create(): sign-up runs on the Atlas sign-up page: render <SignUp /> (or send users to /sign-up)
+  return account.create(ID.unique(), email, password);
+}
+
+export async function logout() {
+  await account.deleteSession('current');
+}

@@ -1,0 +1,678 @@
+{
+  "id": "5f1d6c1e-7c1a-4a4c-9a55-acme0000realm",
+  "realm": "acme",
+  "displayName": "Acme",
+  "keycloakVersion": "26.0.5",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": false,
+  "rememberMe": true,
+  "verifyEmail": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "passwordPolicy": "length(12) and digits(1) and upperCase(1) and lowerCase(1) and notUsername(undefined) and passwordHistory(3) and hashAlgorithm(argon2) and maxLength(64)",
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyInitialCounter": 0,
+  "otpPolicyDigits": 6,
+  "otpPolicyLookAheadWindow": 1,
+  "otpPolicyPeriod": 30,
+  "otpPolicyCodeReusable": false,
+  "webAuthnPolicyRpEntityName": "keycloak",
+  "webAuthnPolicyRpId": "",
+  "webAuthnPolicyPasswordlessRpEntityName": "Acme",
+  "webAuthnPolicyPasswordlessRpId": "acme.example",
+  "webAuthnPolicyPasswordlessUserVerificationRequirement": "required",
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "ssoSessionIdleTimeoutRememberMe": 0,
+  "ssoSessionMaxLifespanRememberMe": 2592000,
+  "offlineSessionIdleTimeout": 2592000,
+  "accessTokenLifespan": 300,
+  "organizationsEnabled": true,
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "en",
+    "de"
+  ],
+  "defaultLocale": "en",
+  "loginTheme": "acme",
+  "eventsEnabled": true,
+  "smtpServer": {
+    "host": "smtp.acme.example",
+    "port": "587",
+    "from": "no-reply@acme.example",
+    "fromDisplayName": "Acme",
+    "auth": "true",
+    "user": "mailer",
+    "password": "**********",
+    "starttls": "true"
+  },
+  "roles": {
+    "realm": [
+      {
+        "id": "r1",
+        "name": "default-roles-acme",
+        "composite": true,
+        "composites": {
+          "realm": [
+            "offline_access",
+            "uma_authorization"
+          ]
+        },
+        "clientRole": false
+      },
+      {
+        "id": "r2",
+        "name": "offline_access",
+        "description": "${role_offline-access}",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "id": "r3",
+        "name": "uma_authorization",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "id": "r4",
+        "name": "admin",
+        "description": "Acme administrators",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "id": "r5",
+        "name": "Content Editor",
+        "composite": true,
+        "composites": {
+          "realm": [
+            "admin"
+          ]
+        },
+        "clientRole": false
+      }
+    ],
+    "client": {
+      "acme-web": [
+        {
+          "id": "c1",
+          "name": "billing",
+          "description": "Billing access",
+          "composite": false,
+          "clientRole": true
+        }
+      ],
+      "realm-management": [
+        {
+          "id": "c2",
+          "name": "view-users",
+          "composite": false,
+          "clientRole": true
+        }
+      ],
+      "account": [
+        {
+          "id": "c3",
+          "name": "manage-account",
+          "composite": false,
+          "clientRole": true
+        }
+      ]
+    }
+  },
+  "groups": [
+    {
+      "id": "g-eng",
+      "name": "Engineering",
+      "path": "/Engineering",
+      "attributes": {
+        "cost_center": [
+          "42"
+        ]
+      },
+      "realmRoles": [
+        "Content Editor"
+      ],
+      "clientRoles": {},
+      "subGroups": [
+        {
+          "id": "g-be",
+          "name": "Backend",
+          "path": "/Engineering/Backend",
+          "attributes": {},
+          "realmRoles": [],
+          "clientRoles": {
+            "acme-web": [
+              "billing"
+            ]
+          },
+          "subGroups": []
+        }
+      ]
+    }
+  ],
+  "defaultRole": {
+    "id": "r1",
+    "name": "default-roles-acme",
+    "composite": true,
+    "clientRole": false
+  },
+  "requiredCredentials": [
+    "password"
+  ],
+  "users": [
+    {
+      "id": "b1f2c3d4-0000-4000-8000-00000000jane",
+      "username": "jane",
+      "firstName": "Jane",
+      "lastName": "Doe",
+      "email": "Jane@Acme.example",
+      "emailVerified": true,
+      "createdTimestamp": 1716808035158,
+      "enabled": true,
+      "totp": true,
+      "attributes": {
+        "phoneNumber": [
+          "+1 415 555 0101"
+        ],
+        "department": [
+          "R&D"
+        ],
+        "locale": [
+          "de"
+        ],
+        "tags": [
+          "a",
+          "b"
+        ]
+      },
+      "credentials": [
+        {
+          "id": "cred-jane-pw",
+          "type": "password",
+          "userLabel": "My password",
+          "createdDate": 1716808035239,
+          "secretData": "{\"value\":\"GNjvIqBcbM+mqCUt7nqYgl696zKTjNO1wLnvPkDfMFA=\",\"salt\":\"txHDSAn9HgpQ7GE8Be9zTQ==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":5,\"algorithm\":\"argon2\",\"additionalParameters\":{\"hashLength\":[\"32\"],\"memory\":[\"7168\"],\"type\":[\"id\"],\"version\":[\"1.3\"],\"parallelism\":[\"1\"]}}"
+        },
+        {
+          "id": "cred-jane-otp",
+          "type": "otp",
+          "userLabel": "Phone",
+          "createdDate": 1716808100000,
+          "secretData": "{\"value\":\"nNpUuB1qZr8kxPQxW2iC\"}",
+          "credentialData": "{\"subType\":\"totp\",\"digits\":6,\"counter\":0,\"period\":30,\"algorithm\":\"HmacSHA1\"}"
+        },
+        {
+          "id": "cred-jane-pk",
+          "type": "webauthn-passwordless",
+          "userLabel": "MacBook",
+          "createdDate": 1716808200000,
+          "secretData": "{}",
+          "credentialData": "{\"aaguid\":\"fbfc3007-154e-4ecc-8c0b-6e020557d7bd\",\"credentialId\":\"3xLs1eIE+2BMyv0dnvsF1Q==\",\"credentialPublicKey\":\"pQECAyYgASFYIPv2yqMp3SPwA4PB3wU6vYNlD6E0WOFxq6Hg2o-RXT7RIlggaLdS7xQXhH0nVj7tjpgqkbW-CvdlhyBVXTwyTD0Hn7Q\",\"counter\":4,\"attestationStatementFormat\":\"none\",\"transports\":[\"internal\",\"hybrid\"]}"
+        },
+        {
+          "id": "cred-jane-rc",
+          "type": "recovery-authn-codes",
+          "createdDate": 1716808300000,
+          "secretData": "{\"codes\":[{\"number\":1,\"encodedHashedValue\":\"4J9eVKvqLE7Xhz+DiePhetaLo2dBJpNzKZc6o/8ZG/L1Ipt0L7FLMLg6FYIY3KkVD+v9iJxHe/07kEOm0+6VNA==\"},{\"number\":2,\"encodedHashedValue\":\"TFtzG/fws0CVvLRIYJbUmYRT4Zbb9wr35dQZRDWRk3y6ObX4Z+FODFbWF+DElfPoEw4S6z7tQI11Sr8opm2c0g==\"}]}",
+          "credentialData": "{\"hashIterations\":1,\"algorithm\":\"SHA-512\",\"totalCodes\":12,\"remainingCodes\":2}"
+        }
+      ],
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "federatedIdentities": [
+        {
+          "identityProvider": "google",
+          "userId": "1093849",
+          "userName": "jane@gmail.com"
+        }
+      ],
+      "realmRoles": [
+        "default-roles-acme",
+        "admin"
+      ],
+      "clientRoles": {
+        "acme-web": [
+          "billing"
+        ],
+        "account": [
+          "manage-account"
+        ]
+      },
+      "notBefore": 0,
+      "groups": [
+        "/Engineering/Backend"
+      ]
+    },
+    {
+      "id": "d6ce8fe7-bab3-4d41-9c38-0ef8cafc2d05",
+      "username": "sam",
+      "email": "sam@acme.example",
+      "emailVerified": false,
+      "createdTimestamp": 1589834705173,
+      "enabled": false,
+      "totp": false,
+      "credentials": [
+        {
+          "id": "bac8754e-2044-4d11-8adc-fcdade4fa827",
+          "type": "password",
+          "createdDate": 1716808035239,
+          "secretData": "{\"value\":\"OnsOPGVN5ku0lAuW+6IUMhiYyre5C9itUlMBH9xtQgWYYqeYG3kiRkWrdBVWfvv1t5F4r7FnNLqQzZ7R5Fna2w==\",\"salt\":\"WQWgqINSHrX0yk5oIl4xpw==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+        },
+        {
+          "id": "cred-sam-hotp",
+          "type": "otp",
+          "createdDate": 1716808100000,
+          "secretData": "{\"value\":\"hotpSecretValue12345\"}",
+          "credentialData": "{\"subType\":\"hotp\",\"digits\":6,\"counter\":3,\"period\":30,\"algorithm\":\"HmacSHA1\"}"
+        }
+      ],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
+      "federatedIdentities": [
+        {
+          "identityProvider": "partner-saml",
+          "userId": "sam@partner.example",
+          "userName": "sam@partner.example"
+        }
+      ],
+      "realmRoles": [
+        "default-roles-acme"
+      ],
+      "groups": [
+        "/Engineering"
+      ]
+    },
+    {
+      "id": "7a1e0000-0000-4000-8000-0000000000ee",
+      "username": "lee",
+      "email": "lee@acme.example",
+      "emailVerified": true,
+      "createdTimestamp": 1600000000000,
+      "enabled": true,
+      "federationLink": "ldap-corp",
+      "attributes": {
+        "LDAP_ID": [
+          "9c1f"
+        ],
+        "LDAP_ENTRY_DN": [
+          "uid=lee,ou=people,dc=acme,dc=example"
+        ]
+      },
+      "credentials": [],
+      "realmRoles": [
+        "default-roles-acme"
+      ],
+      "groups": []
+    },
+    {
+      "id": "0f0f0000-0000-4000-8000-000000000001",
+      "username": "old.admin",
+      "email": "old@acme.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "hashedSaltedValue": "dqalJHLkWhUJZO/q6+z1fvXOohTcGCXcvoU8xCEyvTxGN4wmLx7DtyhKuefggh6Bkx1I2eBTEX4tiWggwyXMDw==",
+          "salt": "3fBAt5GAGGxFrV9fznpZHQ==",
+          "hashIterations": 100000,
+          "algorithm": "pbkdf2"
+        }
+      ],
+      "realmRoles": [
+        "admin"
+      ]
+    },
+    {
+      "id": "5e5e0000-0000-4000-8000-0000000000aa",
+      "username": "service-account-acme-api",
+      "emailVerified": false,
+      "enabled": true,
+      "serviceAccountClientId": "acme-api",
+      "credentials": [],
+      "realmRoles": [
+        "default-roles-acme"
+      ]
+    },
+    {
+      "id": "9a9a0000-0000-4000-8000-0000000000bb",
+      "username": "kim",
+      "email": "kim@acme.example",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "id": "cred-kim",
+          "type": "password",
+          "secretData": "{\"value\":\"5f4dcc3b5aa765d61d8327deb882cf99\",\"salt\":\"\"}",
+          "credentialData": "{\"hashIterations\":1,\"algorithm\":\"md5\"}"
+        }
+      ]
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "google",
+      "displayName": "Google",
+      "internalId": "idp-1",
+      "providerId": "google",
+      "enabled": true,
+      "trustEmail": true,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "123-goog.apps.googleusercontent.com",
+        "clientSecret": "${vault.google_secret}",
+        "defaultScope": "openid profile email",
+        "syncMode": "IMPORT"
+      }
+    },
+    {
+      "alias": "partner-saml",
+      "displayName": "Partner SAML",
+      "internalId": "idp-2",
+      "providerId": "saml",
+      "enabled": true,
+      "organizationId": "org-partner",
+      "config": {
+        "singleSignOnServiceUrl": "https://idp.partner.example/sso",
+        "idpEntityId": "https://idp.partner.example",
+        "entityId": "https://sso.acme.example/realms/acme",
+        "signingCertificate": "MIIBkTCB+wIJAKHBfpegPjMCMA0GCSqGSIb3DQEBCwUA",
+        "nameIDPolicyFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+        "principalType": "SUBJECT",
+        "kc.org.domain": "partner.example"
+      }
+    },
+    {
+      "alias": "partner-oidc",
+      "displayName": "Partner OIDC",
+      "internalId": "idp-3",
+      "providerId": "oidc",
+      "enabled": true,
+      "config": {
+        "issuer": "https://login.partner.example",
+        "clientId": "kc-client",
+        "clientSecret": "s3cr3t-from-export",
+        "defaultScope": "openid email profile",
+        "authorizationUrl": "https://login.partner.example/authorize",
+        "tokenUrl": "https://login.partner.example/token"
+      }
+    },
+    {
+      "alias": "github",
+      "displayName": "GitHub",
+      "internalId": "idp-4",
+      "providerId": "github",
+      "enabled": false,
+      "config": {
+        "clientId": "Iv1.gh",
+        "clientSecret": "**********"
+      }
+    }
+  ],
+  "organizations": [
+    {
+      "id": "org-partner",
+      "name": "Partner Co",
+      "alias": "partner-co",
+      "enabled": true,
+      "description": "Our partner",
+      "attributes": {
+        "tier": [
+          "gold"
+        ]
+      },
+      "domains": [
+        {
+          "name": "partner.example",
+          "verified": true
+        }
+      ],
+      "members": [
+        {
+          "username": "jane",
+          "membershipType": "UNMANAGED"
+        },
+        {
+          "username": "sam",
+          "membershipType": "MANAGED"
+        },
+        {
+          "username": "ghost",
+          "membershipType": "UNMANAGED"
+        }
+      ],
+      "identityProviders": [
+        {
+          "alias": "partner-saml"
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "id": "cl-1",
+      "clientId": "acme-web",
+      "name": "Acme web",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "https://app.acme.example/*",
+        "https://app.acme.example/callback"
+      ],
+      "webOrigins": [
+        "https://app.acme.example",
+        "+"
+      ],
+      "rootUrl": "https://app.acme.example"
+    },
+    {
+      "id": "cl-2",
+      "clientId": "acme-api",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
+    },
+    {
+      "id": "cl-3",
+      "clientId": "acme-migration",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": []
+    },
+    {
+      "id": "cl-4",
+      "clientId": "https://saas.example/saml",
+      "enabled": true,
+      "protocol": "saml",
+      "attributes": {
+        "saml_assertion_consumer_url_post": "https://saas.example/saml/acs",
+        "saml_name_id_format": "email"
+      }
+    },
+    {
+      "id": "cl-5",
+      "clientId": "account",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "redirectUris": [
+        "/realms/acme/account/*"
+      ],
+      "webOrigins": []
+    }
+  ],
+  "requiredActions": [
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 10
+    },
+    {
+      "alias": "TERMS_AND_CONDITIONS",
+      "name": "Terms and Conditions",
+      "providerId": "TERMS_AND_CONDITIONS",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 20
+    },
+    {
+      "alias": "UPDATE_PASSWORD",
+      "name": "Update Password",
+      "providerId": "UPDATE_PASSWORD",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 30
+    },
+    {
+      "alias": "VERIFY_EMAIL",
+      "name": "Verify Email",
+      "providerId": "VERIFY_EMAIL",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 50
+    },
+    {
+      "alias": "webauthn-register-passwordless",
+      "name": "Webauthn Register Passwordless",
+      "providerId": "webauthn-register-passwordless",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 80
+    },
+    {
+      "alias": "CONFIGURE_RECOVERY_AUTHN_CODES",
+      "name": "Recovery Authentication Codes",
+      "providerId": "CONFIGURE_RECOVERY_AUTHN_CODES",
+      "enabled": true,
+      "defaultAction": false,
+      "priority": 120
+    },
+    {
+      "alias": "delete_account",
+      "name": "Delete Account",
+      "providerId": "delete_account",
+      "enabled": false,
+      "defaultAction": false,
+      "priority": 60
+    }
+  ],
+  "browserFlow": "browser",
+  "directGrantFlow": "direct grant",
+  "authenticationFlows": [
+    {
+      "id": "f1",
+      "alias": "browser",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": true,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 10
+        },
+        {
+          "authenticator": "identity-provider-redirector",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 25
+        },
+        {
+          "authenticatorFlow": true,
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "flowAlias": "forms"
+        }
+      ]
+    },
+    {
+      "id": "f2",
+      "alias": "forms",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": true,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10
+        },
+        {
+          "authenticatorFlow": true,
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "flowAlias": "Browser - Conditional OTP"
+        }
+      ]
+    },
+    {
+      "id": "f3",
+      "alias": "Browser - Conditional OTP",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": true,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-user-configured",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20
+        }
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.storage.UserStorageProvider": [
+      {
+        "id": "ldap-corp",
+        "name": "corp-ldap",
+        "providerId": "ldap",
+        "subComponents": {},
+        "config": {
+          "editMode": [
+            "READ_ONLY"
+          ],
+          "importEnabled": [
+            "true"
+          ]
+        }
+      }
+    ]
+  }
+}

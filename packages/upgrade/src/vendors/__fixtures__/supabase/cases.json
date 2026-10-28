@@ -1,0 +1,9 @@
+[
+  { "name": "server-page", "path": "app/account/page.tsx" },
+  { "name": "client-component", "path": "components/login.tsx", "manual": ["auth.signInWithPassword(): credentials are collected on the Atlas sign-in page"] },
+  { "name": "middleware", "path": "middleware.ts", "manual": ["updateSession() is replaced by the Atlas middleware"] },
+  { "name": "helpers-react", "path": "pages/_app.tsx", "manual": ["removed provider props with no Atlas counterpart: supabaseClient, initialSession"] },
+  { "name": "auth-ui", "path": "components/auth-form.tsx", "manual": ["<Auth> is now Atlas's <SignIn />", "Supabase Auth UI theme"] },
+  { "name": "callback-route", "path": "app/auth/callback/route.ts", "manual": ["Supabase auth callback route", "auth.exchangeCodeForSession()"] },
+  { "name": "admin", "path": "lib/admin.ts", "manual": ["auth.admin.deleteUser(): use the Atlas Backend API", "auth.getUser(): this file could be browser or server code"] }
+]

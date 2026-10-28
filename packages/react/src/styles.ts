@@ -25,6 +25,9 @@
  * faint to find the focus by), and inputs are never under 16px so iOS Safari
  * does not zoom the page on focus.
  */
+import { POLICY_CSS } from '@atlasauth/js';
+import { adoptConstructable, applyHostVariableBridge, applyStyleNonce } from '@atlasauth/design/runtime';
+
 export const ATLAS_STYLE_ELEMENT_ID = 'atlas-base-styles';
 
 export const ATLAS_BASE_CSS = `
@@ -33,6 +36,9 @@ export const ATLAS_BASE_CSS = `
 
 .atlas-card{display:flex;flex-direction:column;gap:calc(var(--atlas-spacing-unit,4px) * 4);width:100%;max-width:25rem;margin:0 auto;padding:calc(var(--atlas-spacing-unit,4px) * 8);background:var(--atlas-color-background,#fff);border:1px solid var(--atlas-color-border,#e4e4e9);border-radius:var(--atlas-border-radius,8px);box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06);}
 .atlas-card form{display:flex;flex-direction:column;gap:calc(var(--atlas-spacing-unit,4px) * 3);}
+.atlas-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+.atlas-profile-traits,.atlas-profile-completion{display:flex;flex-direction:column;gap:calc(var(--atlas-spacing-unit,4px) * 3);}
+.atlas-profile-traits fieldset{display:flex;flex-direction:column;gap:calc(var(--atlas-spacing-unit,4px) * 2);margin:0;padding:0;border:0;}
 
 .atlas-title{margin:0;font-size:1.25rem;font-weight:600;text-align:center;color:var(--atlas-color-text,#1c1c1f);}
 
@@ -48,7 +54,7 @@ export const ATLAS_BASE_CSS = `
 .atlas-button:active:not(:disabled){filter:brightness(.94);}
 .atlas-button:disabled{opacity:.6;cursor:not-allowed;}
 
-.atlas-error{color:var(--atlas-color-danger,#d64545);font-size:.8125rem;}
+.atlas-error{color:var(--atlas-color-danger,#c53030);font-size:.8125rem;}
 .atlas-alternatives{display:flex;flex-direction:column;align-items:center;gap:6px;}
 button.atlas-link{padding:2px 4px;font:inherit;font-size:.875rem;font-weight:500;color:var(--atlas-color-primary,#5b5bd6);background:none;border:0;border-radius:4px;cursor:pointer;}
 button.atlas-link:hover:not(:disabled){text-decoration:underline;}
@@ -56,6 +62,10 @@ button.atlas-link:disabled{opacity:.6;cursor:not-allowed;}
 .atlas-footer{margin:12px 0 0;text-align:center;font-size:.875rem;color:var(--atlas-color-muted,#666);}
 .atlas-footer a.atlas-link{font-weight:500;color:var(--atlas-color-primary,#5b5bd6);text-decoration:none;}
 .atlas-footer a.atlas-link:hover{text-decoration:underline;}
+.atlas-badge{display:inline-block;font-size:.75em;line-height:1.4;padding:1px 6px;border-radius:999px;border:1px solid currentColor;opacity:.75;white-space:nowrap;}
+.atlas-last-used{margin-inline-start:auto;}
+.atlas-last-used-hint{margin:0 0 8px;font-size:.8125rem;color:var(--atlas-color-muted,#666);}
+.atlas-mfa-qr{display:block;margin:8px auto;width:180px;height:180px;image-rendering:pixelated;}
 button.atlas-link:focus-visible{outline:2px solid var(--atlas-color-focus-ring,var(--atlas-color-primary,#5b5bd6));outline-offset:2px;}
 
 .atlas-social-button:hover{filter:brightness(.98);}
@@ -72,10 +82,13 @@ button.atlas-link:focus-visible{outline:2px solid var(--atlas-color-focus-ring,v
 .atlas-avatar{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:none;border-radius:999px;overflow:hidden;background:var(--atlas-color-primary,#5b5bd6);color:var(--atlas-color-text-on-primary,#fff);font-weight:600;font-size:.875rem;cursor:pointer;}
 .atlas-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
 
-.atlas-menu{position:absolute;right:0;top:100%;margin-top:6px;min-width:12rem;display:flex;flex-direction:column;padding:4px;background:var(--atlas-color-background,#fff);border:1px solid var(--atlas-color-border,#e4e4e9);border-radius:var(--atlas-border-radius,8px);box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:50;}
-.atlas-menu-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;font-size:.875rem;font-family:inherit;text-align:left;text-decoration:none;color:var(--atlas-color-text,#1c1c1f);background:transparent;border:none;border-radius:6px;cursor:pointer;}
+.atlas-menu{position:absolute;inset-inline-end:0;top:100%;margin-top:6px;min-width:12rem;display:flex;flex-direction:column;padding:4px;background:var(--atlas-color-background,#fff);border:1px solid var(--atlas-color-border,#e4e4e9);border-radius:var(--atlas-border-radius,8px);box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:50;}
+.atlas-menu-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;font-size:.875rem;font-family:inherit;text-align:start;text-decoration:none;color:var(--atlas-color-text,#1c1c1f);background:transparent;border:none;border-radius:6px;cursor:pointer;}
 .atlas-menu-item:hover:not(:disabled){background:color-mix(in srgb,var(--atlas-color-text,#1c1c1f) 7%,transparent);}
 .atlas-menu-item:disabled{opacity:.5;cursor:default;}
+.atlas-audit-list{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:2px;}
+.atlas-audit-item{padding:8px 0;font-size:.875rem;border-bottom:1px solid var(--atlas-color-border,#e4e4e9);}
+.atlas-audit-meta{color:var(--atlas-color-text-secondary,#6b6b76);}
 
 .atlas-tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--atlas-color-border,#e4e4e9);}
 .atlas-tab{padding:8px 12px;font-family:inherit;font-size:.875rem;color:var(--atlas-color-text,#1c1c1f);background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;}
@@ -119,7 +132,7 @@ export const ATLAS_DESIGN_CSS = `
 :where(.atlas-root[data-atlas-design]) .atlas-section-title,:where(.atlas-root[data-atlas-design]) .atlas-plan-name{font-size:var(--atlas-font-size-lg);margin:0;}
 :where(.atlas-root[data-atlas-design]) .atlas-subtitle,:where(.atlas-root[data-atlas-design]) .atlas-text{color:var(--atlas-color-muted);margin:0;}
 :where(.atlas-root[data-atlas-design]) .atlas-link{color:var(--atlas-color-primary-text);}
-:where(.atlas-root[data-atlas-design]) .atlas-list{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:calc(var(--atlas-space-unit) * 1.5);}
+:where(.atlas-root[data-atlas-design]) .atlas-list{margin:0;padding-inline-start:1.1em;display:flex;flex-direction:column;gap:calc(var(--atlas-space-unit) * 1.5);}
 :where(.atlas-root[data-atlas-design]) .atlas-list-item{color:var(--atlas-color-text);}
 
 :where(.atlas-root[data-atlas-design]) .atlas-field{gap:calc(var(--atlas-space-unit) * 1.5);font-size:var(--atlas-font-size-sm);}
@@ -131,7 +144,7 @@ export const ATLAS_DESIGN_CSS = `
 :where(.atlas-root[data-atlas-design]) :is(.atlas-input:focus,.atlas-account-input:focus){border-color:var(--atlas-color-primary);}
 :where(.atlas-root[data-atlas-design]) :is(.atlas-input,.atlas-account-input,.atlas-button,.atlas-button-secondary,.atlas-social-button,.atlas-menu-item,.atlas-tab,.atlas-avatar):focus-visible{outline:2px solid var(--atlas-focus-outline-color,var(--atlas-color-primary));outline-offset:2px;}
 :where(.atlas-root[data-atlas-input="filled"]) :is(.atlas-input,.atlas-account-input){background:color-mix(in srgb,var(--atlas-color-text) 6%,var(--atlas-color-input-background));border-color:transparent;}
-:where(.atlas-root[data-atlas-input="underline"]) :is(.atlas-input,.atlas-account-input){background:transparent;border-width:0 0 max(1px,var(--atlas-border-width)) 0;border-radius:0;padding-left:0;padding-right:0;}
+:where(.atlas-root[data-atlas-input="underline"]) :is(.atlas-input,.atlas-account-input){background:transparent;border-width:0 0 max(1px,var(--atlas-border-width)) 0;border-radius:0;padding-inline-start:0;padding-inline-end:0;}
 :where(.atlas-root[data-atlas-input="underline"]) :is(.atlas-input,.atlas-account-input):focus{box-shadow:0 1px 0 0 var(--atlas-color-primary);}
 
 :where(.atlas-root[data-atlas-design]) .atlas-button{min-height:var(--atlas-control-height);font-size:var(--atlas-font-size-base);color:var(--atlas-color-text-on-primary,var(--atlas-color-primary-ink));background:var(--atlas-color-primary);border-width:var(--atlas-border-width);border-radius:var(--atlas-radius-control);text-transform:var(--atlas-button-text-transform);letter-spacing:var(--atlas-button-letter-spacing);}
@@ -142,6 +155,7 @@ export const ATLAS_DESIGN_CSS = `
 :where(.atlas-root[data-atlas-design]) .atlas-button-secondary:disabled{opacity:.6;cursor:not-allowed;}
 
 :where(.atlas-root[data-atlas-design]) .atlas-error,:where(.atlas-root[data-atlas-design]) .atlas-alert{color:var(--atlas-color-danger);font-size:var(--atlas-font-size-sm);}
+:where(.atlas-root[data-atlas-design]) .atlas-impersonation-banner{display:flex;flex-wrap:wrap;align-items:center;gap:calc(var(--atlas-space-unit) * 2);padding:calc(var(--atlas-space-unit) * 2) calc(var(--atlas-space-unit) * 3);color:var(--atlas-color-text);background:color-mix(in srgb,var(--atlas-color-primary) 10%,var(--atlas-color-surface));border:max(1px,var(--atlas-border-width)) solid var(--atlas-color-border);border-radius:var(--atlas-radius-control);}
 
 :where(.atlas-root[data-atlas-social="icons"]) .atlas-social-label{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}
 
@@ -169,7 +183,8 @@ export const ATLAS_FLOW_CSS = `.atlas-captcha{display:flex;justify-content:cente
 .atlas-captcha:empty{display:none;}
 .atlas-consent{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;font-size:.875rem;}
 .atlas-choices{display:flex;flex-direction:column;gap:6px;}
-.atlas-choice{display:flex;gap:6px;align-items:center;font-weight:400;}`;
+.atlas-choice{display:flex;gap:6px;align-items:center;font-weight:400;}
+${POLICY_CSS}`;
 
 export const ATLAS_STYLES_CSS = `${ATLAS_BASE_CSS}\n${ATLAS_DESIGN_CSS}\n${ATLAS_FLOW_CSS}`;
 
@@ -178,11 +193,22 @@ export const ATLAS_STYLES_CSS = `${ATLAS_BASE_CSS}\n${ATLAS_DESIGN_CSS}\n${ATLAS
  * multiple `<AtlasProvider>`s — or a re-mount — add it exactly once. A no-op
  * when there is no DOM (SSR); the styles land on the client at insertion time.
  */
+let atlasStylesAdopted = false;
+
 export function injectAtlasStyles(): void {
   if (typeof document === 'undefined') return;
-  if (document.getElementById(ATLAS_STYLE_ELEMENT_ID)) return;
+  // The host page's --atlas-host-* variables, when it sets any, restyle the components.
+  applyHostVariableBridge(document);
+  if (atlasStylesAdopted || document.getElementById(ATLAS_STYLE_ELEMENT_ID)) return;
+  // A constructable stylesheet needs no style-src under a strict CSP; else a
+  // <style> carrying the page's CSP nonce (setStyleNonce, <meta name="csp-nonce">).
+  if (adoptConstructable(document, ATLAS_STYLE_ELEMENT_ID, ATLAS_STYLES_CSS)) {
+    atlasStylesAdopted = true;
+    return;
+  }
   const style = document.createElement('style');
   style.id = ATLAS_STYLE_ELEMENT_ID;
+  applyStyleNonce(document, style);
   style.textContent = ATLAS_STYLES_CSS;
   document.head.appendChild(style);
 }

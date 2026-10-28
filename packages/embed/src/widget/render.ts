@@ -1,9 +1,11 @@
-import { initialFlow, nextStep, passkeysSupported, resetStep, type FieldError } from '@atlasauth/js';
+import { awaitingSignUpLink, initialFlow, nextStep, passkeysSupported, pendingRecoveryCodes, resetStep, type FieldError } from '@atlasauth/js';
 import type { AtlasWidget } from '../widget';
 import { COPY } from './constants';
 import { cls, doc, el } from './dom';
 import { renderForm, renderReset, renderSignUpForm } from './forms';
 import { renderHandlePrompt, renderPasskeyButton, renderSocial, socialProviders } from './social';
+import { renderRecoveryCodes, say } from './mfa';
+import { disposePolicyUi, renderPolicyStep } from './policies';
 
 // ---- rendering -----------------------------------------------------------
 
@@ -54,7 +56,11 @@ export function renderErrors(w: AtlasWidget, errors: readonly FieldError[]): voi
 }
 
 export function render(w: AtlasWidget): void {
+  disposePolicyUi(w);
+  // An open policy dialog is not part of the card: a repaint must not tear it down.
+  const keep = Array.from(w.root.children).filter((n) => n.hasAttribute('data-atlas-policy-modal'));
   w.root.textContent = '';
+  for (const n of keep) w.root.appendChild(n);
   const card = el(w, 'div', cls(w, 'card', 'atlas-embed-card'));
 
   const logoUrl = w.appearance?.logoUrl ?? null;
@@ -82,6 +88,17 @@ export function render(w: AtlasWidget): void {
       const focusTarget = card.querySelector('[data-atlas-autofocus]');
       if (focusTarget instanceof HTMLElement) focusTarget.focus();
     }
+    return;
+  }
+
+  // After an MFA enrolment: its recovery codes, shown once before the sign-in finishes.
+  const recoveryCodes = pendingRecoveryCodes(w.state);
+  if (recoveryCodes) {
+    card.setAttribute('data-step', 'recovery_codes');
+    if (w.lastStepKind !== 'recovery_codes') card.setAttribute('data-enter', '');
+    w.lastStepKind = 'recovery_codes';
+    card.appendChild(renderRecoveryCodes(w, recoveryCodes));
+    w.root.appendChild(card);
     return;
   }
 
@@ -138,7 +155,13 @@ export function render(w: AtlasWidget): void {
     card.appendChild(el(w, 'div', cls(w, 'divider', 'atlas-embed-divider'), 'or'));
   }
 
-  card.appendChild(isSignUpStart ? renderSignUpForm(w) : renderForm(w, step.kind));
+  card.appendChild(
+    isSignUpStart
+      ? renderSignUpForm(w)
+      : step.kind === 'accept_policies'
+        ? renderPolicyStep(w)
+        : renderForm(w, step.kind),
+  );
 
   // §5.5 passkey sign-in: a usernameless/discoverable-credential button at the
   // start of a sign-in, shown only when the instance offers passkeys and the
@@ -174,7 +197,11 @@ export function renderStepContext(w: AtlasWidget, stepKind: string): HTMLElement
   let back = false;
   switch (stepKind) {
     case 'collect_email_code':
-      text = email ? `Enter the code we sent to ${email}` : 'Enter the code we sent to your email';
+      text = awaitingSignUpLink(w.state.attempt, w.account.emailVerification)
+        ? 'Check your email'
+        : email
+          ? `Enter the code we sent to ${email}`
+          : 'Enter the code we sent to your email';
       back = true;
       break;
     case 'collect_first_factor':
@@ -190,7 +217,7 @@ export function renderStepContext(w: AtlasWidget, stepKind: string): HTMLElement
       text = 'Choose a new password';
       break;
     case 'enroll_second_factor':
-      text = 'Enter two codes from your authenticator app to finish setup';
+      text = say(w, 'mfa.enrollChoose');
       break;
     default:
       return null;

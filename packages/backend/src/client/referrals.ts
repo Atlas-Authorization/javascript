@@ -12,8 +12,8 @@ import type { UserReferralResult } from './users';
  * call is retried, and `user.referral_attributed` is sent when it resolves.
  *
  * `provider` is `webhook` (the Atlas referral protocol, which any platform can
- * implement; see {@link verifyReferralRequest}), `referally` (the built-in
- * Referally adapter: `endpoint_url` is your Referally base URL, plus
+ * implement; see {@link verifyReferralRequest}), `referalli` (the built-in
+ * Referalli adapter: `endpoint_url` is your Referalli base URL, plus
  * `connection_id`, `signing_secret` and optionally `tracking_token`) or
  * another built-in vendor adapter.
  * `signing_secret`, `api_key` and `inbound_secret` are write-only: reads
@@ -52,6 +52,10 @@ export interface ReferralProviderInfo {
   needs: Array<'endpoint_url' | 'signing_secret' | 'api_key' | 'connection_id' | 'tracking_token'>;
   /** The vendor's own first-party tracking cookie, suggested when this provider is picked. */
   default_context_cookie: string | null;
+  /** Every cookie the vendor has written, in the order Atlas tries them. */
+  default_context_cookies?: string[];
+  /** Retired spellings of `id`, accepted on write (for example `referally` for `referalli`). */
+  aliases?: string[];
   docs_url: string | null;
 }
 
@@ -117,11 +121,12 @@ export interface ReferralInboundStatus {
 }
 
 /** A referral program whose script or cookie the browser reads. */
-export type ReferralBrowserSource = 'referally' | 'rewardful' | 'tolt' | 'promotekit' | 'firstpromoter' | 'partnerstack' | 'dub';
+export type ReferralBrowserSource = 'referalli' | 'rewardful' | 'tolt' | 'promotekit' | 'firstpromoter' | 'partnerstack' | 'dub';
 
 /** Which consent manager decides on the tracking cookie's ids: `auto` (any common one), one manager, or `app` (only the app's own decision). */
 export type ReferralConsentProvider =
   | 'auto'
+  | 'atlasconsent'
   | 'cookiemunch'
   | 'onetrust'
   | 'cookiebot'
@@ -133,6 +138,7 @@ export type ReferralConsentProvider =
   | 'klaro'
   | 'tcf'
   | 'consent_mode'
+  | 'gpc'
   | 'app';
 
 /** What a platform answers to a ping. */
@@ -157,6 +163,29 @@ export interface ReferralPing {
   error?: string | null;
 }
 
+/** A one-click (OAuth) install a deployment offers for a referral platform. */
+export interface ReferralOneClick {
+  id: string;
+  name: string;
+  available: boolean;
+  /** What the connection is saved as: `referalli` or `webhook` (the generic protocol). */
+  provider: string;
+  scope: string;
+  redirect_uri: string;
+}
+
+/** `POST /v1/instance/referrals/{preset}/install`. */
+export interface ReferralInstall {
+  object: 'referral_install';
+  preset: string;
+  provider: string;
+  /** Send the merchant here to pick an organization and program. */
+  authorize_url: string;
+  redirect_uri: string;
+  /** Epoch ms; the link lasts 15 minutes. */
+  expires_at: number;
+}
+
 /** `GET /v1/instance/referrals`. */
 export interface ReferralSettings {
   object: 'referral_settings';
@@ -175,8 +204,18 @@ export interface ReferralSettings {
   api_key_set: boolean;
   /** Query parameters that carry a referral code, in priority order (default `ref`, `via`, `aff`). */
   url_params: string[];
-  /** First-party tracking cookie read under consent; null = never read a cookie. */
+  /** The first tracking cookie read under consent; null = never read a cookie. `context_cookies` lists them all. */
   context_cookie: string | null;
+  /** Every tracking cookie, in the order they are tried. */
+  context_cookies?: string[];
+  /** Retired spellings of `provider` that are still accepted on write. */
+  provider_aliases?: string[];
+  /** What the chosen provider can do now: its built-in capabilities plus what its last ping advertised. */
+  capabilities?: ReferralProviderCapabilities | null;
+  /** One-click connect to Referalli (the `referalli` preset). */
+  one_click?: ReferralOneClick | null;
+  /** Every platform this deployment offers a one-click install for. */
+  one_click_presets?: ReferralOneClick[];
   consent_category: string;
   consent_fallback_category: string | null;
   /** Every new user becomes a referrer (gets a code and link from the platform). */
@@ -186,7 +225,7 @@ export interface ReferralSettings {
   /** How long a sign-up waits for the platform (100-5000 ms, default 3000). */
   timeout_ms: number;
   security: ReferralSecuritySettings;
-  /** Public tracking token (the `referally` adapter derives the code lookup from it). */
+  /** Public tracking token (the `referalli` adapter derives the code lookup from it). */
   tracking_token?: string | null;
   /** Public, CORS-enabled lookup with `{code}` for "X invited you" on hosted sign-up. */
   code_lookup_url?: string | null;
@@ -238,7 +277,10 @@ export interface UpdateReferralSettingsBody {
   inbound_endpoint_id?: string | null;
   /** 1-10 names of `[A-Za-z0-9_.-]{1,40}`. */
   url_params?: string[];
-  context_cookie?: string | null;
+  /** A cookie name, or a list of up to 5 tried in order; null clears. */
+  context_cookie?: string | string[] | null;
+  /** The same with a list; wins over `context_cookie`. */
+  context_cookies?: string[] | null;
   consent_category?: string;
   consent_fallback_category?: string | null;
   auto_enroll_users?: boolean;
@@ -456,6 +498,15 @@ export function referralsResource(request: RequestFn) {
       idempotencyKey?: string,
     ): Promise<ReferralRetryFailedResult> {
       return request({ method: 'POST', path: '/v1/instance/referrals/calls/retry_failed', body: filter, idempotencyKey });
+    },
+    /**
+     * `POST /v1/instance/referrals/{preset}/install` — start a one-click
+     * connection to a referral platform (`referalli`, or any id in
+     * `one_click_presets`). 422 `REFERRALS_NOT_CONFIGURED` when the deployment
+     * does not offer it; connect with a key or signing secret then.
+     */
+    install(preset: string, body: { return_to?: string | null } = {}): Promise<ReferralInstall> {
+      return request({ method: 'POST', path: `/v1/instance/referrals/${enc(preset)}/install`, body });
     },
     /**
      * `POST /v1/instance/referrals/simulate` — send a sign-up call for a fake

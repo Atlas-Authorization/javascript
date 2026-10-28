@@ -1,7 +1,4 @@
 import { TSESLint } from '@typescript-eslint/utils';
-// @ts-expect-error -- @typescript-eslint/parser exposes its types only via the
-// package "exports" map, which this package's classic moduleResolution does not
-// read; the RuleTester needs the parser VALUE only, so `any` here is fine.
 import * as tsParser from '@typescript-eslint/parser';
 import { describe, it } from 'vitest';
 import rule from './no-leaked-secret-key';

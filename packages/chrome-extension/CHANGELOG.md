@@ -1,5 +1,9 @@
 # @atlasauth/chrome-extension changelog
 
+## 0.4.0 — 2026-10-28
+
+- Reports device posture to Atlas (self-reported; never marks a device trusted)
+
 ## 0.3.1
 - **Fixed:** depends on `@atlasauth/react` `^0.9.0` instead of one exact version. With an exact pin, an app that also
   installed a newer `@atlasauth/react` got two copies, and hooks from one couldn't see the other's

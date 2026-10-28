@@ -1,5 +1,7 @@
 import {
+  acknowledgeRecoveryCodes,
   advance,
+  pendingRecoveryCodes,
   closeOAuthPopupAfterSignIn,
   completeOAuthPopupLanding,
   flowFromPending,
@@ -11,7 +13,9 @@ import {
   parseNativeSignInResponse,
   planFirstFactor,
   pollAttempt,
+  pollPasswordReset,
   prepareFactor,
+  resendSignUpVerification,
   shouldKeepPolling,
   readRedirectResult,
   resetStep,
@@ -20,6 +24,7 @@ import {
   startPasswordReset,
   advancePasswordReset,
   stripRedirectParams,
+  type AttemptView,
   type PopupLanding,
 } from '@atlasauth/js';
 import { validateRedirect } from '../redirect';
@@ -27,6 +32,8 @@ import type { AtlasWidget } from '../widget';
 import type { CaptchaFlowKey } from '../appearance';
 import { atlasCaptchaLabels, flowNeedsCaptcha, getCaptchaToken, isRenderable } from './captcha';
 import { render, renderNote, renderErrors } from './render';
+import { refreshAfterRefusal } from './policies';
+import { flushMarketing } from '@atlasauth/js';
 
 /**
  * §5 obtain a captcha token for a flow, mounting the challenge OUTSIDE `w.root`
@@ -39,13 +46,13 @@ import { render, renderNote, renderErrors } from './render';
  * risk-triggered sign-in challenge, where the server demands a token mid-flow
  * regardless of the per-flow toggle.
  */
-async function captchaToken(
+export async function captchaToken(
   w: AtlasWidget,
   key: CaptchaFlowKey,
   always = false,
 ): Promise<string | null> {
   const flow = w.captchaFlows[key];
-  const wanted = always ? !!flow && isRenderable(flow.provider) : flowNeedsCaptcha(flow);
+  const wanted = always ? !!flow && isRenderable(flow.provider, flow) : flowNeedsCaptcha(flow);
   if (!wanted || !flow) return null;
   const doc = w.root.ownerDocument ?? document;
   const host = doc.createElement('div');
@@ -127,7 +134,7 @@ export async function handleRedirectLanding(w: AtlasWidget): Promise<boolean> {
   // A redirect that carries a status but no ticket owes a second factor:
   // resume the flow AT that step, bound to the same attempt.
   if (result.status) {
-    w.state = flowFromPending({ id: result.attemptId, status: result.status });
+    w.state = flowFromPending({ id: result.attemptId, status: result.status, ...(result.policyToken ? { policyToken: result.policyToken } : {}) });
     scrubUrl(w, win);
   }
   return false;
@@ -182,6 +189,9 @@ export async function exchange(w: AtlasWidget, attemptId: string, ticket: string
  * bubbles and is cancelable-free; its detail carries the attempt id.
  */
 export async function complete(w: AtlasWidget, attemptId: string | null): Promise<void> {
+  // ADM-08 attach the campaign attribution captured on this page to the new user (best effort; the server only
+  // attributes a recently created user, and only when the instance captures and the visitor consented).
+  if (!w.options.preview) await flushMarketing(w.client).catch(() => undefined);
   const win = w.root.ownerDocument?.defaultView ?? (typeof window !== 'undefined' ? window : null);
   const target = validateRedirect(
     w.options.redirect,
@@ -298,6 +308,12 @@ export async function submit(
   }
 
   const attempt = w.state.attempt;
+  // An enrolment's recovery codes are shown first (render draws them);
+  // "I've saved my codes" (`saveRecoveryCodes`) finishes the sign-in.
+  if (pendingRecoveryCodes(w.state)) {
+    render(w);
+    return;
+  }
   if (attempt?.status === 'complete') {
     const attemptId = (attempt as { id?: string }).id ?? null;
     if (w.state.ticket && attemptId) await exchange(w, attemptId, w.state.ticket);
@@ -305,6 +321,20 @@ export async function submit(
     return;
   }
   render(w);
+}
+
+/** "I've saved my codes": forget the recovery codes, then exchange the ticket and finish. */
+export async function saveRecoveryCodes(w: AtlasWidget): Promise<void> {
+  if (w.busy || !pendingRecoveryCodes(w.state)) return;
+  w.state = acknowledgeRecoveryCodes(w.state);
+  const attemptId = w.state.attempt?.id ?? null;
+  w.busy = true;
+  try {
+    if (w.state.ticket && attemptId) await exchange(w, attemptId, w.state.ticket);
+  } finally {
+    w.busy = false;
+  }
+  await complete(w, attemptId);
 }
 
 /**
@@ -334,6 +364,20 @@ export async function sendEmailFactor(
   }
 }
 
+/**
+ * Resend a sign-up's emailed proof (code or link — the earlier one stops
+ * working); a refusal (a 429) stays on the step with the server's error.
+ */
+export async function resendSignUp(w: AtlasWidget): Promise<void> {
+  if (w.busy) return;
+  w.busy = true;
+  render(w);
+  w.state = await resendSignUpVerification(w.client, w.state);
+  w.busy = false;
+  w.flash = w.state.errors.length === 0 ? 'We sent you a new email.' : null;
+  render(w);
+}
+
 function startLinkPoll(w: AtlasWidget): void {
   if (w.linkPoll) clearInterval(w.linkPoll);
   w.linkPoll = setInterval(() => {
@@ -343,8 +387,12 @@ function startLinkPoll(w: AtlasWidget): void {
         w.linkPoll = null;
         return;
       }
+      const before = w.state.attempt?.status;
       const { state, ticket } = await pollAttempt(w.client, w.state);
       w.state = state;
+      // Moved on without a session yet (e.g. a passkey sign-up whose email was just
+      // proven): draw the new step.
+      if (!ticket && state.attempt && state.attempt.status !== before) render(w);
       if (!ticket || !state.attempt) return;
       if (w.linkPoll) clearInterval(w.linkPoll);
       w.linkPoll = null;
@@ -452,7 +500,7 @@ async function startSsoPopup(
   const onMessage = (event: MessageEvent): void => {
     if (event.origin !== expectedOrigin) return;
     const data = event.data as
-      | { type?: string; ticket?: string; attempt_id?: string; status?: string; error?: string }
+      | { type?: string; ticket?: string; attempt_id?: string; status?: string; error?: string; policy_token?: string }
       | null;
     if (!data || data.type !== 'atlas-sso') return;
     win.removeEventListener('message', onMessage);
@@ -476,7 +524,11 @@ async function startSsoPopup(
     }
     // Owes a second factor — resume the flow in THIS window at that step.
     if (data.attempt_id && data.status) {
-      w.state = flowFromPending({ id: data.attempt_id, status: data.status });
+      w.state = flowFromPending({
+        id: data.attempt_id,
+        status: data.status,
+        ...(typeof data.policy_token === 'string' ? { policyToken: data.policy_token } : {}),
+      });
       render(w);
     }
   };
@@ -533,8 +585,19 @@ export async function completeIdToken(w: AtlasWidget, provider: string, idToken:
     await complete(w, parsed.attemptId);
     return;
   }
-  // Owes a second factor — resume at that step, bound to the same attempt.
-  w.state = flowFromPending({ id: parsed.attemptId, status: parsed.status });
+  // Owes a second factor (or policy acceptance) — resume at that step, bound
+  // to the same attempt. A held attempt's response carries what it waits on
+  // and the one-time token for accepting.
+  const held = res.data as { pending_policies?: AttemptView['pending_policies']; policy_acceptance_token?: string } | null;
+  const seeded = flowFromPending({
+    id: parsed.attemptId,
+    status: parsed.status,
+    ...(typeof held?.policy_acceptance_token === 'string' ? { policyToken: held.policy_acceptance_token } : {}),
+  });
+  w.state =
+    parsed.status === 'needs_policy_acceptance' && seeded.attempt && Array.isArray(held?.pending_policies)
+      ? { ...seeded, attempt: { ...seeded.attempt, pending_policies: held.pending_policies } }
+      : seeded;
   render(w);
 }
 
@@ -557,11 +620,14 @@ export async function submitReset(w: AtlasWidget, values: Record<string, string>
     }
     const token = await captchaToken(w, 'passwordReset');
     w.resetFlow = await startPasswordReset(w.client, values.email ?? '', token ?? undefined);
+    // A reset link may be opened anywhere: this tab follows the attempt.
+    if (w.resetFlow.attempt?.poll_secret) startResetPoll(w);
   } else {
     w.resetFlow = await advancePasswordReset(w.client, w.resetFlow, {
       code: values.code,
       password: values.password,
-    });
+      securityAnswers: (w.resetFlow.securityQuestions ?? []).map((question, i) => ({ question, answer: values[`security_answer_${i}`] ?? '' })),
+    }, { askQuestions: w.account.mfa?.securityQuestions === true });
   }
   w.busy = false;
 
@@ -587,6 +653,33 @@ export async function submitReset(w: AtlasWidget, values: Record<string, string>
   render(w);
 }
 
+/**
+ * Link mode: follow a reset attempt while its emailed link is opened (perhaps
+ * on another device), then draw the step it reached (the second factor or the
+ * new password). Stops when the user leaves the reset, or it moves on.
+ */
+function startResetPoll(w: AtlasWidget): void {
+  if (w.linkPoll) clearInterval(w.linkPoll);
+  const attemptId = w.resetFlow?.attempt?.id;
+  w.linkPoll = setInterval(() => {
+    void (async () => {
+      const flow = w.resetFlow;
+      if (!flow?.attempt || flow.attempt.id !== attemptId || flow.attempt.status !== 'needs_email_verification') {
+        if (w.linkPoll) clearInterval(w.linkPoll);
+        w.linkPoll = null;
+        return;
+      }
+      const next = await pollPasswordReset(w.client, flow, { askQuestions: w.account.mfa?.securityQuestions === true });
+      // The user may have left the reset (or restarted it) while this was in flight.
+      if (w.resetFlow !== flow || next.attempt?.status === 'needs_email_verification') return;
+      if (w.linkPoll) clearInterval(w.linkPoll);
+      w.linkPoll = null;
+      w.resetFlow = next;
+      render(w);
+    })();
+  }, 2_000);
+}
+
 export async function submitSignUp(w: AtlasWidget, values: Record<string, string>, consent = true): Promise<void> {
   if (w.busy) return;
   w.busy = true;
@@ -605,8 +698,11 @@ export async function submitSignUp(w: AtlasWidget, values: Record<string, string
     fields,
     consent,
     captchaToken: token ?? undefined,
+    policyAcceptances: w.policies.build(),
   });
   w.busy = false;
+  // A policy changed while the form was open: reload them so the form asks again.
+  await refreshAfterRefusal(w);
 
   const attempt = w.state.attempt;
   if (attempt?.status === 'complete') {
@@ -615,5 +711,8 @@ export async function submitSignUp(w: AtlasWidget, values: Record<string, string
     await complete(w, attemptId);
     return;
   }
+  // Link mode (or both): the verification link may be opened anywhere; this
+  // tab collects the session by polling.
+  if (shouldKeepPolling(w.state)) startLinkPoll(w);
   render(w);
 }

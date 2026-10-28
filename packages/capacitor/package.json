@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/capacitor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
   "dependencies": {
@@ -51,6 +51,7 @@
   },
   "files": [
     "dist",
+    "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
   ]

@@ -76,3 +76,18 @@ export function defineTool<S extends z.ZodTypeAny>(def: {
     execute: async (args, ctx) => sanitize(await def.execute(args as z.infer<S>, ctx)),
   };
 }
+
+/**
+ * The minimal tool shape every framework adapter maps from. A toolkit's {@link BoundTool} satisfies it, and so does
+ * a tool you write by hand, which is what lets the same adapters carry the connection tools too.
+ */
+export interface AgentTool {
+  name: string;
+  description: string;
+  /** The Zod schema of the arguments: documents them and validates them. */
+  schema: z.ZodTypeAny;
+  /** True for a pure read. */
+  readOnly?: boolean;
+  /** Run the tool with already-validated arguments. */
+  execute(args: unknown): Promise<unknown>;
+}

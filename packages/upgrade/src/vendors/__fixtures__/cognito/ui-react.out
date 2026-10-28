@@ -1,0 +1,15 @@
+import { Amplify } from 'aws-amplify';
+import { Button } from '@aws-amplify/ui-react';
+import config from './amplifyconfiguration.json';
+
+import { withAmplifyAuthenticatorCompat, useAmplifyAuthenticatorCompat } from '@atlasauth/react/compat';
+
+// TODO(atlas-migrate): Amplify.configure(): remove the Auth (Cognito) section; Atlas is configured by <AtlasProvider> and the Atlas dashboard. Delete the call if Amplify has nothing else to do
+Amplify.configure(config);
+
+function App() {
+  const { user, signOut } = useAmplifyAuthenticatorCompat((context) => [context.user]);
+  return <Button onClick={signOut}>Sign out {user?.username}</Button>;
+}
+
+export default withAmplifyAuthenticatorCompat(App);

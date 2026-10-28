@@ -1,11 +1,12 @@
 import { createAtlasToolkit } from '@atlasauth/agent-toolkit';
 import type { AtlasClient } from '@atlasauth/backend';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerAtlasTools, type McpToolSpec } from './tools';
+import { toMcpToolSpecs, type McpToolSpec } from './tools';
+import { DOCS_TOOL_NAMES, createDocsSource, docsToolSpecs, type DocsSourceOptions } from './docs';
 
 /** This package's own identity, surfaced to MCP clients during the handshake. */
 export const SERVER_NAME = '@atlasauth/mcp';
-export const SERVER_VERSION = '0.1.0';
+export const SERVER_VERSION = '0.3.1';
 
 /**
  * Options for {@link createAtlasMcpServer}. The tool-selection fields
@@ -38,6 +39,12 @@ export interface AtlasMcpServerOptions {
   name?: string;
   /** Override the advertised server version (defaults to {@link SERVER_VERSION}). */
   version?: string;
+  /**
+   * The read-only Atlas docs tools (`search_atlas_docs`, `read_atlas_doc`). On
+   * by default; `false` leaves them out, an object configures where the docs
+   * are fetched from. Like every tool they obey `allowedTools` when it is set.
+   */
+  docs?: boolean | DocsSourceOptions;
 }
 
 /** An {@link McpServer} plus the specs it was built from, for embedding/testing. */
@@ -62,24 +69,47 @@ export interface AtlasMcpServer {
  * await server.connect(new StdioServerTransport());
  */
 export function createAtlasMcpServer(options: AtlasMcpServerOptions): AtlasMcpServer {
-  // Delegate client construction AND scoping to the toolkit so this package
-  // owns no part of the safety model — it only transports what the toolkit
-  // decided to expose. `createAtlasToolkit` throws if neither `backend` nor
-  // `secretKey` is supplied.
-  const toolkit = createAtlasToolkit({
-    backend: options.backend,
-    secretKey: options.secretKey,
-    apiUrl: options.apiUrl,
-    fetch: options.fetch,
-    allowedTools: options.allowedTools,
-    scopes: options.scopes,
-  });
+  const specs: McpToolSpec[] = [];
+
+  // With no key and no client there is nothing to manage, so the server runs in
+  // docs-only mode (the setup `atlas mcp install` writes by default).
+  const hasInstance = Boolean(options.backend || options.secretKey);
+  if (hasInstance) {
+    // Delegate client construction AND scoping to the toolkit so this package
+    // owns no part of the safety model — it only transports what the toolkit
+    // decided to expose.
+    const toolkit = createAtlasToolkit({
+      backend: options.backend,
+      secretKey: options.secretKey,
+      apiUrl: options.apiUrl,
+      fetch: options.fetch,
+      allowedTools: options.allowedTools,
+      scopes: options.scopes,
+    });
+    specs.push(...toMcpToolSpecs(toolkit));
+  }
+
+  if (options.docs !== false) {
+    const docs = docsToolSpecs(createDocsSource(typeof options.docs === 'object' ? options.docs : { fetch: options.fetch }));
+    // An allowlist is authoritative for every tool, docs included.
+    specs.push(...(options.allowedTools ? docs.filter((t) => options.allowedTools!.includes(t.name)) : docs));
+  }
+
+  if (specs.length === 0) {
+    throw new Error('No tools to serve: pass ATLAS_SECRET_KEY for instance tools, or leave the docs tools on.');
+  }
 
   const server = new McpServer({
     name: options.name ?? SERVER_NAME,
     version: options.version ?? SERVER_VERSION,
   });
-
-  const tools = registerAtlasTools(server, toolkit);
-  return { server, tools };
+  for (const spec of specs) {
+    if ((DOCS_TOOL_NAMES as readonly string[]).includes(spec.name)) {
+      // The docs tools only read public pages: say so, so clients can run them without a prompt.
+      server.tool(spec.name, spec.description, spec.shape, { readOnlyHint: true, openWorldHint: true }, spec.handler);
+    } else {
+      server.tool(spec.name, spec.description, spec.shape, spec.handler);
+    }
+  }
+  return { server, tools: specs };
 }

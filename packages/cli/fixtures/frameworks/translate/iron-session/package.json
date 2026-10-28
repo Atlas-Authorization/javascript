@@ -1,0 +1,1 @@
+{ "name": "dash", "dependencies": { "next": "15.0.0", "iron-session": "^8.0.0" } }

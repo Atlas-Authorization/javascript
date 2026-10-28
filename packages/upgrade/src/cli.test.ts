@@ -60,9 +60,20 @@ describe('main: clerk-to-atlas', () => {
   });
 
   it('rejects an unsupported --from', () => {
-    const code = main([dir, '--from', 'auth0'], { logger, isTty: true });
+    const code = main([dir, '--from', 'ping-identity'], { logger, isTty: true });
     expect(code).toBe(1);
-    expect(err.join('\n')).toContain("unsupported --from 'auth0'");
+    expect(err.join('\n')).toContain("unsupported --from 'ping-identity'");
+  });
+
+  it('runs a vendor migration (--from auth0) as a dry run with a diff and a report', () => {
+    const source = `import { useAuth0 } from '@auth0/auth0-react';\nexport const A = () => useAuth0().user;\n`;
+    writeFileSync(join(dir, 'app.tsx'), source, 'utf8');
+    const code = main([dir, '--from', 'auth0', '--dry'], { logger, isTty: true });
+    expect(code).toBe(0);
+    const text = out.join('\n');
+    expect(text).toContain('+ import { useAuth0Compat } from');
+    expect(text).toContain('atlas-upgrade --from auth0');
+    expect(readFileSync(join(dir, 'app.tsx'), 'utf8')).toBe(source);
   });
 });
 

@@ -1,0 +1,10 @@
+// TODO(atlas-migrate): Configuration: not needed once the Ory client calls are replaced (Atlas SDKs read ATLAS_* from the environment)
+// TODO(atlas-migrate): FrontendApi (Kratos browser flows): sign-in, sign-up, recovery and settings run on Atlas pages and components; read the session with useAuth() / useUser() in the browser and verify the Atlas session token with @atlasauth/backend on the server
+import { Configuration, FrontendApi } from '@ory/client';
+
+export const ory = new FrontendApi(new Configuration({ basePath: process.env.NEXT_PUBLIC_ATLAS_FRONTEND_API, baseOptions: { withCredentials: true } }));
+
+export async function sessionOf(cookie: string) {
+  const { data } = await ory.toSession({ cookie });
+  return data;
+}

@@ -1,0 +1,5 @@
+// TODO(atlas-migrate): 'PrismaAdapter' from '@auth/prisma-adapter': database adapter: Atlas stores users and sessions now; remove the adapter from the Auth.js config and move existing users with `atlas import --from authjs`
+import { PrismaAdapter } from '@auth/prisma-adapter';
+import { prisma } from '@/lib/prisma';
+
+export const adapter = PrismaAdapter(prisma);

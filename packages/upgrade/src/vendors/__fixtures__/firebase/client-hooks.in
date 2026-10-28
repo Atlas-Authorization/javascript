@@ -1,0 +1,31 @@
+'use client';
+import { useEffect, useState } from 'react';
+import { getAuth, onAuthStateChanged, signOut, signInWithPopup, GoogleAuthProvider, type User } from 'firebase/auth';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { app } from '@/lib/firebase';
+
+const auth = getAuth(app);
+
+export function Account() {
+  const [user, loading] = useAuthState(auth);
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, async (next: User | null) => {
+      setToken(next ? await next.getIdToken() : null);
+    });
+  }, []);
+
+  async function google() {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  }
+
+  if (loading) return null;
+  return (
+    <div>
+      <p>{user?.email ?? auth.currentUser?.email}</p>
+      <button onClick={google}>Google</button>
+      <button onClick={() => signOut(auth)}>Sign out</button>
+    </div>
+  );
+}

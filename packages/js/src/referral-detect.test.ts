@@ -34,6 +34,8 @@ export function windowFrom(f: Fixture): Record<string, unknown> {
           }
         : last === 'cmplz_has_consent'
           ? (k: string) => (value as Record<string, unknown>)[k]
+          : last === 'has'
+            ? (k: string) => ((value as Record<string, unknown>)[k] === undefined ? null : (value as Record<string, unknown>)[k])
           : last === '__tcfapi'
             ? (cmd: string, _v: number, cb: (d: unknown, ok: boolean) => void) => {
                 if (cmd === 'getTCData' || cmd === 'addEventListener') cb(value, true);

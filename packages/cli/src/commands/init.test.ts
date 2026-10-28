@@ -89,6 +89,14 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
           return { data: state.hooks } as T;
         case '/v1/instance/preflight':
           return { ok: !state.findings.some((f) => f.severity === 'error'), findings: state.findings } as T;
+        case '/v1/integration-health':
+        case '/v1/integration-health?only=webhooks&probe=false': {
+          const checks = state.findings.map((f) => ({ id: f.code, ok: f.severity === 'info' ? null : false, detail: f.message, fix: f.fix, source: 'preflight' }));
+          const failing = checks.filter((c) => c.ok === false).length;
+          return { ok: failing === 0, checks, summary: { failing, passing: 0, unknown: checks.length - failing }, lastPath: path } as T;
+        }
+        case '/v1/embed?instance=ins_1&shape=button&origin=https%3A%2F%2Fshop.example':
+          return { tenant: { policy: 'script-src https://atlasauth.net', sources: {}, originAllowed: false } } as T;
       }
       throw notFound();
     },
@@ -159,13 +167,20 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
       record('PATCH', path, body);
       if (path === '/v1/instance') {
         const st = ((body as { auth_config: { strategies: Record<string, boolean> } }).auth_config.strategies);
-        if ((st.emailCode || st.emailLink) && !state.development && !state.managed?.verified) {
-          throw new AtlasApiError(422, [{ code: 'EMAIL_PROVIDER_REQUIRED', message: 'No email provider.' }]);
-        }
+        // The server accepts email methods without a sender and reports them as inactive.
         Object.assign(state.instance.strategies, st);
+        const canSend = state.development || state.managed?.verified;
+        const inactive = canSend
+          ? []
+          : (['emailCode', 'emailLink'] as const)
+              .filter((k) => state.instance.strategies[k])
+              .map((k) => ({ method: k === 'emailCode' ? 'email_code' : 'email_link', reason: 'email_provider_required' }));
+        return { inactive_methods: inactive } as T;
       }
       if (path === '/v1/oauth_clients/oc_1') {
-        state.clients[0]!.redirect_uris = (body as { redirect_uris: string[] }).redirect_uris;
+        const b = body as { redirect_uris?: string[]; backchannel_logout_uri?: string };
+        if (b.redirect_uris) state.clients[0]!.redirect_uris = b.redirect_uris;
+        if (b.backchannel_logout_uri) (state.clients[0] as Record<string, unknown>).backchannel_logout_uri = b.backchannel_logout_uri;
       }
       return {} as T;
     },
@@ -248,9 +263,9 @@ describe('atlas init', () => {
     });
     expect(io.stdout()).toContain('resend._domainkey.mail.acme.example');
     expect(io.stdout()).toContain('CNAME auth.acme.example → cname.atlas.test');
-    // Email code waits for the sender; the others are on.
-    expect(state.instance.strategies).toMatchObject({ password: true, passkey: true, emailCode: false });
-    expect(io.stdout()).toMatch(/Not turned on yet.*emailCode/);
+    // Every method is switched on; email code is reported as not offered until the sender is ready.
+    expect(state.instance.strategies).toMatchObject({ password: true, passkey: true, emailCode: true });
+    expect(io.stdout()).toMatch(/Not offered to users yet.*email_code/);
     expect(state.clients[0]).toMatchObject({ name: 'acme (production)', redirect_uris: ['https://app.acme.example/callback'] });
     expect(state.writes.find((w) => w.path === '/v1/oauth_clients')?.body).toMatchObject({ first_party: true });
 
@@ -291,6 +306,20 @@ describe('atlas init', () => {
     expect(io.stdout()).toContain('Found app ins_1');
     // The issuer the API returns wins over the derived one.
     expect(io.stdout()).toContain('Issuer:            https://auth.acme.example');
+  });
+
+  // ATL-D14 --backchannel sets the client's back-channel logout URI (create, then patch on a re-run).
+  it('sets the back-channel logout URI with --backchannel', async () => {
+    const io = captureIO();
+    expect(await run([...INIT(), '--backchannel', 'https://app.acme.example/auth/backchannel-logout'], ctxWith(io))).toBe(0);
+    expect(state.writes.find((w) => w.path === '/v1/oauth_clients')?.body).toMatchObject({
+      backchannel_logout_uri: 'https://app.acme.example/auth/backchannel-logout',
+    });
+    expect(io.stdout()).toContain('nextBackchannelLogout');
+    const again = captureIO();
+    expect(await run([...INIT(), '--backchannel', 'https://app.acme.example/bcl2'], ctxWith(again))).toBe(0);
+    expect(state.writes.at(-1)).toMatchObject({ method: 'PATCH', path: '/v1/oauth_clients/oc_1', body: { backchannel_logout_uri: 'https://app.acme.example/bcl2' } });
+    expect(await run(['init', '--product', 'acme', '--backchannel', 'http://evil.example/x', '--yes'], ctxWith(captureIO()))).toBe(1);
   });
 
   it('refuses to create a secret over an existing, different file unless --force', async () => {
@@ -456,6 +485,39 @@ describe('atlas env', () => {
     expect(v.stdout()).toContain(join(home, 'acme', 'production.env'));
   });
 
+  it('k8s: a ConfigMap of public values and kubectl commands that read the secret files', async () => {
+    const io = captureIO();
+    expect(await run(['env', '--product', 'acme', '--format', 'k8s'], ctxWith(io))).toBe(0);
+    noSecrets(io);
+    const out = io.stdout();
+    expect(out).toContain('kind: ConfigMap');
+    expect(out).toContain('name: acme-atlas');
+    expect(out).toContain('ATLAS_PUBLISHABLE_KEY: "pk_test_1"');
+    expect(out).toContain(`kubectl create secret generic acme-atlas-atlas-secret-key --from-env-file='${join(home, 'acme', 'production.env')}'`);
+    expect(out).toContain('secretKeyRef: { name: acme-atlas-atlas-secret-key, key: ATLAS_SECRET_KEY }');
+  });
+
+  it('prints both ATLAS_API_BASE and ATLAS_API_URL', async () => {
+    const io = captureIO();
+    expect(await run(['env', '--product', 'acme', '--format', 'dotenv'], ctxWith(io))).toBe(0);
+    expect(io.stdout()).toContain('ATLAS_API_BASE=https://api.atlas.test');
+    expect(io.stdout()).toContain('ATLAS_API_URL=https://api.atlas.test');
+  });
+
+  it('ATLAS_API_BASE is honoured like ATLAS_API_URL for project commands', async () => {
+    const seen: string[] = [];
+    const io = captureIO();
+    const c = ctxWith(io, {
+      env: { XDG_CONFIG_HOME: home, ATLAS_API_BASE: 'https://base.example' },
+      makeHttp: (o) => {
+        seen.push(o.apiUrl);
+        return fakeAtlas(state, o.secretKey);
+      },
+    });
+    expect(await run(['preflight', '--product', 'acme'], c)).toBe(0);
+    expect(seen.every((u) => u === 'https://base.example')).toBe(true);
+  });
+
   it('needs a known product and format', async () => {
     expect(await run(['env', '--format', 'dotenv'], ctxWith(captureIO()))).toBe(1);
     expect(await run(['env', '--product', 'nope'], ctxWith(captureIO()))).toBe(1);
@@ -533,4 +595,21 @@ describe('secrets written by default', () => {
     expect(body.secret_file).toBe(join(home, 'atlasauth', 'webhook-whe_1.env'));
     expect(readFileSync(body.secret_file, 'utf8')).toContain(`ATLAS_WEBHOOK_SECRET=${WEBHOOK_SECRET}`);
   });
+});
+
+describe('atlas doctor', () => {
+  beforeEach(async () => {
+    await run(INIT(), ctxWith(captureIO()));
+  });
+
+  it('doctor exits 1 when a check fails and prints each fix', async () => {
+    state.findings = [{ severity: 'error', code: 'email_provider_missing', message: 'No email.', fix: 'Add one.' }];
+    const io = captureIO();
+    expect(await run(['doctor', '--product', 'acme'], ctxWith(io))).toBe(1);
+    expect(io.stdout()).toContain('email_provider_missing: Add one.');
+    expect(io.stderr()).toContain('integration check(s) failing');
+    state.findings = [];
+    expect(await run(['doctor', '--product', 'acme', '--only', 'webhooks', '--no-probe'], ctxWith(captureIO()))).toBe(0);
+  });
+
 });

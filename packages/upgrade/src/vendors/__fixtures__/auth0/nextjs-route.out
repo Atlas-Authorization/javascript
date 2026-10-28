@@ -1,0 +1,3 @@
+import { handleAuthCompat } from '@atlasauth/nextjs/compat';
+
+export const GET = handleAuthCompat();

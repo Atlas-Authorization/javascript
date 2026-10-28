@@ -1,5 +1,46 @@
 # @atlasauth/types changelog
 
+## 0.12.0 — 2026-10-28
+
+- Webhook payload types for workflows, feature flags, chat approvals, risk, device assurance, billing discounts, agent governance, gateway tool changes and connection triggers
+
+## 0.11.0 — 2026-10-27
+
+### Added
+
+- Webhook event types `connection.refresh_failed`, `connection.revoked`, `connection.reauthorization_required`, `connection.scopes_changed` and `connection.recovered`.
+- Identity-governance event types `iga_request.created`, `iga_request.approval_needed`, `iga_request.decided`, `iga_request.escalated`, `iga_grant.created`, `iga_grant.revoked`, `iga_campaign.launched`, `iga_campaign.reminder`, `iga_campaign.closed`, `iga_violation.detected`, `iga_user.reconciled` and `iga_user.offboarded`.
+- Webhook event types `uma.request_submitted` and `uma.request_decided` (user-managed access requests a resource owner approves).
+
+## 0.10.0 — 2026-10-26
+
+### Changed
+
+- New webhook event types.
+
+## 0.9.0 — 2026-10-24
+
+- Integrator platform release: see the Atlas changelog for 2026-10-24.
+
+## 0.8.0 — 2026-10-24
+
+### Added
+
+- Policy acceptance webhook payload types: `user.policy_accepted` and `policy.version_published`.
+
+## 0.7.0 — 2026-10-24
+
+### Added
+
+- `WebhookEvent` gains `user.reactivated` (a dormant account signed in again) and `session.updated`.
+- `Session.custom_data`: custom per-session data attached by the app's backend or a `post_login` Action.
+
+## 0.6.0 — 2026-10-23
+
+### Added
+
+- `WebhookEvent` gains `user.anonymous_linked`, `organizationInvitation.resent`, `team.created` / `team.updated` / `team.deleted`, `teamMembership.created` / `teamMembership.deleted`, `appRole.created` / `appRole.updated` / `appRole.deleted` and `user.app_roles_updated`.
+
 ## 0.5.0
 
 ### Added

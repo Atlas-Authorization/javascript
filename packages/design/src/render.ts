@@ -6,6 +6,7 @@ import {
   type LegacyDesignTokens,
 } from './client';
 import type { AtlasDesign, PresetId } from './schema';
+import { adoptConstructable, applyStyleNonce } from './adopt';
 
 /**
  * The framework-neutral half of an SDK's `appearance` handling, shared by the
@@ -144,12 +145,18 @@ export function applyAppearanceToDom(
   for (const [name, value] of Object.entries(render.attributes)) root.setAttribute(name, value);
 
   if (render.css) {
-    const existing = Array.from(doc.head.querySelectorAll('style[data-atlas-design]'));
-    if (!existing.some((el) => el.getAttribute('data-atlas-design') === render.key)) {
-      const style = doc.createElement('style');
-      style.setAttribute('data-atlas-design', render.key);
-      style.textContent = render.css;
-      doc.head.appendChild(style);
+    // A constructable stylesheet first (no style-src needed under a strict
+    // CSP), else a <style> carrying the page's CSP nonce.
+    const sheetDoc = doc as unknown as Parameters<typeof adoptConstructable>[0];
+    if (!adoptConstructable(sheetDoc, `design:${render.key}`, render.css)) {
+      const existing = Array.from(doc.head.querySelectorAll('style[data-atlas-design]'));
+      if (!existing.some((el) => el.getAttribute('data-atlas-design') === render.key)) {
+        const style = doc.createElement('style');
+        style.setAttribute('data-atlas-design', render.key);
+        applyStyleNonce(sheetDoc, style);
+        style.textContent = render.css;
+        doc.head.appendChild(style);
+      }
     }
   }
   if (render.fontStylesheets.length) {

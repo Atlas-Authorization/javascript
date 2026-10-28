@@ -5,6 +5,7 @@ import {
   createSignal,
   onCleanup,
   onMount,
+  untrack,
   type JSX,
 } from 'solid-js';
 import { isServer, render } from 'solid-js/web';
@@ -18,7 +19,16 @@ import {
   atlasCaptchaLabels,
   createCaptchaController,
   createSignUp,
+  PolicyAcceptanceController,
+  confirmPolicies,
+  controllerForPending,
   fetchInstanceSettings,
+  loadPolicies,
+  initialFlow,
+  injectPolicyStyles,
+  mountPolicyAcceptStep,
+  mountPolicyClickwrap,
+  mountPolicyConsent,
   flowFromPending,
   flowNeedsCaptcha,
   nextStep,
@@ -36,6 +46,7 @@ import {
 import { useAtlas } from './context';
 import type { AtlasClient } from './provider';
 import { ATLAS_SOLID_SDK } from './version';
+import { policyHost, policyText } from './policies';
 
 /**
  * The mountable widgets — `<SignIn>`, `<SignUp>`, `<UserButton>`.
@@ -216,9 +227,9 @@ function renderFirstFactor(
   return out;
 }
 
-function renderSubmit(kind: string, busy: boolean, hidden = false): JSX.Element {
-  if (hidden || kind === 'done' || kind === 'await_oauth') return null;
-  return h('button', { class: 'atlas-button', type: 'submit', disabled: busy }, 'Continue');
+function renderSubmit(kind: string, busy: boolean, hidden = false, blocked = false): JSX.Element {
+  if (hidden || kind === 'done' || kind === 'await_oauth' || kind === 'accept_policies') return null;
+  return h('button', { class: 'atlas-button', type: 'submit', disabled: busy || blocked }, 'Continue');
 }
 
 /** One configured sign-up field's control (uncontrolled — read from `FormData`). */
@@ -269,8 +280,9 @@ function signUpControl(f: PublicSignUpField): JSX.Element {
  * email + password, and the legal-consent row. Re-rendered only when the
  * settings change, so what the user typed survives a refused submit.
  */
-function renderSignUpFields(settings: InstanceSettings | null): JSX.Element {
-  const legal = settings?.legal;
+function renderSignUpFields(settings: InstanceSettings | null, hasPolicies = false): JSX.Element {
+  // Instance policies replace the legacy single "I agree to the Terms" row.
+  const legal = hasPolicies ? undefined : settings?.legal;
   const showLegal = !!legal && (!!legal.termsUrl || !!legal.privacyUrl);
   const links: JSX.Element[] = [];
   if (legal?.termsUrl) {
@@ -315,6 +327,8 @@ function renderSignUpFields(settings: InstanceSettings | null): JSX.Element {
 function formValues(form: HTMLFormElement): Record<string, string> {
   const values: Record<string, string> = {};
   new FormData(form).forEach((value, key) => {
+    // The policy boxes are the controller's, not form fields.
+    if (key === 'policies' || key.startsWith('policy_')) return;
     values[key] = key in values ? `${values[key]}, ${String(value)}` : String(value);
   });
   return values;
@@ -343,6 +357,17 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
   );
   const [settings, setSettingsRaw] = createSignal<InstanceSettings | null>(null);
 
+  // Policy acceptance: the sign-up's policies (terms, privacy, …), kept in a
+  // controller; `policyTick` re-runs the view when a box is ticked or they load.
+  const policies = new PolicyAcceptanceController([]);
+  const [policyTick, setPolicyTick] = createSignal(0);
+  const offPolicies = policies.subscribe(() => setPolicyTick((n) => n + 1));
+  onCleanup(offPolicies);
+  const hasPolicies = createMemo(() => (policyTick(), policies.policies.length > 0));
+  const policiesBlocked = () => (policyTick(), policies.policies.length > 0 && !policies.canSubmit());
+  const [declined, setDeclined] = createSignal<string | null>(null);
+  const pt = policyText(client, (key, vars) => t(key, vars));
+
   // §5 the per-flow captcha, driven by the instance's settings so turning it on
   // in the dashboard needs no code change. Configured synchronously with every
   // state / settings change, before the view reads `drawn`.
@@ -369,6 +394,9 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     setStateRaw(next as FlowState);
     syncCaptcha();
   };
+  if (!isServer && props.mode === 'sign-up') {
+    void loadPolicies(fapi, { locale: client.locale ?? undefined }).then((list) => policies.setPolicies(list));
+  }
   if (!isServer) {
     void fetchInstanceSettings(fapi).then((loaded) => {
       if (!loaded) return;
@@ -407,14 +435,51 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     })();
   };
 
+  /** The sign-up submit: scroll-mode policies are read in their unskippable dialog first. */
+  const startCreate = (values: Record<string, string>) => {
+    setDeclined(null);
+    if (hasPolicies() && policies.pendingScroll()) {
+      void confirmPolicies(policies, { t: pt }).then((res) => {
+        if (res.ok) create(values);
+        else setDeclined(res.declined);
+      });
+      return;
+    }
+    create(values);
+  };
+
+  /** The sign-in step for `needs_policy_acceptance`: the dialog / checkboxes, then the acceptances go to the flow. */
+  const policyStep = (): JSX.Element => {
+    const el = document.createElement('div');
+    let step: ReturnType<typeof mountPolicyAcceptStep> | null = null;
+    let alive = true;
+    void controllerForPending(fapi, untrack(() => state().attempt), { locale: client.locale ?? undefined }).then((controller) => {
+      if (!alive) return;
+      injectPolicyStyles(el.ownerDocument);
+      step = mountPolicyAcceptStep(el, controller, {
+        t: pt,
+        onSubmit: (acceptances) => submit({ policy_acceptances: JSON.stringify(acceptances) }),
+        // Declining cancels the attempt: back to the first step, saying why.
+        onDecline: (policy) =>
+          setState({ ...initialFlow, errors: [{ code: 'POLICY_DECLINED', message: pt('policy.declined', { policy: policy.title }) }] }),
+      });
+    });
+    createEffect(() => step?.setBusy(state().busy));
+    onCleanup(() => {
+      alive = false;
+      step?.destroy();
+    });
+    return el;
+  };
+
   const create = (values: Record<string, string>) => {
     void (async () => {
       setState((s) => ({ ...s, busy: true, errors: [] }));
       // The consent box is `required` when the instance requires agreement, so a
       // submitted form always carries it then; without a requirement it is moot.
       const { consent, ...rest } = values;
-      const agreed = settings()?.legal.required ? consent === 'true' : true;
-      await finish(await createSignUp(fapi, rest, { consent: agreed, captcha: signUpCaptcha, t }));
+      const agreed = hasPolicies() ? true : settings()?.legal.required ? consent === 'true' : true;
+      await finish(await createSignUp(fapi, rest, { consent: agreed, captcha: signUpCaptcha, t, policies }));
     })();
   };
 
@@ -507,7 +572,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
       onSubmit: (event: Event) => {
         event.preventDefault();
         const values = formValues(event.currentTarget as HTMLFormElement);
-        if (kind() === 'create_account') create(values);
+        if (kind() === 'create_account') startCreate(values);
         else submit(values);
       },
     },
@@ -515,19 +580,31 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
       h('h1', { class: 'atlas-title' }, props.title),
       () => renderErrors(state().errors, client.localization),
       () => {
-        if (kind() === 'create_account') return signUpBlocked() ? emailUnavailable() : renderSignUpFields(settings());
+        if (kind() === 'create_account') return signUpBlocked() ? emailUnavailable() : renderSignUpFields(settings(), hasPolicies());
+        if (kind() === 'accept_policies') return policyStep();
         if (kind() === 'collect_first_factor') {
           const [listed, offered] = firstFactor().split(':') as [string, string];
           return renderFirstFactor(offered ? offered.split(',') : [], listed === 'listed', emailSent(), sendEmailFactor);
         }
         return renderFields(kind());
       },
+      () =>
+        kind() === 'create_account' && !signUpBlocked() && hasPolicies()
+          ? [
+              policyHost('div', (el) => mountPolicyConsent(el, policies, { t: pt })),
+              declined() ? h('p', { class: 'atlas-error', role: 'alert', 'data-atlas-policy-declined': '' }, pt('policy.declined', { policy: declined()! })) : null,
+            ]
+          : null,
       captchaSlot(signUpCaptcha, () => kind() === 'create_account' && !signUpBlocked() && signUpCaptchaDrawn()),
       captchaSlot(
         captcha,
         () => (kind() === 'collect_identifier' || kind() === 'collect_captcha') && captchaDrawn(),
       ),
-      () => renderSubmit(kind(), state().busy, signUpBlocked() || awaitingEmail()),
+      () => renderSubmit(kind(), state().busy, signUpBlocked() || awaitingEmail(), kind() === 'create_account' && policiesBlocked()),
+      () =>
+        kind() === 'create_account' && !signUpBlocked() && hasPolicies()
+          ? policyHost('p', (el) => mountPolicyClickwrap(el, policies, { t: pt }))
+          : null,
     ],
   );
 }
@@ -625,3 +702,5 @@ function mountable(
 export const SignIn = mountable((client) => client.mountSignIn, 'atlas-signin-root');
 export const SignUp = mountable((client) => client.mountSignUp, 'atlas-signup-root');
 export const UserButton = mountable((client) => client.mountUserButton, 'atlas-user-button-root');
+/** In-app policy re-acceptance: a banner (and the dialog / checkboxes) for a signed-in user whose policy changed. */
+export const PolicyGate = mountable((client) => client.mountPolicyGate, 'atlas-policy-gate-root');

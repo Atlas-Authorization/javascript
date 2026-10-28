@@ -1,5 +1,13 @@
 import {
   AtlasBackend,
+  createBetterAuthBridge,
+  createMigrationBridge,
+  serializeBridgeCookie,
+  type MigrationBridgeDecision,
+  type MigrationBridgeRequest,
+  type MigrationTokenExtractor,
+  type TokenFormat,
+  type LegacyIssuer,
   ForbiddenError,
   evaluate,
   hasFromClaims,
@@ -108,6 +116,163 @@ export interface AtlasPluginOptions {
   hookName?: 'onRequest' | 'preHandler';
   /** Injectable fetch, for tests and custom transports. */
   fetchImpl?: typeof fetch;
+  /**
+   * Moving from Better Auth: on a GET/HEAD request carrying a Better Auth
+   * session cookie and no Atlas session, exchange it ONCE for an Atlas session
+   * (server-side), set the Atlas cookies, clear the Better Auth ones and
+   * redirect to the same URL. Needs `publishableKey`.
+   */
+  betterAuthBridge?: boolean | BetterAuthBridgeConfig;
+  /**
+   * Moving from any other vendor (Auth0, Clerk, Cognito, Firebase, Supabase …):
+   * the same zero-logout exchange for that vendor's session cookie or token.
+   * Needs `publishableKey`. See {@link MigrationBridgeConfig}.
+   */
+  migrationBridge?: MigrationBridgeConfig;
+  /** The Atlas Frontend API origin. Defaults to the origin of `jwksUrl`. */
+  fapiOrigin?: string;
+  /** Also accept your old provider's JWTs for a bounded window (see `AtlasBackendOptions.legacyIssuers`). */
+  legacyIssuers?: readonly LegacyIssuer[];
+  /**
+   * The instance secret key. Used by `legacyIssuers` to map an old `sub` to the Atlas user, and by
+   * `betterAuthBridge` to exchange through the Backend API (limited per instance for a bulk cutover,
+   * the user's IP and user agent forwarded) instead of the per-IP Frontend API.
+   */
+  secretKey?: string;
+  bapiBaseUrl?: string;
+}
+
+/** Options for {@link AtlasPluginOptions.betterAuthBridge}. */
+export interface BetterAuthBridgeConfig {
+  /** Better Auth's `advanced.cookiePrefix` (default `better-auth`). */
+  cookiePrefix?: string;
+  /** The session cookie's full name, when the old app overrode it. */
+  cookieName?: string;
+  /** The domain the Better Auth cookies were set on, so they clear. */
+  cookieDomain?: string;
+  /** Where a user who still owes a second factor finishes signing in. Default: the requested URL. */
+  signInUrl?: string;
+  /** Mark the Atlas cookies Secure. Default true. */
+  secure?: boolean;
+}
+
+/** Options for {@link AtlasPluginOptions.migrationBridge}. */
+export interface MigrationBridgeConfig {
+  /** The vendor you are moving from (`auth0`, `clerk`, `cognito`, `supabase`, …). */
+  source: string;
+  /** The bridge preset (default: the one named like `source`). */
+  preset?: string;
+  /** Variables the preset's cookie names need (`client_id`, `project_ref`, …). */
+  presetVars?: Record<string, string>;
+  /** Cookie names to read instead of the preset's (`*` wildcards allowed). */
+  cookieNames?: string[];
+  /** Cookie names to clear after an exchange instead of the preset's. */
+  clearCookieNames?: string[];
+  tokenFormat?: TokenFormat;
+  /** Open an encrypted vendor cookie locally and return the token inside. */
+  extractToken?: MigrationTokenExtractor;
+  /** Also read `Authorization: Bearer` tokens from the vendor. */
+  bearer?: boolean;
+  /** The domain the old cookies were set on, so they clear. */
+  cookieDomain?: string;
+  /** Where a user who still owes a second factor finishes signing in. Default: the requested URL. */
+  signInUrl?: string;
+  /** Mark the Atlas cookies Secure. Default true. */
+  secure?: boolean;
+}
+
+export {
+  createBetterAuthBridge,
+  createMigrationBridge,
+  exchangeMigrationSession,
+  type MigrationBridgeDecision,
+  type MigrationExchangeResult,
+  type MigrationTokenExtractor,
+  exchangeBetterAuthSession,
+  readBetterAuthSessionCookie,
+  type BetterAuthBridgeDecision,
+  type BetterAuthExchangeResult,
+  type LegacyIssuer,
+} from '@atlasauth/backend';
+
+/**
+ * The Better Auth session bridge as an `onRequest` hook (registered by
+ * {@link atlasPlugin} when `betterAuthBridge` is set). Sending the redirect
+ * ends the request; otherwise the request continues untouched.
+ */
+export function betterAuthBridgeHook(
+  options: Pick<AtlasPluginOptions, 'jwksUrl' | 'publishableKey' | 'fapiOrigin' | 'fetchImpl' | 'secretKey' | 'bapiBaseUrl'> & {
+    config?: BetterAuthBridgeConfig;
+  },
+) {
+  if (!options.publishableKey) throw new Error('betterAuthBridge needs `publishableKey`.');
+  const config = options.config ?? {};
+  const bridge = createBetterAuthBridge({
+    fapiOrigin: options.fapiOrigin ?? new URL(options.jwksUrl).origin,
+    publishableKey: options.publishableKey,
+    cookiePrefix: config.cookiePrefix,
+    cookieName: config.cookieName,
+    betterAuthCookieDomain: config.cookieDomain,
+    secure: config.secure,
+    // With the secret key the exchange uses the Backend API (per-instance limit, user IP forwarded).
+    secretKey: options.secretKey,
+    bapiBaseUrl: options.bapiBaseUrl,
+    fetchImpl: options.fetchImpl,
+  });
+  return bridgeOnRequest(bridge, config.signInUrl);
+}
+
+/**
+ * The zero-logout bridge for any vendor as an `onRequest` hook (registered by
+ * {@link atlasPlugin} when `migrationBridge` is set).
+ */
+export function migrationBridgeHook(
+  options: Pick<AtlasPluginOptions, 'jwksUrl' | 'publishableKey' | 'fapiOrigin' | 'fetchImpl' | 'secretKey' | 'bapiBaseUrl'> & {
+    config: MigrationBridgeConfig;
+  },
+) {
+  if (!options.publishableKey) throw new Error('migrationBridge needs `publishableKey`.');
+  const config = options.config;
+  const bridge = createMigrationBridge({
+    source: config.source,
+    preset: config.preset,
+    presetVars: config.presetVars,
+    cookieNames: config.cookieNames,
+    clearCookieNames: config.clearCookieNames,
+    tokenFormat: config.tokenFormat,
+    extractToken: config.extractToken,
+    bearer: config.bearer,
+    oldCookieDomain: config.cookieDomain,
+    secure: config.secure,
+    fapiOrigin: options.fapiOrigin ?? new URL(options.jwksUrl).origin,
+    publishableKey: options.publishableKey,
+    secretKey: options.secretKey,
+    bapiBaseUrl: options.bapiBaseUrl,
+    fetchImpl: options.fetchImpl,
+  });
+  return bridgeOnRequest(bridge, config.signInUrl);
+}
+
+/** Render a bridge decision: a 307 back to the same URL (or the sign-in URL) carrying the cookies. */
+function bridgeOnRequest(bridge: (request: MigrationBridgeRequest) => Promise<MigrationBridgeDecision>, signInUrl: string | undefined) {
+  return async function bridgeOnRequestHook(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+    if (request.method !== 'GET' && request.method !== 'HEAD') return;
+    let outcome: MigrationBridgeDecision;
+    try {
+      outcome = await bridge({ headers: request.headers, ip: request.ip });
+    } catch {
+      return;
+    }
+    if (outcome.action === 'none' || (outcome.action === 'refused' && outcome.cookies.length === 0)) return;
+    const here = `${request.protocol}://${request.headers.host ?? 'localhost'}${request.url}`;
+    const location =
+      outcome.action === 'needs_mfa'
+        ? outcome.continuationUrl(signInUrl ? new URL(signInUrl, here).toString() : here)
+        : request.url;
+    reply.header('set-cookie', outcome.cookies.map(serializeBridgeCookie));
+    // code + Location by hand: `reply.redirect`'s argument order differs between Fastify 4 and 5.
+    await reply.code(307).header('location', location).send();
+  };
 }
 
 /** The lifecycle hooks {@link atlasPlugin} may attach to. */
@@ -245,12 +410,22 @@ export function atlasPlugin(options: AtlasPluginOptions): FastifyPluginCallback 
     issuer: options.issuer,
     authorizedParties: options.authorizedParties,
     fetchImpl: options.fetchImpl,
+    legacyIssuers: options.legacyIssuers,
+    secretKey: options.secretKey,
+    bapiBaseUrl: options.bapiBaseUrl,
   });
+  const bridge = options.betterAuthBridge
+    ? betterAuthBridgeHook({ ...options, config: options.betterAuthBridge === true ? {} : options.betterAuthBridge })
+    : null;
+  const vendorBridge = options.migrationBridge ? migrationBridgeHook({ ...options, config: options.migrationBridge }) : null;
 
   return function plugin(instance: FastifyInstance, _opts, done) {
     // Seed the decorator so every request carries the property (Fastify
     // optimises requests whose shape is declared up front).
     instance.decorateRequest('atlas', null);
+    // The Better Auth bridge runs first (onRequest), before any auth decision.
+    if (bridge) instance.addHook('onRequest', bridge);
+    if (vendorBridge) instance.addHook('onRequest', vendorBridge);
 
     // resolveAuth already fails closed, but guard the attach step too: a
     // signed-out decoration is always safe, a thrown hook is not.
@@ -311,3 +486,44 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
  */
 const _requireAuthIsPreHandler: preHandlerHookHandler = requireAuth;
 void _requireAuthIsPreHandler;
+
+// ── Protecting an API / MCP server with Atlas-issued OAuth access tokens ────
+
+import { createAccessTokenVerifier, type AccessTokenVerifierOptions } from '@atlasauth/backend';
+export {
+  createAccessTokenVerifier,
+  protectedResourceMetadata,
+  protectedResourceMetadataPath,
+  type AccessTokenClaims,
+  type AccessTokenResult,
+  type AccessTokenVerifierOptions,
+} from '@atlasauth/backend';
+
+/**
+ * A `preHandler` that gates a route on an Atlas-issued OAuth access token for
+ * YOUR API (audience, scopes, DPoP when bound), answering failures with the
+ * RFC 6750 / RFC 9728 `WWW-Authenticate` challenge. The verified token is on
+ * `request.atlasToken`.
+ */
+export function requireAccessToken(options: AccessTokenVerifierOptions) {
+  const verify = createAccessTokenVerifier(options);
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const url = `${request.protocol}://${request.headers.host ?? ''}${request.url}`;
+    const result = await verify({ method: request.method, url, headers: request.headers });
+    // RFC 9449 §8 — the server nonce, on success and refusal alike.
+    if (result.dpopNonce) reply.header('dpop-nonce', result.dpopNonce);
+    if (!result.ok) {
+      await reply
+        .code(result.status)
+        .header('www-authenticate', result.wwwAuthenticate)
+        .send(result.error ? { error: result.error, error_description: result.description } : { error: 'unauthorized' });
+      return;
+    }
+    (request as FastifyRequest & { atlasToken?: unknown }).atlasToken = {
+      claims: result.claims,
+      subject: result.subject,
+      clientId: result.clientId,
+      scopes: result.scopes,
+    };
+  };
+}

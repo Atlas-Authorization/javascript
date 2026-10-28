@@ -26,6 +26,7 @@ import {
 import {
   FapiClient,
   advanceWithCaptcha,
+  beginPasskeySignIn,
   atlasCaptchaLabels,
   createCaptchaController,
   flowNeedsCaptcha,
@@ -35,7 +36,12 @@ import {
   signInCaptchaOptions,
   startSignUp,
   advance,
+  nextStep,
   prepareFactor,
+  PolicyAcceptanceController,
+  controllerForPending,
+  loadPolicies,
+  isPolicyAcceptanceRequired,
   flowFromPending,
   initialFlow,
   getPasskeyAssertion,
@@ -47,6 +53,8 @@ import {
   type EmailDelivery,
   type FieldError,
   type FlowState,
+  type PasskeyExtensionResults,
+  type PasskeyPrfRequest,
 } from '@atlasauth/js';
 import { useAtlas, useSignIn } from '@atlasauth/react';
 import type { FlowMode } from './machine';
@@ -86,6 +94,22 @@ export interface FlowContextValue {
    * hand-built context) — everything is then offered, as before.
    */
   emailDelivery?: EmailDelivery;
+  /**
+   * The instance's policies (terms, privacy, …) for this flow: the sign-up's
+   * published policies, or a sign-in's `pending_policies` while it is in
+   * `needs_policy_acceptance`. `<*.Policies>` draws them; `submit` sends the
+   * acceptances. Empty when the instance has none.
+   */
+  policies?: PolicyAcceptanceController;
+  /** Whether the submit may go (every required checkbox policy is ticked). */
+  policiesSatisfied?: boolean;
+  /** A scroll-mode dialog is open (set by `submit` when one is still unread). */
+  policyReading?: boolean;
+  setPolicyReading?(reading: boolean): void;
+  /** The title of a policy the user declined, until they try again. */
+  policyDeclined?: string | null;
+  /** The user declined `title`: cancels a sign-in attempt, or just reports on a sign-up. */
+  declinePolicy?(title: string): void;
 }
 
 /** `useLayoutEffect` in the browser, `useEffect` during SSR (no warning). */
@@ -121,7 +145,14 @@ export function useFlowContext(expected?: FlowMode): FlowContextValue {
  * re-boot + optional `afterUrl` navigation) lives here, shared across every way a
  * developer composes the primitives.
  */
-export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}): FlowContextValue {
+export function useFlowDriver(
+  mode: FlowMode,
+  opts: {
+    afterUrl?: string;
+    passkeyPrf?: PasskeyPrfRequest;
+    onPasskeyExtensionResults?: (results: PasskeyExtensionResults) => void;
+  } = {},
+): FlowContextValue {
   const { publishableKey, frontendApi, reload, pendingAttempt, instanceSettings, catalog, errorCatalog, locale } =
     useAtlas();
   // Reuse the React SDK's imperative OAuth starter (popup/redirect + ticket
@@ -140,6 +171,30 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
     mode === 'sign-in' ? flowFromPending(pendingAttempt) : initialFlow,
   );
   const [values, setValues] = useState<Record<string, string>>({});
+
+  // Policy acceptance: the sign-up's policies, or a sign-in's pending ones.
+  const policies = useMemo(() => new PolicyAcceptanceController([]), []);
+  const [policyReading, setPolicyReading] = useState(false);
+  const [policyDeclined, setPolicyDeclined] = useState<string | null>(null);
+  const [policyVersion, bumpPolicies] = useState(0);
+  useEffect(() => policies.subscribe(() => bumpPolicies((n) => n + 1)), [policies]);
+  const attemptStep = state.attempt ? nextStep(state.attempt).kind : null;
+  const pendingPolicyAttempt = attemptStep === 'accept_policies' ? state.attempt : null;
+  useEffect(() => {
+    let alive = true;
+    if (pendingPolicyAttempt) {
+      void controllerForPending(client, pendingPolicyAttempt, { locale: locale ?? undefined }).then((c) => {
+        if (alive) policies.setPolicies(c.policies);
+      });
+    } else if (mode === 'sign-up' && !state.attempt) {
+      void loadPolicies(client, { locale: locale ?? undefined }).then((list) => {
+        if (alive) policies.setPolicies(list);
+      });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [client, locale, mode, policies, pendingPolicyAttempt, state.attempt]);
 
   // §5 the per-flow captcha, driven by the instance's settings (`/v1/appearance`)
   // so switching it on in the dashboard makes `<*.Captcha>` draw it with no
@@ -160,6 +215,7 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
   // Referral attribution: a referred sign-up shows the challenge when the
   // instance asks for it, even with the captcha otherwise off.
   const [referralChallenge, setReferralChallenge] = useState(false);
+  const [passkeyChallenge, setPasskeyChallenge] = useState(false);
   useEffect(() => {
     let alive = true;
     void referralChallengeRequired(client).then((on) => {
@@ -179,15 +235,22 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
       const flow = flows?.signUp;
       return { flow, active: !state.attempt && flowNeedsCaptcha(flow) };
     }
+    // A passkey begin the server refused pending a captcha (a force-challenge
+    // switch): draw the sign-in challenge on the identifier step for its retry.
+    if (passkeyChallenge && !state.attempt) return { flow: flows?.signIn, active: true, eager: true };
     return signInCaptchaOptions(flows?.signIn, state, () => {
       void submitRef.current();
     });
-  }, [instanceSettings, mode, state, referralChallenge]);
-  const captchaNeeded = captchaOptions.active && isRenderableCaptcha(captchaOptions.flow?.provider);
+  }, [instanceSettings, mode, state, referralChallenge, passkeyChallenge]);
+  const captchaNeeded = captchaOptions.active && isRenderableCaptcha(captchaOptions.flow?.provider, captchaOptions.flow);
   // A layout effect: a `<*.Captcha>` mounting in this commit has attached its
   // element by now (child refs run first), so `configure` draws straight into it.
+  // Resolved once the passkey challenge's options are applied (its slot is drawn).
+  const challengeDrawn = useRef<(() => void) | null>(null);
   useIsomorphicLayoutEffect(() => {
     captcha.configure(captchaOptions);
+    challengeDrawn.current?.();
+    challengeDrawn.current = null;
   }, [captcha, captchaOptions]);
   useEffect(() => () => captcha.destroy(), [captcha]);
 
@@ -217,7 +280,20 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
   );
 
   const submit = useCallback(async () => {
+    // A scroll-mode policy still unread: open its dialog first; accepting it submits again.
+    if (mode === 'sign-up' && !state.attempt && policies.pendingScroll()) {
+      setPolicyDeclined(null);
+      setPolicyReading(true);
+      return;
+    }
     setState((current) => ({ ...current, busy: true, errors: [] }));
+
+    // A sign-in waiting on policy acceptance posts the acceptances to `accept_policies`.
+    if (mode === 'sign-in' && state.attempt && nextStep(state.attempt).kind === 'accept_policies') {
+      const next = await advance(client, state, { ...values, policy_acceptances: JSON.stringify(policies.build()) });
+      await finish(next);
+      return;
+    }
 
     // Sign-up's first POST creates the attempt via `/v1/client/sign_ups`, which
     // `advance` does not own (its pre-attempt branch is a sign-IN). Every later
@@ -237,7 +313,10 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
         ...(Object.keys(fields).length ? { fields } : {}),
         ...(values.consent === 'true' ? { consent: true } : {}),
         ...(captchaToken ? { captchaToken } : {}),
+        ...(policies.policies.length > 0 ? { policyAcceptances: policies.build() } : {}),
       });
+      // A policy changed while the form was open: reload them so the form asks again.
+      if (isPolicyAcceptanceRequired(next.errors)) policies.setPolicies(await loadPolicies(client, { locale: locale ?? undefined }));
       next = { ...next, errors: localizeCaptchaErrors(next.errors, t).errors };
       // The token was spent either way; a refused create needs a fresh one.
       if (next.errors.length > 0 && captcha.needed) captcha.reset();
@@ -258,7 +337,7 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
     });
     identifierRef.current = out.identifier;
     await finish(out.state);
-  }, [captcha, client, finish, mode, state, t, values]);
+  }, [captcha, client, finish, locale, mode, policies, state, t, values]);
   submitRef.current = submit;
 
   const resend = useCallback(async () => {
@@ -287,12 +366,38 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
 
   const startPasskey = useCallback(async () => {
     // Verified passkey sign-in: begin → browser ceremony (@atlasauth/js) → finish.
-    const begin = await client.post<Record<string, unknown>>('/v1/client/sign_ins/passkey/begin');
+    // When the instance challenges every sign-in, the begin carries the sign-in
+    // captcha's token (a hand-set `captcha_token` value wins); a refusal draws a
+    // fresh challenge in `<SignIn.Captcha>` and the begin is retried once.
+    let spent = false;
+    const begin = await beginPasskeySignIn(client, {
+      captcha: async ({ retry }) => {
+        if (!retry) {
+          if (values.captcha_token) return values.captcha_token;
+          if (!captcha.needed) return null;
+        } else if (!captcha.needed) {
+          // Draw `<SignIn.Captcha>` for the challenge, and wait for that commit.
+          await new Promise<void>((resolve) => {
+            challengeDrawn.current = resolve;
+            setPasskeyChallenge(true);
+          });
+        }
+        const token = await captcha.getToken();
+        if (token) spent = true;
+        return token;
+      },
+    });
+    setPasskeyChallenge(false);
+    if (spent) captcha.reset();
     if (!begin.ok || !begin.data) {
-      setState((current) => ({ ...current, errors: begin.errors }));
+      setState((current) => ({ ...current, errors: localizeCaptchaErrors(begin.errors, t).errors }));
       return;
     }
-    const body = await getPasskeyAssertion(begin.data);
+    const body = await getPasskeyAssertion(begin.data, {
+      // PRF outputs go to the app's callback only, never into the finish body.
+      ...(opts.passkeyPrf ? { prf: opts.passkeyPrf } : {}),
+      ...(opts.onPasskeyExtensionResults ? { onExtensionResults: opts.onPasskeyExtensionResults } : {}),
+    });
     const done = await client.post<AttemptView & { ticket?: string }>(
       '/v1/client/sign_ins/passkey/finish',
       body,
@@ -308,7 +413,7 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
       pollSecret: state.pollSecret,
       ticket: done.data.ticket ?? null,
     });
-  }, [client, finish, state.pollSecret]);
+  }, [captcha, client, finish, state.pollSecret, t, values.captcha_token, opts.passkeyPrf, opts.onPasskeyExtensionResults]);
 
   // Server errors in the app's language: each `message` becomes the catalog's
   // `error.<reason>` (else the server's own message), so `<Field.Error>` and any
@@ -320,6 +425,16 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
         message: localizedErrorMessage(error, errorCatalog ?? catalog, catalog),
       })),
     [state.errors, errorCatalog, catalog],
+  );
+
+  const declinePolicy = useCallback(
+    (title: string) => {
+      setPolicyReading(false);
+      setPolicyDeclined(title);
+      // Declining a sign-in's pending policy cancels the attempt: back to the start.
+      if (mode === 'sign-in') setState({ ...initialFlow, errors: [] });
+    },
+    [mode],
   );
 
   return useMemo<FlowContextValue>(
@@ -337,6 +452,12 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
       captcha,
       captchaNeeded,
       ...(instanceSettings?.emailDelivery ? { emailDelivery: instanceSettings.emailDelivery } : {}),
+      policies,
+      policiesSatisfied: policies.canSubmit(),
+      policyReading,
+      setPolicyReading,
+      policyDeclined,
+      declinePolicy,
     }),
     [
       mode,
@@ -352,6 +473,11 @@ export function useFlowDriver(mode: FlowMode, opts: { afterUrl?: string } = {}):
       captcha,
       captchaNeeded,
       instanceSettings,
+      policies,
+      policyReading,
+      policyDeclined,
+      declinePolicy,
+      policyVersion,
     ],
   );
 }

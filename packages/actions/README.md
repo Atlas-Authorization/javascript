@@ -31,7 +31,7 @@ export const action = defineAction('post_login', async (event, api) => {
 | field | shape |
 | --- | --- |
 | `user` | `{ id, email, emailVerified, firstName, lastName, username, metadata }` — `id` is `string` for `post_login` / `post_user_registration`, `null` for `pre_user_registration` |
-| `connection` | `{ strategy, method? }` — strategy: `password`, `oauth_google`, `passkey`, `sso_<id>`, `lti`, …; method (registration triggers only): `password`, `email_code`, `email_link`, `phone_code`, `social`, `enterprise_sso`, `web3_wallet`, `lti` |
+| `connection` | `{ strategy, method? }` — strategy: `password`, `oauth_google`, `passkey`, `sso_<id>`, `lti`, …; method (registration triggers only): `password`, `email_code`, `email_link`, `phone_code`, `social`, `enterprise_sso`, `web3_wallet`, `lti`, `passkey` |
 | `request` | `{ ip, userAgent }` |
 | `secrets` | `Record<string, string>` — this action's own decrypted secrets |
 

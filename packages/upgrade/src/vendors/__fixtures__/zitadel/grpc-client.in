@@ -1,0 +1,4 @@
+import { createUserServiceClient } from '@zitadel/client/v2';
+import { createServerTransport } from '@zitadel/client/node';
+
+export const users = createUserServiceClient(createServerTransport('token', { baseUrl: 'https://acme.zitadel.cloud' }));

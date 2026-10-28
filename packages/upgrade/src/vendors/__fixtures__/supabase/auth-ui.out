@@ -1,0 +1,10 @@
+'use client';
+// TODO(atlas-migrate): 'ThemeSupa' from '@supabase/auth-ui-shared': Supabase Auth UI theme: style the Atlas components with the appearance prop or the dashboard designer
+import { ThemeSupa } from '@supabase/auth-ui-shared';
+import { createClient } from '@/utils/supabase/client';
+import { SignIn } from '@atlasauth/react';
+
+export function AuthForm() {
+  const supabase = createClient();
+  return <SignIn />;
+}

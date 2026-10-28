@@ -19,6 +19,8 @@ export interface CustomAuditEvent {
   /** When it happened in your system (epoch ms). */
   occurred_at: number;
   metadata: unknown;
+  /** The registered schema version this event satisfied; null when its action has no schema. */
+  schema_version?: number | null;
   /** When Atlas received it (epoch ms). */
   created_at: number;
 }
@@ -33,6 +35,8 @@ export interface CreateCustomAuditEventBody {
   occurred_at?: number;
   /** Non-secret structured context. */
   metadata?: Record<string, unknown>;
+  /** Pin to a registered schema version; default the latest active one for the action. */
+  schema_version?: number;
 }
 
 /** Shared filters of the list and export endpoints. */
@@ -107,6 +111,61 @@ export function auditEventsResource(request: RequestFn) {
       params: { organization_id?: string; action?: string } = {},
     ): Promise<{ object: 'audit_events.bulk_delete'; deleted: number }> {
       return request({ method: 'DELETE', path: '/v1/audit_events', query: { ...params } });
+    },
+  };
+}
+
+/** A registered audit event schema: what an action's events must look like. */
+export interface AuditEventSchema {
+  object: 'audit_event_schema';
+  id: string;
+  action: string;
+  version: number;
+  description: string | null;
+  /** Allowed `target.type` values (empty = any). */
+  target_types: string[];
+  /** Allowed `actor.type` values (empty = any). */
+  actor_types: string[];
+  /** A JSON Schema the event's metadata must satisfy. */
+  metadata_schema: Record<string, unknown>;
+  status: 'active' | 'deprecated';
+  created_at: number;
+}
+
+export interface RegisterAuditEventSchemaBody {
+  action: string;
+  /** Defaults to the next version for the action; a version is immutable. */
+  version?: number;
+  description?: string;
+  target_types?: string[];
+  actor_types?: string[];
+  metadata_schema?: Record<string, unknown>;
+}
+
+export function auditEventSchemasResource(request: RequestFn) {
+  return {
+    list(): Promise<{ object: 'list'; data: AuditEventSchema[]; has_more: false }> {
+      return request({ method: 'GET', path: '/v1/audit_event_schemas' });
+    },
+    get(id: string): Promise<AuditEventSchema> {
+      return request({ method: 'GET', path: `/v1/audit_event_schemas/${encodeURIComponent(id)}` });
+    },
+    /** Events with this action are validated against it from now on. Change a schema by registering a new version. */
+    register(body: RegisterAuditEventSchemaBody): Promise<AuditEventSchema> {
+      return request({ method: 'POST', path: '/v1/audit_event_schemas', body });
+    },
+    update(id: string, body: { description?: string | null; status?: 'active' | 'deprecated' }): Promise<AuditEventSchema> {
+      return request({ method: 'PATCH', path: `/v1/audit_event_schemas/${encodeURIComponent(id)}`, body });
+    },
+    delete(id: string): Promise<{ object: 'audit_event_schema'; id: string; deleted: true }> {
+      return request({ method: 'DELETE', path: `/v1/audit_event_schemas/${encodeURIComponent(id)}` });
+    },
+    /** Blank fields of one event (`actor_id`, `target_id`, `target_name`, `metadata.<path>`); logged, never deleted. */
+    redact(eventId: string, body: { fields: string[]; reason: string }): Promise<{ object: 'audit_event_redaction'; event_id: string; redacted: string[]; unchanged: string[]; reason: string }> {
+      return request({ method: 'POST', path: `/v1/audit_events/${encodeURIComponent(eventId)}/redact`, body });
+    },
+    redactions(eventId: string): Promise<{ object: 'list'; data: Array<{ id: string; event_id: string; fields: string[]; reason: string; redacted_by: string | null; created_at: number }>; has_more: false }> {
+      return request({ method: 'GET', path: `/v1/audit_events/${encodeURIComponent(eventId)}/redactions` });
     },
   };
 }

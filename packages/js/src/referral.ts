@@ -8,7 +8,7 @@
  * mixing fields across sources:
  *  1. the app's own reader (`referralSource`), for any referral program;
  *  2. a referral program's script on the page, among the instance's
- *     `browser_sources` (Referally's `aff.getReferral()`, Rewardful, Tolt,
+ *     `browser_sources` (Referalli's `aff.getReferral()`, Rewardful, Tolt,
  *     PromoteKit; see ./referral-detect);
  *  3. explicit `ref_*` parameters (`ref`, `ref_click_id`, `ref_anon_id`,
  *     `ref_consent`, `ref_captured_at`) on the page URL;
@@ -54,7 +54,7 @@ import {
 export type { ReferralSourceReader } from './referral-detect';
 
 /** Browser sources kept in page script globals (read before the URL); the rest are cookies (read after). */
-const SCRIPT_SOURCES = new Set(['referally', 'rewardful', 'tolt', 'promotekit']);
+const SCRIPT_SOURCES = new Set(['referalli', 'rewardful', 'tolt', 'promotekit']);
 
 /** The instance's public referral settings, camelCased. */
 export interface ReferralConfig {
@@ -65,8 +65,10 @@ export interface ReferralConfig {
   consentProvider: string;
   /** URL query parameters that carry a code, in priority order. */
   urlParams: string[];
-  /** The tracking cookie to read under consent; null = never read a cookie. */
+  /** The first tracking cookie to read under consent; null = never read a cookie. */
   contextCookie: string | null;
+  /** Every tracking cookie to try, in order (absent = just `contextCookie`). */
+  contextCookies?: string[];
   consentCategory: string;
   consentFallbackCategory: string | null;
   /** `always`: a sign-up carrying a referral code must pass the bot challenge. */
@@ -116,7 +118,7 @@ export interface ReferralCaptureOptions {
 }
 
 /** The browser sources an older server (one that sends no `browser_sources`) implies. */
-const DEFAULT_SOURCES = ['referally'];
+const DEFAULT_SOURCES = ['referalli'];
 
 export const DISABLED_REFERRAL_CONFIG: Readonly<ReferralConfig> = Object.freeze({
   enabled: false,
@@ -124,6 +126,7 @@ export const DISABLED_REFERRAL_CONFIG: Readonly<ReferralConfig> = Object.freeze(
   consentProvider: 'auto',
   urlParams: [],
   contextCookie: null,
+  contextCookies: [] as string[],
   consentCategory: 'referrals',
   consentFallbackCategory: 'marketing',
   challengeReferredSignups: 'inherit',
@@ -156,16 +159,26 @@ export function referralConfigFrom(body: unknown): ReferralConfig {
     ? raw.url_params.filter((p): p is string => typeof p === 'string' && PARAM.test(p)).slice(0, 10)
     : [];
   const sources = Array.isArray(raw.browser_sources)
-    ? raw.browser_sources.filter((s): s is string => typeof s === 'string' && /^[a-z0-9_]{1,40}$/.test(s)).slice(0, 20)
+    ? raw.browser_sources
+        .filter((s): s is string => typeof s === 'string' && /^[a-z0-9_]{1,40}$/.test(s))
+        // `referally` is the retired spelling of `referalli`.
+        .map((s) => (s === 'referally' ? 'referalli' : s))
+        .slice(0, 20)
     : [...DEFAULT_SOURCES];
+  const cookies = (
+    Array.isArray(raw.context_cookies) ? raw.context_cookies : typeof raw.context_cookie === 'string' ? [raw.context_cookie] : []
+  )
+    .filter((c): c is string => typeof c === 'string' && COOKIE_NAME.test(c))
+    .filter((c, i, all) => all.indexOf(c) === i)
+    .slice(0, 5);
   return {
     enabled: true,
     sources,
     consentProvider:
       typeof raw.consent_provider === 'string' && /^[a-z0-9_]{1,40}$/.test(raw.consent_provider) ? raw.consent_provider : 'auto',
     urlParams: params.length ? params : ['ref', 'via', 'aff'],
-    contextCookie:
-      typeof raw.context_cookie === 'string' && COOKIE_NAME.test(raw.context_cookie) ? raw.context_cookie : null,
+    contextCookie: cookies[0] ?? null,
+    contextCookies: cookies,
     consentCategory:
       typeof raw.consent_category === 'string' && raw.consent_category ? raw.consent_category : 'referrals',
     consentFallbackCategory:
@@ -462,19 +475,24 @@ export function captureReferral(
     const code = referralCodeFromSearch(search, config.urlParams);
     if (code) return { code, click_id: null, anon_id: null, consent: 'not_required', captured_at: at, source: 'url' };
   }
-  const cookie = config.contextCookie ? parseReferralCookie(readCookieValue(page.cookies, config.contextCookie)) : null;
-  const fromCookie = cookie ? asCapture(cookie, consent, at, 'cookie') : null;
-  if (fromCookie) return fromCookie;
+  // The tracking cookies in order: the first one that holds a usable referral wins.
+  for (const name of config.contextCookies ?? (config.contextCookie ? [config.contextCookie] : [])) {
+    const cookie = parseReferralCookie(readCookieValue(page.cookies, name));
+    const fromCookie = cookie ? asCapture(cookie, consent, at, 'cookie') : null;
+    if (fromCookie) return fromCookie;
+  }
   return fromDetected(detectReferralSource(detectPage, sources.filter((s) => !SCRIPT_SOURCES.has(s))));
 }
 
 /** The FAPI POST paths that take `referral`: every sign-in / sign-up start and the steps that continue one. */
 const REFERRAL_EXACT = new Set([
   '/v1/client/sign_ups',
+  '/v1/client/sign_ups/passkey',
   '/v1/client/sign_ins',
   '/v1/client/sign_ins/oauth',
   '/v1/client/sign_ins/sso',
   '/v1/client/sign_ins/saml',
+  '/v1/client/sign_ins/wsfed',
   '/v1/client/sign_ins/discourse',
   '/v1/client/sign_ins/id_token',
   '/v1/client/sign_ins/id_token/nonce',
@@ -486,10 +504,12 @@ const REFERRAL_EXACT = new Set([
   '/v1/oauth/siwe/verify',
   '/v1/oauth/siws/nonce',
   '/v1/oauth/siws/verify',
+  '/v1/oauth/siwb/nonce',
+  '/v1/oauth/siwb/verify',
   '/v1/oauth/siwf/nonce',
   '/v1/oauth/siwf/verify',
 ]);
-const REFERRAL_STEP = /^\/v1\/client\/(sign_ins\/[^/]+\/(prepare_first_factor|attempt_first_factor)|sign_ups\/[^/]+\/(prepare_verification|attempt_verification))$/;
+const REFERRAL_STEP = /^\/v1\/client\/(sign_ins\/[^/]+\/(prepare_first_factor|attempt_first_factor)|sign_ups\/[^/]+\/(prepare_verification|attempt_verification|passkey\/finish))$/;
 
 /** Whether a FAPI POST path starts or continues a sign-in / sign-up (and so takes `referral`). */
 export function acceptsReferral(path: string): boolean {

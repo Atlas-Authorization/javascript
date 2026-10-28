@@ -1,7 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import {
+  PolicyAcceptanceController,
+  PolicyGateController,
+  controllerForPending,
   hasFromClaims,
+  loadPolicies,
   type EmailDelivery,
+  type FapiClient,
+  type MyPolicyStatus,
+  type PolicyAcceptance,
+  type PolicyAcceptancePayload,
   type ProtectCondition,
   type ProviderToken,
   type SignOutOptions,
@@ -104,6 +112,17 @@ export function useSignIn(): {
     errors: Array<{ code: string; message: string; param?: string }>;
   }>;
   completeOAuthRedirect(callbackUrl: string): Promise<FlowResult>;
+  /**
+   * Continue an attempt the server holds at `needs_policy_acceptance` (a
+   * `FlowResult` with that `attemptStatus`): send `controller.build()` with the
+   * result's `policyToken`. See `usePendingPolicies()` for the UI.
+   */
+  acceptPolicies(input: {
+    attemptId: string;
+    acceptances: PolicyAcceptance[];
+    policyToken?: string;
+    pollSecret?: string;
+  }): Promise<FlowResult>;
 } {
   const store = useAtlasStore();
   return {
@@ -111,6 +130,7 @@ export function useSignIn(): {
     attemptSecondFactor: store.attemptSecondFactor,
     startOAuth: store.startOAuth,
     completeOAuthRedirect: store.completeOAuthRedirect,
+    acceptPolicies: store.acceptPolicies,
   };
 }
 
@@ -123,6 +143,8 @@ export function useSignUp(): {
     fields?: Record<string, string>;
     consent?: boolean;
     captchaToken?: string;
+    /** The policies the user accepted: `usePolicies().build()`. */
+    policyAcceptances?: PolicyAcceptance[];
   }): Promise<FlowResult>;
   verifyEmailCode(input: { attemptId: string; code: string }): Promise<FlowResult>;
 } {
@@ -154,4 +176,158 @@ export function useEmailDelivery(): { isLoaded: boolean; emailDelivery: EmailDel
     };
   }, [store]);
   return { isLoaded: emailDelivery !== null, emailDelivery };
+}
+
+/** Re-render when a policy controller changes (a tick, a document opened, a refresh). */
+export function useControllerTick(controller: PolicyAcceptanceController | null): void {
+  const [, force] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!controller) return undefined;
+    return controller.subscribe(() => force());
+  }, [controller]);
+}
+
+/** What {@link usePolicies} returns. */
+export interface UsePoliciesResult {
+  /** The state machine behind the policy UI; pass it to `<PolicyConsent>`. */
+  controller: PolicyAcceptanceController;
+  loading: boolean;
+  /** Re-fetch (after a 422 `POLICY_ACCEPTANCE_REQUIRED`, say). */
+  refresh(): Promise<void>;
+  /** Whether the submit button may be enabled (required boxes ticked; `scroll` policies are read on submit). */
+  canSubmit: boolean;
+  /** The `policy_acceptances` for the current ticks. */
+  build(): PolicyAcceptancePayload[];
+}
+
+/** The pieces a policy hook needs from whichever provider is in use. */
+export interface PolicyHookEnv {
+  client: FapiClient;
+  locale?: string;
+}
+
+/**
+ * {@link usePolicies} over an explicit client. The hooks of this package pass
+ * their provider's client; the Expo package passes its own.
+ */
+export function usePoliciesWith(env: PolicyHookEnv, options: { combined?: boolean; signIn?: boolean } = {}): UsePoliciesResult {
+  const { client, locale } = env;
+  const controller = useMemo(
+    () => new PolicyAcceptanceController([], { combined: options.combined }),
+    [options.combined],
+  );
+  const [loading, setLoading] = useState(true);
+  const signIn = options.signIn;
+  const refresh = useCallback(async () => {
+    controller.setPolicies(await loadPolicies(client, { locale, signIn }));
+    setLoading(false);
+  }, [client, controller, locale, signIn]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  useControllerTick(controller);
+  return { controller, loading, refresh, canSubmit: controller.canSubmit(), build: () => controller.build() };
+}
+
+/** {@link usePendingPolicies} over an explicit client. */
+export function usePendingPoliciesWith(
+  env: PolicyHookEnv,
+  held: { pendingPolicies?: unknown } | null | undefined,
+  options: { combined?: boolean } = {},
+): { controller: PolicyAcceptanceController | null; loading: boolean } {
+  const { client, locale } = env;
+  const [controller, setController] = useState<PolicyAcceptanceController | null>(null);
+  const [loading, setLoading] = useState(false);
+  const pending = held?.pendingPolicies;
+  const active = held !== null && held !== undefined;
+  useEffect(() => {
+    if (!active) {
+      setController(null);
+      return undefined;
+    }
+    let live = true;
+    setLoading(true);
+    void controllerForPending(client, { pending_policies: pending }, { combined: options.combined, locale }).then((c) => {
+      if (!live) return;
+      setController(c);
+      setLoading(false);
+    });
+    return () => {
+      live = false;
+    };
+  }, [client, locale, active, pending, options.combined]);
+  useControllerTick(controller);
+  return { controller, loading };
+}
+
+/** What {@link usePolicyGate} returns. */
+export interface UsePolicyGateResult {
+  loaded: boolean;
+  /** The policies that need accepting (empty when none). */
+  pending: MyPolicyStatus[];
+  /** The soonest end of a grace window (ISO time), or null. */
+  graceEndsAt: string | null;
+  /** A controller over the pending policies' current versions, all required. */
+  begin(): Promise<PolicyAcceptanceController>;
+  /** Send the acceptance (`POST /v1/client/me/policies/accept`). */
+  accept(controller: PolicyAcceptanceController): Promise<{ ok: boolean; errors: Array<{ code: string; message: string }> }>;
+  reload(): Promise<void>;
+}
+
+/** {@link usePolicyGate} over an explicit client; `enabled` is "the user is signed in". */
+export function usePolicyGateWith(env: PolicyHookEnv, enabled: boolean): UsePolicyGateResult {
+  const { client, locale } = env;
+  const gate = useMemo(() => new PolicyGateController(client, locale), [client, locale]);
+  const [, force] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => gate.subscribe(() => force()), [gate]);
+  useEffect(() => {
+    if (enabled) void gate.load();
+  }, [gate, enabled]);
+  return {
+    loaded: gate.loaded,
+    pending: gate.pending,
+    graceEndsAt: gate.graceEndsAt,
+    begin: () => gate.begin(),
+    accept: (controller) => gate.accept(controller),
+    reload: () => gate.load(),
+  };
+}
+
+function useEnv(): PolicyHookEnv {
+  const store = useAtlasStore();
+  return { client: store.fapi, locale: store.language };
+}
+
+/**
+ * Load the instance's policies into a controller (`GET /v1/client/policies`) for
+ * a sign-up form. `signIn` keeps only the policies that also apply at sign-in.
+ * Draw them with `<PolicyConsent>` / `<PolicyClickwrap>`, enable the submit with
+ * `canSubmit`, read any `scroll` policies with `<PolicyScrollHost>`, and send
+ * `build()` as `policyAcceptances`.
+ */
+export function usePolicies(options: { combined?: boolean; signIn?: boolean } = {}): UsePoliciesResult {
+  return usePoliciesWith(useEnv(), options);
+}
+
+/**
+ * The controller for a held attempt: pass the `FlowResult` whose `attemptStatus`
+ * is `needs_policy_acceptance` (or null). Fills in the content the attempt only
+ * listed; a redirect resume (no list) shows every required policy.
+ */
+export function usePendingPolicies(
+  held: { pendingPolicies?: unknown } | null | undefined,
+  options: { combined?: boolean } = {},
+): { controller: PolicyAcceptanceController | null; loading: boolean } {
+  return usePendingPoliciesWith(useEnv(), held, options);
+}
+
+/**
+ * In-app re-acceptance for the signed-in user: which policies need accepting
+ * (`pending`, with the end of any grace window), a controller to show them
+ * (`begin()`), and `accept(controller)` to send the result. `<PolicyGate>` is the
+ * ready-made banner over this.
+ */
+export function usePolicyGate(): UsePolicyGateResult {
+  const { status } = useAtlasState();
+  return usePolicyGateWith(useEnv(), status === 'signed_in');
 }

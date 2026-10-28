@@ -1,0 +1,31 @@
+import PocketBase from 'pocketbase';
+
+import { pocketbaseAuthStoreCompat } from '@atlasauth/react/compat';
+
+export const pb = new PocketBase('https://pb.example.com');
+
+export function signedIn() {
+  return pocketbaseAuthStoreCompat.isValid;
+}
+
+export function currentEmail() {
+  return pocketbaseAuthStoreCompat.record?.email;
+}
+
+export async function login(email: string, password: string) {
+  // TODO(atlas-migrate): collection('users').authWithPassword(): credentials are collected on the Atlas sign-in page now: render <SignIn /> (or send users to /sign-in)
+  return pb.collection('users').authWithPassword(email, password);
+}
+
+export async function signup(email: string, password: string) {
+  // TODO(atlas-migrate): collection('users').create(): if this is sign-up, it runs on the Atlas sign-up page now (<SignUp /> or /sign-up); users are created in Atlas, not in PocketBase
+  return pb.collection('users').create({ email, password, passwordConfirm: password });
+}
+
+export function logout() {
+  pocketbaseAuthStoreCompat.clear();
+}
+
+export async function posts() {
+  return pb.collection('posts').getList(1, 20);
+}

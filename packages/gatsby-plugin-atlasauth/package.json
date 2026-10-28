@@ -1,0 +1,48 @@
+{
+  "name": "gatsby-plugin-atlasauth",
+  "version": "0.1.3",
+  "description": "Gatsby plugin that wraps your site in Atlas's React provider so @atlasauth/react hooks and components work on every page, server-rendered and hydrated alike.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@atlasauth/react": "workspace:^"
+  },
+  "peerDependencies": {
+    "gatsby": ">=5",
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "gatsby": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.0.1",
+    "@types/node": "^20.16.11",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "jsdom": "^25.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "!dist/*.tsbuildinfo",
+    "gatsby-browser.js",
+    "gatsby-ssr.js",
+    "gatsby-node.js",
+    "README.md",
+    "CHANGELOG.md"
+  ]
+}

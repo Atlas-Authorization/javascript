@@ -1,0 +1,7 @@
+import { sealData } from 'iron-session';
+
+const password = process.env.SECRET_COOKIE_PASSWORD as string;
+
+export async function inviteToken(teamId: string) {
+  return sealData({ teamId }, { password, ttl: 60 * 60 });
+}

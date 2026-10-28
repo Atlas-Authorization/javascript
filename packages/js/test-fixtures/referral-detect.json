@@ -2,7 +2,7 @@
   "_comment": "Shared by the JS SDK detector (packages/js/src/referral-detect.ts) and the ES5 copy in the Atlas API (hosted pages, Sign in with Atlas button). `fns` turns a dotted path into a function on the window: most return the value; cmplz_has_consent looks the category up in the value; __tcfapi calls back with it. `cookies` is document.cookie.",
   "sources": [
     {
-      "name": "Referally aff.js",
+      "name": "Referalli aff.js",
       "win": {},
       "fns": {
         "aff.getReferral": {
@@ -13,10 +13,10 @@
         }
       },
       "sources": [
-        "referally"
+        "referalli"
       ],
       "expect": {
-        "source": "referally",
+        "source": "referalli",
         "code": "WJXQGLBW",
         "clickId": "clk_123",
         "anonId": "a_456",
@@ -141,10 +141,10 @@
         }
       },
       "sources": [
-        "referally"
+        "referalli"
       ],
       "expect": {
-        "source": "referally",
+        "source": "referalli",
         "code": "WJXQGLBW",
         "clickId": null,
         "anonId": null
@@ -202,7 +202,7 @@
         "aff.getReferral": "__throw__"
       },
       "sources": [
-        "referally"
+        "referalli"
       ],
       "expect": null
     }
@@ -728,6 +728,114 @@
       "expect": {
         "granted": false,
         "by": "none"
+      }
+    },
+    {
+      "name": "Suite consent contract grants referrals",
+      "win": {
+        "__atlasConsent": {
+          "version": 1
+        }
+      },
+      "fns": {
+        "__atlasConsent.has": {
+          "referrals": true
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "atlasconsent"
+      }
+    },
+    {
+      "name": "Suite consent contract: no decision yet (null) is not consent",
+      "win": {
+        "__atlasConsent": {
+          "version": 1
+        }
+      },
+      "fns": {
+        "__atlasConsent.has": {}
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "atlasconsent"
+      }
+    },
+    {
+      "name": "Suite consent contract wins over the CMP behind it",
+      "win": {
+        "__atlasConsent": {
+          "version": 1
+        },
+        "CookieMunch": {
+          "consent": {
+            "marketing": true
+          }
+        }
+      },
+      "fns": {
+        "__atlasConsent.has": {
+          "referrals": false
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "atlasconsent"
+      }
+    },
+    {
+      "name": "Suite consent contract of another version is ignored",
+      "win": {
+        "__atlasConsent": {
+          "version": 2
+        },
+        "CookieMunch": {
+          "consent": {
+            "marketing": true
+          }
+        }
+      },
+      "fns": {
+        "__atlasConsent.has": {
+          "referrals": false
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": true,
+        "by": "cookiemunch"
+      }
+    },
+    {
+      "name": "Global Privacy Control alone denies referrals",
+      "win": {
+        "navigator": {
+          "globalPrivacyControl": true
+        }
+      },
+      "categories": [
+        "referrals",
+        "marketing"
+      ],
+      "expect": {
+        "granted": false,
+        "by": "gpc"
       }
     }
   ]

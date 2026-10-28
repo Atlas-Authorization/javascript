@@ -1,0 +1,12 @@
+import { Auth, Hub } from 'aws-amplify';
+
+export async function token() {
+  const session = await Auth.currentSession();
+  return session.getIdToken().getJwtToken();
+}
+
+export async function register(username: string, password: string) {
+  return Auth.signUp({ username, password });
+}
+
+Hub.listen('datastore', () => undefined);

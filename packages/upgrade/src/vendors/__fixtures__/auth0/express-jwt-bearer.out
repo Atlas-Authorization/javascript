@@ -1,0 +1,20 @@
+import express from 'express';
+// TODO(atlas-migrate): requiredScopes(…): pass requiredScopes: […] to requireAccessToken() (every listed scope is required); the granted scopes are on req.atlasToken.scopes
+import { requiredScopes } from 'express-oauth2-jwt-bearer';
+
+import { requireAccessToken } from '@atlasauth/express';
+
+const app = express();
+
+// TODO(atlas-migrate): requireAccessToken(): remove tokenSigningAlg (Atlas access tokens are RS256, checked against the instance JWKS)
+app.use(
+  requireAccessToken({
+    issuer: process.env.ATLAS_ISSUER!,
+    audience: 'https://api.acme.test',
+    tokenSigningAlg: 'RS256',
+  }),
+);
+
+app.get('/api/orders', requiredScopes('read:orders'), (req, res) => {
+  res.json({ sub: req.auth?.payload.sub });
+});

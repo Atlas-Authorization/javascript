@@ -1,0 +1,19 @@
+// TODO(atlas-migrate): new Hanko(api): the Hanko client: read the session with useAuth() / useUser() from @atlasauth/react and sign out with useAuth().signOut()
+import { Hanko } from '@teamhanko/hanko-frontend-sdk';
+
+const hanko = new Hanko(import.meta.env.VITE_ATLAS_FRONTEND_API);
+
+export async function currentUser() {
+  // TODO(atlas-migrate): hanko.user.getCurrent(): useUser() from @atlasauth/react (currentUser() on the server)
+  return hanko.user.getCurrent();
+}
+
+export async function signOut() {
+  // TODO(atlas-migrate): hanko.logout(): useAuth().signOut() or <SignOutButton /> from @atlasauth/react
+  await hanko.logout();
+}
+
+// TODO(atlas-migrate): onSessionExpired(): onAtlasSignOut(handler) from @atlasauth/react reports sign-outs and expiry
+hanko.onSessionExpired(() => {
+  window.location.href = '/login';
+});

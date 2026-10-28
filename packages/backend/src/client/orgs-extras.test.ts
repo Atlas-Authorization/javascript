@@ -102,6 +102,19 @@ describe('organizations: policy, settings, audit streams, branding, end users, r
     expect(last().url).toBe(`${API_URL}/v1/organizations/org_1/audit_streams/oas_1`);
   });
 
+  it('webhookEndpoints list / create / rotateSecret / delete', async () => {
+    const { atlas, last } = setup({ object: 'list', data: [], has_more: false });
+    await atlas.organizations.webhookEndpoints.list('org_1');
+    expect(last().url).toBe(`${API_URL}/v1/organizations/org_1/webhook_endpoints`);
+    await atlas.organizations.webhookEndpoints.create('org_1', { url: 'https://h.example.test/a' });
+    expect(last().method).toBe('POST');
+    expect(json(last().body)).toEqual({ url: 'https://h.example.test/a' });
+    await atlas.organizations.webhookEndpoints.rotateSecret('org_1', 'we_1');
+    expect(last().url).toBe(`${API_URL}/v1/organizations/org_1/webhook_endpoints/we_1/rotate_secret`);
+    await atlas.organizations.webhookEndpoints.delete('org_1', 'we_1');
+    expect(last().method).toBe('DELETE');
+  });
+
   it('branding get / update', async () => {
     const { atlas, last } = setup({ object: 'organization_branding', organization_id: 'org_1' });
     await atlas.organizations.branding.get('org_1');
@@ -273,6 +286,33 @@ describe('billing, data subject requests, invitations, waitlist additions', () =
     expect(last().method).toBe('POST');
     expect(last().url).toBe(`${API_URL}/v1/billing/subjects/org/org_1/sync_seats`);
     expect(last().body).toBeUndefined();
+  });
+
+  it('billing: several subscriptions per subject, settings, feature check, plan sync', async () => {
+    const { atlas, last } = setup({ object: 'billing_subscription', id: 'bsub_1' });
+    await atlas.billing.getSubscription('bsub_1');
+    expect(last().method).toBe('GET');
+    expect(last().url).toBe(`${API_URL}/v1/billing/subscriptions/bsub_1`);
+    await atlas.billing.changeSubscription('bsub_1', { plan_id: 'bplan_2', schedule_at_period_end: true });
+    expect(last().url).toBe(`${API_URL}/v1/billing/subscriptions/bsub_1/change`);
+    expect(json(last().body)).toEqual({ plan_id: 'bplan_2', schedule_at_period_end: true });
+    await atlas.billing.cancelSubscription('bsub_1', { immediately: true });
+    expect(last().url).toBe(`${API_URL}/v1/billing/subscriptions/bsub_1/cancel`);
+    expect(json(last().body)).toEqual({ immediately: true });
+    await atlas.billing.restoreSubscription('bsub_1');
+    expect(last().url).toBe(`${API_URL}/v1/billing/subscriptions/bsub_1/restore`);
+    await atlas.billing.syncPlanEntitlements('bplan_1');
+    expect(last().url).toBe(`${API_URL}/v1/billing/plans/bplan_1/sync_entitlements`);
+    await atlas.billing.getSettings();
+    expect(last().url).toBe(`${API_URL}/v1/billing/settings`);
+    await atlas.billing.updateSettings({ limit_merge: { seats: 'sum' } });
+    expect(last().method).toBe('PUT');
+    expect(json(last().body)).toEqual({ limit_merge: { seats: 'sum' } });
+    await atlas.billing.checkFeature({ subject_type: 'user', subject_id: 'user_1', feature: 'messages', required: 2 });
+    expect(last().url).toBe(`${API_URL}/v1/billing/check`);
+    expect(json(last().body)).toEqual({ subject_type: 'user', subject_id: 'user_1', feature: 'messages', required: 2 });
+    await atlas.billing.reportUsage({ subject_type: 'user', subject_id: 'user_1', quantity: 1, idempotency_key: 'k2', feature: 'messages' });
+    expect(json(last().body)).toMatchObject({ feature: 'messages' });
   });
 
   it('dataSubjectRequests create / cancel', async () => {

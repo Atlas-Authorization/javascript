@@ -25,10 +25,11 @@ const win = window as unknown as Record<string, unknown>;
 
 const ON: ReferralConfig = {
   enabled: true,
-  sources: ['referally'],
+  sources: ['referalli'],
   consentProvider: 'auto',
   urlParams: ['ref', 'via'],
   contextCookie: 'acme_ref',
+  contextCookies: ['acme_ref'],
   consentCategory: 'referrals',
   consentFallbackCategory: 'marketing',
   challengeReferredSignups: 'inherit',
@@ -154,7 +155,7 @@ describe('referral config + pure capture', () => {
       anon_id: null,
       consent: 'granted',
       captured_at: new Date(1_790_000_000_000).toISOString(),
-      source: 'referally',
+      source: 'referalli',
       consent_by: 'app',
     });
     expect(captureReferral(ON, { searches: [''], aff, capturedAt: 't' })).toMatchObject({ code: 'SCRIPT1', click_id: null, consent: 'not_required' });
@@ -191,6 +192,23 @@ describe('referral config + pure capture', () => {
     });
     expect(captureReferral(ON, { searches: [''], cookies: `acme_ref=${encodeURIComponent('{"clickId":"k_9"}')}` })).toBeNull();
     expect(captureReferral({ ...ON, enabled: false }, { searches: ['?ref=URL001'] })).toBeNull();
+  });
+
+  it('tries the tracking cookies in order and reads a retired source id as its current one', () => {
+    const cfg = referralConfigFrom({
+      referrals: { enabled: true, url_params: ['ref'], context_cookie: 'referalli_ctx', context_cookies: ['referalli_ctx', 'referally_ctx'], browser_sources: ['referally'] },
+    });
+    expect(cfg.contextCookies).toEqual(['referalli_ctx', 'referally_ctx']);
+    expect(cfg.contextCookie).toBe('referalli_ctx');
+    expect(cfg.sources).toEqual(['referalli']);
+    // Only the legacy cookie is present: it still yields the code.
+    const legacy = `referally_ctx=${encodeURIComponent('{"code":"ALICE10"}')}`;
+    expect(captureReferral(cfg, { searches: [''], cookies: legacy, capturedAt: 't' })).toMatchObject({ code: 'ALICE10' });
+    // Both present: the first wins.
+    const both = `${legacy}; referalli_ctx=${encodeURIComponent('{"code":"BOB20"}')}`;
+    expect(captureReferral(cfg, { searches: [''], cookies: both, capturedAt: 't' })).toMatchObject({ code: 'BOB20' });
+    // A server that sends only the single name still works.
+    expect(referralConfigFrom({ referrals: { enabled: true, context_cookie: 'acme_ref' } }).contextCookies).toEqual(['acme_ref']);
   });
 
   it('any program: the app\'s own reader first, then the listed scripts; program cookies after the URL and the tracking cookie', () => {
@@ -233,6 +251,9 @@ describe('referral config + pure capture', () => {
     expect(acceptsReferral('/v1/client/sign_ins/id_token/nonce')).toBe(true);
     expect(acceptsReferral('/v1/client/sign_ins/sia_1/prepare_first_factor')).toBe(true);
     expect(acceptsReferral('/v1/client/sign_ups/sua_1/attempt_verification')).toBe(true);
+    expect(acceptsReferral('/v1/client/sign_ups/passkey')).toBe(true);
+    expect(acceptsReferral('/v1/client/sign_ups/sua_1/passkey/finish')).toBe(true);
+    expect(acceptsReferral('/v1/client/sign_ups/sua_1/passkey/begin')).toBe(false);
     expect(acceptsReferral('/v1/client/sign_ins/sia_1/attempt_second_factor')).toBe(false);
     expect(acceptsReferral('/v1/client/tickets/exchange')).toBe(false);
     expect(acceptsReferral('/v1/client/me')).toBe(false);
@@ -379,7 +400,7 @@ describe('v2 capture on the FapiClient', () => {
       anon_id: null,
       consent: 'not_required',
       captured_at: new Date(1_790_000_000_000).toISOString(),
-      source: 'referally',
+      source: 'referalli',
       consent_by: 'none',
     });
     // The consent callback is asked at each start.
@@ -430,7 +451,7 @@ describe('redirect helpers (ref_* parameters)', () => {
       ['ref_click_id', 'clk_1'],
       ['ref_consent', 'granted'],
       ['ref_captured_at', new Date(1_790_000_000_000).toISOString()],
-      ['ref_source', 'referally'],
+      ['ref_source', 'referalli'],
       ['ref_consent_by', 'app'],
     ]);
     // Cookie Munch on the page counts as consent.

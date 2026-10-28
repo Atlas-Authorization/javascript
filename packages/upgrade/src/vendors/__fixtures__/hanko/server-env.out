@@ -1,0 +1,7 @@
+// TODO(atlas-migrate): HANKO_API_URL: the Hanko API URL; the browser uses NEXT_PUBLIC_ATLAS_FRONTEND_API, servers verify tokens with ATLAS_JWKS_URL
+const api = process.env.HANKO_API_URL;
+// TODO(atlas-migrate): HANKO_API_KEY: server code uses ATLAS_SECRET_KEY (from the Atlas dashboard)
+const key = process.env.HANKO_API_KEY;
+
+export const jwks = `${api}/.well-known/jwks.json`;
+export const headers = { authorization: `Bearer ${key}` };

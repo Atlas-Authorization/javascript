@@ -153,10 +153,10 @@ describe('fallbacks', () => {
   it('a locale without a bundle uses the (server-localised) message, not English catalog text', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const { el } = await signInRefusedWith(
-      { code: 'VERIFICATION_FAILED', message: '자격 증명이 올바르지 않습니다.', reason: 'form_password_incorrect' },
-      { locale: 'ko' },
+      { code: 'VERIFICATION_FAILED', message: 'Taarifa za kuingia si sahihi.', reason: 'form_password_incorrect' },
+      { locale: 'sw' },
     );
-    expect(errorText(el)).toBe('자격 증명이 올바르지 않습니다.');
+    expect(errorText(el)).toBe('Taarifa za kuingia si sahihi.');
   });
 
   it('with no locale, the English catalog string is used', async () => {

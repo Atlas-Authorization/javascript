@@ -17,6 +17,15 @@ export interface ResolvedAuth {
 }
 
 /**
+ * The API base from the environment. `ATLAS_API_BASE` (the name the guides, the
+ * backend SDK and the generated env files use) and `ATLAS_API_URL` (the CLI's
+ * original name) are both accepted; the first one set wins.
+ */
+export function envApiUrl(env: NodeJS.ProcessEnv): string | undefined {
+  return env.ATLAS_API_BASE?.trim() || env.ATLAS_API_URL?.trim() || undefined;
+}
+
+/**
  * Resolve which credential to use, with env overrides winning over the stored
  * profile — the same precedence `auth0-cli` and most cloud CLIs use, so a CI
  * job can set `ATLAS_SECRET_KEY` without a `login` step. Throws a clean error
@@ -37,7 +46,7 @@ export function resolveAuth(ctx: RunContext, values: Values): ResolvedAuth {
     );
   }
 
-  const envUrl = ctx.env.ATLAS_API_URL?.trim();
+  const envUrl = envApiUrl(ctx.env);
   const apiUrl = envUrl || stored?.api_url || DEFAULT_API_URL;
 
   return {

@@ -1,0 +1,20 @@
+'use client';
+import { Descope, SignUpFlow, UserProfile } from '@descope/nextjs-sdk';
+import { useRouter } from 'next/navigation';
+
+export function Login() {
+  const router = useRouter();
+  return <Descope flowId="sign-up-or-in" theme="light" onSuccess={() => router.push('/dashboard')} onError={(e) => console.error(e)} />;
+}
+
+export function Register() {
+  return <SignUpFlow />;
+}
+
+export function Account() {
+  return <UserProfile widgetId="user-profile-widget" />;
+}
+
+export function StepUp() {
+  return <Descope flowId="step-up" />;
+}

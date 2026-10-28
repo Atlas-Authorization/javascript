@@ -1,0 +1,12 @@
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+
+const jwks = createRemoteJWKSet(new URL(process.env.OIDC_JWKS_URI!));
+
+export async function verifyIdToken(idToken: string, nonce: string) {
+  const { payload } = await jwtVerify(idToken, jwks, {
+    issuer: process.env.OIDC_ISSUER!,
+    audience: process.env.OIDC_CLIENT_ID!,
+  });
+  if (payload.nonce !== nonce) throw new Error('bad nonce');
+  return payload;
+}

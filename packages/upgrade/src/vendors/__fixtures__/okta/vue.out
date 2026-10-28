@@ -1,0 +1,10 @@
+import { createApp } from 'vue';
+// TODO(atlas-migrate): @okta/okta-vue: move to the Atlas Vue plugin: app.use(createAtlas({ publishableKey, frontendApi })) from @atlasauth/vue, then read auth with useAuth() / useUser(); Atlas completes sign-in itself, so the /login/callback route can go
+import OktaVue from '@okta/okta-vue';
+import { OktaAuth } from '@okta/okta-auth-js';
+import App from './App.vue';
+
+// TODO(atlas-migrate): new OktaAuth(config) outside a React app has no drop-in Atlas counterpart: in a Vue app use the createAtlas plugin from @atlasauth/vue, in Angular provideAtlas from @atlasauth/angular, otherwise the Atlas JS SDK (@atlasauth/js); sign-in then runs on your Atlas /sign-in page
+const oktaAuth = new OktaAuth({ issuer: import.meta.env.VITE_OKTA_ISSUER, clientId: import.meta.env.VITE_OKTA_CLIENT_ID });
+
+createApp(App).use(OktaVue, { oktaAuth }).mount('#app');

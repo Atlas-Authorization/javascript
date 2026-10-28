@@ -1,0 +1,43 @@
+'use client';
+import { useEffect, useState } from 'react';
+// TODO(atlas-migrate): signIn(): credentials are collected on the Atlas sign-in page now: render <SignIn /> (or send users to /sign-in)
+import { signIn } from 'aws-amplify/auth';
+import {
+  amplifyFetchAuthSessionCompat,
+  amplifyFetchUserAttributesCompat,
+  amplifyGetCurrentUserCompat,
+  amplifySignOutCompat,
+  amplifyHubListenCompat,
+} from '@atlasauth/react/compat';
+
+export function Profile() {
+  const [email, setEmail] = useState<string | undefined>();
+
+  useEffect(() => {
+    amplifyGetCurrentUserCompat()
+      .then(() => amplifyFetchUserAttributesCompat())
+      .then((attrs) => setEmail(attrs.email))
+      .catch(() => setEmail(undefined));
+    return amplifyHubListenCompat('auth', ({ payload }) => {
+      if (payload.event === 'signedOut') setEmail(undefined);
+    });
+  }, []);
+
+  async function callApi() {
+    const { tokens } = await amplifyFetchAuthSessionCompat();
+    return fetch('/api', { headers: { Authorization: `Bearer ${tokens?.idToken?.toString()}` } });
+  }
+
+  async function login(username: string, password: string) {
+    await signIn({ username, password });
+  }
+
+  return (
+    <div>
+      {email}
+      <button onClick={callApi}>Call</button>
+      <button onClick={() => login('a', 'b')}>Login</button>
+      <button onClick={() => amplifySignOutCompat()}>Sign out</button>
+    </div>
+  );
+}

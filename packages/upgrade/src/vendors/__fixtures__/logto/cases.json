@@ -1,0 +1,37 @@
+[
+  {
+    "name": "react-provider",
+    "path": "src/main.tsx",
+    "envStyle": "vite",
+    "manual": [
+      "removed provider props with no Atlas counterpart: config"
+    ]
+  },
+  {
+    "name": "next-route",
+    "path": "app/api/logto/[action]/route.ts",
+    "manual": [
+      "this Logto route is no longer used",
+      "LogtoClient (@logto/next)"
+    ]
+  },
+  {
+    "name": "express-server",
+    "path": "server/auth.ts",
+    "envStyle": "node",
+    "manual": [
+      "handleAuthRoutes(): Atlas hosts sign-in",
+      "withLogto(): use atlasMiddleware()",
+      "LOGTO_APP_SECRET: server code uses ATLAS_SECRET_KEY",
+      "LOGTO_BASE_URL: not needed"
+    ]
+  },
+  {
+    "name": "server-actions",
+    "path": "app/page.tsx",
+    "manual": [
+      "getLogtoContext(): read the session with auth()",
+      "signIn(): sign-in is the Atlas /sign-in page"
+    ]
+  }
+]

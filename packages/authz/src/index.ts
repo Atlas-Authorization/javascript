@@ -20,3 +20,23 @@ export {
   isRoleKey,
   isPermissionKey,
 } from './keys';
+export {
+  FilterCompileError,
+  evalFilter,
+  filterToDrizzle,
+  filterToPrisma,
+  filterToSql,
+  likeToRegExp,
+  type DrizzleOps,
+  type DrizzleOptions,
+  type Filter,
+  type FilterCmp,
+  type FilterRows,
+  type FilterScalar,
+  type FilterTerm,
+  type PrismaOptions,
+  type SqlColumn,
+  type SqlDialect,
+  type SqlFragment,
+  type SqlOptions,
+} from './filter';

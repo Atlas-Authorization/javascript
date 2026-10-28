@@ -1,5 +1,9 @@
 # @atlasauth/expo-passkeys changelog
 
+## 0.2.0 — 2026-10-23
+- **Passkey sign-in takes the sign-in captcha.** `authenticateWithPasskey()` accepts `captchaToken` (sent on the start) and `getCaptchaToken` (asked for a fresh token after a `CAPTCHA_REQUIRED` / `CAPTCHA_FAILED` refusal; the start is retried once). Needed when the app challenges every sign-in.
+- Built on `@atlasauth/js` 0.16.0.
+
 ## 0.1.1
 - **`frontendApi` is validated at client creation.** A missing, empty or malformed value now throws an
   `AtlasConfigError` (from `@atlasauth/js`; `code: 'FRONTEND_API_REQUIRED'` or `'FRONTEND_API_INVALID'`)

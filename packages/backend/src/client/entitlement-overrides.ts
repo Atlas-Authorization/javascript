@@ -20,6 +20,8 @@ export interface EntitlementOverride {
   limits: Record<string, unknown> | null;
   /** Epoch ms when the override lapses, or null for open-ended. */
   expires_at: number | null;
+  /** For an account of the owner's own products: reads back as `planSource: "internal"` and never counts as revenue. */
+  internal?: boolean;
   created_by: string | null;
   created_at: number;
 }
@@ -35,6 +37,8 @@ export interface CreateEntitlementOverrideBody {
   limits?: Record<string, unknown> | null;
   /** Epoch ms; omit or null for open-ended. */
   expires_at?: number | null;
+  /** The grant is for an account of the owner's own products (reported as `internal`). */
+  internal?: boolean;
 }
 
 export interface ListEntitlementOverridesParams {
@@ -59,6 +63,32 @@ export function entitlementOverridesResource(request: RequestFn) {
     /** Revoke: the subject reverts to its Stripe-derived entitlement on the next session. */
     delete(id: string): Promise<{ object: 'entitlement_override'; id: string; deleted: true }> {
       return request({ method: 'DELETE', path: `/v1/entitlement_overrides/${enc(id)}` });
+    },
+  };
+}
+
+/** The standard entitlements document: one shape any product can serve (JSON Schema `https://atlasauth.net/schemas/entitlements-v1.json`). */
+export interface Entitlements {
+  object: 'entitlements';
+  $schema?: string;
+  subject: { type: EntitlementOverrideSubjectType; id: string };
+  plan: string | null;
+  /** `plan` (a subscription), `override` (a sales-led grant), `internal` (an owner account, never revenue) or `none`. */
+  planSource: 'plan' | 'override' | 'internal' | 'none';
+  entitlements: Array<{
+    key: string;
+    enabled: boolean;
+    limit?: number;
+    used?: number;
+    source: 'plan' | 'override' | 'internal';
+  }>;
+}
+
+export function entitlementsResource(request: RequestFn) {
+  return {
+    /** `GET /v1/entitlements`: gate a feature the same way against any product that serves this shape. */
+    get(params: { subject_type: EntitlementOverrideSubjectType; subject_id: string }): Promise<Entitlements> {
+      return request({ method: 'GET', path: '/v1/entitlements', query: { ...params } });
     },
   };
 }

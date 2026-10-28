@@ -17,7 +17,7 @@ export type { FieldProps, FieldLabelProps, FieldInputProps, FieldErrorProps } fr
 // The flow context + its hook, for building your own primitives.
 export { useFlowContext } from './context';
 export type { FlowContextValue } from './context';
-export type { CaptchaProps, EmailUnavailableProps } from './flow-parts';
+export type { CaptchaProps, EmailUnavailableProps, PoliciesProps, PoliciesRenderProps } from './flow-parts';
 
 // The pure state machine — step selection, field + action wiring. Exported so it
 // can be reused (and so consumers can reason about the mapping) without React.
@@ -41,3 +41,4 @@ export {
 // The two compound components, also available as subpath imports.
 export * as SignIn from './sign-in';
 export * as SignUp from './sign-up';
+export * as Passkey from './passkey';

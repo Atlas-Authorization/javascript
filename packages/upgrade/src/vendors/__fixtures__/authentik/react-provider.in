@@ -1,0 +1,14 @@
+import { createRoot } from 'react-dom/client';
+import { AuthProvider } from 'react-oidc-context';
+import { App } from './App';
+
+createRoot(document.getElementById('root')!).render(
+  <AuthProvider
+    authority={import.meta.env.VITE_AUTHENTIK_ISSUER}
+    client_id={import.meta.env.VITE_AUTHENTIK_CLIENT_ID}
+    redirect_uri={window.location.origin}
+    onSigninCallback={() => window.history.replaceState({}, document.title, window.location.pathname)}
+  >
+    <App />
+  </AuthProvider>,
+);

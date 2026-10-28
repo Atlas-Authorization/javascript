@@ -1,0 +1,25 @@
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/auth';
+
+import {
+  onFirebaseAuthStateChangedCompat,
+  firebaseSignOutCompat,
+  getFirebaseCurrentUserCompat,
+} from '@atlasauth/react/compat';
+
+export function watch(cb: (email: string | null) => void) {
+  return onFirebaseAuthStateChangedCompat(null, (user) => cb(user?.email ?? null));
+}
+
+export async function logout() {
+  await firebaseSignOutCompat(null);
+}
+
+export async function login(email: string, password: string) {
+  // TODO(atlas-migrate): firebase.auth().signInWithEmailAndPassword(): credentials are collected on the Atlas sign-in page now: render <SignIn /> (or send users to /sign-in)
+  return firebase.auth().signInWithEmailAndPassword(email, password);
+}
+
+export function who() {
+  return getFirebaseCurrentUserCompat()?.uid;
+}

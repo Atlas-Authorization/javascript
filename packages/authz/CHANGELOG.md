@@ -1,5 +1,16 @@
 # @atlasauth/authz changelog
 
+## 0.3.0 — 2026-10-27
+
+### Added
+
+- Residual-policy filters: the `Filter` type, `evalFilter` (run a filter on in-memory rows), and the compilers `filterToSql` (parameterised, Postgres/MySQL/SQLite), `filterToPrisma` and `filterToDrizzle`.
+
+## 0.2.0 — 2026-10-23
+
+### Added
+- App-level (instance-wide) roles and permissions: `ProtectCondition` gains `appRole`, `appPermission`, `anyAppPermission` and `allAppPermissions`, checked against the new `AuthzClaims.app_roles` / `app_permissions`. Like `plan` / `feature`, they need no active organization; a miss is `missing_permission`.
+
 ## 0.1.1
 
 First published release.

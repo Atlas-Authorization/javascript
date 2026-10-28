@@ -1,5 +1,57 @@
 # @atlasauth/embed changelog
 
+## Unreleased
+
+## 0.14.0 — 2026-10-26
+
+### Changed
+
+- Pricing table, organization admin and lead-form embeds; the standalone bundle and widget load them.
+
+## 0.13.0 — 2026-10-24
+
+- SSO organization claims, app adoption, validating dry runs, sealed secrets, consent API adapters; see the Atlas changelog.
+
+## 0.12.0 — 2026-10-24
+
+### Added
+
+- The widget's stylesheet is a constructable stylesheet (or a `<style>` with the page's CSP nonce), so `style-src` needs no `'unsafe-inline'`; the host page's `--atlas-host-*` variables restyle it where set.
+
+## 0.11.0 — 2026-10-24
+
+### Added
+
+- **Policy acceptance** in the widget: on sign-up the instance's policies replace the single terms row (consent block with in-page viewer, clickwrap line, unskippable scroll dialog); on sign-in the `needs_policy_acceptance` step. Strings follow the widget's `localization` (`policy.*`), else English.
+
+## 0.10.0 — 2026-10-24
+
+### Added
+
+- Opt-in passkey PRF: `passkeyPrf` (markup `data-atlas-passkey-prf="<salt>"`) requests the WebAuthn `prf` extension on passkey sign-in and dispatches an `atlas:passkey-prf` CustomEvent (`PasskeyPrfEventDetail`) on the widget's element with the results. They are never sent to Atlas.
+- The CaptchaFox and Vercel BotID captcha providers (`FlowCaptcha.attestationUrl` for BotID's attestation route).
+
+### Changed
+
+- Built on `@atlasauth/js` 0.17.0.
+
+## 0.9.0 — 2026-10-23
+
+### Added
+
+- **Recovery codes after enrolment.** Setting up a second factor at sign-in now shows the account's one-time recovery codes before the sign-in finishes: copy them, download them as a .txt file, then "I've saved my codes" exchanges the ticket. Before, the widget completed straight away and the codes were never shown. They follow the widget's `localization` catalog (`mfa.recoveryCodesTitle`, `mfa.recoveryCodesHelp`, `mfa.recoveryCodesCopy`, `mfa.recoveryCodesCopied`, `mfa.recoveryCodesDownload`, `mfa.recoveryCodesSaved`).
+- **MFA enrolment at sign-in.** The enrolment step fetches the authenticator setup and shows its QR code and setup key, then the code field(s). Where the app offers texted codes, the user can instead enter a phone number and confirm with the texted code.
+- **"Text me a code instead" / "Email me a code instead"** at the second-factor step, where the app offers them.
+- These strings follow the widget's `localization` catalog (the `mfa.*` keys of `@atlasauth/localizations`), else English.
+
+### Fixed
+
+- **Passkey sign-in on an app that challenges every sign-in.** The passkey button sends the sign-in captcha's token on the ceremony start. A refusal (a force-challenge switch, or a rejected token) draws the challenge again and retries once with a fresh token. The background passkey autofill is not started while an always-on sign-in captcha is configured.
+
+### Changed
+
+- Built on `@atlasauth/js` 0.16.0.
+
 ## 0.8.0
 
 ### Changed

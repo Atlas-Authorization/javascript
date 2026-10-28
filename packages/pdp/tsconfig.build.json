@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // JS is bundled by build.mjs (the abac/fga engines are inlined from @atlas/core source); tsc only emits typings.
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "sourceMap": false
+  },
+  "exclude": ["src/**/*.test.ts"]
+}

@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/actions",
-  "version": "0.1.1",
+  "version": "0.5.0",
   "description": "Typed SDK, local test harness and template gallery for Atlas Actions — tenant code run at fixed points in the auth pipeline (the Atlas peer of @auth0/actions).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
   "devDependencies": {
@@ -29,6 +29,7 @@
   },
   "files": [
     "dist",
+    "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
   ]

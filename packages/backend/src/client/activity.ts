@@ -64,8 +64,16 @@ export interface ConfigChangelogEntry {
   ip?: string | null;
   /** The object that changed, e.g. `{ type: 'oauth_client', id }`. */
   target?: { type: string; id: string | null } | null;
-  changes?: Array<{ section: string; before: unknown; after: unknown }>;
-  /** Changed field names, when no before/after was recorded. */
+  /**
+   * Always present: one entry per changed field. On an older entry that recorded
+   * only field names, `values_recorded` is false and before/after are null.
+   */
+  changes: Array<{ section: string; before: unknown; after: unknown; values_recorded: boolean }>;
+  /** True when the write changed nothing. */
+  no_op: boolean;
+  /** What the source recorded: before/after values, field names only, or nothing. */
+  recorded: 'diff' | 'fields' | 'none';
+  /** @deprecated read `changes[].section`. */
   fields?: string[];
 }
 
@@ -74,6 +82,8 @@ export interface ListConfigChangelogParams extends CursorParams {
   action?: string;
   /** Only changes at or after this ISO-8601 date. */
   since?: string;
+  /** false = leave out writes that changed nothing. */
+  include_no_op?: boolean;
 }
 
 export function eventsResource(request: RequestFn) {

@@ -1,0 +1,15 @@
+import OktaJwtVerifier from '@okta/jwt-verifier';
+
+import { AtlasBackend } from '@atlasauth/backend';
+
+// TODO(atlas-migrate): new OktaJwtVerifier({ issuer }): verify Atlas session tokens with new AtlasBackend({ issuer: process.env.ATLAS_ISSUER!, jwksUrl: process.env.ATLAS_JWKS_URL }) from @atlasauth/backend; during the cutover add legacyIssuers: oktaLegacyIssuer({ domain, until }) so tokens Okta already issued keep verifying
+const verifier = new OktaJwtVerifier({
+  issuer: process.env.OKTA_ISSUER!,
+});
+
+export async function authenticate(authorization: string) {
+  const token = authorization.replace(/^Bearer /, '');
+  // TODO(atlas-migrate): verifyAccessToken(): use `const result = await backend.verify(token)`. It does not throw: reject the request when result.ok is false, and read result.claims. Atlas session tokens have no API audience by default, so the audience argument has no counterpart (pass `audience` to AtlasBackend for an aud check). Okta access tokens put the login in sub and the user id in uid; Atlas puts the Atlas user id in sub
+  const jwt = await verifier.verifyAccessToken(token, 'api://default');
+  return jwt.claims.sub;
+}

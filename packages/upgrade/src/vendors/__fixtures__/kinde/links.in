@@ -1,0 +1,13 @@
+import { LoginLink, LogoutLink, RegisterLink } from '@kinde-oss/kinde-auth-nextjs/components';
+
+export function AuthLinks({ signedIn }: { signedIn: boolean }) {
+  if (signedIn) return <LogoutLink postLogoutRedirectURL="/goodbye">Sign out</LogoutLink>;
+  return (
+    <nav>
+      <LoginLink postLoginRedirectURL="/dashboard">Sign in</LoginLink>
+      <RegisterLink orgCode="org_123" className="cta">
+        Create account
+      </RegisterLink>
+    </nav>
+  );
+}

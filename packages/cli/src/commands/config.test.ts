@@ -37,6 +37,8 @@ class MockApi implements ConfigHttp {
       '/v1/notification_templates': 'notification_templates',
       '/v1/email_templates': 'email_templates',
       '/v1/organizations': 'organizations',
+      '/v1/permissions': 'permissions',
+      '/v1/custom_oauth_providers': 'custom_oauth_providers',
     };
     const key = map[path];
     if (key) return { data: (this.state[key] as unknown[]) ?? [] } as T;
@@ -335,6 +337,46 @@ describe('config import', () => {
   });
 });
 
+describe('config import: partial documents and the newer resource types', () => {
+  it('an instance file without allowed_origins leaves the live origins alone', async () => {
+    writeFileSync(join(dir, 'instance.json'), JSON.stringify({ auth_config: { session: { idleMs: 600000 } } }) + '\n');
+    const api = new MockApi(seedState());
+    expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), api))).toBe(0);
+    const patch = api.writes.find((w) => w.path === '/v1/instance');
+    expect(patch?.body).toEqual({ auth_config: { session: { idleMs: 600000 } } });
+  });
+
+  it('creates permissions before the roles that grant them, and custom OAuth providers', async () => {
+    writeFileSync(join(dir, 'roles.json'), JSON.stringify([{ key: 'org:billing', name: 'Billing', permissions: ['org:invoices:read'] }]));
+    writeFileSync(join(dir, 'permissions.json'), JSON.stringify([{ key: 'org:invoices:read', name: 'invoices read' }]));
+    writeFileSync(
+      join(dir, 'custom_oauth_providers.json'),
+      JSON.stringify([{ provider_key: 'keycloak', display_name: 'Keycloak', protocol: 'oidc', issuer: 'https://kc.example', client_secret: '${KC_SECRET}' }]),
+    );
+    const api = new MockApi({ ...seedState(), permissions: [], custom_oauth_providers: [], roles: [] });
+    expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), api, { KC_SECRET: 'kc' }))).toBe(0);
+    const paths = api.writes.map((w) => w.path);
+    expect(paths.indexOf('/v1/permissions')).toBeGreaterThanOrEqual(0);
+    expect(paths.indexOf('/v1/permissions')).toBeLessThan(paths.indexOf('/v1/roles'));
+    const custom = api.writes.find((w) => w.path === '/v1/custom_oauth_providers');
+    expect((custom?.body as { client_secret: string }).client_secret).toBe('kc');
+  });
+
+  it('sends provider settings (values) and wallet settings alongside the credentials', async () => {
+    writeFileSync(
+      join(dir, 'oauth_providers.json'),
+      JSON.stringify([
+        { provider: 'microsoft', client_id: 'mid', client_secret: 'ms', values: { tenant: 'organizations' } },
+        { provider: 'siwe', settings: { domain: 'app.example' } },
+      ]),
+    );
+    const api = new MockApi({ ...seedState(), oauth_providers: [] });
+    expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), api))).toBe(0);
+    expect(api.writes).toContainEqual({ method: 'PUT', path: '/v1/oauth_providers/microsoft', body: { values: { tenant: 'organizations', client_id: 'mid', client_secret: 'ms' } } });
+    expect(api.writes).toContainEqual({ method: 'PUT', path: '/v1/oauth_providers/siwe', body: { settings: { domain: 'app.example' } } });
+  });
+});
+
 describe('config dispatch', () => {
   it('an unknown subcommand exits non-zero with a hint', async () => {
     const io = captureIO();
@@ -348,5 +390,147 @@ describe('config dispatch', () => {
     const code = await run(['config', 'export', '--dir', dir, '--format', 'toml'], ctx(io, new MockApi(seedState())));
     expect(code).toBe(1);
     expect(io.stderr()).toContain("--format must be 'json' or 'yaml'");
+  });
+});
+
+describe('config plan', () => {
+  it('reports no drift right after an export, and writes nothing', async () => {
+    const api = new MockApi(seedState());
+    await run(['config', 'export', '--dir', dir], ctx(captureIO(), api));
+    const io = captureIO();
+    expect(await run(['config', 'plan', '--dir', dir, '--exit-code'], ctx(io, api))).toBe(0);
+    expect(io.stdout()).toContain('No drift');
+    expect(api.writes).toEqual([]);
+  });
+
+  it('shows a field-level diff and exits 2 with --exit-code when live has drifted', async () => {
+    const api = new MockApi(seedState());
+    await run(['config', 'export', '--dir', dir], ctx(captureIO(), api));
+    const state = seedState();
+    (state.instance as { allowed_origins: string[] }).allowed_origins = ['https://moved.example.com'];
+    (state.roles as Array<{ name: string }>)[0]!.name = 'Writer';
+    const drifted = new MockApi(state);
+
+    const io = captureIO();
+    expect(await run(['config', 'plan', '--dir', dir, '--exit-code'], ctx(io, drifted))).toBe(2);
+    const out = io.stdout();
+    expect(out).toContain('~ instance (update)');
+    expect(out).toContain('allowed_origins');
+    expect(out).toContain('https://moved.example.com');
+    expect(out).toContain('~ roles editor (update)');
+    expect(out).toContain('name: "Writer" -> "Editor"');
+    expect(drifted.writes).toEqual([]);
+
+    // Without --exit-code the same drift still exits 0.
+    expect(await run(['config', 'plan', '--dir', dir], ctx(captureIO(), drifted))).toBe(0);
+  });
+
+  it('plans creates and lists live-only resources without deleting them', async () => {
+    const api = new MockApi(seedState());
+    await run(['config', 'export', '--dir', dir], ctx(captureIO(), api));
+    const state = seedState();
+    (state.redirect_urls as unknown[]).pop();
+    (state.redirect_urls as unknown[]).push({ id: 'rurl_9', url: 'https://extra.example.com/cb' });
+    const io = captureIO();
+    expect(await run(['config', 'plan', '--dir', dir, '--exit-code'], ctx(io, new MockApi(state)))).toBe(2);
+    expect(io.stdout()).toContain('+ redirect_urls https://app.example.com/cb2 (create)');
+    expect(io.stdout()).toContain('Live but not in');
+    expect(io.stdout()).toContain('https://extra.example.com/cb');
+  });
+
+  it('--json is machine readable', async () => {
+    const api = new MockApi(seedState());
+    await run(['config', 'export', '--dir', dir], ctx(captureIO(), api));
+    const state = seedState();
+    (state.roles as Array<{ name: string }>)[0]!.name = 'Writer';
+    const io = captureIO();
+    expect(await run(['config', 'plan', '--dir', dir, '--json'], ctx(io, new MockApi(state)))).toBe(0);
+    const json = JSON.parse(io.stdout());
+    expect(json.object).toBe('config_plan');
+    expect(json.has_changes).toBe(true);
+    expect(json.changes[0]).toMatchObject({ type: 'roles', key: 'editor', action: 'update' });
+    expect(json.changes[0].fields).toEqual([{ path: 'name', before: 'Writer', after: 'Editor' }]);
+  });
+
+  it('errors clearly when the directory is missing', async () => {
+    const io = captureIO();
+    expect(await run(['config', 'plan', '--dir', join(dir, 'nope')], ctx(io, new MockApi(seedState())))).toBe(1);
+    expect(io.stderr()).toContain('Config directory not found');
+  });
+});
+
+describe('config promote', () => {
+  /** Two environments = two profiles; makeHttp hands each its own mock by secret key. */
+  function promoteCtx(io: CaptureIO, apis: Record<string, MockApi>, targetKey = 'sk_test_target'): RunContext {
+    const base = ctx(io, new MockApi({}));
+    return {
+      ...base,
+      config: new MemoryConfigStore({
+        active_profile: 'staging',
+        profiles: {
+          staging: { api_url: 'https://api.test', secret_key: 'sk_test_source' },
+          production: { api_url: 'https://api.test', secret_key: targetKey },
+        },
+      }),
+      makeHttp: ({ secretKey }) => apis[secretKey]!,
+    };
+  }
+
+  const emptyTarget = () => ({
+    instance: { allowed_origins: [], auth_config: {} },
+    redirect_urls: [],
+    oauth_clients: [], oauth_providers: [], sso_connections: [], billing_plans: [], notification_templates: [],
+    organizations: [], roles: [], jwt_templates: [], webhook_endpoints: [], resource_servers: [], email_templates: [],
+  });
+
+  it('plans the source config against the target without writing (--dry-run)', async () => {
+    const target = new MockApi(emptyTarget());
+    const io = captureIO();
+    const code = await run(
+      ['config', 'promote', '--from', 'staging', '--to', 'production', '--dry-run'],
+      promoteCtx(io, { sk_test_source: new MockApi(seedState()), sk_test_target: target }),
+    );
+    expect(code).toBe(0);
+    expect(target.writes).toEqual([]);
+    expect(io.stdout()).toContain('Promoting staging -> production');
+    expect(io.stdout()).toContain('redirect_urls');
+  });
+
+  it('applies the diff to the target', async () => {
+    const target = new MockApi(emptyTarget());
+    const code = await run(
+      ['config', 'promote', '--from', 'staging', '--to', 'production'],
+      promoteCtx(captureIO(), { sk_test_source: new MockApi(seedState()), sk_test_target: target }),
+    );
+    expect(code).toBe(0);
+    expect(target.writes.some((w) => w.method === 'POST' && w.path === '/v1/redirect_urls')).toBe(true);
+  });
+
+  it('never ships a secret from the source', async () => {
+    const target = new MockApi(emptyTarget());
+    await run(
+      ['config', 'promote', '--from', 'staging', '--to', 'production'],
+      promoteCtx(captureIO(), { sk_test_source: new MockApi(seedState()), sk_test_target: target }),
+    );
+    const sent = JSON.stringify(target.writes);
+    expect(sent).not.toContain('sk_super_secret_value');
+    expect(sent).not.toContain('whsec_super_secret');
+  });
+
+  it('needs --yes to apply to a live key, and refuses a missing or identical profile', async () => {
+    const apis = { sk_test_source: new MockApi(seedState()), atlas_live_sk_target: new MockApi(emptyTarget()) };
+    const attempt = async (args: string[], key?: string) => {
+      const io = captureIO();
+      const code = await run(['config', 'promote', ...args], promoteCtx(io, apis as Record<string, MockApi>, key));
+      return { code, err: io.stderr() };
+    };
+    const live = await attempt(['--from', 'staging', '--to', 'production'], 'atlas_live_sk_target');
+    expect(live.code).toBe(1);
+    expect(live.err).toContain('--yes');
+    // A dry run against live is fine.
+    expect((await attempt(['--from', 'staging', '--to', 'production', '--dry-run'], 'atlas_live_sk_target')).code).toBe(0);
+    expect((await attempt(['--from', 'staging', '--to', 'nope'])).err).toContain("No profile named 'nope'");
+    expect((await attempt(['--from', 'staging', '--to', 'staging'])).err).toContain('same profile');
+    expect((await attempt(['--from', 'staging'])).err).toContain('--to');
   });
 });

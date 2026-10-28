@@ -1,13 +1,19 @@
 import {
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   EventEmitter,
   Input,
+  OnChanges,
+  OnDestroy,
   Output,
   inject,
+  type SimpleChanges,
 } from '@angular/core';
 import {
+  confirmPolicies,
   localizedErrorMessage,
+  type PolicyAcceptanceController,
   type CaptchaController,
   type FieldError,
   type InstanceSettings,
@@ -17,6 +23,7 @@ import { AtlasService } from '../atlas.service';
 import { classFor, type ElementKey } from '../appearance';
 import { translate } from '../i18n';
 import { AtlasCaptchaSlotDirective } from '../directives/captcha-slot.directive';
+import { AtlasPoliciesDirective, policyUi } from './policy-host';
 
 /** What the create-account form emits: the values typed plus the consent tick. */
 export interface SignUpFormSubmit {
@@ -36,7 +43,7 @@ export interface SignUpFormSubmit {
   selector: 'atlas-sign-up-form',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AtlasCaptchaSlotDirective],
+  imports: [AtlasCaptchaSlotDirective, AtlasPoliciesDirective],
   template: `
     <div [class]="cls('card', 'atlas-card')">
       <h1 [class]="cls('headerTitle', 'atlas-title')">{{ t('signUp.title') }}</h1>
@@ -126,14 +133,17 @@ export interface SignUpFormSubmit {
           }
         }
 
+        @if (showEmail()) {
         <label [class]="cls('formField', 'atlas-field')">
-          <span [class]="cls('formFieldLabel', 'atlas-field-label')">{{ t('signUp.emailLabel') }}</span>
+          <span [class]="cls('formFieldLabel', 'atlas-field-label')">{{
+            emailRequired() ? t('signUp.emailLabel') : t('signUp.optionalField', { label: t('signUp.emailLabel') })
+          }}</span>
           <input
             [class]="cls('formFieldInput', 'atlas-input')"
             type="email"
             name="email"
             autocomplete="email"
-            required
+            [required]="emailRequired()"
             [value]="values['email'] ?? ''"
             (input)="setValue('email', $any($event.target).value)"
           />
@@ -141,7 +151,11 @@ export interface SignUpFormSubmit {
             <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
           }
         </label>
+        }
 
+        @if (passkey) {
+          <p class="atlas-text">{{ t('signUp.passkeyIntro') }}</p>
+        } @else {
         <label [class]="cls('formField', 'atlas-field')">
           <span [class]="cls('formFieldLabel', 'atlas-field-label')">{{ t('signUp.passwordLabel') }}</span>
           <input
@@ -157,6 +171,16 @@ export interface SignUpFormSubmit {
             <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
           }
         </label>
+        }
+
+        @if (hasPolicies()) {
+          <div [atlasPolicies]="policies"></div>
+          @if (declined) {
+            <span [class]="cls('formFieldError', 'atlas-error')" role="alert" data-atlas-policy-declined="">
+              {{ t('policy.declined', { policy: declined }) }}
+            </span>
+          }
+        }
 
         @if (showLegal()) {
           <label [class]="cls('formField', 'atlas-consent')">
@@ -197,24 +221,65 @@ export interface SignUpFormSubmit {
         >
           {{ t('signUp.submit') }}
         </button>
+        @if (hasPolicies()) {
+          <p atlasPolicyKind="clickwrap" [atlasPolicies]="policies"></p>
+        }
+        @if (switchable) {
+          <div class="atlas-alternatives">
+            <button
+              type="button"
+              [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+              [attr.data-atlas-sign-up-mode]="passkey ? 'password' : 'passkey'"
+              [disabled]="busy"
+              (click)="switchMode.emit()"
+            >
+              {{ t(passkey ? 'signUp.passwordOption' : 'signUp.passkeyOption') }}
+            </button>
+          </div>
+        }
       </form>
       }
     </div>
   `,
 })
-export class SignUpFormComponent {
+export class SignUpFormComponent implements OnChanges, OnDestroy {
   private readonly atlas = inject(AtlasService);
+  private readonly cdr = inject(ChangeDetectorRef);
+  private unwatch: (() => void) | null = null;
 
   @Input() settings: InstanceSettings | null = null;
   @Input() busy = false;
   @Input() errors: FieldError[] = [];
   @Input() captcha: CaptchaController | null = null;
+  /** Passkey-only sign-up: no password field; the email per the instance's mode. */
+  @Input() passkey: { email: 'off' | 'optional' | 'required' } | null = null;
+  /** Whether the password / passkey toggle is shown (both are offered). */
+  @Input() switchable = false;
+  /** The instance's policies (terms, privacy, …); they replace the legacy consent row. */
+  @Input() policies: PolicyAcceptanceController | null = null;
+  /** The user asked for the other sign-up method. */
+  @Output() switchMode = new EventEmitter<void>();
 
   /** Emits the typed values and the consent tick when the form is submitted. */
   @Output() submitSignUp = new EventEmitter<SignUpFormSubmit>();
 
   protected values: Record<string, string> = {};
   protected agreed = false;
+  protected declined: string | null = null;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!changes['policies']) return;
+    this.unwatch?.();
+    this.unwatch = this.policies?.subscribe(() => this.cdr.markForCheck()) ?? null;
+  }
+
+  ngOnDestroy(): void {
+    this.unwatch?.();
+  }
+
+  protected hasPolicies(): boolean {
+    return !!this.policies && this.policies.policies.length > 0;
+  }
 
   protected t(key: string, vars?: Record<string, string>): string {
     return translate(this.atlas.localization, key, vars);
@@ -237,7 +302,17 @@ export class SignUpFormComponent {
 
   /** Email + password sign-up cannot complete: the app cannot send the verification email. */
   protected emailUnavailable(): boolean {
+    // A passkey sign-up that collects no email (or an unproven one) sends no mail.
+    if (this.passkey && this.passkey.email !== 'required') return false;
     return this.settings?.emailDelivery?.passwordSignUp === false;
+  }
+
+  protected showEmail(): boolean {
+    return !this.passkey || this.passkey.email !== 'off';
+  }
+
+  protected emailRequired(): boolean {
+    return !this.passkey || this.passkey.email === 'required';
   }
 
   protected fields(): PublicSignUpField[] {
@@ -269,11 +344,14 @@ export class SignUpFormComponent {
   }
 
   protected showLegal(): boolean {
+    // Instance policies replace the legacy single "I agree to the Terms" row.
+    if (this.hasPolicies()) return false;
     const legal = this.settings?.legal;
     return !!legal && (!!legal.termsUrl || !!legal.privacyUrl);
   }
 
   protected consentOk(): boolean {
+    if (this.hasPolicies()) return this.policies!.canSubmit();
     return !this.settings?.legal?.required || this.agreed;
   }
 
@@ -288,6 +366,19 @@ export class SignUpFormComponent {
   protected onSubmit(event: Event): void {
     event.preventDefault();
     if (this.emailUnavailable() || !this.consentOk()) return;
+    this.declined = null;
+    if (this.hasPolicies()) {
+      // Scroll-mode policies are read in their unskippable dialog first.
+      const values = { ...this.values };
+      void confirmPolicies(this.policies!, { t: policyUi(this.atlas).t }).then((res) => {
+        if (res.ok) this.submitSignUp.emit({ values, consent: true });
+        else {
+          this.declined = res.declined;
+          this.cdr.markForCheck();
+        }
+      });
+      return;
+    }
     this.submitSignUp.emit({
       values: { ...this.values },
       consent: this.settings?.legal?.required ? this.agreed : true,

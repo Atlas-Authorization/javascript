@@ -1,0 +1,23 @@
+[
+  {
+    "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "user_id": "b5dd5267-b462-48be-b70d-bcd6f1bbe7a5",
+    "organization_id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+    "created_at": "2020-12-31 23:59:59"
+  },
+  {
+    "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "user_id": "1d6a4824-d935-4980-8f18-8ee5d6efe2fc",
+    "organization_id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+    "created_at": "2020-12-31 23:59:59"
+  },
+  {
+    "id": "c3d4e5f6-a7b8-4c9d-8e0f-2a3b4c5d6e7f",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "user_id": "e0282f3f-b211-4f0e-b777-6fabc69287c9",
+    "organization_id": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+    "created_at": "2020-12-31 23:59:59"
+  }
+]

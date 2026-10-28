@@ -19,6 +19,13 @@ export {
   useSilentAuth,
   useUser,
 } from './hooks';
+// Identity governance: request access, approve, review.
+export { AccessRequests, useAccess } from './access';
+export type { UseAccessResult } from './access';
+// Authorization widgets: share a resource, role matrix, request access, pending approvals.
+export { AccessRequestButton, PendingApprovals, RoleMatrix, ShareDialog, useShareableResources } from './authz-widgets';
+// Your own login / consent pages (delegated login and consent).
+export { useDelegatedChallenge, useDelegatedFlow } from './delegated-ui';
 export { ATLAS_REACT_SDK, ATLAS_REACT_VERSION } from './version';
 // `onSignOut({ reason })`: the event type, and the `atlas:signout` window event for
 // scripts outside the React tree.
@@ -28,10 +35,15 @@ export * from './fapi';
 export * from './components';
 export type * from './sign-in-with-atlas';
 export {
+  ATLASID_EVENTS,
+  atlasIdLabels,
   buildAtlasAuthorizeUrl,
   completeSignInWithAtlas,
+  listenAtlasIdEvents,
+  oneTapWithAtlas,
   signInWithAtlasPopup,
   SignInWithAtlasButton,
+  useAtlasIdEvents,
 } from './sign-in-with-atlas';
 // Cross-property SSO: the browser silent-check (hidden-iframe OIDC prompt=none),
 // surfaced first-class here from @atlasauth/js.
@@ -57,3 +69,8 @@ export type { ProviderDiagnosis, OverlayGeometry, Rect } from '@atlasauth/js';
 // The instance's public sign-in / sign-up settings (`useAtlas().instanceSettings`).
 export type { InstanceSettings, PublicSignUpField } from './instance-settings';
 export type { CaptchaFlowKey, CaptchaWidgetMode, FlowCaptcha } from '@atlasauth/js';
+
+// Drop-in compatibility helpers for apps migrated from other auth providers
+// live on their own entry point, `@atlasauth/react/compat`, so the main API
+// stays Atlas-named.
+export type { GetTokenOptions } from './active-atlas';

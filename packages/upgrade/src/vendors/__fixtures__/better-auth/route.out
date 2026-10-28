@@ -1,0 +1,4 @@
+import { auth } from '@/lib/auth';
+import { toNextJsHandlerCompat } from '@atlasauth/nextjs/compat';
+
+export const { POST, GET } = toNextJsHandlerCompat(auth);

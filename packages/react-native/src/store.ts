@@ -1,7 +1,11 @@
 import {
   EMAIL_DELIVERY_UNKNOWN,
+  PolicyGateController,
   SignOutGuard,
+  acceptAttemptPolicies,
   advance,
+  controllerForPending,
+  loadPolicies,
   fetchInstanceSettings,
   getProviderToken as fetchProviderToken,
   initialFlow,
@@ -10,6 +14,7 @@ import {
   readRedirectResult,
   resolveFrontendApi,
   startSignUp,
+  type AttestationProvider,
   type CaptchaFlowKey,
   type EmailDelivery,
   type FapiClient,
@@ -17,6 +22,8 @@ import {
   type FlowCaptcha,
   type FlowState,
   type InstanceSettings,
+  type PolicyAcceptance,
+  type PolicyAcceptanceController,
   type ProviderToken,
   type SignOutOptions,
   type SignOutResult,
@@ -84,6 +91,11 @@ export interface AtlasStoreConfig {
    */
   locale?: string;
   /**
+   * App and device attestation (Apple App Attest / Google Play Integrity).
+   * Required once the instance turns on `attackProtection.appAttestation`.
+   */
+  attestation?: AttestationProvider;
+  /**
    * Delays (ms) between background re-tries of a revoke `signOut()` could not
    * complete. Default `[15_000, 60_000, 300_000]`; `[]` re-tries only on a
    * later `bootstrap()`.
@@ -132,6 +144,7 @@ export class AtlasStore {
   private readonly storage: TokenStorage;
   private readonly client: FapiClient;
   private readonly getCaptchaToken?: AtlasStoreConfig['getCaptchaToken'];
+  private readonly locale?: string;
   /** Tombstones + revoke (with background re-try) for `signOut()` and `bootstrap()`. */
   private readonly guard: SignOutGuard;
   /** A raw FAPI request authenticated with `token` (not the stored one). */
@@ -140,6 +153,7 @@ export class AtlasStore {
   constructor(config: AtlasStoreConfig) {
     this.storage = config.storage ?? createInMemoryStorage();
     this.getCaptchaToken = config.getCaptchaToken;
+    this.locale = config.locale;
     const fetchImpl = config.fetchImpl ?? fetch;
     const frontendApi = resolveFrontendApi(config.frontendApi, {
       component: '<AtlasProvider> / createAtlasStore()',
@@ -151,6 +165,7 @@ export class AtlasStore {
       fetchImpl,
       getToken: () => this.storage.getToken(),
       locale: config.locale,
+      attestation: config.attestation,
     });
     // The revoke is bound to the token being dropped, not read from storage at
     // call time: sign-out clears storage, and the background re-try of a failed
@@ -409,6 +424,8 @@ export class AtlasStore {
       status: 'needs_more',
       attemptStatus: result.status,
       attemptId: result.attemptId,
+      // A redirect that came back needing policy acceptance carries the proof in its URL.
+      ...(result.policyToken ? { policyToken: result.policyToken } : {}),
       errors: [],
     };
   };
@@ -435,6 +452,12 @@ export class AtlasStore {
     fields?: Record<string, string>;
     consent?: boolean;
     captchaToken?: string;
+    /**
+     * The policies the user accepted (`controller.build()` from `usePolicies()`).
+     * An instance with required policies refuses a sign-up without them
+     * (`POLICY_ACCEPTANCE_REQUIRED`).
+     */
+    policyAcceptances?: PolicyAcceptance[];
   }): Promise<FlowResult> => {
     const fields: Record<string, string> = { ...input.fields };
     if (input.firstName) fields.first_name = input.firstName;
@@ -446,6 +469,7 @@ export class AtlasStore {
         fields,
         ...(input.consent ? { consent: true } : {}),
         ...(captchaToken ? { captchaToken } : {}),
+        ...(input.policyAcceptances?.length ? { policyAcceptances: input.policyAcceptances } : {}),
       });
 
     let flow = await create(input.captchaToken);
@@ -487,12 +511,70 @@ export class AtlasStore {
       await this.setSessionToken(jwt);
       return { status: 'complete', errors: [] };
     }
+    const held = flow.attempt as { status?: string; pending_policies?: unknown } | null;
     return {
       status: 'needs_more',
-      attemptStatus: (flow.attempt as { status?: string } | null)?.status,
+      attemptStatus: held?.status,
       attemptId: attemptId(flow),
+      ...(flow.policyToken ? { policyToken: flow.policyToken } : {}),
+      ...(held?.status === 'needs_policy_acceptance' && held.pending_policies !== undefined
+        ? { pendingPolicies: held.pending_policies }
+        : {}),
       errors: [],
     };
+  }
+
+  // ── policy acceptance ────────────────────────────────────────────────────
+
+  /**
+   * Continue an attempt the server holds at `needs_policy_acceptance` (a
+   * sign-in, a social sign-up, a reset): `POST /v1/client/sign_ins/:id/accept_policies`.
+   * Send what `controller.build()` made, with the attempt's `policyToken` (from
+   * the `FlowResult`, or the redirect URL via `completeOAuthRedirect`) or, for a
+   * magic-link / QR tab, its `pollSecret`. On completion the ticket is exchanged
+   * for a token and persisted, like any other step.
+   */
+  acceptPolicies = async (input: {
+    attemptId: string;
+    acceptances: PolicyAcceptance[];
+    policyToken?: string;
+    pollSecret?: string;
+  }): Promise<FlowResult> => {
+    const seeded: FlowState = {
+      ...initialFlow,
+      attempt: { id: input.attemptId, status: 'needs_policy_acceptance' } as FlowState['attempt'],
+      policyToken: input.policyToken ?? null,
+      pollSecret: input.pollSecret ?? null,
+    };
+    return this.completeFlow(await acceptAttemptPolicies(this.client, seeded, input.acceptances));
+  };
+
+  /** `GET /v1/client/policies`: the policies a sign-up (or, with `signIn`, a sign-in) shows. Empty on failure. */
+  loadPolicies = (opts: { signIn?: boolean; locale?: string } = {}) =>
+    loadPolicies(this.client, { locale: opts.locale ?? this.locale, signIn: opts.signIn });
+
+  /**
+   * A controller for the policies a held attempt waits on, with their content
+   * filled in (`pendingPolicies` from the `FlowResult`; none, from a redirect,
+   * shows every required policy).
+   */
+  policyControllerFor = (
+    held: { pendingPolicies?: unknown } | null | undefined,
+    opts: { combined?: boolean } = {},
+  ): Promise<PolicyAcceptanceController> =>
+    controllerForPending(this.client, { pending_policies: held?.pendingPolicies }, { combined: opts.combined, locale: this.locale });
+
+  /** In-app re-acceptance for the signed-in user (the engine behind `usePolicyGate()`). */
+  createPolicyGate = (): PolicyGateController => new PolicyGateController(this.client, this.locale);
+
+  /** The bearer-authenticated Frontend API client this store uses (for `@atlasauth/js` helpers and the `*With` policy hooks). */
+  get fapi(): FapiClient {
+    return this.client;
+  }
+
+  /** The UI language the store was created with, if any. */
+  get language(): string | undefined {
+    return this.locale;
   }
 }
 

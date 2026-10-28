@@ -13,10 +13,17 @@
  */
 import type { FieldError } from './attempt';
 import type { FapiClient } from './fapi';
+import { getResetSecurityQuestions } from './mfa-factors';
 
 export interface ResetAttempt {
   id: string;
   status: string;
+  /**
+   * Present when the application resets by emailed link: poll
+   * {@link pollPasswordReset} with it until the link is opened (perhaps on
+   * another device), then carry on from the new status.
+   */
+  poll_secret?: string;
 }
 
 export interface ResetFlowState {
@@ -25,6 +32,11 @@ export interface ResetFlowState {
   busy: boolean;
   /** Present once the reset completes — exchange it for session cookies. */
   ticket: string | null;
+  /**
+   * At `needs_new_password`: the security questions the user must answer first (they set some;
+   * recovery only). Empty or absent when none are required. Send the answers as `securityAnswers`.
+   */
+  securityQuestions?: string[];
 }
 
 export const initialResetFlow: ResetFlowState = {
@@ -56,7 +68,9 @@ export async function startPasswordReset(
 export async function advancePasswordReset(
   client: FapiClient,
   state: ResetFlowState,
-  values: { code?: string; password?: string },
+  values: { code?: string; password?: string; securityAnswers?: Array<{ question: string; answer: string }> },
+  /** `askQuestions`: look up the user's security questions on reaching the new-password step (`account.mfa.securityQuestions`). */
+  opts: { askQuestions?: boolean } = {},
 ): Promise<ResetFlowState> {
   const attempt = state.attempt;
   if (!attempt) return state;
@@ -74,7 +88,7 @@ export async function advancePasswordReset(
       break;
     case 'needs_new_password':
       path = `/v1/client/password_resets/${attempt.id}/set_new_password`;
-      body = { password: values.password ?? '' };
+      body = { password: values.password ?? '', ...(values.securityAnswers?.length ? { security_answers: values.securityAnswers } : {}) };
       break;
     default:
       return state;
@@ -91,7 +105,15 @@ export async function advancePasswordReset(
     errors: [],
     busy: false,
     ticket: res.data.ticket ?? null,
+    ...(opts.askQuestions ? await questionsFor(client, res.data.id, res.data.status) : {}),
   };
+}
+
+/** The security questions a reset owes once it reaches the new-password step. */
+async function questionsFor(client: FapiClient, id: string, status: string): Promise<{ securityQuestions?: string[] }> {
+  if (status !== 'needs_new_password') return {};
+  const asked = await getResetSecurityQuestions(client, id);
+  return asked?.required ? { securityQuestions: asked.questions } : {};
 }
 
 /** The step a reset flow is on — what the UI should collect next. */
@@ -118,4 +140,23 @@ export function resetStep(state: ResetFlowState): ResetStep {
     default:
       return 'unknown';
   }
+}
+
+/**
+ * Link mode: check whether the emailed reset link was opened. Resolves the
+ * flow at its current status (`needs_new_password` / `needs_second_factor`
+ * once it was); unchanged while still waiting or when the server can't say.
+ */
+export async function pollPasswordReset(client: FapiClient, state: ResetFlowState, opts: { askQuestions?: boolean } = {}): Promise<ResetFlowState> {
+  const attempt = state.attempt;
+  if (!attempt?.poll_secret) return state;
+  const res = await client.get<ResetAttempt>(
+    `/v1/client/password_resets/${attempt.id}?poll_secret=${encodeURIComponent(attempt.poll_secret)}`,
+  );
+  if (!res.ok || !res.data) return state;
+  return {
+    ...state,
+    attempt: { id: res.data.id, status: res.data.status, poll_secret: attempt.poll_secret },
+    ...(opts.askQuestions ? await questionsFor(client, res.data.id, res.data.status) : {}),
+  };
 }

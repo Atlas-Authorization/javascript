@@ -1,5 +1,30 @@
 # @atlasauth/react-native changelog
 
+## Unreleased
+
+## 0.7.0 — 2026-10-26
+
+### Changed
+
+- `<AtlasProvider>`, the FAPI client and the store carry the bearer client through to policy acceptance flows.
+
+## 0.6.0 — 2026-10-24
+Requires `@atlasauth/js` with policy acceptance.
+- **Policy acceptance** (terms of service, privacy, any policy the app defines).
+  - Hooks: `usePolicies({ combined?, signIn? })` loads the instance's policies into a `PolicyAcceptanceController`
+    (`canSubmit`, `build()`); `usePendingPolicies(result)` builds the controller for a sign-in held at
+    `needs_policy_acceptance`; `usePolicyGate()` is the signed-in re-acceptance state. `useSignUp().signUpWithPassword`
+    takes `policyAcceptances`; `useSignIn().acceptPolicies({ attemptId, acceptances, policyToken })` continues a held
+    attempt. A `FlowResult` held at `needs_policy_acceptance` carries `policyToken` and `pendingPolicies`; so does
+    `completeOAuthRedirect(url)` (from `__atlas_policy_token`).
+  - Components: `<PolicyConsent>` (checkbox, combined or per policy, with an in-app document viewer), `<PolicyClickwrap>`,
+    `<PolicyScrollHost>` / `<PolicyScrollModal>` (unskippable modal: back button swallowed, Accept once the end is seen or
+    the text fits, Decline cancels), `<PolicyAcceptStep>`, `<PolicyGate>` (banner plus re-acceptance), `<PolicyViewer>`,
+    `<PolicyDocument>`. Documents are drawn natively from the server's sanitised HTML (`parsePolicyHtml`), no web view.
+    `strings` overrides any `policy.*` text; `styles` merges styles.
+  - Store: `acceptPolicies`, `loadPolicies`, `policyControllerFor`, `createPolicyGate`, `fapi`. The `*With` hooks
+    (`usePoliciesWith`, `usePendingPoliciesWith`, `usePolicyGateWith`) take an explicit client, for other providers (Expo).
+
 ## 0.5.0
 Requires `@atlasauth/js` 0.9.0.
 - **New `locale?: string`** on `AtlasProviderProps` and `AtlasStoreConfig`: sent as `Accept-Language` on every

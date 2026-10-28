@@ -1,3 +1,4 @@
+import type { PasskeyExtensionResults, PasskeyPrfRequest } from '@atlasauth/js';
 /**
  * The step-flow primitives — `Root`, `Step`, `Action`, `Strategy` — shared by
  * `<SignIn.*>` and `<SignUp.*>`. They are built once here and attached to each
@@ -10,8 +11,9 @@
  * the only thing that decides what shows.
  */
 
-import { useCallback, type ButtonHTMLAttributes, type ReactNode } from 'react';
-import { EMAIL_UNAVAILABLE_MESSAGE } from '@atlasauth/js';
+import { useCallback, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { EMAIL_UNAVAILABLE_MESSAGE, type Policy, type PolicyAcceptanceController } from '@atlasauth/js';
+import { PolicyClickwrap, PolicyConsent, PolicyScrollQueue, usePolicyText } from '@atlasauth/react';
 import { FlowProvider, useFlowContext, useFlowDriver, type FlowContextValue } from './context';
 import { Slot } from './primitives';
 import {
@@ -29,6 +31,14 @@ export interface RootProps {
   /** Where to send the user once the flow completes. Optional. */
   afterUrl?: string;
   /**
+   * Request the WebAuthn `prf` extension in the passkey ceremony (sign-in with
+   * a passkey on `<SignIn.Root>`): a secret derived from the passkey and your
+   * salt, for client-side encryption keys. It never reaches Atlas.
+   */
+  passkeyPrf?: PasskeyPrfRequest;
+  /** Receives the passkey ceremony's client extension results (the PRF outputs). */
+  onPasskeyExtensionResults?: (results: PasskeyExtensionResults) => void;
+  /**
    * Render-prop form: receive the live flow context (attempt, errors, busy, …) so
    * you can drive entirely bespoke markup. Otherwise children are rendered as-is.
    */
@@ -37,8 +47,8 @@ export interface RootProps {
 
 /** Build the `Root` for a flow mode: runs the driver and provides the context. */
 export function makeRoot(mode: FlowMode) {
-  function Root({ afterUrl, children }: RootProps) {
-    const flow = useFlowDriver(mode, { afterUrl });
+  function Root({ afterUrl, passkeyPrf, onPasskeyExtensionResults, children }: RootProps) {
+    const flow = useFlowDriver(mode, { afterUrl, passkeyPrf, onPasskeyExtensionResults });
     return (
       <FlowProvider value={flow}>
         {typeof children === 'function' ? children(flow) : children}
@@ -101,7 +111,7 @@ export function Action({
 
   const props: ButtonHTMLAttributes<HTMLButtonElement> = {
     type: action === 'submit' ? 'submit' : 'button',
-    disabled: action === 'submit' ? flow.busy || rest.disabled : rest.disabled,
+    disabled: action === 'submit' ? flow.busy || flow.policiesSatisfied === false || rest.disabled : rest.disabled,
     ...rest,
     onClick: (event) => {
       rest.onClick?.(event);
@@ -231,5 +241,82 @@ export function Captcha({ asChild, children }: CaptchaProps) {
     <Slot asChild={asChild} props={props} defaultElement={(p) => <div {...p} />}>
       {children}
     </Slot>
+  );
+}
+
+export interface PoliciesRenderProps {
+  /** The state machine: policies, ticks, `build()`. */
+  controller: PolicyAcceptanceController;
+  policies: Policy[];
+  /** Whether the required checkbox policies are all ticked. */
+  satisfied: boolean;
+  /** A policy the user declined and has not retried. */
+  declined: string | null;
+}
+
+export interface PoliciesProps {
+  /**
+   * Render-prop form for fully custom markup. Without it the policies draw as
+   * plain, class-hooked markup: the checkbox block with its in-page viewer and
+   * the clickwrap sentence.
+   */
+  children?: ReactNode | ((props: PoliciesRenderProps) => ReactNode);
+}
+
+/**
+ * The instance's policies (terms, privacy, any policy) for the current step.
+ * On `<SignUp.Step name="start">` it is the create-account policies; on
+ * `<SignIn.Step name="policies">` the policies waiting for acceptance. Renders
+ * nothing when there are none. Scroll-mode policies appear as the unskippable
+ * dialog: on submit at sign-up, at once at sign-in. Gate your submit on
+ * `flow.policiesSatisfied` (the `<Action>` does so itself).
+ */
+export function Policies({ children }: PoliciesProps) {
+  const flow = useFlowContext();
+  const controller = flow.policies;
+  const [declinedHere, setDeclinedHere] = useState(false);
+  const t = usePolicyText();
+  if (!controller || controller.policies.length === 0) return null;
+  const policies = controller.policies;
+  const signIn = flow.mode === 'sign-in';
+  const hasOthers = policies.some((p) => p.display !== 'scroll');
+  const running = signIn ? !declinedHere : !!flow.policyReading;
+  const props: PoliciesRenderProps = {
+    controller,
+    policies,
+    satisfied: flow.policiesSatisfied ?? controller.canSubmit(),
+    declined: flow.policyDeclined ?? null,
+  };
+  return (
+    <>
+      {typeof children === 'function' ? (
+        children(props)
+      ) : (
+        children ?? (
+          <>
+            <PolicyConsent controller={controller} errors={flow.errors} />
+            <PolicyClickwrap controller={controller} />
+            {props.declined ? (
+              <span role="alert" data-atlas-policy-declined="">
+                {t('policy.declined', { policy: props.declined })}
+              </span>
+            ) : null}
+          </>
+        )
+      )}
+      <PolicyScrollQueue
+        controller={controller}
+        running={running}
+        reaccept={signIn}
+        onDone={() => {
+          flow.setPolicyReading?.(false);
+          if (!signIn || !hasOthers) void flow.submit();
+        }}
+        onDecline={(policy) => {
+          setDeclinedHere(true);
+          flow.declinePolicy?.(policy.title);
+        }}
+      />
+    </>
   );
 }

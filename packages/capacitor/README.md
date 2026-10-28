@@ -109,6 +109,23 @@ const secureStore: TokenStore = {
 const atlas = await createAtlasCapacitor({ /* … */ storage: secureStore });
 ```
 
+## Policy acceptance (terms of service, privacy)
+
+The system-browser sign-in (`atlas.signIn()`) happens on Atlas's hosted pages, which already collect the acceptances at sign-up
+and hold a sign-in until a newer version is accepted. For screens in your own WebView:
+
+```ts
+// A custom sign-up form
+const policies = await atlas.policies();
+mountPolicyConsent(consentHost, policies, { t: policyText() });
+// on submit: send policies.build() as policy_acceptances
+
+// A signed-in user whose policies changed
+mountPolicyGate(gateHost, atlas.policyGate(), { onAccepted: () => refresh() });
+```
+
+Pass `locale` to `createAtlasCapacitor` to get translated policy versions.
+
 ## Driving the pieces yourself
 
 The flow is also exposed à la carte: `createPkcePair`, `buildAuthorizeUrl`,

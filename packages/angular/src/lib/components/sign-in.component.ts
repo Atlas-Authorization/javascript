@@ -6,10 +6,11 @@ import {
   OnInit,
   inject,
 } from '@angular/core';
-import { signUp as hostedSignUp } from '@atlasauth/js';
+import { lastUsedMethodLabel, signUp as hostedSignUp } from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
 import { translate } from '../i18n';
 import { AttemptFlowComponent } from './attempt-flow.component';
+import { RecoveryCodesComponent } from './recovery-codes.component';
 import { AtlasFlowController } from './flow-controller';
 
 /**
@@ -26,8 +27,16 @@ import { AtlasFlowController } from './flow-controller';
   selector: 'atlas-sign-in',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AttemptFlowComponent],
+  imports: [AttemptFlowComponent, RecoveryCodesComponent],
   template: `
+    @if (lastUsedLabel(); as label) {
+      <p class="atlas-text atlas-last-used-hint" data-atlas="last-used" [attr.data-atlas-method]="flow.lastMethod()">
+        {{ t('signIn.lastUsed') }}: {{ label }}
+      </p>
+    }
+    @if (flow.recoveryCodes(); as codes) {
+      <atlas-recovery-codes [codes]="codes" [busy]="flow.state().busy" (saved)="flow.saveRecoveryCodes()"></atlas-recovery-codes>
+    } @else {
     <atlas-attempt-flow
       [attempt]="flow.state().attempt"
       [busy]="flow.state().busy"
@@ -37,9 +46,19 @@ import { AtlasFlowController } from './flow-controller';
       [captcha]="flow.captchaDrawn() ? flow.captcha : null"
       [firstFactors]="flow.firstFactors()"
       [preparedFactor]="flow.preparedFactor()"
+      [offerEmailSecondFactor]="flow.settings()?.account?.emailSecondFactor === true"
+      [emailedSecondFactor]="flow.emailSecondFactor()"
       (submitFlow)="flow.submit($event)"
       (chooseFactor)="flow.prepare($event)"
+      [offerSmsSecondFactor]="flow.settings() !== null && flow.mfaChoices().sms"
+      [textedSecondFactor]="flow.smsSecondFactor()"
+      [enrollment]="flow.enrollment"
+      [enrollmentState]="flow.enrollmentState()"
+      (emailSecondFactor)="flow.sendEmailSecondFactor()"
+      (smsSecondFactor)="flow.sendSmsSecondFactor()"
+      (policyDeclined)="flow.declinePolicy($event)"
     ></atlas-attempt-flow>
+    }
     @if (flow.state().attempt?.status !== 'complete' && signUpHref(); as href) {
       <p class="atlas-footer" data-atlas-sign-up-prompt="">
         {{ t('signIn.noAccount') }} <a class="atlas-link" [href]="href">{{ t('signIn.signUpLink') }}</a>
@@ -61,6 +80,12 @@ export class SignInComponent implements OnInit, OnDestroy {
 
   protected t(key: string): string {
     return translate(this.atlas.localization, key);
+  }
+
+  /** "Last used: Password" on the identifier step, when the instance shows the hint. */
+  protected lastUsedLabel(): string | null {
+    if (this.flow.state().attempt) return null;
+    return lastUsedMethodLabel(this.flow.lastMethod(), (key) => this.t(key));
   }
 
   protected signUpHref(): string | null {

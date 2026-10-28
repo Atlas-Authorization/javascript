@@ -1,0 +1,13 @@
+import { Auth0ClientCompat } from '@atlasauth/nextjs/compat';
+
+// TODO(atlas-migrate): AUTH0_CLIENT_ID: server code identifies the instance with ATLAS_SECRET_KEY; the browser uses NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY
+// TODO(atlas-migrate): AUTH0_CLIENT_SECRET: server code uses ATLAS_SECRET_KEY (from the Atlas dashboard)
+// TODO(atlas-migrate): AUTH0_SECRET (cookie encryption): Atlas manages its own session cookies; server code uses ATLAS_SECRET_KEY
+// TODO(atlas-migrate): APP_BASE_URL: not needed; add your app origin to the instance allowed origins in the Atlas dashboard
+export const auth0 = new Auth0ClientCompat({
+  domain: process.env.ATLAS_ISSUER,
+  clientId: process.env.AUTH0_CLIENT_ID,
+  clientSecret: process.env.AUTH0_CLIENT_SECRET,
+  secret: process.env.AUTH0_SECRET,
+  appBaseUrl: process.env.APP_BASE_URL,
+});

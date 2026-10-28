@@ -3,8 +3,12 @@
  * `atlas-upgrade` — the Atlas peer of `@clerk/upgrade`.
  *
  * Two jobs:
- *   1. migrate a Clerk codebase to Atlas (default / `--from clerk` /
- *      `--transform clerk-to-atlas`);
+ *   1. migrate a codebase to Atlas: Clerk (default / `--from clerk` /
+ *      `--transform clerk-to-atlas`), or `--from authjs | supabase | auth0 |
+ *      better-auth | openid-client | jose | generic-oidc | lucia | passport |
+ *      iron-session |
+ *      firebase | cognito | azure-ad-b2c | entra-external-id | appwrite |
+ *      pocketbase | nhost` (the same engine `atlas migrate code` drives);
  *   2. move a project's `@atlasauth/*` dependency ranges across versions
  *      (`--transform version-bump --to <version>`).
  *
@@ -17,6 +21,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { unifiedDiff } from './diff';
+import { formatMigration, MIGRATE_VENDORS, resolveVendor, runMigration } from './migrate';
 import { runClerkToAtlas } from './runner';
 import { bumpAtlasDeps } from './transforms/version-bump';
 
@@ -26,7 +31,12 @@ Usage:
   atlas-upgrade [path] [options]
 
 Options:
-  --from <clerk>          Source SDK to migrate from (currently: clerk).
+  --from <vendor>         Source to migrate from: clerk (default), authjs,
+                          supabase, auth0, better-auth, openid-client,
+                          jose, generic-oidc, lucia, passport,
+                          iron-session, firebase,
+                          cognito, azure-ad-b2c, entra-external-id,
+                          appwrite, pocketbase, nhost.
   --transform <name>      clerk-to-atlas (default) | version-bump
   --to <version>          Target version for version-bump (default: latest).
   --dry                   Print a diff and write nothing.
@@ -135,10 +145,12 @@ export function main(argv: string[], env: MainEnv = {}): number {
     return runVersionBump(target, cli.to ?? 'latest', write, log);
   }
   if (transform === 'clerk-to-atlas') {
-    if (cli.from && cli.from !== 'clerk') {
-      log.error(`atlas-upgrade: unsupported --from '${cli.from}' (only 'clerk').`);
+    const vendor = cli.from ? resolveVendor(cli.from) : 'clerk';
+    if (!vendor) {
+      log.error(`atlas-upgrade: unsupported --from '${cli.from}' (one of: ${MIGRATE_VENDORS.join(', ')}).`);
       return 1;
     }
+    if (vendor !== 'clerk') return runVendor(target, vendor, write, log);
     return runCodemod(target, write, cli.dry, log);
   }
 
@@ -169,6 +181,19 @@ function runCodemod(target: string, write: boolean, dry: boolean, log: Logger): 
   if (!write && result.filesChanged > 0) {
     log.log('  (dry run — nothing was written; re-run with --yes to apply)');
   }
+  return 0;
+}
+
+function runVendor(target: string, vendor: Exclude<ReturnType<typeof resolveVendor>, undefined>, write: boolean, log: Logger): number {
+  const result = runMigration(target, { from: vendor, write });
+  for (const change of result.changes) {
+    if (write) log.log(`  updated ${change.path}`);
+    else {
+      log.log(unifiedDiff(change.before, change.after, change.path));
+      log.log('');
+    }
+  }
+  for (const line of formatMigration(result, { written: write, command: 'atlas-upgrade' })) log.log(line);
   return 0;
 }
 

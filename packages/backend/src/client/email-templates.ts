@@ -14,7 +14,26 @@ export type EmailTemplateName =
   | 'account_locked'
   | 'account_secured'
   | 'team_member_added'
-  | 'team_role_changed';
+  | 'team_role_changed'
+  | 'email_changed'
+  | 'email_change_confirm'
+  | 'parental_consent_request'
+  | 'phone_changed'
+  | 'identity_linked'
+  | 'identity_unlinked'
+  | 'passkey_added'
+  | 'passkey_removed'
+  | 'recovery_codes_regenerated'
+  | 'factor_removed'
+  | 'device_key_added'
+  | 'device_key_removed'
+  | 'uma_request_submitted'
+  | 'risk_alert'
+  | 'account_unblock'
+  | 'impersonation_alert'
+  | 'verification_link'
+  | 'password_reset_link'
+  | 'account_reactivated';
 
 /** The customizable body of a template: a subject line and a text body. */
 export interface EmailTemplateBody {

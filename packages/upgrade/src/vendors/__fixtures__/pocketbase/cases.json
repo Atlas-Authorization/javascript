@@ -1,0 +1,18 @@
+[
+  {
+    "name": "client",
+    "path": "src/lib/pocketbase.ts",
+    "envStyle": "vite",
+    "manual": [
+      "collection('users').authWithPassword(): credentials are collected on the Atlas sign-in page",
+      "collection('users').create(): if this is sign-up",
+      "PocketBase API rules that check @request.auth"
+    ]
+  },
+  {
+    "name": "hooks-server",
+    "path": "src/hooks.server.ts",
+    "envStyle": "vite",
+    "manual": ["pb.authStore.loadFromCookie(): Atlas keeps its own session cookie", "pb.authStore.exportToCookie(): Atlas keeps its own session cookie"]
+  }
+]

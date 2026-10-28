@@ -71,13 +71,13 @@ function readHeader(headers: HeadersLike, name: string): string | undefined {
  * secret rotates, Atlas signs with the old and the new secret). Entries of
  * another version are skipped, so a future scheme never breaks this verifier.
  */
-function parseSignatures(header: string): string[] {
+function parseSignatures(header: string, version: string = SIGNATURE_VERSION): string[] {
   const out: string[] = [];
   for (const entry of header.trim().split(/\s+/)) {
     const comma = entry.indexOf(',');
     if (comma <= 0) continue;
     const value = entry.slice(comma + 1);
-    if (entry.slice(0, comma) === SIGNATURE_VERSION && value) out.push(value);
+    if (entry.slice(0, comma) === version && value) out.push(value);
   }
   return out;
 }
@@ -95,6 +95,14 @@ export interface VerifyWebhookInput {
   now?: Date;
   /** Override the ±replay tolerance (defaults to 5 minutes). */
   toleranceMs?: number;
+  /**
+   * The exact URL Atlas POSTed to (your endpoint's `url`). When given, `v2`
+   * signature entries — which also cover the URL, for endpoints with
+   * `signature_versions` including `v2` — are checked too.
+   */
+  url?: string;
+  /** Accept only a `v2` entry (needs `url`): a delivery replayed to another URL then fails. */
+  requireV2?: boolean;
 }
 
 /**
@@ -123,8 +131,9 @@ export function verifyWebhook<T = unknown>(input: VerifyWebhookInput): WebhookVe
   const signature = readHeader(input.headers, ATLAS_WEBHOOK_HEADERS.signature);
   if (!id || !timestampRaw || !signature) return { verified: false, reason: 'missing_headers' };
 
-  const provided = parseSignatures(signature);
-  if (provided.length === 0) return { verified: false, reason: 'malformed_signature' };
+  const provided = input.requireV2 ? [] : parseSignatures(signature);
+  const providedV2 = input.url ? parseSignatures(signature, 'v2') : [];
+  if (provided.length === 0 && providedV2.length === 0) return { verified: false, reason: 'malformed_signature' };
 
   const timestamp = Number(timestampRaw);
   const now = (input.now ?? new Date()).getTime();
@@ -143,6 +152,15 @@ export function verifyWebhook<T = unknown>(input: VerifyWebhookInput): WebhookVe
   for (const candidate of provided) {
     const a = Buffer.from(candidate);
     if (a.length === expected.length && timingSafeEqual(a, expected)) matched = true;
+  }
+  if (input.url) {
+    const expectedV2 = Buffer.from(
+      createHmac('sha256', input.secret).update(`${id}.${timestamp}.${input.url}.${raw}`).digest('base64'),
+    );
+    for (const candidate of providedV2) {
+      const a = Buffer.from(candidate);
+      if (a.length === expectedV2.length && timingSafeEqual(a, expectedV2)) matched = true;
+    }
   }
   if (!matched) return { verified: false, reason: 'signature_mismatch' };
 

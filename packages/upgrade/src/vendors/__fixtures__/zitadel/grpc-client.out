@@ -1,0 +1,6 @@
+// TODO(atlas-migrate): 'createUserServiceClient' from '@zitadel/client/v2': ZITADEL API client: the Atlas Backend API (createAtlasClient from @atlasauth/backend) replaces its user, session and organization services
+import { createUserServiceClient } from '@zitadel/client/v2';
+// TODO(atlas-migrate): 'createServerTransport' from '@zitadel/client/node': ZITADEL API client: the Atlas Backend API (createAtlasClient from @atlasauth/backend) replaces its user, session and organization services
+import { createServerTransport } from '@zitadel/client/node';
+
+export const users = createUserServiceClient(createServerTransport('token', { baseUrl: 'https://acme.zitadel.cloud' }));

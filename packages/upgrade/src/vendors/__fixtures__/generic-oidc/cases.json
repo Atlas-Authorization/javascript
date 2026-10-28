@@ -1,0 +1,1 @@
+[{"name":"oidc","path":"src/auth/oidc.ts","manual":["OIDC discovery by hand","PKCE by hand","code exchange by hand","logout URL by hand"]},{"name":"plain","path":"src/math.ts","unchanged":true}]

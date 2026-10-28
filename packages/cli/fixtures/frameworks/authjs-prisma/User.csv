@@ -1,0 +1,5 @@
+id,name,email,emailVerified,image,password
+clu1ada,Ada Lovelace,Ada@Example.com,2025-03-01 10:00:00+00,https://avatars.example.com/ada.png,$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
+clu2grace,Grace Hopper,grace@example.com,,,
+clu3noemail,Anon,,,,
+clu4plain,Plain Text,plain@example.com,,,hunter2

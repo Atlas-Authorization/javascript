@@ -1,0 +1,16 @@
+import Keycloak from 'keycloak-js';
+
+const keycloak = new Keycloak({
+  url: import.meta.env.VITE_KEYCLOAK_URL,
+  realm: 'acme',
+  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID,
+});
+
+export async function signIn() {
+  await keycloak.init({ onLoad: 'check-sso' });
+  await keycloak.login();
+}
+
+export function signOut() {
+  return keycloak.logout();
+}

@@ -7,14 +7,21 @@ import {
   inject,
 } from '@angular/core';
 import {
+  awaitingSignUpLink,
+  enrollmentSubmitKey,
+  groupSetupKey,
   localizedErrorMessage,
   nextStep,
   type AttemptView,
   type CaptchaController,
   type FieldError,
+  type MfaEnrollmentController,
+  type MfaEnrollmentState,
+  type MfaEnrollmentStrategy,
 } from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
 import { AtlasCaptchaSlotDirective } from '../directives/captcha-slot.directive';
+import { PolicyAcceptStepComponent } from './policy-host';
 import { classFor, type ElementKey } from '../appearance';
 import { translate } from '../i18n';
 
@@ -45,7 +52,7 @@ interface StepField {
   selector: 'atlas-attempt-flow',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AtlasCaptchaSlotDirective],
+  imports: [AtlasCaptchaSlotDirective, PolicyAcceptStepComponent],
   template: `
     <div [class]="cls('card', 'atlas-card')">
       <h1 [class]="cls('headerTitle', 'atlas-title')">{{ t(titleKey) }}</h1>
@@ -57,6 +64,98 @@ interface StepField {
       <form (submit)="onSubmit($event)">
         @if (codeSentText(); as sentText) {
           <p class="atlas-text" data-atlas-code-sent="">{{ sentText }}</p>
+        }
+        @if (linkOnly()) {
+          <!-- Nothing to type: the flow polls until the emailed link is opened (anywhere). -->
+          <p class="atlas-text" data-atlas-link-sent="" aria-live="polite">
+            {{ t('signUp.linkSentTo', { email: attempt?.identifier ?? '' }) }}
+          </p>
+          <button
+            [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+            type="button"
+            data-atlas-resend=""
+            [disabled]="busy"
+            (click)="resend.emit()"
+          >
+            {{ t('signIn.resendLink') }}
+          </button>
+        }
+        @if (enrolling() && enrollmentState; as enrol) {
+          @if (enrol.method === null) {
+            <p class="atlas-text">{{ t('mfa.enrollChoose') }}</p>
+            @for (m of enrol.options; track m) {
+              <button
+                [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+                type="button"
+                [attr.data-atlas-mfa-method]="m"
+                [disabled]="busy || enrol.busy"
+                (click)="chooseMethod(m)"
+              >
+                {{ t(m === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption') }}
+              </button>
+            }
+          } @else if (enrol.method === 'totp') {
+            @if (enrol.enrollment; as setup) {
+              <p class="atlas-text">{{ t('mfa.enrollScan') }}</p>
+              @if (setup.qrCode) {
+                <img class="atlas-mfa-qr" data-atlas="mfa-qr" [src]="setup.qrCode" [alt]="t('mfa.enrollQrAlt')" width="180" height="180" />
+              }
+              @if (setup.secret) {
+                <p class="atlas-text" data-atlas="mfa-setup-key">{{ t('mfa.enrollSetupKey') }}: <code>{{ setupKey(setup.secret) }}</code></p>
+              }
+              <label class="atlas-field">
+                <span>{{ t('mfa.enrollFirstCodeLabel') }}</span>
+                <input [class]="cls('formFieldInput', 'atlas-input')" type="text" name="code" autocomplete="one-time-code" inputmode="numeric" [value]="values['code'] ?? ''" (input)="setValue('code', $any($event.target).value)" />
+              </label>
+              @if (enrol.totpCodes >= 2) {
+                <label class="atlas-field">
+                  <span>{{ t('mfa.enrollSecondCodeLabel') }}</span>
+                  <input [class]="cls('formFieldInput', 'atlas-input')" type="text" name="secondCode" autocomplete="one-time-code" inputmode="numeric" [value]="values['secondCode'] ?? ''" (input)="setValue('secondCode', $any($event.target).value)" />
+                </label>
+              }
+            } @else {
+              <p class="atlas-text" aria-live="polite">{{ enrol.busy ? t('mfa.enrollPreparing') : '' }}</p>
+            }
+          } @else {
+            @if (enrol.enrollment; as texted) {
+              <p class="atlas-text" data-atlas="mfa-code-texted" aria-live="polite">{{ t('mfa.codeTextedTo', { phone: texted.phone ?? '' }) }}</p>
+              <label class="atlas-field">
+                <span>{{ t('mfa.codeLabel') }}</span>
+                <input [class]="cls('formFieldInput', 'atlas-input')" type="text" name="code" autocomplete="one-time-code" inputmode="numeric" [value]="values['code'] ?? ''" (input)="setValue('code', $any($event.target).value)" />
+              </label>
+              <button
+                [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+                type="button"
+                data-atlas-resend=""
+                [disabled]="busy || enrol.busy"
+                (click)="resendEnrollment()"
+              >
+                {{ t('signIn.resendCode') }}
+              </button>
+            } @else {
+              <label class="atlas-field">
+                <span>{{ t('mfa.phoneLabel') }}</span>
+                <input [class]="cls('formFieldInput', 'atlas-input')" type="tel" name="phone" autocomplete="tel" [value]="values['phone'] ?? ''" (input)="setValue('phone', $any($event.target).value)" />
+              </label>
+              <p class="atlas-text">{{ t('mfa.phoneHint') }}</p>
+            }
+          }
+          @for (error of enrol.errors; track $index) {
+            <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ error.message }}</p>
+          }
+          @if (enrol.method !== null && enrol.options.length > 1) {
+            @for (other of otherMethods(enrol); track other) {
+              <button
+                [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+                type="button"
+                [attr.data-atlas-mfa-method]="other"
+                [disabled]="busy || enrol.busy"
+                (click)="chooseMethod(other)"
+              >
+                {{ t(other === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption') }}
+              </button>
+            }
+          }
         }
         @for (f of fields(); track $index) {
           @if (f.kind === 'input') {
@@ -80,14 +179,66 @@ interface StepField {
           }
         }
 
+        @if (awaitingPolicies()) {
+          <!-- A required policy changed: scroll-mode ones in their dialog, the rest as checkboxes. -->
+          <atlas-policy-accept-step
+            [attempt]="attempt"
+            [busy]="busy"
+            (submitFlow)="submitFlow.emit($event)"
+            (declined)="policyDeclined.emit($event)"
+          ></atlas-policy-accept-step>
+        }
+
         @if (showCaptcha()) {
           <div class="atlas-captcha" data-atlas-captcha="" [atlasCaptchaSlot]="captcha"></div>
         }
 
         @if (showSubmit()) {
-          <button [class]="cls('formButtonPrimary', 'atlas-button')" [disabled]="busy" type="submit">
-            {{ t('signIn.submit') }}
+          <button [class]="cls('formButtonPrimary', 'atlas-button')" [disabled]="busy || (enrolling() && !!enrollmentState?.busy)" type="submit">
+            {{ t(submitKey()) }}
           </button>
+        }
+
+        @if (showSmsSecondFactor()) {
+          @if (smsSecondFactorSentTo(); as sentTo) {
+            <p class="atlas-text" data-atlas="sms-second-factor-sent" aria-live="polite">
+              {{ t('mfa.codeTextedTo', { phone: sentTo }) }}
+            </p>
+          } @else {
+            <button
+              [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+              type="button"
+              data-atlas="sms-second-factor"
+              [disabled]="busy || !!textedSecondFactor?.busy"
+              (click)="smsSecondFactor.emit()"
+            >
+              {{ textedSecondFactor?.busy ? t('signIn.sending') : t('mfa.smsCodeOption') }}
+            </button>
+            @if (textedSecondFactor?.error; as message) {
+              <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ message }}</p>
+            }
+          }
+        }
+
+        @if (showEmailSecondFactor()) {
+          @if (emailSecondFactorSentTo(); as sentTo) {
+            <p class="atlas-text" data-atlas="email-second-factor-sent" aria-live="polite">
+              {{ t('signIn.codeSentTo', { email: sentTo }) }}
+            </p>
+          } @else {
+            <button
+              [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+              type="button"
+              data-atlas="email-second-factor"
+              [disabled]="busy || !!emailedSecondFactor?.busy"
+              (click)="emailSecondFactor.emit()"
+            >
+              {{ emailedSecondFactor?.busy ? t('signIn.sending') : t('signIn.emailCodeOption') }}
+            </button>
+            @if (emailedSecondFactor?.error; as message) {
+              <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ message }}</p>
+            }
+          }
         }
 
         @if (showEmailCodeOption()) {
@@ -134,6 +285,40 @@ export class AttemptFlowComponent {
   @Output() submitFlow = new EventEmitter<Record<string, string>>();
   /** Emits when the user picks a first factor the server must send first (an emailed code). */
   @Output() chooseFactor = new EventEmitter<'email_code'>();
+  /**
+   * Offer "Email me a code instead" at the second factor (the instance's
+   * `account.emailSecondFactor`); `emailSecondFactor` asks for it and
+   * `emailedSecondFactor` reports how it went.
+   */
+  @Input() offerEmailSecondFactor = false;
+  /** `AtlasFlowController.emailSecondFactor()`: in flight, where it went, or why not. */
+  @Input() emailedSecondFactor: { busy?: boolean; sentTo?: string; error?: string } | null = null;
+  @Output() emailSecondFactor = new EventEmitter<void>();
+  /**
+   * Offer "Text me a code instead" at the second factor (where the app offers
+   * texted codes, `AtlasFlowController.mfaChoices().sms`); `smsSecondFactor`
+   * asks for it and `textedSecondFactor` reports how it went.
+   */
+  @Input() offerSmsSecondFactor = false;
+  /** `AtlasFlowController.smsSecondFactor()`: in flight, where it went, or why not. */
+  @Input() textedSecondFactor: { busy?: boolean; sentTo?: string; error?: string } | null = null;
+  @Output() smsSecondFactor = new EventEmitter<void>();
+  /**
+   * The MFA enrolment step (`AtlasFlowController.enrollment` and
+   * `enrollmentState()`): the authenticator app's QR code and setup key, or a
+   * texted code. Null: the step asks for two authenticator codes only.
+   */
+  @Input() enrollment: MfaEnrollmentController | null = null;
+  @Input() enrollmentState: MfaEnrollmentState | null = null;
+  /**
+   * The instance's `account.emailVerification`. On `link` a sign-up's
+   * verification step has nothing to type: it says to open the emailed link
+   * while the flow polls, and offers a resend (`resend`).
+   */
+  @Input() emailVerification: string = 'code';
+  @Output() resend = new EventEmitter<void>();
+  /** The user declined a policy the sign-in was waiting on (`needs_policy_acceptance`): cancel the attempt. */
+  @Output() policyDeclined = new EventEmitter<string>();
 
   protected values: Record<string, string> = {};
 
@@ -158,7 +343,51 @@ export class AttemptFlowComponent {
 
   protected onSubmit(event: Event): void {
     event.preventDefault();
+    // Enrolment: text the code to the typed number, or confirm the factor.
+    if (this.enrolling() && this.enrollment) {
+      void this.enrollment.submit(this.values).then((next) => {
+        if (next) this.submitFlow.emit(next);
+      });
+      return;
+    }
     this.submitFlow.emit(this.values);
+  }
+
+  /** The shared enrolment step is drawn (a controller was passed and the flow is enrolling). */
+  protected enrolling(): boolean {
+    return this.step().kind === 'enroll_second_factor' && !!this.enrollment && !!this.enrollmentState;
+  }
+
+  protected chooseMethod(method: MfaEnrollmentStrategy): void {
+    this.values = {};
+    void this.enrollment?.choose(method);
+  }
+
+  protected resendEnrollment(): void {
+    void this.enrollment?.resend();
+  }
+
+  protected otherMethods(state: MfaEnrollmentState): MfaEnrollmentStrategy[] {
+    return state.options.filter((m) => m !== state.method);
+  }
+
+  protected setupKey(secret: string): string {
+    return groupSetupKey(secret);
+  }
+
+  /** The submit button's label key (enrolment: "Text me a code" before the number is sent). */
+  protected submitKey(): string {
+    return (this.enrolling() && this.enrollmentState && enrollmentSubmitKey(this.enrollmentState)) || 'signIn.submit';
+  }
+
+  protected showSmsSecondFactor(): boolean {
+    return this.offerSmsSecondFactor && this.step().kind === 'collect_second_factor';
+  }
+
+  /** Where the texted second-factor code went (masked), once it was sent. */
+  protected smsSecondFactorSentTo(): string | null {
+    const sent = this.textedSecondFactor?.sentTo;
+    return typeof sent === 'string' ? sent || ' ' : null;
   }
 
   protected formErrors(): FieldError[] {
@@ -185,6 +414,20 @@ export class AttemptFlowComponent {
     return this.firstFactors ?? step.strategies;
   }
 
+  protected linkOnly(): boolean {
+    return awaitingSignUpLink(this.attempt, this.emailVerification);
+  }
+
+  protected showEmailSecondFactor(): boolean {
+    return this.offerEmailSecondFactor && this.step().kind === 'collect_second_factor';
+  }
+
+  /** Where the emailed second-factor code went (masked), once it was sent. */
+  protected emailSecondFactorSentTo(): string | null {
+    const sent = this.emailedSecondFactor?.sentTo;
+    return typeof sent === 'string' ? sent || ' ' : null;
+  }
+
   protected showEmailCodeOption(): boolean {
     // Before the code is sent: the choice (or the retry of a failed automatic
     // send). After: "Resend code".
@@ -197,12 +440,20 @@ export class AttemptFlowComponent {
     return this.t('signIn.codeSentTo', { email: this.attempt?.identifier ?? '' });
   }
 
+  /** The attempt is `needs_policy_acceptance`. */
+  protected awaitingPolicies(): boolean {
+    return this.step().kind === 'accept_policies';
+  }
+
   protected showSubmit(): boolean {
     const kind = this.step().kind;
     // Nothing to submit on a first-factor step that only offers an emailed code
     // until that code is sent.
     if (kind === 'collect_first_factor') return this.fields().length > 0;
-    return kind !== 'done' && kind !== 'await_oauth';
+    if (this.linkOnly()) return false;
+    // Enrolment: nothing to submit while choosing a method or fetching the setup.
+    if (this.enrolling() && this.enrollmentState && !enrollmentSubmitKey(this.enrollmentState)) return false;
+    return kind !== 'done' && kind !== 'await_oauth' && kind !== 'accept_policies';
   }
 
   protected fields(): StepField[] {
@@ -224,6 +475,8 @@ export class AttemptFlowComponent {
       case 'collect_second_factor':
         return [{ kind: 'input', name: 'code', labelKey: 'mfa.codeLabel', type: 'text' }];
       case 'enroll_second_factor':
+        // The shared enrolment step draws its own fields (above).
+        if (this.enrolling()) return [];
         // Two consecutive codes (§5.6): a phone with a fast clock fails here
         // rather than on every sign-in afterwards.
         return [
@@ -231,9 +484,12 @@ export class AttemptFlowComponent {
           { kind: 'input', name: 'secondCode', labelKey: 'mfa.enrollSecondCodeLabel', type: 'text' },
         ];
       case 'collect_email_code':
-        return [{ kind: 'input', name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
+        return this.linkOnly() ? [] : [{ kind: 'input', name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
       case 'collect_new_password':
         return [{ kind: 'input', name: 'password', labelKey: 'reset.newPasswordLabel', type: 'password' }];
+      case 'accept_policies':
+        // Drawn by <atlas-policy-accept-step> above.
+        return [];
       case 'collect_captcha':
         // §5 the server withheld the attempt until a captcha clears. Solving the
         // widget resubmits the identifier on its own; the button retries.

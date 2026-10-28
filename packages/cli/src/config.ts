@@ -12,6 +12,18 @@ import { CliError } from './errors';
 export interface Profile {
   api_url: string;
   secret_key: string;
+  /** When `secret_key` is a one-hour token (from `atlas login --device`), when it expires (Unix ms). */
+  expires_at?: number;
+  /** The resource the short-lived token is bound to (`ins_…`, `app_…`, `acct_…`). */
+  resource?: string;
+  scope?: string;
+  /**
+   * The operator token from `atlas login --device` (short-lived, Unix-ms expiry):
+   * `atlas token` swaps it for resource-bound tokens. Never a long-lived key.
+   */
+  operator?: { access_token: string; expires_at: number; issuer: string };
+  /** Atlas's own (staff) account id, remembered for `atlas admin` once given. */
+  staff_account_id?: string;
 }
 
 /** The whole config file: named profiles plus which one is active. */

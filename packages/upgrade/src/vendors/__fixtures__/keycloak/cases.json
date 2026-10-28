@@ -1,0 +1,42 @@
+[
+  {
+    "name": "react-provider",
+    "path": "src/main.tsx",
+    "envStyle": "vite",
+    "manual": [
+      "removed provider props with no Atlas counterpart: authClient, initOptions"
+    ]
+  },
+  {
+    "name": "keycloak-js",
+    "path": "src/keycloak.ts",
+    "envStyle": "vite",
+    "manual": [
+      "new Keycloak(config): the Keycloak client",
+      "keycloak.login(): <SignInButton />",
+      "keycloak.logout(): useAuth().signOut()"
+    ]
+  },
+  {
+    "name": "keycloak-connect",
+    "path": "server/auth.ts",
+    "envStyle": "node",
+    "manual": [
+      "Keycloak (keycloak-connect): replace keycloak.middleware()",
+      "KEYCLOAK_URL: the Keycloak server URL"
+    ]
+  },
+  {
+    "name": "authjs-provider",
+    "path": "auth.config.ts",
+    "manual": [
+      "Keycloak provider (Auth.js)",
+      "AUTH_KEYCLOAK_ID: the Auth.js Keycloak provider setting"
+    ]
+  },
+  {
+    "name": "plain",
+    "path": "src/math.ts",
+    "unchanged": true
+  }
+]

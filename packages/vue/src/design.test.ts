@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApp, h } from 'vue';
-import { resolveDesign } from '@atlasauth/design';
+import { adoptedCss, resolveDesign } from '@atlasauth/design';
+
+/** The design stylesheet: a <style> element, or a constructable sheet where the DOM supports them. */
+const designCss = (key: string | null) =>
+  document.head.querySelector(`style[data-atlas-design="${key}"]`)?.textContent ?? adoptedCss(document, `design:${key}`);
 import { cssVariables, renderAppearance, resolveTokens } from './appearance';
 import { createAtlas } from './plugin';
 
@@ -51,8 +55,7 @@ describe('appearance design support (same semantics as @atlasauth/react)', () =>
     const root = document.documentElement;
     const key = root.getAttribute('data-atlas-design');
     expect(key).toBeTruthy();
-    const style = document.head.querySelector(`style[data-atlas-design="${key}"]`);
-    expect(style?.textContent).toContain(resolveDesign({ preset: 'midnight' }).palette.primary);
+    expect(designCss(key)).toContain(resolveDesign({ preset: 'midnight' }).palette.primary);
   });
 
   it('adopts the dashboard design, with code overrides winning', async () => {
@@ -74,8 +77,8 @@ describe('appearance design support (same semantics as @atlasauth/react)', () =>
     await flush();
     await flush();
     const key = document.documentElement.getAttribute('data-atlas-design');
-    const css = document.head.querySelector(`style[data-atlas-design="${key}"]`)?.textContent ?? '';
-    expect(css).toContain(`--atlas-color-primary:${resolved.palette.primary}`);
+    const css = designCss(key);
+    expect(css).toContain(`--atlas-color-primary:var(--atlas-host-accent,${resolved.palette.primary})`);
     expect(css).toContain('--atlas-color-accent:#123456');
     expect(document.head.querySelector('link[data-atlas-font]')?.getAttribute('href')).toBe(
       '/v1/design/fonts/inter.css',

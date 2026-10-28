@@ -1,0 +1,7 @@
+// TODO(atlas-migrate): node-appwrite Users: use the Atlas Backend API (@atlasauth/backend users.*); move existing users with `atlas migrate export appwrite`
+import { Client, Users, Databases } from 'node-appwrite';
+
+const client = new Client().setEndpoint('https://cloud.appwrite.io/v1').setProject('proj').setKey(process.env.APPWRITE_KEY!);
+
+export const users = new Users(client);
+export const db = new Databases(client);

@@ -29,10 +29,10 @@
  * ```
  */
 
-import { Action, Captcha, EmailUnavailable, Step, Strategy, makeOauthButton, makeRoot } from './flow-parts';
+import { Action, Captcha, EmailUnavailable, Policies, Step, Strategy, makeOauthButton, makeRoot } from './flow-parts';
 
 export const Root = makeRoot('sign-up');
-export { Step, Action, Strategy, Captcha, EmailUnavailable };
+export { Step, Action, Strategy, Captcha, EmailUnavailable, Policies };
 
 /** A per-provider social sign-up button (the `oauth_<provider>` strategy). */
 export const Connection = makeOauthButton();

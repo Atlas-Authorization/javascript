@@ -48,6 +48,11 @@ atlas init     --product <name> [--domain <d>] [--instance-env development|produ
 atlas preflight [--instance <id> | --product <name>] [--fail-on error|warning]
 atlas env      --product <name> --format dotenv|coolify|vercel
 atlas client   rotate <client-id> [--now | --overlap <seconds>]
+atlas import   --from <vendor> <export-file> [--dry-run]
+atlas migrate  code --from <clerk|authjs|supabase|auth0|better-auth> [path] [--yes]
+atlas info     [path]
+atlas actions  list | deploy <file> | test <file> | gallery [query] | show <slug>
+               | install <slug> [--secrets-file f] | installs | update <id> | publish <template.json>
 ```
 
 Every command takes `--json` for raw JSON (otherwise a human table). Paginated

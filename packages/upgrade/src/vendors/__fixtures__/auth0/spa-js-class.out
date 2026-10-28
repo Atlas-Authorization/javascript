@@ -1,0 +1,22 @@
+import { Auth0CompatClient, Auth0CompatError } from '@atlasauth/js/compat';
+import type { Auth0CompatTokenOptions } from '@atlasauth/js/compat';
+
+const client = new Auth0CompatClient({
+  frontendApi: import.meta.env.VITE_ATLAS_FRONTEND_API!,
+  publishableKey: import.meta.env.VITE_ATLAS_PUBLISHABLE_KEY!,
+  authorizationParams: { audience: 'https://api.acme.test', scope: 'openid profile read:orders' },
+});
+
+export async function token(opts?: Auth0CompatTokenOptions) {
+  try {
+    return await client.getTokenSilently(opts);
+  } catch (err) {
+    if (err instanceof Auth0CompatError && err.error === 'login_required') await client.loginWithRedirect();
+    throw err;
+  }
+}
+
+export async function exchange(subjectToken: string) {
+  // TODO(atlas-migrate): exchangeToken(): custom token exchange: use Atlas sign-in tokens (@atlasauth/backend signInTokens) or an Actions-based flow
+  return client.exchangeToken({ subject_token: subjectToken, subject_token_type: 'urn:acme:legacy', audience: 'https://api.acme.test' });
+}

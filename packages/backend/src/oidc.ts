@@ -1,6 +1,7 @@
 import { createLocalJWKSet, errors as joseErrors, jwtVerify, type JWTPayload } from 'jose';
 import { createPkcePair } from './handshake';
 import { JwksCache } from './jwks-cache';
+import { ATLAS_SIGNING_ALGS } from './algs';
 
 /**
  * Server-side OpenID Connect relying party for the hosted-redirect integration.
@@ -23,7 +24,7 @@ import { JwksCache } from './jwks-cache';
  *    minute so a burst of callbacks cannot become an outbound request flood),
  *    the code exchange with the client's authentication method, and the JWKS
  *    (the package's rate-limited kid-miss cache).
- *  - ID-token verification with the algorithm PINNED to RS256 (so `alg: none`
+ *  - ID-token verification with the algorithm PINNED to RS256 or ES256 (so `alg: none`
  *    and HS* confusion are refused), `iss` exact, `aud` containing the client id
  *    (and `azp` equal to it when there are several audiences or an `azp` at all),
  *    `nonce` equal to the cookie's, `exp`/`iat` with a small tolerance, and
@@ -117,6 +118,12 @@ export interface OidcStartOptions extends OidcBaseOptions {
   /** Sent as `audience_hint`. */
   audienceHint?: string;
   /**
+   * Sent as `organization`: the organization (id or slug) the sign-in must be
+   * made in. The user has to be a member (else the callback fails with
+   * `access_denied`); the identity's `organization` is then that org.
+   */
+  organization?: string;
+  /**
    * Any other authorize parameters. They cannot override the ones this helper
    * owns (`response_type`, `client_id`, `redirect_uri`, `state`, `nonce`,
    * `code_challenge`, `code_challenge_method`).
@@ -181,6 +188,7 @@ export async function oidcStart(options: OidcStartOptions): Promise<OidcStartRes
   if (options.prompt) url.searchParams.set('prompt', options.prompt);
   if (options.loginHint) url.searchParams.set('login_hint', options.loginHint);
   if (options.audienceHint) url.searchParams.set('audience_hint', options.audienceHint);
+  if (options.organization) url.searchParams.set('organization', options.organization);
 
   const payload: FlowPayload = {
     s: state,
@@ -230,6 +238,101 @@ export interface OidcCallbackOptions extends OidcBaseOptions {
   clockToleranceSec?: number;
 }
 
+/** The organization a sign-in was made in (the ID token's `org_*` claims). */
+export interface OidcOrganization {
+  /** `org_id` */
+  id: string;
+  /** `org_slug` */
+  slug: string;
+  /** `org_role`: the user's role key in it. */
+  role: string;
+  /** `org_permissions` */
+  permissions: string[];
+}
+
+/** One entry of the `orgs` claim (the `organizations` scope). */
+export interface OidcOrganizationMembership {
+  id: string;
+  slug: string;
+  role: string;
+}
+
+/** The enterprise SSO context of a sign-in (the ID token's `sso_*` claims). */
+export interface OidcSsoContext {
+  /** `sso_connection_id`: the connection the user signed in through. */
+  connectionId: string;
+  /**
+   * `sso_organization_id`: the Atlas organization that owns the connection, or
+   * null for an instance-wide connection. Independent of `organization`: scope a
+   * per-organization "require SSO" rule on this, never on "signed in via SSO".
+   */
+  organizationId: string | null;
+  /** `sso_connection_type`: the connection protocol. */
+  type: 'saml' | 'oidc' | null;
+  /** `sso_tenant_id`: the IdP-side tenant (Entra `tid`, Google `hd`, SAML entity id), when known. */
+  tenantId: string | null;
+  /** `sso_issuer`: the IdP issuer, when known. */
+  issuer: string | null;
+  /** `sso_domain`: the connection domain matching the user's email. */
+  domain: string | null;
+}
+
+/** The Atlas-specific claims an Atlas ID token can carry, beyond the OIDC standard ones. */
+export interface AtlasIdTokenClaims {
+  account_status?: 'active' | 'suspended' | 'banned';
+  org_id?: string;
+  org_slug?: string;
+  org_role?: string;
+  org_permissions?: string[];
+  orgs?: OidcOrganizationMembership[];
+  sso_connection_id?: string;
+  sso_organization_id?: string;
+  sso_connection_type?: 'saml' | 'oidc';
+  sso_tenant_id?: string;
+  sso_issuer?: string;
+  sso_domain?: string;
+}
+
+/** Read the organization (`org_*`) from verified ID-token or userinfo claims. */
+export function oidcOrganizationOf(claims: Record<string, unknown>): OidcOrganization | null {
+  if (typeof claims.org_id !== 'string') return null;
+  return {
+    id: claims.org_id,
+    slug: typeof claims.org_slug === 'string' ? claims.org_slug : '',
+    role: typeof claims.org_role === 'string' ? claims.org_role : '',
+    permissions: Array.isArray(claims.org_permissions)
+      ? claims.org_permissions.filter((p): p is string => typeof p === 'string')
+      : [],
+  };
+}
+
+/** Read the `orgs` membership list (the `organizations` scope) from claims. */
+export function oidcOrganizationsOf(claims: Record<string, unknown>): OidcOrganizationMembership[] | null {
+  if (!Array.isArray(claims.orgs)) return null;
+  return claims.orgs
+    .filter((o): o is Record<string, unknown> => typeof o === 'object' && o !== null)
+    .filter((o) => typeof o.id === 'string')
+    .map((o) => ({
+      id: o.id as string,
+      slug: typeof o.slug === 'string' ? o.slug : '',
+      role: typeof o.role === 'string' ? o.role : '',
+    }));
+}
+
+/** Read the enterprise SSO context (`sso_*`) from claims. */
+export function oidcSsoOf(claims: Record<string, unknown>): OidcSsoContext | null {
+  if (typeof claims.sso_connection_id !== 'string') return null;
+  const s = (v: unknown) => (typeof v === 'string' ? v : null);
+  return {
+    connectionId: claims.sso_connection_id,
+    organizationId: s(claims.sso_organization_id),
+    type: claims.sso_connection_type === 'saml' || claims.sso_connection_type === 'oidc' ? claims.sso_connection_type : null,
+    tenantId: s(claims.sso_tenant_id),
+    issuer: s(claims.sso_issuer),
+    domain: s(claims.sso_domain),
+  };
+}
+
 export interface OidcIdentity {
   /** The Atlas user id (`sub`). Unique within one issuer. */
   sub: string;
@@ -243,6 +346,17 @@ export interface OidcIdentity {
   /** `true` only when the ID token says `email_verified: true`. */
   emailVerified: boolean;
   name: string | null;
+  /**
+   * The organization the sign-in was made in (`org_id`, `org_slug`,
+   * `org_role`, `org_permissions`): the `organization` you asked for, the
+   * enterprise SSO connection's organization, or the user's active one. Null
+   * when no organization was involved.
+   */
+  organization: OidcOrganization | null;
+  /** Every membership (`orgs`), when you asked for the `organizations` scope. */
+  organizations: OidcOrganizationMembership[] | null;
+  /** The enterprise SSO connection the user signed in through (`sso_*`), or null. */
+  sso: OidcSsoContext | null;
   /** The raw, verified ID token. Keep it for `logoutUrl({ idTokenHint })`. */
   idToken: string;
   accessToken: string;
@@ -251,7 +365,7 @@ export interface OidcIdentity {
   /** When the access token expires, in epoch milliseconds. */
   expiresAt: number;
   /** Every verified ID-token claim. */
-  claims: JWTPayload & Record<string, unknown>;
+  claims: JWTPayload & AtlasIdTokenClaims & Record<string, unknown>;
   /** A `Set-Cookie` value that removes the flow cookie. Send it with your response. */
   clearCookie: string;
 }
@@ -346,6 +460,9 @@ async function runCallback(
     email: typeof claims.email === 'string' ? claims.email : null,
     emailVerified: claims.email_verified === true,
     name: typeof claims.name === 'string' ? claims.name : null,
+    organization: oidcOrganizationOf(claims),
+    organizations: oidcOrganizationsOf(claims),
+    sso: oidcSsoOf(claims),
     idToken: tokens.id_token,
     accessToken: tokens.access_token,
     ...(typeof tokens.refresh_token === 'string' ? { refreshToken: tokens.refresh_token } : {}),
@@ -471,7 +588,9 @@ async function verifyIdToken(
   const header = decodeHeader(idToken);
   if (!header) throw invalid('it is not a JWT');
   // Pinned before any key lookup, so `none` and HS* never get near a key.
-  if (header.alg !== 'RS256') throw invalid(`its algorithm is ${String(header.alg)}, not RS256`);
+  if (typeof header.alg !== 'string' || !ATLAS_SIGNING_ALGS.includes(header.alg)) {
+    throw invalid(`its algorithm is ${String(header.alg)}, not RS256 or ES256`);
+  }
 
   const keys = await jwksFor(discovery.jwks_uri, opts).get(typeof header.kid === 'string' ? header.kid : undefined);
   if (!keys || keys.keys.length === 0) {
@@ -481,7 +600,7 @@ async function verifyIdToken(
   let payload: JWTPayload;
   try {
     ({ payload } = await jwtVerify(idToken, createLocalJWKSet(keys as never), {
-      algorithms: ['RS256'],
+      algorithms: ATLAS_SIGNING_ALGS,
       issuer: discovery.issuer,
       audience: opts.clientId,
       clockTolerance: opts.clockToleranceSec,

@@ -22,6 +22,7 @@ export interface OrgLdapConnection {
   base_dn: string;
   user_filter: string;
   start_tls: boolean;
+  require_consent_screen: boolean;
   attributes: OrgLdapAttributeMap;
   has_bind_password: boolean;
   default_role_id: string | null;
@@ -40,6 +41,8 @@ export interface UpdateOrgLdapConnectionBody {
   /** Search filter with a `{{username}}` placeholder. */
   user_filter?: string;
   start_tls?: boolean;
+  /** Ask the person to confirm the sign-in before it completes (the sign-in response then carries `consent_required`). */
+  require_consent_screen?: boolean;
   attributes?: OrgLdapAttributeMap;
   /** Service-account password. Write-only; re-encrypted only when supplied. */
   bind_password?: string;

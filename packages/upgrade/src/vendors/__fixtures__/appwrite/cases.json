@@ -1,0 +1,13 @@
+[
+  {
+    "name": "client",
+    "path": "lib/appwrite.ts",
+    "envStyle": "vite",
+    "manual": [
+      "account.createEmailPasswordSession(): credentials are collected on the Atlas sign-in page",
+      "account.create(): sign-up runs on the Atlas sign-up page",
+      "Appwrite permissions (Role.user / Role.users / Role.team) no longer see the signed-in user"
+    ]
+  },
+  { "name": "server", "path": "lib/server/appwrite.ts", "manual": ["node-appwrite Users: use the Atlas Backend API"] }
+]

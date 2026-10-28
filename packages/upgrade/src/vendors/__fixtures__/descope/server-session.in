@@ -1,0 +1,9 @@
+import { session } from '@descope/nextjs-sdk/server';
+import { redirect } from 'next/navigation';
+
+export default async function Dashboard() {
+  const currentSession = await session();
+  if (!currentSession) redirect('/sign-in');
+  const roles = currentSession.token.roles as string[];
+  return <h1>Hello {currentSession.token.sub} ({roles.join(', ')})</h1>;
+}

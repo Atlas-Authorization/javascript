@@ -1,0 +1,1 @@
+[{ "provider_ptr_id": 1, "client_type": "confidential", "client_id": "grafana", "sub_mode": "hashed_user_id", "issuer_mode": "per_provider", "signing_key_id": "dddddddd-0000-4000-8000-000000000001" }]

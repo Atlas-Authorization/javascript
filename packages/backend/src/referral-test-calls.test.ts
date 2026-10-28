@@ -5,18 +5,18 @@ import { verifyReferralRequest } from './referrals';
 import { verifyWebhook } from './webhooks';
 import {
   referralEmailHash,
-  referallySignature,
+  referalliSignature,
   signAtlasReferralCall,
-  signReferallyCall,
+  signReferalliCall,
   signReferralUpdatedEvent,
 } from './referral-test-calls';
 
 const SECRET = 'referral_signing_secret_0123456789';
 const NOW = Date.parse('2026-10-21T14:03:11Z');
 
-/** Verify an x-referally-signature exactly as the spec defines it. */
-function referallyVerifies(header: string, payload: string, secret: string): boolean {
-  const m = /^t=(\d+),v1=([0-9a-f]{64})$/.exec(header);
+/** Verify an x-referalli-signature exactly as the spec defines it. */
+function referalliVerifies(header: string, payload: string, secret: string): boolean {
+  const m = /^t=(\d+),v1=([0-9a-f]{64}),v2=[0-9a-f]{64}$/.exec(header);
   if (!m) return false;
   const expected = createHmac('sha256', secret).update(`${m[1]}.${payload}`).digest('hex');
   return expected === m[2];
@@ -50,32 +50,54 @@ describe('signAtlasReferralCall', () => {
   });
 });
 
-describe('signReferallyCall', () => {
+describe('signReferalliCall', () => {
   it('signs a POST over the raw body with unix seconds and the version header', () => {
     const body = { customerRef: 'usr_8812', signedUpAt: '2026-10-21T14:03:11Z', referral: { code: 'WJXQGLBW', consent: 'not_required' } };
-    const call = signReferallyCall({ baseUrl: 'https://referrals.example.com/', connectionId: 'conn_1', secret: SECRET, op: 'signups', body, now: NOW });
+    const call = signReferalliCall({ baseUrl: 'https://referrals.example.com/', connectionId: 'conn_1', secret: SECRET, op: 'signups', body, now: NOW });
     expect(call.url).toBe('https://referrals.example.com/v1/auth/connections/conn_1/signups');
     expect(call.method).toBe('POST');
-    expect(call.headers['referally-version']).toBe('2026-10-21');
-    expect(call.headers['x-referally-signature']).toMatch(new RegExp(`^t=${NOW / 1000},v1=`));
-    expect(referallyVerifies(call.headers['x-referally-signature']!, call.body!, SECRET)).toBe(true);
-    expect(referallyVerifies(call.headers['x-referally-signature']!, call.body!, 'other')).toBe(false);
+    expect(call.headers['referalli-version']).toBe('2026-10-21');
+    expect(call.headers['x-referalli-signature']).toMatch(new RegExp(`^t=${NOW / 1000},v1=`));
+    expect(referalliVerifies(call.headers['x-referalli-signature']!, call.body!, SECRET)).toBe(true);
+    expect(referalliVerifies(call.headers['x-referalli-signature']!, call.body!, 'other')).toBe(false);
   });
 
   it('signs a GET export over the raw query string', () => {
-    const call = signReferallyCall({ baseUrl: 'https://referrals.example.com', connectionId: 'conn_1', secret: SECRET, op: 'export', customerRef: 'usr 1', now: NOW });
+    const call = signReferalliCall({ baseUrl: 'https://referrals.example.com', connectionId: 'conn_1', secret: SECRET, op: 'export', customerRef: 'usr 1', now: NOW });
     expect(call.method).toBe('GET');
     expect(call.body).toBeUndefined();
     expect(call.url).toBe('https://referrals.example.com/v1/auth/connections/conn_1/export?customerRef=usr+1');
-    expect(referallyVerifies(call.headers['x-referally-signature']!, 'customerRef=usr+1', SECRET)).toBe(true);
-    expect(() => signReferallyCall({ baseUrl: 'https://r.example.com', connectionId: 'c', secret: SECRET, op: 'export' })).toThrow(/customerRef/);
+    expect(referalliVerifies(call.headers['x-referalli-signature']!, 'customerRef=usr+1', SECRET)).toBe(true);
+    expect(() => signReferalliCall({ baseUrl: 'https://r.example.com', connectionId: 'c', secret: SECRET, op: 'export' })).toThrow(/customerRef/);
   });
 
   it('signs an empty payload for a body-less ping as "{}"', () => {
-    const call = signReferallyCall({ baseUrl: 'https://r.example.com', connectionId: 'c', secret: SECRET, op: 'ping', now: NOW });
+    const call = signReferalliCall({ baseUrl: 'https://r.example.com', connectionId: 'c', secret: SECRET, op: 'ping', now: NOW });
     expect(call.body).toBe('{}');
     expect(call.request().method).toBe('POST');
-    expect(referallySignature(SECRET, '', 1)).toMatch(/^t=1,v1=[0-9a-f]{64}$/);
+    expect(referalliSignature(SECRET, '', 1)).toMatch(/^t=1,v1=[0-9a-f]{64}$/);
+  });
+
+  it('sends v2 and the legacy x-referally-* headers with the same values', () => {
+    const call = signReferalliCall({ baseUrl: 'https://r.example.com', connectionId: 'c', secret: SECRET, op: 'signups', body: { customerRef: 'u' }, now: NOW, requestId: 'req_1' });
+    expect(call.headers['x-referally-signature']).toBe(call.headers['x-referalli-signature']);
+    expect(call.headers['x-referally-id']).toBe('req_1');
+    expect(call.headers['x-referalli-id']).toBe('req_1');
+    expect(call.headers['referally-version']).toBe('2026-10-21');
+    const t = NOW / 1000;
+    const v2 = createHmac('sha256', SECRET).update(`${t}.POST./v1/auth/connections/c/signups.${call.body}`).digest('hex');
+    expect(call.headers['x-referalli-signature']).toContain(`v2=${v2}`);
+    const get = signReferalliCall({ baseUrl: 'https://r.example.com', connectionId: 'c', secret: SECRET, op: 'export', customerRef: 'u', now: NOW });
+    const g2 = createHmac('sha256', SECRET).update(`${t}.GET./v1/auth/connections/c/export?customerRef=u.`).digest('hex');
+    expect(get.headers['x-referalli-signature']).toContain(`v2=${g2}`);
+  });
+
+  it('keeps fx.referallyCall as an alias of fx.referalliCall', async () => {
+    const fx = await createTestIssuer({ now: () => NOW });
+    const o = { baseUrl: 'https://r.example.com', connectionId: 'c', secret: SECRET, op: 'ping' as const, requestId: 'r' };
+    const a = fx.referallyCall(o);
+    const b = fx.referalliCall(o);
+    expect([a.url, a.method, a.headers, a.body]).toEqual([b.url, b.method, b.headers, b.body]);
   });
 
   it('hashes emails as Atlas does', () => {
@@ -89,8 +111,8 @@ describe('createTestIssuer referral calls', () => {
     const fx = await createTestIssuer({ now: () => NOW });
     const a = fx.referralCall({ baseUrl: 'https://p.example.com', secret: SECRET, op: 'ping', payload: { customerRef: 'atlas_connection_test' } });
     expect(a.headers['atlas-timestamp']).toBe(String(NOW));
-    const b = fx.referallyCall({ baseUrl: 'https://r.example.com', connectionId: 'c', secret: SECRET, op: 'users', body: { customerRef: 'u', status: 'suspended' } });
-    expect(b.headers['x-referally-signature']).toMatch(new RegExp(`^t=${NOW / 1000},`));
+    const b = fx.referalliCall({ baseUrl: 'https://r.example.com', connectionId: 'c', secret: SECRET, op: 'users', body: { customerRef: 'u', status: 'suspended' } });
+    expect(b.headers['x-referalli-signature']).toMatch(new RegExp(`^t=${NOW / 1000},`));
   });
 });
 

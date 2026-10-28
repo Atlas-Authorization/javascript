@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FONT_IDS } from './fonts';
+import { CUSTOM_FONT_ID, FONT_IDS } from './fonts';
 import {
   COLOR_SCHEMES,
   PALETTE_SLOTS,
@@ -55,6 +55,13 @@ export const hexColor = z.string().regex(HEX_COLOR, 'Use a 6-digit hex colour li
 export const assetId = z
   .string()
   .regex(ASSET_ID, 'Use the asset_id returned by the design image upload (dasset_…).');
+/** A catalog font id, or a self-hosted brand font id (`custom-<hash>`). One typed string, so the OpenAPI schema stays typed. */
+const FONT_ID_PATTERN = new RegExp(
+  `^(?:${FONT_IDS.map((id) => id.replace(/[^a-z0-9-]/g, '')).join('|')}|${CUSTOM_FONT_ID.source.replace(/^\^|\$$/g, '')})$`,
+);
+const fontId = z
+  .string()
+  .regex(FONT_ID_PATTERN, `Use a catalog font id (${FONT_IDS.join(', ')}), or a self-hosted font id (custom-…) from a brand import.`);
 const int = (min: number, max: number) => z.number().int().min(min).max(max);
 const enumOf = <T extends readonly [string, ...string[]]>(values: T) => z.enum(values);
 
@@ -67,8 +74,9 @@ export const paletteSchema = z.object(paletteShape).strict();
 
 export const typographySchema = z
   .object({
-    font: z.enum(FONT_IDS as [string, ...string[]]).optional(),
-    headingFont: z.enum(FONT_IDS as [string, ...string[]]).optional(),
+    /** A catalog font id, or a self-hosted brand font (`custom-<hash>`, imported from a brand document). */
+    font: fontId.optional(),
+    headingFont: fontId.optional(),
     /** Body text size in px. */
     baseSize: int(12, 20).optional(),
     headingWeight: int(400, 800).multipleOf(100).optional(),

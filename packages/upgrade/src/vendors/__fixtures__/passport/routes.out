@@ -1,0 +1,26 @@
+const express = require('express');
+const passport = require('passport');
+
+const { requireAuth } = require('@atlasauth/express');
+
+const router = express.Router();
+
+// TODO(atlas-migrate): passport.authenticate('local'): email/password sign-in runs on the Atlas sign-in page now; delete this login route and send users to /sign-in
+router.post('/login', passport.authenticate('local', { failureRedirect: '/login' }), (req, res) => {
+  res.redirect('/');
+});
+
+router.get('/api/profile', requireAuth({ jwksUrl: process.env.ATLAS_JWKS_URL, issuer: process.env.ATLAS_ISSUER }), (req, res) => {
+  // TODO(atlas-migrate): req.user is no longer set by Passport: getAuth(req).userId from @atlasauth/express is the Atlas user id; load your own user record by it
+  res.json(req.user);
+});
+
+router.post('/logout', (req, res, next) => {
+  // TODO(atlas-migrate): req.logout(): sign out in the browser (useAuth().signOut() or <SignOutButton /> from @atlasauth/react), or revoke on the server with createAtlasClientFromEnv().sessions.revoke(getAuth(req).sessionId) from @atlasauth/backend
+  req.logout((err) => {
+    if (err) return next(err);
+    res.redirect('/');
+  });
+});
+
+module.exports = router;

@@ -1,0 +1,16 @@
+'use client';
+import { useNextAuthSession, nextAuthSignIn, nextAuthSignOut } from '@atlasauth/react/compat';
+
+export function UserMenu() {
+  const { data: session, status } = useNextAuthSession();
+  if (status === 'loading') return null;
+  if (!session) {
+    return <button onClick={() => nextAuthSignIn('github', { callbackUrl: '/dashboard' })}>Sign in</button>;
+  }
+  return (
+    <div>
+      {session.user?.email}
+      <button onClick={() => nextAuthSignOut({ callbackUrl: '/' })}>Sign out</button>
+    </div>
+  );
+}

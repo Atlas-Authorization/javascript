@@ -1,0 +1,23 @@
+'use client';
+import { Descope } from '@descope/nextjs-sdk';
+import { useRouter } from 'next/navigation';
+
+import { SignIn, SignUp, UserProfile } from '@atlasauth/react';
+
+export function Login() {
+  const router = useRouter();
+  return <SignIn />;
+}
+
+export function Register() {
+  return <SignUp />;
+}
+
+export function Account() {
+  return <UserProfile />;
+}
+
+export function StepUp() {
+  // TODO(atlas-migrate): <Descope flowId="step-up">: custom Descope flows have no Atlas counterpart; build this screen from the Atlas components (<SignIn />, <SignUp />, <UserProfile />) or hooks (useSignIn, useSignUp, useReverification)
+  return <Descope flowId="step-up" />;
+}

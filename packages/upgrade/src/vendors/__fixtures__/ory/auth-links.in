@@ -1,0 +1,7 @@
+'use client';
+import type { ReactNode } from 'react';
+
+export function Nav({ signedIn, children }: { signedIn: boolean; children: ReactNode }) {
+  if (!children) return null;
+  return signedIn ? <a href="/self-service/logout/browser">Sign out</a> : <a href="/self-service/login/browser?return_to=/dashboard">Sign in</a>;
+}

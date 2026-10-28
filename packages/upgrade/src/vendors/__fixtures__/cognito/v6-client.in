@@ -1,0 +1,36 @@
+'use client';
+import { useEffect, useState } from 'react';
+import { fetchAuthSession, fetchUserAttributes, getCurrentUser, signIn, signOut } from 'aws-amplify/auth';
+import { Hub } from 'aws-amplify/utils';
+
+export function Profile() {
+  const [email, setEmail] = useState<string | undefined>();
+
+  useEffect(() => {
+    getCurrentUser()
+      .then(() => fetchUserAttributes())
+      .then((attrs) => setEmail(attrs.email))
+      .catch(() => setEmail(undefined));
+    return Hub.listen('auth', ({ payload }) => {
+      if (payload.event === 'signedOut') setEmail(undefined);
+    });
+  }, []);
+
+  async function callApi() {
+    const { tokens } = await fetchAuthSession();
+    return fetch('/api', { headers: { Authorization: `Bearer ${tokens?.idToken?.toString()}` } });
+  }
+
+  async function login(username: string, password: string) {
+    await signIn({ username, password });
+  }
+
+  return (
+    <div>
+      {email}
+      <button onClick={callApi}>Call</button>
+      <button onClick={() => login('a', 'b')}>Login</button>
+      <button onClick={() => signOut()}>Sign out</button>
+    </div>
+  );
+}

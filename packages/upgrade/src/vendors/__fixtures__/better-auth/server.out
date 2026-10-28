@@ -1,0 +1,14 @@
+// TODO(atlas-migrate): 'prismaAdapter' from 'better-auth/adapters/prisma': Better Auth server config (adapter/plugin): Atlas stores users and runs these features itself; remove it with the config
+import { prismaAdapter } from 'better-auth/adapters/prisma';
+// TODO(atlas-migrate): nextCookies(): Atlas sets its own cookies; remove the plugin
+import { nextCookies } from 'better-auth/next-js';
+import { prisma } from './db';
+import { createBetterAuthServerCompat } from '@atlasauth/nextjs/compat';
+
+export const auth = createBetterAuthServerCompat({
+  database: prismaAdapter(prisma, { provider: 'postgresql' }),
+  emailAndPassword: { enabled: true },
+  plugins: [nextCookies()],
+});
+
+export type Session = typeof auth.$Infer.Session;

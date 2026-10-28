@@ -22,10 +22,32 @@ export interface ApiKey {
   limits?: ApiKeyLimit[] | null;
   /** Each cap with its current-window usage (empty when the key has no caps). */
   usage?: ApiKeyLimitState[];
+  /** A disabled key fails verify until re-enabled (it is not revoked). */
+  enabled?: boolean;
+  /** Per-key verify rate limit, or null. */
+  rate_limit?: ApiKeyRateLimit | null;
+  /** Uses left (each successful verify spends one); null = unlimited. */
+  remaining?: number | null;
   last_used_at: number | null;
   expires_at: number | null;
   revoked_at: number | null;
   created_at: number;
+}
+
+/** At most `max` successful verifies per `window_seconds`. */
+export interface ApiKeyRateLimit {
+  max: number;
+  window_seconds: number;
+}
+
+/** Controls shared by create and update. */
+export interface ApiKeyControls {
+  /** Default true. A disabled key fails verify and cannot mint tokens. */
+  enabled?: boolean;
+  /** Per-key verify rate limit; null removes it. */
+  rate_limit?: ApiKeyRateLimit | null;
+  /** Uses left; null = unlimited. */
+  remaining?: number | null;
 }
 
 /** The window a spend cap counts over. `request` caps a single debit; `day`/`month` are UTC calendar windows; `total` never resets. */
@@ -114,18 +136,22 @@ export interface ApiKeyWithSecret extends ApiKey {
   note: string;
 }
 
-export interface CreateApiKeyBody {
+export interface CreateApiKeyBody extends ApiKeyControls {
   subject_type: ApiKeySubjectType;
   subject_id: string;
   name?: string;
   claims?: Record<string, unknown>;
-  /** Epoch ms; null (or omitted) never expires. */
+  /** Epoch ms; null never expires (omitted: the instance default lifetime, if any). */
   expires_at?: number | null;
+  /** Relative expiry; mutually exclusive with `expires_at`. */
+  expires_in_seconds?: number;
+  /** Custom secret prefix (e.g. `acme` gives `acme_<id>_<secret>`). */
+  prefix?: string;
   /** Per-key spend caps, metered with `recordUsage`. */
   limits?: ApiKeyLimit[] | null;
 }
 
-export interface UpdateApiKeyBody {
+export interface UpdateApiKeyBody extends ApiKeyControls {
   name?: string | null;
   claims?: Record<string, unknown>;
   expires_at?: number | null;
@@ -140,6 +166,20 @@ export interface UpdateApiKeyBody {
  */
 export type ApiKeyVerification =
   | { object: 'api_key_verification'; valid: false }
+  | {
+      /**
+       * A live key refused by its own policy: `insufficient_scope` (see
+       * `missing_scopes`), `rate_limited` (retry after `retry_after_ms`) or
+       * `usage_exhausted` (no uses left).
+       */
+      object: 'api_key_verification';
+      valid: false;
+      code: 'insufficient_scope' | 'rate_limited' | 'usage_exhausted';
+      id: string;
+      missing_scopes?: string[];
+      retry_after_ms?: number;
+      remaining?: number;
+    }
   | {
       object: 'api_key_verification';
       valid: true;
@@ -156,6 +196,8 @@ export type ApiKeyVerification =
       usage?: ApiKeyLimitState[];
       last_used_at: number | null;
       expires_at?: number | null;
+      /** Uses left after this verify (null = unlimited). */
+      remaining?: number | null;
     };
 
 /**
@@ -215,8 +257,12 @@ export function apiKeysResource(request: RequestFn) {
       return request({ method: 'POST', path: '/v1/api_keys', body, idempotencyKey });
     },
     /** Check a presented secret. Rate-limited — it is an online credential check. */
-    verify(secret: string): Promise<ApiKeyVerification> {
-      return request({ method: 'POST', path: '/v1/api_keys/verify', body: { secret } });
+    /**
+     * Verify a presented key. `required_scopes`: every one must be on the key,
+     * else `{ valid: false, code: 'insufficient_scope' }`.
+     */
+    verify(secret: string, options: { required_scopes?: string[] } = {}): Promise<ApiKeyVerification> {
+      return request({ method: 'POST', path: '/v1/api_keys/verify', body: { secret, ...options } });
     },
     get(id: string): Promise<ApiKey> {
       return request({ method: 'GET', path: `/v1/api_keys/${enc(id)}` });

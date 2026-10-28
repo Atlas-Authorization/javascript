@@ -1,0 +1,7 @@
+import Keycloak from 'next-auth/providers/keycloak';
+
+const options = {
+  providers: [Keycloak({ clientId: process.env.AUTH_KEYCLOAK_ID, clientSecret: process.env.AUTH_KEYCLOAK_SECRET })],
+};
+
+export default options;

@@ -1,5 +1,28 @@
 # @atlasauth/localizations changelog
 
+## Unreleased
+
+## 0.11.0 — 2026-10-26
+
+### Changed
+
+- New bundles (including `ar-SA` and `fa-IR`) and strings for the new components; coverage report extended.
+
+## 0.10.0 — 2026-10-24
+
+### Added
+
+- `policy.*` strings (policy acceptance: checkbox and clickwrap sentences, the scroll dialog, what changed, re-acceptance, the in-app banner) in every bundle.
+
+## 0.9.0 — 2026-10-24
+
+- **Added 13 keys** in every shipped locale for approving a device sign-in on your own page (`<DeviceAuthorization/>`): `deviceAuth.title`, `deviceAuth.subtitle`, `deviceAuth.codeLabel`, `deviceAuth.continue`, `deviceAuth.request`, `deviceAuth.scopesTitle`, `deviceAuth.checkCode`, `deviceAuth.approve`, `deviceAuth.deny`, `deviceAuth.approved`, `deviceAuth.denied`, `deviceAuth.invalidCode`, `deviceAuth.another`.
+
+## 0.8.0 — 2026-10-23
+
+- **Added 6 keys** in every shipped locale for the recovery codes shown after MFA enrolment at sign-in: `mfa.recoveryCodesTitle`, `mfa.recoveryCodesHelp`, `mfa.recoveryCodesCopy`, `mfa.recoveryCodesCopied`, `mfa.recoveryCodesDownload`, `mfa.recoveryCodesSaved`.
+- **Added 12 keys** in every shipped locale for the sign-in's MFA steps: the enrolment method choice (`mfa.enrollChoose`, `mfa.enrollTotpOption`, `mfa.enrollSmsOption`), the authenticator setup (`mfa.enrollScan`, `mfa.enrollQrAlt`, `mfa.enrollSetupKey`, `mfa.enrollPreparing`), the texted factor (`mfa.phoneLabel`, `mfa.phoneHint`, `mfa.sendCode`, `mfa.codeTextedTo`) and "Text me a code instead" (`mfa.smsCodeOption`).
+
 ## 0.7.0
 - **Added 2 keys**, in every shipped locale: `signIn.signedIn` ("You're signed in.", shown once this browser holds the session after a sign-in) and `signIn.sessionNotKept` (shown when the sign-in completed but the browser didn't keep the session, for example because it blocks third-party cookies).
 

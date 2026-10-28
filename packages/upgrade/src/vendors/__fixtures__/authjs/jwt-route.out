@@ -1,0 +1,8 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@atlasauth/nextjs/server';
+
+export async function GET(req: NextRequest) {
+  const token = (await auth()).claims;
+  if (!token) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  return NextResponse.json({ userId: token.sub });
+}

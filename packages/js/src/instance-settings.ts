@@ -1,5 +1,5 @@
 import type { CaptchaFlowKey, FlowCaptcha } from './captcha-widget';
-import { emailDeliveryFrom, type EmailDelivery } from './environment';
+import { accountUxFrom, emailDeliveryFrom, type AccountUx, type EmailDelivery } from './environment';
 import type { FapiClient } from './fapi';
 import { referralChallengeRequired } from './referral';
 
@@ -26,6 +26,12 @@ export interface InstanceSettings {
    * server that does not say.
    */
   emailDelivery: EmailDelivery;
+  /**
+   * The username rule (null while usernames are off), whether "Last used"
+   * badges are shown, and code-vs-link email proofs. When usernames are on, a
+   * `username` entry is already in {@link signUpFields}.
+   */
+  account: AccountUx;
 }
 
 /** One configurable sign-up field, exactly as `/v1/appearance` resolves it. */
@@ -99,7 +105,22 @@ export function instanceSettingsFrom(body: unknown): InstanceSettings {
       }
     : NO_LEGAL;
 
-  return { captchaFlows, signUpFields, legal, emailDelivery: emailDeliveryFrom(root) };
+  const account = accountUxFrom(root);
+  // Usernames on: the create-account form collects one, drawn as the first
+  // extra field (keyed `username` — the server takes it as the username).
+  if (account.username && !signUpFields.some((f) => f.key === 'username')) {
+    signUpFields.unshift({
+      key: 'username',
+      label: 'Username',
+      type: 'text',
+      required: account.username.requiredAtSignUp,
+      placeholder: null,
+      options: [],
+      builtin: true,
+    });
+  }
+
+  return { captchaFlows, signUpFields, legal, emailDelivery: emailDeliveryFrom(root), account };
 }
 
 /**

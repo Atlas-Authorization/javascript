@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // Lit's reactive properties are declared with `static properties`, not decorators.
+    "useDefineForClassFields": false,
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

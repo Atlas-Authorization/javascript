@@ -1,5 +1,25 @@
 # @atlasauth/solid changelog
 
+## 0.10.0 — 2026-10-28
+
+- `ManageCiba` component lists sign-in approvals (approve or deny) and manages the CIBA PIN.
+
+## 0.9.0 — 2026-10-24
+
+### Added
+
+- **Policy acceptance** in `<SignUp>` and `<SignIn>` (consent block with in-page viewer, clickwrap line, unskippable scroll dialog, the `needs_policy_acceptance` step), plus `<PolicyGate/>`.
+
+## 0.8.0 — 2026-10-23
+
+### Added
+
+- `<OrganizationAuditLog/>` and `useOrganizationAuditLog()`: the active organization's audit trail for its admins, paged, with labels as props. Renders nothing for a member who may not read it.
+
+### Changed
+
+- Built on `@atlasauth/js` 0.16.0.
+
 ## 0.7.0
 
 ### Changed

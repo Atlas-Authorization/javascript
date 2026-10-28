@@ -1,0 +1,6 @@
+import { createAtlasMiddleware } from '@atlasauth/nextjs/compat';
+
+export default createAtlasMiddleware({
+  publicRoutes: ['/(.*)'],
+  protectedRoutes: ['/dashboard(.*)', '/settings'],
+});

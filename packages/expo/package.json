@@ -1,16 +1,17 @@
 {
   "name": "@atlasauth/expo",
-  "version": "0.2.1",
+  "version": "0.4.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
   "dependencies": {
     "@atlasauth/js": "workspace:*",
-    "@atlasauth/react": "workspace:^"
+    "@atlasauth/react": "workspace:^",
+    "@atlasauth/react-native": "workspace:^"
   },
   "peerDependencies": {
     "react": ">=18",
@@ -47,6 +48,7 @@
   },
   "files": [
     "dist",
+    "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
   ]

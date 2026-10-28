@@ -1,4 +1,4 @@
-import { FapiClient, resolveFrontendApi, type ProviderToken } from '@atlasauth/js';
+import { FapiClient, resolveFrontendApi, type AttestationProvider, type ProviderToken } from '@atlasauth/js';
 import type { AtlasSession, AtlasUser } from './types';
 
 /**
@@ -41,6 +41,8 @@ export function createNativeClient(opts: {
   getToken: () => string | null | Promise<string | null>;
   /** Sent as `Accept-Language`, so the server's error messages come back in that language. */
   locale?: string;
+  /** App Attest / Play Integrity provider; sign-up, sign-in and SMS-send calls then carry the `Atlas-Attestation` proof. */
+  attestation?: AttestationProvider;
 }): FapiClient {
   return new FapiClient({
     publishableKey: opts.publishableKey,
@@ -52,6 +54,7 @@ export function createNativeClient(opts: {
     }),
     fetchImpl: bearerFetch(opts.fetchImpl, opts.getToken),
     locale: opts.locale,
+    attestation: opts.attestation,
   });
 }
 

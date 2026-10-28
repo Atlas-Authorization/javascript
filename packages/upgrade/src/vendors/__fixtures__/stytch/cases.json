@@ -1,0 +1,14 @@
+[
+  {
+    "name": "provider",
+    "path": "app/auth-provider.tsx"
+  },
+  {
+    "name": "env",
+    "path": "lib/stytch-config.ts",
+    "manual": [
+      "STYTCH_PROJECT_ID: keep only as the project_id",
+      "STYTCH_SECRET: replace with ATLAS_SECRET_KEY"
+    ]
+  }
+]

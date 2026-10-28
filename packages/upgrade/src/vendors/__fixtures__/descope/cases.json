@@ -1,0 +1,54 @@
+[
+  {
+    "name": "react-provider",
+    "path": "src/main.tsx",
+    "envStyle": "vite",
+    "manual": ["removed provider props with no Atlas counterpart: persistTokens"]
+  },
+  {
+    "name": "flows",
+    "path": "components/auth-flows.tsx",
+    "manual": [
+      "<Descope> is now Atlas's <SignIn />; removed props with no Atlas counterpart: flowId, theme, onSuccess, onError",
+      "<UserProfile> is now Atlas's <UserProfile />; removed props with no Atlas counterpart: widgetId",
+      "<Descope flowId=\"step-up\">: custom Descope flows have no Atlas counterpart"
+    ]
+  },
+  {
+    "name": "hooks",
+    "path": "components/user-menu.tsx",
+    "manual": ["getSessionToken() is synchronous in Descope"]
+  },
+  {
+    "name": "middleware",
+    "path": "middleware.ts",
+    "manual": [
+      "removed authMiddleware options with no Atlas counterpart: projectId",
+      "middleware now runs Atlas: every route your config.matcher selects needs a signed-in user"
+    ]
+  },
+  {
+    "name": "middleware-private-routes",
+    "path": "middleware.ts",
+    "manual": [
+      "removed authMiddleware options with no Atlas counterpart: projectId",
+      "only your protectedRoutes (the old privateRoutes) need a signed-in user"
+    ]
+  },
+  {
+    "name": "server-session",
+    "path": "app/dashboard/page.tsx"
+  },
+  {
+    "name": "node-sdk",
+    "path": "lib/descope.ts",
+    "envStyle": "node",
+    "manual": [
+      "DescopeClient(): verify session tokens with AtlasBackend",
+      "validateSession(): verify the Atlas session token with AtlasBackend",
+      "management.user.delete(): manage users, tenants and roles with the Atlas Backend API",
+      "DESCOPE_PROJECT_ID: the browser identifies the Atlas instance with ATLAS_PUBLISHABLE_KEY",
+      "DESCOPE_MANAGEMENT_KEY: the Atlas Backend API uses ATLAS_SECRET_KEY"
+    ]
+  }
+]

@@ -113,4 +113,39 @@ describe('openfga', () => {
     expect(last().url).toBe(`${API_URL}/v1/openfga/stores/s1/write`);
     expect(JSON.parse(last().body!)).toEqual({ writes: { tuple_keys: [tk] }, deletes: { tuple_keys: [] } });
   });
+
+  it('listUsers / listAllUsers / readChanges hit the wire routes', async () => {
+    const page = (users: unknown[], token: string) => ({ users, excluded_users: [], continuation_token: token });
+    const { impl, calls } = mockFetch([
+      { body: page([{ object: { type: 'user', id: 'a' } }], 'next') },
+      { body: page([{ wildcard: { type: 'user' } }], '') },
+      { body: { changes: [], continuation_token: 'tok' } },
+    ]);
+    const atlas = createAtlasClient({ secretKey: SECRET, apiUrl: API_URL, fetch: impl });
+    const all = await atlas.openfga.listAllUsers('s1', {
+      object: { type: 'document', id: 'roadmap' },
+      relation: 'viewer',
+      user_filters: [{ type: 'user' }],
+      consistency: 'HIGHER_CONSISTENCY',
+    });
+    expect(all.users).toEqual([{ object: { type: 'user', id: 'a' } }, { wildcard: { type: 'user' } }]);
+    expect(calls[0]!.url).toBe(`${API_URL}/v1/openfga/stores/s1/list-users`);
+    expect(JSON.parse(calls[1]!.body!).continuation_token).toBe('next');
+    expect(JSON.parse(calls[0]!.body!).consistency).toBe('HIGHER_CONSISTENCY');
+
+    await atlas.openfga.readChanges('s1', { type: 'document', page_size: 5, start_time: '2026-01-01T00:00:00Z' });
+    expect(calls[2]!.method).toBe('GET');
+    const u = new URL(calls[2]!.url);
+    expect(u.pathname).toBe('/v1/openfga/stores/s1/changes');
+    expect(Object.fromEntries(u.searchParams)).toEqual({ type: 'document', page_size: '5', start_time: '2026-01-01T00:00:00Z' });
+  });
+
+  it('carries tuple conditions and context', async () => {
+    const { atlas, last } = setup({ allowed: true });
+    const cond = { name: 'in_office', context: { cidr: '10.0.0.0/8' } };
+    await atlas.openfga.write('s1', { writes: { tuple_keys: [{ ...tk, condition: cond }] } });
+    expect(JSON.parse(last().body!).writes.tuple_keys[0].condition).toEqual(cond);
+    await atlas.openfga.check('s1', { tuple_key: tk, context: { ip: '10.1.1.1' }, consistency_token: 'fgc1_x' });
+    expect(JSON.parse(last().body!)).toMatchObject({ context: { ip: '10.1.1.1' }, consistency_token: 'fgc1_x' });
+  });
 });

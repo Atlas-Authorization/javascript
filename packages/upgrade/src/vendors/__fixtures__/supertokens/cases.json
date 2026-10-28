@@ -1,0 +1,29 @@
+[
+  {
+    "name": "react-provider",
+    "path": "src/main.tsx",
+    "envStyle": "vite"
+  },
+  {
+    "name": "node-init",
+    "path": "server/supertokens.ts",
+    "envStyle": "node",
+    "manual": [
+      "supertokens.init(): delete the SuperTokens setup",
+      "Session (supertokens-node)",
+      "Recipe (supertokens-node)",
+      "SUPERTOKENS_CONNECTION_URI: the SuperTokens core is only needed for lazy migration",
+      "SUPERTOKENS_API_KEY: server code uses ATLAS_SECRET_KEY"
+    ]
+  },
+  {
+    "name": "express-routes",
+    "path": "server/app.ts",
+    "envStyle": "node",
+    "manual": [
+      "middleware(): Atlas hosts sign-in and session endpoints",
+      "errorHandler(): delete it",
+      "verifySession(): use requireAuth()"
+    ]
+  }
+]

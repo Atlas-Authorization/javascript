@@ -1,0 +1,40 @@
+[
+  {
+    "name": "elements-login",
+    "path": "app/login/page.tsx",
+    "manual": [
+      "getLoginFlow(): Atlas hosts sign-in",
+      "the Ory flow props (flow, config) are gone"
+    ]
+  },
+  {
+    "name": "nextjs-middleware",
+    "path": "middleware.ts",
+    "manual": [
+      "createOryMiddleware(options) options were removed"
+    ]
+  },
+  {
+    "name": "client-sdk",
+    "path": "lib/ory.ts",
+    "manual": [
+      "FrontendApi (Kratos browser flows)",
+      "Configuration: not needed"
+    ]
+  },
+  {
+    "name": "env",
+    "path": "lib/env.ts",
+    "manual": [
+      "ORY_KRATOS_ADMIN_URL: admin and OAuth APIs",
+      "ORY_PROJECT_API_KEY: server code uses ATLAS_SECRET_KEY"
+    ]
+  },
+  {
+    "name": "auth-links",
+    "path": "components/nav.tsx",
+    "manual": [
+      "/self-service/logout/browser: sign-out is an action in Atlas"
+    ]
+  }
+]

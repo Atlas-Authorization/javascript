@@ -1,0 +1,13 @@
+import { handleAuthRoutes, withLogto } from '@logto/express';
+import express from 'express';
+
+const config = {
+  endpoint: process.env.LOGTO_ENDPOINT,
+  appId: process.env.LOGTO_APP_ID,
+  appSecret: process.env.LOGTO_APP_SECRET,
+  baseUrl: process.env.LOGTO_BASE_URL,
+};
+
+export const app = express();
+app.use(handleAuthRoutes(config));
+app.get('/me', withLogto(config), (req, res) => res.json(req.user));

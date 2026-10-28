@@ -1,0 +1,9 @@
+** [Bugsnag] Bugsnag will not notify errors in development
+{"table":"devise_config","row":{"devise_version":"4.9.4","pepper":null,"stretches":12,"modules":"database_authenticatable,registerable,recoverable,rememberable,validatable,confirmable,lockable,trackable,two_factor_authenticatable,two_factor_backupable,omniauthable","session_store":"active_record_store","session_key":"_shop_session","session_ttl_seconds":1209600}}
+{"table":"users","row":{"id":17,"email":"Ada@Example.com","encrypted_password":"$2a$12$K5tRZ1o6aF1k3Q1vXk0cJ.3m0uV7m6c9nJ8Wq3zE5j1oX7yYb2Z9e","confirmed_at":"2024-02-03T04:05:06.000Z","locked_at":null,"created_at":"2024-02-01T00:00:00.000Z","current_sign_in_at":"2026-10-20T10:00:00.000Z","admin":true,"otp_required_for_login":true,"otp_secret":"jbswy3dpehpk3pxp","otp_backup_codes":["$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy","not-a-digest"],"provider":"github","uid":"583231"}}
+{"table":"users","row":{"id":18,"email":"grace@example.com","encrypted_password":"sha512digestnotbcrypt","confirmed_at":null,"locked_at":"2026-10-01T00:00:00.000Z","created_at":"2024-03-01T00:00:00.000Z","admin":false,"otp_required_for_login":false,"otp_secret":null}}
+{"table":"identities","row":{"user_id":18,"provider":"google_oauth2","uid":"110248495921238986420","email":"grace@example.com"}}
+{"table":"roles","row":{"id":1,"name":"editor","resource_type":null,"resource_id":null}}
+{"table":"roles","row":{"id":2,"name":"owner","resource_type":"Shop","resource_id":4}}
+{"table":"users_roles","row":{"user_id":18,"role_id":1}}
+{"table":"sessions","row":{"session_id":"2::4c4f6c1e0a3a4f6b9d1e2f3a4b5c6d7e8f9012345678901234567890abcdef12","user_id":17,"updated_at":"2026-10-24T00:00:00.000Z"}}

@@ -1,0 +1,9 @@
+// TODO(atlas-migrate): authentik admin API client: use AtlasBackend from @atlasauth/backend (users, roles, organizations, API keys)
+// TODO(atlas-migrate): CoreApi: users, groups and tokens are AtlasBackend users / roles / apiKeys from @atlasauth/backend
+import { Configuration, CoreApi } from '@goauthentik/api';
+
+// TODO(atlas-migrate): AUTHENTIK_URL: the authentik host; point these calls at your Atlas instance (the Backend API with ATLAS_SECRET_KEY)
+// TODO(atlas-migrate): AUTHENTIK_TOKEN: authentik admin API token; Backend API calls use ATLAS_SECRET_KEY
+const config = new Configuration({ basePath: process.env.AUTHENTIK_URL + '/api/v3', accessToken: process.env.AUTHENTIK_TOKEN });
+
+export const listUsers = () => new CoreApi(config).coreUsersList({ isActive: true });

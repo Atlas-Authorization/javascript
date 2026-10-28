@@ -1,0 +1,9 @@
+// TODO(atlas-migrate): EmailAuthProvider: password sign-in is on the Atlas sign-in page; delete the credential
+import { EmailAuthProvider, getAuth } from 'firebase/auth';
+import { SignIn } from '@atlasauth/react';
+
+const uiConfig = { signInFlow: 'popup', signInOptions: [EmailAuthProvider.PROVIDER_ID] };
+
+export function Login() {
+  return <SignIn />;
+}

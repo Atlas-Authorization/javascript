@@ -1,0 +1,12 @@
+import { createRoot } from 'react-dom/client';
+import { App } from './App';
+import { oidcConfig } from './oidc-config';
+import { AtlasProvider } from '@atlasauth/react';
+
+createRoot(document.getElementById('root')!).render(
+  <AtlasProvider
+    publishableKey={import.meta.env.VITE_ATLAS_PUBLISHABLE_KEY!}
+    frontendApi={import.meta.env.VITE_ATLAS_FRONTEND_API!}>
+    <App />
+  </AtlasProvider>,
+);

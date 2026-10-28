@@ -800,6 +800,8 @@ describe('§5 sign-up with configurable fields', () => {
       fields: { first_name: 'Ada', company: 'Acme' },
       // §5.1 no consent gate configured → consent is implicit (true).
       consent: true,
+      // The stable device id rides on every sign-up start (accounts-per-device limit).
+      device_id: expect.stringMatching(/^d_/),
     });
     // The server asked for email verification → the code step is now shown.
     expect(root.querySelector('[name="code"]')).toBeTruthy();
@@ -1632,6 +1634,199 @@ describe('passkey sign-in (§5.5)', () => {
     vi.unstubAllGlobals();
   });
 
+  it('opt-in PRF: requests prf and dispatches atlas:passkey-prf on the element, never sending it to Atlas', async () => {
+    vi.stubGlobal('PublicKeyCredential', class {});
+    const prfOut = new Uint8Array(32).fill(5).buffer;
+    let seenExtensions: unknown;
+    const get = vi.fn(async (o: { publicKey: { extensions?: unknown } }) => {
+      seenExtensions = o.publicKey.extensions;
+      return {
+        rawId: new Uint8Array([1, 2, 3]).buffer,
+        id: 'AQID',
+        response: {
+          authenticatorData: new Uint8Array([10]).buffer,
+          clientDataJSON: new Uint8Array([20]).buffer,
+          signature: new Uint8Array([30]).buffer,
+        },
+        getClientExtensionResults: () => ({ prf: { results: { first: prfOut } } }),
+      };
+    });
+    vi.stubGlobal('navigator', { credentials: { get, create: vi.fn() } });
+    const base = envelope([]);
+    const { impl, calls } = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...base, strategies: { ...base.strategies, passkey: true } } }),
+      'POST /v1/client/sign_ins/passkey/begin': () => ({
+        status: 201,
+        body: { handle: 'wa_x', challenge: 'Y2hhbA', rpId: 'accounts.acme.com', allowCredentials: [], userVerification: 'preferred' },
+      }),
+      'POST /v1/client/sign_ins/passkey/finish': () => ({ body: { object: 'sign_in_attempt', status: 'complete', created_session_id: 'sess_1' } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const events: { credentialId: string; enabled: boolean; results?: { first: Uint8Array } }[] = [];
+    root.addEventListener('atlas:passkey-prf', (e) => events.push((e as CustomEvent).detail));
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl, passkeyPrf: { eval: { first: 'vault:v1' } } }).mount();
+    await flush();
+    (root.querySelector('[data-atlas-passkey]') as HTMLButtonElement).click();
+    await flush();
+    expect((seenExtensions as { prf: { eval: { first: Uint8Array } } }).prf.eval.first).toEqual(new TextEncoder().encode('vault:v1'));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ credentialId: 'AQID', enabled: true });
+    expect(events[0]!.results!.first).toEqual(new Uint8Array(prfOut));
+    for (const c of calls) expect(JSON.stringify(c.body ?? {})).not.toContain('prf');
+    vi.unstubAllGlobals();
+  });
+
+  it('without the opt-in, no prf is requested and no event fires', async () => {
+    vi.stubGlobal('PublicKeyCredential', class {});
+    let seenExtensions: unknown = 'unset';
+    const get = vi.fn(async (o: { publicKey: { extensions?: unknown } }) => {
+      seenExtensions = o.publicKey.extensions;
+      return {
+        rawId: new Uint8Array([1]).buffer,
+        id: 'AQ',
+        response: { authenticatorData: new Uint8Array([1]).buffer, clientDataJSON: new Uint8Array([2]).buffer, signature: new Uint8Array([3]).buffer },
+      };
+    });
+    vi.stubGlobal('navigator', { credentials: { get, create: vi.fn() } });
+    const base = envelope([]);
+    const { impl } = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...base, strategies: { ...base.strategies, passkey: true } } }),
+      'POST /v1/client/sign_ins/passkey/begin': () => ({ status: 201, body: { handle: 'wa_y', challenge: 'Y2hhbA', rpId: 'accounts.acme.com', allowCredentials: [] } }),
+      'POST /v1/client/sign_ins/passkey/finish': () => ({ body: { object: 'sign_in_attempt', status: 'complete', created_session_id: 'sess_2' } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    let fired = false;
+    root.addEventListener('atlas:passkey-prf', () => (fired = true));
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+    (root.querySelector('[data-atlas-passkey]') as HTMLButtonElement).click();
+    await flush();
+    expect(seenExtensions).toBeUndefined();
+    expect(fired).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('a passkey that still owes MFA continues at the second-factor step instead of completing', async () => {
+    vi.stubGlobal('PublicKeyCredential', class {});
+    const get = vi.fn(async () => ({
+      rawId: new Uint8Array([1]).buffer,
+      id: 'AQ',
+      response: {
+        authenticatorData: new Uint8Array([2]).buffer,
+        clientDataJSON: new Uint8Array([3]).buffer,
+        signature: new Uint8Array([4]).buffer,
+      },
+    }));
+    vi.stubGlobal('navigator', { credentials: { get, create: vi.fn() } });
+    const base = envelope([]);
+    const { impl, calls } = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...base, strategies: { ...base.strategies, passkey: true } } }),
+      'POST /v1/client/sign_ins/passkey/begin': () => ({
+        status: 201,
+        body: { handle: 'wa_m', challenge: 'Y2hhbA', rpId: 'accounts.acme.com', allowCredentials: [], userVerification: 'preferred' },
+      }),
+      'POST /v1/client/sign_ins/passkey/finish': () => ({
+        body: { id: 'sia_pk', object: 'sign_in_attempt', status: 'needs_second_factor', identifier: 'ada@example.com', created_session_id: null },
+      }),
+      'POST /v1/client/sign_ins/sia_pk/attempt_second_factor': () => ({ body: { id: 'sia_pk', status: 'needs_second_factor' } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    let completed = false;
+    root.addEventListener('atlas:complete', () => {
+      completed = true;
+    });
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+    (root.querySelector('[data-atlas-passkey]') as HTMLButtonElement).click();
+    await flush();
+
+    expect(completed).toBe(false);
+    expect(root.textContent).toContain('Enter the code from your authenticator app');
+    expect(calls.some((c) => c.path === '/v1/client/sign_ins/passkey/finish')).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  describe('bot challenge at the ceremony start', () => {
+    const okBegin = { status: 201, body: { handle: 'wa_c', challenge: 'Y2hhbA', rpId: 'accounts.acme.com', allowCredentials: [], userVerification: 'preferred' } };
+    const refusal = (code: string) => ({ status: 400, body: { errors: [{ code, message: 'Complete the check.', param: 'captcha_token' }] } });
+    let minted = 0;
+    const setup = (signIn: Record<string, unknown>, begin: (n: number) => { status?: number; body: unknown }) => {
+      minted = 0;
+      (window as unknown as Record<string, unknown>).turnstile = {
+        render: (_el: HTMLElement, opts: { callback: (t: string) => void }) => {
+          minted += 1;
+          const token = `ts-${minted}`;
+          setTimeout(() => opts.callback(token), 0);
+          return 'w';
+        },
+      };
+      vi.stubGlobal('PublicKeyCredential', class {});
+      const get = vi.fn(async () => ({
+        rawId: new Uint8Array([1]).buffer,
+        id: 'AQ',
+        response: { authenticatorData: new Uint8Array([2]).buffer, clientDataJSON: new Uint8Array([3]).buffer, signature: new Uint8Array([4]).buffer },
+      }));
+      vi.stubGlobal('navigator', { credentials: { get, create: vi.fn() } });
+      const base = envelope([]);
+      let n = 0;
+      const made = makeFetch({
+        'GET /v1/appearance': () => ({ body: { ...base, strategies: { ...base.strategies, passkey: true }, captchaFlows: { signIn } } }),
+        'POST /v1/client/sign_ins/passkey/begin': () => begin(++n),
+        'POST /v1/client/sign_ins/passkey/finish': () => ({ body: { object: 'sign_in_attempt', status: 'complete', created_session_id: 's_c' } }),
+      });
+      return { ...made, get };
+    };
+    const run = async (impl: typeof fetch) => {
+      const root = document.createElement('div');
+      document.body.appendChild(root);
+      let completed = false;
+      root.addEventListener('atlas:complete', () => {
+        completed = true;
+      });
+      await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+      await flush();
+      (root.querySelector('[data-atlas-passkey]') as HTMLButtonElement).click();
+      await flush();
+      await flush();
+      return { root, completed: () => completed };
+    };
+    const begins = (calls: { path: string; body: Record<string, unknown> | undefined }[]) =>
+      calls.filter((c) => c.path === '/v1/client/sign_ins/passkey/begin').map((c) => c.body);
+
+    afterEach(() => {
+      delete (window as unknown as Record<string, unknown>).turnstile;
+      vi.unstubAllGlobals();
+    });
+
+    it('an always-on sign-in captcha: the begin carries its token', async () => {
+      const { impl, calls } = setup({ enabled: true, provider: 'turnstile', siteKey: 'sk', widget: 'managed' }, () => okBegin);
+      const { completed } = await run(impl);
+      expect(begins(calls)).toEqual([{ captcha_token: 'ts-1' }]);
+      expect(completed()).toBe(true);
+    });
+
+    it('a force-challenge refusal draws the challenge once and retries with its token', async () => {
+      const { impl, calls } = setup({ enabled: false, provider: 'turnstile', siteKey: 'sk', widget: 'managed' }, (n) =>
+        n === 1 ? refusal('CAPTCHA_REQUIRED') : okBegin,
+      );
+      const { completed } = await run(impl);
+      expect(begins(calls)).toEqual([{}, { captcha_token: 'ts-1' }]);
+      expect(completed()).toBe(true);
+    });
+
+    it('CAPTCHA_FAILED retries once with a fresh token, then reports a second refusal', async () => {
+      const { impl, calls, get } = setup({ enabled: true, provider: 'turnstile', siteKey: 'sk', widget: 'managed' }, () => refusal('CAPTCHA_FAILED'));
+      const { root, completed } = await run(impl);
+      expect(begins(calls)).toEqual([{ captcha_token: 'ts-1' }, { captcha_token: 'ts-2' }]);
+      expect(get).not.toHaveBeenCalled();
+      expect(completed()).toBe(false);
+      expect(root.querySelector('[data-atlas-passkey]')).toBeTruthy();
+    });
+  });
+
   it('does NOT show the passkey button when the instance has passkeys off', async () => {
     vi.stubGlobal('PublicKeyCredential', class {});
     vi.stubGlobal('navigator', { credentials: { get: vi.fn(), create: vi.fn() } });
@@ -1748,5 +1943,279 @@ describe('focus ring contrast', () => {
       { appearance: { variables: { colorFocusRing: '#22f79a' } } },
     );
     expect(ringOf(root)).toBe('#22f79a');
+  });
+});
+
+describe('link-only verification and reset', () => {
+  const linkAccount = (over: Record<string, unknown>) => ({
+    username: null,
+    last_sign_in_method: false,
+    email_verification: 'code',
+    password_reset: 'code',
+    ...over,
+  });
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it('sign-up in link mode: no code field and no submit, "check your email", then the poll signs this tab in', async () => {
+    let opened = false;
+    const { impl, calls } = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...envelope([]), account: linkAccount({ email_verification: 'link' }) } }),
+      'POST /v1/client/sign_ups': () => ({
+        status: 201,
+        body: { object: 'sign_up_attempt', id: 'sua_l', status: 'needs_email_verification', identifier: 'ada@example.com', poll_secret: 'ps_l' },
+      }),
+      'POST /v1/client/sign_ups/sua_l/prepare_verification': () => ({ body: { object: 'sign_up_attempt', id: 'sua_l', status: 'needs_email_verification' } }),
+      'GET /v1/client/sign_ups/sua_l': () => ({
+        body: opened
+          ? { object: 'sign_up_attempt', id: 'sua_l', status: 'complete', ticket: 'tk_l' }
+          : { object: 'sign_up_attempt', id: 'sua_l', status: 'needs_email_verification' },
+      }),
+      'POST /v1/client/tickets/exchange': () => ({ body: { object: 'session' } }),
+      'GET /v1/client': () => ({ body: { user: { id: 'u1' }, session: { id: 's1' } } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, mode: 'sign-up', fetchImpl: impl }).mount();
+    await flush();
+    (root.querySelector('[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    (root.querySelector('[name="password"]') as HTMLInputElement).value = 'sup3rSecretPw!';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(root.querySelector('[name="code"]')).toBeNull();
+    expect(root.querySelector('.atlas-embed-code-box')).toBeNull();
+    expect(root.querySelector('button[type="submit"]')).toBeNull();
+    expect(root.querySelector('[data-atlas-link-sent]')?.textContent).toContain('confirmation link to ada@example.com');
+    expect(root.textContent).toContain('Check your email');
+
+    // Resend asks for a fresh email.
+    (root.querySelector('[data-atlas-resend]') as HTMLButtonElement).click();
+    await flush();
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/v1/client/sign_ups/sua_l/prepare_verification')).toBe(true);
+
+    opened = true;
+    await wait(2_200);
+    await flush();
+    const polled = calls.find((c) => c.method === 'GET' && c.path === '/v1/client/sign_ups/sua_l');
+    expect(polled?.search).toContain('poll_secret=ps_l');
+    expect(calls.find((c) => c.path === '/v1/client/tickets/exchange')?.body).toMatchObject({ attempt_id: 'sua_l', ticket: 'tk_l' });
+  }, 10_000);
+
+  it('sign-up in code mode keeps the code boxes (and offers a resend)', async () => {
+    const { impl } = makeFetch({
+      'GET /v1/appearance': () => ({ body: envelope([]) }),
+      'POST /v1/client/sign_ups': () => ({ status: 201, body: { object: 'sign_up_attempt', id: 'sua_c', status: 'needs_email_verification' } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, mode: 'sign-up', fetchImpl: impl }).mount();
+    await flush();
+    (root.querySelector('[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    (root.querySelector('[name="password"]') as HTMLInputElement).value = 'sup3rSecretPw!';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(root.querySelector('.atlas-embed-code-box')).toBeTruthy();
+    expect(root.querySelector('[data-atlas-link-sent]')).toBeNull();
+    expect(root.querySelector('[data-atlas-resend]')?.textContent).toBe('Resend code');
+  });
+
+  it('reset in link mode: asks for a link, shows no code field, and follows the attempt to the new-password step', async () => {
+    let opened = false;
+    const { impl, calls } = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...envelope([]), account: linkAccount({ password_reset: 'link' }) } }),
+      'POST /v1/client/password_resets': () => ({ status: 201, body: { id: 'pr_l', status: 'needs_email_verification', poll_secret: 'ps_r' } }),
+      'GET /v1/client/password_resets/pr_l': () => ({ body: { id: 'pr_l', status: opened ? 'needs_new_password' : 'needs_email_verification' } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+    (Array.from(root.querySelectorAll('.atlas-embed-step-back')).find((b) => (b.textContent ?? '').includes('Forgot')) as HTMLButtonElement).click();
+    expect(root.textContent).toContain('send you a reset link');
+    expect(root.querySelector('button[type="submit"]')?.textContent).toContain('Send reset link');
+    (root.querySelector('input[name="email"]') as HTMLInputElement).value = 'ada@example.com';
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await flush();
+
+    expect(root.querySelector('.atlas-embed-code-box')).toBeNull();
+    expect(root.querySelector('button[type="submit"]')).toBeNull();
+    expect(root.querySelector('[data-atlas-link-sent]')?.textContent).toContain('reset link to ada@example.com');
+
+    opened = true;
+    await wait(2_200);
+    await flush();
+    expect(calls.find((c) => c.method === 'GET' && c.path === '/v1/client/password_resets/pr_l')?.search).toContain('poll_secret=ps_r');
+    expect(root.querySelector('input[name="password"]'), 'reaches the new-password step').toBeTruthy();
+  }, 10_000);
+});
+
+describe('MFA enrolment mid-sign-in and the texted second factor', () => {
+  const TOTP_SETUP = { object: 'mfa_enrollment', strategy: 'totp', factor_id: 'mfa_t', secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/x', qr_code: 'data:image/gif;base64,R0lG' };
+  const SMS_ACCOUNT = { mfa: { totp: true, sms: true, totp_codes: 1 }, email_second_factor: true };
+  const start = async (status: string, account?: Record<string, unknown>) => {
+    const made = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...envelope([]), ...(account ? { account } : {}) } }),
+      'POST /v1/client/sign_ins': () => ({ status: 201, body: { id: 'sia_m', object: 'sign_in_attempt', status } }),
+      'POST /v1/client/sign_ins/sia_m/prepare_mfa_enrollment': (body) => ({
+        status: 201,
+        body: body?.strategy === 'phone_code' ? { object: 'mfa_enrollment', strategy: 'phone_code', factor_id: 'mfa_s', phone: '+1•••0101' } : TOTP_SETUP,
+      }),
+      'POST /v1/client/sign_ins/sia_m/attempt_mfa_enrollment': () => ({ body: { id: 'sia_m', status: 'needs_mfa_enrollment' } }),
+      'POST /v1/client/sign_ins/sia_m/prepare_second_factor': (body) => ({
+        status: 201,
+        body: { object: 'second_factor_challenge', strategy: body?.strategy, sent_to: body?.strategy === 'sms' ? '+1•••0101' : 'a•••@example.com' },
+      }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: made.impl }).mount();
+    await flush();
+    (root.querySelector('input[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    return { root, calls: made.calls };
+  };
+  const setHidden = (root: HTMLElement, name: string, value: string) => {
+    (root.querySelector(`input[name="${name}"]`) as HTMLInputElement).value = value;
+  };
+  const posted = (calls: { path: string; body: Record<string, unknown> | undefined }[], path: string) =>
+    calls.filter((c) => c.path === path).map((c) => c.body);
+
+  it('authenticator app only: fetches the setup and shows its QR code and setup key, then confirms', async () => {
+    const { root, calls } = await start('needs_mfa_enrollment');
+    expect(posted(calls, '/v1/client/sign_ins/sia_m/prepare_mfa_enrollment')).toEqual([{ strategy: 'totp' }]);
+    expect(root.querySelector('[data-atlas="mfa-qr"]')!.getAttribute('src')).toBe(TOTP_SETUP.qr_code);
+    expect(root.querySelector('[data-atlas="mfa-setup-key"]')!.textContent).toContain('JBSW Y3DP EHPK 3PXP');
+    expect(root.querySelector('[data-atlas-mfa-method="phone_code"]')).toBeNull();
+    setHidden(root, 'code', '111111');
+    setHidden(root, 'secondCode', '222222');
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(posted(calls, '/v1/client/sign_ins/sia_m/attempt_mfa_enrollment')).toEqual([{ factor_id: 'mfa_t', codes: ['111111', '222222'] }]);
+  });
+
+  it('where the app can text: choose texts, send the number, confirm with the texted code', async () => {
+    const { root, calls } = await start('needs_mfa_enrollment', SMS_ACCOUNT);
+    expect(posted(calls, '/v1/client/sign_ins/sia_m/prepare_mfa_enrollment')).toEqual([]);
+    expect(root.querySelector('button[type="submit"]')).toBeNull();
+    (root.querySelector('[data-atlas-mfa-method="phone_code"]') as HTMLButtonElement).click();
+    await flush();
+    const phone = root.querySelector('input[name="phone"]') as HTMLInputElement;
+    expect(phone.getAttribute('type')).toBe('tel');
+    expect(root.querySelector('button[type="submit"]')!.textContent).toContain('Text me a code');
+    phone.value = '+14155550101';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(posted(calls, '/v1/client/sign_ins/sia_m/prepare_mfa_enrollment')).toEqual([{ strategy: 'phone_code', phone: '+14155550101' }]);
+    expect(root.querySelector('[data-atlas="mfa-code-texted"]')!.textContent).toContain('+1•••0101');
+    setHidden(root, 'code', '654321');
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(posted(calls, '/v1/client/sign_ins/sia_m/attempt_mfa_enrollment')).toEqual([{ factor_id: 'mfa_s', code: '654321' }]);
+  });
+
+  it('offers "Text me a code instead" and "Email me a code instead" at the second factor where the app does', async () => {
+    const { root, calls } = await start('needs_second_factor', SMS_ACCOUNT);
+    (root.querySelector('[data-atlas="sms-second-factor"]') as HTMLButtonElement).click();
+    await flush();
+    expect(posted(calls, '/v1/client/sign_ins/sia_m/prepare_second_factor')).toEqual([{ strategy: 'sms' }]);
+    expect(root.querySelector('[data-atlas="sms-second-factor-sent"]')!.textContent).toContain('+1•••0101');
+    (root.querySelector('[data-atlas="email-second-factor"]') as HTMLButtonElement).click();
+    await flush();
+    expect(root.querySelector('[data-atlas="email-second-factor-sent"]')!.textContent).toContain('a•••@example.com');
+  });
+
+  it('shows the recovery codes once (copy, download as .txt) and exchanges the ticket only after "I\'ve saved my codes"', async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:codes');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const made = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...envelope([]), account: { mfa: { totp: true, sms: false, totp_codes: 1 } } } }),
+      'POST /v1/client/sign_ins': () => ({ status: 201, body: { id: 'sia_m', object: 'sign_in_attempt', status: 'needs_mfa_enrollment' } }),
+      'POST /v1/client/sign_ins/sia_m/prepare_mfa_enrollment': () => ({ status: 201, body: TOTP_SETUP }),
+      'POST /v1/client/sign_ins/sia_m/attempt_mfa_enrollment': () => ({
+        body: { id: 'sia_m', status: 'complete', ticket: 'tkt_m', backup_codes: ['aaaa-1111', 'bbbb-2222'] },
+      }),
+      'POST /v1/client/tickets/exchange': () => ({ body: { object: 'session' } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const events: unknown[] = [];
+    root.addEventListener('atlas:complete', (e) => events.push((e as CustomEvent).detail));
+    const widget = new AtlasWidget(root, { ...OPTS, fetchImpl: made.impl });
+    await widget.mount();
+    await flush();
+    (root.querySelector('input[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    setHidden(root, 'code', '111111');
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+
+    expect(root.querySelector('[data-atlas="recovery-codes"]')).not.toBeNull();
+    expect([...root.querySelectorAll('[data-atlas="recovery-codes-list"] li')].map((li) => li.textContent)).toEqual(['aaaa-1111', 'bbbb-2222']);
+    expect(root.querySelector('form')).toBeNull();
+    expect(made.calls.some((c) => c.path === '/v1/client/tickets/exchange')).toBe(false);
+    expect(events).toEqual([]);
+    expect(JSON.stringify(widget.state.attempt)).not.toContain('aaaa-1111');
+
+    (root.querySelector('[data-atlas="recovery-codes-copy"]') as HTMLButtonElement).click();
+    await flush();
+    expect(writeText).toHaveBeenCalledWith('aaaa-1111\nbbbb-2222');
+    expect(root.querySelector('[data-atlas="recovery-codes-copied"]')).not.toBeNull();
+    (root.querySelector('[data-atlas="recovery-codes-download"]') as HTMLButtonElement).click();
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(anchorClick).toHaveBeenCalledTimes(1);
+
+    (root.querySelector('[data-atlas="recovery-codes-saved"]') as HTMLButtonElement).click();
+    await flush();
+    expect(made.calls.find((c) => c.path === '/v1/client/tickets/exchange')?.body).toMatchObject({ attempt_id: 'sia_m', ticket: 'tkt_m' });
+    expect(events).toHaveLength(1);
+    expect(widget.state.recoveryCodes ?? null).toBeNull();
+    expect(root.querySelector('[data-atlas="recovery-codes"]')).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it('uses the widget localization for the MFA strings', async () => {
+    const made = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...envelope([]), account: SMS_ACCOUNT } }),
+      'POST /v1/client/sign_ins': () => ({ status: 201, body: { id: 'sia_m', object: 'sign_in_attempt', status: 'needs_second_factor' } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: made.impl, localization: { 'mfa.smsCodeOption': 'SMS stattdessen' } }).mount();
+    await flush();
+    (root.querySelector('input[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(root.querySelector('[data-atlas="sms-second-factor"]')!.textContent).toBe('SMS stattdessen');
+  });
+});
+
+describe('accessibility of the mounted panel', () => {
+  it('announces form and field errors (role=alert) as they appear', async () => {
+    const { el } = await import('./widget/dom');
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const w = { root } as unknown as AtlasWidget;
+    for (const c of ['atlas-embed-form-error', 'atlas-embed-error']) {
+      expect(el(w, 'div', c, 'Wrong password').getAttribute('role')).toBe('alert');
+    }
+    expect(el(w, 'div', 'atlas-embed-field', 'x').getAttribute('role')).toBeNull();
+  });
+
+  it('puts the panel language on its root so a screen reader uses it', async () => {
+    const { impl } = makeFetch({ 'GET /v1/appearance': () => ({ body: envelope([]) }) });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, locale: 'es', fetchImpl: impl }).mount();
+    expect(root.getAttribute('lang')).toBe('es');
+    const own = document.createElement('div');
+    own.setAttribute('lang', 'fr');
+    document.body.appendChild(own);
+    await new AtlasWidget(own, { ...OPTS, locale: 'es', fetchImpl: impl }).mount();
+    expect(own.getAttribute('lang')).toBe('fr');
   });
 });

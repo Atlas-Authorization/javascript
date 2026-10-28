@@ -1,0 +1,7 @@
+[
+  { "id": 1, "user_id": 2, "source_id": "eeeeeeee-0000-4000-8000-000000000001", "identifier": "583231", "created": "2024-02-02T10:00:00Z" },
+  { "id": 2, "user_id": 4, "source_id": "eeeeeeee-0000-4000-8000-000000000002", "identifier": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6", "created": "2024-04-01T10:00:00Z" },
+  { "id": 3, "user_id": 3, "source_id": "eeeeeeee-0000-4000-8000-000000000003", "identifier": "grace@partner.example", "created": "2024-03-01T10:00:00Z" },
+  { "id": 4, "user_id": 2, "source_id": "eeeeeeee-0000-4000-8000-000000000004", "identifier": "cn=ada,ou=users,dc=corp,dc=example", "created": "2024-02-01T10:00:00Z" },
+  { "id": 5, "user_id": 5, "source_id": "eeeeeeee-0000-4000-8000-000000000001", "identifier": "999", "created": "2024-01-10T09:00:00Z" }
+]

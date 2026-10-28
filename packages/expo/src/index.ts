@@ -30,3 +30,6 @@ export {
   AtlasLoading,
   AtlasLoaded,
 } from '@atlasauth/react';
+
+// Policy acceptance (terms, privacy, any policy): native components + hooks bound to this provider.
+export * from './policies';

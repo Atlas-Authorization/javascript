@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "jsx": "react-jsx",
+    /*
+     * The wrap + tests touch the DOM lib (React elements, Testing Library), and
+     * the option/gatsby-node plumbing reads `process.env` — so DOM comes from
+     * `lib` and the Node globals from `@types/node`. Nothing else is pulled in
+     * automatically; `@testing-library/react` and `vitest` ship their own types,
+     * imported explicitly where used.
+     */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

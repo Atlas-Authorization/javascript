@@ -1,0 +1,23 @@
+[
+  {
+    "name": "client-hooks",
+    "path": "components/account.tsx",
+    "manual": ["signInWithPopup(): credentials are collected on the Atlas sign-in page", "GoogleAuthProvider: social and enterprise providers are enabled in the Atlas dashboard"]
+  },
+  {
+    "name": "v8-compat",
+    "path": "src/auth.ts",
+    "envStyle": "vite",
+    "manual": ["firebase.auth().signInWithEmailAndPassword(): credentials are collected on the Atlas sign-in page"]
+  },
+  {
+    "name": "admin",
+    "path": "app/api/me/route.ts",
+    "manual": ["Firebase Admin verifyIdToken(): verify the Atlas session token instead", "Firebase Admin setCustomUserClaims(): custom claims"]
+  },
+  {
+    "name": "firebaseui",
+    "path": "components/login.tsx",
+    "manual": ["FirebaseUI is now Atlas's <SignIn />; its props (uiConfig, firebaseAuth)", "EmailAuthProvider: password sign-in is on the Atlas sign-in page"]
+  }
+]

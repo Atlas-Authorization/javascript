@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { reauthenticate, type ReauthInput } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
+import { useClasses, useErrorText, useText } from './components-shared';
 
 /**
  * Clerk-parity `useReverification()`. A thin, headless wrapper over the EXISTING
@@ -82,8 +83,89 @@ export function useReverification(): {
     const job = pending.current;
     pending.current = null;
     setNeedsReverification(false);
-    job?.reject(new Error('Reverification cancelled.'));
+    job?.reject(new Error(REVERIFICATION_CANCELLED));
   }, []);
 
   return { withReverification, needsReverification, completeReverification, cancelReverification };
+}
+
+/** What {@link useReverification} returns; the prompt drives it. */
+export type Reverification = ReturnType<typeof useReverification>;
+
+/** A cancelled reverification rejects the parked call with this message. */
+export const REVERIFICATION_CANCELLED = 'Reverification cancelled.';
+
+/** True for the rejection a user's own "Cancel" produces (not worth an error). */
+export function isReverificationCancelled(err: unknown): boolean {
+  return err instanceof Error && err.message === REVERIFICATION_CANCELLED;
+}
+
+/**
+ * The drop-in "Confirm it's you" prompt for a parked {@link useReverification}
+ * call. Renders nothing until a sensitive action came back `STEP_UP_REQUIRED`;
+ * then it asks for the password, re-authenticates in place, and the parked
+ * action retries once. The account components (`<UserProfile>`, `<ManageMfa>`,
+ * `<ManagePasskeys>`, the phone and email sections) all use it, so a stale
+ * session never fails a destructive action silently.
+ */
+export function ReverificationPrompt({
+  reverification,
+  name = 'reverification',
+}: {
+  reverification: Reverification;
+  /** `data-atlas` hook for styling/tests. */
+  name?: string;
+}) {
+  const t = useText();
+  const errorText = useErrorText();
+  const cls = useClasses();
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!reverification.needsReverification) return null;
+
+  const confirm = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await reverification.completeReverification({ strategy: 'password', password });
+      setPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? errorText(err) : t('error.generic'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div data-atlas={name} role="dialog" aria-label={t('reverification.title')}>
+      <p className={cls('text', 'atlas-text')}><strong>{t('reverification.title')}</strong></p>
+      <p className={cls('text', 'atlas-text')}>{t('reverification.subtitle')}</p>
+      <label className={cls('formField', 'atlas-field')}>
+        <span className={cls('formFieldLabel', 'atlas-field-label')}>{t('reverification.passwordLabel')}</span>
+        <input
+          className={cls('formFieldInput', 'atlas-account-input')}
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </label>
+      {error ? <p className={cls('formFieldError', 'atlas-error')} role="alert">{error}</p> : null}
+      <button className={cls('formButtonPrimary', 'atlas-button')} type="button" disabled={busy} onClick={() => void confirm()}>
+        {t('reverification.submit')}
+      </button>
+      <button
+        className={cls('formButtonSecondary', 'atlas-button-secondary')}
+        type="button"
+        onClick={() => {
+          setPassword('');
+          setError(null);
+          reverification.cancelReverification();
+        }}
+      >
+        {t('reverification.cancel')}
+      </button>
+    </div>
+  );
 }

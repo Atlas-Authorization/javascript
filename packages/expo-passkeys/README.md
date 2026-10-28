@@ -64,5 +64,21 @@ if (result.status === 'complete' && result.ticket) {
 }
 ```
 
+### When the app challenges every sign-in
+
+If the app asks for a security check on every sign-in, the sign-in start needs a captcha token.
+Pass a solved `captchaToken`, or a `getCaptchaToken` callback, or both. The callback is called after
+the server refuses the start (`CAPTCHA_REQUIRED` or `CAPTCHA_FAILED`). It receives the app's public
+sign-in captcha settings (provider, site key). Run that provider's challenge, for example in a
+WebView, and return the solved token. The start is then retried once with it.
+
+```ts
+const result = await authenticateWithPasskey({
+  config,
+  passkey: Passkey,
+  getCaptchaToken: async ({ captcha }) => solveInWebView(captcha), // your own challenge screen
+});
+```
+
 `toRegistrationFinishBody` / `toAssertionFinishBody` are exported as pure helpers
 if you want to drive the two HTTP calls yourself.

@@ -25,3 +25,7 @@ export { defineTool } from './types';
 export type { ToolDefinition, ToolContext, ToolResource, ToolVerb } from './types';
 
 export { sanitize } from './sanitize';
+
+export { createConnectionsToolkit } from './connections';
+export type { ConnectionsToolkitOptions } from './connections';
+export type { AgentTool } from './types';

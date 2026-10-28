@@ -1,0 +1,15 @@
+[
+  {
+    "name": "provider",
+    "path": "app/auth-provider.tsx"
+  },
+  {
+    "name": "env",
+    "path": "lib/workos-config.ts",
+    "manual": [
+      "WORKOS_API_KEY: replace with ATLAS_SECRET_KEY",
+      "WORKOS_COOKIE_PASSWORD: remove once the zero-logout bridge is retired",
+      "NEXT_PUBLIC_WORKOS_REDIRECT_URI: remove"
+    ]
+  }
+]

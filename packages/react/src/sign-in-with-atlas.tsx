@@ -1,6 +1,7 @@
 'use client';
 
-import { createElement, type CSSProperties } from 'react';
+import { createElement, useEffect, useRef, type CSSProperties } from 'react';
+import { adoptConstructable, applyStyleNonce } from '@atlasauth/design/runtime';
 import { referralParams, withReferralParams, type ReferralConsent, type ReferralSourceReader } from '@atlasauth/js';
 
 export interface AtlasIdOptions {
@@ -32,6 +33,8 @@ export interface AtlasIdResult {
 }
 
 const DEFAULT_ISSUER = 'https://atlasauth.net';
+/** Reported in atlasid:ready by the React button (the hosted script reports its own version). */
+const SDK_BUTTON_VERSION = 'react';
 
 function b64url(bytes: Uint8Array): string {
   let s = '';
@@ -77,6 +80,8 @@ function begin(opts: AtlasIdOptions, mode: 'redirect' | 'popup'): Begun {
         code_challenge_method: 'S256',
       });
       if (mode === 'popup') params.set('response_mode', 'web_message');
+      // Tells Atlas the SDK's button started this sign-in (the app preflight's button_rendered_origins).
+      params.set('atlasid_button', 'react');
       for (const [k, v] of referralParams({ referral: opts.referral, consent: opts.referralConsent, source: opts.referralSource })) params.set(k, v);
       return `${issuer}/oauth2/authorize?${params.toString()}`;
     });
@@ -339,6 +344,166 @@ const LABELS = {
   continue: 'Continue with Atlas',
 } as const;
 
+/** The label in each hosted-page language (same table as the hosted script). */
+const LABELS_BY_LOCALE: Record<string, Record<keyof typeof LABELS, string>> = {
+  en: LABELS,
+  es: { signin: 'Iniciar sesión con Atlas', signup: 'Registrarse con Atlas', continue: 'Continuar con Atlas' },
+  fr: { signin: 'Se connecter avec Atlas', signup: "S'inscrire avec Atlas", continue: 'Continuer avec Atlas' },
+  de: { signin: 'Mit Atlas anmelden', signup: 'Mit Atlas registrieren', continue: 'Weiter mit Atlas' },
+  'pt-BR': { signin: 'Entrar com Atlas', signup: 'Cadastrar-se com Atlas', continue: 'Continuar com Atlas' },
+  ja: { signin: 'Atlas でログイン', signup: 'Atlas で登録', continue: 'Atlas で続ける' },
+  nl: { signin: 'Inloggen met Atlas', signup: 'Registreren met Atlas', continue: 'Doorgaan met Atlas' },
+};
+
+/** The labels for a BCP 47 tag (`es-MX` → es, `pt` → pt-BR), English when unknown. */
+export function atlasIdLabels(locale?: string | null): Record<keyof typeof LABELS, string> {
+  const t = String(locale ?? '').replace(/_/g, '-');
+  if (LABELS_BY_LOCALE[t]) return LABELS_BY_LOCALE[t]!;
+  const lang = t.split('-')[0]!.toLowerCase();
+  if (lang === 'pt') return LABELS_BY_LOCALE['pt-BR']!;
+  return LABELS_BY_LOCALE[lang] ?? LABELS;
+}
+
+/**
+ * The `atlasid:*` DOM events the button (this component and the hosted
+ * script's) dispatches on its element, bubbling:
+ *   atlasid:ready    rendered ({ version })
+ *   atlasid:signin   a popup / One Tap sign-in finished (the AtlasIdResult)
+ *   atlasid:error    { error } (popup_closed is a cancel)
+ *   atlasid:onetap   { outcome: signed_in | dismissed | unavailable | error }
+ * and keeps `data-atlasid-state` on it: ready | pending | signed-in | error.
+ */
+export const ATLASID_EVENTS = ['atlasid:ready', 'atlasid:signin', 'atlasid:error', 'atlasid:onetap'] as const;
+export type AtlasIdEventName = (typeof ATLASID_EVENTS)[number];
+
+export interface AtlasIdEventHandlers {
+  onReady?: (detail: { version?: string; issuer?: string }) => void;
+  onSignIn?: (result: AtlasIdResult | Record<string, unknown>) => void;
+  onError?: (detail: { error: string; directive?: string; origin?: string }) => void;
+  onOneTap?: (detail: { outcome: 'signed_in' | 'dismissed' | 'unavailable' | 'error'; error?: string }) => void;
+}
+
+/**
+ * Subscribe to the `atlasid:*` events of a button element (this component, or
+ * a `[data-atlas-signin]` host the hosted script upgrades). Returns the
+ * unsubscribe function. SSR-safe: a no-op without an element.
+ */
+export function listenAtlasIdEvents(el: EventTarget | null | undefined, handlers: AtlasIdEventHandlers): () => void {
+  if (!el || typeof el.addEventListener !== 'function') return () => {};
+  const map: Array<[AtlasIdEventName, ((d: never) => void) | undefined]> = [
+    ['atlasid:ready', handlers.onReady as never],
+    ['atlasid:signin', handlers.onSignIn as never],
+    ['atlasid:error', handlers.onError as never],
+    ['atlasid:onetap', handlers.onOneTap as never],
+  ];
+  const bound = map
+    .filter(([, fn]) => typeof fn === 'function')
+    .map(([name, fn]) => {
+      const l = (ev: Event) => (fn as (d: unknown) => void)((ev as CustomEvent).detail);
+      el.addEventListener(name, l);
+      return () => el.removeEventListener(name, l);
+    });
+  return () => bound.forEach((off) => off());
+}
+
+/** React hook form of {@link listenAtlasIdEvents} for a ref to the button or host element. */
+export function useAtlasIdEvents(ref: { current: EventTarget | null }, handlers: AtlasIdEventHandlers): void {
+  const latest = useRef(handlers);
+  latest.current = handlers;
+  useEffect(
+    () =>
+      listenAtlasIdEvents(ref.current, {
+        onReady: (d) => latest.current.onReady?.(d),
+        onSignIn: (d) => latest.current.onSignIn?.(d),
+        onError: (d) => latest.current.onError?.(d),
+        onOneTap: (d) => latest.current.onOneTap?.(d),
+      }),
+    [ref],
+  );
+}
+
+function emitAtlasId(el: EventTarget | null | undefined, name: AtlasIdEventName, detail: unknown): void {
+  if (!el || typeof el.dispatchEvent !== 'function' || typeof CustomEvent === 'undefined') return;
+  try {
+    el.dispatchEvent(new CustomEvent(name, { bubbles: true, detail }));
+  } catch {
+    /* a detached element */
+  }
+}
+
+function setAtlasIdState(el: Element | null | undefined, state: 'ready' | 'pending' | 'signed-in' | 'error'): void {
+  try {
+    el?.setAttribute('data-atlasid-state', state);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** The button's :focus-visible ring and reduced-motion rule (inline styles cannot express them). */
+const BUTTON_SHEET =
+  '[data-atlas="sign-in-with-atlas"]{transition:filter .15s,background .15s}' +
+  '[data-atlas="sign-in-with-atlas"]:hover{filter:brightness(1.12)}' +
+  '[data-atlas="sign-in-with-atlas"]:focus{outline:none}' +
+  '[data-atlas="sign-in-with-atlas"]:focus-visible{outline:3px solid var(--atlas-host-focus-ring,#1a73e8);outline-offset:2px}' +
+  '@media (prefers-reduced-motion:reduce){[data-atlas="sign-in-with-atlas"]{transition:none}[data-atlas="sign-in-with-atlas"]:hover{filter:none}}' +
+  '@media (forced-colors:active){[data-atlas="sign-in-with-atlas"]{border-color:ButtonText}}';
+
+let buttonSheetApplied = false;
+function ensureButtonSheet(): void {
+  if (buttonSheetApplied || typeof document === 'undefined') return;
+  buttonSheetApplied = true;
+  if (adoptConstructable(document, 'atlasid-react-button', BUTTON_SHEET)) return;
+  const style = document.createElement('style');
+  style.setAttribute('data-atlasid-react', '');
+  applyStyleNonce(document, style);
+  style.textContent = BUTTON_SHEET;
+  document.head.appendChild(style);
+}
+
+/**
+ * One Tap: the browser's own FedCM account prompt for Sign in with Atlas (no
+ * third-party cookies, no popup). Rejects with `fedcm_unavailable` where the
+ * browser has no FedCM, and with the browser's error when the user is signed
+ * out of Atlas or dismisses it — keep the button as the fallback.
+ */
+export async function oneTapWithAtlas(opts: {
+  clientId: string;
+  issuer?: string;
+  nonce?: string;
+  scope?: string;
+  context?: 'signin' | 'signup' | 'use' | 'continue';
+  loginHint?: string;
+  signal?: AbortSignal;
+  mediation?: 'optional' | 'required' | 'silent';
+}): Promise<{ credential: string; idToken: string; claims: Record<string, unknown>; via: 'fedcm' }> {
+  if (!opts.clientId) throw new Error('clientId is required');
+  const nav = typeof navigator !== 'undefined' ? (navigator as Navigator & { credentials?: CredentialsContainer }) : undefined;
+  if (typeof (globalThis as { IdentityCredential?: unknown }).IdentityCredential === 'undefined' || !nav?.credentials?.get) {
+    throw new Error('fedcm_unavailable');
+  }
+  const issuer = (opts.issuer ?? DEFAULT_ISSUER).replace(/\/+$/, '');
+  const nonce = opts.nonce ?? randomToken();
+  const provider: Record<string, unknown> = {
+    configURL: `${issuer}/oauth2/fedcm/config.json`,
+    clientId: opts.clientId,
+    nonce,
+    params: { nonce, scope: opts.scope ?? 'openid profile email' },
+  };
+  if (opts.loginHint) provider.loginHint = opts.loginHint;
+  const cred = (await nav.credentials.get({
+    identity: { providers: [provider], context: opts.context ?? 'signin' },
+    mediation: opts.mediation ?? 'optional',
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  } as unknown as CredentialRequestOptions)) as unknown as { token?: unknown } | null;
+  const token = cred && typeof cred.token === 'string' ? cred.token : null;
+  if (!token) throw new Error('fedcm_no_token');
+  const claims = decodeClaims(token);
+  const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  if (claims.iss !== issuer || !aud.includes(opts.clientId)) throw new Error('invalid_id_token');
+  if (claims.nonce !== nonce) throw new Error('nonce_mismatch');
+  return { credential: token, idToken: token, claims, via: 'fedcm' };
+}
+
 // Same look as the hosted script's button (.atlasid-btn and friends).
 const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
 const SIZES = {
@@ -347,10 +512,11 @@ const SIZES = {
   small: { height: 32, fontSize: 13, padding: '0 10px', gap: 8, mark: 16 },
 } as const;
 
+// The host page's --atlas-host-* variables restyle the button where the page sets them.
 const THEMES: Record<'dark' | 'light' | 'outline', CSSProperties> = {
-  dark: { background: '#0f1117', color: '#fff', borderColor: '#0f1117' },
-  light: { background: '#fff', color: '#0f1117', borderColor: '#dadce0' },
-  outline: { background: 'transparent', color: 'inherit', borderColor: 'currentColor' },
+  dark: { background: 'var(--atlas-host-accent, #0f1117)', color: 'var(--atlas-host-accent-ink, #fff)', borderColor: 'var(--atlas-host-accent, #0f1117)' },
+  light: { background: 'var(--atlas-host-surface, #fff)', color: 'var(--atlas-host-ink, #0f1117)', borderColor: 'var(--atlas-host-line, #dadce0)' },
+  outline: { background: 'transparent', color: 'var(--atlas-host-ink, inherit)', borderColor: 'var(--atlas-host-line, currentColor)' },
 };
 
 function AtlasMark({ size }: { size: number }) {
@@ -375,6 +541,18 @@ interface ButtonLook {
   text?: 'signin' | 'signup' | 'continue';
   className?: string;
   onError?: (e: Error) => void;
+  /** Label language (BCP 47). Default: the page's <html lang>, else English. */
+  locale?: string;
+  /** Accessible name override; default the visible label. */
+  ariaLabel?: string;
+  /** Called once the button is in the DOM (also dispatched as atlasid:ready). */
+  onReady?: (detail: { version: string }) => void;
+  /**
+   * One Tap: offer the browser's FedCM account prompt when the button mounts
+   * (browser mode). The result goes to onSuccess; where FedCM is unavailable
+   * or the user dismisses it, nothing changes and the button stays.
+   */
+  oneTap?: boolean;
 }
 
 /**
@@ -405,36 +583,92 @@ export function SignInWithAtlasButton(props: SignInWithAtlasButtonProps) {
     padding: dims.padding,
     height: dims.height,
   };
-  const fail = (e: unknown) => {
+  // Hook-free on purpose (it renders without a provider and is callable as a
+  // plain function): the element comes from the click / ref callback.
+  let el: HTMLElement | null = null;
+  const fail = (e: unknown, target?: HTMLElement | null) => {
     const error = e instanceof Error ? e : new Error(String(e));
+    const node = target ?? el;
+    setAtlasIdState(node, error.message === 'popup_closed' ? 'ready' : 'error');
+    emitAtlasId(node, 'atlasid:error', { error: error.message });
     if (props.onError) props.onError(error);
     else if (typeof console !== 'undefined') console.error(`AtlasID: ${error.message}`);
   };
-  const onClick = () => {
+  const succeed = (r: AtlasIdResult | Record<string, unknown>, target?: HTMLElement | null) => {
+    const node = target ?? el;
+    setAtlasIdState(node, 'signed-in');
+    emitAtlasId(node, 'atlasid:signin', r);
+    props.onSuccess?.(r as AtlasIdResult);
+  };
+  const onClick = (ev?: { currentTarget?: unknown }) => {
+    const target = (ev?.currentTarget as HTMLElement | undefined) ?? el;
     if (props.loginUri !== undefined) {
-      const target = safeLoginUri(props.loginUri);
-      if (target) window.location.assign(withReferralParams(target, { referral: props.referral, consent: props.referralConsent, source: props.referralSource }));
-      else fail(new Error('loginUri must be an https URL or a same-origin path'));
+      const dest = safeLoginUri(props.loginUri);
+      if (dest) {
+        setAtlasIdState(target, 'pending');
+        window.location.assign(withReferralParams(dest, { referral: props.referral, consent: props.referralConsent, source: props.referralSource }));
+      } else fail(new Error('loginUri must be an https URL or a same-origin path'), target);
       return;
     }
+    setAtlasIdState(target, 'pending');
     if (props.uxMode === 'popup') {
       signInWithAtlasPopup(props)
-        .then((r) => props.onSuccess?.(r))
+        .then((r) => succeed(r, target))
         .catch((e: Error) => {
           // Closing the popup is a normal cancel, not an error to log.
-          if (e?.message === 'popup_closed' && !props.onError) return;
-          fail(e);
+          if (e?.message === 'popup_closed' && !props.onError) {
+            setAtlasIdState(target, 'ready');
+            emitAtlasId(target, 'atlasid:error', { error: 'popup_closed' });
+            return;
+          }
+          fail(e, target);
         });
       return;
     }
     buildAtlasAuthorizeUrl(props)
       .then((u) => window.location.assign(u))
-      .catch(fail);
+      .catch((e: unknown) => fail(e, target));
   };
+  const ref = (node: HTMLButtonElement | null) => {
+    el = node;
+    if (!node || node.hasAttribute('data-atlasid-state')) return;
+    ensureButtonSheet();
+    setAtlasIdState(node, 'ready');
+    emitAtlasId(node, 'atlasid:ready', { version: SDK_BUTTON_VERSION });
+    props.onReady?.({ version: SDK_BUTTON_VERSION });
+    if (props.oneTap && props.loginUri === undefined && props.clientId) {
+      oneTapWithAtlas({ clientId: props.clientId, issuer: props.issuer, scope: props.scope }).then(
+        (r) => {
+          emitAtlasId(node, 'atlasid:onetap', { outcome: 'signed_in' });
+          succeed({ ...r, id_token: r.idToken }, node);
+        },
+        (e: Error & { name?: string }) => {
+          const outcome =
+            e?.message === 'fedcm_unavailable'
+              ? 'unavailable'
+              : e?.name === 'NetworkError' || e?.name === 'NotAllowedError' || e?.name === 'AbortError'
+                ? 'dismissed'
+                : 'error';
+          emitAtlasId(node, 'atlasid:onetap', { outcome, error: e?.message });
+        },
+      );
+    }
+  };
+  const pageLang =
+    props.locale ?? (typeof document !== 'undefined' ? document.documentElement?.getAttribute('lang') : null) ?? 'en';
+  const label = atlasIdLabels(pageLang)[text];
   return createElement(
     'button',
-    { type: 'button', className: props.className, style, onClick, 'data-atlas': 'sign-in-with-atlas' },
+    {
+      type: 'button',
+      className: props.className,
+      style,
+      onClick,
+      ref,
+      'aria-label': props.ariaLabel ?? label,
+      'data-atlas': 'sign-in-with-atlas',
+    },
     createElement(AtlasMark, { size: dims.mark }),
-    createElement('span', null, LABELS[text]),
+    createElement('span', null, label),
   );
 }

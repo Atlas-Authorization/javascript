@@ -20,6 +20,7 @@ import type {
 } from './local-authentication';
 
 export * from './local-authentication';
+export * from './device-key';
 
 export type BiometricReason =
   | 'no_hardware'

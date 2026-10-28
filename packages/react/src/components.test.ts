@@ -49,6 +49,8 @@ describe('the documented components and hooks are all exported', () => {
       'UserProfile',
       'OrganizationSwitcher',
       'OrganizationProfile',
+      'OrganizationAuditLog',
+      'useOrganizationAuditLog',
       'SignedIn',
       'SignedOut',
       'Protect',

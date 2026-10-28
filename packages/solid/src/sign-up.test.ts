@@ -129,6 +129,8 @@ describe('<SignUp> creates the account', () => {
       email: 'new@example.com',
       password: 'blue tangerine anvil 71!',
       consent: true,
+      // The stable device id rides on every sign-up start (accounts-per-device limit).
+      device_id: expect.stringMatching(/^d_/),
     });
 
     setInput(el, 'code', '424242');

@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { str, type ParsedArgs, type Values } from '../args';
 import { createConfigHttp, isNotFound, type ConfigHttp } from '../config-http';
@@ -12,7 +13,8 @@ import {
   type Format,
   type Json,
 } from '../serialize';
-import { resolveAuth } from './shared';
+import { DEFAULT_API_URL } from '@atlasauth/backend';
+import { envApiUrl, resolveAuth } from './shared';
 
 // ───────────────────────────── resource model ─────────────────────────────
 
@@ -116,10 +118,11 @@ function registry(): ResourceSpec[] {
       },
       async apply(http, config) {
         const c = compact(config);
-        await http.patch('/v1/instance', {
-          allowed_origins: c.allowed_origins ?? [],
-          auth_config: c.auth_config ?? {},
-        });
+        // A file without allowed_origins leaves the live origins alone (a partial
+        // document, e.g. one produced by `atlas migrate better-auth config`).
+        const body: Record<string, Json> = { auth_config: c.auth_config ?? {} };
+        if (c.allowed_origins !== undefined) body.allowed_origins = c.allowed_origins;
+        await http.patch('/v1/instance', body);
       },
     },
 
@@ -205,6 +208,32 @@ function registry(): ResourceSpec[] {
       },
     },
 
+    // 5b. Custom (generic) OAuth 2.0 / OIDC login providers — key = provider_key.
+    {
+      kind: 'collection',
+      type: 'custom_oauth_providers',
+      keyOf: (c) => String(obj(c).provider_key ?? ''),
+      async fetchLive(http) {
+        const rows = await listData<Record<string, unknown>>(http, '/v1/custom_oauth_providers');
+        return rows.map((r) => ({
+          key: String(r.provider_key ?? ''),
+          id: String(r.id ?? ''),
+          config: pick(r, CUSTOM_PROVIDER_KEYS),
+        }));
+      },
+      async create(http, config) {
+        await http.post('/v1/custom_oauth_providers', compact(config));
+      },
+      async update(http, live, config) {
+        const body = compact(config);
+        delete body.provider_key; // immutable
+        await http.patch(`/v1/custom_oauth_providers/${enc(live.id)}`, body);
+      },
+      async remove(http, live) {
+        await http.delete(`/v1/custom_oauth_providers/${enc(live.id)}`);
+      },
+    },
+
     // 6. Resource servers (API audiences) — key = identifier.
     {
       kind: 'collection',
@@ -256,6 +285,29 @@ function registry(): ResourceSpec[] {
       },
       async remove(http, live) {
         await http.delete(`/v1/jwt_templates/${enc(live.id)}`);
+      },
+    },
+
+    // 7b. Custom permissions — key = key. Before roles, which grant them. System ones skipped.
+    {
+      kind: 'collection',
+      type: 'permissions',
+      keyOf: (c) => String(obj(c).key ?? ''),
+      async fetchLive(http) {
+        const rows = await listData<Record<string, unknown>>(http, '/v1/permissions');
+        return rows
+          .filter((r) => r.is_system !== true)
+          .map((r) => ({ key: String(r.key ?? ''), id: String(r.id ?? ''), config: pick(r, PERMISSION_KEYS) }));
+      },
+      async create(http, config) {
+        await http.post('/v1/permissions', compact(config));
+      },
+      async update(http, live, config) {
+        const c = obj(config);
+        await http.patch(`/v1/permissions/${enc(live.id)}`, { name: c.name, description: c.description ?? null });
+      },
+      async remove(http, live) {
+        await http.delete(`/v1/permissions/${enc(live.id)}`);
       },
     },
 
@@ -488,6 +540,30 @@ const RESOURCE_SERVER_KEYS = [
   'signing_alg',
 ] as const;
 const ROLE_KEYS = ['key', 'name', 'description', 'permissions'] as const;
+const PERMISSION_KEYS = ['key', 'name', 'description'] as const;
+const CUSTOM_PROVIDER_KEYS = [
+  'provider_key',
+  'display_name',
+  'icon_url',
+  'protocol',
+  'issuer',
+  'discovery_url',
+  'authorization_endpoint',
+  'token_endpoint',
+  'userinfo_endpoint',
+  'jwks_uri',
+  'scopes',
+  'pkce',
+  'authorization_params',
+  'token_params',
+  'token_endpoint_auth_method',
+  'profile_source',
+  'profile_mapping',
+  'client_id',
+  'enabled',
+  'allow_sign_in',
+  'allow_sign_up',
+] as const;
 const WEBHOOK_KEYS = ['url', 'enabled_events', 'active'] as const;
 const SSO_KEYS = [
   'type',
@@ -521,6 +597,9 @@ const BILLING_KEYS = [
   'trial_days',
   'stripe_meter_id',
   'usage_unit',
+  'provider',
+  'annual_price_id',
+  'kind',
 ] as const;
 const NOTIFICATION_KEYS = ['name', 'subject', 'body', 'category'] as const;
 const EMAIL_KEYS = ['name', 'subject', 'text'] as const;
@@ -553,7 +632,8 @@ function ssoKey(config: Config): string {
 /** Configure an OAuth provider: credentials/scopes (PUT), then scope + enabled toggles. */
 async function putProvider(http: ConfigHttp, config: Config): Promise<void> {
   const c = obj(config);
-  const values: Record<string, Json> = {};
+  // Provider settings (a tenant, a domain, Apple's team/key ids) ride along in `values`.
+  const values: Record<string, Json> = { ...obj(c.values ?? null) };
   if (c.client_id !== undefined && c.client_id !== null) values.client_id = c.client_id;
   // A secret only exists here when the file carried a ${ENV} placeholder for it.
   if (c.client_secret !== undefined && c.client_secret !== null) {
@@ -562,6 +642,8 @@ async function putProvider(http: ConfigHttp, config: Config): Promise<void> {
   const body: Record<string, Json> = {};
   if (Object.keys(values).length) body.values = values;
   if (Array.isArray(c.scopes)) body.scopes = c.scopes;
+  // Credential-less providers (siwe, siws, siwb, siwf) take verifier settings instead.
+  if (c.settings && typeof c.settings === 'object' && !Array.isArray(c.settings)) body.settings = c.settings;
   const provider = String(c.provider ?? '');
   if (Object.keys(body).length) {
     await http.put(`/v1/oauth_providers/${enc(provider)}`, body);
@@ -605,16 +687,20 @@ export async function config(ctx: RunContext, args: ParsedArgs): Promise<number>
       return exportConfig(ctx, args.values);
     case 'import':
       return importConfig(ctx, args.values);
+    case 'plan':
+      return planConfig(ctx, args.values);
+    case 'promote':
+      return promoteConfig(ctx, args.values);
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'config ${sub}'. Try: export, import.`
-          : 'config needs a subcommand: export, import.',
+          ? `Unknown subcommand 'config ${sub}'. Try: export, import, plan, promote.`
+          : 'config needs a subcommand: export, import, plan, promote.',
       );
   }
 }
 
-function resolveFormat(values: Values): Format {
+export function resolveFormat(values: Values): Format {
   const raw = str(values, 'format');
   if (raw === undefined) return 'json';
   if (raw !== 'json' && raw !== 'yaml') {
@@ -634,12 +720,9 @@ function requireHttp(ctx: RunContext, values: Values): ConfigHttp {
   return make({ secretKey: auth.secretKey, apiUrl: auth.apiUrl });
 }
 
-async function exportConfig(ctx: RunContext, values: Values): Promise<number> {
-  const http = requireHttp(ctx, values);
-  const dir = resolveDir(values);
-  const format = resolveFormat(values);
+/** Write every resource type's live config to `dir` (deterministic, secrets omitted); returns the file count. */
+async function writeExport(http: ConfigHttp, dir: string, format: Format): Promise<number> {
   const ext = format === 'json' ? 'json' : 'yaml';
-
   mkdirSync(dir, { recursive: true });
   let fileCount = 0;
 
@@ -658,33 +741,59 @@ async function exportConfig(ctx: RunContext, values: Values): Promise<number> {
       fileCount += 1;
     }
   }
+  return fileCount;
+}
+
+async function exportConfig(ctx: RunContext, values: Values): Promise<number> {
+  const http = requireHttp(ctx, values);
+  const dir = resolveDir(values);
+  const format = resolveFormat(values);
+  const fileCount = await writeExport(http, dir, format);
 
   ctx.io.out(`Exported ${fileCount} resource file(s) to ${dir} (${format}).`);
   ctx.io.out('Secrets are never exported — supply any credential at import via a ${ENV} placeholder.');
   return 0;
 }
 
-interface Change {
+export interface Change {
   type: string;
   action: 'create' | 'update' | 'delete';
   key: string;
+  /** The live document (absent on a create). Carried for `atlas config plan`'s field diff. */
+  before?: Config;
+  /** The desired document (absent on a delete). */
+  after?: Config;
 }
 
-async function importConfig(ctx: RunContext, values: Values): Promise<number> {
-  const http = requireHttp(ctx, values);
-  const dir = resolveDir(values);
-  const format = resolveFormat(values);
-  const ext = format === 'json' ? 'json' : 'yaml';
-  const dryRun = values['dry-run'] === true;
-  const prune = values.prune === true;
+/** A planned change and the call that applies it. */
+export interface PlannedChange extends Change {
+  apply: () => Promise<void>;
+}
 
+/** What `atlas config import` would do: the changes, the unchanged count and the skipped deletes. */
+export interface ConfigPlan {
+  changes: PlannedChange[];
+  unchanged: number;
+  skippedDeletes: Change[];
+}
+
+/**
+ * Diff a config directory against the live instance. Nothing is written: the
+ * returned changes carry their own `apply`. Used by `atlas config import` and by
+ * `atlas migrate better-auth` (which shows the plan before applying it).
+ */
+export async function planConfigImport(
+  http: ConfigHttp,
+  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean },
+): Promise<ConfigPlan> {
+  const { dir, format, env, prune } = opts;
+  const ext = format === 'json' ? 'json' : 'yaml';
   if (!existsSync(dir)) {
     throw new CliError(`Config directory not found: ${dir}. Run 'atlas config export' first.`);
   }
   const present = new Set(readdirSync(dir));
 
-  const changes: Change[] = [];
-  const applications: Array<() => Promise<void>> = [];
+  const changes: PlannedChange[] = [];
   let unchanged = 0;
   const skippedDeletes: Change[] = [];
 
@@ -693,7 +802,7 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
     // A type with no file is simply NOT MANAGED — leave live untouched.
     if (!present.has(file)) continue;
     const text = readFileSync(join(dir, file), 'utf8');
-    const parsed = interpolate(deserialize(text, format), ctx.env);
+    const parsed = interpolate(deserialize(text, format), env);
 
     if (spec.kind === 'singleton') {
       const desired = parsed;
@@ -702,8 +811,7 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
         unchanged += 1;
         continue;
       }
-      changes.push({ type: spec.type, action: live === null ? 'create' : 'update', key: '' });
-      applications.push(() => spec.apply(http, desired));
+      changes.push({ type: spec.type, action: live === null ? 'create' : 'update', key: '', ...(live === null ? {} : { before: live }), after: desired, apply: () => spec.apply(http, desired) });
       continue;
     }
 
@@ -717,8 +825,7 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
     for (const [key, cfg] of desiredByKey) {
       const existing = liveByKey.get(key);
       if (!existing) {
-        changes.push({ type: spec.type, action: 'create', key });
-        applications.push(() => spec.create(http, cfg));
+        changes.push({ type: spec.type, action: 'create', key, after: cfg, apply: () => spec.create(http, cfg) });
       } else if (!deepEqual(cfg, existing.config)) {
         if (!spec.update) {
           throw new CliError(
@@ -726,8 +833,7 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
           );
         }
         const upd = spec.update;
-        changes.push({ type: spec.type, action: 'update', key });
-        applications.push(() => upd(http, existing, cfg));
+        changes.push({ type: spec.type, action: 'update', key, before: existing.config, after: cfg, apply: () => upd(http, existing, cfg) });
       } else {
         unchanged += 1;
       }
@@ -735,31 +841,174 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
 
     for (const entry of live) {
       if (desiredByKey.has(entry.key)) continue;
-      const change: Change = { type: spec.type, action: 'delete', key: entry.key };
+      const change: Change = { type: spec.type, action: 'delete', key: entry.key, before: entry.config };
       if (!spec.remove) {
         skippedDeletes.push(change);
         continue;
       }
       if (prune) {
         const rm = spec.remove;
-        changes.push(change);
-        applications.push(() => rm(http, entry));
+        changes.push({ ...change, apply: () => rm(http, entry) });
       } else {
         skippedDeletes.push(change);
       }
     }
   }
+  return { changes, unchanged, skippedDeletes };
+}
 
-  printPlan(ctx, changes, unchanged, skippedDeletes, { dryRun, prune });
+/** The stored credential of a named profile (one profile per environment). */
+function profileHttp(ctx: RunContext, name: string): { http: ConfigHttp; secretKey: string } {
+  const stored = ctx.config.load().profiles[name];
+  if (!stored?.secret_key) {
+    throw new CliError(`No profile named '${name}'. Run 'atlas login --profile ${name}' with that environment's secret key.`);
+  }
+  const secretKey = stored.secret_key;
+  const apiUrl = envApiUrl(ctx.env) || stored.api_url || DEFAULT_API_URL;
+  const make = ctx.makeHttp ?? createConfigHttp;
+  return { http: make({ secretKey, apiUrl }), secretKey };
+}
+
+/** True for a production (live) secret key: `atlas_live_sk_…` or `sk_live_…`. */
+const isLiveKey = (key: string) => /(?:^|_)live_/.test(key);
+
+/**
+ * `atlas config promote --from <profile> --to <profile>`: copy one environment's
+ * configuration to another (development → staging → production) through the same
+ * plan/apply engine as `config import`. Each environment is a profile holding that
+ * instance's secret key. Secrets never travel: `${ENV}` placeholders stay as they
+ * are and credentials are set per environment. `--dry-run` prints the plan only;
+ * applying to a live (production) key needs `--yes`.
+ */
+async function promoteConfig(ctx: RunContext, values: Values): Promise<number> {
+  const from = str(values, 'from');
+  const to = str(values, 'to');
+  if (!from || !to) throw new CliError('promote needs --from <profile> and --to <profile> (one profile per environment).');
+  if (from === to) throw new CliError('--from and --to name the same profile.');
+  const format = resolveFormat(values);
+  const dryRun = values['dry-run'] === true;
+  const prune = values.prune === true;
+
+  const source = profileHttp(ctx, from);
+  const target = profileHttp(ctx, to);
+  if (source.secretKey === target.secretKey) {
+    throw new CliError(`Profiles '${from}' and '${to}' hold the same secret key — they are the same environment.`);
+  }
+  if (!dryRun && isLiveKey(target.secretKey) && values.yes !== true) {
+    throw new CliError(`'${to}' is a live (production) environment. Review with --dry-run, then re-run with --yes to apply.`);
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), 'atlas-promote-'));
+  try {
+    await writeExport(source.http, dir, format);
+    const plan = await planConfigImport(target.http, { dir, format, env: ctx.env, prune });
+    ctx.io.out(`Promoting ${from} -> ${to}`);
+    printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
+    if (dryRun) return 0;
+    for (const change of plan.changes) await change.apply();
+    ctx.io.out(plan.changes.length ? `Applied ${plan.changes.length} change(s) to ${to}.` : 'No changes to apply.');
+    return 0;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function importConfig(ctx: RunContext, values: Values): Promise<number> {
+  const http = requireHttp(ctx, values);
+  const dir = resolveDir(values);
+  const format = resolveFormat(values);
+  const dryRun = values['dry-run'] === true;
+  const prune = values.prune === true;
+
+  const plan = await planConfigImport(http, { dir, format, env: ctx.env, prune });
+  printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
 
   if (dryRun) return 0;
-  for (const apply of applications) await apply();
-  if (changes.length) ctx.io.out(`Applied ${changes.length} change(s).`);
+  for (const change of plan.changes) await change.apply();
+  if (plan.changes.length) ctx.io.out(`Applied ${plan.changes.length} change(s).`);
   else ctx.io.out('No changes to apply.');
   return 0;
 }
 
-function printPlan(
+/** One differing field between the live and the desired document. */
+export interface FieldDiff {
+  path: string;
+  before?: Json;
+  after?: Json;
+}
+
+/** Leaf-level differences between two documents, as dotted paths (arrays compare whole). */
+export function diffFields(before: Json | undefined, after: Json | undefined, path = ''): FieldDiff[] {
+  const isObj = (x: Json | undefined): x is { [k: string]: Json } => x !== null && typeof x === 'object' && !Array.isArray(x);
+  if (isObj(before) && isObj(after)) {
+    const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
+    return keys.flatMap((k) => diffFields(before[k], after[k], path ? `${path}.${k}` : k));
+  }
+  if (before !== undefined && after !== undefined && deepEqual(before, after)) return [];
+  if (before === undefined && after === undefined) return [];
+  return [{ path: path || '(document)', ...(before === undefined ? {} : { before }), ...(after === undefined ? {} : { after }) }];
+}
+
+const show = (v: Json | undefined) => (v === undefined ? '(unset)' : typeof v === 'string' ? JSON.stringify(v) : JSON.stringify(v));
+
+/**
+ * `atlas config plan`: a Terraform-style, read-only diff of a config directory
+ * (`atlas config export` output, committed to git) against the live instance.
+ * Field-level for updates, `--json` for tooling, and `--exit-code` to exit 2
+ * when there is drift so CI can gate on it. Never writes anything.
+ */
+async function planConfig(ctx: RunContext, values: Values): Promise<number> {
+  const http = requireHttp(ctx, values);
+  const dir = resolveDir(values);
+  const format = resolveFormat(values);
+  const prune = values.prune === true;
+  const plan = await planConfigImport(http, { dir, format, env: ctx.env, prune });
+  const deletes: Change[] = prune ? [] : plan.skippedDeletes;
+  const all: Change[] = plan.changes;
+  const rows = all.map((c) => ({
+    type: c.type,
+    key: c.key || null,
+    action: c.action,
+    fields: c.action === 'update' ? diffFields(c.before, c.after) : [],
+  }));
+  const pending = rows.length;
+
+  if (values.json === true) {
+    ctx.io.out(
+      JSON.stringify(
+        {
+          object: 'config_plan',
+          changes: rows,
+          unchanged: plan.unchanged,
+          unmanaged_live: deletes.map((d) => ({ type: d.type, key: d.key || null })),
+          has_changes: pending > 0,
+        },
+        null,
+        2,
+      ),
+    );
+  } else {
+    ctx.io.out(`Plan: ${pending} to change, ${plan.unchanged} unchanged${deletes.length ? `, ${deletes.length} live but not in config` : ''}.`);
+    const sign = { create: '+', update: '~', delete: '-' } as const;
+    for (const c of [...all].sort(sortChange)) {
+      const label = c.key ? `${c.type} ${c.key}` : c.type;
+      ctx.io.out('');
+      ctx.io.out(`${sign[c.action]} ${label} (${c.action})`);
+      if (c.action === 'update') {
+        for (const f of diffFields(c.before, c.after)) ctx.io.out(`    ${f.path}: ${show(f.before)} -> ${show(f.after)}`);
+      }
+    }
+    if (deletes.length) {
+      ctx.io.out('');
+      ctx.io.out(`Live but not in ${dir} (kept; pass --prune to plan their deletion):`);
+      for (const d of deletes) ctx.io.out(`    ${d.type}${d.key ? ` ${d.key}` : ''}`);
+    }
+    if (pending === 0) ctx.io.out('No drift: the instance matches the config directory.');
+  }
+  return values['exit-code'] === true && pending > 0 ? 2 : 0;
+}
+
+export function printPlan(
   ctx: RunContext,
   changes: Change[],
   unchanged: number,
@@ -800,7 +1049,7 @@ function asArray(value: Json): Config[] {
  * on disk. An unset variable is left verbatim so the plan surfaces it rather
  * than silently blanking a credential.
  */
-function interpolate(value: Json, env: NodeJS.ProcessEnv): Json {
+export function interpolate(value: Json, env: NodeJS.ProcessEnv): Json {
   if (typeof value === 'string') {
     return value.replace(/\$\{([A-Z0-9_]+)\}/g, (match, name: string) => env[name] ?? match);
   }

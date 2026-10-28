@@ -102,7 +102,7 @@ export function parseInstanceEnv(raw: string | undefined, fallback: InstanceEnv)
 }
 
 /** The raw HTTP client for a credential (the context's, or the real one). */
-export function httpFor(ctx: RunContext, opts: { secretKey: string; apiUrl: string }): ConfigHttp {
+export function httpFor(ctx: RunContext, opts: { secretKey: string; apiUrl: string; headers?: Record<string, string> }): ConfigHttp {
   return (ctx.makeHttp ?? createConfigHttp)(opts);
 }
 

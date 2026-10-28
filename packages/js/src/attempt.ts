@@ -23,6 +23,19 @@ export type AttemptStatus =
   | 'needs_new_password'
   /** §5 the server is asking the identifier step to clear a captcha challenge. */
   | 'needs_captcha'
+  /**
+   * Every factor passed, but the user must accept the current version of one
+   * or more policies (`pending_policies`) before a session is issued. Accept
+   * with `acceptAttemptPolicies` (POST /v1/client/sign_ins/:id/accept_policies).
+   */
+  | 'needs_policy_acceptance'
+  /**
+   * Every factor passed, but the user owes a required action
+   * (`pending_required_actions`: a new password, profile fields, a verified
+   * address, an application step). Finish one with `completeRequiredAction`
+   * (POST /v1/client/sign_ins/:id/required_actions).
+   */
+  | 'needs_required_action'
   | 'complete'
   | 'abandoned';
 
@@ -35,9 +48,62 @@ export type Step =
   | { kind: 'collect_captcha' }
   | { kind: 'await_oauth' }
   | { kind: 'collect_new_password' }
+  /** Show `policies` (GET /v1/client/policies has their content) and submit acceptances. */
+  | { kind: 'accept_policies'; policies: PendingPolicy[] }
+  /** Collect what `actions[0]` needs (a password, name fields, an emailed code) or send the user to its `url`. */
+  | { kind: 'complete_required_action'; actions: PendingRequiredAction[] }
   | { kind: 'done'; sessionId: string | null }
   | { kind: 'restart'; reason: 'abandoned' }
   | { kind: 'unknown'; status: string };
+
+/** One action an attempt waits on (`pending_required_actions`). */
+export interface PendingRequiredAction {
+  id: string;
+  /** `update_password`, `verify_email`, `update_profile`, `complete_profile` or `journey_form` (see `fields`), `identity_verification` (see `AttemptView.identity_verification`), or `custom` (see `url`). */
+  action: string;
+  /** `custom` only: where to send the user; the application closes the action. */
+  url: string | null;
+  reason: string | null;
+  /** `complete_profile` (progressive profiling) and `journey_form`: the fields asked for. */
+  fields?: ProfileCompletionField[];
+  /** `journey_form` (a server-driven step of the sign-in journey): its heading and introduction. */
+  title?: string | null;
+  intro?: string | null;
+}
+
+/** One field of progressive profiling (`pending_required_actions[].fields`, `getProfileCompletion`). */
+export interface ProfileCompletionField {
+  key: string;
+  label: string;
+  type: string;
+  required: boolean;
+  placeholder: string | null;
+  options: string[];
+}
+
+/** One policy an attempt waits on (`pending_policies`). */
+export interface PendingPolicy {
+  /** The policy key (`tos`, `privacy`, …). */
+  policy: string;
+  policy_id: string;
+  title: string;
+  display: 'checkbox' | 'scroll' | 'link' | (string & {});
+  version_id: string;
+  version: string;
+  /** SHA-256 of the sanitised HTML to show; send it back in the acceptance. */
+  content_sha256: string;
+  /** The user accepted an earlier version: show `summary_of_changes`. */
+  reaccept: boolean;
+  summary_of_changes: string | null;
+}
+
+/** The identity check an `identity_verification` required action started (`step: 'start'`) or read. */
+export interface AttemptIdentityVerification {
+  status: 'pending' | 'approved' | 'declined' | 'needs_review';
+  /** The verification service's hosted page, while pending. */
+  url: string | null;
+  reason: string | null;
+}
 
 export interface AttemptView {
   /**
@@ -50,14 +116,32 @@ export interface AttemptView {
    */
   id: string | null;
   /** The resource type the server stamps on every attempt view. */
-  object?: 'sign_in_attempt';
+  object?: 'sign_in_attempt' | 'sign_up_attempt';
   status: string;
   /** The identifier the attempt was started with; `null` before one is collected. */
   identifier?: string | null;
   supported_first_factors?: string[];
+  /** `passkey` on a passkey-only sign-up (see `awaitingPasskey`). */
+  strategy?: string;
   created_session_id?: string | null;
   /** Attempt expiry (epoch ms); `null` on the pre-attempt challenge marker. */
   expires_at?: number | null;
+  /** While `needs_policy_acceptance`: what to accept. */
+  pending_policies?: PendingPolicy[];
+  /** While held on the `identity_verification` required action: the check started or read by the last submit. */
+  identity_verification?: AttemptIdentityVerification;
+  /**
+   * While `needs_policy_acceptance`, on the response that put it there only:
+   * the one-time token to send with the acceptances.
+   */
+  policy_acceptance_token?: string;
+  /** While `needs_required_action`: what the user owes. */
+  pending_required_actions?: PendingRequiredAction[];
+  /**
+   * While `needs_required_action`, on the response that put it there only:
+   * the one-time token to send with the action.
+   */
+  required_action_token?: string;
 }
 
 export function nextStep(attempt: AttemptView): Step {
@@ -98,6 +182,12 @@ export function nextStep(attempt: AttemptView): Step {
 
     case 'needs_new_password':
       return { kind: 'collect_new_password' };
+
+    case 'needs_policy_acceptance':
+      return { kind: 'accept_policies', policies: attempt.pending_policies ?? [] };
+
+    case 'needs_required_action':
+      return { kind: 'complete_required_action', actions: attempt.pending_required_actions ?? [] };
 
     case 'complete':
       return { kind: 'done', sessionId: attempt.created_session_id ?? null };

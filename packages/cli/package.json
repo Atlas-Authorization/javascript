@@ -1,7 +1,7 @@
 {
   "name": "@atlasauth/cli",
-  "version": "0.5.0",
-  "description": "atlas — manage an Atlas instance from the terminal via the Backend API.",
+  "version": "0.15.0",
+  "description": "atlas \u2014 manage an Atlas instance from the terminal via the Backend API.",
   "bin": {
     "atlas": "dist/cli.js"
   },
@@ -16,12 +16,17 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
+    "test": "vitest run --no-isolate"
   },
   "dependencies": {
     "@atlasauth/actions": "workspace:*",
-    "@atlasauth/backend": "workspace:*"
+    "@atlasauth/backend": "workspace:*",
+    "@atlasauth/emulator": "workspace:*",
+    "@atlasauth/migrate": "workspace:*",
+    "@atlasauth/referral-conformance": "workspace:*",
+    "@atlasauth/upgrade": "workspace:*",
+    "yaml": "^2.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
@@ -33,6 +38,8 @@
   },
   "files": [
     "dist",
+    "github-action",
+    "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
   ]

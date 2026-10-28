@@ -1,0 +1,20 @@
+import { Auth0Client, GenericError, type GetTokenSilentlyOptions } from '@auth0/auth0-spa-js';
+
+const client = new Auth0Client({
+  domain: 'acme.us.auth0.com',
+  clientId: 'abc123',
+  authorizationParams: { audience: 'https://api.acme.test', scope: 'openid profile read:orders' },
+});
+
+export async function token(opts?: GetTokenSilentlyOptions) {
+  try {
+    return await client.getTokenSilently(opts);
+  } catch (err) {
+    if (err instanceof GenericError && err.error === 'login_required') await client.loginWithRedirect();
+    throw err;
+  }
+}
+
+export async function exchange(subjectToken: string) {
+  return client.exchangeToken({ subject_token: subjectToken, subject_token_type: 'urn:acme:legacy', audience: 'https://api.acme.test' });
+}

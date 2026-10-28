@@ -2,6 +2,10 @@
   "extends": "./tsconfig.json",
   // esbuild (build.mjs) emits the JS; tsc only emits the type declarations.
   "compilerOptions": {
+    // Incremental: an unchanged package rebuilds in seconds. The build info
+    // lives in dist, so deleting dist always forces a full rebuild.
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo",
     "emitDeclarationOnly": true
   },
   // Typecheck covers the tests; the published dist must not carry them.

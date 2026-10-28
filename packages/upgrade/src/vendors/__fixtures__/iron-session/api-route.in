@@ -1,0 +1,6 @@
+import { withIronSessionApiRoute } from 'iron-session/next';
+import { sessionOptions } from '@/lib/session';
+
+export default withIronSessionApiRoute(async function userRoute(req, res) {
+  res.json({ user: req.session.user ?? null });
+}, sessionOptions);

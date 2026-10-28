@@ -1,0 +1,1 @@
+{"_id":{"$oid":"65f1c0ffee0000000000000c"},"sessionToken":"mongo-session-token-1","userId":{"$oid":"65f1c0ffee0000000000000a"},"expires":{"$date":{"$numberLong":"1795000000000"}}}

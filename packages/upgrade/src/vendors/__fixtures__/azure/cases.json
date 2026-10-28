@@ -1,0 +1,12 @@
+[
+  {
+    "name": "msal-react",
+    "path": "components/app.tsx",
+    "manual": ["removed provider props with no Atlas counterpart: instance", "NEXT_PUBLIC_AZURE_AD_B2C_CLIENT_ID: MSAL configuration"]
+  },
+  {
+    "name": "msal-node",
+    "path": "app/auth/callback/route.ts",
+    "manual": ["server-side: Atlas hosts sign-in and callbacks", "AZURE_AD_CLIENT_SECRET: MSAL configuration"]
+  }
+]

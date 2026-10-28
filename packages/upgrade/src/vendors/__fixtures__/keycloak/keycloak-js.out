@@ -1,0 +1,19 @@
+// TODO(atlas-migrate): new Keycloak(config): the Keycloak client: read the session with useAuth() / useUser() from @atlasauth/react; sign in with <SignInButton /> and out with <SignOutButton /> or useAuth().signOut(); send useAuth().getToken() to your API
+import Keycloak from 'keycloak-js';
+
+const keycloak = new Keycloak({
+  url: import.meta.env.VITE_ATLAS_FRONTEND_API,
+  realm: 'acme',
+  clientId: import.meta.env.VITE_ATLAS_PUBLISHABLE_KEY,
+});
+
+export async function signIn() {
+  await keycloak.init({ onLoad: 'check-sso' });
+  // TODO(atlas-migrate): keycloak.login(): <SignInButton /> from @atlasauth/react, or link to /sign-in
+  await keycloak.login();
+}
+
+export function signOut() {
+  // TODO(atlas-migrate): keycloak.logout(): useAuth().signOut() or <SignOutButton /> from @atlasauth/react
+  return keycloak.logout();
+}

@@ -1,0 +1,8 @@
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+
+export async function handler(token: string) {
+  const decoded = await getAuth().verifyIdToken(token);
+  await getAuth().setCustomUserClaims(decoded.uid, { admin: true });
+  return getFirestore().collection('users').doc(decoded.uid).get();
+}

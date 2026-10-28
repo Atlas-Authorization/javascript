@@ -1,0 +1,10 @@
+import passport from 'passport';
+import { Strategy as LocalStrategy } from 'passport-local';
+import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { findUser } from '../db';
+
+passport.use(new LocalStrategy((username, password, done) => findUser(username, password, done)));
+passport.use(new GoogleStrategy({ clientID: 'id', clientSecret: 'secret', callbackURL: '/auth/google/callback' }, (_a, _r, profile, done) => done(null, profile)));
+
+passport.serializeUser((user: { id: string }, done) => done(null, user.id));
+passport.deserializeUser((id: string, done) => findUser(id, null, done));

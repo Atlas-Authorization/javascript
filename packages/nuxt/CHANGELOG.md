@@ -1,5 +1,11 @@
 # @atlasauth/nuxt changelog
 
+## 0.2.0 — 2026-10-24
+Requires `@atlasauth/vue` with policy acceptance.
+- **Policy acceptance** (terms of service, privacy, any policy the app defines). `usePolicies` and `usePolicyState` are
+  auto-imported, and `PolicyConsent`, `PolicyClickwrap`, `PolicyAcceptStep` and `PolicyGate` are registered as components,
+  from `@atlasauth/vue` (`<SignIn>` / `<SignUp>` already show the policies).
+
 ## 0.1.5
 
 ### Changed

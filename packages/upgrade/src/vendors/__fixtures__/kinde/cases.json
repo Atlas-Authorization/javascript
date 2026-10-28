@@ -1,0 +1,75 @@
+[
+  {
+    "name": "server-session",
+    "path": "app/dashboard/page.tsx",
+    "manual": [
+      "getBooleanFlag: Kinde feature flags have no Atlas counterpart"
+    ]
+  },
+  {
+    "name": "middleware",
+    "path": "middleware.ts",
+    "manual": [
+      "withAuth now runs the Atlas middleware"
+    ]
+  },
+  {
+    "name": "middleware-options",
+    "path": "middleware.ts",
+    "manual": [
+      "withAuth isAuthorized: it now receives the Atlas session claims",
+      "withAuth now runs the Atlas middleware"
+    ]
+  },
+  {
+    "name": "middleware-v1",
+    "path": "middleware.ts",
+    "manual": [
+      "middleware now runs Atlas"
+    ]
+  },
+  {
+    "name": "auth-route",
+    "path": "app/api/auth/[kindeAuth]/route.ts",
+    "manual": [
+      "this Kinde route is no longer used"
+    ]
+  },
+  {
+    "name": "links",
+    "path": "components/auth-links.tsx",
+    "manual": [
+      "<RegisterLink> is now <SignUpButton>: removed props it does not accept: orgCode"
+    ]
+  },
+  {
+    "name": "browser-client",
+    "path": "components/profile.tsx"
+  },
+  {
+    "name": "nextjs-provider",
+    "path": "app/auth-provider.tsx"
+  },
+  {
+    "name": "react-provider",
+    "path": "src/main.tsx",
+    "envStyle": "vite",
+    "manual": [
+      "removed provider props with no Atlas counterpart: redirectUri, logoutUri"
+    ]
+  },
+  {
+    "name": "react-hooks",
+    "path": "src/Profile.tsx",
+    "envStyle": "vite"
+  },
+  {
+    "name": "env",
+    "path": "lib/kinde-config.ts",
+    "manual": [
+      "KINDE_CLIENT_SECRET: server code uses ATLAS_SECRET_KEY",
+      "KINDE_SITE_URL: not needed",
+      "KINDE_POST_LOGOUT_REDIRECT_URL: pass redirectUrl to <SignOutButton>"
+    ]
+  }
+]

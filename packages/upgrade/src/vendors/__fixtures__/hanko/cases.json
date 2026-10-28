@@ -1,0 +1,7 @@
+[
+  { "name": "login-element", "path": "components/login.tsx", "manual": ["register(api): delete it", "<hanko-auth> is now <SignIn />; its attributes (lang)"] },
+  { "name": "profile-element", "path": "components/account.tsx", "manual": ["<hanko-profile> is now <UserProfile />"] },
+  { "name": "frontend-sdk", "path": "src/hanko.ts", "envStyle": "vite", "manual": ["hanko.user.getCurrent(): useUser()", "hanko.logout(): useAuth().signOut()", "onSessionExpired(): onAtlasSignOut"] },
+  { "name": "server-env", "path": "lib/hanko.ts", "manual": ["HANKO_API_URL: the Hanko API URL", "HANKO_API_KEY: server code uses ATLAS_SECRET_KEY"] },
+  { "name": "plain", "path": "src/math.ts", "unchanged": true }
+]

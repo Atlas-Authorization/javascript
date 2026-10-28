@@ -1,3 +1,5 @@
+import { metadataQuery, type ProvisioningFields, type ProvisioningInput, type ProvisioningMetadata } from './compliance';
+import type { KeyKind, StandardKey, Whoami } from './credentials';
 import {
   createKeyedRequest,
   enc,
@@ -33,6 +35,14 @@ export interface AtlasIdAppPreflight {
   checked_at: number;
   user_count: number;
   findings: PreflightFinding[];
+  /** The page origins the Sign in with Atlas button script ran on in the last 7 days. */
+  button_rendered_origins?: { origin: string; last_seen_at: number; requests: number }[];
+  /** How the last 7 days' sign-ins started: the rendered button, the script API, One Tap, the no-script fallback, or unmarked. */
+  authorize_requests_7d?: { button: number; js: number; fedcm: number; fallback: number; unmarked: number };
+  /** Origins of sign-ins that came through the no-script fallback link (`?atlasid_fallback=1`). */
+  fallback_origins?: { origin: string; last_seen_at: number; requests: number }[];
+  /** Whether the app's homepage references the button script (null = could not check). */
+  homepage_includes_script?: boolean | null;
 }
 
 /**
@@ -43,8 +53,14 @@ export interface AtlasIdAppPreflight {
  * platform key manages many apps, a secret key manages exactly one instance.
  */
 export interface AtlasPlatformClientConfig {
-  /** The platform key (`psk_...`). Sent as `Authorization: Bearer <key>`; never logged. */
+  /**
+   * The platform key (`atlas_live_psk_…` or legacy `psk_…`), or a one-hour
+   * platform-bound access token from `exchangeOperatorToken`. Sent as
+   * `Authorization: Bearer <key>`; never logged.
+   */
   platformKey: string;
+  /** Sealed secret delivery (`x25519:<public key>`); see AtlasClientConfig.secretRecipient. */
+  secretRecipient?: string;
   /** Base URL of the API, e.g. `https://api.atlasauth.net`. */
   apiUrl?: string;
   /** Injectable `fetch`, for tests and non-global-fetch runtimes. */
@@ -58,7 +74,7 @@ export interface AtlasPlatformClientConfig {
 // ---- apps ------------------------------------------------------------------
 
 /** An app (instance) a platform owns. Never carries a secret. */
-export interface PlatformApp {
+export interface PlatformApp extends ProvisioningFields {
   object: 'app';
   id: string;
   name: string;
@@ -113,6 +129,9 @@ export interface CreatePlatformAppBody {
   /** Default true: also provision a test-mode sibling instance. */
   create_development_sibling?: boolean;
   tags?: string[];
+  metadata?: ProvisioningMetadata;
+  /** A stable key of your own: a repeat create with it returns the existing app (200, no secret). */
+  external_ref?: string;
 }
 
 export interface UpdatePlatformAppBody {
@@ -120,6 +139,8 @@ export interface UpdatePlatformAppBody {
   /** Origin strings, or `{ origin, integration }` entries (`redirect` | `embedded` | `auto`). */
   allowed_origins?: AllowedOriginInput[];
   tags?: string[];
+  /** Replaces the provisioning metadata. */
+  metadata?: ProvisioningMetadata;
 }
 
 export interface ListPlatformAppsParams {
@@ -129,9 +150,11 @@ export interface ListPlatformAppsParams {
   archived?: boolean;
   /** `true`: include archived apps alongside active ones. */
   include_archived?: boolean;
+  /** Only apps whose provisioning metadata matches every pair. */
+  metadata?: ProvisioningMetadata;
 }
 
-export interface CreatePlatformInstanceBody {
+export interface CreatePlatformInstanceBody extends ProvisioningInput {
   environment?: 'production' | 'development';
   /** Origin strings, or `{ origin, integration }` entries (`redirect` | `embedded` | `auto`). */
   allowed_origins?: AllowedOriginInput[];
@@ -180,9 +203,10 @@ export interface RotateAtlasIdAppSecretBody {
 }
 
 /** Metadata of a currently-valid secret key. Never the secret itself. */
-export interface PlatformSecretKey {
+export interface PlatformSecretKey extends ProvisioningFields {
   object: 'secret_key';
   id: string;
+  name?: string | null;
   prefix: string;
   created_at: number;
   expires_at?: number | null;
@@ -199,7 +223,58 @@ export interface PlatformAppTransfer {
 
 export interface PlatformAppBulkDeleteResult {
   object: 'bulk_delete_result';
-  results: Array<{ id: string; deleted: boolean; reason?: string }>;
+  /** `disable` (ids) or `hard_delete` (a sandbox metadata selection). */
+  mode?: 'disable' | 'hard_delete';
+  dry_run?: boolean;
+  results: Array<{ id: string; type?: string; instance_id?: string; deleted: boolean; reason?: string }>;
+  changes?: Array<{ section: string; before: unknown; after: unknown }>;
+}
+
+/** A sandbox teardown selection: must carry `sandbox: true`. */
+export interface SandboxTeardownBody {
+  metadata: ProvisioningMetadata;
+  dry_run?: boolean;
+}
+
+/** A named, tagged extra secret key for an app. */
+export interface CreatePlatformSecretKeyBody extends ProvisioningInput {
+  name?: string;
+  /** Any instance of the same app; default the app's own. */
+  instance_id?: string;
+}
+
+export interface CreatedPlatformSecretKey extends PlatformSecretKey {
+  app_id: string;
+  instance_id: string;
+  /** Present only on a fresh create (never on an idempotent replay). */
+  secret?: string;
+  note?: string;
+}
+
+export interface CloneConfigBody {
+  /** Default `development`. */
+  to_environment?: 'development' | 'production';
+  target_instance_id?: string;
+  /** Default auth_config, roles, redirect_urls. */
+  sections?: Array<'auth_config' | 'allowed_origins' | 'roles' | 'redirect_urls'>;
+  include_origins?: boolean;
+  dry_run?: boolean;
+}
+
+export interface CloneConfigResult {
+  object: 'clone_config_result' | 'dry_run';
+  source_instance_id: string;
+  target_instance_id: string | null;
+  to_environment: string;
+  created_target: boolean;
+  sections: string[];
+  excluded: Array<{ path: string; reason: 'secret' | 'instance_specific' }>;
+  never_copied: string[];
+  changes: Array<{ section: string; before: unknown; after: unknown }>;
+  target?: PlatformApp | null;
+  /** When a new instance was created for the clone: its secret key, shown once. */
+  secret?: string;
+  note?: string;
 }
 
 export interface AccountlessApp {
@@ -272,7 +347,7 @@ export interface AtlasIdAppBrandingInput {
 }
 
 /** A Sign in with Atlas app: an OpenID Connect client on the Atlas issuer. */
-export interface AtlasIdApp {
+export interface AtlasIdApp extends ProvisioningFields {
   object: 'atlas_id_app';
   id: string;
   client_id: string;
@@ -289,7 +364,10 @@ export interface AtlasIdApp {
   allowed_scopes: string[];
   type: 'confidential' | 'public';
   secret_prefix?: string | null;
+  /** The instance that manages this app's grants (its scoped key lists and revokes them), or null. */
   managed_by_instance_id?: string | null;
+  /** `instance_toggle`: an instance's Sign in with Atlas toggle app; `adopted`: handed to an instance with `setManagedBy`. */
+  managed_via?: 'instance_toggle' | 'adopted' | null;
   created_at: number;
   updated_at: number;
   /** On `get` only: people who have approved the app. */
@@ -305,13 +383,93 @@ export interface AtlasIdApp {
   previous_secret_expires_at?: number | null;
   /** When the current client secret was issued (epoch ms); null for a public app. */
   secret_issued_at?: number | null;
+  /** Test sign-in mode: `+atlas_test` addresses on a verified domain sign in to this app with the fixed code 424242. */
+  test_mode?: boolean;
+  /** Test and review accounts must use an address on a domain you verified. */
+  provisioned_verified_domains_only?: boolean;
+}
+
+/** A Sign in with Atlas test or review account: confined to the app(s) it was made for. */
+export interface AtlasIdProvisionedAccount {
+  object: 'atlas_id_provisioned_account';
+  id: string;
+  /** The Atlas ID subject the app sees. */
+  sub: string;
+  email: string | null;
+  email_verified: boolean;
+  label: string;
+  kind: 'provisioned' | 'test_mode' | 'developer';
+  provisioned_by: 'app' | 'staff';
+  app_ids: string[];
+  apps: Array<{ id: string; client_id: string; name: string }>;
+  any_app: boolean;
+  two_factor_exempt: boolean;
+  /** Epoch ms; null = never expires. */
+  expires_at: number | null;
+  expired: boolean;
+  developer_account_id: string | null;
+  created_by: { type: string; id: string };
+  last_sign_in_at: number | null;
+  password_rotated_at: number | null;
+  created_at: number;
+  updated_at: number;
+  /** Only on create and password rotation: the password, returned exactly once. */
+  password?: string;
+  /** With a `secretRecipient`: the password sealed to it. */
+  sealed_password?: string;
+  note?: string;
+}
+
+export interface AtlasIdProvisionedAccountList {
+  object: 'list';
+  data: AtlasIdProvisionedAccount[];
+  /** The account-wide cap (default 25). */
+  limit: number;
+  /** Test accounts the account holds across all its apps. */
+  total: number;
+}
+
+export interface CreateAtlasIdProvisionedAccountBody {
+  email: string;
+  /** What the account is for, e.g. "app-store reviewer". */
+  label: string;
+  /** At least 12 characters. Omit it and Atlas generates one. Returned once either way. */
+  password?: string;
+  /** Default true. */
+  email_verified?: boolean;
+  /** Never asked for a second factor when signing in to this app. A risk you opt into. */
+  two_factor_exempt?: boolean;
+  /** Epoch ms or ISO 8601; omit or null for a non-expiring account. */
+  expires_at?: number | string | null;
+}
+
+export interface RotateAtlasIdProvisionedPasswordBody {
+  /** At least 12 characters; omit it and Atlas generates one. */
+  password?: string;
+}
+
+/** A domain the account claimed; verified ones gate test sign-in mode. */
+export interface AccountDomain {
+  object: 'account_domain';
+  id: string;
+  domain: string;
+  verified: boolean;
+  verified_at: number | null;
+  last_checked_at: number | null;
+  verification: { type: 'TXT'; name: string; value: string };
+  record_found?: boolean;
+  created_at: number;
 }
 
 /** Create / rotate response: confidential apps carry the client secret exactly once. */
 export interface AtlasIdAppWithSecret extends AtlasIdApp {
   client_secret?: string;
+  /** With a `secretRecipient`: the client secret sealed to it. */
+  sealed_client_secret?: string;
   /** The per-app webhook signing secret, returned exactly once (first set, or rotated). */
   webhook_secret?: string;
+  /** With a `secretRecipient`: the webhook secret sealed to it. */
+  sealed_webhook_secret?: string;
   /** On a rotation: the overlap applied, in seconds. */
   overlap_seconds?: number;
   note?: string;
@@ -391,7 +549,7 @@ interface AtlasIdAppFields {
   branding?: AtlasIdAppBrandingInput | null;
 }
 
-export interface CreateAtlasIdAppBody extends AtlasIdAppFields {
+export interface CreateAtlasIdAppBody extends AtlasIdAppFields, ProvisioningInput {
   name: string;
   redirect_uris: string[];
   /** Default `confidential`. */
@@ -400,22 +558,113 @@ export interface CreateAtlasIdAppBody extends AtlasIdAppFields {
 
 export interface UpdateAtlasIdAppBody extends AtlasIdAppFields {
   name?: string;
+  /** Replaces the provisioning metadata. */
+  metadata?: ProvisioningMetadata;
   redirect_uris?: string[];
   /**
    * Per-app webhook (public https): user.updated, user.deleted and grant.revoked for
    * this app's users. Setting it the first time returns `webhook_secret` once; null removes it.
    */
   webhook_url?: string | null;
+  /** Turn test sign-in mode on or off. Turning it on needs a verified domain on the account. */
+  test_mode?: boolean;
+  /** Require test and review accounts to use an address on a domain you verified. */
+  provisioned_verified_domains_only?: boolean;
+}
+
+// ---- account audit ----------------------------------------------------------------
+
+export interface AccountAuditRecord {
+  object: 'account_audit_log';
+  id: string;
+  account_id: string;
+  actor: { type: string; id: string | null };
+  action: string;
+  target: { type: string | null; id: string | null };
+  instance_id: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  metadata: Record<string, unknown>;
+  created_at: number;
+}
+
+export interface AccountAuditStream {
+  object: 'account_audit_stream';
+  id: string;
+  url: string;
+  format: 'atlas' | 'cloudevents';
+  active: boolean;
+  has_secret: true;
+  cursor: string | null;
+  consecutive_failures: number;
+  failing_since: number | null;
+  next_attempt_at: number | null;
+  last_delivered_at: number | null;
+  last_error: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 // ---- the client ----------------------------------------------------------------
 
 function platformNamespaces(request: RequestFn) {
   return {
+    /** Introspect the platform key / token this client uses. */
+    whoami(): Promise<Whoami> {
+      return request({ method: 'GET', path: '/v1/platform/whoami' });
+    },
+    /** Every credential on the account (incl. revoked), and minting/revoking them. */
+    keys: {
+      list(params: { kind?: KeyKind; status?: StandardKey['status']; instance_id?: string } = {}): Promise<ListPage<StandardKey>> {
+        return request({ method: 'GET', path: '/v1/platform/keys', query: { ...params } });
+      },
+      /** Scopes ⊆ the caller's; per-app grant scopes `atlas_id_apps:<app id>:grants:read|write` allowed. */
+      create(body: {
+        scopes: string[];
+        name?: string;
+        application_ids?: string[];
+        expires_at?: number | string;
+        ip_allowlist?: string[];
+        owner?: string;
+        key_format?: 'atlas' | 'legacy';
+      }): Promise<{ object: 'platform_api_key'; id: string; prefix: string; scopes: string[]; secret?: string; sealed_secret?: string }> {
+        return request({ method: 'POST', path: '/v1/platform/keys', body });
+      },
+      update(id: string, body: { name?: string | null; owner?: string | null; expires_at?: number | string | null }): Promise<{ object: 'platform_api_key'; id: string }> {
+        return request({ method: 'PATCH', path: `/v1/platform/keys/${enc(id)}`, body });
+      },
+      revoke(id: string): Promise<{ object: 'key'; id: string; kind: KeyKind; revoked: true }> {
+        return request({ method: 'POST', path: `/v1/platform/keys/${enc(id)}/revoke` });
+      },
+    },
+    /** The account audit log and its streams. */
+    audit: {
+      list(params: { limit?: number; starting_after?: string; action?: string } = {}): Promise<ListPage<AccountAuditRecord>> {
+        return request({ method: 'GET', path: '/v1/platform/audit_logs', query: { ...params } });
+      },
+      streams: {
+        list(): Promise<ListPage<AccountAuditStream>> {
+          return request({ method: 'GET', path: '/v1/platform/audit_streams' });
+        },
+        create(body: { url: string; format?: 'atlas' | 'cloudevents' }): Promise<AccountAuditStream & { secret?: string; sealed_secret?: string }> {
+          return request({ method: 'POST', path: '/v1/platform/audit_streams', body });
+        },
+        update(id: string, body: { url?: string; format?: 'atlas' | 'cloudevents'; active?: boolean }): Promise<AccountAuditStream> {
+          return request({ method: 'PATCH', path: `/v1/platform/audit_streams/${enc(id)}`, body });
+        },
+        delete(id: string): Promise<{ object: 'account_audit_stream'; id: string; deleted: true }> {
+          return request({ method: 'DELETE', path: `/v1/platform/audit_streams/${enc(id)}` });
+        },
+        test(id: string): Promise<{ id: string; ok: boolean; status: number | null; error?: string }> {
+          return request({ method: 'POST', path: `/v1/platform/audit_streams/${enc(id)}/test` });
+        },
+      },
+    },
     apps: {
       /** Archived apps are hidden unless `include_archived` or `archived` is set. */
       list(params: ListPlatformAppsParams = {}): Promise<ListPage<PlatformApp>> {
-        return request({ method: 'GET', path: '/v1/platform/apps', query: { ...params } });
+        const { metadata, ...rest } = params;
+        return request({ method: 'GET', path: '/v1/platform/apps', query: { ...rest, ...metadataQuery(metadata) } });
       },
       /** Provision an app; its secret key is revealed exactly once. */
       create(body: CreatePlatformAppBody = {}, idempotencyKey?: string): Promise<CreatedPlatformApp> {
@@ -434,8 +683,31 @@ function platformNamespaces(request: RequestFn) {
         return request({ method: 'DELETE', path: `/v1/platform/apps/${enc(id)}` });
       },
       /** Disable up to 100 apps; ids you do not own are skipped as `not_found`. */
-      bulkDelete(ids: string[]): Promise<PlatformAppBulkDeleteResult> {
-        return request({ method: 'POST', path: '/v1/platform/apps/bulk_delete', body: { ids } });
+      bulkDelete(ids: string[] | SandboxTeardownBody): Promise<PlatformAppBulkDeleteResult> {
+        return request({
+          method: 'POST',
+          path: '/v1/platform/apps/bulk_delete',
+          body: Array.isArray(ids) ? { ids } : ids,
+        });
+      },
+      /**
+       * Hard delete every sandbox-tagged app and resource of this platform
+       * (`{ sandbox: true }` must be in the selection). `dry_run` lists what would go.
+       */
+      sandboxTeardown(metadata: ProvisioningMetadata = { sandbox: true }, opts: { dryRun?: boolean } = {}): Promise<PlatformAppBulkDeleteResult> {
+        return request({
+          method: 'POST',
+          path: '/v1/platform/apps/bulk_delete',
+          body: { metadata, ...(opts.dryRun ? { dry_run: true } : {}) },
+        });
+      },
+      /** Copy an app's configuration into its development (or another) instance, secrets excluded. */
+      cloneConfig(id: string, body: CloneConfigBody = {}, idempotencyKey?: string): Promise<CloneConfigResult> {
+        return request({ method: 'POST', path: `/v1/platform/apps/${enc(id)}/clone_config`, body, idempotencyKey });
+      },
+      /** Mint an additional named, taggable secret key (shown once; `external_ref` makes it idempotent). */
+      createSecretKey(id: string, body: CreatePlatformSecretKeyBody = {}, idempotencyKey?: string): Promise<CreatedPlatformSecretKey> {
+        return request({ method: 'POST', path: `/v1/platform/apps/${enc(id)}/secret_keys`, body, idempotencyKey });
       },
       /** Hide from the default listing. Does not disable the app. */
       archive(id: string): Promise<PlatformApp> {
@@ -461,8 +733,8 @@ function platformNamespaces(request: RequestFn) {
         });
       },
       /** Currently-valid secret keys (metadata only). */
-      secretKeys(id: string): Promise<ListPage<PlatformSecretKey>> {
-        return request({ method: 'GET', path: `/v1/platform/apps/${enc(id)}/secret_keys` });
+      secretKeys(id: string, params: { metadata?: ProvisioningMetadata } = {}): Promise<ListPage<PlatformSecretKey>> {
+        return request({ method: 'GET', path: `/v1/platform/apps/${enc(id)}/secret_keys`, query: metadataQuery(params.metadata) });
       },
       instances: {
         list(appId: string): Promise<ListPage<PlatformApp>> {
@@ -545,8 +817,8 @@ function platformNamespaces(request: RequestFn) {
     },
     /** Sign in with Atlas apps registered to the platform's account. */
     atlasIdApps: {
-      list(): Promise<AtlasIdAppList> {
-        return request({ method: 'GET', path: '/v1/platform/atlas_id_apps' });
+      list(params: { metadata?: ProvisioningMetadata } = {}): Promise<AtlasIdAppList> {
+        return request({ method: 'GET', path: '/v1/platform/atlas_id_apps', query: metadataQuery(params.metadata) });
       },
       /** Register an app. A confidential app's `client_secret` is returned exactly once. */
       create(body: CreateAtlasIdAppBody, idempotencyKey?: string): Promise<AtlasIdAppWithSecret> {
@@ -628,6 +900,20 @@ function platformNamespaces(request: RequestFn) {
         });
       },
       /**
+       * Hand the app's grant management to an instance of the same account
+       * (`managed_via: "adopted"`), or take it back with `null`. That instance's
+       * secret key, scoped to `privacy:grants:revoke` or `atlas_id_grants:*`,
+       * then lists and revokes the app's grants, so a data-rights tool never
+       * needs the platform key. The app stays yours to edit.
+       */
+      setManagedBy(id: string, instanceId: string | null): Promise<AtlasIdApp & { changed: boolean }> {
+        return request({
+          method: 'PUT',
+          path: `/v1/platform/atlas_id_apps/${enc(id)}/managed_by`,
+          body: { instance_id: instanceId },
+        });
+      },
+      /**
        * New per-app webhook signing secret (`webhook_secret`), returned once. By
        * default the previous secret stops at once; for `overlap_seconds` it signs
        * each delivery too. 409 without a webhook.
@@ -639,6 +925,58 @@ function platformNamespaces(request: RequestFn) {
           body,
         });
       },
+      /**
+       * Test and review accounts for this app: real Atlas accounts confined to
+       * it (reviewer logins, CI, demos). Needs `platform:atlas_id_apps:provision`
+       * or the per-app `atlas_id_apps:<app id>:provision` scope. Passwords come
+       * back exactly once, on create and on rotation (pass `secretRecipient` to
+       * receive them sealed).
+       */
+      provisionedAccounts: {
+        list(appId: string): Promise<AtlasIdProvisionedAccountList> {
+          return request({ method: 'GET', path: `/v1/platform/atlas_id_apps/${enc(appId)}/provisioned_accounts` });
+        },
+        create(
+          appId: string,
+          body: CreateAtlasIdProvisionedAccountBody,
+          idempotencyKey?: string,
+        ): Promise<AtlasIdProvisionedAccount> {
+          return request({
+            method: 'POST',
+            path: `/v1/platform/atlas_id_apps/${enc(appId)}/provisioned_accounts`,
+            body,
+            idempotencyKey,
+          });
+        },
+        get(appId: string, accountId: string): Promise<AtlasIdProvisionedAccount> {
+          return request({
+            method: 'GET',
+            path: `/v1/platform/atlas_id_apps/${enc(appId)}/provisioned_accounts/${enc(accountId)}`,
+          });
+        },
+        /** Deletes the account and ends every session and grant it holds. */
+        remove(
+          appId: string,
+          accountId: string,
+        ): Promise<{ object: 'atlas_id_provisioned_account'; id: string; deleted: true; sessions_ended: number }> {
+          return request({
+            method: 'DELETE',
+            path: `/v1/platform/atlas_id_apps/${enc(appId)}/provisioned_accounts/${enc(accountId)}`,
+          });
+        },
+        /** A new password (yours, or one Atlas generates), returned once. */
+        rotatePassword(
+          appId: string,
+          accountId: string,
+          body?: RotateAtlasIdProvisionedPasswordBody,
+        ): Promise<AtlasIdProvisionedAccount> {
+          return request({
+            method: 'POST',
+            path: `/v1/platform/atlas_id_apps/${enc(appId)}/provisioned_accounts/${enc(accountId)}/password`,
+            body,
+          });
+        },
+      },
       /** Preview a design on the Sign in with Atlas page without saving it. */
       previewDesign(design: AtlasDesign): Promise<DesignPreview> {
         return request({
@@ -646,6 +984,22 @@ function platformNamespaces(request: RequestFn) {
           path: '/v1/platform/atlas_id_apps/design/preview',
           body: { design },
         });
+      },
+    },
+    /** Domains the account verified by DNS; they gate test sign-in mode and the test-account domain restriction. */
+    domains: {
+      list(): Promise<{ object: 'list'; data: AccountDomain[]; verified_domains: string[] }> {
+        return request({ method: 'GET', path: '/v1/platform/domains' });
+      },
+      /** Claim a domain; returns the TXT record to publish. */
+      claim(domain: string): Promise<AccountDomain> {
+        return request({ method: 'POST', path: '/v1/platform/domains', body: { domain } });
+      },
+      verify(domainId: string): Promise<AccountDomain> {
+        return request({ method: 'POST', path: `/v1/platform/domains/${enc(domainId)}/verify` });
+      },
+      remove(domainId: string): Promise<unknown> {
+        return request({ method: 'DELETE', path: `/v1/platform/domains/${enc(domainId)}` });
       },
     },
     /** The account's Sign in with Atlas publisher name and verified domain. */

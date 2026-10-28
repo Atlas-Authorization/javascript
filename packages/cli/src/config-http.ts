@@ -17,7 +17,7 @@ export interface ConfigHttp {
   post<T>(path: string, body: unknown): Promise<T>;
   put<T>(path: string, body: unknown): Promise<T>;
   patch<T>(path: string, body: unknown): Promise<T>;
-  delete(path: string): Promise<void>;
+  delete(path: string, body?: unknown): Promise<void>;
 }
 
 /** The production {@link ConfigHttp}: Bearer-authed `fetch`, mirroring the backend client. */
@@ -25,6 +25,8 @@ export function createConfigHttp(opts: {
   secretKey: string;
   apiUrl: string;
   fetch?: typeof fetch;
+  /** Extra request headers (e.g. `X-Secret-Recipient` for sealed secret delivery). */
+  headers?: Record<string, string>;
 }): ConfigHttp {
   const base = opts.apiUrl.replace(/\/+$/, '');
   const fetchImpl = opts.fetch ?? globalThis.fetch;
@@ -34,6 +36,7 @@ export function createConfigHttp(opts: {
 
   async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = {
+      ...opts.headers,
       authorization: `Bearer ${opts.secretKey}`,
       accept: 'application/json',
     };
@@ -54,8 +57,8 @@ export function createConfigHttp(opts: {
     post: (path, body) => send('POST', path, body),
     put: (path, body) => send('PUT', path, body),
     patch: (path, body) => send('PATCH', path, body),
-    delete: async (path) => {
-      await send<void>('DELETE', path);
+    delete: async (path, body) => {
+      await send<void>('DELETE', path, body);
     },
   };
 }

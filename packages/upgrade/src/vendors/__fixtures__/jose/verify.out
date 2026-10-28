@@ -1,0 +1,16 @@
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+
+import { oidc } from '@atlasauth/backend';
+
+// TODO(atlas-migrate): createRemoteJWKSet(): the signing keys are fetched, cached and refetched on an unknown kid (rate limited) by oidc.callback / oidc.verifyIdToken
+const jwks = createRemoteJWKSet(new URL(process.env.OIDC_JWKS_URI!));
+
+export async function verifyIdToken(idToken: string, nonce: string) {
+  // TODO(atlas-migrate): jwtVerify(): if this verifies an OIDC ID token, oidc.verifyIdToken(idToken, { issuer, clientId, nonce, accessToken }) runs the same checks on an ID token you obtained yourself. If it verifies a session or access token, use AtlasBackend#verify() from @atlasauth/backend (it checks the issuer, audience and expiry against the instance's keys)
+  const { payload } = await jwtVerify(idToken, jwks, {
+    issuer: process.env.OIDC_ISSUER!,
+    audience: process.env.OIDC_CLIENT_ID!,
+  });
+  if (payload.nonce !== nonce) throw new Error('bad nonce');
+  return payload;
+}

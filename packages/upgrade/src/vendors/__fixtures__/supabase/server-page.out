@@ -1,0 +1,14 @@
+import { redirect } from 'next/navigation';
+import { createClient } from '@/utils/supabase/server';
+
+import { getSupabaseUserCompat } from '@atlasauth/nextjs/compat';
+
+export default async function AccountPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await getSupabaseUserCompat();
+  if (!user) redirect('/login');
+  const { data: notes } = await supabase.from('notes').select();
+  return <pre>{JSON.stringify({ email: user.email, notes })}</pre>;
+}

@@ -1,0 +1,18 @@
+import { redirect } from 'next/navigation';
+import { getKindeServerSessionCompat } from '@atlasauth/nextjs/compat';
+
+export default async function DashboardPage() {
+  // TODO(atlas-migrate): getBooleanFlag: Kinde feature flags have no Atlas counterpart, so this now always returns the default value you pass; move the flag to your own flag service (or gate billing features with has({ feature }))
+  const { isAuthenticated, getUser, getPermission, getBooleanFlag } = getKindeServerSessionCompat();
+  if (!(await isAuthenticated())) redirect('/sign-in?redirect_url=%2Fdashboard');
+  const user = await getUser();
+  const billing = await getPermission('manage:billing');
+  const beta = await getBooleanFlag('beta', false);
+  return (
+    <main>
+      <h1>Welcome, {user?.given_name}</h1>
+      {billing?.isGranted && <a href="/billing">Billing</a>}
+      {beta && <p>Beta features are on</p>}
+    </main>
+  );
+}

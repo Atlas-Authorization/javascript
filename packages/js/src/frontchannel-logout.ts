@@ -31,6 +31,42 @@ export interface SignOutOptions {
    * Honoured by every framework provider.
    */
   strict?: boolean;
+  /**
+   * Follow the upstream provider's end-session URL after signing out locally,
+   * when the session came from a custom OAuth/OIDC provider or enterprise OIDC
+   * connection with RP-initiated logout on. Default `true`; `false` leaves it
+   * to you (`result.upstreamLogoutUrl`).
+   */
+  upstreamLogout?: boolean;
+  /**
+   * Where the user lands after that upstream logout. Must be on an allowed
+   * origin of the instance; otherwise the provider's configured post-logout
+   * page is used. Also used for SAML Single Logout when
+   * `samlLogoutRedirectUrl` is not set.
+   */
+  returnUrl?: string;
+  /**
+   * SAML Single Logout. When the session came from a SAML connection with
+   * Single Logout on, the sign-out response carries a `saml_logout_url`; by
+   * default the browser is then sent there (after the local sign-out) so the
+   * identity provider's session ends too. Pass `false` to stay on the page and
+   * handle `SignOutResult.samlLogoutUrl` yourself.
+   *
+   * A browser can follow only one logout redirect. In the (unusual) case that
+   * the response carries both `upstream_logout_url` and `saml_logout_url`, the
+   * upstream OpenID provider's URL is followed (it has no server-to-server
+   * fallback) and the SAML identity provider is told server-to-server through
+   * SOAP back-channel logout when its connection has a SOAP endpoint;
+   * `samlLogoutUrl` is still reported. With `upstreamLogout: false`, the SAML
+   * URL is followed instead.
+   */
+  samlLogout?: boolean;
+  /**
+   * SAML Single Logout: where the identity provider returns the browser once it
+   * has signed the user out. Must be on one of the instance's allowed origins.
+   * Defaults to `returnUrl`, else the page that signed out.
+   */
+  samlLogoutRedirectUrl?: string;
 }
 
 /** The default wait for front-channel logout frames. */

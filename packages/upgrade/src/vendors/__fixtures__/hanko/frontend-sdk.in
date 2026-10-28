@@ -1,0 +1,15 @@
+import { Hanko } from '@teamhanko/hanko-frontend-sdk';
+
+const hanko = new Hanko(import.meta.env.VITE_HANKO_API_URL);
+
+export async function currentUser() {
+  return hanko.user.getCurrent();
+}
+
+export async function signOut() {
+  await hanko.logout();
+}
+
+hanko.onSessionExpired(() => {
+  window.location.href = '/login';
+});

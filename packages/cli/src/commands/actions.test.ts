@@ -14,6 +14,7 @@ const ACTION: Action = {
   runtime: 'node',
   enabled: true,
   secret_names: ['CLAIM_NAMESPACE'],
+  http_target: null,
   created_at: 0,
   updated_at: 0,
 };

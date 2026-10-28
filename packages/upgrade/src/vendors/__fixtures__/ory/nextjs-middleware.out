@@ -1,0 +1,7 @@
+import oryConfig from '@/ory.config';
+import { createAtlasMiddleware } from '@atlasauth/nextjs/compat';
+
+// TODO(atlas-migrate): createOryMiddleware(options) options were removed: Atlas serves sign-in itself. Every matched route needs a signed-in user except /sign-in and /sign-up; pass publicRoutes to createAtlasMiddleware() to open more
+export const middleware = createAtlasMiddleware();
+
+export const config = { matcher: ['/((?!_next|favicon.ico).*)'] };

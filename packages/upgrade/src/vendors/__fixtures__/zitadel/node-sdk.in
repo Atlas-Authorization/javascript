@@ -1,0 +1,5 @@
+import { introspect, ServiceAccount } from '@zitadel/node';
+
+export async function isActive(token: string) {
+  return introspect({ token });
+}

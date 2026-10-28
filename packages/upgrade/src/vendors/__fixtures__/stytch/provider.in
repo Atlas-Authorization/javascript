@@ -1,0 +1,12 @@
+'use client';
+import { StytchProvider } from '@stytch/nextjs';
+import { stytch } from '../lib/stytch';
+import type { ReactNode } from 'react';
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  return (
+    <StytchProvider stytch={stytch}>
+      {children}
+    </StytchProvider>
+  );
+}

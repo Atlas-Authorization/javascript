@@ -85,7 +85,7 @@ const CHROME_FALLBACK: ChromeTokens = {
   colorText: '#1c1c1f',
   colorPrimary: '#5b5bd6',
   colorBorder: '#e4e4e9',
-  colorDanger: '#d64545',
+  colorDanger: '#c53030',
   borderRadius: '10px',
   fontFamily:
     'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',

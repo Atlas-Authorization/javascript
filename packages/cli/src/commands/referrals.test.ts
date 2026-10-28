@@ -12,7 +12,7 @@ import { describeTestLines, parseCodeCsv, pingSkewMs } from './referrals';
 
 /**
  * `atlas referrals connect | backfill | status`, driven through `run()` with an
- * in-memory Atlas API and an in-memory Referally merchant API.
+ * in-memory Atlas API and an in-memory Referalli merchant API.
  */
 
 type Call = { method: string; path: string; body?: unknown };
@@ -76,8 +76,8 @@ function makeCtx(
 
 type Remote = Array<{ url: string; init: RequestInit }>;
 
-/** An in-memory Referally merchant API, routed by `METHOD path`; `over` replaces answers (404 for anything unknown). */
-function referallyApi(record: Remote, over: Record<string, { status: number; body: unknown }> = {}) {
+/** An in-memory Referalli merchant API, routed by `METHOD path`; `over` replaces answers (404 for anything unknown). */
+function referalliApi(record: Remote, over: Record<string, { status: number; body: unknown }> = {}) {
   const routes: Record<string, { status: number; body: unknown }> = {
     'GET /v1/org': { status: 200, body: { id: 'org_1', livemode: true } },
     'POST /v1/auth/connections': { status: 201, body: { id: 'conn_1', secret: CONN_SECRET, trackingToken: 'tt_pub_1', signupsUrl: 'x' } },
@@ -102,18 +102,18 @@ const PING_OK = {
   ping: { ok: true, org_name: 'Acme', program_id: 'prg_1', program_name: 'Main', auto_enroll_users: true, clock_skew_ms: 1200 },
 };
 
-describe('atlas referrals connect --provider referally', () => {
+describe('atlas referrals connect --provider referalli', () => {
   it('creates the connection with the merchant key, stores id + secret on the instance, pings, and never prints a secret', async () => {
     const io = captureIO();
     const calls: Call[] = [];
     const remote: Array<{ url: string; init: RequestInit }> = [];
     const code = await run(
       [
-        'referrals', 'connect', '--provider', 'referally', '--program', 'prg_1',
-        '--base-url', 'https://referrals.example.com/', '--referally-key', MERCHANT_KEY,
+        'referrals', 'connect', '--provider', 'referalli', '--program', 'prg_1',
+        '--base-url', 'https://referrals.example.com/', '--referalli-key', MERCHANT_KEY,
         '--auto-enroll', '--destination', 'https://app.example.com/login', '--enable',
       ],
-      makeCtx(io, calls, { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referallyApi(remote) }),
+      makeCtx(io, calls, { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referalliApi(remote) }),
     );
     expect(code).toBe(0);
     expect(remote.map((r) => `${r.init.method ?? 'GET'} ${r.url}`)).toEqual([
@@ -125,7 +125,7 @@ describe('atlas referrals connect --provider referally', () => {
     for (const r of remote) {
       const headers = r.init.headers as Record<string, string>;
       expect(headers.authorization).toBe(`Bearer ${MERCHANT_KEY}`);
-      expect(headers['referally-version']).toBe('2026-10-21');
+      expect(headers['referalli-version']).toBe('2026-10-21');
     }
     expect(JSON.parse(sent(remote, 'PATCH', '/v1/auth/connections/conn_1')!.init.body as string)).toEqual({ signatureVersion: 'v2' });
     expect(JSON.parse(sent(remote, 'POST', '/v1/webhook-endpoints')!.init.body as string)).toEqual({
@@ -148,7 +148,7 @@ describe('atlas referrals connect --provider referally', () => {
       'PATCH /v1/instance/referrals',
     ]);
     expect(calls[1]!.body).toEqual({
-      provider: 'referally',
+      provider: 'referalli',
       endpoint_url: 'https://referrals.example.com',
       connection_id: 'conn_1',
       signing_secret: CONN_SECRET,
@@ -163,7 +163,7 @@ describe('atlas referrals connect --provider referally', () => {
     expect(all).not.toContain(CONN_SECRET);
     expect(all).not.toContain(WEBHOOK_SECRET);
     expect(io.stderr()).toBe('');
-    expect(io.stdout()).toContain('Referral changes on Referally sync back to Atlas (webhook whe_1).');
+    expect(io.stdout()).toContain('Referral changes on Referalli sync back to Atlas (webhook whe_1).');
     expect(io.stdout()).toContain('Organization:       Acme');
     expect(io.stdout()).toContain('Program:            Main (prg_1)');
     expect(io.stdout()).toContain('Referral attribution is on.');
@@ -174,20 +174,20 @@ describe('atlas referrals connect --provider referally', () => {
     const calls: Call[] = [];
     const remote: Array<{ url: string; init: RequestInit }> = [];
     const ctx = makeCtx(io, calls, { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, {
-      fetch: referallyApi(remote),
-      readFile: () => `# merchant key\nREFERALLY_API_KEY=${MERCHANT_KEY}\n`,
+      fetch: referalliApi(remote),
+      readFile: () => `# merchant key\nREFERALLI_API_KEY=${MERCHANT_KEY}\n`,
     });
-    expect(await run(['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referally-key-file', 'k.env'], ctx)).toBe(0);
+    expect(await run(['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referalli-key-file', 'k.env'], ctx)).toBe(0);
     expect((remote[0]!.init.headers as Record<string, string>).authorization).toBe(`Bearer ${MERCHANT_KEY}`);
 
     const io2 = captureIO();
-    expect(await run(['referrals', 'connect', '--program', 'prg_1', '--referally-key', 'k'], makeCtx(io2, [], {}))).toBe(1);
+    expect(await run(['referrals', 'connect', '--program', 'prg_1', '--referalli-key', 'k'], makeCtx(io2, [], {}))).toBe(1);
     expect(io2.stderr()).toContain('--base-url');
     const io3 = captureIO();
     expect(await run(['referrals', 'connect', '--base-url', 'https://r.example.com'], makeCtx(io3, [], {}))).toBe(1);
     expect(io3.stderr()).toContain('--program');
     const io4 = captureIO();
-    expect(await run(['referrals', 'connect', '--program', 'p', '--base-url', 'http://r.example.com', '--referally-key', 'k'], makeCtx(io4, [], {}))).toBe(1);
+    expect(await run(['referrals', 'connect', '--program', 'p', '--base-url', 'http://r.example.com', '--referalli-key', 'k'], makeCtx(io4, [], {}))).toBe(1);
     expect(io4.stderr()).toContain('https');
   });
 
@@ -195,9 +195,9 @@ describe('atlas referrals connect --provider referally', () => {
     const io = captureIO();
     const remote: Array<{ url: string; init: RequestInit }> = [];
     const code = await run(
-      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referally-key', MERCHANT_KEY],
+      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referalli-key', MERCHANT_KEY],
       makeCtx(io, [], ATLAS, {
-        fetch: referallyApi(remote, {
+        fetch: referalliApi(remote, {
           'GET /v1/org': { status: 401, body: { error: { message: 'invalid key' } } },
           'POST /v1/auth/connections': { status: 401, body: { error: { message: 'invalid key' } } },
         }),
@@ -213,17 +213,17 @@ describe('atlas referrals connect --provider referally', () => {
     const io = captureIO();
     const remote: Array<{ url: string; init: RequestInit }> = [];
     const code = await run(
-      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referally-key', MERCHANT_KEY],
+      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referalli-key', MERCHANT_KEY],
       makeCtx(
         io,
         [],
         { ...ATLAS, 'PATCH /v1/instance/referrals': new AtlasApiError(422, [{ code: 'VALIDATION', message: 'bad' } as never]) },
-        { fetch: referallyApi(remote) },
+        { fetch: referalliApi(remote) },
       ),
     );
     expect(code).toBe(1);
-    const file = join(home, 'atlasauth', 'referally-connection-conn_1.env');
-    expect(readFileSync(file, 'utf8')).toContain(`REFERALLY_CONNECTION_SECRET=${CONN_SECRET}`);
+    const file = join(home, 'atlasauth', 'referalli-connection-conn_1.env');
+    expect(readFileSync(file, 'utf8')).toContain(`REFERALLI_CONNECTION_SECRET=${CONN_SECRET}`);
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(io.stdout() + io.stderr()).not.toContain(CONN_SECRET);
   });
@@ -232,7 +232,7 @@ describe('atlas referrals connect --provider referally', () => {
     const io = captureIO();
     const calls: Call[] = [];
     const code = await run(
-      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referally-key', MERCHANT_KEY, '--enable'],
+      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referalli-key', MERCHANT_KEY, '--enable'],
       makeCtx(
         io,
         calls,
@@ -240,7 +240,7 @@ describe('atlas referrals connect --provider referally', () => {
           ...ATLAS,
           'POST /v1/instance/referrals/test': { ok: false, http_status: 401, latency_ms: 10, error: { code: 'signature_rejected', message: 'Signature rejected' } },
         },
-        { fetch: referallyApi([]) },
+        { fetch: referalliApi([]) },
       ),
     );
     expect(code).toBe(1);
@@ -251,13 +251,13 @@ describe('atlas referrals connect --provider referally', () => {
   });
 });
 
-describe('atlas referrals connect --provider referally: test vs live, v2 and sync', () => {
-  const args = ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referally-key', MERCHANT_KEY];
+describe('atlas referrals connect --provider referalli: test vs live, v2 and sync', () => {
+  const args = ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referalli-key', MERCHANT_KEY];
 
   it('refuses a live key for a development instance before creating anything', async () => {
     const io = captureIO();
     const remote: Remote = [];
-    const code = await run(args, makeCtx(io, [], { ...ATLAS, 'GET /v1/instance': { id: 'ins_1', environment: 'development' } }, { fetch: referallyApi(remote) }));
+    const code = await run(args, makeCtx(io, [], { ...ATLAS, 'GET /v1/instance': { id: 'ins_1', environment: 'development' } }, { fetch: referalliApi(remote) }));
     expect(code).toBe(1);
     expect(io.stderr()).toContain('reaches live data but instance ins_1 is development');
     expect(io.stderr()).toContain('rk_test_');
@@ -267,24 +267,24 @@ describe('atlas referrals connect --provider referally: test vs live, v2 and syn
   it('refuses a test org for a production instance; --allow-mode-mismatch goes ahead with a warning', async () => {
     const remoteOver = { 'GET /v1/org': { status: 200, body: { id: 'org_t', livemode: false } } };
     const io = captureIO();
-    expect(await run(args, makeCtx(io, [], ATLAS, { fetch: referallyApi([], remoteOver) }))).toBe(1);
+    expect(await run(args, makeCtx(io, [], ATLAS, { fetch: referalliApi([], remoteOver) }))).toBe(1);
     expect(io.stderr()).toContain('reaches test data but instance ins_1 is production');
     const io2 = captureIO();
     const remote: Remote = [];
-    const code = await run([...args, '--allow-mode-mismatch'], makeCtx(io2, [], { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referallyApi(remote, remoteOver) }));
+    const code = await run([...args, '--allow-mode-mismatch'], makeCtx(io2, [], { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referalliApi(remote, remoteOver) }));
     expect(code).toBe(0);
-    expect(io2.stderr()).toContain('warning: the Referally key reaches test data');
+    expect(io2.stderr()).toContain('warning: the Referalli key reaches test data');
     expect(sent(remote, 'POST', '/v1/auth/connections')).toBeDefined();
   });
 
-  it('falls back to the key prefix when Referally reports no mode: rk_test_ suits a development instance', async () => {
+  it('falls back to the key prefix when Referalli reports no mode: rk_test_ suits a development instance', async () => {
     const io = captureIO();
     const remote: Remote = [];
     const testKey = 'rk_test_merchant_key_never_printed';
     const code = await run(
-      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referally-key', testKey],
+      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referalli-key', testKey],
       makeCtx(io, [], { ...ATLAS, 'GET /v1/instance': { id: 'ins_1', environment: 'development' }, 'POST /v1/instance/referrals/test': PING_OK }, {
-        fetch: referallyApi(remote, { 'GET /v1/org': { status: 200, body: { id: 'org_1' } } }),
+        fetch: referalliApi(remote, { 'GET /v1/org': { status: 200, body: { id: 'org_1' } } }),
       }),
     );
     expect(code).toBe(0);
@@ -294,7 +294,7 @@ describe('atlas referrals connect --provider referally: test vs live, v2 and syn
   it('--no-sync registers no webhook; a refused webhook or v2 switch is a warning, not a failure', async () => {
     const io = captureIO();
     const remote: Remote = [];
-    expect(await run([...args, '--no-sync'], makeCtx(io, [], { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referallyApi(remote) }))).toBe(0);
+    expect(await run([...args, '--no-sync'], makeCtx(io, [], { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referalliApi(remote) }))).toBe(0);
     expect(sent(remote, 'POST', '/v1/webhook-endpoints')).toBeUndefined();
 
     const io2 = captureIO();
@@ -302,7 +302,7 @@ describe('atlas referrals connect --provider referally: test vs live, v2 and syn
     const code = await run(
       [...args, '--json'],
       makeCtx(io2, calls, { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, {
-        fetch: referallyApi([], {
+        fetch: referalliApi([], {
           'PATCH /v1/auth/connections/conn_1': { status: 400, body: { error: { message: 'unknown field signatureVersion' } } },
           'POST /v1/webhook-endpoints': { status: 403, body: { error: { message: 'admins only' } } },
         }),
@@ -332,12 +332,12 @@ describe('atlas referrals connect --provider referally: test vs live, v2 and syn
           },
           'POST /v1/instance/referrals/test': PING_OK,
         },
-        { fetch: referallyApi([]) },
+        { fetch: referalliApi([]) },
       ),
     );
     expect(code).toBe(0);
-    const file = join(home, 'atlasauth', 'referally-webhook-whe_1.env');
-    expect(readFileSync(file, 'utf8')).toContain(`REFERALLY_WEBHOOK_SECRET=${WEBHOOK_SECRET}`);
+    const file = join(home, 'atlasauth', 'referalli-webhook-whe_1.env');
+    expect(readFileSync(file, 'utf8')).toContain(`REFERALLI_WEBHOOK_SECRET=${WEBHOOK_SECRET}`);
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(io.stdout() + io.stderr()).not.toContain(WEBHOOK_SECRET);
   });
@@ -376,7 +376,7 @@ describe('atlas referrals connect --provider webhook', () => {
   it('refuses an unknown provider', async () => {
     const io = captureIO();
     expect(await run(['referrals', 'connect', '--provider', 'acme'], makeCtx(io, [], {}))).toBe(1);
-    expect(io.stderr()).toContain('--provider must be one of referally, webhook');
+    expect(io.stderr()).toContain('--provider must be one of referalli, webhook');
   });
 });
 
@@ -437,7 +437,7 @@ describe('atlas referrals status', () => {
       makeCtx(io, [], {
         'GET /v1/instance/referrals': {
           enabled: true,
-          provider: 'referally',
+          provider: 'referalli',
           endpoint_url: 'https://r.example.com',
           program_id: 'prg_1',
           connection_id: 'conn_1',
@@ -502,8 +502,135 @@ describe('referrals helpers', () => {
   it('has help', async () => {
     const io = captureIO();
     expect(await run(['referrals', '--help'], makeCtx(io, [], {}))).toBe(0);
-    expect(io.stdout()).toContain('--provider referally');
+    expect(io.stdout()).toContain('--provider referalli');
     const io2 = captureIO();
     expect(await run(['referrals', 'nope'], makeCtx(io2, [], {}))).toBe(1);
+  });
+});
+
+describe('the old Referally names', () => {
+  it('--provider referally, --referally-key and REFERALLY_* still work, each with a notice', async () => {
+    const io = captureIO();
+    const calls: Call[] = [];
+    const remote: Remote = [];
+    const code = await run(
+      ['referrals', 'connect', '--provider', 'referally', '--program', 'prg_1', '--referally-key', MERCHANT_KEY],
+      makeCtx(
+        io,
+        calls,
+        { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK },
+        { fetch: referalliApi(remote), env: { XDG_CONFIG_HOME: home, REFERALLY_BASE_URL: 'https://referrals.example.com' } },
+      ),
+    );
+    expect(code).toBe(0);
+    expect(io.stderr()).toContain("'--provider referally' is the old name of '--provider referalli'");
+    expect(io.stderr()).toContain("'--referally-key' is the old name of '--referalli-key'");
+    expect(io.stderr()).toContain("'REFERALLY_BASE_URL' is the old name of 'REFERALLI_BASE_URL'");
+    expect(calls.find((c) => c.method === 'PATCH' && c.path === '/v1/instance/referrals')?.body).toMatchObject({ provider: 'referalli' });
+    expect(io.stdout() + io.stderr()).not.toContain(MERCHANT_KEY);
+  });
+
+  it('REFERALLY_API_KEY and --referally-key-file are read too', async () => {
+    const io = captureIO();
+    const remote: Remote = [];
+    const code = await run(
+      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://referrals.example.com'],
+      makeCtx(io, [], { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, {
+        fetch: referalliApi(remote),
+        env: { XDG_CONFIG_HOME: home, REFERALLY_API_KEY: MERCHANT_KEY },
+      }),
+    );
+    expect(code).toBe(0);
+    expect(io.stderr()).toContain("'REFERALLY_API_KEY' is the old name of 'REFERALLI_API_KEY'");
+    expect(sent(remote, 'GET', '/v1/org')?.init.headers).toMatchObject({ authorization: `Bearer ${MERCHANT_KEY}` });
+  });
+});
+
+describe('atlas referrals connect --provider referalli --oauth', () => {
+  const AUTHORIZE = 'https://referalli.com/v1/oauth/authorize?client_id=atlas&scope=connections%3Awrite&state=abc';
+
+  it('prints the link, waits for the connection to appear, then pings', async () => {
+    const io = captureIO();
+    const calls: Call[] = [];
+    let reads = 0;
+    const code = await run(
+      ['referrals', 'connect', '--provider', 'referalli', '--oauth', '--enable'],
+      makeCtx(io, calls, {
+        'POST /v1/instance/referrals/referalli/install': { authorize_url: AUTHORIZE, expires_at: Date.now() + 600_000 },
+        'GET /v1/instance/referrals': () => {
+          reads += 1;
+          // Read 1 is the state before; the merchant finishes by the third read.
+          return reads < 3
+            ? { provider: 'webhook', connection_id: null }
+            : { provider: 'referalli', connection_id: 'conn_9', program_id: 'prg_9', signing_secret_set: true };
+        },
+        'POST /v1/instance/referrals/test': PING_OK,
+      }),
+    );
+    expect(code).toBe(0);
+    expect(io.stdout()).toContain(AUTHORIZE);
+    expect(io.stdout()).toContain('Connected to referalli (connection conn_9, program prg_9)');
+    expect(io.stdout()).toContain('Referral attribution is on.');
+    expect(calls.some((c) => c.method === 'PATCH' && JSON.stringify(c.body) === '{"enabled":true}')).toBe(true);
+    // No key or secret is involved at all.
+    expect(calls.some((c) => JSON.stringify(c.body ?? '').includes('signing_secret'))).toBe(false);
+  });
+
+  it('points to the key flow when the deployment does not offer one-click yet', async () => {
+    const io = captureIO();
+    const code = await run(
+      ['referrals', 'connect', '--provider', 'referalli', '--oauth'],
+      makeCtx(io, [], {
+        'GET /v1/instance/referrals': { provider: 'webhook', connection_id: null },
+        'POST /v1/instance/referrals/referalli/install': new AtlasApiError(422, [{ code: 'REFERRALS_NOT_CONFIGURED', message: 'not available' }]),
+      }),
+    );
+    expect(code).not.toBe(0);
+    expect(io.stderr()).toContain('not available on this Atlas');
+    expect(io.stderr()).toContain('--referalli-key-file');
+  });
+
+  it('gives up when the link expires', async () => {
+    const io = captureIO();
+    const code = await run(
+      ['referrals', 'connect', '--provider', 'referalli', '--oauth'],
+      makeCtx(io, [], {
+        'POST /v1/instance/referrals/referalli/install': { authorize_url: AUTHORIZE, expires_at: Date.now() - 1 },
+        'GET /v1/instance/referrals': { provider: 'webhook', connection_id: null },
+      }),
+    );
+    expect(code).not.toBe(0);
+    expect(io.stderr()).toContain('expired');
+  });
+});
+
+describe('atlas referrals conformance', () => {
+  it('runs the suite against the connected Referalli and exits 1 when a case fails', async () => {
+    const io = captureIO();
+    // A platform that answers 404 to everything: every case but the 404 ones fails.
+    const fetchImpl = (async () => new Response(JSON.stringify({ error: { code: 'not_found', message: 'no' } }), { status: 404, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+    const code = await run(
+      ['referrals', 'conformance', '--secret-file', '/secret', '--only', 'auth.'],
+      makeCtx(
+        io,
+        [],
+        { 'GET /v1/instance/referrals': { provider: 'referalli', endpoint_url: 'https://referalli.example.com', connection_id: 'conn_1' } },
+        { fetch: fetchImpl, readFile: () => 'conn_secret_0123456789\n' },
+      ),
+    );
+    expect(code).toBe(1);
+    expect(io.stdout()).toContain('FAIL  auth.bad_signature_is_401');
+    expect(io.stdout()).toContain('PASS  auth.unknown_connection_is_404_or_423');
+    expect(io.stdout() + io.stderr()).not.toContain('conn_secret_0123456789');
+  });
+
+  it('needs the secret from a file, because Atlas never shows it', async () => {
+    const io = captureIO();
+    const code = await run(
+      ['referrals', 'conformance'],
+      makeCtx(io, [], { 'GET /v1/instance/referrals': { provider: 'referalli', endpoint_url: 'https://r.example.com', connection_id: 'c' } }),
+    );
+    expect(code).not.toBe(0);
+    expect(io.stderr()).toContain('--secret-file');
   });
 });

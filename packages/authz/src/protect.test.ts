@@ -89,3 +89,37 @@ describe('key shapes', () => {
     expect(isPermissionKey('billing:manage')).toBe(false);
   });
 });
+
+describe('app-level roles and permissions', () => {
+  const claims = { app_roles: ['support'], app_permissions: ['tickets:read', 'tickets:write'] };
+
+  it('needs no active organization', () => {
+    expect(evaluate(claims, { appPermission: 'tickets:read' })).toEqual({ allowed: true });
+    expect(evaluate(claims, { appRole: 'support' })).toEqual({ allowed: true });
+  });
+
+  it('refuses a permission or role the user lacks', () => {
+    expect(evaluate(claims, { appPermission: 'billing:manage' })).toEqual({
+      allowed: false,
+      reason: 'missing_permission',
+    });
+    expect(evaluate(claims, { appRole: 'admin' }).allowed).toBe(false);
+    expect(evaluate({}, { appPermission: 'tickets:read' }).allowed).toBe(false);
+  });
+
+  it('any / all', () => {
+    expect(evaluate(claims, { anyAppPermission: ['x:y', 'tickets:read'] }).allowed).toBe(true);
+    expect(evaluate(claims, { anyAppPermission: ['x:y'] }).allowed).toBe(false);
+    expect(evaluate(claims, { allAppPermissions: ['tickets:read', 'tickets:write'] }).allowed).toBe(true);
+    expect(evaluate(claims, { allAppPermissions: ['tickets:read', 'x:y'] }).allowed).toBe(false);
+  });
+
+  it('combines with an org condition (both must hold)', () => {
+    const both = { ...claims, org_id: 'org_1', org_permissions: ['org:docs:read'] };
+    expect(evaluate(both, { appPermission: 'tickets:read', permission: 'org:docs:read' }).allowed).toBe(true);
+    expect(evaluate(claims, { appPermission: 'tickets:read', permission: 'org:docs:read' })).toEqual({
+      allowed: false,
+      reason: 'no_organization',
+    });
+  });
+});

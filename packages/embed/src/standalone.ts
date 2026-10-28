@@ -13,11 +13,20 @@
  */
 import { defineElements } from './element';
 import { mountSignIn, mountSignUp } from './mount';
+import { mountOrganizationAdmin } from './org-admin';
+import { mountPricingTable } from './pricing';
+import { mountLeadForm } from './lead-form';
 import { readScriptTag, setScriptDefaults } from './config';
 
 export interface AtlasGlobal {
   mountSignIn: typeof mountSignIn;
   mountSignUp: typeof mountSignUp;
+  /** Mount a tenant-admin section (SSO, directory, domains, log streams, API keys, IP allowlist, webhooks). */
+  mountOrganizationAdmin: typeof mountOrganizationAdmin;
+  /** Mount the instance's pricing table (plans, trial, promotion, checkout). */
+  mountPricingTable: typeof mountPricingTable;
+  /** Mount a lead / newsletter signup form. */
+  mountLeadForm: typeof mountLeadForm;
   defineElements: typeof defineElements;
 }
 
@@ -41,7 +50,7 @@ function currentScript(): HTMLScriptElement | null {
 function boot(): void {
   setScriptDefaults(readScriptTag(currentScript()));
   defineElements();
-  window.Atlas = { mountSignIn, mountSignUp, defineElements };
+  window.Atlas = { mountSignIn, mountSignUp, mountOrganizationAdmin, mountPricingTable, mountLeadForm, defineElements };
 }
 
 boot();

@@ -1,0 +1,5 @@
+[
+  { "id": 1, "name": "Phone", "confirmed": true, "user_id": 2, "key": "3132333435363738393031323334353637383930", "step": 30, "t0": 0, "digits": 6, "tolerance": 1, "drift": 0, "last_t": 59, "created": "2024-02-03T10:00:00Z", "last_used": null },
+  { "id": 2, "name": "Unfinished", "confirmed": false, "user_id": 3, "key": "0011223344556677889900112233445566778899", "step": 30, "t0": 0, "digits": 6 },
+  { "id": 3, "name": "Admin token", "confirmed": true, "user_id": 1, "key": "8f3a6b1c9d2e4f5061728394a5b6c7d8e9f00112", "step": 30, "t0": 0, "digits": 8, "created": "2024-01-11T09:00:00Z" }
+]

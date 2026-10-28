@@ -1,0 +1,5 @@
+userId,type,provider,providerAccountId,refresh_token,access_token,expires_at,token_type,scope,id_token,session_state
+clu1ada,oauth,github,583231,,gho_abc,1792000000,bearer,read:user user:email,,
+clu2grace,oidc,google,109876543210,1//refresh,ya29.token,1793000000,Bearer,openid email profile,eyJ...,
+clu2grace,email,email,grace@example.com,,,,,,,
+cluXghost,oauth,github,1,,,,,,,

@@ -1,0 +1,18 @@
+// TODO(atlas-migrate): supertokens.init(): delete the SuperTokens setup (Atlas hosts sign-in, sessions and users); protect routes with atlasMiddleware() / requireAuth() from @atlasauth/express, auth() from @atlasauth/nextjs/server, or verify session tokens with AtlasBackend from @atlasauth/backend
+import supertokens from 'supertokens-node';
+// TODO(atlas-migrate): Session (supertokens-node): Atlas creates sessions at sign-in; read the signed-in user with getAuth(req) (@atlasauth/express) or auth() (@atlasauth/nextjs/server), and manage sessions with AtlasBackend from @atlasauth/backend
+import Session from 'supertokens-node/recipe/session';
+// TODO(atlas-migrate): Recipe (supertokens-node): sign-up, sign-in and account APIs are hosted by Atlas; manage users, roles, metadata and tenants with AtlasBackend from @atlasauth/backend
+import EmailPassword from 'supertokens-node/recipe/emailpassword';
+
+// TODO(atlas-migrate): SUPERTOKENS_CONNECTION_URI: the SuperTokens core is only needed for lazy migration during the cutover window; remove it afterwards
+// TODO(atlas-migrate): SUPERTOKENS_API_KEY: server code uses ATLAS_SECRET_KEY (from the Atlas dashboard)
+supertokens.init({
+  framework: 'express',
+  supertokens: {
+    connectionURI: process.env.SUPERTOKENS_CONNECTION_URI!,
+    apiKey: process.env.SUPERTOKENS_API_KEY,
+  },
+  appInfo: { appName: 'Acme', apiDomain: 'https://api.acme.example', websiteDomain: 'https://acme.example' },
+  recipeList: [EmailPassword.init(), Session.init()],
+});

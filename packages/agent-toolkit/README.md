@@ -81,6 +81,35 @@ const tools = toLangChainTools(toolkit); // DynamicStructuredTool[]
 `create_api_key` never returns the one-time plaintext secret (it is stripped);
 mint through `@atlasauth/backend` directly if you need it.
 
+## Connection tools and more frameworks
+
+`createConnectionsToolkit` is the other half: what an agent can do with the third-party accounts people connected to it.
+It runs as the agent (agent token), so it only reaches connections the agent holds a grant for, and no tool returns a
+provider token; calls go through Atlas.
+
+```ts
+import { createConnectionsToolkit } from '@atlasauth/agent-toolkit';
+import { toOpenAiAgentsTools } from '@atlasauth/agent-toolkit/openai-agents';
+
+const tools = createConnectionsToolkit({ baseUrl: 'https://<your-frontend-api>', agentToken: () => getAgentToken() });
+const agent = new Agent({ name: 'Ops', tools: toOpenAiAgentsTools(tools) });
+```
+
+Tools: `list_connections`, `list_connection_actions`, `run_connection_action`, `call_provider_api`, and
+`request_connection_access` (when `agentId` and `agentSecret` are given). A connection that is not connected answers with
+`authorize_url` so the agent can hand the person a link.
+
+Adapters (each takes a toolkit or a tool list, and loads its framework lazily so none is a hard dependency):
+
+| Framework | Import | Function |
+| --- | --- | --- |
+| OpenAI Agents SDK | `@atlasauth/agent-toolkit/openai-agents` | `toOpenAiAgentsTools` |
+| Mastra | `@atlasauth/agent-toolkit/mastra` | `toMastraTools` |
+| LlamaIndex.TS | `@atlasauth/agent-toolkit/llamaindex` | `toLlamaIndexTools` |
+| Google ADK (TypeScript) | `@atlasauth/agent-toolkit/google-adk` | `toAdkTools` |
+
+CrewAI and Google ADK for Python are in the `atlas-agent-toolkit` Python package.
+
 ## License
 
 MIT

@@ -1,0 +1,18 @@
+import { useAuth0Compat, withAuthenticationRequiredCompat } from '@atlasauth/react/compat';
+import type { Auth0CompatUser } from '@atlasauth/react/compat';
+
+function Profile() {
+  const { user, isAuthenticated, isLoading, loginWithRedirect, logout, getAccessTokenSilently } = useAuth0Compat<Auth0CompatUser>();
+  if (isLoading) return <p>Loading…</p>;
+  if (!isAuthenticated) return <button onClick={() => loginWithRedirect()}>Log in</button>;
+  const callApi = async () => fetch('/api', { headers: { authorization: `Bearer ${await getAccessTokenSilently()}` } });
+  return (
+    <div>
+      <img src={user?.picture} alt={user?.name} />
+      <button onClick={callApi}>Call API</button>
+      <button onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}>Log out</button>
+    </div>
+  );
+}
+
+export default withAuthenticationRequiredCompat(Profile, { onRedirecting: () => <p>Redirecting…</p> });

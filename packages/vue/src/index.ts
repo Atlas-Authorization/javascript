@@ -8,6 +8,8 @@ export * from './composables';
 export * from './flow';
 export * from './fapi';
 export * from './components';
+export { ManageCiba } from './manage-ciba';
+export { PolicyAcceptStep, PolicyClickwrap, PolicyConsent, PolicyGate, usePolicies, usePolicyState } from './policies';
 
 // The instance's public sign-in / sign-up settings the prebuilt forms read
 // (`useSignUp().settings`), and the captcha types they render.

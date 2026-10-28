@@ -1,0 +1,33 @@
+[
+  {
+    "name": "react-provider",
+    "path": "src/main.tsx",
+    "envStyle": "vite",
+    "manual": [
+      "removed provider props with no Atlas counterpart:"
+    ]
+  },
+  {
+    "name": "hooks",
+    "path": "components/header.tsx",
+    "manual": [
+      "useFusionAuth(): read the session with useAuth()",
+      "FusionAuthLoginButton: <SignInButton />"
+    ]
+  },
+  {
+    "name": "node-client",
+    "path": "lib/fusionauth.ts",
+    "envStyle": "node",
+    "manual": [
+      "FusionAuthClient: manage users",
+      "FUSIONAUTH_API_KEY: server code uses ATLAS_SECRET_KEY",
+      "FUSIONAUTH_URL: the FusionAuth server URL"
+    ]
+  },
+  {
+    "name": "plain",
+    "path": "src/math.ts",
+    "unchanged": true
+  }
+]

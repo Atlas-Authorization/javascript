@@ -26,4 +26,11 @@ export interface AuthzClaims {
   pla?: string | null;
   /** §billing — the granted feature keys (Clerk `has({feature})`), minted as `fea`. */
   fea?: readonly string[] | null;
+  /**
+   * App-level (instance-wide) role keys the user holds, e.g. `support`. Not tied
+   * to any organization, so checking them needs no active organization.
+   */
+  app_roles?: readonly string[] | null;
+  /** The union of the permissions the user's app roles grant, e.g. `tickets:read`. */
+  app_permissions?: readonly string[] | null;
 }

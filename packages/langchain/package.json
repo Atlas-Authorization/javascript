@@ -1,0 +1,24 @@
+{
+  "name": "@atlasauth/langchain",
+  "version": "0.1.0",
+  "description": "Authorization-filtered LangChain retrieval backed by Atlas FGA: a retriever that only returns documents the asking user may see.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@atlasauth/rag": "workspace:^"
+  },
+  "keywords": ["atlas", "atlasauth", "langchain", "rag", "authorization", "fga"],
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "CHANGELOG.md"]
+}

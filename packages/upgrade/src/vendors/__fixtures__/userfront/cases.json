@@ -1,0 +1,10 @@
+[
+  {
+    "name": "env",
+    "path": "lib/userfront-config.ts",
+    "manual": [
+      "USERFRONT_API_KEY: replace with ATLAS_SECRET_KEY",
+      "USERFRONT_JWT_PUBLIC_KEY: remove"
+    ]
+  }
+]

@@ -1,5 +1,37 @@
 # @atlasauth/nextjs changelog
 
+## Unreleased
+
+## 0.8.0 — 2026-10-25
+
+### Added
+
+- `@atlasauth/nextjs/compat`: `getKindeServerSessionCompat`, `kindeWithAuthCompat`, `handleKindeAuthCompat` (Kinde) and `descopeSessionCompat` (Descope) for server code migrated with `atlas migrate code`.
+- `migrationBridge` option: the Better Auth session bridge for any vendor (`source: 'auth0' | 'clerk' | 'cognito' | …`), reading the vendor's session cookie or token per its preset (or `cookieNames` / `extractToken`). A Clerk or Firebase `__session` is told apart from Atlas's own by its issuer.
+
+## 0.7.0 — 2026-10-24
+
+- Integrator platform release: see the Atlas changelog for 2026-10-24.
+
+## 0.6.0 — 2026-10-24
+
+### Added
+
+- `betterAuthBridge` option: during a migration from Better Auth, turns each user's Better Auth session into an Atlas session on their next request (once), clears the old cookie, and sends users who still owe a second factor to sign-in. With `secretKey`, exchanges run server to server at a per-app limit suited to a bulk cutover.
+
+## 0.5.0 — 2026-10-24
+
+### Added
+
+- `@atlasauth/nextjs/compat`: server-side drop-in helpers for apps migrated from Auth.js (`getServerSessionCompat`, `nextAuthCompat`, server `signIn`/`signOut`), Auth0 (`getAuth0SessionCompat`, `withApiAuthRequiredCompat`, `withPageAuthRequiredCompat`, `handleAuthCompat`, `Auth0ClientCompat`), Supabase Auth (`getSupabaseUserCompat`, `getSupabaseSessionCompat`, `supabaseSignOutCompat`) and Better Auth (`createBetterAuthServerCompat`, `toNextJsHandlerCompat`, `getSessionCookieCompat`), and `createAtlasMiddleware()` built from the environment.
+- `withAccessToken` sets the `DPoP-Nonce` response header (on success and refusal) when the verifier is given `dpopNonces`.
+
+## 0.4.0 — 2026-10-23
+
+### Added
+
+- `withAccessToken(options, handler)`: wrap an App Router route handler so it runs only for a request with an Atlas-issued OAuth access token for your API (audience, scopes, DPoP); anything else gets 401/403 with the `WWW-Authenticate` challenge. Re-exports `createAccessTokenVerifier`, `protectedResourceMetadata`, `protectedResourceMetadataPath`.
+
 ## 0.3.0
 ### Added
 - **`getAtlasInitialState(options?)`** in `@atlasauth/nextjs/server` → `Promise<AtlasInitialState>`: the instance's

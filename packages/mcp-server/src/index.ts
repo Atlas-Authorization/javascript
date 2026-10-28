@@ -19,3 +19,14 @@ export { registerAtlasTools, toMcpToolSpecs } from './tools';
 export type { McpToolSpec } from './tools';
 
 export { resolveOptions, ENV } from './config';
+
+export {
+  DEFAULT_DOCS_URL,
+  DOCS_TOOL_NAMES,
+  createDocsSource,
+  docsToolSpecs,
+  findDoc,
+  parseDocs,
+  searchDocs,
+} from './docs';
+export type { DocHit, DocPage, DocsSource, DocsSourceOptions } from './docs';

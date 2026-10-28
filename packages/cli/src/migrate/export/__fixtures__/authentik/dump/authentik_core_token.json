@@ -1,0 +1,7 @@
+[
+  { "token_uuid": "ffffffff-0000-4000-8000-000000000001", "identifier": "ada-ci", "key": "Xk3vR8pQ2mN7sT4wY6zA1bC5dE9fG0hJ3kL7mN2pQ5rS8tU1vW4xY7zA0bC3dE6f", "intent": "api", "user_id": 2, "expiring": true, "expires": "2099-01-01T00:00:00Z", "description": "CI deploys", "managed": null },
+  { "token_uuid": "ffffffff-0000-4000-8000-000000000002", "identifier": "ada-mail", "key": "mailpw-9f8e7d6c5b4a", "intent": "app_password", "user_id": 2, "expiring": false, "expires": "2020-01-01T00:00:00Z", "description": "", "managed": null },
+  { "token_uuid": "ffffffff-0000-4000-8000-000000000003", "identifier": "akadmin-recovery", "key": "r3c0v3ry", "intent": "recovery", "user_id": 1, "expiring": true, "expires": "2099-01-01T00:00:00Z", "description": "", "managed": null },
+  { "token_uuid": "ffffffff-0000-4000-8000-000000000004", "identifier": "ak-outpost-0f6a2b-api", "key": "outpostkey", "intent": "api", "user_id": 5, "expiring": false, "expires": null, "description": "", "managed": "goauthentik.io/outpost/0f6a2b-api" },
+  { "token_uuid": "ffffffff-0000-4000-8000-000000000005", "identifier": "admin-old", "key": "oldkey", "intent": "api", "user_id": 1, "expiring": true, "expires": "2025-01-01T00:00:00Z", "description": "", "managed": null }
+]

@@ -72,6 +72,9 @@ export function optionsFromElement(
   if (referral === 'off' || referral === 'false') options.referral = false;
   const referralConsent = dataset.atlasReferralConsent ?? attr('referral-consent');
   if (referralConsent === 'granted' || referralConsent === 'denied') options.referralConsent = referralConsent;
+  // Opt-in passkey PRF: the salt for the `atlas:passkey-prf` event (never sent to Atlas).
+  const prfSalt = dataset.atlasPasskeyPrf ?? attr('passkey-prf');
+  if (prfSalt) options.passkeyPrf = { eval: { first: prfSalt } };
   return options;
 }
 

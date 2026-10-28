@@ -150,3 +150,58 @@ describe('AtlasFga', () => {
     expect(() => new AtlasFga({ fetch: mockAtlas().fetch })).toThrow(/secret key/);
   });
 });
+
+describe('list-users, changes, conditions and consistency', () => {
+  function recorder(responses: unknown[]) {
+    const calls: { method: string; url: string; body: any }[] = [];
+    let i = 0;
+    const fetchImpl = (async (input: any, init: any) => {
+      calls.push({ method: (init?.method ?? 'GET').toUpperCase(), url: String(input), body: init?.body ? JSON.parse(init.body) : undefined });
+      return new Response(JSON.stringify(responses[Math.min(i++, responses.length - 1)]), { status: 200 });
+    }) as unknown as typeof fetch;
+    return { fetch: fetchImpl, calls };
+  }
+
+  it('listUsers posts the filter and returns usersets/wildcards untouched', async () => {
+    const r = recorder([{ object: 'fga.list_users', users: ['user:*'], excluded_users: ['user:eve'], continuation_token: null, authorization_model_id: 'm', consistency_token: 'fgc1_x' }]);
+    const fga = new AtlasFga({ secretKey: 'sk_test', storeId: 's1', authorizationModelId: 'm', fetch: r.fetch });
+    const out = await fga.listUsers({ object: 'doc:1', relation: 'viewer', user_filters: [{ type: 'user' }], consistency: 'HIGHER_CONSISTENCY' });
+    expect(out.excluded_users).toEqual(['user:eve']);
+    expect(r.calls[0]!.url).toMatch(/\/v1\/fga\/stores\/s1\/list-users$/);
+    expect(r.calls[0]!.body).toMatchObject({ object: 'doc:1', user_filters: [{ type: 'user' }], consistency: 'HIGHER_CONSISTENCY', authorization_model_id: 'm' });
+  });
+
+  it('listAllUsers follows the continuation token across pages', async () => {
+    const page = (users: string[], next: string | null) => ({ object: 'fga.list_users', users, excluded_users: [], continuation_token: next, authorization_model_id: 'm', consistency_token: 't' });
+    const r = recorder([page(['user:a', 'user:b'], 'c1'), page(['user:c'], null)]);
+    const fga = new AtlasFga({ secretKey: 'sk_test', storeId: 's1', fetch: r.fetch });
+    const all = await fga.store('s2').listAllUsers({ object: 'doc:1', relation: 'viewer', user_filters: [{ type: 'user' }], page_size: 2 });
+    expect(all.users).toEqual(['user:a', 'user:b', 'user:c']);
+    expect(all.continuation_token).toBeNull();
+    expect(r.calls).toHaveLength(2);
+    expect(r.calls[1]!.body.continuation_token).toBe('c1');
+    expect(r.calls[1]!.url).toContain('/stores/s2/');
+  });
+
+  it('readChanges sends a GET with query parameters and no body', async () => {
+    const r = recorder([{ object: 'list', data: [], has_more: false, continuation_token: 'tok' }]);
+    const fga = new AtlasFga({ secretKey: 'sk_test', storeId: 's1', fetch: r.fetch });
+    const page = await fga.readChanges({ type: 'doc', page_size: 10, continuation_token: 'abc', start_time: '2026-01-01T00:00:00Z' });
+    expect(page.continuation_token).toBe('tok');
+    const c = r.calls[0]!;
+    expect(c.method).toBe('GET');
+    expect(c.body).toBeUndefined();
+    const u = new URL(c.url);
+    expect(u.pathname).toBe('/v1/fga/stores/s1/changes');
+    expect(Object.fromEntries(u.searchParams)).toEqual({ type: 'doc', page_size: '10', continuation_token: 'abc', start_time: '2026-01-01T00:00:00Z' });
+  });
+
+  it('sends conditions, context and consistency tokens on writes and checks', async () => {
+    const r = recorder([{ object: 'fga.write_result', writes: 1, deletes: 0, consistency_token: 'fgc1_w' }, { object: 'fga.check', allowed: true, authorization_model_id: 'm', consistency_token: 'fgc1_c' }]);
+    const fga = new AtlasFga({ secretKey: 'sk_test', storeId: 's1', fetch: r.fetch });
+    const w = await fga.writeTuples([{ user: 'user:a', relation: 'viewer', object: 'doc:1', condition: { name: 'in_office', context: { cidr: '10.0.0.0/8' } } }]);
+    await fga.check({ user: 'user:a', relation: 'viewer', object: 'doc:1', context: { ip: '10.1.1.1' }, consistency_token: w.consistency_token });
+    expect(r.calls[0]!.body.writes[0].condition).toEqual({ name: 'in_office', context: { cidr: '10.0.0.0/8' } });
+    expect(r.calls[1]!.body).toMatchObject({ context: { ip: '10.1.1.1' }, consistency_token: 'fgc1_w' });
+  });
+});

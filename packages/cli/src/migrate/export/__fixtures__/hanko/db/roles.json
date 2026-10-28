@@ -1,0 +1,18 @@
+[
+  {
+    "id": "8d9e0f1a-2b3c-4d4e-9f5a-6b7c8d9e0f1a",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "slug": "billing",
+    "name": "Billing",
+    "created_at": "2020-12-31 23:59:59",
+    "updated_at": "2020-12-31 23:59:59"
+  },
+  {
+    "id": "9e0f1a2b-3c4d-4e5f-a06b-7c8d9e0f1a2b",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "slug": "admin",
+    "name": "Administrator",
+    "created_at": "2020-12-31 23:59:59",
+    "updated_at": "2020-12-31 23:59:59"
+  }
+]

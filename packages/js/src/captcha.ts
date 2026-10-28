@@ -16,6 +16,7 @@
  */
 import type { FapiClient } from './fapi';
 import { renderAtlasCaptcha, type AtlasChallenge } from './atlas-captcha';
+import { fetchBotIdAttestation } from './captcha-widget';
 
 /** The public widget config `GET /v1/client/captcha` returns. No secrets. */
 export interface CaptchaWidgetConfig {
@@ -28,6 +29,11 @@ export interface CaptchaWidgetConfig {
   site_key: string | null;
   /** How a widget-drawing provider should render. */
   widget_mode: 'invisible' | 'managed' | 'visible';
+  /**
+   * Vercel BotID only: the route on your own Vercel deployment that answers
+   * `{ token }` (a signed BotID verdict). Null for every other provider.
+   */
+  attestation_url?: string | null;
   /** Whether this action ALWAYS requires a passing captcha. */
   enabled: boolean;
 }
@@ -53,6 +59,7 @@ const PROVIDER_SCRIPTS: Record<string, string | ((siteKey: string) => string)> =
   recaptcha: 'https://www.google.com/recaptcha/api.js?render=explicit',
   recaptcha_v3: (siteKey) =>
     `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(siteKey)}`,
+  captchafox: 'https://cdn.captchafox.com/api.js?render=explicit',
 };
 
 /** One-shot loaders, keyed by script URL, so a provider script injects once. */
@@ -97,6 +104,7 @@ interface CaptchaWindow {
   hcaptcha?: WidgetApi;
   turnstile?: WidgetApi;
   grecaptcha?: WidgetApi;
+  captchafox?: WidgetApi;
 }
 
 /** Render the resolved provider's widget into `element` and resolve its token. */
@@ -159,6 +167,27 @@ function renderWidget(
         });
         return;
       }
+      case 'captchafox': {
+        const api = w.captchafox;
+        if (!api) return reject(new Error('CaptchaFox did not load.'));
+        const fail = () => reject(new Error('CaptchaFox challenge failed.'));
+        Promise.resolve(
+          api.render(element, {
+            sitekey: siteKey,
+            mode: invisible ? 'hidden' : 'inline',
+            onVerify: (token: string) => resolve(token),
+            onError: fail,
+            onFail: fail,
+          }),
+        ).then((id) => {
+          if (invisible && api.execute) {
+            Promise.resolve(api.execute(id)).then((token) => {
+              if (typeof token === 'string' && token) resolve(token);
+            }, fail);
+          }
+        }, fail);
+        return;
+      }
       default:
         reject(new Error(`Captcha provider "${provider}" has no browser widget.`));
     }
@@ -203,6 +232,13 @@ export function captcha(client: FapiClient) {
           return res.data;
         },
       }).token;
+    }
+    if (cfg.provider === 'vercel_botid') {
+      // No widget: the app's own Vercel route signs a BotID verdict.
+      if (!cfg.attestation_url) {
+        throw new Error('Vercel BotID needs an attestation URL (captcha.attestationUrl) to fetch a verdict from.');
+      }
+      return fetchBotIdAttestation(cfg.attestation_url);
     }
     if (cfg.provider === 'none' || !cfg.site_key) {
       throw new Error(

@@ -22,7 +22,7 @@ import { enc, type RequestFn } from './request';
 // ── Transports ──────────────────────────────────────────────────────────────
 
 /** Email transports accepted by `PUT /v1/messaging_providers/email`. */
-export type EmailTransport = 'resend' | 'ses' | 'smtp' | 'brevo' | 'mailgun';
+export type EmailTransport = 'resend' | 'ses' | 'smtp' | 'brevo' | 'mailgun' | 'smtp2go' | 'webhook';
 
 /** SMS transports accepted by `PUT /v1/messaging_providers/sms`. */
 export type SmsTransport =
@@ -35,7 +35,8 @@ export type SmsTransport =
   | 'infobip'
   | 'clicksend'
   | 'bandwidth'
-  | 'aws_sns';
+  | 'aws_sns'
+  | 'webhook';
 
 export type MessagingTransport = EmailTransport | SmsTransport;
 
@@ -67,6 +68,14 @@ export interface MailgunConfig {
   domain: string;
   /** Mailgun region. Default `us`. */
   region?: 'us' | 'eu';
+}
+
+/** SMTP2GO. */
+export interface Smtp2goConfig {
+  /** SMTP2GO API key (`api-…`) with permission to send email. Required on first setup. Write-only: never returned. */
+  api_key: string;
+  /** The data region your account uses. Omit for the regionless host. */
+  region?: 'us' | 'eu' | 'au';
 }
 
 /** Amazon SES. */
@@ -185,6 +194,16 @@ export interface AwsSnsConfig extends SmsFrom {
   session_token?: string;
 }
 
+/** Your own delivery endpoint: Atlas POSTs each message, Standard Webhooks signed. */
+export interface WebhookConfig {
+  /** Your HTTPS endpoint (port 443). Required on first setup. */
+  url: string;
+  /** Signing secret (`whsec_…` base64 or any string). Required on first setup. Write-only: never returned. */
+  signing_secret: string;
+  /** Email only. `rendered` (default) sends the final subject/text/html; `raw` sends the template name and variables. */
+  payload?: 'rendered' | 'raw';
+}
+
 /** The `config` shape for each transport, keyed by transport. */
 export interface MessagingTransportConfigs {
   resend: ResendConfig;
@@ -192,6 +211,7 @@ export interface MessagingTransportConfigs {
   smtp: SmtpConfig;
   brevo: BrevoConfig;
   mailgun: MailgunConfig;
+  smtp2go: Smtp2goConfig;
   twilio: TwilioConfig;
   vonage: VonageConfig;
   messagebird: MessagebirdConfig;
@@ -202,6 +222,7 @@ export interface MessagingTransportConfigs {
   clicksend: ClicksendConfig;
   bandwidth: BandwidthConfig;
   aws_sns: AwsSnsConfig;
+  webhook: WebhookConfig;
 }
 
 /** The write-only (secret) keys of each transport — never present in a response. */
@@ -211,6 +232,7 @@ export interface MessagingSecretKeys {
   smtp: 'password';
   brevo: 'api_key';
   mailgun: 'api_key';
+  smtp2go: 'api_key';
   twilio: 'auth_token';
   vonage: 'api_secret';
   messagebird: 'access_key';
@@ -221,6 +243,7 @@ export interface MessagingSecretKeys {
   clicksend: 'api_key';
   bandwidth: 'password';
   aws_sns: 'secret_access_key' | 'session_token';
+  webhook: 'signing_secret';
 }
 
 // ── Request bodies ──────────────────────────────────────────────────────────
@@ -321,6 +344,17 @@ export type SmsProvider = { [T in SmsTransport]: MessagingProviderOf<'sms', T> }
 
 /** Either channel's provider. Narrow on `transport` (or `channel`) to read its config. */
 export type MessagingProvider = EmailProvider | SmsProvider;
+
+/**
+ * What a singleton GET returns when nothing is configured yet (never a 404).
+ * A configured object carries `configured: true`.
+ */
+export interface NotConfigured<O extends string = string> {
+  object: O;
+  configured: false;
+  /** What to call to configure it. */
+  message?: string;
+}
 
 export interface MessagingProviders {
   object: 'messaging_providers';
@@ -447,7 +481,7 @@ export interface DevelopmentEmail {
 /** `{ provider_id }`, or your provider exactly as `messaging.setEmail` takes it. */
 export type EnableDevelopmentEmailBody =
   | { provider_id: string; from_address?: string }
-  | { transport: 'resend' | 'ses' | 'smtp' | 'brevo' | 'mailgun'; config?: Record<string, string>; from_address?: string };
+  | { transport: 'resend' | 'ses' | 'smtp' | 'brevo' | 'mailgun' | 'smtp2go' | 'webhook'; config?: Record<string, string>; from_address?: string };
 
 export interface MessagingTestResult {
   object: 'messaging_test';
@@ -491,6 +525,12 @@ export function messagingResource(request: RequestFn) {
     get(): Promise<MessagingProviders> {
       return request({ method: 'GET', path: '/v1/messaging_providers' });
     },
+    /** One channel's provider, or `{ configured: false, channel }` when none is set. */
+    channel<C extends 'email' | 'sms'>(
+      channel: C,
+    ): Promise<(C extends 'email' ? EmailProvider : SmsProvider) | (NotConfigured<'messaging_provider'> & { channel: C })> {
+      return request({ method: 'GET', path: `/v1/messaging_providers/${channel}` });
+    },
     /**
      * Configure (or update) the email provider. `config` keys are checked per
      * `transport`; on an update of the same transport, omitted keys — including
@@ -525,8 +565,8 @@ export function messagingResource(request: RequestFn) {
      * Atlas's sign-in emails without a verified domain ([Atlas test] subjects, capped).
      */
     developmentEmail: {
-      /** 404 when the provider is not in development mode. */
-      get(): Promise<DevelopmentEmail> {
+      /** `{ configured: false }` when the provider is not in development mode. */
+      get(): Promise<DevelopmentEmail | NotConfigured<'development_email'>> {
         return request({ method: 'GET', path: '/v1/messaging_providers/email/development' });
       },
       /** Turn development mode on. 409 `DEVELOPMENT_EMAIL_NOT_ALLOWED` on a production instance. */
@@ -540,8 +580,8 @@ export function messagingResource(request: RequestFn) {
     },
     /** Managed email: Atlas sets your sending domain up on your own Resend or Brevo account. */
     managedEmail: {
-      /** 404 when none is configured. */
-      get(): Promise<ManagedEmail> {
+      /** `{ configured: false }` when none is configured. */
+      get(): Promise<ManagedEmail | NotConfigured<'managed_email'>> {
         return request({ method: 'GET', path: '/v1/messaging_providers/email/managed' });
       },
       /** Register the sending domain; returns the DNS `records` to publish. */

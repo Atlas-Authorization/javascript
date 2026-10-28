@@ -1,0 +1,9 @@
+'use client';
+import { Auth } from '@supabase/auth-ui-react';
+import { ThemeSupa } from '@supabase/auth-ui-shared';
+import { createClient } from '@/utils/supabase/client';
+
+export function AuthForm() {
+  const supabase = createClient();
+  return <Auth supabaseClient={supabase} appearance={{ theme: ThemeSupa }} providers={['github']} />;
+}

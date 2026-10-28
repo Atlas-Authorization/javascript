@@ -72,6 +72,7 @@ function serializeCookie({ name, value, options }: AtlasCookie): string {
   // Same encoding Next's `response.cookies.set` applies, so readers agree.
   const parts = [`${name}=${encodeURIComponent(value)}`];
   if (options.path) parts.push(`Path=${options.path}`);
+  if (options.domain) parts.push(`Domain=${options.domain}`);
   if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
   if (options.httpOnly) parts.push('HttpOnly');
   if (options.secure) parts.push('Secure');

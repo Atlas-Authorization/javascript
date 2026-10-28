@@ -130,6 +130,75 @@ describe('authenticateWithPasskey', () => {
   });
 });
 
+describe('authenticateWithPasskey — sign-in captcha', () => {
+  /** begin answers in turn from `begins`; everything else as in `router`. */
+  function scripted(begins: Array<{ status: number; body: unknown }>) {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(typeof input === 'string' ? input : input.toString()).pathname;
+      calls.push({ path, body: init?.body ? JSON.parse(init.body as string) : undefined });
+      const reply =
+        path === '/v1/client/sign_ins/passkey/begin'
+          ? begins.shift()!
+          : path === '/v1/client/sign_ins/passkey/finish'
+            ? { status: 200, body: { id: 'att_c', status: 'complete', ticket: 'tkt_c' } }
+            : path === '/v1/appearance'
+              ? { status: 200, body: { captchaFlows: { signIn: { enabled: false, provider: 'turnstile', siteKey: 'site_1', widget: 'managed' } } } }
+              : { status: 404, body: null };
+      return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    const beginBodies = () => calls.filter((c) => c.path === '/v1/client/sign_ins/passkey/begin').map((c) => c.body);
+    return { fetchImpl, beginBodies };
+  }
+  const OK = { status: 200, body: { challenge: 'chal_C', handle: 'h_C' } };
+  const refused = (code: string) => ({ status: 400, body: { errors: [{ code, message: 'check', param: 'captcha_token' }] } });
+
+  it('sends a token passed up front', async () => {
+    const { fetchImpl, beginBodies } = scripted([OK]);
+    const result = await authenticateWithPasskey({ config: { ...config, fetchImpl }, passkey: fakePasskey, captchaToken: 'tok_up' });
+    expect(result.status).toBe('complete');
+    expect(beginBodies()).toEqual([{ captcha_token: 'tok_up' }]);
+  });
+
+  it('after CAPTCHA_REQUIRED asks getCaptchaToken (with the sign-in captcha settings) and retries once', async () => {
+    const { fetchImpl, beginBodies } = scripted([refused('CAPTCHA_REQUIRED'), OK]);
+    const asked: unknown[] = [];
+    const result = await authenticateWithPasskey({
+      config: { ...config, fetchImpl },
+      passkey: fakePasskey,
+      getCaptchaToken: async (request) => {
+        asked.push(request);
+        return 'tok_fresh';
+      },
+    });
+    expect(result).toMatchObject({ status: 'complete', ticket: 'tkt_c' });
+    expect(beginBodies()).toEqual([{}, { captcha_token: 'tok_fresh' }]);
+    expect(asked).toEqual([
+      { flow: 'signIn', refused: 'CAPTCHA_REQUIRED', captcha: { enabled: false, provider: 'turnstile', siteKey: 'site_1', widget: 'managed' } },
+    ]);
+  });
+
+  it('CAPTCHA_FAILED on the up-front token: one retry with a fresh token, then the refusal', async () => {
+    const { fetchImpl, beginBodies } = scripted([refused('CAPTCHA_FAILED'), refused('CAPTCHA_FAILED')]);
+    const result = await authenticateWithPasskey({
+      config: { ...config, fetchImpl },
+      passkey: fakePasskey,
+      captchaToken: 'tok_old',
+      getCaptchaToken: async () => 'tok_new',
+    });
+    expect(beginBodies()).toEqual([{ captcha_token: 'tok_old' }, { captcha_token: 'tok_new' }]);
+    expect(result.status).toBe('error');
+    expect(result.errors[0]?.code).toBe('CAPTCHA_FAILED');
+  });
+
+  it('without a callback a refusal is returned as the error', async () => {
+    const { fetchImpl, beginBodies } = scripted([refused('CAPTCHA_REQUIRED')]);
+    const result = await authenticateWithPasskey({ config: { ...config, fetchImpl }, passkey: fakePasskey });
+    expect(beginBodies()).toEqual([{}]);
+    expect(result).toMatchObject({ status: 'error', errors: [{ code: 'CAPTCHA_REQUIRED' }] });
+  });
+});
+
 describe('createFapiClient config', () => {
   it('throws a clear config error when frontendApi is missing', () => {
     let caught: unknown;

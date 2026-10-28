@@ -1,5 +1,91 @@
 # @atlasauth/react changelog
 
+## 0.23.1 — 2026-10-28
+
+- The SDK reports its own version correctly again (the previous release still identified itself as the release before).
+
+## 0.23.0 — 2026-10-28
+
+- `<ManageCiba/>` in the account panel
+- Sharing and approval widgets: `ShareDialog`, `RoleMatrix`, `AccessRequestButton`, `PendingApprovals`
+- `<IntegrationGallery/>`
+- `keepSessionAlive` on `AtlasProvider` refreshes the token when a tab wakes
+
+## 0.22.0 — 2026-10-27
+
+### Added
+
+- `<AccessRequests/>` and `useAccess()`: browse the access catalog, request access, approve or decline requests, and complete access reviews for the signed-in user.
+
+### Changed
+
+- `<ConnectedAccounts/>` and `useConnectedAccounts().authorize` connect the connection itself (its tokens are stored on the connection, no external account and no sign-in method) instead of linking an external account; an organization admin gets Connect as well as Share my account. Statuses `revoked` and `error` have labels.
+
+## 0.21.0 — 2026-10-26
+
+### Added
+
+- `<ManageMfa/>` offers counter-based tokens, YubiKeys and Duo when the application has them on (`<ManageMoreFactors/>`), and `<ManageSecurityQuestions/>` (also inside `<UserProfile/>`) sets recovery questions. `<SignIn/>` shows "Use Duo instead" at the second-factor step and polls until Duo approves. The authenticator field no longer says "6-digit".
+
+## 0.20.0 — 2026-10-25
+
+### Added
+
+- `@atlasauth/react/compat`: `useOktaAuthCompat` / `OktaAuthCompat` (okta-react, okta-auth-js), `useKindeBrowserClientCompat` / `useKindeAuthCompat` (Kinde), and `useDescopeCompat`, `useDescopeSessionCompat`, `useDescopeUserCompat`, `getDescopeSessionTokenCompat` (Descope), keeping each SDK's result shapes for apps migrated with `atlas migrate code`.
+
+## 0.19.0 — 2026-10-24
+
+- Per-call integration audiences (`getToken({ for, cbid })`), partner platforms, operator tokens for partner products.
+
+## 0.18.0 — 2026-10-24
+
+- SSO organization claims, app adoption, validating dry runs, sealed secrets, consent API adapters; see the Atlas changelog.
+
+## 0.17.0 — 2026-10-24
+
+### Added
+
+- `SignInWithAtlasButton` dispatches the `atlasid:ready` / `atlasid:signin` / `atlasid:error` / `atlasid:onetap` DOM events and sets `data-atlasid-state`; new `listenAtlasIdEvents()` and `useAtlasIdEvents()` subscribe to them (on this button or a script-upgraded `[data-atlas-signin]` element).
+- The button's label and `aria-label` follow `locale` (default the page's `<html lang>`), it shows a visible `:focus-visible` ring, honours `prefers-reduced-motion`, and reads the host page's `--atlas-host-*` variables (`--atlas-host-accent`, `--atlas-host-accent-ink`, `--atlas-host-surface`, `--atlas-host-ink`, `--atlas-host-line`, `--atlas-host-focus-ring`). New props `locale`, `ariaLabel`, `onReady`, `oneTap`.
+- One Tap: `oneTapWithAtlas()` (FedCM) and the button's `oneTap` prop.
+- The components' stylesheet is a constructable stylesheet (no `style-src 'unsafe-inline'` needed), or a `<style>` carrying the page's CSP nonce; the host page's `--atlas-host-*` variables restyle them where set.
+
+## 0.16.0 — 2026-10-24
+
+### Added
+
+- **Policy acceptance.** `<SignUp>` shows the instance's policies instead of the single terms checkbox: a combined (or per-policy) checkbox whose names open the document in an in-page viewer, a clickwrap line under the button, and an unskippable scroll-to-accept dialog (focus trapped, no close button, Escape ignored; Accept turns on once the end of the text is seen or when it fits; Decline cancels). The submit is blocked until the required policies are accepted, `policy_acceptances` is sent, and a 422 `POLICY_ACCEPTANCE_REQUIRED` reloads the policies and asks again.
+- `<SignIn>` handles `needs_policy_acceptance`: the dialog (with what changed on a re-acceptance) or the checkboxes, then it continues to the second factor or the session. Declining cancels the attempt and says why.
+- New: `<PolicyGate/>` (in-app re-acceptance banner), `usePolicies()`, `<PolicyConsent/>`, `<PolicyClickwrap/>`, `<PolicyModal/>`, `<PolicyAcceptStep/>`. `FlowProps.policyConsent` picks `combined` or `separate` checkboxes. New `policy.*` strings in the catalog and in every `@atlasauth/localizations` bundle.
+
+## 0.15.0 — 2026-10-24
+
+### Added
+
+- `@atlasauth/react/compat`: drop-in compat helpers for apps migrated from Auth.js, Auth0, Supabase Auth and Better Auth (what `atlas migrate code` rewrites onto): `useNextAuthSession`, `nextAuthSignIn`, `nextAuthSignOut`, `getNextAuthSession`, `useAuth0Compat`, `useAuth0UserCompat`, `withAuthenticationRequiredCompat`, `getSupabaseUserCompat`, `getSupabaseSessionCompat`, `supabaseSignOutCompat`, `supabaseSignInWithOAuthCompat`, `onSupabaseAuthStateChangeCompat`, `useSupabaseUserCompat`, `useSupabaseSessionCompat`, `createBetterAuthCompatClient`, plus `signInRedirect` and the pure projections. The imperative ones act on the mounted `<AtlasProvider>` (`getActiveAtlas()`).
+- `<DeviceAuthorization/>` and `useDeviceAuthorization()`: approve a TV / console / CLI sign-in (RFC 8628) on your own page — enter or scan the code, see the app and the access it asks for, Allow or Deny, with the "Confirm it's you" prompt when the app requires a recent re-authentication. Reads `?user_code=` from the page URL. New strings (`deviceAuth.*`) are in the catalog and in every `@atlasauth/localizations` bundle.
+- `signOut()` follows SAML Single Logout (`saml_logout_url`) as well as upstream (RP-initiated) logout, with the same options and precedence as `@atlasauth/js` (`samlLogout`, `samlLogoutRedirectUrl`, `SignOutResult.samlLogoutUrl`; the upstream URL wins when both are returned).
+- WebAuthn PRF: `passkeyPrf` / `onPasskeyExtensionResults` on `<SignIn>` / `<SignUp>`, and `prf` / `onExtensionResults` on `<ManagePasskeys>` (`ManagePasskeysProps`) when a passkey is added. The outputs never reach Atlas.
+- Billing: `useBilling()` returns `subscriptions` and `addons` (live add-on subscriptions), `changePlan` / `cancel` / `restore` take `subscriptionId`, and `check(feature, { required })` asks whether the subject may use a feature (`AtlasFeatureCheck`). Plans and subscriptions carry `provider`, `kind` and the trial / annual fields.
+- `custom_data` on the session resource (read-only on the client).
+- `<SignIn>` / `<SignUp>` captchas support CaptchaFox and Vercel BotID.
+
+## 0.14.0 — 2026-10-23
+
+### Added
+
+- `<OrganizationAuditLog/>` and `useOrganizationAuditLog()`: the active organization's audit trail for its admins.
+- **Recovery codes after enrolment.** Setting up a second factor at sign-in now shows the account's one-time recovery codes before the sign-in finishes, as the hosted page does: copy them, download them as a .txt file, then "I've saved my codes" continues. Before, the sign-in completed straight away and the codes were never shown. The codes are kept in memory only, never on the attempt or in storage. New strings (`mfa.recoveryCodesTitle`, `mfa.recoveryCodesHelp`, `mfa.recoveryCodesCopy`, `mfa.recoveryCodesCopied`, `mfa.recoveryCodesDownload`, `mfa.recoveryCodesSaved`) are in the catalog and in every `@atlasauth/localizations` bundle.
+- **MFA enrolment at sign-in works end to end.** When the app requires a second factor and the account has none, `<SignIn>` now fetches the authenticator setup and shows its QR code and the setup key, then asks for the code (one or two, as the app requires). Before, the step asked for codes without ever showing the setup.
+- **Text-message enrolment** where the app offers texted codes and can send them: the user picks "Use text messages", enters a phone number, and confirms with the texted code. When both methods are offered the user chooses, and can switch.
+- **"Text me a code instead"** at the second-factor step where the app offers texted codes, beside the existing "Email me a code instead".
+- The new strings are in the catalog (`mfa.enrollChoose`, `mfa.enrollTotpOption`, `mfa.enrollSmsOption`, `mfa.enrollScan`, `mfa.enrollQrAlt`, `mfa.enrollSetupKey`, `mfa.enrollPreparing`, `mfa.phoneLabel`, `mfa.phoneHint`, `mfa.sendCode`, `mfa.codeTextedTo`, `mfa.smsCodeOption`) and in every `@atlasauth/localizations` bundle.
+- Texted codes are offered only where the server says the app can text (`account.mfa` on `/v1/appearance`). A server that does not say gets the authenticator app only.
+
+### Changed
+
+- Built on `@atlasauth/js` 0.16.0.
+
 ## 0.13.0
 
 ### Added

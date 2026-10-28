@@ -1,5 +1,11 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Incremental: an unchanged package rebuilds in seconds. The build info
+    // lives in dist, so deleting dist always forces a full rebuild.
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
+  },
   // Typecheck (tsconfig.json) covers the tests and the in-memory fake, but the
   // BUILD must emit neither into dist — the fake is a test-only helper.
   "exclude": ["**/*.test.ts", "**/*.test.tsx", "src/testing/**"]

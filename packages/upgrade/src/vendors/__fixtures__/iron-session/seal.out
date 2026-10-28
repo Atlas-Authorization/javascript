@@ -1,0 +1,9 @@
+// TODO(atlas-migrate): sealData() / unsealData() are not the sign-in session: keep iron-session for them (sealed links, invites), or use Atlas sign-in tokens (atlasClient().signInTokens.create) for passwordless sign-in links
+import { sealData } from 'iron-session';
+
+// TODO(atlas-migrate): SECRET_COOKIE_PASSWORD: iron-session cookie password; remove it unless sealData() / unsealData() still use it (Atlas signs its own sessions)
+const password = process.env.SECRET_COOKIE_PASSWORD as string;
+
+export async function inviteToken(teamId: string) {
+  return sealData({ teamId }, { password, ttl: 60 * 60 });
+}

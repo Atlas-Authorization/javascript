@@ -29,6 +29,7 @@ export { webhooks } from './commands/webhooks';
 export { sessions } from './commands/sessions';
 export { config } from './commands/config';
 export { actions } from './commands/actions';
+export { pages } from './commands/pages';
 export { init } from './commands/init';
 export { preflight, envCommand, client } from './commands/project-commands';
 export { referrals } from './commands/referrals';
@@ -48,3 +49,7 @@ export {
   type ProjectInstance,
   type InstanceEnv,
 } from './project';
+export { migrate } from './commands/migrate';
+export { planConfigImport, type ConfigPlan, type PlannedChange } from './commands/config';
+export { translateBetterAuth, type Translation, type ReportEntry, type ConfigDocument } from './migrate/better-auth/translate';
+export { migrateBetterAuth, STEPS as BETTER_AUTH_MIGRATION_STEPS } from './migrate/better-auth/orchestrator';

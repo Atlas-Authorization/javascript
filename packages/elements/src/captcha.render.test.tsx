@@ -154,6 +154,8 @@ describe('<SignUp.Captcha>', () => {
       email: 'new@example.com',
       password: 'blue tangerine anvil 71!',
       captcha_token: 'tok-bad',
+      // The SDK stamps its device id on every account-creating start.
+      device_id: expect.stringMatching(/^d_/),
     });
     await vi.waitFor(() =>
       expect(el.querySelector('[role="alert"]')?.textContent).toBe(
@@ -221,5 +223,105 @@ describe('<SignIn.Captcha>', () => {
       captcha_token: 'tok-si',
     });
     await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+  });
+});
+
+describe('<SignIn.PasskeyButton> with a sign-in captcha', () => {
+  const BEGIN = { handle: 'wa_1', challenge: 'Y2hhbA', rpId: 'example.com', allowCredentials: [], userVerification: 'preferred' };
+  const stubAuthenticator = () => {
+    vi.stubGlobal('PublicKeyCredential', class {});
+    const get = vi.fn(async () => ({
+      rawId: new Uint8Array([1]).buffer,
+      id: 'AQ',
+      response: { authenticatorData: new Uint8Array([2]).buffer, clientDataJSON: new Uint8Array([3]).buffer, signature: new Uint8Array([4]).buffer },
+    }));
+    Object.defineProperty(window.navigator, 'credentials', { configurable: true, value: { get, create: vi.fn() } });
+    return get;
+  };
+  const passkeyUi = (
+    <SignIn.Root>
+      {(flow) => (
+        <>
+          {flow.errors.map((e) => (
+            <p key={e.code} role="alert">
+              {e.message}
+            </p>
+          ))}
+          <SignIn.Step name="start">
+            <SignIn.Captcha />
+            <SignIn.PasskeyButton>Passkey</SignIn.PasskeyButton>
+          </SignIn.Step>
+        </>
+      )}
+    </SignIn.Root>
+  );
+  const begins = () => posts('/v1/client/sign_ins/passkey/begin').map((c) => c.body);
+  const finishRoute: Route = (c) =>
+    c.path === '/v1/client/sign_ins/passkey/finish' ? json({ id: 'sia_p', status: 'needs_second_factor' }) : undefined;
+
+  it('an always-on sign-in captcha: the begin carries the solved token', async () => {
+    const ts = fakeTurnstile();
+    stubAuthenticator();
+    const el = await mount(passkeyUi, {
+      captchaFlows: { signIn: TURNSTILE },
+      routes: [(c) => (c.path === '/v1/client/sign_ins/passkey/begin' ? json(BEGIN, 201) : undefined), finishRoute],
+    });
+    await vi.waitFor(() => expect(ts.api.render).toHaveBeenCalledTimes(1));
+    ts.solve('tok-pk');
+    await act(async () => {
+      fireEvent.click(el.querySelector('button')!);
+    });
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins/passkey/finish')).toHaveLength(1));
+    expect(begins()).toEqual([{ captcha_token: 'tok-pk' }]);
+  });
+
+  it('a force-challenge refusal draws the challenge, then retries the begin once with its token', async () => {
+    const ts = fakeTurnstile();
+    stubAuthenticator();
+    const el = await mount(passkeyUi, {
+      captchaFlows: { signIn: { ...TURNSTILE, enabled: false } },
+      routes: [
+        (c) => {
+          if (c.path !== '/v1/client/sign_ins/passkey/begin') return undefined;
+          return c.body?.captcha_token
+            ? json(BEGIN, 201)
+            : json({ errors: [{ code: 'CAPTCHA_REQUIRED', message: 'x', param: 'captcha_token' }] }, 400);
+        },
+        finishRoute,
+      ],
+    });
+    expect(ts.api.render).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(el.querySelector('button')!);
+    });
+    await vi.waitFor(() => expect(ts.api.render).toHaveBeenCalledTimes(1));
+    ts.solve('tok-fc');
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins/passkey/finish')).toHaveLength(1));
+    expect(begins()).toEqual([{}, { captcha_token: 'tok-fc' }]);
+  });
+
+  it('CAPTCHA_FAILED: one retry with a fresh token, then the localized refusal', async () => {
+    const ts = fakeTurnstile();
+    const get = stubAuthenticator();
+    const el = await mount(passkeyUi, {
+      captchaFlows: { signIn: TURNSTILE },
+      routes: [
+        (c) =>
+          c.path === '/v1/client/sign_ins/passkey/begin'
+            ? json({ errors: [{ code: 'CAPTCHA_FAILED', message: 'x', param: 'captcha_token' }] }, 400)
+            : undefined,
+      ],
+    });
+    await vi.waitFor(() => expect(ts.api.render).toHaveBeenCalledTimes(1));
+    ts.solve('tok-1');
+    await act(async () => {
+      fireEvent.click(el.querySelector('button')!);
+    });
+    await vi.waitFor(() => expect(ts.api.render).toHaveBeenCalledTimes(2));
+    ts.solve('tok-2');
+    await vi.waitFor(() => expect(begins()).toHaveLength(2));
+    expect(begins()).toEqual([{ captcha_token: 'tok-1' }, { captcha_token: 'tok-2' }]);
+    await vi.waitFor(() => expect(el.querySelector('[role="alert"]')).not.toBeNull());
+    expect(get).not.toHaveBeenCalled();
   });
 });

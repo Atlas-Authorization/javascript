@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { LOCALES, LOCALIZATION_KEYS, missingKeys, resolveLocale } from './coverage';
+import { LOCALES, LOCALIZATION_KEYS, localeDirection, missingKeys, resolveLocale } from './coverage';
 import { deDE } from './de-DE';
 import { enUS } from './en-US';
 import { esES } from './es-ES';
@@ -160,7 +160,10 @@ describe('LOCALES', () => {
       expect(bundle.locale).toBe(tag);
     }
     expect(Object.keys(LOCALES).sort()).toEqual(
-      ['de-DE', 'en-US', 'es-ES', 'fr-FR', 'ja-JP', 'nl-NL', 'pt-BR'],
+      [
+        'ar-SA', 'de-DE', 'en-US', 'es-ES', 'fa-IR', 'fr-FR', 'he-IL', 'hi-IN', 'id-ID', 'it-IT', 'ja-JP', 'ko-KR',
+        'nl-NL', 'pl-PL', 'pt-BR', 'ru-RU', 'sv-SE', 'th-TH', 'tr-TR', 'vi-VN', 'zh-CN', 'zh-TW',
+      ],
     );
   });
 });
@@ -209,7 +212,7 @@ describe('resolveLocale', () => {
 
   it('returns undefined for an unknown language', () => {
     expect(resolveLocale('zz')).toBeUndefined();
-    expect(resolveLocale('it-IT')).toBeUndefined();
+    expect(resolveLocale('sw-KE')).toBeUndefined();
     expect(resolveLocale('')).toBeUndefined();
     expect(resolveLocale('-')).toBeUndefined();
     expect(resolveLocale('constructor')).toBeUndefined();
@@ -223,5 +226,31 @@ describe('package entry', () => {
     expect(pkg.missingKeys).toBe(missingKeys);
     expect(pkg.resolveLocale).toBe(resolveLocale);
     expect(pkg.LOCALES).toBe(LOCALES);
+  });
+});
+
+describe('locale coverage gate', () => {
+  it('every bundle keeps the English placeholders on every key', () => {
+    for (const [tag, bundle] of Object.entries(LOCALES)) {
+      for (const key of LOCALIZATION_KEYS) {
+        const text = (bundle as unknown as Record<string, string>)[key]!;
+        expect(placeholders(text), `${tag} ${key}`).toEqual(placeholders((enUS as unknown as Record<string, string>)[key]!));
+      }
+    }
+  });
+
+  it('resolves the new languages and the Chinese script/region variants', () => {
+    expect(resolveLocale('ar-EG')?.locale).toBe('ar-SA');
+    expect(resolveLocale('iw')?.locale).toBe('he-IL');
+    expect(resolveLocale('zh')?.locale).toBe('zh-CN');
+    expect(resolveLocale('zh-Hans')?.locale).toBe('zh-CN');
+    expect(resolveLocale('zh-Hant')?.locale).toBe('zh-TW');
+    expect(resolveLocale('zh-HK')?.locale).toBe('zh-TW');
+    expect(resolveLocale('th_TH')?.locale).toBe('th-TH');
+  });
+
+  it('localeDirection is rtl for ar / he / fa only', () => {
+    expect(['ar', 'he-IL', 'fa_IR', 'iw'].map(localeDirection)).toEqual(['rtl', 'rtl', 'rtl', 'rtl']);
+    expect(['en', 'zh-Hant', 'hi', 'th', '', null].map(localeDirection)).toEqual(['ltr', 'ltr', 'ltr', 'ltr', 'ltr', 'ltr']);
   });
 });

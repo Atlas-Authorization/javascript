@@ -1,0 +1,5 @@
+import { SignInWithGoogle, ThemeSwitch } from '@zitadel/react';
+
+export function Login() {
+  return <SignInWithGoogle />;
+}

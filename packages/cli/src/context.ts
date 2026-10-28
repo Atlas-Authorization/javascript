@@ -13,7 +13,7 @@ import { defaultPrompter, type Prompter } from './prompt';
  */
 export type ManagementClient = Pick<
   AtlasClient,
-  'users' | 'organizations' | 'apiKeys' | 'webhooks' | 'sessions' | 'actions'
+  'users' | 'organizations' | 'apiKeys' | 'webhooks' | 'sessions' | 'actions' | 'actionGallery' | 'actionTemplates' | 'pageTemplates'
 >;
 
 /**
@@ -35,7 +35,7 @@ export interface RunContext {
    * config-only `/v1` endpoints the typed client omits). Optional so existing
    * contexts stay valid; the config command falls back to the real one.
    */
-  makeHttp?: (opts: { secretKey: string; apiUrl: string }) => ConfigHttp;
+  makeHttp?: (opts: { secretKey: string; apiUrl: string; headers?: Record<string, string> }) => ConfigHttp;
   /**
    * Read a file's text, for commands that take a path (`atlas actions deploy`
    * / `test`). Injectable so a test drives them with an in-memory file instead
@@ -49,6 +49,17 @@ export interface RunContext {
   fetch?: typeof fetch;
   /** Wait between polls (`--wait`). Optional; defaults to a real timer. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Run a program with inherited stdio and return its exit code (`atlas migrate
+   * better-auth --run-export` runs the exporter in the app). Optional; defaults
+   * to a real child process.
+   */
+  exec?: (cmd: string, args: string[], opts: { cwd: string }) => Promise<number>;
+  /**
+   * Stops a long-running command (`atlas listen`). Optional; defaults to an
+   * abort on SIGINT/SIGTERM so Ctrl-C ends the stream cleanly.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -63,7 +74,7 @@ export function defaultContext(overrides: Partial<RunContext> = {}): RunContext 
     config: new FileConfigStore(defaultConfigPath()),
     prompt: defaultPrompter(),
     makeClient: ({ secretKey, apiUrl }) => createAtlasClient({ secretKey, apiUrl }),
-    makeHttp: ({ secretKey, apiUrl }) => createConfigHttp({ secretKey, apiUrl }),
+    makeHttp: ({ secretKey, apiUrl, headers }) => createConfigHttp({ secretKey, apiUrl, headers }),
     readFile: (path) => readFileSync(path, 'utf8'),
     ...overrides,
   };

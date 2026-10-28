@@ -1,0 +1,22 @@
+import { NhostClient } from '@nhost/nhost-js';
+
+import { nhostAuthCompat } from '@atlasauth/react/compat';
+
+export const nhost = new NhostClient({ subdomain: 'abc', region: 'eu-central-1' });
+
+export async function token() {
+  if (await nhostAuthCompat.isAuthenticatedAsync()) return nhostAuthCompat.getAccessToken();
+  return null;
+}
+
+export async function login(email: string, password: string) {
+  // TODO(atlas-migrate): nhost.auth.signIn(): credentials are collected on the Atlas sign-in page now: render <SignIn /> (or send users to /sign-in)
+  return nhost.auth.signIn({ email, password });
+}
+
+export function role() {
+  // TODO(atlas-migrate): nhost.auth.getHasuraClaim(): Hasura claims: create an Atlas JWT template that emits "https://hasura.io/jwt/claims" (x-hasura-user-id, x-hasura-default-role, x-hasura-allowed-roles) and point HASURA_GRAPHQL_JWT_SECRET at the Atlas JWKS ({"jwk_url": "<frontend API>/.well-known/jwks.json"})
+  return nhost.auth.getHasuraClaim('default-role');
+}
+
+export const off = nhostAuthCompat.onAuthStateChanged((event, session) => console.log(event, session?.user.id));

@@ -44,6 +44,8 @@ export type FlowMode = 'sign-in' | 'sign-up';
  * - `verifications` — an emailed verification code (the usual sign-up step).
  * - `reset-password` — choose a new password (the forgot-password tail).
  * - `sso-callback` — an OAuth/magic-link hand-off is in flight.
+ * - `policies` — a required policy (terms, privacy, …) changed and must be
+ *   accepted before the sign-in continues (`needs_policy_acceptance`).
  * - `complete` — the attempt finished; a session ticket is in hand.
  * - `error` — a status this SDK version does not understand, or an abandoned
  *   attempt. Rendered as something the user can act on, never as a blank box.
@@ -56,6 +58,7 @@ export type StepName =
   | 'verifications'
   | 'reset-password'
   | 'sso-callback'
+  | 'policies'
   | 'complete'
   | 'error';
 
@@ -86,6 +89,8 @@ export function stepForAttempt(attempt: AttemptView | null): StepName {
       return 'reset-password';
     case 'await_oauth':
       return 'sso-callback';
+    case 'accept_policies':
+      return 'policies';
     case 'done':
       return 'complete';
     case 'restart':

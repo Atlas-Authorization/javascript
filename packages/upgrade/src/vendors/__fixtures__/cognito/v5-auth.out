@@ -1,0 +1,16 @@
+import { Auth, Hub } from 'aws-amplify';
+
+import { amplifyAuthV5Compat } from '@atlasauth/react/compat';
+
+export async function token() {
+  const session = await amplifyAuthV5Compat.currentSession();
+  return session.getIdToken().getJwtToken();
+}
+
+export async function register(username: string, password: string) {
+  // TODO(atlas-migrate): Auth.signUp(): sign-up runs on the Atlas sign-up page: render <SignUp /> (or send users to /sign-up)
+  return Auth.signUp({ username, password });
+}
+
+// TODO(atlas-migrate): Hub.listen() on a non-auth channel: it stays on Amplify
+Hub.listen('datastore', () => undefined);

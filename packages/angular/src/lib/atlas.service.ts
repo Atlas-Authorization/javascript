@@ -10,6 +10,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { BehaviorSubject, Observable, Subject, combineLatest } from 'rxjs';
 import { distinctUntilChanged, map } from 'rxjs/operators';
+import { AtlasOrganizationAuditLog } from './components/organization-audit-log';
 import {
   FapiClient,
   SignOutGuard,
@@ -26,10 +27,12 @@ import {
   readRedirectResult,
   resolveFrontendApi,
   stripRedirectParams,
+  type OrganizationAuditLogOptions,
   type ProviderToken,
   type RedirectResult,
   type SignOutOptions,
   type SignOutResult,
+  type EndImpersonationResult,
   SDK_HEADER,
   SignOutNotifier,
   getTemplateToken,
@@ -41,6 +44,7 @@ import {
   type SignOutReason,
   configureReferralCapture,
   withDevBrowser,
+  reauthenticate,
 } from '@atlasauth/js';
 import { evaluate, type ProtectCondition } from '@atlasauth/authz';
 import { ATLAS_OPTIONS } from './atlas.config';
@@ -116,7 +120,7 @@ export class AtlasService implements OnDestroy {
    * flow seeds itself from this so the user resumes at the 2FA step. Captured
    * once, synchronously, at construction — before any flow component reads it.
    */
-  readonly pendingAttempt: { id: string; status: string } | null;
+  readonly pendingAttempt: { id: string; status: string; policyToken?: string } | null;
 
   // --- Reactive state (source of truth) ---------------------------------------
 
@@ -322,6 +326,28 @@ export class AtlasService implements OnDestroy {
     }
   }
 
+  /**
+   * The active organization's audit trail, for its admins: `state` is a signal
+   * of `{ entries, loading, forbidden, hasMore }`, one page at a time with
+   * `loadMore()`. `action` narrows it (exact, or a prefix ending in `.`). It
+   * follows the active organization; call `destroy()` when done. The peer of
+   * React's `useOrganizationAuditLog`.
+   */
+  organizationAuditLog(options: OrganizationAuditLogOptions = {}): AtlasOrganizationAuditLog {
+    return new AtlasOrganizationAuditLog(this.createFapiClient(), this.organization$, options);
+  }
+
+  /**
+   * Re-authenticate the signed-in user with their password (a step-up), for an
+   * action the server answered with STEP_UP_REQUIRED. Rejects when refused.
+   */
+  reauthenticate(password: string): Promise<void> {
+    return reauthenticate(
+      { strategy: 'password', password },
+      { api: this.baseUrl, publishableKey: this.publishableKey, fetchImpl: this.doFetch, locale: this.requestLocale },
+    );
+  }
+
   /** A fresh {@link FapiClient} for driving a sign-in/sign-up flow. */
   createFapiClient(): FapiClient {
     return new FapiClient({
@@ -393,6 +419,24 @@ export class AtlasService implements OnDestroy {
     this.clearLocalState('user');
     if (this.guard.promoted(attempt)) await this.reload();
     return this.guard.settle(attempt, options);
+  }
+
+  /**
+   * End the active impersonation ("return to admin"): the impersonator's own
+   * session on this browser becomes active again with no sign-in
+   * (`resumed: true`); with none, another account signed in here is adopted,
+   * or this browser is signed out.
+   */
+  async endImpersonation(): Promise<EndImpersonationResult> {
+    const outcome = await this.guard.endImpersonation(this.cache.peek()?.sessionId ?? this._session.value?.id ?? null);
+    if (!outcome.ended) return outcome;
+    if (!outcome.activeSessionId) {
+      this.clearLocalState('user');
+      return outcome;
+    }
+    if (outcome.jwt) this.applyToken(outcome.jwt, outcome.activeSessionId);
+    await this.reload();
+    return outcome;
   }
 
   /**
@@ -500,10 +544,10 @@ export class AtlasService implements OnDestroy {
     if (exchanged) void closeOAuthPopupAfterSignIn();
   }
 
-  private readPendingAttempt(): { id: string; status: string } | null {
+  private readPendingAttempt(): { id: string; status: string; policyToken?: string } | null {
     const result = readRedirectResult(window.location.search);
     return result?.status && !result.ticket
-      ? { id: result.attemptId, status: result.status }
+      ? { id: result.attemptId, status: result.status, ...(result.policyToken ? { policyToken: result.policyToken } : {}) }
       : null;
   }
 

@@ -8,6 +8,7 @@ export interface Role {
   name: string;
   description: string | null;
   is_system: boolean;
+  visibility: 'public' | 'internal';
   permissions: string[];
   member_count: number;
   created_at: number;
@@ -26,12 +27,15 @@ export interface CreateRoleBody {
   key: string;
   name: string;
   description?: string;
+  /** `internal` = assignable by your backend only; hidden from org-admin pickers. */
+  visibility?: 'public' | 'internal';
   permissions?: string[];
 }
 
 export interface UpdateRoleBody {
   name?: string;
   description?: string;
+  visibility?: 'public' | 'internal';
   /** May be supplied but must equal the current key — the key is immutable. */
   key?: string;
 }

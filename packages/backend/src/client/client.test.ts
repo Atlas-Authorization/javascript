@@ -233,6 +233,11 @@ describe('namespace routing (method + path + payload per namespace)', () => {
     expect(last(calls).url).toBe(`${API_URL}/v1/oauth_clients/c1/rotate_secret`);
     await c.oauthClients.rotateSecret('c1', { overlap_seconds: 0 });
     expect(JSON.parse(last(calls).body!)).toEqual({ overlap_seconds: 0 });
+    await c.oauthClients.appSettings.update('c1', { allowed_sign_in_methods: ['passkey'] });
+    expect(last(calls).url).toBe(`${API_URL}/v1/oauth_clients/c1/app_settings`);
+    expect(last(calls).method).toBe('PATCH');
+    await c.oauthClients.appSettings.get('c1');
+    expect(last(calls).method).toBe('GET');
     await c.oauthClients.grants.delete('c1', 'g1');
     expect(last(calls)).toMatchObject({
       method: 'DELETE',
@@ -362,6 +367,14 @@ describe('parity wave: the full-breadth namespaces reach every BAPI resource', (
     expect(last(calls).url).toBe(`${API_URL}/v1/rate_limit_policy`);
     await c.riskBasedMfa.get();
     expect(last(calls).url).toBe(`${API_URL}/v1/risk_based_mfa`);
+    await c.riskBasedMfa.fraudLookup({ ip: '203.0.113.9' });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/fraud/lookup` });
+    await c.riskEvents.feedback('rke_1', 'fraud');
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/risk_events/rke_1/feedback` });
+    await c.ssf.streams.verify('ssfs_1', 'abc');
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/ssf/streams/ssfs_1/verify` });
+    await c.ssf.receivers.list();
+    expect(last(calls).url).toBe(`${API_URL}/v1/ssf/receivers`);
     await c.botSignals.list();
     expect(last(calls).url).toBe(`${API_URL}/v1/bot_signals`);
     await c.networkAcls.list();
@@ -390,6 +403,34 @@ describe('parity wave: the full-breadth namespaces reach every BAPI resource', (
     const c = client(impl);
     await c.actions.setBindings('post_login', {} as never);
     expect(last(calls)).toMatchObject({ method: 'PUT', url: `${API_URL}/v1/actions/bindings/post_login` });
+    await c.workflows.dryRun('wf1', { user_id: 'user_1' });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/workflows/wf1/dry_run` });
+    await c.pageTemplates.discard('sign-in', 'draft');
+    expect(last(calls)).toMatchObject({ method: 'DELETE', url: `${API_URL}/v1/instance/page_templates/sign-in?status=draft` });
+    await c.serviceConnectors.invoke('scn_1', 'send_sms', { to: '+1555', body: 'hi' });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/service_connectors/scn_1/invoke` });
+    await c.desktopMfa.listDevices({ user_id: 'usr_1' });
+    expect(last(calls)).toMatchObject({ method: 'GET', url: `${API_URL}/v1/desktop_mfa/devices?user_id=usr_1` });
+    await c.desktopMfa.listDevicePasskeys('ddv_1');
+    expect(last(calls)).toMatchObject({ method: 'GET', url: `${API_URL}/v1/desktop_mfa/devices/ddv_1/passkeys` });
+    await c.desktopMfa.deleteDevicePasskey('ddv_1', 'ddp_9');
+    expect(last(calls)).toMatchObject({ method: 'DELETE', url: `${API_URL}/v1/desktop_mfa/devices/ddv_1/passkeys/ddp_9` });
+    await c.desktopMfa.revokeOfflineCache('ddv_1');
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/desktop_mfa/devices/ddv_1/revoke_offline_cache` });
+    await c.desktopMfa.listDeviceSsoRegistrations({ user_id: 'usr_1' });
+    expect(last(calls)).toMatchObject({ method: 'GET', url: `${API_URL}/v1/device_sso/registrations?user_id=usr_1` });
+    await c.desktopMfa.revokeDeviceSsoRegistration('dsso_1');
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/device_sso/registrations/dsso_1/revoke` });
+    await c.desktopMfa.deleteDeviceSsoRegistration('dsso_1');
+    expect(last(calls)).toMatchObject({ method: 'DELETE', url: `${API_URL}/v1/device_sso/registrations/dsso_1` });
+    await c.identityVerification.decide('idv_1', { decision: 'approved' });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/identity_verifications/idv_1/decide` });
+    await c.iga.requests.decide('igr_1', { decision: 'approve', approver_user_id: 'u1' });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/iga/requests/igr_1/decide` });
+    await c.iga.campaigns.evidenceCsv('igc_1');
+    expect(last(calls).url).toBe(`${API_URL}/v1/iga/campaigns/igc_1/evidence?format=csv`);
+    await c.iga.lifecycle.offboard('u1', { close_account: true });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/iga/users/u1/offboard` });
     await c.importExport.listJobs();
     expect(last(calls).url).toBe(`${API_URL}/v1/jobs`);
     await c.dataSubjectRequests.fulfill('dsr1');
@@ -400,11 +441,33 @@ describe('parity wave: the full-breadth namespaces reach every BAPI resource', (
     expect(last(calls).url).toBe(`${API_URL}/v1/billing/plans`);
   });
 
+  it('privacy: the executor protocol and the orchestrator settings', async () => {
+    const { impl, calls } = mockFetch([{ body: {} }]);
+    const c = client(impl);
+    await c.privacy.lookup({ emails: ['a@example.com'], atlas: { sub: 'user_1' } });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/privacy/lookup` });
+    await c.privacy.createRequest({ subjectId: 'user_1', type: 'closure', caseId: 'case_1' }, 'idem-key-0123456789');
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/privacy/requests` });
+    expect(last(calls).headers['idempotency-key']).toBe('idem-key-0123456789');
+    await c.privacy.cancelRequest('dsr1');
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/privacy/requests/dsr1/cancel` });
+    await c.privacy.getRequest('dsr1');
+    expect(last(calls).url).toBe(`${API_URL}/v1/privacy/requests/dsr1`);
+    await c.privacy.preset('cookiemunch');
+    expect(last(calls).url).toBe(`${API_URL}/v1/privacy/presets/cookiemunch`);
+    await c.privacy.orchestrator.set({ provider: 'custom', name: 'Acme', case_url: 'https://o.example/cases' });
+    expect(last(calls)).toMatchObject({ method: 'PUT', url: `${API_URL}/v1/instance/privacy_orchestrator` });
+    await c.privacy.orchestrator.delete();
+    expect(last(calls)).toMatchObject({ method: 'DELETE', url: `${API_URL}/v1/instance/privacy_orchestrator` });
+  });
+
   it('connectors & instance: radiusClients, ltiPlatforms, instance, instanceSecurity, tokens', async () => {
     const { impl, calls } = mockFetch([{ body: {} }]);
     const c = client(impl);
     await c.radiusClients.list();
     expect(last(calls).url).toBe(`${API_URL}/v1/radius_clients`);
+    await c.mcpGateways.update('mcg_1', { enabled: false });
+    expect(last(calls)).toMatchObject({ method: 'PATCH', url: `${API_URL}/v1/mcp_gateways/mcg_1` });
     await c.ltiPlatforms.list();
     expect(last(calls).url).toBe(`${API_URL}/v1/lti_platforms`);
     await c.instance.get();

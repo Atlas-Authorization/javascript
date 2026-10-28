@@ -1,0 +1,10 @@
+import express from 'express';
+import { auth, requiresAuth } from 'express-openid-connect';
+
+const app = express();
+
+app.use(auth({ authRequired: false, baseURL: process.env.BASE_URL, issuerBaseURL: process.env.ISSUER_BASE_URL }));
+
+app.get('/profile', requiresAuth(), (req, res) => {
+  res.send(JSON.stringify(req.oidc.user));
+});

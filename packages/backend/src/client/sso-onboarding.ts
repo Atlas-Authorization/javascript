@@ -6,6 +6,17 @@ import type { ListPage } from './types';
  * self-service-profiles model. It fixes which protocols an end-customer may
  * configure and either binds an org or promises to name one at ticket issue.
  */
+/** An Admin Portal task a ticket may perform for its organization. */
+export type SsoPortalIntent =
+  | 'sso'
+  | 'directory_sync'
+  | 'domain_verification'
+  | 'log_stream'
+  | 'audit_log'
+  | 'certificate_renewal'
+  | 'api_keys'
+  | 'webhooks';
+
 export interface SsoOnboardingProfile {
   object: 'sso_onboarding_profile';
   id: string;
@@ -15,6 +26,8 @@ export interface SsoOnboardingProfile {
   organization_id: string | null;
   company_name: string | null;
   allow_scim: boolean;
+  /** The Admin Portal tasks this profile's tickets may perform. */
+  intents: SsoPortalIntent[];
   created_at: number;
   updated_at: number;
 }
@@ -53,6 +66,8 @@ export interface CreateSsoOnboardingProfileBody {
   organization_id?: string | null;
   company_name?: string | null;
   allow_scim?: boolean;
+  /** Admin Portal tasks to grant; omit for the classic SSO (+ domain) profile. */
+  intents?: SsoPortalIntent[];
 }
 
 export interface CreateSsoOnboardingTicketBody {

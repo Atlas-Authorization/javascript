@@ -1,0 +1,13 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseAdmin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+
+export async function removeUser(id: string) {
+  // TODO(atlas-migrate): auth.admin.deleteUser(): use the Atlas Backend API (@atlasauth/backend, e.g. users.delete)
+  await supabaseAdmin.auth.admin.deleteUser(id);
+}
+
+export async function whoAmI() {
+  // TODO(atlas-migrate): auth.getUser(): this file could be browser or server code; use getSupabaseUserCompat from @atlasauth/react/compat (browser) or @atlasauth/nextjs/compat (server)
+  return supabaseAdmin.auth.getUser();
+}

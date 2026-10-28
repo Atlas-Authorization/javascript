@@ -50,7 +50,12 @@ describe('backward compatibility (no design anywhere)', () => {
     // FNV-1a of ATLAS_BASE_CSS. Byte-identical from 0.3.1 until 0.5.0, where it
     // changed deliberately for accessibility: text-on-primary contrast, a
     // visible focus ring, 16px inputs. 0.8.1 adds the link-style buttons of the
-    // first-factor step ("Email me a code instead", "Resend code").
+    // first-factor step ("Email me a code instead", "Resend code"). It changes
+    // again deliberately for the `<OrganizationAuditLog/>` list (`.atlas-audit-*`),
+    // then the "Last used" sign-in badge and hint (.atlas-badge, .atlas-last-used*),
+    // then the error colour #c53030 (4.5:1 contrast on white), then the profile
+    // traits / profile completion layout (.atlas-profile-traits, .atlas-profile-completion),
+    // then logical properties for right-to-left locales (inset-inline-end, text-align:start).
     expect(designKey(ATLAS_BASE_CSS)).toBe(BASE_CSS_HASH);
   });
 
@@ -71,7 +76,7 @@ describe('the dashboard design', () => {
     expect(out.attributes['data-atlas-design']).toBe(out.key);
     expect(out.attributes['data-atlas-card']).toBe(instance.resolved.card.style);
     expect(out.css).toContain(`.atlas-root[data-atlas-design="${out.key}"]{`);
-    expect(out.css).toContain(`--atlas-color-primary:${instance.resolved.palette.primary}`);
+    expect(out.css).toContain(`--atlas-color-primary:var(--atlas-host-accent,${instance.resolved.palette.primary})`);
     expect(out.fontStylesheets).toEqual(['https://auth.acme.com/v1/design/fonts/inter.css']);
     // No legacy token defaults inline: they would override the design's variables.
     expect(out.style).toEqual({});
@@ -103,13 +108,13 @@ describe('the dashboard design', () => {
 describe('code-level overrides win over the dashboard design', () => {
   it('appearance.design', () => {
     const out = renderAppearance({ design: { palette: { primary: '#ff0000' }, card: { style: 'glass' } } }, instance);
-    expect(out.css).toContain('--atlas-color-primary:#ff0000');
+    expect(out.css).toContain('--atlas-color-primary:var(--atlas-host-accent,#ff0000)');
     expect(out.attributes['data-atlas-card']).toBe('glass');
   });
 
   it('appearance.preset replaces the dashboard design as the base', () => {
     const out = renderAppearance({ preset: 'midnight' }, instance);
-    expect(out.css).toContain(`--atlas-color-primary:${resolveDesign({ preset: 'midnight' }).palette.primary}`);
+    expect(out.css).toContain(`--atlas-color-primary:var(--atlas-host-accent,${resolveDesign({ preset: 'midnight' }).palette.primary})`);
   });
 
   it('a preset works with no dashboard design at all (SSR-renderable)', () => {
@@ -120,13 +125,13 @@ describe('code-level overrides win over the dashboard design', () => {
 
   it('legacy variables map onto the design; design beats variables', () => {
     const v = renderAppearance({ variables: { colorPrimary: '#00ff00', borderRadius: '4px' } }, instance);
-    expect(v.css).toContain('--atlas-color-primary:#00ff00');
-    expect(v.css).toContain('--atlas-radius-control:4px');
+    expect(v.css).toContain('--atlas-color-primary:var(--atlas-host-accent,#00ff00)');
+    expect(v.css).toContain('--atlas-radius-control:var(--atlas-host-radius,4px)');
     const d = renderAppearance(
       { variables: { colorPrimary: '#00ff00' }, design: { palette: { primary: '#0000ff' } } },
       instance,
     );
-    expect(d.css).toContain('--atlas-color-primary:#0000ff');
+    expect(d.css).toContain('--atlas-color-primary:var(--atlas-host-accent,#0000ff)');
   });
 
   it('an unmappable token stays a raw inline variable (and still wins)', () => {
@@ -185,4 +190,4 @@ describe('element keys', () => {
   });
 });
 
-const BASE_CSS_HASH = '1j7k6i6';
+const BASE_CSS_HASH = 'v92jkl';

@@ -1,0 +1,1 @@
+[{"name":"verify","path":"src/auth/verify.ts","manual":["jwtVerify()","createRemoteJWKSet()"]},{"name":"unrelated","path":"src/sign.ts","unchanged":true}]

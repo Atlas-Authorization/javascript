@@ -1,0 +1,46 @@
+import {
+  MsalCompatClient,
+  MsalCompatInteractionRequiredError,
+  useMsalCompat,
+  useIsAuthenticatedCompat,
+} from '@atlasauth/react/compat';
+
+import type { MsalCompatAccount } from '@atlasauth/react/compat';
+import { AtlasProvider, SignedIn, SignedOut } from '@atlasauth/react';
+
+// TODO(atlas-migrate): NEXT_PUBLIC_AZURE_AD_B2C_CLIENT_ID: MSAL configuration; Atlas reads its publishable key and frontend API from the ATLAS_* env vars instead
+const msal = new MsalCompatClient({
+  auth: { clientId: process.env.NEXT_PUBLIC_AZURE_AD_B2C_CLIENT_ID!, authority: 'https://contoso.b2clogin.com/contoso.onmicrosoft.com/B2C_1_signin' },
+});
+
+function Greeting() {
+  const { instance, accounts } = useMsalCompat();
+  const signedIn = useIsAuthenticatedCompat();
+  const account: MsalCompatAccount | undefined = accounts[0];
+
+  async function call() {
+    try {
+      const result = await instance.acquireTokenSilent({ scopes: ['openid'], account });
+      return fetch('/api', { headers: { Authorization: `Bearer ${result.accessToken}` } });
+    } catch (e) {
+      if (e instanceof MsalCompatInteractionRequiredError) await instance.loginRedirect();
+    }
+  }
+
+  return signedIn ? <button onClick={call}>Hi {account?.name}</button> : null;
+}
+
+export function App() {
+  return (
+    <AtlasProvider
+      publishableKey={process.env.NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY!}
+      frontendApi={process.env.NEXT_PUBLIC_ATLAS_FRONTEND_API!}>
+      <SignedIn>
+        <Greeting />
+      </SignedIn>
+      <SignedOut>
+        <button onClick={() => msal.loginRedirect()}>Sign in</button>
+      </SignedOut>
+    </AtlasProvider>
+  );
+}

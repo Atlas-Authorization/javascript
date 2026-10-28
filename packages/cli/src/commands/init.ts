@@ -15,7 +15,7 @@ import {
   type ProjectManifest,
 } from '../project';
 import { assertProductName, productDir, readEnvFile, writeSecretFile } from '../secrets';
-import { wantsJson } from './shared';
+import { envApiUrl, wantsJson } from './shared';
 
 /**
  * `atlas init` — set up an Atlas app for a product in one idempotent command.
@@ -62,6 +62,8 @@ interface InitOptions {
   emailKeyFile?: string;
   redirects: string[];
   webhookUrl?: string;
+  /** ATL-D14 the app route that receives back-channel logouts (set on the OAuth client). */
+  backchannelUrl?: string;
   force: boolean;
   rotateSecret: boolean;
 }
@@ -107,6 +109,19 @@ function parseOptions(args: ParsedArgs): InitOptions {
       throw new CliError(`--client-redirect must be an absolute URL, got '${r}'.`);
     }
   }
+  const backchannelUrl = str(v, 'backchannel');
+  if (backchannelUrl !== undefined) {
+    let u: URL;
+    try {
+      u = new URL(backchannelUrl);
+    } catch {
+      throw new CliError(`--backchannel must be an absolute URL, got '${backchannelUrl}'.`);
+    }
+    if (u.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)) {
+      throw new CliError('--backchannel must be an https URL (http only on localhost).');
+    }
+    if (redirects.length === 0) throw new CliError('--backchannel needs --client-redirect: it is set on the OAuth client.');
+  }
   return {
     product,
     appName: str(v, 'name') || product,
@@ -120,6 +135,7 @@ function parseOptions(args: ParsedArgs): InitOptions {
     emailKeyFile,
     redirects,
     webhookUrl: str(v, 'webhook-url'),
+    backchannelUrl,
     force: v.force === true,
     rotateSecret: v['rotate-secret'] === true,
   };
@@ -131,13 +147,13 @@ function platformAuth(ctx: RunContext, args: ParsedArgs): { secretKey: string; a
   const profile = str(args.values, 'profile') || file.active_profile || 'default';
   const stored = file.profiles[profile];
   const envKey = ctx.env.ATLAS_PLATFORM_KEY?.trim();
-  const key = envKey || (stored?.secret_key.startsWith('psk_') ? stored.secret_key : undefined);
+  const key = envKey || ((stored?.secret_key?.startsWith('psk_') || /^atlas_(live|test)_psk_/.test(stored?.secret_key ?? '')) ? stored?.secret_key : undefined);
   if (!key) {
     throw new CliError(
       "atlas init needs a platform key (psk_…). Set ATLAS_PLATFORM_KEY, or store one with 'atlas login --secret-key psk_…'.",
     );
   }
-  const apiUrl = ctx.env.ATLAS_API_URL?.trim() || stored?.api_url || DEFAULT_API_URL;
+  const apiUrl = envApiUrl(ctx.env) || stored?.api_url || DEFAULT_API_URL;
   return { secretKey: key, apiUrl };
 }
 
@@ -163,6 +179,8 @@ interface InstanceRow {
   discovery_url?: string | null;
   jwks_uri?: string | null;
   auth_config_resolved?: { strategies?: Record<string, unknown> };
+  /** Switched-on methods not offered to users until an email provider exists. */
+  inactive_methods?: Array<{ method: string; reason: string }>;
 }
 
 const isStatus = (err: unknown, status: number) => err instanceof AtlasApiError && err.status === status;
@@ -335,23 +353,28 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   }
 
   // --- 3. strategies --------------------------------------------------------
+  // Every requested method is switched on, even before the email sender is
+  // ready: the instance accepts the write and simply does not offer a method
+  // that needs email (it reports it under inactive_methods) until it can send.
   if (opts.strategies.length) {
     const current = (await api.get<InstanceRow>('/v1/instance')).auth_config_resolved?.strategies ?? {};
     const missing = opts.strategies.filter((s) => current[s] !== true);
-    const enableNow = missing.filter((s) => !EMAIL_STRATEGIES.has(s) || emailReady);
-    const later = missing.filter((s) => EMAIL_STRATEGIES.has(s) && !emailReady);
-    if (enableNow.length) {
+    if (missing.length) {
       try {
-        await api.patch('/v1/instance', { auth_config: { strategies: Object.fromEntries(enableNow.map((s) => [s, true])) } });
-        log(`Turned on: ${enableNow.join(', ')}.`);
+        const res = await api.patch<InstanceRow>('/v1/instance', { auth_config: { strategies: Object.fromEntries(missing.map((s) => [s, true])) } });
+        log(`Turned on: ${missing.join(', ')}.`);
+        const inactive = (res?.inactive_methods ?? []).map((m) => m.method);
+        if (inactive.length) {
+          log(`Not offered to users yet (they need an email provider, and this instance cannot send email): ${inactive.join(', ')}. They become active once email can be sent.`);
+        }
       } catch (err) {
-        // Password sign-up with email verification also needs a sender: say so, keep going.
+        // An older server refuses email methods without a sender: say so, keep going.
         if (!(err instanceof AtlasApiError && err.status === 422 && err.code === 'EMAIL_PROVIDER_REQUIRED')) throw err;
         log(`Not turned on yet: ${err.message} Re-run atlas init once email can be sent.`);
       }
     }
-    if (later.length) {
-      log(`Not turned on yet (the instance cannot send email until the sender is ready): ${later.join(', ')}. Re-run atlas init once it is.`);
+    if (!emailReady && missing.some((s) => EMAIL_STRATEGIES.has(s))) {
+      log('Email code / email link need the email sender: they start working as soon as it is ready.');
     }
   }
 
@@ -372,7 +395,9 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   // --- 5. first-party OAuth client -----------------------------------------
   if (opts.redirects.length) {
     const clientName = `${opts.appName} (${env})`;
-    const clients = (await api.get<ListBody<{ id: string; client_id: string; name: string; redirect_uris: string[] }>>('/v1/oauth_clients')).data ?? [];
+    const clients = (
+      await api.get<ListBody<{ id: string; client_id: string; name: string; redirect_uris: string[]; backchannel_logout_uri?: string | null }>>('/v1/oauth_clients')
+    ).data ?? [];
     const existing = clients.find((c) => c.name === clientName);
     if (existing) {
       const missingUris = opts.redirects.filter((r) => !existing.redirect_uris.includes(r));
@@ -381,6 +406,10 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
         log(`Added redirect URIs to OAuth client ${existing.client_id}: ${missingUris.join(', ')}.`);
       } else {
         log(`Found OAuth client ${existing.client_id}.`);
+      }
+      if (opts.backchannelUrl && existing.backchannel_logout_uri !== opts.backchannelUrl) {
+        await api.patch(`/v1/oauth_clients/${existing.id}`, { backchannel_logout_uri: opts.backchannelUrl });
+        log(`Set the back-channel logout URI of ${existing.client_id} to ${opts.backchannelUrl}.`);
       }
       const hasSecret = Boolean(readEnvFile(clientFile)?.ATLAS_CLIENT_SECRET);
       if (!hasSecret) log(`Its secret is not in ${clientFile}. Mint one with: atlas client rotate ${existing.id} --product ${opts.product} --instance-env ${env}`);
@@ -396,6 +425,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
         name: clientName,
         redirect_uris: opts.redirects,
         first_party: true,
+        ...(opts.backchannelUrl ? { backchannel_logout_uri: opts.backchannelUrl } : {}),
       });
       if (c.client_secret) {
         writeSecretFile(dir, `${env}-oauth-client.env`, { ATLAS_CLIENT_ID: c.client_id, ATLAS_CLIENT_SECRET: c.client_secret }, {
@@ -406,6 +436,12 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
       record.oauth_client = { id: c.id, client_id: c.client_id, redirect_uris: c.redirect_uris, secret_file: c.client_secret ? clientFile : null };
       log(`Created first-party OAuth client ${c.client_id}. Secret written to ${clientFile}.`);
     }
+  }
+
+  if (opts.backchannelUrl) {
+    log(
+      `Back-channel logout goes to ${opts.backchannelUrl}. Serve it with @atlasauth/backend: expressBackchannelLogout, fastifyBackchannelLogoutPlugin or nextBackchannelLogout ({ issuer, clientId, onLogout }). Test it with POST /v1/oauth_clients/{id}/backchannel_logout/test.`,
+    );
   }
 
   // --- 6. webhook endpoint ---------------------------------------------------

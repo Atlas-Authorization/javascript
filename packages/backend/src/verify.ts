@@ -51,6 +51,8 @@ export {
   isRoleKey,
   isPermissionKey,
 } from '@atlasauth/authz';
+import { ATLAS_SIGNING_ALGS } from './algs';
+import { LegacyIssuerVerifier, peekIssuer, type LegacyIssuer } from './legacy-issuers';
 
 /**
  * §7.3 verification by customer backends.
@@ -92,6 +94,21 @@ export interface SessionClaims {
   org_slug?: string;
   org_role?: string;
   org_permissions?: string[];
+  /**
+   * Enterprise SSO: present only when the session was signed in through an
+   * enterprise SSO connection. `sso_organization_id` is the organization that
+   * OWNS the connection (independent of `org_id`; absent for an instance-wide
+   * connection). Scope a per-organization "require SSO" rule on it.
+   */
+  sso_connection_id?: string;
+  sso_organization_id?: string;
+  sso_connection_type?: 'saml' | 'oidc';
+  /** App-level (instance-wide) role keys; gate with `has({ appRole })`. Absent when none. */
+  app_roles?: string[];
+  /** Permissions granted by the app roles; gate with `has({ appPermission })`. Absent when none. */
+  app_permissions?: string[];
+  /** USR-03: slugs of the instance groups the user belongs to (and their ancestors), when any. */
+  groups?: string[];
   /** §billing entitlement — active plan slug; gate with `has({ plan })`. */
   pla?: string;
   /** §billing entitlement — granted feature keys; gate with `has({ feature })`. */
@@ -120,6 +137,12 @@ export interface SessionClaims {
    * `email` under the same opt-in, and only when the user carries one.
    */
   external_id?: string;
+  /**
+   * Present ONLY on a token accepted through `legacyIssuers` (a cutover from
+   * another provider): which issuer minted it and the subject it carried there.
+   * `sub` is already the Atlas user id.
+   */
+  legacy?: { kind: string; issuer: string; sub: string };
   [claim: string]: unknown;
 }
 
@@ -229,10 +252,21 @@ export interface AtlasBackendOptions {
   bapiBaseUrl?: string;
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /**
+   * Cutover from another auth provider (Better Auth): ALSO accept JWTs from
+   * these issuers until each one's `until`, verified against that issuer's own
+   * key set, with `sub` mapped to the Atlas user id (the old id is the user's
+   * `external_id`; mapped through the Backend API unless the issuer has a
+   * `resolveSubject`). The verified claims carry `sub` = the Atlas user id,
+   * `external_id` = the old id and `legacy` = `{ kind, issuer, sub }`, so code
+   * that needs to tell the two apart can. Atlas tokens are unaffected.
+   */
+  legacyIssuers?: readonly LegacyIssuer[];
 }
 
 export class AtlasBackend {
   private readonly jwks: JwksCache;
+  private readonly legacy?: LegacyIssuerVerifier;
 
   /**
    * The server-side OIDC relying party (hosted-redirect sign-in) for this
@@ -286,6 +320,20 @@ export class AtlasBackend {
       clearCookie: oidcClearCookie,
     };
 
+    if (options.legacyIssuers && options.legacyIssuers.length > 0) {
+      if (options.legacyIssuers.some((l) => l.issuer === options.issuer)) {
+        throw new Error('AtlasBackend: a legacy issuer cannot be the Atlas `issuer` itself.');
+      }
+      this.legacy = new LegacyIssuerVerifier({
+        issuers: options.legacyIssuers,
+        secretKey: options.secretKey,
+        bapiBaseUrl: options.bapiBaseUrl,
+        fetchImpl: options.fetchImpl,
+        now: options.now,
+        clockToleranceSeconds: CLOCK_SKEW_SECONDS,
+      });
+    }
+
     this.jwks = new JwksCache({
       url: hasUrl ? options.jwksUrl : undefined,
       staticJwks: options.jwks,
@@ -318,6 +366,22 @@ export class AtlasBackend {
   async verify(token: string): Promise<VerifyResult> {
     if (!token || token.split('.').length !== 3) return { ok: false, reason: 'malformed' };
 
+    // A token from a configured legacy issuer (within its window) is verified
+    // against THAT issuer's keys only — never the Atlas keys, and an Atlas
+    // token never reaches the legacy path (the `iss` routes, the signature decides).
+    if (this.legacy) {
+      const entry = this.legacy.match(peekIssuer(token));
+      if (entry) {
+        const outcome = await this.legacy.verify(token, entry);
+        if (!outcome.ok) return { ok: false, reason: outcome.reason };
+        const claims = outcome.claims as unknown as SessionClaims;
+        if (this.options.authorizedParties?.length && claims.azp !== undefined) {
+          if (!this.options.authorizedParties.includes(claims.azp)) return { ok: false, reason: 'unauthorized_party' };
+        }
+        return authorized(claims);
+      }
+    }
+
     const keys: Jwks | null = await this.jwks.get(readKid(token));
     if (!keys || keys.keys.length === 0) {
       return this.jwks.lastError
@@ -330,7 +394,7 @@ export class AtlasBackend {
       const { payload } = await jwtVerify(token, createLocalJWKSet(keys as never), {
         // Pinned. Without this, a token whose header says `alg: none` — or any
         // algorithm the key material can be coerced into — verifies.
-        algorithms: ['RS256'],
+        algorithms: ATLAS_SIGNING_ALGS,
         issuer: this.options.issuer,
         // §S4 enforce `aud` ONLY when the caller configured an expected audience.
         // Unset leaves `aud` unchecked, so a token carrying its default
@@ -551,6 +615,19 @@ export function hasPermission(claims: SessionClaims, permission: string): boolea
 
 export function hasRole(claims: SessionClaims, role: string): boolean {
   return hasFromClaims(claims, { role });
+}
+
+/**
+ * App-level permission check: reads `app_permissions` off the token (the union
+ * of the user's instance-wide app roles). Needs no active organization.
+ */
+export function hasAppPermission(claims: SessionClaims, permission: string): boolean {
+  return hasFromClaims(claims, { appPermission: permission });
+}
+
+/** App-level role check: reads `app_roles` off the token. Needs no active organization. */
+export function hasAppRole(claims: SessionClaims, role: string): boolean {
+  return hasFromClaims(claims, { appRole: role });
 }
 
 /**

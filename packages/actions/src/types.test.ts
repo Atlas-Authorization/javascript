@@ -47,4 +47,30 @@ describe('typed event/api per trigger', () => {
     });
     expect(ACTION_TRIGGERS).toContain('post_login');
   });
+
+  it('pre_token can add and suppress claims; attempts can lock; side effects cannot deny', () => {
+    defineAction('pre_token', (event, api) => {
+      const kind: unknown = event.context.tokenType;
+      api.accessToken.setCustomClaim('tier', kind);
+      api.idToken.suppressClaim('email');
+      api.access.deny('x');
+    });
+    defineAction('mfa_verification_attempt', (event, api) => {
+      if (event.context.result === 'failure') api.access.lock('too many');
+    });
+    defineAction('post_logout', (event, api) => {
+      api.console.log(event.user.id);
+      // @ts-expect-error — a side-effect trigger has no api.access.
+      api.access.deny('nope');
+    });
+    defineAction('pre_user_registration', (_event, api) => {
+      api.signUp.prefill('company', 'Acme');
+      api.user.setName('Ada', 'Lovelace');
+    });
+    defineAction('pre_member_add', (event, api) => {
+      const slug: string = event.organization.slug;
+      api.access.deny(slug);
+    });
+    expect(ACTION_TRIGGERS).toHaveLength(26);
+  });
 });

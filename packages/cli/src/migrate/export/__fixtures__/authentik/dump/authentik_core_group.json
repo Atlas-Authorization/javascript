@@ -1,0 +1,5 @@
+[
+  { "group_uuid": "aaaaaaaa-0000-4000-8000-000000000001", "name": "authentik Admins", "is_superuser": true, "attributes": {} },
+  { "group_uuid": "aaaaaaaa-0000-4000-8000-000000000002", "name": "Engineering", "is_superuser": false, "attributes": { "cost_center": "R&D" } },
+  { "group_uuid": "aaaaaaaa-0000-4000-8000-000000000003", "name": "Platform Team", "is_superuser": false, "attributes": {} }
+]

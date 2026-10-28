@@ -1,4 +1,5 @@
 import { enc, type RequestFn } from './request';
+import type { WebhookDelivery, WebhookEndpoint, WebhookEndpointWithSecret } from './webhooks';
 import type { CursorPage, CursorParams, DataList, DeletedObject, ListPage, Metadata } from './types';
 
 export interface Organization {
@@ -62,6 +63,17 @@ export interface OrganizationEndUserPoolPolicy {
   allowHostedSignup?: boolean;
 }
 
+/** Tighten-only password rules an org layers over the instance policy. */
+export interface OrgPasswordPolicyOverride {
+  minLength?: number;
+  checkBreaches?: true;
+  requireUppercase?: true;
+  requireLowercase?: true;
+  requireNumber?: true;
+  requireSymbol?: true;
+  bannedPasswords?: string[];
+}
+
 /**
  * The organization's security policy overrides. Keys are camelCase on this
  * route, and only overrides that are set appear. Unknown keys from a newer API
@@ -69,6 +81,10 @@ export interface OrganizationEndUserPoolPolicy {
  */
 export interface OrganizationPolicySettings {
   requireMfa?: boolean;
+  /** Factor classes every member must have used; implies an MFA session. */
+  requiredFactors?: Array<'totp' | 'sms' | 'passkey' | 'push'>;
+  /** Tighten-only password rules for members. */
+  passwordPolicyOverride?: OrgPasswordPolicyOverride;
   ssoRequired?: boolean;
   sessionIdleOverrideMs?: number;
   /**
@@ -81,6 +97,10 @@ export interface OrganizationPolicySettings {
   /** Cap on the absolute session lifetime for members, in seconds (300 … 7776000). */
   maxSessionAgeSeconds?: number;
   endUserPool?: OrganizationEndUserPoolPolicy;
+  /** Break-glass: addresses (at most 20) that may still use a password while `ssoRequired` is on. Each use is audited. */
+  ssoBypass?: string[];
+  /** Technical contacts (at most 10) recorded for the organization's connections. */
+  itContacts?: Array<{ email: string; name?: string; role?: string }>;
   [key: string]: unknown;
 }
 
@@ -243,7 +263,11 @@ export interface ReplaceOrganizationMetadataBody {
  */
 export interface OrganizationPolicyPatch {
   requireMfa?: boolean | null;
+  requiredFactors?: Array<'totp' | 'sms' | 'passkey' | 'push'> | null;
+  passwordPolicyOverride?: OrgPasswordPolicyOverride | null;
   ssoRequired?: boolean | null;
+  ssoBypass?: string[] | null;
+  itContacts?: Array<{ email: string; name?: string; role?: string }> | null;
   sessionIdleOverrideMs?: number | null;
   /** Restrict member sign-in methods; `null` clears (all methods). Unknown method → 400. */
   allowedSignInMethods?: string[] | null;
@@ -257,6 +281,15 @@ export interface OrganizationPolicyPatch {
   entitlementOverrides?: null;
   endUserPool?: OrganizationEndUserPoolPolicy | null;
   [key: string]: unknown;
+}
+
+/** Fields an organization's endpoint accepts. */
+export interface OrganizationWebhookEndpointBody {
+  url?: string;
+  /** Event types, or ["*"]; only this organization's events are ever delivered. */
+  enabled_events?: string[];
+  description?: string | null;
+  active?: boolean;
 }
 
 export function organizationsResource(request: RequestFn) {
@@ -475,6 +508,58 @@ export function organizationsResource(request: RequestFn) {
         return request({
           method: 'DELETE',
           path: `/v1/organizations/${enc(orgId)}/audit_streams/${enc(streamId)}`,
+        });
+      },
+    },
+
+    /**
+     * The organization's own webhook endpoints. They receive only that
+     * organization's events and are hidden from the instance's endpoint list;
+     * the org's admins manage the same endpoints from the app.
+     */
+    webhookEndpoints: {
+      list(orgId: string): Promise<ListPage<WebhookEndpoint>> {
+        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/webhook_endpoints` });
+      },
+      get(orgId: string, endpointId: string): Promise<WebhookEndpoint> {
+        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/webhook_endpoints/${enc(endpointId)}` });
+      },
+      /** The signing secret is in this response only. */
+      create(
+        orgId: string,
+        body: OrganizationWebhookEndpointBody & { url: string },
+        idempotencyKey?: string,
+      ): Promise<WebhookEndpointWithSecret> {
+        return request({ method: 'POST', path: `/v1/organizations/${enc(orgId)}/webhook_endpoints`, body, idempotencyKey });
+      },
+      update(orgId: string, endpointId: string, body: OrganizationWebhookEndpointBody): Promise<WebhookEndpoint> {
+        return request({
+          method: 'PATCH',
+          path: `/v1/organizations/${enc(orgId)}/webhook_endpoints/${enc(endpointId)}`,
+          body,
+        });
+      },
+      delete(orgId: string, endpointId: string): Promise<{ object: 'webhook_endpoint'; id: string; deleted: true }> {
+        return request({
+          method: 'DELETE',
+          path: `/v1/organizations/${enc(orgId)}/webhook_endpoints/${enc(endpointId)}`,
+        });
+      },
+      /** Returns the new secret once; the previous one keeps signing for 24 hours. */
+      rotateSecret(
+        orgId: string,
+        endpointId: string,
+      ): Promise<{ object: 'webhook_secret'; secret: string; overlap_seconds: number; previous_secret_expires_at: number | null }> {
+        return request({
+          method: 'POST',
+          path: `/v1/organizations/${enc(orgId)}/webhook_endpoints/${enc(endpointId)}/rotate_secret`,
+        });
+      },
+      deliveries(orgId: string, endpointId: string, query: Record<string, string | number | undefined> = {}): Promise<ListPage<WebhookDelivery>> {
+        return request({
+          method: 'GET',
+          path: `/v1/organizations/${enc(orgId)}/webhook_endpoints/${enc(endpointId)}/deliveries`,
+          query,
         });
       },
     },

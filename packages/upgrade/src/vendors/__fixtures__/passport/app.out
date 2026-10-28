@@ -1,0 +1,15 @@
+import express from 'express';
+import session from 'express-session';
+import { atlasMiddleware, getAuth } from '@atlasauth/express';
+
+const app = express();
+// TODO(atlas-migrate): express-session: Atlas keeps the sign-in session in its own __session cookie; remove this (with its store and SESSION_SECRET) unless the session also holds non-auth data
+app.use(session({ secret: 'keyboard cat', resave: false, saveUninitialized: false }));
+app.use(atlasMiddleware({ jwksUrl: process.env.ATLAS_JWKS_URL!, issuer: process.env.ATLAS_ISSUER! }));
+
+app.get('/me', (req, res) => {
+  if (!getAuth(req).isSignedIn) return res.sendStatus(401);
+  res.json({ ok: true });
+});
+
+export default app;

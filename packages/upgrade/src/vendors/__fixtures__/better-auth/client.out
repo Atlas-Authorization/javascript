@@ -1,0 +1,11 @@
+// TODO(atlas-migrate): 'organizationClient' from 'better-auth/client/plugins': Better Auth client plugin: the matching feature is built into Atlas (organizations → useOrganization(), 2FA/passkeys/magic links → the sign-in page); remove the plugin and its authClient.<plugin> calls
+import { organizationClient } from 'better-auth/client/plugins';
+import { createBetterAuthCompatClient } from '@atlasauth/react/compat';
+
+// TODO(atlas-migrate): NEXT_PUBLIC_BETTER_AUTH_URL: not needed (the compat client ignores baseURL); set the Atlas publishable key and frontend API env vars instead
+export const authClient = createBetterAuthCompatClient({
+  baseURL: process.env.NEXT_PUBLIC_BETTER_AUTH_URL,
+  plugins: [organizationClient()],
+});
+
+export const { signIn, signOut, useSession } = authClient;

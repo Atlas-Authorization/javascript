@@ -1,0 +1,19 @@
+'use server';
+import { getIronSession } from 'iron-session';
+import { cookies } from 'next/headers';
+import { sessionOptions, type SessionData } from '@/lib/session';
+
+export async function login(userId: string) {
+  // TODO(atlas-migrate): getIronSession(): read the signed-in user with auth() ({ userId, sessionId }) or currentUser() from @atlasauth/nextjs/server; sign-in and sign-out (session.save() / destroy()) are Atlas pages and actions now; keep other session data in Atlas user metadata or your database
+  const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
+  session.userId = userId;
+  // TODO(atlas-migrate): session.save(): sign-in runs on the Atlas pages, which create the session and its cookie; delete this and send users to /sign-in
+  await session.save();
+}
+
+export async function logout() {
+  // TODO(atlas-migrate): getIronSession(): read the signed-in user with auth() ({ userId, sessionId }) or currentUser() from @atlasauth/nextjs/server; sign-in and sign-out (session.save() / destroy()) are Atlas pages and actions now; keep other session data in Atlas user metadata or your database
+  const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
+  // TODO(atlas-migrate): session.destroy(): sign-out — call useAuth().signOut() or render <SignOutButton /> from @atlasauth/react, or revoke on the server with atlasClient().sessions.revoke(sessionId) from @atlasauth/nextjs/server
+  session.destroy();
+}

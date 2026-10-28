@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACCOUNT_UX_DEFAULT,
   EMAIL_DELIVERY_UNKNOWN,
   clientEnvironmentFrom,
   emailDeliveryFrom,
@@ -73,6 +74,7 @@ describe('clientEnvironmentFrom / fetchClientEnvironment', () => {
       strategies: {},
       emailDelivery: EMAIL_DELIVERY_UNKNOWN,
       socialProviders: [],
+      account: ACCOUNT_UX_DEFAULT,
     });
   });
 

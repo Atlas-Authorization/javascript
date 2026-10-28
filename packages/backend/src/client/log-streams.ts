@@ -1,7 +1,7 @@
 import { enc, type RequestFn } from './request';
 import type { ListPage } from './types';
 
-export type LogStreamType = 'http' | 'datadog' | 'splunk';
+export type LogStreamType = 'http' | 'datadog' | 'splunk' | 's3' | 'gcs' | 'azure_blob' | 'aws_eventbridge' | 'kinesis_firehose' | 'cloudwatch_logs' | 'elastic' | 'sumo_logic' | 'new_relic' | 'azure_event_hubs' | 'sentinel' | 'gcp_pubsub' | 'bigquery' | 'snowflake' | 'loki' | 'otlp' | 'kafka';
 
 /**
  * A log stream — the instance event feed forwarded to an external sink (generic

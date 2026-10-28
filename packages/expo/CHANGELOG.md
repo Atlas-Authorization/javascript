@@ -1,5 +1,22 @@
 # @atlasauth/expo changelog
 
+## Unreleased
+
+## 0.4.0 — 2026-10-26
+
+### Changed
+
+- `<AtlasProvider>` provides the bearer client it builds over the token cache to the policy hooks.
+
+## 0.3.0 — 2026-10-24
+Requires `@atlasauth/react-native` with policy acceptance (new dependency).
+- **Policy acceptance** (terms of service, privacy, any policy the app defines). `<PolicyConsent>`, `<PolicyClickwrap>`,
+  `<PolicyAcceptStep>`, `<PolicyScrollHost>`, `<PolicyScrollModal>`, `<PolicyViewer>` and `<PolicyDocument>` are the
+  `@atlasauth/react-native` components, re-exported; `usePolicies()`, `usePendingPolicies()`, `usePolicyGate()` and
+  `<PolicyGate>` are bound to this package's `<AtlasProvider>`. `<AtlasProvider>` now also provides the bearer client it
+  builds over the token cache: `useExpoFapiClient()`, for `@atlasauth/js` calls such as `startSignUp({ policyAcceptances })` and
+  `acceptAttemptPolicies(...)`.
+
 ## 0.2.1
 - **Fixed:** depends on `@atlasauth/react` `^0.9.0` instead of one exact version. With an exact pin, an app that also
   installed a newer `@atlasauth/react` got two copies, and hooks from one couldn't see the other's

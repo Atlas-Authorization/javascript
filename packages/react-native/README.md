@@ -205,6 +205,47 @@ if (isEmailDeliveryNotConfigured(result)) {
 }
 ```
 
+## Policy acceptance (terms of service, privacy)
+
+When the app defines policies in the Atlas dashboard, sign-up must carry the user's acceptance and sign-in can be held
+until a newer version is accepted.
+
+```tsx
+// Sign-up: show the policies, send what the user accepted.
+const { controller, canSubmit, build } = usePolicies();
+const { signUpWithPassword } = useSignUp();
+const [reading, setReading] = useState(false);
+
+<PolicyConsent controller={controller} />              {/* checkbox + in-app document viewer */}
+<Button title="Create account" disabled={!canSubmit} onPress={() => setReading(true)} />
+<PolicyClickwrap controller={controller} viewer={false} />   {/* "By continuing you agree to ..." */}
+<PolicyScrollHost                                       {/* `scroll` policies: unskippable modal */}
+  controller={controller}
+  active={reading}
+  onDecline={() => setReading(false)}
+  onDone={() => { setReading(false); void signUpWithPassword({ emailAddress, password, policyAcceptances: build() }); }}
+/>
+```
+
+A sign-in the server holds comes back as a `FlowResult` with `attemptStatus: 'needs_policy_acceptance'`, a `policyToken` and
+`pendingPolicies` (an OAuth redirect gives the token via `completeOAuthRedirect(url)`):
+
+```tsx
+const { controller } = usePendingPolicies(held);   // held: that FlowResult, or null
+const { acceptPolicies } = useSignIn();
+controller && (
+  <PolicyAcceptStep
+    controller={controller}
+    onSubmit={(acceptances) => acceptPolicies({ attemptId: held.attemptId!, policyToken: held.policyToken, acceptances })}
+    onDecline={cancel}
+  />
+);
+```
+
+For a signed-in user whose policies changed, render `<PolicyGate>` near the top of a screen: it draws a banner (with any grace
+window) and the re-acceptance modal. A 422 `POLICY_ACCEPTANCE_REQUIRED` on sign-up means a policy changed while the form was
+open: call `refresh()` from `usePolicies()`.
+
 ## Hooks
 
 | Hook            | Returns                                                                             |

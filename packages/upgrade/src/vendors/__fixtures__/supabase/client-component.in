@@ -1,0 +1,31 @@
+'use client';
+import { useEffect, useState } from 'react';
+import { createClient } from '@/utils/supabase/client';
+
+export function Login() {
+  const supabase = createClient();
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setEmail(session?.user.email ?? null);
+    });
+    return () => data.subscription.unsubscribe();
+  }, [supabase]);
+
+  async function withGitHub() {
+    await supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: '/account' } });
+  }
+
+  async function withPassword(password: string) {
+    await supabase.auth.signInWithPassword({ email: email ?? '', password });
+  }
+
+  return (
+    <div>
+      <button onClick={withGitHub}>GitHub</button>
+      <button onClick={() => withPassword('x')}>Password</button>
+      <button onClick={() => supabase.auth.signOut()}>Sign out</button>
+    </div>
+  );
+}

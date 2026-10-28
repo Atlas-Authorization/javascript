@@ -5,7 +5,18 @@ export type BuiltInNotificationTemplate =
   | 'new_device'
   | 'unattended_access'
   | 'password_changed'
-  | 'mfa_changed';
+  | 'mfa_changed'
+  | 'email_changed'
+  | 'phone_changed'
+  | 'identity_linked'
+  | 'identity_unlinked'
+  | 'passkey_added'
+  | 'passkey_removed'
+  | 'recovery_codes_regenerated'
+  | 'factor_removed'
+  | 'device_key_added'
+  | 'device_key_removed'
+  | 'risk_alert';
 
 export interface SendNotificationBody {
   /** The end-user to notify. */

@@ -1,0 +1,5 @@
+import { Configuration, CoreApi } from '@goauthentik/api';
+
+const config = new Configuration({ basePath: process.env.AUTHENTIK_URL + '/api/v3', accessToken: process.env.AUTHENTIK_TOKEN });
+
+export const listUsers = () => new CoreApi(config).coreUsersList({ isActive: true });

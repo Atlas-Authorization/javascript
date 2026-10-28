@@ -1,0 +1,20 @@
+import { NhostClient, NhostProvider, useAuthenticationStatus, useUserData, useSignOut, useSignInEmailPassword } from '@nhost/react';
+
+const nhost = new NhostClient({ subdomain: 'abc', region: 'eu-central-1' });
+
+function Header() {
+  const { isAuthenticated, isLoading } = useAuthenticationStatus();
+  const user = useUserData();
+  const { signOut } = useSignOut();
+  const { signInEmailPassword } = useSignInEmailPassword();
+  if (isLoading) return null;
+  return isAuthenticated ? <button onClick={signOut}>{user?.displayName}</button> : <button onClick={() => signInEmailPassword('a', 'b')}>Sign in</button>;
+}
+
+export function App() {
+  return (
+    <NhostProvider nhost={nhost}>
+      <Header />
+    </NhostProvider>
+  );
+}

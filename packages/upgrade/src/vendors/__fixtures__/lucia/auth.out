@@ -1,0 +1,11 @@
+import { Lucia } from 'lucia';
+// TODO(atlas-migrate): 'PrismaAdapter' from '@lucia-auth/adapter-prisma': Lucia database adapter: Atlas stores users and sessions now; remove it with the Lucia instance (keep your user table only for your own data)
+import { PrismaAdapter } from '@lucia-auth/adapter-prisma';
+import { prisma } from './db';
+
+const adapter = new PrismaAdapter(prisma.session, prisma.user);
+
+// TODO(atlas-migrate): new Lucia(adapter, …): Atlas stores users and sessions now; delete this instance with its adapter, sessionCookie and getUserAttributes options once nothing calls it (export your users first with `atlas migrate lucia export`)
+export const lucia = new Lucia(adapter, {
+  sessionCookie: { attributes: { secure: process.env.NODE_ENV === 'production' } },
+});

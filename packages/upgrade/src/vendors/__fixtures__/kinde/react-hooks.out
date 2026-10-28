@@ -1,0 +1,22 @@
+import { useKindeAuthCompat } from '@atlasauth/react/compat';
+
+export function Profile() {
+  const { user, isAuthenticated, isLoading, login, register, logout, getToken } = useKindeAuthCompat();
+  if (isLoading) return <p>Loading…</p>;
+  if (!isAuthenticated) {
+    return (
+      <div>
+        <button onClick={() => login()}>Sign in</button>
+        <button onClick={() => register()}>Create account</button>
+      </div>
+    );
+  }
+  const loadOrders = async () => fetch('/api/orders', { headers: { authorization: `Bearer ${await getToken()}` } });
+  return (
+    <div>
+      <img src={user?.picture ?? undefined} alt={user?.given_name ?? ''} />
+      <button onClick={loadOrders}>Load orders</button>
+      <button onClick={() => logout()}>Sign out</button>
+    </div>
+  );
+}

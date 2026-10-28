@@ -197,3 +197,149 @@ describe('SessionTombstones with a custom store (native)', () => {
     expect(setItem).toHaveBeenCalledWith('atlas:signed-out-sessions:https://fapi.example', expect.stringContaining('"s"'));
   });
 });
+
+describe('SignOutGuard.endImpersonation', () => {
+  it('tombstones the ended impersonation session and reports the resumed one', async () => {
+    const request = vi.fn(async () =>
+      new Response(JSON.stringify({ resumed: true, active_session_id: 'sess_admin', jwt: 'j' }), { status: 200 }),
+    );
+    const guard = new SignOutGuard({ request, frontendApi: 'https://fapi.example/imp-1' });
+    const out = await guard.endImpersonation('sess_imp');
+    expect(out).toMatchObject({ ended: true, resumed: true, activeSessionId: 'sess_admin' });
+    expect(guard.isSignedOut('sess_imp')).toBe(true);
+    expect(guard.isSignedOut('sess_admin')).toBe(false);
+  });
+
+  it('a refusal tombstones nothing; no session id makes no request', async () => {
+    const request = vi.fn(async () => new Response('{}', { status: 409 }));
+    const guard = new SignOutGuard({ request, frontendApi: 'https://fapi.example/imp-2' });
+    expect((await guard.endImpersonation('sess_x')).ended).toBe(false);
+    expect(guard.isSignedOut('sess_x')).toBe(false);
+    request.mockClear();
+    expect((await guard.endImpersonation(null)).ended).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('SAML Single Logout on sign-out', () => {
+  const samlUrl = 'https://fapi.example/v1/sso/saml/ssoc_1/slo/start?request=_abc';
+
+  it('sends the browser to saml_logout_url after the local sign-out, and reports it', async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, href: original.href, assign } });
+    try {
+      const guard = new SignOutGuard({ request: async () => json({ status: 'revoked', saml_logout_url: samlUrl }) });
+      const attempt = await guard.revoke('sess_1');
+      expect(guard.settle(attempt)).toEqual({ revoked: true, samlLogoutUrl: samlUrl });
+      expect(assign).toHaveBeenCalledWith(samlUrl);
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original });
+    }
+  });
+
+  it('stays put with samlLogout:false, or when another account was promoted', async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, href: original.href, assign } });
+    try {
+      const g1 = new SignOutGuard({ request: async () => json({ saml_logout_url: samlUrl }) });
+      expect(g1.settle(await g1.revoke('sess_1'), { samlLogout: false })).toEqual({ revoked: true, samlLogoutUrl: samlUrl });
+      const g2 = new SignOutGuard({ request: async () => json({ saml_logout_url: samlUrl, active_session_id: 'sess_2' }) });
+      g2.settle(await g2.revoke('sess_1'));
+      expect(assign).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original });
+    }
+  });
+
+  it('ignores a non-https saml_logout_url and forwards samlLogoutRedirectUrl to the revoke', async () => {
+    const paths: string[] = [];
+    const guard = new SignOutGuard({
+      request: async (path) => {
+        paths.push(path);
+        return json({ saml_logout_url: 'javascript:alert(1)' });
+      },
+    });
+    const attempt = await guard.revoke('sess_1', { samlLogoutRedirectUrl: 'https://app.example/bye' });
+    expect(guard.settle(attempt, { samlLogout: false })).toEqual({ revoked: true });
+    expect(paths).toEqual([`/v1/client/sessions/sess_1/revoke?redirect_url=${encodeURIComponent('https://app.example/bye')}`]);
+  });
+});
+
+describe('a sign-out response with both upstream_logout_url and saml_logout_url', () => {
+  const upstreamUrl = 'https://op.example/logout?id_token_hint=eyJ.e30.sig&state=s1';
+  const samlUrl = 'https://fapi.example/v1/sso/saml/ssoc_1/slo/start?request=_abc';
+  const both = () => json({ object: 'session', status: 'revoked', upstream_logout_url: upstreamUrl, saml_logout_url: samlUrl });
+
+  it('follows upstream_logout_url first, navigates only once, and reports both URLs', async () => {
+    const navigate = vi.fn();
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, href: original.href, assign } });
+    try {
+      const guard = new SignOutGuard({ request: async () => both(), navigate });
+      const attempt = await guard.revoke('sess_1');
+      expect(guard.settle(attempt)).toEqual({ revoked: true, upstreamLogoutUrl: upstreamUrl, samlLogoutUrl: samlUrl });
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith(upstreamUrl);
+      expect(assign).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original });
+    }
+  });
+
+  it('follows the upstream URL first without a navigate hook too (window.location)', async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, href: original.href, assign } });
+    try {
+      const guard = new SignOutGuard({ request: async () => both() });
+      guard.settle(await guard.revoke('sess_1'));
+      expect(assign.mock.calls).toEqual([[upstreamUrl]]);
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original });
+    }
+  });
+
+  it('follows saml_logout_url instead with upstreamLogout:false; neither when both are off', async () => {
+    const navigate = vi.fn();
+    const guard = new SignOutGuard({ request: async () => both(), navigate });
+    expect(guard.settle(await guard.revoke('sess_1'), { upstreamLogout: false })).toEqual({
+      revoked: true,
+      upstreamLogoutUrl: upstreamUrl,
+      samlLogoutUrl: samlUrl,
+    });
+    expect(navigate.mock.calls).toEqual([[samlUrl]]);
+
+    navigate.mockClear();
+    expect(guard.settle(await guard.revoke('sess_2'), { upstreamLogout: false, samlLogout: false })).toEqual({
+      revoked: true,
+      upstreamLogoutUrl: upstreamUrl,
+      samlLogoutUrl: samlUrl,
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('samlLogout:false alone still follows the upstream URL', async () => {
+    const navigate = vi.fn();
+    const guard = new SignOutGuard({ request: async () => both(), navigate });
+    guard.settle(await guard.revoke('sess_1'), { samlLogout: false });
+    expect(navigate.mock.calls).toEqual([[upstreamUrl]]);
+  });
+
+  it('sends returnUrl as the body return_url and samlLogoutRedirectUrl as ?redirect_url on one revoke', async () => {
+    const calls: { path: string; init?: RequestInit }[] = [];
+    const guard = new SignOutGuard({
+      request: async (path, init) => {
+        calls.push({ path, init });
+        return both();
+      },
+      navigate: vi.fn(),
+    });
+    await guard.revoke('sess_1', { returnUrl: 'https://app.example/op-bye', samlLogoutRedirectUrl: 'https://app.example/saml-bye' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.path).toBe(`/v1/client/sessions/sess_1/revoke?redirect_url=${encodeURIComponent('https://app.example/saml-bye')}`);
+    expect(JSON.parse(String(calls[0]!.init!.body))).toEqual({ return_url: 'https://app.example/op-bye' });
+  });
+});

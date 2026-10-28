@@ -54,6 +54,23 @@ export default component$(() => (
 - `@atlasauth/qwik/server` — `protectRoute(event, opts)` / `getAuthState(event)`
   for Qwik City loaders and request handlers.
 
+## Policy acceptance (terms of service, privacy)
+
+`<SignIn>` and `<SignUp>` show the instance's policies themselves. In a custom form:
+
+```tsx
+const policies = usePolicies();
+<PolicyConsent controller={policies.controller.value} />
+<button disabled={!policies.canSubmit.value} onClick$={() => signUp(buildAcceptances(policies.controller.value))}>
+  Create account
+</button>
+<PolicyClickwrap controller={policies.controller.value} />
+```
+
+A sign-in held at `needs_policy_acceptance` is drawn with `<PolicyAcceptStep attempt={held} onSubmit$={...} />`, and
+`<PolicyGate />` shows a banner when a signed-in user's policies need re-accepting. The controller is live, so it is held
+`noSerialize`d and created in the browser; on the server it reads back as `undefined`.
+
 ## How Qwik's serialization boundary is handled
 
 Qwik serializes component state to ship SSR output to the browser and to resume

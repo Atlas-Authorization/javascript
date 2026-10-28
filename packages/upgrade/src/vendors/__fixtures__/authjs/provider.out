@@ -1,0 +1,11 @@
+'use client';
+import type { ReactNode } from 'react';
+import { AtlasProvider } from '@atlasauth/react';
+
+export function Providers({ children, session }: { children: ReactNode; session?: unknown }) {
+  return (
+    <AtlasProvider publishableKey={process.env.NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY!} frontendApi={process.env.NEXT_PUBLIC_ATLAS_FRONTEND_API!}>
+      {children}
+    </AtlasProvider>
+  );
+}

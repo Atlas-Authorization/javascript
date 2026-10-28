@@ -1,0 +1,11 @@
+import session from 'express-session';
+// TODO(atlas-migrate): Keycloak (keycloak-connect): replace keycloak.middleware() / protect() with atlasMiddleware() and requireAuth() from @atlasauth/express; read the user with getAuth(req); delete the session store
+import Keycloak from 'keycloak-connect';
+import express from 'express';
+
+const app = express();
+const store = new session.MemoryStore();
+// TODO(atlas-migrate): KEYCLOAK_URL: the Keycloak server URL; the browser uses ATLAS_FRONTEND_API, servers verify tokens with ATLAS_JWKS_URL
+const keycloak = new Keycloak({ store }, { realm: 'acme', 'auth-server-url': process.env.KEYCLOAK_URL });
+
+app.use(keycloak.middleware());

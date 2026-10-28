@@ -179,7 +179,30 @@ export interface CompileDesignCssOptions {
   scope: string;
   /** Maps an uploaded asset id to its public URL. Required for background images. */
   assetUrl?: (assetId: string) => string;
+  /**
+   * Let the host page's `--atlas-host-*` variables (the shared UI-kit names) win over
+   * the design where the page sets them: each mapped variable compiles to
+   * `var(--atlas-host-…, <design value>)`. For components embedded on a customer's
+   * page (the SDK scope); Atlas's own hosted pages leave it off.
+   */
+  hostVariables?: boolean;
 }
+
+/**
+ * The host-page variables an embedded component reads, and the design
+ * variables each one feeds. `--atlas-host-focus-ring` always has a visible fallback.
+ */
+export const HOST_VARIABLE_MAP: Readonly<Record<string, string>> = Object.freeze({
+  '--atlas-color-primary': '--atlas-host-accent',
+  '--atlas-color-primary-ink': '--atlas-host-accent-ink',
+  '--atlas-color-surface': '--atlas-host-surface',
+  '--atlas-card-background': '--atlas-host-surface',
+  '--atlas-color-text': '--atlas-host-ink',
+  '--atlas-color-border': '--atlas-host-line',
+  '--atlas-radius-control': '--atlas-host-radius',
+  '--atlas-font-body': '--atlas-host-font',
+  '--atlas-focus-outline-color': '--atlas-host-focus-ring',
+});
 
 type Vars = [string, string | undefined][];
 
@@ -304,10 +327,13 @@ function staticVars(d: ResolvedDesign): Vars {
   ];
 }
 
-const block = (selector: string, vars: Vars): string => {
+const block = (selector: string, vars: Vars, host = false): string => {
   const body = vars
     .filter((v): v is [string, string] => typeof v[1] === 'string' && DESIGN_CSS_VARIABLE_NAMES.has(v[0]))
-    .map(([k, v]) => `${k}:${v};`)
+    .map(([k, v]) => {
+      const fd = host && Object.prototype.hasOwnProperty.call(HOST_VARIABLE_MAP, k) ? HOST_VARIABLE_MAP[k] : undefined;
+      return fd ? `${k}:var(${fd},${v});` : `${k}:${v};`;
+    })
     .join('');
   return `${selector}{${body}}`;
 };
@@ -335,14 +361,15 @@ export function compileDesignCss(d: ResolvedDesign, opts: CompileDesignCssOption
   const light = paletteVars(d.palette ?? ({} as ResolvedPalette), d, d.background ?? {}, 'light', opts);
   const dark = paletteVars(d.paletteDark ?? ({} as ResolvedPalette), d, d.backgroundDark ?? {}, 'dark', opts);
 
+  const host = opts.hostVariables === true;
   const parts = [
-    block(scope, [...staticVars(d), ...(scheme === 'dark' ? dark : light)]),
-    block(`${scope}[data-atlas-theme="light"]`, light),
-    block(`${scope}[data-atlas-theme="dark"]`, dark),
+    block(scope, [...staticVars(d), ...(scheme === 'dark' ? dark : light)], host),
+    block(`${scope}[data-atlas-theme="light"]`, light, host),
+    block(`${scope}[data-atlas-theme="dark"]`, dark, host),
   ];
   if (scheme === 'auto') {
     parts.push(
-      `@media (prefers-color-scheme:dark){${block(`${scope}:not([data-atlas-theme="light"])`, dark)}}`,
+      `@media (prefers-color-scheme:dark){${block(`${scope}:not([data-atlas-theme="light"])`, dark, host)}}`,
     );
   }
   const css = parts.join('\n');
@@ -390,3 +417,24 @@ export function designFontSheets(d: ResolvedDesign): string[] {
   }
   return [...out];
 }
+
+/**
+ * The bridge for an embedded component that renders without a design: maps
+ * each host-page `--atlas-host-*` variable the page actually sets onto the component's
+ * variables, scoped with zero specificity so a design (or the page's own
+ * `--atlas-*` theming) still wins. `setVariables` are the `--atlas-host-*` names the
+ * page defines (read from its computed style); unset ones are left alone, so
+ * the component's built-in defaults apply.
+ */
+export function hostVariableBridgeCss(setVariables: readonly string[], scope = '.atlas-root'): string {
+  if (!SAFE_SCOPE.test(scope) || scope.includes(',')) return '';
+  const set = new Set(setVariables);
+  const body = Object.entries(HOST_VARIABLE_MAP)
+    .filter(([, fd]) => set.has(fd))
+    .map(([k, fd]) => `${k}:var(${fd});`)
+    .join('');
+  return body ? `:where(${scope}){${body}}` : '';
+}
+
+/** Every `--atlas-host-*` variable an embedded component reads. */
+export const HOST_VARIABLE_NAMES: readonly string[] = Object.freeze([...new Set(Object.values(HOST_VARIABLE_MAP))]);

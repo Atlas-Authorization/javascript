@@ -1,0 +1,36 @@
+import { PublicClientApplication, InteractionRequiredAuthError, type AccountInfo } from '@azure/msal-browser';
+import { MsalProvider, AuthenticatedTemplate, UnauthenticatedTemplate, useMsal, useIsAuthenticated } from '@azure/msal-react';
+
+const msal = new PublicClientApplication({
+  auth: { clientId: process.env.NEXT_PUBLIC_AZURE_AD_B2C_CLIENT_ID!, authority: 'https://contoso.b2clogin.com/contoso.onmicrosoft.com/B2C_1_signin' },
+});
+
+function Greeting() {
+  const { instance, accounts } = useMsal();
+  const signedIn = useIsAuthenticated();
+  const account: AccountInfo | undefined = accounts[0];
+
+  async function call() {
+    try {
+      const result = await instance.acquireTokenSilent({ scopes: ['openid'], account });
+      return fetch('/api', { headers: { Authorization: `Bearer ${result.accessToken}` } });
+    } catch (e) {
+      if (e instanceof InteractionRequiredAuthError) await instance.loginRedirect();
+    }
+  }
+
+  return signedIn ? <button onClick={call}>Hi {account?.name}</button> : null;
+}
+
+export function App() {
+  return (
+    <MsalProvider instance={msal}>
+      <AuthenticatedTemplate>
+        <Greeting />
+      </AuthenticatedTemplate>
+      <UnauthenticatedTemplate>
+        <button onClick={() => msal.loginRedirect()}>Sign in</button>
+      </UnauthenticatedTemplate>
+    </MsalProvider>
+  );
+}

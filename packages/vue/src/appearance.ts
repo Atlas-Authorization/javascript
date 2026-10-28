@@ -58,7 +58,14 @@ export type ElementKey =
   | 'avatar'
   | 'menu'
   | 'menuItem'
-  | 'badge';
+  | 'list'
+  | 'listItem'
+  | 'badge'
+  | 'text'
+  | 'pricingTable'
+  | 'planName'
+  | 'price'
+  | 'priceInterval';
 
 export interface Appearance extends DesignAppearance {
   /** A prebuilt token theme to start from (pre-design-system themes). */
@@ -79,7 +86,7 @@ export const DEFAULT_TOKENS: Required<DesignTokens> = {
   colorPrimary: '#5b5bd6',
   colorText: '#1c1c1f',
   colorBackground: '#ffffff',
-  colorDanger: '#d64545',
+  colorDanger: '#c53030',
   colorBorder: '#e4e4e9',
   borderRadius: '8px',
   fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',

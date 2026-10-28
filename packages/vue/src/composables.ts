@@ -1,6 +1,21 @@
-import { computed, type ComputedRef, type ShallowRef } from 'vue';
-import type { ProviderToken, SignOutOptions, SignOutResult } from '@atlasauth/js';
+import { computed, onMounted, onScopeDispose, shallowRef, watch, type ComputedRef, type ShallowRef } from 'vue';
+import {
+  actorFromClaims,
+  listPublicPlans,
+  startPlanCheckout,
+  type PublicBillingPlan,
+  createOrganizationAuditLog,
+  FapiClient,
+  type EndImpersonationResult,
+  type ImpersonationActor,
+  type OrganizationAuditLogOptions,
+  type OrganizationAuditLogState,
+  type ProviderToken,
+  type SignOutOptions,
+  type SignOutResult,
+} from '@atlasauth/js';
 import { useAtlas } from './context';
+import { ATLAS_VUE_SDK } from './version';
 import type { AuthStatus } from './plugin';
 import { evaluate, type ProtectCondition } from './protect';
 import type { AtlasOrganizationMembership, AtlasSession, AtlasUser } from './types';
@@ -103,5 +118,90 @@ export function useOrganization(): {
     membership: active,
     memberships,
     setActive: setActiveOrganization,
+  };
+}
+
+/**
+ * The active organization's audit trail, for its admins: one page at a time,
+ * newest first, with `loadMore()`. `action` narrows it (exact, or a prefix
+ * ending in `.`). `state.forbidden` is true when the signed-in member may not
+ * read it, so the caller can hide the surface. Follows the active organization.
+ */
+export function useOrganizationAuditLog(options: OrganizationAuditLogOptions = {}): {
+  state: ShallowRef<OrganizationAuditLogState>;
+  loadMore(): Promise<void>;
+  reload(): Promise<void>;
+} {
+  const atlas = useAtlas();
+  const { organization } = useOrganization();
+  const log = createOrganizationAuditLog(
+    new FapiClient({
+      publishableKey: atlas.publishableKey,
+      baseUrl: atlas.frontendApi,
+      locale: atlas.locale,
+      sdk: ATLAS_VUE_SDK,
+    }),
+    options,
+  );
+  const state = shallowRef(log.getState());
+  const unsubscribe = log.subscribe((next) => {
+    state.value = next;
+  });
+  watch(
+    () => organization.value?.id ?? null,
+    (id) => void log.load(id),
+    { immediate: true },
+  );
+  onScopeDispose(unsubscribe);
+  return { state, loadMore: log.loadMore, reload: log.reload };
+}
+
+/**
+ * The instance's public plans and a Checkout starter — the data behind
+ * `<PricingTable/>`. `checkout` needs a signed-in session and navigates to the
+ * provider's hosted Checkout page.
+ */
+export function usePricingPlans(options: { audience?: 'user' | 'org' } = {}): {
+  isLoaded: ShallowRef<boolean>;
+  plans: ShallowRef<PublicBillingPlan[]>;
+  checkout(input: { planId: string; interval?: 'month' | 'year'; orgId?: string; successUrl?: string }): Promise<string | null>;
+} {
+  const atlas = useAtlas();
+  const client = new FapiClient({ publishableKey: atlas.publishableKey, baseUrl: atlas.frontendApi, locale: atlas.locale, sdk: ATLAS_VUE_SDK });
+  const plans = shallowRef<PublicBillingPlan[]>([]);
+  const isLoaded = shallowRef(false);
+  onMounted(async () => {
+    plans.value = await listPublicPlans(client, options);
+    isLoaded.value = true;
+  });
+  return {
+    isLoaded,
+    plans,
+    async checkout(input) {
+      const here = typeof window === 'undefined' ? '/' : window.location.href;
+      const out = await startPlanCheckout(client, { ...input, successUrl: input.successUrl ?? here });
+      if (out.url && typeof window !== 'undefined') window.location.assign(out.url);
+      return out.url;
+    },
+  };
+}
+
+/**
+ * The impersonation state of the active session, and "return to admin" — the
+ * Vue peer of React's `useImpersonation()`.
+ */
+export function useImpersonation(): {
+  isImpersonating: ComputedRef<boolean>;
+  actor: ComputedRef<ImpersonationActor | null>;
+  canReturnToAdmin: ComputedRef<boolean>;
+  endImpersonation(): Promise<EndImpersonationResult>;
+} {
+  const { claims, session, endImpersonation } = useAtlas();
+  const actor = computed(() => actorFromClaims(claims.value) ?? session.value?.actor ?? null);
+  return {
+    isImpersonating: computed(() => actor.value !== null),
+    actor,
+    canReturnToAdmin: computed(() => actor.value !== null && Boolean(session.value?.actor_session_id)),
+    endImpersonation,
   };
 }

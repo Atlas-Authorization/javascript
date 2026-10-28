@@ -1,0 +1,27 @@
+'use client';
+import { getSessionToken } from '@descope/nextjs-sdk/client';
+import { useCallback } from 'react';
+
+import { useDescopeCompat, useDescopeSessionCompat, useDescopeUserCompat } from '@atlasauth/react/compat';
+
+async function fetchOrders() {
+  // TODO(atlas-migrate): getSessionToken() is synchronous in Descope, but Atlas fetches session tokens asynchronously: use `await getDescopeSessionTokenCompat()` from @atlasauth/react/compat, or `await getToken()` from useAuth()
+  const token = getSessionToken();
+  return fetch('/api/orders', { headers: { Authorization: `Bearer ${token}` } });
+}
+
+export function UserMenu() {
+  const { isAuthenticated, isSessionLoading } = useDescopeSessionCompat();
+  const { user, isUserLoading } = useDescopeUserCompat();
+  const sdk = useDescopeCompat();
+  const logout = useCallback(() => sdk.logout(), [sdk]);
+  if (isSessionLoading || isUserLoading) return <p>Loading</p>;
+  if (!isAuthenticated) return null;
+  return (
+    <div>
+      <span>{user?.name ?? user?.email}</span>
+      <button onClick={() => fetchOrders()}>Orders</button>
+      <button onClick={logout}>Log out</button>
+    </div>
+  );
+}

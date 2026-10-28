@@ -4,15 +4,18 @@ import { useCallback, useMemo, useRef, type ReactNode, type ButtonHTMLAttributes
 import {
   mintNativeNonce,
   nativeSignIn,
+  pendingRecoveryCodes,
   startOauthPopup,
   startOauthRedirect,
   type OAuthPopupHandlers,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
-import { FapiClient, type FlowState } from './fapi';
+import { FapiClient, initialFlow, type FlowState } from './fapi';
+import { usePolicyText } from './policies';
 import { CaptchaSlot } from './captcha';
 import {
   AttemptFlow,
+  LastUsedHint,
   SignUpPrompt,
   SocialSignInButtons,
   resolveGoogleButtonRender,
@@ -25,7 +28,8 @@ import {
 import { ATLAS_REACT_SDK } from './version';
 
 export function SignIn(props: FlowProps = {}) {
-  const { state, submit, client, finish, captcha, prepare, usePassword } = useFlow({
+  const t = usePolicyText();
+  const { state, setState, submit, client, finish, captcha, prepare, usePassword, saveRecoveryCodes } = useFlow({
     afterUrl: props.afterUrl,
     referral: props.referral,
     referralConsent: props.referralConsent,
@@ -33,6 +37,7 @@ export function SignIn(props: FlowProps = {}) {
 
   return (
     <>
+      {!state.attempt ? <LastUsedHint client={client} /> : null}
       <AttemptFlow
         attempt={state.attempt}
         busy={state.busy}
@@ -45,6 +50,15 @@ export function SignIn(props: FlowProps = {}) {
         prepared={state.prepared ?? null}
         onPrepare={prepare}
         onUsePassword={usePassword}
+        recoveryCodes={pendingRecoveryCodes(state)}
+        onRecoveryCodesSaved={saveRecoveryCodes}
+        onPolicyDecline={(policy) =>
+          // Declining cancels the attempt: back to the first step, saying why.
+          setState({
+            ...initialFlow,
+            errors: [{ code: 'POLICY_DECLINED', message: t('policy.declined', { policy: policy.title }) }],
+          })
+        }
       />
       {/* Social buttons belong on the first step, not mid-flow (e.g. during a
           second factor). `!state.attempt` is exactly the initial identifier step. */}

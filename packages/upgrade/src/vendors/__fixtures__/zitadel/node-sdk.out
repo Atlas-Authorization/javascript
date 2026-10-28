@@ -1,0 +1,7 @@
+// TODO(atlas-migrate): introspect(): verify the Atlas session token with AtlasBackend#verify from @atlasauth/backend (checked against the instance JWKS, no call per request)
+// TODO(atlas-migrate): ServiceAccount: service accounts become Atlas API keys or M2M clients; call the Backend API with @atlasauth/backend
+import { introspect, ServiceAccount } from '@zitadel/node';
+
+export async function isActive(token: string) {
+  return introspect({ token });
+}

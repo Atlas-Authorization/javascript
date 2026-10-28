@@ -4,6 +4,8 @@ import type { CursorPage, CursorParams } from './types';
 export interface AuditLog {
   object: 'audit_log';
   id: string;
+  /** Who acted; `key_name` names the secret or platform key when a key did. */
+  actor?: { type: string; id: string | null; key_name: string | null; key_prefix: string | null };
   actor_type: string;
   actor_id: string | null;
   action: string;

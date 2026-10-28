@@ -13,7 +13,14 @@
  *   sign in : POST /v1/client/sign_ins/passkey/begin → Passkey.get → /finish
  */
 
-import type { FieldError, PasskeyAssertionBody, PasskeyRegistrationBody } from '@atlasauth/js';
+import {
+  beginPasskeySignIn,
+  fetchInstanceSettings,
+  type FieldError,
+  type FlowCaptcha,
+  type PasskeyAssertionBody,
+  type PasskeyRegistrationBody,
+} from '@atlasauth/js';
 import { createFapiClient, type AtlasFapiConfig } from './client';
 import type {
   PasskeyCreateResult,
@@ -94,22 +101,59 @@ export interface PasskeySignInResult {
   errors: FieldError[];
 }
 
+/** What {@link authenticateWithPasskey}'s `getCaptchaToken` is asked for. */
+export interface PasskeyCaptchaTokenRequest {
+  /** Always `signIn`: the passkey begin takes the sign-in challenge. */
+  flow: 'signIn';
+  /**
+   * The instance's public sign-in captcha settings (provider, site key, widget
+   * mode) from `GET /v1/appearance`; null if they could not be read.
+   */
+  captcha: FlowCaptcha | null;
+  /** The refusal that prompted the ask. */
+  refused: 'CAPTCHA_REQUIRED' | 'CAPTCHA_FAILED';
+}
+
 /**
  * Sign in with a passkey. Runs begin → platform ceremony → finish and returns
  * the attempt outcome: `complete` carries a one-time `ticket` to exchange for a
  * session (hand it to `@atlasauth/expo`), `needs_more` means a factor is still
  * owed.
+ *
+ * When the instance challenges every sign-in (an always-on sign-in captcha, or
+ * a force-challenge switch) the begin needs a `captcha_token`. Pass a solved
+ * `captchaToken` up front, and/or a `getCaptchaToken` callback: after a
+ * `CAPTCHA_REQUIRED` / `CAPTCHA_FAILED` refusal it is asked for a FRESH token
+ * (run the provider's challenge, e.g. in a WebView, with `captcha.siteKey`) and
+ * the begin is retried once. Without either, the refusal comes back as the
+ * result's error.
  */
 export async function authenticateWithPasskey(opts: {
   config: AtlasFapiConfig;
   passkey: ReactNativePasskey;
+  /** A solved sign-in captcha token, sent on the first begin. */
+  captchaToken?: string;
+  /** Asked for a fresh token after a captcha refusal; the begin is then retried once. */
+  getCaptchaToken?: (request: PasskeyCaptchaTokenRequest) => Promise<string | null>;
 }): Promise<PasskeySignInResult> {
   const client = createFapiClient(opts.config);
+  const { captchaToken, getCaptchaToken } = opts;
 
-  const begin = await client.post<Record<string, unknown>>(
-    '/v1/client/sign_ins/passkey/begin',
-    {},
-  );
+  const begin = await beginPasskeySignIn(client, {
+    captcha:
+      captchaToken || getCaptchaToken
+        ? async ({ retry, refused }) => {
+            if (!retry) return captchaToken ?? null;
+            if (!getCaptchaToken) return null;
+            const settings = await fetchInstanceSettings(client);
+            return getCaptchaToken({
+              flow: 'signIn',
+              captcha: settings?.captchaFlows.signIn ?? null,
+              refused: refused ?? 'CAPTCHA_REQUIRED',
+            });
+          }
+        : null,
+  });
   if (!begin.ok || !begin.data) return { status: 'error', errors: begin.errors };
 
   const assertion = await opts.passkey.get(begin.data);

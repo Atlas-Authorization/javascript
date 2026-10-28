@@ -1,0 +1,10 @@
+'use server';
+import { Argon2id } from 'oslo/password';
+import { generateIdFromEntropySize } from 'lucia';
+import { db } from '@/lib/db';
+
+export async function signup(username: string, password: string) {
+  const passwordHash = await new Argon2id().hash(password);
+  const userId = generateIdFromEntropySize(10);
+  await db.user.create({ data: { id: userId, username, passwordHash } });
+}

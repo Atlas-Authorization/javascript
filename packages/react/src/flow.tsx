@@ -1,4 +1,5 @@
 'use client';
+import type { PasskeyExtensionResults, PasskeyPrfRequest } from '@atlasauth/js';
 
 import {
   useCallback,
@@ -10,14 +11,22 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  journeyRedirectUrl,
   flowNeedsCaptcha,
   atlasCaptchaLabels,
+  acknowledgeRecoveryCodes,
+  enrollmentSubmitKey,
+  pendingRecoveryCodes,
+  fetchLastSignInMethod,
+  isLastUsed,
+  lastUsedMethodLabel,
   mintNativeNonce,
   nativeSignIn,
   nextStep,
   offeredFirstFactors,
   planFirstFactor,
   prepareFactor,
+  resendSignUpVerification,
   retryAfterSeconds,
   renderGoogleOverlayButton,
   reportProviderUnavailable,
@@ -38,9 +47,18 @@ import {
   shouldKeepPolling,
   type FlowState,
 } from './fapi';
-import { useClass, useClasses, useErrorText, useText } from './components-shared';
+import { useClass, useClasses, useErrorText, useFapiClient, useText } from './components-shared';
 import { localizeCaptchaErrors, useCaptcha } from './captcha';
 import { forceCaptchaFlow, useReferralChallenge, useStableReferralConsent } from './referral';
+import {
+  DuoSecondFactorOption,
+  MfaEnrollmentFields,
+  RecoveryCodes,
+  SecondFactorCodeOption,
+  useMfaChoices,
+  useMfaEnrollment,
+} from './mfa-steps';
+import { PolicyAcceptStep } from './policies';
 import { ATLAS_REACT_SDK } from './version';
 
 /**
@@ -61,6 +79,13 @@ import { ATLAS_REACT_SDK } from './version';
 export interface FlowProps {
   /** Where to send the user once the flow completes. */
   afterUrl?: string;
+  /**
+   * `<SignUp>`: offer the instance's plans as a step before the account form and,
+   * once the account exists, send the user straight to Checkout for the chosen
+   * plan (they return to `afterUrl`, else the current page). `required` makes the
+   * choice mandatory; `optional` lets them skip. Only user (B2C) plans are shown.
+   */
+  planSelection?: 'optional' | 'required';
   /**
    * `<SignIn>`: where "No account? Sign up" goes. Default: the instance's hosted
    * sign-up page (carrying the visitor's referral). `null` hides the link (your
@@ -129,6 +154,21 @@ export interface FlowProps {
    * hand-rolling the invisible-overlay technique themselves.
    */
   googleButton?: GoogleButtonMode;
+  /**
+   * Request the WebAuthn `prf` extension when `<SignUp>` creates a passkey: a
+   * secret derived from the passkey and your salt, for client-side encryption
+   * keys. The outputs go to {@link FlowProps.onPasskeyExtensionResults} only and
+   * never reach Atlas.
+   */
+  passkeyPrf?: PasskeyPrfRequest;
+  /** Receives the passkey ceremony's client extension results (the PRF outputs). */
+  onPasskeyExtensionResults?: (results: PasskeyExtensionResults) => void;
+  /**
+   * Policy acceptance (terms, privacy, any policy the instance publishes):
+   * `'combined'` (default) shows one checkbox for every checkbox-mode policy,
+   * `'separate'` one checkbox per policy.
+   */
+  policyConsent?: 'combined' | 'separate';
 }
 
 /**
@@ -149,6 +189,9 @@ export function AttemptFlow({
   onPrepare,
   onUsePassword,
   sessionKept,
+  recoveryCodes = null,
+  onRecoveryCodesSaved,
+  onPolicyDecline,
 }: {
   attempt: AttemptView | null;
   onSubmit(values: Record<string, string>): void;
@@ -176,6 +219,15 @@ export function AttemptFlow({
   onUsePassword?(): void;
   /** `FlowState.sessionKept`: whether this browser kept the session the sign-in created. */
   sessionKept?: boolean;
+  /**
+   * The recovery codes an MFA enrolment just completed the sign-in with
+   * (`pendingRecoveryCodes(state)`): drawn once instead of the form, and
+   * "I've saved my codes" calls {@link onRecoveryCodesSaved} to finish.
+   */
+  recoveryCodes?: string[] | null;
+  onRecoveryCodesSaved?(): void;
+  /** The user declined a policy the sign-in was waiting on: cancel the attempt (`needs_policy_acceptance`). */
+  onPolicyDecline?(policy: { key: string; title: string }): void;
 }) {
   const t = useText();
   const errorText = useErrorText();
@@ -189,6 +241,10 @@ export function AttemptFlow({
 
   const [values, setValues] = useState<Record<string, string>>({});
   const step = attempt ? nextStep(attempt) : { kind: 'collect_identifier' as const };
+  // The MFA steps: what the app offers, and the enrolment step's own state.
+  const mfaChoices = useMfaChoices();
+  const enrolment = useMfaEnrollment(attempt?.id ?? null, step.kind === 'enroll_second_factor');
+  const enrolSubmitKey = step.kind === 'enroll_second_factor' ? enrollmentSubmitKey(enrolment.state) : null;
   /**
    * The first factors this form may offer: the server's list, minus email code /
    * link while the app can't deliver email (a capability of the app, never a
@@ -212,6 +268,12 @@ export function AttemptFlow({
   const sending =
     step.kind === 'collect_first_factor' && !noFirstFactor && sent === null && !plan.password && emailOptions.length > 0;
   const identifier = (attempt as { identifier?: string | null } | null)?.identifier ?? '';
+  // A sign-up on an instance that verifies by link only: nothing to type — the
+  // tab polls until the emailed link is opened (anywhere).
+  const linkOnlySignUp =
+    step.kind === 'collect_email_code' &&
+    attempt?.object === 'sign_up_attempt' &&
+    instanceSettings?.account?.emailVerification === 'link';
 
   /**
    * "Resend" waits out the server's `retry_after` when it answered 429, rather
@@ -230,7 +292,7 @@ export function AttemptFlow({
     name: string,
     labelKey: string,
     type = 'text',
-    extra: { autoComplete?: string; inputMode?: 'numeric' } = {},
+    extra: { autoComplete?: string; inputMode?: 'numeric' | 'tel' } = {},
   ) => (
     <label key={name} className={cls('formField', 'atlas-field')}>
       <span className={cls('formFieldLabel', 'atlas-field-label')}>{t(labelKey)}</span>
@@ -289,21 +351,173 @@ export function AttemptFlow({
         }
         return [field('password', 'signIn.passwordLabel', 'password', { autoComplete: 'current-password' })];
       case 'collect_second_factor':
-        return [field('code', 'mfa.codeLabel')];
+        // "Text me a code instead" / "Email me a code instead", where the app offers them.
+        return [
+          field('code', 'mfa.codeLabel'),
+          ...(mfaChoices.sms && attempt?.id
+            ? [<SecondFactorCodeOption key="sms-2fa" attemptId={attempt.id} strategy="sms" />]
+            : []),
+          ...(mfaChoices.emailCode && attempt?.id
+            ? [<SecondFactorCodeOption key="email-2fa" attemptId={attempt.id} strategy="email_code" />]
+            : []),
+          ...(mfaChoices.duo && attempt?.id
+            ? [<DuoSecondFactorOption key="duo-2fa" attemptId={attempt.id} onSubmit={onSubmit} />]
+            : []),
+        ];
       case 'enroll_second_factor':
         /**
-         * Two codes, not one. §5.6 wants consecutive codes so a phone with a
-         * fast clock fails here rather than on every sign-in afterwards, and
-         * asking for one would hide that failure until it was expensive.
+         * The authenticator app (QR code, setup key, then its code — two
+         * consecutive codes where the app asks for them, §5.6) or, where the
+         * app can text, a phone number and the texted code.
          */
         return [
-          field('code', 'mfa.enrollFirstCodeLabel'),
-          field('secondCode', 'mfa.enrollSecondCodeLabel'),
+          <MfaEnrollmentFields
+            key="enrol"
+            controller={enrolment.controller}
+            state={enrolment.state}
+            busy={busy}
+            field={field}
+            clearValues={() => setValues({})}
+          />,
         ];
       case 'collect_email_code':
+        if (linkOnlySignUp) {
+          return [
+            <p key="link-sent" className={cls('text', 'atlas-text')} data-atlas-link-sent="" aria-live="polite">
+              {t('signUp.linkSentTo', { email: attempt?.identifier ?? '' })}
+            </p>,
+            attempt ? <ResendSignUpLink key="resend" attempt={attempt} /> : null,
+          ];
+        }
         return [field('code', 'signIn.emailCodeLabel')];
       case 'collect_new_password':
         return [field('password', 'reset.newPasswordLabel', 'password')];
+      case 'complete_required_action': {
+        // The user owes a step (USR-04): ask for what the first one needs.
+        const owed = step.actions[0];
+        if (owed?.action === 'update_password') return [field('password', 'reset.newPasswordLabel', 'password', { autoComplete: 'new-password' })];
+        if (owed?.action === 'update_profile') {
+          return [
+            field('first_name', 'requiredAction.firstNameLabel', 'text', { autoComplete: 'given-name' }),
+            field('last_name', 'requiredAction.lastNameLabel', 'text', { autoComplete: 'family-name' }),
+          ];
+        }
+        if (owed?.action === 'complete_profile') {
+          // Progressive profiling: the fields the application asked for; optional-only steps can be skipped.
+          const asked = owed.fields ?? [];
+          return [
+            ...asked.map((f) => (
+              <label key={f.key} className={cls('formField', 'atlas-field')}>
+                <span className={cls('formFieldLabel', 'atlas-field-label')}>{f.label}{f.required ? ' *' : ''}</span>
+                <input
+                  className={inputClass}
+                  type={f.type === 'tel' || f.type === 'email' || f.type === 'url' || f.type === 'number' || f.type === 'date' ? f.type : 'text'}
+                  name={`field:${f.key}`}
+                  placeholder={f.placeholder ?? undefined}
+                  value={values[`field:${f.key}`] ?? ''}
+                  onChange={(event) => setValues((v) => ({ ...v, [`field:${f.key}`]: event.target.value }))}
+                />
+              </label>
+            )),
+            asked.every((f) => !f.required) ? (
+              <button key="skip" type="button" className={buttonClass} disabled={busy} onClick={() => onSubmit({ action: 'complete_profile', skip: 'true' })}>
+                {t('requiredAction.skip')}
+              </button>
+            ) : null,
+          ];
+        }
+        if (owed?.action === 'journey_form') {
+          // A server-driven form from the sign-in journey: rendered from its fields.
+          const asked = owed.fields ?? [];
+          const set = (key: string, v: string) => setValues((cur) => ({ ...cur, [`field:${key}`]: v }));
+          return [
+            owed.title ? <h2 key="title" className={cls('headerTitle', 'atlas-title')}>{owed.title}</h2> : null,
+            owed.intro ? <p key="intro" className={cls('text', 'atlas-text')}>{owed.intro}</p> : null,
+            ...asked.map((f) => {
+              const name = `field:${f.key}`;
+              const label = <span className={cls('formFieldLabel', 'atlas-field-label')}>{f.label}{f.required ? ' *' : ''}</span>;
+              if (f.type === 'checkbox') {
+                return (
+                  <label key={f.key} className={cls('formField', 'atlas-field')}>
+                    <input type="checkbox" name={name} checked={values[name] === 'true'} onChange={(event) => set(f.key, event.target.checked ? 'true' : 'false')} />
+                    {label}
+                  </label>
+                );
+              }
+              if (f.type === 'select') {
+                return (
+                  <label key={f.key} className={cls('formField', 'atlas-field')}>
+                    {label}
+                    <select className={inputClass} name={name} value={values[name] ?? ''} onChange={(event) => set(f.key, event.target.value)}>
+                      <option value="" />
+                      {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </label>
+                );
+              }
+              if (f.type === 'textarea') {
+                return (
+                  <label key={f.key} className={cls('formField', 'atlas-field')}>
+                    {label}
+                    <textarea className={inputClass} name={name} rows={3} placeholder={f.placeholder ?? undefined} value={values[name] ?? ''} onChange={(event) => set(f.key, event.target.value)} />
+                  </label>
+                );
+              }
+              return (
+                <label key={f.key} className={cls('formField', 'atlas-field')}>
+                  {label}
+                  <input
+                    className={inputClass}
+                    type={f.type === 'email' || f.type === 'number' || f.type === 'date' ? f.type : 'text'}
+                    name={name}
+                    placeholder={f.placeholder ?? undefined}
+                    value={values[name] ?? ''}
+                    onChange={(event) => set(f.key, event.target.value)}
+                  />
+                </label>
+              );
+            }),
+          ];
+        }
+        if (owed?.action === 'identity_verification') {
+          return [<IdentityVerificationStep key="idv" attempt={attempt} busy={busy} onSubmit={onSubmit} />];
+        }
+        if (owed?.action === 'verify_email') {
+          return [
+            <p key="verify" className={cls('text', 'atlas-text')}>{t('requiredAction.verifyIntro')}</p>,
+            <button
+              key="send"
+              type="button"
+              className={buttonClass}
+              disabled={busy}
+              onClick={() => onSubmit({ action: 'verify_email', step: 'send' })}
+            >
+              {t('requiredAction.sendCode')}
+            </button>,
+            field('code', 'signIn.emailCodeLabel', 'text', { autoComplete: 'one-time-code', inputMode: 'numeric' }),
+          ];
+        }
+        // An application-defined step: the app closes it, then the user signs in again.
+        return [
+          <p key="custom" className={cls('text', 'atlas-text')}>{t('requiredAction.customIntro')}</p>,
+          owed?.url ? (
+            <a key="go" className={buttonClass} href={owed.url} rel="noopener">
+              {t('signIn.submit')}
+            </a>
+          ) : null,
+        ];
+      }
+      case 'accept_policies':
+        // A required policy changed: scroll-mode ones in their dialog, the rest as checkboxes.
+        return [
+          <PolicyAcceptStep
+            key="policies"
+            attempt={attempt}
+            busy={busy}
+            onSubmit={onSubmit}
+            onDecline={onPolicyDecline}
+          />,
+        ];
       case 'collect_captcha':
         /**
          * §5 the server withheld the attempt until a captcha clears (an always-on
@@ -340,6 +554,10 @@ export function AttemptFlow({
     }
   };
 
+  if (recoveryCodes && recoveryCodes.length && onRecoveryCodesSaved) {
+    return <RecoveryCodes codes={recoveryCodes} busy={busy} onSaved={onRecoveryCodesSaved} />;
+  }
+
   return (
     <div className={cardClass}>
       {hideTitle ? null : <h1 className={titleClass}>{t(titleKey)}</h1>}
@@ -362,14 +580,35 @@ export function AttemptFlow({
             onSubmit(sent === 'email_code' ? { code: values.code ?? '' } : { password: values.password ?? '' });
             return;
           }
+          // Enrolment: text the code to the typed number, or confirm the factor.
+          if (step.kind === 'enroll_second_factor') {
+            void enrolment.controller.submit(values).then((next) => {
+              if (next) onSubmit(next);
+            });
+            return;
+          }
+          // Required actions: name the action; the emailed code is verified, not re-sent.
+          if (step.kind === 'complete_required_action') {
+            const owed = step.actions[0]?.action;
+            onSubmit({ ...values, action: owed ?? '', ...(owed === 'verify_email' ? { step: 'verify' } : {}) });
+            return;
+          }
           onSubmit(values);
         }}
       >
         {fields()}
         {step.kind === 'collect_identifier' || step.kind === 'collect_captcha' ? captcha : null}
-        {step.kind !== 'done' && step.kind !== 'await_oauth' && !noFirstFactor && sent !== 'email_link' && !sending ? (
-          <button className={buttonClass} disabled={busy} type="submit">
-            {t('signIn.submit')}
+        {step.kind !== 'done' &&
+        step.kind !== 'await_oauth' &&
+        step.kind !== 'accept_policies' &&
+        !(step.kind === 'complete_required_action' && step.actions[0]?.action === 'custom') &&
+        !noFirstFactor &&
+        sent !== 'email_link' &&
+        !sending &&
+        !linkOnlySignUp &&
+        (step.kind !== 'enroll_second_factor' || enrolSubmitKey) ? (
+          <button className={buttonClass} disabled={busy || (step.kind === 'enroll_second_factor' && enrolment.state.busy)} type="submit">
+            {t(enrolSubmitKey ?? 'signIn.submit')}
           </button>
         ) : null}
         {step.kind === 'collect_first_factor' && !noFirstFactor ? (
@@ -463,11 +702,18 @@ function navigateAfterComplete(afterUrl?: string): void {
  */
 export function useFlow({
   afterUrl,
+  afterSignIn,
   signInCaptcha = true,
   referral,
   referralConsent,
 }: {
   afterUrl?: string;
+  /**
+   * Runs once the session is held (after the re-boot), before `afterUrl`. Resolve
+   * `true` when it navigated the user itself (e.g. to a plan's Checkout), which
+   * skips `afterUrl`. `<SignUp planSelection>` uses it.
+   */
+  afterSignIn?: (client: FapiClient) => Promise<boolean>;
   /** See {@link FlowProps.referral}. */
   referral?: false;
   /** See {@link FlowProps.referralConsent}. */
@@ -532,6 +778,11 @@ export function useFlow({
   // sign-in identically.
   const finish = useCallback(
     async (next: FlowState) => {
+      // An enrolment's recovery codes are shown first; `saveRecoveryCodes` finishes.
+      if (pendingRecoveryCodes(next)) {
+        setState({ ...next, busy: false });
+        return;
+      }
       if (next.attempt?.status !== 'complete') {
         setState(next);
         return;
@@ -540,22 +791,30 @@ export function useFlow({
       // alone says nothing about whether the cookie was kept.
       setState({ ...next, busy: true });
       let exchanged = true;
+      // Where the sign-in journey sends the user next, when it names a place.
+      let journeyUrl: string | null = null;
       if (next.ticket) {
         const res = await client.post('/v1/client/tickets/exchange', {
           attempt_id: (next.attempt as { id?: string }).id,
           ticket: next.ticket,
         });
         exchanged = res.ok;
+        journeyUrl = res.ok ? journeyRedirectUrl(res.data) : null;
       }
       const kept = exchanged && (await reload());
       setState({ ...next, busy: false, sessionKept: kept });
       if (!kept) return;
       // §R3.2 wake sibling tabs now, rather than when they next gain focus.
       broadcastSessionChange();
+      if (afterSignIn && (await afterSignIn(client))) return;
+      if (journeyUrl && typeof window !== 'undefined') {
+        window.location.assign(journeyUrl);
+        return;
+      }
       // §10.2 send the user on once signed-in — no-op when afterUrl is unset.
       navigateAfterComplete(afterUrl);
     },
-    [afterUrl, broadcastSessionChange, client, reload],
+    [afterSignIn, afterUrl, broadcastSessionChange, client, reload],
   );
 
   const submit = useCallback(
@@ -670,6 +929,11 @@ export function useFlow({
         const kept = res.ok && (await reload());
         setState((current) => ({ ...current, sessionKept: kept }));
         if (!kept) return;
+        const journeyUrl = journeyRedirectUrl(res.data);
+        if (journeyUrl && typeof window !== 'undefined') {
+          window.location.assign(journeyUrl);
+          return;
+        }
         // §10.2 a cross-device sign-in that completes here redirects too.
         navigateAfterComplete(afterUrl);
       })();
@@ -678,7 +942,12 @@ export function useFlow({
     return () => clearInterval(timer);
   }, [afterUrl, client, reload, state]);
 
-  return { state, setState, submit, client, finish, captcha, prepare, usePassword };
+  /** "I've saved my codes": forget the recovery codes and finish the sign-in. */
+  const saveRecoveryCodes = useCallback(() => {
+    void finish(acknowledgeRecoveryCodes(state));
+  }, [finish, state]);
+
+  return { state, setState, submit, client, finish, captcha, prepare, usePassword, saveRecoveryCodes };
 }
 
 /** Google's multi-color "G" mark — trusted, static, first-party SVG. */
@@ -1193,6 +1462,143 @@ export function AtlasSsoButton({
  * the returned ticket for a session. Previously `<SignIn>` rendered only the
  * Google button, so an instance's other social providers never appeared.
  */
+/** "Resend link" on a link-only sign-up: a fresh email (the earlier link stops working). */
+/**
+ * The `identity_verification` required action: a start button, then the
+ * verification service's page in a new tab, and a poll (plus a manual
+ * "I've finished") that re-reads the verdict. The sign-in continues on its own
+ * once the check is approved; a declined or in-review check says so.
+ */
+export const IDENTITY_POLL_MS = 4_000;
+export function IdentityVerificationStep({ attempt, busy, onSubmit }: { attempt: AttemptView | null; busy: boolean; onSubmit(values: Record<string, string>): void }) {
+  const t = useText();
+  const cls = useClasses();
+  const buttonClass = useClass('formButtonPrimary', 'atlas-button');
+  const idv = attempt?.identity_verification ?? null;
+  const url = idv?.url ?? null;
+  const submitRef = useRef(onSubmit);
+  submitRef.current = onSubmit;
+  useEffect(() => {
+    if (!url) return;
+    const timer = setInterval(() => submitRef.current({ action: 'identity_verification' }), IDENTITY_POLL_MS);
+    return () => clearInterval(timer);
+  }, [url]);
+  const note = idv?.status === 'declined' ? t('requiredAction.idvDeclined') : idv?.status === 'needs_review' ? t('requiredAction.idvReview') : url ? t('requiredAction.idvWaiting') : null;
+  const returnTo = typeof window !== 'undefined' && window.location.protocol === 'https:' ? window.location.href : undefined;
+  return (
+    <div data-atlas-identity-verification="">
+      <p className={cls('text', 'atlas-text')}>{t('requiredAction.idvIntro')}</p>
+      {url ? (
+        <>
+          <a className={buttonClass} href={url} target="_blank" rel="noopener noreferrer">
+            {t('requiredAction.idvOpen')}
+          </a>
+          <button type="button" className={buttonClass} disabled={busy} onClick={() => onSubmit({ action: 'identity_verification' })}>
+            {t('requiredAction.idvCheck')}
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          className={buttonClass}
+          disabled={busy}
+          onClick={() => onSubmit({ action: 'identity_verification', step: 'start', ...(returnTo ? { redirect_url: returnTo } : {}) })}
+        >
+          {t('requiredAction.idvStart')}
+        </button>
+      )}
+      {note ? <p className={cls('text', 'atlas-text')} role="status" aria-live="polite">{note}</p> : null}
+    </div>
+  );
+}
+
+function ResendSignUpLink({ attempt }: { attempt: AttemptView }) {
+  const client = useFapiClient();
+  const t = useText();
+  const errorText = useErrorText();
+  const cls = useClasses();
+  const [state, setState] = useState<{ busy?: boolean; sent?: boolean; error?: FieldError }>({});
+  const send = () => {
+    setState({ busy: true });
+    void resendSignUpVerification(client, { attempt, errors: [], busy: true, pollSecret: null, ticket: null }).then((next) =>
+      setState(next.errors[0] ? { error: next.errors[0] } : { sent: true }),
+    );
+  };
+  return (
+    <>
+      <button type="button" className={cls('link', 'atlas-link')} data-atlas-resend="" disabled={state.busy} onClick={send}>
+        {state.busy ? t('signIn.sending') : t('signIn.resendLink')}
+      </button>
+      {state.error ? (
+        <div className={cls('alert', 'atlas-alert')} role="alert">
+          {errorText(state.error)}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The method this browser last signed in with (`password`, `oauth_github`, …),
+ * for the "Last used" badge — null until known, when none is remembered, or
+ * when the instance turned the hint off.
+ */
+export function useLastSignInMethod(client: FapiClient): string | null {
+  const { instanceSettings } = useAtlas();
+  const enabled = instanceSettings?.account?.lastSignInMethod === true;
+  const [method, setMethod] = useState<string | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    void fetchLastSignInMethod(client).then((m) => {
+      if (live) setMethod(m);
+    });
+    return () => {
+      live = false;
+    };
+  }, [client, enabled]);
+  return enabled ? method : null;
+}
+
+/** The small "Last used" badge on a sign-in option. */
+export function LastUsedBadge() {
+  const t = useText();
+  const cls = useClasses();
+  return (
+    <span className={cls('badge', 'atlas-badge atlas-last-used')} data-atlas="last-used" style={LAST_USED_BADGE_STYLE}>
+      {t('signIn.lastUsed')}
+    </span>
+  );
+}
+
+const LAST_USED_BADGE_STYLE = {
+  marginInlineStart: 'auto',
+  fontSize: '0.75em',
+  padding: '1px 6px',
+  borderRadius: 999,
+  border: '1px solid currentColor',
+  opacity: 0.7,
+  whiteSpace: 'nowrap',
+} as const;
+
+/**
+ * Above the identifier step: which first-party method (password, email code,
+ * passkey, phone) this browser used last. Social methods are badged on their
+ * own buttons instead.
+ */
+export function LastUsedHint({ client }: { client: FapiClient }) {
+  const last = useLastSignInMethod(client);
+  const t = useText();
+  const cls = useClasses();
+  const label = lastUsedMethodLabel(last, t);
+  if (!label) return null;
+  return (
+    <p className={cls('text', 'atlas-text atlas-last-used-hint')} data-atlas="last-used" data-atlas-method={last}>
+      {t('signIn.lastUsed')}: {label}
+    </p>
+  );
+}
+
 export function SocialSignInButtons({
   client,
   onComplete,
@@ -1215,6 +1621,7 @@ export function SocialSignInButtons({
   const errorText = useErrorText();
   const effectiveMode = oauthMode ?? providerOauthMode ?? 'redirect';
   const { environment, loadEnvironment, appearanceData } = useAtlas();
+  const lastMethod = useLastSignInMethod(client);
   // From the provider's own `/v1/appearance` (server-seeded or fetched once); no
   // Atlas button until it is known.
   const atlasConnection = useMemo(
@@ -1324,6 +1731,11 @@ export function SocialSignInButtons({
           onProviderUnavailable ? (reason) => onProviderUnavailable('google', reason) : undefined
         }
       />
+      {isLastUsed(lastMethod, 'google') && !redirectProviders.some((p) => p.provider === 'google') ? (
+        <div data-atlas-provider="google" style={{ display: 'flex' }}>
+          <LastUsedBadge />
+        </div>
+      ) : null}
       {redirectProviders.map(({ provider, label, icon }) => (
         <div
           key={provider}
@@ -1355,6 +1767,7 @@ export function SocialSignInButtons({
           <span className={cls('socialButtonText', 'atlas-social-label')}>
             {label ?? `Continue with ${providerLabel(provider)}`}
           </span>
+          {isLastUsed(lastMethod, provider) ? <LastUsedBadge /> : null}
         </div>
       ))}
 {atlasConnection ? (

@@ -1,0 +1,8 @@
+import { createApp } from 'vue';
+import OktaVue from '@okta/okta-vue';
+import { OktaAuth } from '@okta/okta-auth-js';
+import App from './App.vue';
+
+const oktaAuth = new OktaAuth({ issuer: import.meta.env.VITE_OKTA_ISSUER, clientId: import.meta.env.VITE_OKTA_CLIENT_ID });
+
+createApp(App).use(OktaVue, { oktaAuth }).mount('#app');

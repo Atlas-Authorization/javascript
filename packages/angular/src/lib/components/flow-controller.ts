@@ -4,8 +4,17 @@ import {
   advanceWithCaptcha,
   atlasCaptchaLabels,
   createCaptchaController,
+  createPasskeySignUp,
   createSignUp,
+  finishPasskeySignUp,
   fetchInstanceSettings,
+  fetchLastSignInMethod,
+  createMfaEnrollment,
+  acknowledgeRecoveryCodes,
+  pendingRecoveryCodes,
+  mfaChoicesFrom,
+  prepareSecondFactorCode,
+  resendSignUpVerification,
   flowNeedsCaptcha,
   signInCaptchaOptions,
   flowFromPending,
@@ -16,9 +25,14 @@ import {
   prepareFactor,
   planFirstFactor,
   shouldKeepPolling,
+  PolicyAcceptanceController,
+  loadPolicies,
   type CaptchaController,
   type FlowState,
   type InstanceSettings,
+  type MfaChoices,
+  type MfaEnrollmentController,
+  type MfaEnrollmentState,
 } from '@atlasauth/js';
 import { EN_US, translate } from '../i18n';
 
@@ -44,6 +58,11 @@ export class AtlasFlowController {
    * resolves, or when the server could not be reached.
    */
   readonly settings = signal<InstanceSettings | null>(null);
+  /**
+   * The method this browser last signed in with (`password`, `oauth_github`, …)
+   * for the "Last used" hint; null when none, or the instance turned it off.
+   */
+  readonly lastMethod = signal<string | null>(null);
   /** The sign-in captcha (identifier step / `needs_captcha` challenge). */
   readonly captcha: CaptchaController = createCaptchaController(undefined, {
     // The Atlas captcha's words follow the form's catalog (read when drawn).
@@ -63,6 +82,26 @@ export class AtlasFlowController {
    * otherwise.
    */
   readonly preparedFactor = signal<'email_code' | null>(null);
+  /**
+   * "Email me a code instead" at the second factor ({@link sendEmailSecondFactor}):
+   * in flight, where the code went, or why it was not sent. Null until asked,
+   * and again once the flow leaves that step.
+   */
+  readonly emailSecondFactor = signal<{ busy?: boolean; sentTo?: string; error?: string } | null>(null);
+  /** "Text me a code instead" at the second factor ({@link sendSmsSecondFactor}): as {@link emailSecondFactor}. */
+  readonly smsSecondFactor = signal<{ busy?: boolean; sentTo?: string; error?: string } | null>(null);
+  /**
+   * The MFA enrolment step (`needs_mfa_enrollment`): the authenticator app's
+   * setup (QR code, setup key) or a texted code. Started and reset with the flow.
+   */
+  readonly enrollment: MfaEnrollmentController;
+  /** {@link enrollment}'s state, for templates. */
+  readonly enrollmentState: WritableSignal<MfaEnrollmentState>;
+  /**
+   * The instance's policies (terms, privacy, …) for the create-account form:
+   * {@link create} sends their acceptances and reloads them after a refusal.
+   */
+  readonly policies = new PolicyAcceptanceController([]);
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private identifier = '';
 
@@ -76,7 +115,23 @@ export class AtlasFlowController {
     // Seeded from a redirect that came back mid-flow (e.g. OAuth needing a second
     // factor) so the user resumes at the demanded step instead of starting over.
     this.state = signal<FlowState>(pending ? flowFromPending(pending) : initialFlow);
+    this.enrollment = createMfaEnrollment(this.client, () => this.mfaChoices());
+    this.enrollmentState = signal<MfaEnrollmentState>(this.enrollment.state);
+    this.enrollment.subscribe((next) => this.enrollmentState.set(next));
     this.syncCaptcha();
+    this.syncEnrollment();
+  }
+
+  /** What the app lets the MFA steps offer (from {@link settings}). */
+  mfaChoices(): MfaChoices {
+    return mfaChoicesFrom(this.settings()?.account);
+  }
+
+  /** Start the enrolment step for its attempt, or reset it once the flow leaves. */
+  private syncEnrollment(): void {
+    const attempt = this.state().attempt;
+    if (attempt?.status === 'needs_mfa_enrollment' && attempt.id) this.enrollment.start(attempt.id);
+    else this.enrollment.reset();
   }
 
   /** Fetch the instance's public settings and draw whatever captcha they require. */
@@ -85,6 +140,7 @@ export class AtlasFlowController {
     if (loaded) {
       this.settings.set(loaded);
       this.syncCaptcha();
+      if (loaded.account.lastSignInMethod) this.lastMethod.set(await fetchLastSignInMethod(this.client));
     }
   }
 
@@ -145,10 +201,17 @@ export class AtlasFlowController {
   }
 
   private setState(next: FlowState): void {
+    const previousId = this.state().attempt?.id ?? null;
     this.state.set(next);
     // A prepared factor belongs to the first-factor step it was sent for.
     if (next.attempt?.status !== 'needs_first_factor') this.preparedFactor.set(null);
+    // An emailed second-factor code belongs to the second-factor step of this attempt.
+    if (next.attempt?.status !== 'needs_second_factor' || (next.attempt?.id ?? null) !== previousId) {
+      this.emailSecondFactor.set(null);
+      this.smsSecondFactor.set(null);
+    }
     this.syncCaptcha();
+    this.syncEnrollment();
     this.autoSend();
   }
 
@@ -184,6 +247,19 @@ export class AtlasFlowController {
     await this.finish(out.state);
   }
 
+  /** Load the sign-up's policies into {@link policies} (`<atlas-sign-up>` calls it on init). */
+  async loadPolicies(locale?: string): Promise<void> {
+    this.policies.setPolicies(await loadPolicies(this.client, { locale }));
+  }
+
+  /** The user declined a policy a sign-in was waiting on: cancel the attempt and say why. */
+  declinePolicy(title: string): void {
+    this.state.set({
+      ...initialFlow,
+      errors: [{ code: 'POLICY_DECLINED', message: this.t('policy.declined').replace('{policy}', title) }],
+    });
+  }
+
   /**
    * Create an account (`POST /v1/client/sign_ups`) from a create-account form's
    * values — email, password and any configured sign-up fields — carrying the
@@ -196,11 +272,86 @@ export class AtlasFlowController {
       consent,
       captcha: this.signUpCaptcha,
       t: this.t,
+      policies: this.policies,
     });
     await this.finish(next);
   }
 
+  /**
+   * "Email me a code instead" at the second factor (the instance's
+   * `account.emailSecondFactor`): mails a code to the account's verified email;
+   * it is then posted with {@link submit} like any 2FA code.
+   */
+  async sendEmailSecondFactor(): Promise<void> {
+    await this.sendSecondFactorCode('email_code', this.emailSecondFactor);
+  }
+
+  /**
+   * "Text me a code instead" at the second factor (where the app offers texted
+   * codes, {@link mfaChoices}`().sms`): texts a code to the account's enrolled
+   * phone; it is then posted with {@link submit} like any 2FA code.
+   */
+  async sendSmsSecondFactor(): Promise<void> {
+    await this.sendSecondFactorCode('sms', this.smsSecondFactor);
+  }
+
+  private async sendSecondFactorCode(
+    strategy: 'sms' | 'email_code',
+    out: WritableSignal<{ busy?: boolean; sentTo?: string; error?: string } | null>,
+  ): Promise<void> {
+    const id = this.state().attempt?.id;
+    if (!id) return;
+    out.set({ busy: true });
+    try {
+      const { sentTo } = await prepareSecondFactorCode(this.client, id, strategy);
+      out.set({ sentTo });
+    } catch (error) {
+      out.set({ error: error instanceof Error ? error.message : this.t('error.generic') });
+    }
+  }
+
+  /** Resend a sign-up's emailed code / link (the earlier one stops working). */
+  async resendSignUp(): Promise<void> {
+    this.state.update((current) => ({ ...current, busy: true, errors: [] }));
+    this.state.set(await resendSignUpVerification(this.client, this.state()));
+  }
+
+  /**
+   * Start a passkey-only sign-up (`POST /v1/client/sign_ups/passkey`) from the
+   * create-account form's values — no password. Offered when the instance's
+   * `account.passkeySignUp` is set.
+   */
+  async createWithPasskey(values: Record<string, string>, consent = true): Promise<void> {
+    this.state.update((current) => ({ ...current, busy: true, errors: [] }));
+    await this.finish(await createPasskeySignUp(this.client, values, { consent, captcha: this.signUpCaptcha, t: this.t, policies: this.policies }));
+  }
+
+  /** The passkey-only sign-up's last step: create the passkey, and with it the account. */
+  async createPasskey(): Promise<void> {
+    this.state.update((current) => ({ ...current, busy: true, errors: [] }));
+    await this.finish(await finishPasskeySignUp(this.client, this.state(), { t: this.t }));
+  }
+
+  /**
+   * The recovery codes an MFA enrolment just completed the sign-in with, shown
+   * once before it finishes ({@link saveRecoveryCodes}); null otherwise. They
+   * live only in this controller's memory.
+   */
+  recoveryCodes(): string[] | null {
+    return pendingRecoveryCodes(this.state());
+  }
+
+  /** "I've saved my codes": forget the recovery codes and finish the sign-in. */
+  async saveRecoveryCodes(): Promise<void> {
+    await this.finish(acknowledgeRecoveryCodes(this.state()));
+  }
+
   private async finish(next: FlowState): Promise<void> {
+    // An enrolment's recovery codes are shown first; `saveRecoveryCodes` finishes.
+    if (pendingRecoveryCodes(next)) {
+      this.setState({ ...next, busy: false });
+      return;
+    }
     if (next.attempt?.status === 'complete') {
       // Stays busy until this browser actually holds the session: the completion
       // alone says nothing about whether the cookie was kept.
@@ -237,6 +388,8 @@ export class AtlasFlowController {
       void (async () => {
         const { state: next, ticket } = await pollAttempt(this.client, this.state());
         this.setState(next);
+        // e.g. a passkey sign-up whose email was just proven: only this tab can go on.
+        if (!ticket && !shouldKeepPolling(next)) this.stopPolling();
         if (!ticket || !next.attempt) return;
 
         // The ticket is exchanged by a normal request, so no session token ever

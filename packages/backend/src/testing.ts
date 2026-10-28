@@ -3,10 +3,10 @@ import type { Jwks } from './jwks-cache';
 import type { SessionClaims } from './verify';
 import {
   signAtlasReferralCall,
-  signReferallyCall,
+  signReferalliCall,
   signReferralUpdatedEvent,
   type AtlasReferralCallOptions,
-  type ReferallyCallOptions,
+  type ReferalliCallOptions,
   type ReferralUpdatedEventOptions,
   type SignedReferralCall,
 } from './referral-test-calls';
@@ -28,6 +28,8 @@ import {
 
 /** Options for {@link createTestIssuer}. All optional — the defaults are usable as-is. */
 export interface CreateTestIssuerOptions {
+  /** Signing algorithm of the test key: RS256 (default) or ES256, like an Atlas instance. */
+  alg?: 'RS256' | 'ES256';
   /** The `iss` the fixture stamps on every token. Defaults to a local test URL. */
   issuer?: string;
   /** The `kid` on the signing key and in the published JWKS. */
@@ -81,8 +83,52 @@ export const TEST_TOKEN_TAMPERS: readonly TestTokenTamper[] = [
   'alg_none',
 ];
 
+/**
+ * The organization / enterprise SSO context of a fixture ID token, set as the
+ * claims Atlas uses (`org_id`, `org_slug`, `org_role`, `org_permissions`,
+ * `orgs`, `sso_*`). Explicit `claims` still win.
+ */
+export interface TestTenantContext {
+  /** The organization the sign-in was made in. `role` defaults to `org:member`. */
+  organization?: { id: string; slug: string; role?: string; permissions?: string[] };
+  /** Every membership (the `organizations` scope's `orgs` claim). */
+  organizations?: Array<{ id: string; slug: string; role: string }>;
+  /** The enterprise SSO connection the user signed in through. */
+  sso?: {
+    connectionId: string;
+    /** `sso_organization_id`: the organization that owns the connection. */
+    organizationId?: string;
+    /** `sso_connection_type`. Default `oidc`. */
+    type?: 'saml' | 'oidc';
+    tenantId?: string;
+    issuer?: string;
+    domain?: string;
+  };
+}
+
+/** The claims a {@link TestTenantContext} stands for. */
+export function testTenantClaims(context: TestTenantContext = {}): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (context.organization) {
+    out.org_id = context.organization.id;
+    out.org_slug = context.organization.slug;
+    out.org_role = context.organization.role ?? 'org:member';
+    out.org_permissions = context.organization.permissions ?? [];
+  }
+  if (context.organizations) out.orgs = context.organizations;
+  if (context.sso) {
+    out.sso_connection_id = context.sso.connectionId;
+    if (context.sso.organizationId) out.sso_organization_id = context.sso.organizationId;
+    out.sso_connection_type = context.sso.type ?? 'oidc';
+    if (context.sso.tenantId) out.sso_tenant_id = context.sso.tenantId;
+    if (context.sso.issuer) out.sso_issuer = context.sso.issuer;
+    if (context.sso.domain) out.sso_domain = context.sso.domain;
+  }
+  return out;
+}
+
 /** Options for {@link TestIssuer.mintIdToken}. */
-export interface MintIdTokenOptions {
+export interface MintIdTokenOptions extends TestTenantContext {
   /** The audience. Default: the fixture's `clientId`. */
   aud?: string | string[];
   /** The nonce the sign-in sent. */
@@ -94,8 +140,12 @@ export interface MintIdTokenOptions {
   tamper?: TestTokenTamper;
 }
 
-/** Options for {@link TestIssuer.authorize}. */
-export interface TestAuthorizeOptions {
+/**
+ * Options for {@link TestIssuer.authorize}. Without an explicit `organization`,
+ * an `organization` parameter on the authorize URL becomes the ID token's org
+ * (`{ id: <value>, slug: <value> }`), as Atlas would for a member.
+ */
+export interface TestAuthorizeOptions extends TestTenantContext {
   /** The signed-in user. Default `user_test`. */
   sub?: string;
   /** Extra ID-token claims (`email`, `email_verified`, `name`, …), or overrides. */
@@ -137,7 +187,7 @@ export interface TestIssuer {
   /** The client id the fake token endpoint serves (`clientId` option). */
   clientId: string;
   /**
-   * Mint an OIDC ID token as Atlas's token endpoint would: RS256, `aud` = the
+   * Mint an OIDC ID token as Atlas's token endpoint would: the issuer's alg, `aud` = the
    * client id, `nonce`, `iat`/`exp`, `sub`, `auth_time`, `sid`. `claims`
    * override any default; `tamper` forges one of the six negative cases.
    */
@@ -163,10 +213,12 @@ export interface TestIssuer {
    */
   referralCall(options: AtlasReferralCallOptions): SignedReferralCall;
   /**
-   * A signed Referally connection call, as an instance with provider
-   * `referally` sends it, to run against a local Referally in your tests.
+   * A signed Referalli connection call, as an instance with provider
+   * `referalli` sends it, to run against a local Referalli in your tests.
    */
-  referallyCall(options: ReferallyCallOptions): SignedReferralCall;
+  referalliCall(options: ReferalliCallOptions): SignedReferralCall;
+  /** @deprecated The old spelling of {@link TestIssuer.referalliCall}; same function. */
+  referallyCall(options: ReferalliCallOptions): SignedReferralCall;
   /**
    * A signed `referral.updated` event, as a platform on the Atlas referral
    * protocol sends it to an instance's inbound URL (two-way sync).
@@ -189,7 +241,7 @@ const DEFAULT_CLIENT_ID = 'client_test';
 const DEFAULT_ID_TOKEN_TTL_SECONDS = 3600;
 
 /**
- * Build an offline test issuer. Generates an RS256 keypair, exposes its public
+ * Build an offline test issuer. Generates an RS256 (or, with `alg`, ES256) keypair, exposes its public
  * JWKS, and returns a `mintSession` that signs tokens with the private half.
  *
  * ```ts
@@ -207,10 +259,11 @@ export async function createTestIssuer(
   const ttlSeconds = options.ttlSeconds ?? DEFAULT_TTL_SECONDS;
   const clock = options.now ?? Date.now;
 
-  const { privateKey, publicKey } = await generateKeyPair('RS256');
+  const alg = options.alg ?? 'RS256';
+  const { privateKey, publicKey } = await generateKeyPair(alg);
   // The published key: the public half plus the `kid`/`alg`/`use` a JWKS
   // consumer keys on — the same shape Atlas serves at `/.well-known/jwks.json`.
-  const publicJwk = { ...(await exportJWK(publicKey)), kid, alg: 'RS256', use: 'sig' };
+  const publicJwk = { ...(await exportJWK(publicKey)), kid, alg, use: 'sig' };
   const jwks: Jwks = { keys: [publicJwk] };
 
   const clientId = options.clientId ?? DEFAULT_CLIENT_ID;
@@ -232,10 +285,10 @@ export async function createTestIssuer(
     if (tamper === 'alg_none') return new UnsecuredJWT(payload).encode();
     let key = privateKey;
     if (tamper === 'foreign_key') {
-      foreignKey ??= generateKeyPair('RS256').then((pair) => pair.privateKey);
+      foreignKey ??= generateKeyPair(alg).then((pair) => pair.privateKey);
       key = await foreignKey;
     }
-    return new SignJWT(payload).setProtectedHeader({ alg: 'RS256', kid, typ: 'JWT' }).sign(key);
+    return new SignJWT(payload).setProtectedHeader({ alg, kid, typ: 'JWT' }).sign(key);
   }
 
   function applyTamper(payload: Record<string, unknown>, tamper: TestTokenTamper | undefined, nowSeconds: number) {
@@ -290,6 +343,7 @@ export async function createTestIssuer(
       amr: ['pwd'],
       ...(mintOptions.nonce !== undefined ? { nonce: mintOptions.nonce } : {}),
       ...(mintOptions.accessToken ? { at_hash: await atHash(mintOptions.accessToken) } : {}),
+      ...testTenantClaims(mintOptions),
       ...claims,
     };
     return sign(applyTamper(payload, mintOptions.tamper, nowSeconds), mintOptions.tamper);
@@ -328,7 +382,15 @@ export async function createTestIssuer(
         challenge: p.get('code_challenge') ?? undefined,
         scope: p.get('scope') ?? 'openid',
         sub: authOptions.sub ?? 'user_test',
-        claims: authOptions.claims ?? {},
+        claims: {
+          ...testTenantClaims({
+            ...authOptions,
+            organization:
+              authOptions.organization ??
+              (p.get('organization') ? { id: p.get('organization')!, slug: p.get('organization')! } : undefined),
+          }),
+          ...(authOptions.claims ?? {}),
+        },
         tamper: authOptions.tamper,
       });
       back.searchParams.set('code', code);
@@ -396,7 +458,7 @@ export async function createTestIssuer(
     end_session_endpoint: endpoints.endSession,
     response_types_supported: ['code'],
     subject_types_supported: ['public'],
-    id_token_signing_alg_values_supported: ['RS256'],
+    id_token_signing_alg_values_supported: [alg],
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
   };
@@ -420,7 +482,8 @@ export async function createTestIssuer(
     mintSession,
     mintIdToken,
     referralCall: (o) => signAtlasReferralCall({ ...o, now: o.now ?? clock() }),
-    referallyCall: (o) => signReferallyCall({ ...o, now: o.now ?? clock() }),
+    referalliCall: (o) => signReferalliCall({ ...o, now: o.now ?? clock() }),
+    referallyCall: (o) => signReferalliCall({ ...o, now: o.now ?? clock() }),
     referralUpdatedEvent: (o) => signReferralUpdatedEvent({ ...o, now: o.now ?? clock() }),
     authorize,
     fetch: fakeFetch,

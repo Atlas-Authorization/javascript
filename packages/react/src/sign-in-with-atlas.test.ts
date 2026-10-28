@@ -2,8 +2,11 @@ import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  atlasIdLabels,
   buildAtlasAuthorizeUrl,
   completeSignInWithAtlas,
+  listenAtlasIdEvents,
+  oneTapWithAtlas,
   signInWithAtlasPopup,
   SignInWithAtlasButton,
 } from './sign-in-with-atlas';
@@ -283,9 +286,10 @@ describe('SignInWithAtlasButton look (parity with the hosted script)', () => {
     const html = renderToString(createElement(SignInWithAtlasButton, opts));
     expect(html).toContain('M12 2 3 21h4l5-11 5 11h4L12 2z');
     const dark = button(opts).props.style;
-    expect(dark).toMatchObject({ background: '#0f1117', color: '#fff', borderColor: '#0f1117', height: 44, borderRadius: 6 });
+    // The script's colours, behind the host page's --atlas-host-* variables.
+    expect(dark).toMatchObject({ background: 'var(--atlas-host-accent, #0f1117)', color: 'var(--atlas-host-accent-ink, #fff)', borderColor: 'var(--atlas-host-accent, #0f1117)', height: 44, borderRadius: 6 });
     expect(String(dark.font)).toMatch(/^600 15px\/1 /);
-    expect(button({ ...opts, theme: 'light' }).props.style).toMatchObject({ background: '#fff', color: '#0f1117', borderColor: '#dadce0' });
+    expect(button({ ...opts, theme: 'light' }).props.style).toMatchObject({ background: 'var(--atlas-host-surface, #fff)', color: 'var(--atlas-host-ink, #0f1117)', borderColor: 'var(--atlas-host-line, #dadce0)' });
     expect(button({ ...opts, size: 'small', shape: 'pill' }).props.style).toMatchObject({ height: 32, borderRadius: 999 });
   });
 });
@@ -469,5 +473,69 @@ describe('Sign in with Atlas carries the referral', () => {
       'granted',
     ]);
     expect(p.get('ref_captured_at')).toBe(new Date(1_790_000_000 * 1000).toISOString());
+  });
+});
+
+describe('SignInWithAtlasButton accessibility and atlasid:* events', () => {
+  it('labels in the requested language and sets a matching aria-label', () => {
+    const html = renderToString(createElement(SignInWithAtlasButton, { ...opts, text: 'continue', locale: 'es-MX' }));
+    expect(html).toContain('Continuar con Atlas');
+    expect(html).toContain('aria-label="Continuar con Atlas"');
+    expect(atlasIdLabels('pt').signin).toBe('Entrar com Atlas');
+    expect(atlasIdLabels('xx').signup).toBe('Sign up with Atlas');
+  });
+
+  it('dispatches atlasid:ready and sets data-atlasid-state when mounted', () => {
+    const events: Array<{ type: string; detail: unknown }> = [];
+    const attrs: Record<string, string> = {};
+    const node = {
+      hasAttribute: (k: string) => k in attrs,
+      setAttribute: (k: string, v: string) => void (attrs[k] = v),
+      dispatchEvent: (e: CustomEvent) => (events.push({ type: e.type, detail: e.detail }), true),
+    };
+    const onReady = vi.fn();
+    const el = SignInWithAtlasButton({ ...opts, onReady }) as unknown as { ref: (n: unknown) => void } & { props: unknown };
+    (el as unknown as { ref: (n: unknown) => void }).ref(node);
+    expect(attrs['data-atlasid-state']).toBe('ready');
+    expect(events.map((e) => e.type)).toEqual(['atlasid:ready']);
+    expect(onReady).toHaveBeenCalledWith({ version: 'react' });
+  });
+
+  it('listenAtlasIdEvents subscribes and unsubscribes', () => {
+    const target = new EventTarget();
+    const onError = vi.fn();
+    const off = listenAtlasIdEvents(target, { onError });
+    target.dispatchEvent(new CustomEvent('atlasid:error', { detail: { error: 'csp_blocked' } }));
+    off();
+    target.dispatchEvent(new CustomEvent('atlasid:error', { detail: { error: 'again' } }));
+    expect(onError.mock.calls).toEqual([[{ error: 'csp_blocked' }]]);
+  });
+
+  it('the authorize URL carries the button marker', async () => {
+    const url = new URL(await buildAtlasAuthorizeUrl(opts));
+    expect(url.searchParams.get('atlasid_button')).toBe('react');
+  });
+
+  it('oneTapWithAtlas reports fedcm_unavailable without FedCM', async () => {
+    await expect(oneTapWithAtlas({ clientId: 'cid' })).rejects.toThrow('fedcm_unavailable');
+  });
+
+  it('oneTapWithAtlas verifies the issuer, audience and nonce of the FedCM token', async () => {
+    let req: { identity: { providers: Array<{ nonce: string; configURL: string }> } } | null = null;
+    vi.stubGlobal('IdentityCredential', function IdentityCredential() {});
+    vi.stubGlobal('navigator', {
+      credentials: {
+        get: async (r: typeof req) => {
+          req = r;
+          const nonce = r!.identity.providers[0]!.nonce;
+          return { token: jwt({ iss: 'https://atlasauth.net', aud: 'cid', nonce }) };
+        },
+      },
+    });
+    const r = await oneTapWithAtlas({ clientId: 'cid' });
+    expect(r.via).toBe('fedcm');
+    expect(req!.identity.providers[0]!.configURL).toBe('https://atlasauth.net/oauth2/fedcm/config.json');
+    vi.stubGlobal('navigator', { credentials: { get: async () => ({ token: jwt({ iss: 'https://atlasauth.net', aud: 'cid', nonce: 'other' }) }) } });
+    await expect(oneTapWithAtlas({ clientId: 'cid' })).rejects.toThrow('nonce_mismatch');
   });
 });

@@ -134,6 +134,26 @@ if (session) mgr.setSession(session);
 const headers = await mgr.authHeaders(); // { Authorization, 'x-publishable-key' }
 ```
 
+## Policy acceptance (terms of service, privacy)
+
+When the app defines policies in the Atlas dashboard, sign-up must carry the user's acceptance and sign-in can be held until a
+newer version is accepted. The components are React Native views (see `@atlasauth/react-native`); the hooks use this package's
+provider and bearer client.
+
+```tsx
+import { usePolicies, PolicyConsent, PolicyClickwrap, PolicyScrollHost, useExpoFapiClient } from '@atlasauth/expo';
+import { startSignUp } from '@atlasauth/js';
+
+const { controller, canSubmit, build } = usePolicies();
+const client = useExpoFapiClient();
+// <PolicyConsent controller={controller} /> ... then, on submit (after <PolicyScrollHost> reads any `scroll` policies):
+await startSignUp(client, { email, password, policyAcceptances: build() });
+```
+
+A sign-in held at `needs_policy_acceptance` is continued with `acceptAttemptPolicies(client, state, controller.build())` from
+`@atlasauth/js` (`usePendingPolicies({ pendingPolicies })` builds the controller and `<PolicyAcceptStep>` draws the step).
+`<PolicyGate>` shows a signed-in banner and re-acceptance modal.
+
 ## Companion packages
 
 | Package | What it adds |

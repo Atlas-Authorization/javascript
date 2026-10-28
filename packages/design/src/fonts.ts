@@ -64,8 +64,28 @@ export const FONT_IDS = FONT_CATALOG.map((f) => f.id) as readonly string[];
 
 const BY_ID = new Map(FONT_CATALOG.map((f) => [f.id, f]));
 
-/** The catalog entry for an id, or undefined when it is not on the list. */
+/**
+ * A self-hosted brand font: `custom-<32 hex>`, the first 32 hex digits of the
+ * SHA-256 of the mirrored font file. Atlas stores the file (imported from a
+ * brand document's font URL) and serves it from its own origin; the CSS family
+ * name is derived from the id, never from caller text.
+ */
+export const CUSTOM_FONT_ID = /^custom-[a-f0-9]{32}$/;
+
+export function isCustomFontId(id: unknown): id is string {
+  return typeof id === 'string' && CUSTOM_FONT_ID.test(id);
+}
+
+/** The CSS family name of a self-hosted font id. */
+export function customFontFamily(id: string): string {
+  return `Brand ${id.slice(7, 15)}`;
+}
+
+/** The catalog entry for an id (a self-hosted font gets a synthesized entry), or undefined. */
 export function fontById(id: unknown): FontDefinition | undefined {
+  if (isCustomFontId(id)) {
+    return { id, label: 'Brand font', family: customFontFamily(id), category: 'sans-serif', fallback: SANS_FALLBACK, google: null } as unknown as FontDefinition;
+  }
   return typeof id === 'string' ? BY_ID.get(id) : undefined;
 }
 
@@ -96,6 +116,7 @@ export function googleFontSheetUrl(id: unknown): string | null {
 
 /** The Atlas-origin path of a font's mirrored stylesheet (relative to the API origin). */
 export function fontSheetPath(id: unknown): string | null {
+  if (isCustomFontId(id)) return `/v1/design/fonts/${id}.css`;
   const f = fontById(id);
   return f?.google ? `/v1/design/fonts/${f.id}.css` : null;
 }

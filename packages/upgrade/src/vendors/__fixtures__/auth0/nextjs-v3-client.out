@@ -1,0 +1,23 @@
+'use client';
+import type { ReactNode } from 'react';
+
+import { AtlasProvider } from '@atlasauth/react';
+import { useAuth0UserCompat } from '@atlasauth/react/compat';
+
+function Nav() {
+  const { user, isLoading } = useAuth0UserCompat();
+  if (isLoading) return null;
+  // TODO(atlas-migrate): /api/auth/logout: sign-out is an action in Atlas; use <SignOutButton /> or useAuth().signOut() from @atlasauth/react
+  return user ? <a href="/api/auth/logout">Logout</a> : <a href="/sign-in?redirect_url=%2Fdashboard">Login</a>;
+}
+
+export function Shell({ children }: { children: ReactNode }) {
+  return (
+    <AtlasProvider
+      publishableKey={process.env.NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY!}
+      frontendApi={process.env.NEXT_PUBLIC_ATLAS_FRONTEND_API!}>
+      <Nav />
+      {children}
+    </AtlasProvider>
+  );
+}

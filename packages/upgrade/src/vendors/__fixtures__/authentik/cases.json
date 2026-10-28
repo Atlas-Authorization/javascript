@@ -1,0 +1,8 @@
+[
+  { "name": "react-provider", "path": "src/main.tsx", "envStyle": "vite", "manual": ["removed provider props with no Atlas counterpart: redirect_uri, onSigninCallback"] },
+  { "name": "react-provider-spread", "path": "src/index.tsx", "envStyle": "vite", "manual": ["removed the spread OIDC settings"] },
+  { "name": "nextauth-provider", "path": "auth.ts", "manual": ["authentik provider: Atlas hosts sign-in", "AUTH_AUTHENTIK_SECRET: server code uses ATLAS_SECRET_KEY"] },
+  { "name": "user-manager", "path": "src/auth/user-manager.ts", "envStyle": "vite", "manual": ["UserManager: Atlas hosts the redirect", "WebStorageStateStore: delete it"] },
+  { "name": "admin-client", "path": "lib/authentik.ts", "manual": ["authentik admin API client", "AUTHENTIK_TOKEN: authentik admin API token"] },
+  { "name": "plain", "path": "src/math.ts", "unchanged": true }
+]

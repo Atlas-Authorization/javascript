@@ -1,5 +1,40 @@
 # @atlasauth/elements changelog
 
+## Unreleased
+
+## 0.11.0 — 2026-10-26
+
+### Changed
+
+- `Passkey.*` parts (`Root`, `Register`, `Login`, `Error`) for passkeys against your own user store, exported as `@atlasauth/elements/passkey`.
+
+## 0.10.0 — 2026-10-24
+
+### Added
+
+- **`<SignUp.Policies>` / `<SignIn.Policies>`**: the instance's policies for the step (default markup, or a render prop with the controller). New step `policies` for `needs_policy_acceptance`; `<*.Action action="submit">` stays disabled until the required policies are ticked; the flow context gains `policies`, `policiesSatisfied`, `policyReading`, `policyDeclined` and `declinePolicy`.
+
+## 0.9.0 — 2026-10-24
+
+### Added
+
+- `passkeyPrf` and `onPasskeyExtensionResults` on `<SignIn.Root>` / `<SignUp.Root>`: request the WebAuthn `prf` extension in the passkey ceremony (a secret derived from the passkey and your salt, for client-side encryption keys). The outputs go to your callback only and never reach Atlas.
+- `<SignIn.Captcha>` / `<SignUp.Captcha>` support the CaptchaFox and Vercel BotID providers.
+
+### Changed
+
+- Built on `@atlasauth/js` 0.17.0.
+
+## 0.8.0 — 2026-10-23
+
+### Fixed
+
+- **`<SignIn.PasskeyButton>` on an app that challenges every sign-in.** The ceremony start sends the `<SignIn.Captcha>` token (a hand-set `captcha_token` value wins). A refusal draws a fresh challenge in `<SignIn.Captcha>` and retries once. Captcha refusals are shown in the form's language.
+
+### Changed
+
+- Built on `@atlasauth/js` 0.16.0.
+
 ## 0.7.0
 
 ### Changed

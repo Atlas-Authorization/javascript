@@ -54,6 +54,8 @@ export interface LocalizationResource {
   'signIn.submit': string;
   'signIn.forgotPassword': string;
   'signIn.noAccount': string;
+  /** Badge on the sign-in option this browser used last. */
+  'signIn.lastUsed': string;
   'signIn.signUpLink': string;
   'signIn.orDivider': string;
   /** Contains `{provider}`. */
@@ -88,6 +90,13 @@ export interface LocalizationResource {
   'signUp.privacy': string;
   'signUp.and': string;
   'signUp.emailUnavailable': string;
+  'signUp.passkeyOption': string;
+  'signUp.passwordOption': string;
+  'signUp.passkeyIntro': string;
+  'signUp.passkeyPrompt': string;
+  'signUp.passkeyCreate': string;
+  'signUp.passkeyCancelled': string;
+  'signUp.linkSentTo': string;
 
   'captcha.prompt': string;
   'captcha.required': string;
@@ -108,11 +117,43 @@ export interface LocalizationResource {
   'mfa.usePasskey': string;
   'mfa.useBackupCode': string;
   'mfa.submit': string;
+  'mfa.enrollChoose': string;
+  'mfa.enrollTotpOption': string;
+  'mfa.enrollSmsOption': string;
+  'mfa.enrollScan': string;
+  'mfa.enrollQrAlt': string;
+  'mfa.enrollSetupKey': string;
+  'mfa.enrollPreparing': string;
+  'mfa.phoneLabel': string;
+  'mfa.phoneHint': string;
+  'mfa.sendCode': string;
+  'mfa.codeTextedTo': string;
+  'mfa.smsCodeOption': string;
+  'mfa.recoveryCodesTitle': string,
+  'mfa.recoveryCodesHelp': string,
+  'mfa.recoveryCodesCopy': string,
+  'mfa.recoveryCodesCopied': string,
+  'mfa.recoveryCodesDownload': string,
+  'mfa.recoveryCodesSaved': string,
 
   // --- Password reset --------------------------------------------------------
   'reset.title': string;
   'reset.submit': string;
   'reset.newPasswordLabel': string;
+  'requiredAction.firstNameLabel': string;
+  'requiredAction.lastNameLabel': string;
+  'requiredAction.sendCode': string;
+  'requiredAction.skip': string;
+  'requiredAction.customIntro': string;
+  'profileTraits.save': string;
+  'requiredAction.verifyIntro': string;
+  'requiredAction.idvIntro': string;
+  'requiredAction.idvStart': string;
+  'requiredAction.idvOpen': string;
+  'requiredAction.idvWaiting': string;
+  'requiredAction.idvCheck': string;
+  'requiredAction.idvDeclined': string;
+  'requiredAction.idvReview': string;
 
   // --- User button -----------------------------------------------------------
   'userButton.manageAccount': string;
@@ -150,6 +191,35 @@ export interface LocalizationResource {
   'organization.nameLabel': string;
   'organization.create': string;
   'organization.orCreate': string;
+  'organization.invitations': string;
+  'organization.settings': string;
+  'organization.emailLabel': string;
+  'organization.sendInvite': string;
+  'organization.noInvitations': string;
+  'organization.remove': string;
+  'organization.revoke': string;
+  'organization.resend': string;
+  'organization.you': string;
+  'organization.leave': string;
+  'organization.leaveConfirm': string;
+  'organization.delete': string;
+  'organization.deleteConfirm': string;
+  'organization.confirm': string;
+  'organization.cancel': string;
+  'organization.unnamedMember': string;
+  'organization.passwordPrompt': string;
+  'organization.roles': string;
+  'organization.roleName': string;
+  'organization.roleKey': string;
+  'organization.rolePermissions': string;
+  'organization.createRole': string;
+  'organization.saveRole': string;
+  'organization.editRole': string;
+  'organization.deleteRole': string;
+  'organization.noCustomRoles': string;
+  'impersonation.banner': string;
+  'impersonation.returnToAdmin': string;
+  'impersonation.end': string;
 
   // --- Waitlist --------------------------------------------------------------
   'waitlist.title': string;
@@ -185,6 +255,21 @@ export interface LocalizationResource {
   'apiKeys.copy': string;
   'apiKeys.copied': string;
   'apiKeys.done': string;
+
+  // --- Device sign-in approval (RFC 8628) ------------------------------------
+  'deviceAuth.title': string;
+  'deviceAuth.subtitle': string;
+  'deviceAuth.codeLabel': string;
+  'deviceAuth.continue': string;
+  'deviceAuth.request': string;
+  'deviceAuth.scopesTitle': string;
+  'deviceAuth.checkCode': string;
+  'deviceAuth.approve': string;
+  'deviceAuth.deny': string;
+  'deviceAuth.approved': string;
+  'deviceAuth.denied': string;
+  'deviceAuth.invalidCode': string;
+  'deviceAuth.another': string;
   'apiKeys.rename': string;
   'apiKeys.save': string;
   'apiKeys.revoke': string;
@@ -249,6 +334,33 @@ export interface LocalizationResource {
   'error.sign_ups_disabled': string;
   'error.high_risk_blocked': string;
   'error.sms_region_blocked': string;
+
+  // Policy acceptance (terms, privacy, any policy).
+  'policy.agreeCombined': string;
+  'policy.agreeOne': string;
+  'policy.clickwrap': string;
+  'policy.and': string;
+  'policy.read': string;
+  'policy.viewerBack': string;
+  'policy.version': string;
+  'policy.effective': string;
+  'policy.scrollHint': string;
+  'policy.accept': string;
+  'policy.decline': string;
+  'policy.summaryTitle': string;
+  'policy.reacceptTitle': string;
+  'policy.reacceptIntro': string;
+  'policy.pendingTitle': string;
+  'policy.pendingIntro': string;
+  'policy.required': string;
+  'policy.requiredGeneric': string;
+  'policy.declined': string;
+  'policy.loading': string;
+  'policy.bannerTitle': string;
+  'policy.bannerBody': string;
+  'policy.bannerGrace': string;
+  'policy.bannerReview': string;
+  'policy.submit': string;
 }
 
 /**

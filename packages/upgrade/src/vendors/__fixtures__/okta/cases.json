@@ -1,0 +1,87 @@
+[
+  {
+    "name": "react-provider",
+    "path": "src/App.tsx",
+    "envStyle": "vite",
+    "manual": [
+      "removed provider props with no Atlas counterpart: oktaAuth, restoreOriginalUri",
+      "restoreOriginalUri: after sign-in Atlas returns to the page the user started from",
+      "OktaAuthCompat acts on the <AtlasProvider> on the page"
+    ]
+  },
+  {
+    "name": "react-hooks",
+    "path": "src/Profile.tsx",
+    "envStyle": "vite"
+  },
+  {
+    "name": "login-callback",
+    "path": "src/routes/login/callback.tsx",
+    "envStyle": "vite",
+    "manual": [
+      "this is the Okta sign-in callback route",
+      "LoginCallback: Atlas completes the sign-in callback itself"
+    ]
+  },
+  {
+    "name": "auth-js",
+    "path": "src/auth.ts",
+    "envStyle": "vite",
+    "manual": [
+      "new OktaAuth(config) outside a React app has no drop-in Atlas counterpart"
+    ]
+  },
+  {
+    "name": "express-oidc",
+    "path": "server/app.ts",
+    "envStyle": "node",
+    "manual": [
+      "new ExpressOIDC(config): Atlas hosts sign-in",
+      "oidc.router: replace with app.use(atlasMiddleware",
+      "oidc.ensureAuthenticated(): use requireAuth()",
+      "req.userContext: use getAuth(req)",
+      "oidc.on(): Atlas needs no startup step"
+    ]
+  },
+  {
+    "name": "jwt-verifier",
+    "path": "src/middleware/auth.ts",
+    "envStyle": "node",
+    "manual": [
+      "new OktaJwtVerifier({ issuer }): verify Atlas session tokens with new AtlasBackend",
+      "verifyAccessToken(): use `const result = await backend.verify(token)`. It does not throw",
+      "Atlas session tokens have no API audience by default"
+    ]
+  },
+  {
+    "name": "env",
+    "path": "lib/okta-config.ts",
+    "manual": [
+      "OKTA_ORG_URL: the Okta org is not used after the move",
+      "OKTA_CLIENT_SECRET: server code uses ATLAS_SECRET_KEY",
+      "OKTA_TESTING_DISABLEHTTPSCHECK: not needed with Atlas"
+    ]
+  },
+  {
+    "name": "vue",
+    "path": "src/main.ts",
+    "envStyle": "vite",
+    "manual": [
+      "@okta/okta-vue: move to the Atlas Vue plugin",
+      "new OktaAuth(config) outside a React app"
+    ]
+  },
+  {
+    "name": "sdk-node",
+    "path": "scripts/deactivate.ts",
+    "envStyle": "node",
+    "manual": [
+      "new okta.Client({ orgUrl, token }): use createAtlasClient"
+    ]
+  },
+  {
+    "name": "unrelated",
+    "path": "src/util.ts",
+    "unchanged": true
+  }
+]

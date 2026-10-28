@@ -1,0 +1,22 @@
+import express from 'express';
+import session from 'express-session';
+import { ExpressOIDC } from '@okta/oidc-middleware';
+
+const app = express();
+const oidc = new ExpressOIDC({
+  issuer: `${process.env.OKTA_ORG_URL}/oauth2/default`,
+  client_id: process.env.OKTA_CLIENT_ID,
+  client_secret: process.env.OKTA_CLIENT_SECRET,
+  appBaseUrl: 'http://localhost:3000',
+  scope: 'openid profile email',
+});
+
+app.use(session({ secret: 'keyboard cat', resave: false, saveUninitialized: false }));
+app.use(oidc.router);
+app.use('/account', oidc.ensureAuthenticated());
+
+app.get('/account/me', (req, res) => {
+  res.json({ sub: req.userContext.userinfo.sub });
+});
+
+oidc.on('ready', () => app.listen(3000));

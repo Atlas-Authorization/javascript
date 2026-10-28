@@ -9,6 +9,13 @@ export function el(w: AtlasWidget, tag: string, className?: string, text?: strin
   const node = doc(w).createElement(tag);
   if (className) node.className = className;
   if (text != null) node.textContent = text;
+  // Validation and server errors are announced the moment they appear (WCAG 4.1.3).
+  if (
+    node.classList.contains('atlas-embed-form-error') ||
+    node.classList.contains('atlas-embed-error')
+  ) {
+    node.setAttribute('role', 'alert');
+  }
   // The two button classes the ripple stylesheet clips — bind the tap ripple
   // here so every submit/social button gets it without touching each call site.
   if (

@@ -111,3 +111,33 @@ describe('getPasskeyAssertion', () => {
     expect(body.signature).toBe(bufferToBase64Url(bytes([30])));
   });
 });
+
+describe('WebAuthn Level 3 helpers', () => {
+  const credential = { rawId: new Uint8Array([9]).buffer, id: 'CQ', response: { attestationObject: new Uint8Array([1]).buffer, clientDataJSON: new Uint8Array([2]).buffer } } as unknown as Credential;
+  const begin = { challenge: 'AQID', rp: { id: 'x.test', name: 'X' }, user: { id: 'AQ', name: 'a', displayName: 'a' }, pubKeyCredParams: [], hints: ['security-key', 'hybrid'] };
+
+  it('passes server hints and conditional mediation to create()', async () => {
+    const create = vi.fn(async (_options?: unknown) => credential);
+    await createPasskey(begin, { host: { credentials: { create, get: vi.fn() } }, mediation: 'conditional' });
+    const arg = create.mock.calls[0]![0] as unknown as { publicKey: { hints?: string[] }; mediation?: string };
+    expect(arg.publicKey.hints).toEqual(['security-key', 'hybrid']);
+    expect(arg.mediation).toBe('conditional');
+  });
+  it('sends no hints or mediation unless asked', async () => {
+    const create = vi.fn(async (_options?: unknown) => credential);
+    await createPasskey({ ...begin, hints: undefined }, { host: { credentials: { create, get: vi.fn() } } });
+    const arg = create.mock.calls[0]![0] as unknown as { publicKey: { hints?: string[] }; mediation?: string };
+    expect(arg.publicKey.hints).toBeUndefined();
+    expect(arg.mediation).toBeUndefined();
+  });
+  it('reads client capabilities and treats a missing API as unsupported', async () => {
+    const { clientCapabilities, conditionalCreateAvailable } = await import('./passkey');
+    expect(await clientCapabilities()).toEqual({});
+    (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential = { getClientCapabilities: async () => ({ conditionalCreate: true }) };
+    try {
+      expect(await conditionalCreateAvailable()).toBe(true);
+    } finally {
+      delete (globalThis as { PublicKeyCredential?: unknown }).PublicKeyCredential;
+    }
+  });
+});

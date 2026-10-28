@@ -3,7 +3,8 @@ import { limit, str, type ParsedArgs } from '../args';
 import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { fmtTime, printJson, printList, type Column } from '../output';
-import { requireArg, requireClient, wantsJson } from './shared';
+import { httpFor } from '../project';
+import { envApiUrl, requireArg, requireClient, resolveAuth, wantsJson } from './shared';
 
 /** Columns for the human `users list` table — User carries no email inline. */
 const COLUMNS: Column<User>[] = [
@@ -55,6 +56,18 @@ export async function users(ctx: RunContext, args: ParsedArgs): Promise<number> 
       return 0;
     }
 
+    case 'merge': {
+      // atlas users merge <source-id> <into-id> [--dry-run --yes]: the source is folded into <into-id> and deleted.
+      const source = requireArg(args.positionals, 2, 'source-user-id');
+      const into = requireArg(args.positionals, 3, 'into-user-id');
+      const dry = args.values['dry-run'] === true;
+      if (!dry && args.values.yes !== true) throw new CliError('users merge deletes the source user; preview with --dry-run, then pass --yes.');
+      const auth = resolveAuth(ctx, args.values);
+      const report = await httpFor(ctx, { secretKey: auth.secretKey, apiUrl: envApiUrl(ctx.env) ?? auth.apiUrl }).post(`/v1/users/${encodeURIComponent(into)}/merge`, { source_user_id: source, ...(dry ? { dry_run: true } : {}) });
+      printJson(ctx.io, report);
+      return 0;
+    }
+
     case 'delete': {
       const id = requireArg(args.positionals, 2, 'user-id');
       const { client } = requireClient(ctx, args.values);
@@ -67,7 +80,7 @@ export async function users(ctx: RunContext, args: ParsedArgs): Promise<number> 
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'users ${sub}'. Try: list, get, create, delete.`
+          ? `Unknown subcommand 'users ${sub}'. Try: list, get, create, merge, delete.`
           : "users needs a subcommand: list, get, create, delete.",
       );
   }

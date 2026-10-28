@@ -1,0 +1,4 @@
+import { createAtlasMiddleware } from '@atlasauth/nextjs/compat';
+export default createAtlasMiddleware();
+
+export const config = { matcher: ['/dashboard/:path*'] };

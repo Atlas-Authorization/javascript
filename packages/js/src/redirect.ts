@@ -21,7 +21,7 @@ import {
   listenForPopupResult,
 } from './popup-channel';
 
-export const REDIRECT_PARAMS = ['__atlas_attempt', '__atlas_ticket', '__atlas_status'] as const;
+export const REDIRECT_PARAMS = ['__atlas_attempt', '__atlas_ticket', '__atlas_status', '__atlas_policy_token'] as const;
 
 /**
  * Start a redirect-based OAuth sign-in for a provider that has no in-page native
@@ -49,6 +49,8 @@ export interface RedirectResult {
   ticket?: string;
   /** Present when a step remains (e.g. `needs_second_factor`); no session yet. */
   status?: string;
+  /** With `needs_policy_acceptance`: the one-time token for `acceptAttemptPolicies`. */
+  policyToken?: string;
 }
 
 /**
@@ -65,6 +67,8 @@ export interface PopupOutcome {
   error?: string;
   /** Where the opener should navigate for a non-complete outcome. */
   continuationUrl?: string;
+  /** With `needs_policy_acceptance`: the one-time token for `acceptAttemptPolicies`. */
+  policyToken?: string;
 }
 
 /**
@@ -102,6 +106,7 @@ export function mapOAuthPopupPayload(data: unknown): PopupOutcome | null {
         status: str(d.status),
         attemptId: str(d.attemptId),
         continuationUrl: str(d.continuationUrl),
+        ...(str(d.policyToken) ? { policyToken: str(d.policyToken) } : {}),
       };
     default:
       return null;
@@ -331,10 +336,12 @@ export function readRedirectResult(search: string): RedirectResult | null {
   const status = params.get('__atlas_status');
   if (!ticket && !status) return null;
 
+  const policyToken = params.get('__atlas_policy_token');
   return {
     attemptId,
     ...(ticket ? { ticket } : {}),
     ...(status ? { status } : {}),
+    ...((status === 'needs_policy_acceptance' || status === 'needs_required_action') && policyToken ? { policyToken } : {}),
   };
 }
 

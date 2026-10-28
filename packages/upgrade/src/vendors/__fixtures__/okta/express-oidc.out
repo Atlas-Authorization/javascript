@@ -1,0 +1,29 @@
+import express from 'express';
+import session from 'express-session';
+import { ExpressOIDC } from '@okta/oidc-middleware';
+
+import { atlasMiddleware, requireAuth, getAuth } from '@atlasauth/express';
+
+const app = express();
+// TODO(atlas-migrate): new ExpressOIDC(config): Atlas hosts sign-in, so this app no longer runs its own OIDC login, callback and session. Verify the Atlas session instead with atlasMiddleware({ jwksUrl: process.env.ATLAS_JWKS_URL!, issuer: process.env.ATLAS_ISSUER! }) from @atlasauth/express, and drop express-session if nothing else uses it
+const oidc = new ExpressOIDC({
+  issuer: `${process.env.OKTA_ORG_URL}/oauth2/default`,
+  client_id: process.env.OKTA_CLIENT_ID,
+  client_secret: process.env.OKTA_CLIENT_SECRET,
+  appBaseUrl: 'http://localhost:3000',
+  scope: 'openid profile email',
+});
+
+app.use(session({ secret: 'keyboard cat', resave: false, saveUninitialized: false }));
+// TODO(atlas-migrate): oidc.router: replace with app.use(atlasMiddleware({ jwksUrl, issuer })); the /login, /authorization-code/callback and /logout routes it served are gone: send users to your Atlas /sign-in page and sign out in the browser
+app.use(oidc.router);
+// TODO(atlas-migrate): oidc.ensureAuthenticated(): use requireAuth() from @atlasauth/express (it answers 401 instead of redirecting to sign-in; for pages, redirect to /sign-in yourself when getAuth(req).userId is null)
+app.use('/account', oidc.ensureAuthenticated());
+
+app.get('/account/me', (req, res) => {
+  // TODO(atlas-migrate): req.userContext: use getAuth(req) from @atlasauth/express (userId, sessionId, claims); load the full profile with createAtlasClient({ secretKey }).users.get(userId) from @atlasauth/backend
+  res.json({ sub: req.userContext.userinfo.sub });
+});
+
+// TODO(atlas-migrate): oidc.on(): Atlas needs no startup step (there is no OIDC discovery to wait for): start the server directly
+oidc.on('ready', () => app.listen(3000));

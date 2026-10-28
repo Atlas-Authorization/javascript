@@ -1,5 +1,13 @@
 # @atlasauth/expo-biometrics changelog
 
+## Unreleased
+
+## 0.2.0 — 2026-10-26
+
+### Changed
+
+- Device keys: a biometric-gated, hardware-backed key for proving a device on sign-in. See the README.
+
 ## 0.1.0
 
 First published release.

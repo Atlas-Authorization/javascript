@@ -1,0 +1,41 @@
+'use client';
+import { useEffect, useState } from 'react';
+// TODO(atlas-migrate): signInWithPopup(): credentials are collected on the Atlas sign-in page now: render <SignIn /> (or send users to /sign-in); the social buttons there replace the popup
+// TODO(atlas-migrate): GoogleAuthProvider: social and enterprise providers are enabled in the Atlas dashboard and shown on the sign-in page; delete the provider object
+import { getAuth, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { app } from '@/lib/firebase';
+
+import {
+  onFirebaseAuthStateChangedCompat,
+  firebaseSignOutCompat,
+  useFirebaseAuthStateCompat,
+  getFirebaseCurrentUserCompat,
+} from '@atlasauth/react/compat';
+
+import type { FirebaseCompatUser } from '@atlasauth/react/compat';
+
+const auth = getAuth(app);
+
+export function Account() {
+  const [user, loading] = useFirebaseAuthStateCompat(auth);
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    return onFirebaseAuthStateChangedCompat(auth, async (next: FirebaseCompatUser | null) => {
+      setToken(next ? await next.getIdToken() : null);
+    });
+  }, []);
+
+  async function google() {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  }
+
+  if (loading) return null;
+  return (
+    <div>
+      <p>{user?.email ?? getFirebaseCurrentUserCompat()?.email}</p>
+      <button onClick={google}>Google</button>
+      <button onClick={() => firebaseSignOutCompat(auth)}>Sign out</button>
+    </div>
+  );
+}

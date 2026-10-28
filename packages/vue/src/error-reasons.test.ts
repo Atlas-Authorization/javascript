@@ -48,6 +48,7 @@ function makeClient(language?: Catalog): AtlasClient {
     getProviderToken: async () => null,
     signOut: async () => ({ revoked: true }),
     setActiveOrganization: async () => undefined,
+    endImpersonation: async () => ({ ended: false, resumed: false, status: 0 }),
     reload: async () => true,
     onSignOut: () => () => undefined,
   };

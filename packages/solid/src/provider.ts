@@ -36,6 +36,7 @@ import {
 import { ATLAS_SOLID_SDK } from './version';
 import { AtlasContext } from './context';
 import { mountSignInWidget, mountSignUpWidget, mountUserButtonWidget } from './widgets';
+import { mountPolicyGateWidget } from './policies';
 import type {
   AtlasOrganizationMembership,
   AtlasSession,
@@ -94,7 +95,7 @@ export interface AtlasClient {
    * over. Captured synchronously at construction — before any component reads
    * it — because such a redirect carries a status but no ticket.
    */
-  pendingAttempt: { id: string; status: string } | null;
+  pendingAttempt: { id: string; status: string; policyToken?: string } | null;
   /**
    * Always fresh: refreshes first if the cached token is close to expiry. With
    * `{ template }`, a short-lived named-template token (e.g. `'chatly'`).
@@ -135,6 +136,8 @@ export interface AtlasClient {
   mountSignIn(el: HTMLElement): () => void;
   mountSignUp(el: HTMLElement): () => void;
   mountUserButton(el: HTMLElement): () => void;
+  /** Mount the in-app policy re-acceptance banner (`<PolicyGate/>`). */
+  mountPolicyGate(el: HTMLElement): () => void;
 }
 
 export interface AtlasProviderProps {
@@ -216,11 +219,11 @@ export function createAtlasClient(options: {
 
   // A `needs_second_factor` redirect carries a status but no ticket; that is
   // what the 2FA resume seeds from. Read once, synchronously, at construction.
-  const pendingAttempt: { id: string; status: string } | null = (() => {
+  const pendingAttempt: { id: string; status: string; policyToken?: string } | null = (() => {
     if (isServer || typeof window === 'undefined') return null;
     const result = readRedirectResult(window.location.search);
     return result?.status && !result.ticket
-      ? { id: result.attemptId, status: result.status }
+      ? { id: result.attemptId, status: result.status, ...(result.policyToken ? { policyToken: result.policyToken } : {}) }
       : null;
   })();
 
@@ -457,6 +460,7 @@ export function createAtlasClient(options: {
     mountSignIn: (el) => mountSignInWidget(client, el),
     mountSignUp: (el) => mountSignUpWidget(client, el),
     mountUserButton: (el) => mountUserButtonWidget(client, el),
+    mountPolicyGate: (el) => mountPolicyGateWidget(client, el),
   };
 
   // Another tab signed out of THIS session (its tombstone reached the shared

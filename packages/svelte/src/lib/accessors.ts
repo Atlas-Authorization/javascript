@@ -1,23 +1,41 @@
-import { derived, get, writable, type Readable } from 'svelte/store';
+import { derived, get, readable, writable, type Readable } from 'svelte/store';
 import {
   FapiClient,
   advanceWithCaptcha,
   atlasCaptchaLabels,
   createCaptchaController,
+  createPasskeySignUp,
   createSignUp,
+  finishPasskeySignUp,
   fetchInstanceSettings,
+  fetchLastSignInMethod,
   flowNeedsCaptcha,
   signInCaptchaOptions,
   flowFromPending,
   pollAttempt,
   prepareFactor,
   shouldKeepPolling,
+  createOrganizationAuditLog,
+  type OrganizationAuditLogOptions,
+  type OrganizationAuditLogState,
   type CaptchaController,
   type FlowState,
   type InstanceSettings,
   type ProviderToken,
   type SignOutOptions,
   type SignOutResult,
+  createMfaEnrollment,
+  acknowledgeRecoveryCodes,
+  pendingRecoveryCodes,
+  mfaChoicesFrom,
+  prepareSecondFactorCode,
+  resendSignUpVerification,
+  PolicyAcceptanceController,
+  loadPolicies as loadPolicyList,
+  initialFlow as emptyFlow,
+  type MfaChoices,
+  type MfaEnrollmentController,
+  type MfaEnrollmentState,
 } from '@atlasauth/js';
 import { useAtlas, type AuthStatus } from './context';
 import { translate } from './i18n';
@@ -140,6 +158,47 @@ export function getOrganization(): Readable<UseOrganization> {
   });
 }
 
+/**
+ * The active organization's audit trail, for its admins: a store of
+ * `{ entries, loading, forbidden, hasMore }` (one page at a time, newest first)
+ * with `loadMore()` and `reload()`. `action` narrows it (exact, or a prefix
+ * ending in `.`). `forbidden` is true when the signed-in member may not read it.
+ * Follows the active organization while it has subscribers.
+ */
+export interface OrganizationAuditLogStore extends Readable<OrganizationAuditLogState> {
+  loadMore(): Promise<void>;
+  reload(): Promise<void>;
+}
+
+export function getOrganizationAuditLog(options: OrganizationAuditLogOptions = {}): OrganizationAuditLogStore {
+  const atlas = useAtlas();
+  const organization = getOrganization();
+  const log = createOrganizationAuditLog(
+    new FapiClient({
+      publishableKey: atlas.publishableKey,
+      baseUrl: atlas.frontendApi,
+      locale: atlas.locale,
+      sdk: ATLAS_SVELTE_SDK,
+    }),
+    options,
+  );
+  const state = readable(log.getState(), (set) => {
+    const offState = log.subscribe(set);
+    let shown: string | null | undefined;
+    const offOrganization = organization.subscribe(($org) => {
+      const id = $org.organization?.id ?? null;
+      if (id === shown) return;
+      shown = id;
+      void log.load(id);
+    });
+    return () => {
+      offOrganization();
+      offState();
+    };
+  });
+  return { subscribe: state.subscribe, loadMore: log.loadMore, reload: log.reload };
+}
+
 /* ------------------------------------------------------------------ actions */
 
 /** Refresh-if-stale, then hand over the JWT. The `useAuth().getToken` shortcut. */
@@ -175,6 +234,39 @@ export interface FlowController {
    * then posted with {@link submit}.
    */
   create(values: Record<string, string>, consent?: boolean): void;
+  /** Start a passkey-only sign-up (`POST /v1/client/sign_ups/passkey`): no password. */
+  createWithPasskey(values: Record<string, string>, consent?: boolean): void;
+  /** The passkey-only sign-up's last step: create the passkey, and with it the account. */
+  createPasskey(): void;
+  /**
+   * "Email me a code instead" at the second factor (the instance's
+   * `account.emailSecondFactor`): mails a code to the account's verified email;
+   * it is then posted with {@link submit} like any 2FA code.
+   */
+  sendEmailSecondFactor(): Promise<{ sentTo?: string; error?: string }>;
+  /**
+   * "Text me a code instead" at the second factor (where the app offers texted
+   * codes, `mfaChoices().sms`): texts a code to the account's enrolled phone;
+   * it is then posted with {@link submit}.
+   */
+  sendSmsSecondFactor(): Promise<{ sentTo?: string; error?: string }>;
+  /** What the app lets the MFA steps offer (from {@link settings}). */
+  mfaChoices(): MfaChoices;
+  /**
+   * The MFA enrolment step (`needs_mfa_enrollment`): the authenticator app's
+   * setup (QR code, setup key) or a texted code. Started and reset with the flow.
+   */
+  enrollment: MfaEnrollmentController;
+  /** {@link enrollment}'s state as a store. */
+  enrollmentState: Readable<MfaEnrollmentState>;
+  /**
+   * "I've saved my codes": after an enrolment the flow holds its one-time
+   * recovery codes (`pendingRecoveryCodes($state)`, in memory only) and waits
+   * for this before exchanging the ticket and finishing the sign-in.
+   */
+  saveRecoveryCodes(): void;
+  /** Resend a sign-up's emailed code / link (the earlier one stops working). Resolves whether it was sent. */
+  resendSignUp(): Promise<boolean>;
   /**
    * Ask the server to email a sign-in code or link on the first-factor step
    * (`POST …/prepare_first_factor`). Resolves true once it was sent; the code is
@@ -187,10 +279,24 @@ export interface FlowController {
    * or when the server could not be reached.
    */
   settings: Readable<InstanceSettings | null>;
+  /**
+   * The method this browser last signed in with (`password`, `oauth_github`, …)
+   * for the "Last used" hint; null when none, or the instance turned it off.
+   */
+  lastMethod: Readable<string | null>;
   /** The sign-in captcha (identifier step / `needs_captcha` challenge). */
   captcha: CaptchaController;
   /** The sign-up captcha (the create-account step). */
   signUpCaptcha: CaptchaController;
+  /**
+   * The instance's policies (terms, privacy, …) for the create-account form:
+   * `create` sends their acceptances and reloads them after a refusal.
+   */
+  policies: PolicyAcceptanceController;
+  /** Load the sign-up's policies into {@link policies} (`<SignUp>` calls it on mount). */
+  loadPolicies(): Promise<void>;
+  /** The user declined a policy a sign-in was waiting on: cancels the attempt and says why. */
+  declinePolicy(title: string): void;
   /** Stop the magic-link poll loop and remove the captcha widgets — call from `onDestroy`. */
   destroy(): void;
 }
@@ -208,6 +314,7 @@ function createFlow(): FlowController {
   // factor), so the user resumes at the demanded step instead of starting over.
   const state = writable<FlowState>(flowFromPending(atlas.pendingAttempt));
   const settings = writable<InstanceSettings | null>(null);
+  const lastMethod = writable<string | null>(null);
   const t = (key: string) => translate(atlas.catalog, key);
 
   // §5 the per-flow captcha, driven by the instance's settings so turning it on
@@ -228,6 +335,9 @@ function createFlow(): FlowController {
   if (typeof window !== 'undefined') {
     void fetchInstanceSettings(client).then((loaded) => {
       if (loaded) settings.set(loaded);
+      if (loaded?.account.lastSignInMethod) {
+        void fetchLastSignInMethod(client).then((m) => lastMethod.set(m));
+      }
     });
   }
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -266,6 +376,11 @@ function createFlow(): FlowController {
   // Stays busy until this browser actually holds the session: the completion
   // alone says nothing about whether the cookie was kept.
   async function finish(next: FlowState): Promise<void> {
+    // An enrolment's recovery codes are shown first; `saveRecoveryCodes` finishes.
+    if (pendingRecoveryCodes(next)) {
+      state.set({ ...next, busy: false });
+      return;
+    }
     if (next.attempt?.status === 'complete') {
       state.set({ ...next, busy: true });
       let exchanged = true;
@@ -293,10 +408,69 @@ function createFlow(): FlowController {
     })();
   }
 
+  const policies = new PolicyAcceptanceController([]);
+  async function loadPolicies(): Promise<void> {
+    policies.setPolicies(await loadPolicyList(client, { locale: atlas.locale ?? undefined }));
+  }
+  function declinePolicy(title: string): void {
+    state.set({ ...emptyFlow, errors: [{ code: 'POLICY_DECLINED', message: translate(atlas.catalog, 'policy.declined', { policy: title }) }] });
+  }
+
   function create(values: Record<string, string>, consent = true): void {
     void (async () => {
       state.update((current) => ({ ...current, busy: true, errors: [] }));
-      await finish(await createSignUp(client, values, { consent, captcha: signUpCaptcha, t }));
+      await finish(await createSignUp(client, values, { consent, captcha: signUpCaptcha, t, policies }));
+    })();
+  }
+
+  function createWithPasskey(values: Record<string, string>, consent = true): void {
+    void (async () => {
+      state.update((current) => ({ ...current, busy: true, errors: [] }));
+      await finish(await createPasskeySignUp(client, values, { consent, captcha: signUpCaptcha, t, policies }));
+    })();
+  }
+
+  async function sendSecondFactorCode(strategy: 'sms' | 'email_code'): Promise<{ sentTo?: string; error?: string }> {
+    const id = get(state).attempt?.id;
+    if (!id) return { error: t('error.generic') };
+    try {
+      return await prepareSecondFactorCode(client, id, strategy);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : t('error.generic') };
+    }
+  }
+  const sendEmailSecondFactor = () => sendSecondFactorCode('email_code');
+  const sendSmsSecondFactor = () => sendSecondFactorCode('sms');
+
+  // The MFA enrolment step: started while the flow is at needs_mfa_enrollment.
+  const mfaChoices = () => mfaChoicesFrom(get(settings)?.account);
+  const enrollment = createMfaEnrollment(client, mfaChoices);
+  const enrollmentState = writable<MfaEnrollmentState>(enrollment.state);
+  const unsubscribeEnrollment = enrollment.subscribe((next) => enrollmentState.set(next));
+  let enrollingFor: string | null = null;
+  const unsubscribeEnrollmentStep = state.subscribe((flow) => {
+    const id = flow.attempt?.status === 'needs_mfa_enrollment' ? (flow.attempt.id ?? null) : null;
+    if (id === enrollingFor) return;
+    enrollingFor = id;
+    if (id) enrollment.start(id);
+    else enrollment.reset();
+  });
+
+  function saveRecoveryCodes(): void {
+    void finish(acknowledgeRecoveryCodes(get(state)));
+  }
+
+  async function resendSignUp(): Promise<boolean> {
+    state.update((current) => ({ ...current, busy: true, errors: [] }));
+    const next = await resendSignUpVerification(client, get(state));
+    state.set(next);
+    return next.errors.length === 0;
+  }
+
+  function createPasskey(): void {
+    void (async () => {
+      state.update((current) => ({ ...current, busy: true, errors: [] }));
+      await finish(await finishPasskeySignUp(client, get(state), { t }));
     })();
   }
 
@@ -311,6 +485,8 @@ function createFlow(): FlowController {
   function destroy(): void {
     stopPolling();
     unsubscribeCaptcha();
+    unsubscribeEnrollment();
+    unsubscribeEnrollmentStep();
     captcha.destroy();
     signUpCaptcha.destroy();
   }
@@ -319,10 +495,23 @@ function createFlow(): FlowController {
     state: { subscribe: state.subscribe },
     submit,
     create,
+    createWithPasskey,
+    createPasskey,
+    sendEmailSecondFactor,
+    sendSmsSecondFactor,
+    mfaChoices,
+    enrollment,
+    enrollmentState: { subscribe: enrollmentState.subscribe },
+    saveRecoveryCodes,
+    resendSignUp,
     prepare,
     settings: { subscribe: settings.subscribe },
+    lastMethod: { subscribe: lastMethod.subscribe },
     captcha,
     signUpCaptcha,
+    policies,
+    loadPolicies,
+    declinePolicy,
     destroy,
   };
 }

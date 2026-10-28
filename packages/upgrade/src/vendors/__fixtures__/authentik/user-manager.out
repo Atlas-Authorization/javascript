@@ -1,0 +1,10 @@
+// TODO(atlas-migrate): UserManager: Atlas hosts the redirect, callback and silent renew; use useAuth() (signIn / signOut / getToken) from @atlasauth/react
+// TODO(atlas-migrate): WebStorageStateStore: delete it; Atlas keeps the session in its own cookies
+import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
+
+export const userManager = new UserManager({
+  authority: import.meta.env.VITE_ATLAS_FRONTEND_API,
+  client_id: import.meta.env.VITE_ATLAS_PUBLISHABLE_KEY,
+  redirect_uri: `${window.location.origin}/callback`,
+  userStore: new WebStorageStateStore({ store: window.localStorage }),
+});

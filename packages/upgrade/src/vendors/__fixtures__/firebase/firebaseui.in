@@ -1,0 +1,8 @@
+import StyledFirebaseAuth from 'react-firebaseui/StyledFirebaseAuth';
+import { EmailAuthProvider, getAuth } from 'firebase/auth';
+
+const uiConfig = { signInFlow: 'popup', signInOptions: [EmailAuthProvider.PROVIDER_ID] };
+
+export function Login() {
+  return <StyledFirebaseAuth uiConfig={uiConfig} firebaseAuth={getAuth()} />;
+}

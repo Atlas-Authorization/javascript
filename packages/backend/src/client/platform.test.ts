@@ -207,6 +207,72 @@ describe('Sign in with Atlas apps', () => {
   });
 });
 
+describe('Sign in with Atlas test and review accounts', () => {
+  it('maps list/create/get/rotate/remove to the provisioned_accounts routes', async () => {
+    const { impl, calls } = mockFetch([
+      { body: { object: 'list', data: [], limit: 25, total: 0 } },
+      { status: 201, body: { object: 'atlas_id_provisioned_account', id: 'iacct_1', password: 'pw-shown-once' } },
+      { body: { object: 'atlas_id_provisioned_account', id: 'iacct_1' } },
+      { body: { object: 'atlas_id_provisioned_account', id: 'iacct_1', password: 'new-pw' } },
+      { body: { object: 'atlas_id_provisioned_account', id: 'iacct_1', deleted: true, sessions_ended: 2 } },
+    ]);
+    const accounts = platform(impl).atlasIdApps.provisionedAccounts;
+    const base = `${API_URL}/v1/platform/atlas_id_apps/app_1/provisioned_accounts`;
+
+    expect((await accounts.list('app_1')).limit).toBe(25);
+    expect([last(calls).method, last(calls).url]).toEqual(['GET', base]);
+
+    const created = await accounts.create(
+      'app_1',
+      { email: 'reviewer@example.com', label: 'reviewer', two_factor_exempt: true, expires_at: null },
+      'idem-1',
+    );
+    expect(created.password).toBe('pw-shown-once');
+    expect([last(calls).method, last(calls).url]).toEqual(['POST', base]);
+    expect(json(last(calls).body)).toEqual({
+      email: 'reviewer@example.com',
+      label: 'reviewer',
+      two_factor_exempt: true,
+      expires_at: null,
+    });
+    expect(last(calls).headers['idempotency-key']).toBe('idem-1');
+
+    await accounts.get('app_1', 'iacct_1');
+    expect([last(calls).method, last(calls).url]).toEqual(['GET', `${base}/iacct_1`]);
+
+    const rotated = await accounts.rotatePassword('app_1', 'iacct_1');
+    expect(rotated.password).toBe('new-pw');
+    expect([last(calls).method, last(calls).url]).toEqual(['POST', `${base}/iacct_1/password`]);
+
+    const removed = await accounts.remove('app_1', 'iacct_1');
+    expect(removed.sessions_ended).toBe(2);
+    expect([last(calls).method, last(calls).url]).toEqual(['DELETE', `${base}/iacct_1`]);
+  });
+
+  it('encodes ids and sends the test-mode settings on update', async () => {
+    const { impl, calls } = mockFetch([{ body: { object: 'atlas_id_app', id: 'app_1' } }]);
+    const p = platform(impl);
+    await p.atlasIdApps.provisionedAccounts.get('a/b', 'c d');
+    expect(last(calls).url).toBe(`${API_URL}/v1/platform/atlas_id_apps/a%2Fb/provisioned_accounts/c%20d`);
+    await p.atlasIdApps.update('app_1', { test_mode: true, provisioned_verified_domains_only: true });
+    expect(last(calls).method).toBe('PATCH');
+    expect(json(last(calls).body)).toEqual({ test_mode: true, provisioned_verified_domains_only: true });
+  });
+
+  it('maps the verified-domain routes', async () => {
+    const { impl, calls } = mockFetch([{ body: { object: 'account_domain', id: 'dom_1' } }]);
+    const p = platform(impl);
+    await p.domains.list();
+    expect([last(calls).method, last(calls).url]).toEqual(['GET', `${API_URL}/v1/platform/domains`]);
+    await p.domains.claim('example.com');
+    expect(json(last(calls).body)).toEqual({ domain: 'example.com' });
+    await p.domains.verify('dom_1');
+    expect([last(calls).method, last(calls).url]).toEqual(['POST', `${API_URL}/v1/platform/domains/dom_1/verify`]);
+    await p.domains.remove('dom_1');
+    expect([last(calls).method, last(calls).url]).toEqual(['DELETE', `${API_URL}/v1/platform/domains/dom_1`]);
+  });
+});
+
 describe('platform design assets', () => {
   it('uploads raw bytes with the image content type and kind', async () => {
     const { impl, calls } = mockFetch([

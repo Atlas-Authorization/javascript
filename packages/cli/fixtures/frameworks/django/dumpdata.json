@@ -1,0 +1,193 @@
+[
+ {
+  "model": "auth.permission",
+  "pk": 21,
+  "fields": {
+   "name": "Can add invoice",
+   "content_type": 7,
+   "codename": "add_invoice"
+  }
+ },
+ {
+  "model": "auth.group",
+  "pk": 1,
+  "fields": {
+   "name": "billing",
+   "permissions": [
+    21
+   ]
+  }
+ },
+ {
+  "model": "auth.user",
+  "pk": 1,
+  "fields": {
+   "password": "pbkdf2_sha256$1800000$seasalt$sXv9FzN4gEo6/P8G5H1jvir9BIb5e5EkXoVGyjOniNE=",
+   "last_login": "2026-10-01T09:00:00Z",
+   "is_superuser": true,
+   "username": "ada",
+   "first_name": "Ada",
+   "last_name": "Lovelace",
+   "email": "ada@example.com",
+   "is_staff": true,
+   "is_active": true,
+   "date_joined": "2024-01-01T00:00:00Z",
+   "groups": [
+    1
+   ],
+   "user_permissions": []
+  }
+ },
+ {
+  "model": "auth.user",
+  "pk": 2,
+  "fields": {
+   "password": "!unusableXyZ",
+   "last_login": null,
+   "is_superuser": false,
+   "username": "grace",
+   "first_name": "Grace",
+   "last_name": "Hopper",
+   "email": "grace@example.com",
+   "is_staff": false,
+   "is_active": false,
+   "date_joined": "2024-02-01T00:00:00Z",
+   "groups": [],
+   "user_permissions": []
+  }
+ },
+ {
+  "model": "account.emailaddress",
+  "pk": 1,
+  "fields": {
+   "user": 1,
+   "email": "ada@example.com",
+   "verified": true,
+   "primary": true
+  }
+ },
+ {
+  "model": "account.emailaddress",
+  "pk": 2,
+  "fields": {
+   "user": 1,
+   "email": "ada@work.example",
+   "verified": false,
+   "primary": false
+  }
+ },
+ {
+  "model": "account.emailaddress",
+  "pk": 3,
+  "fields": {
+   "user": 2,
+   "email": "grace@example.com",
+   "verified": true,
+   "primary": true
+  }
+ },
+ {
+  "model": "socialaccount.socialaccount",
+  "pk": 5,
+  "fields": {
+   "user": 2,
+   "provider": "github",
+   "uid": "1024",
+   "last_login": "2026-01-01T00:00:00Z",
+   "date_joined": "2025-01-01T00:00:00Z",
+   "extra_data": {
+    "login": "grace",
+    "email": "grace@example.com"
+   }
+  }
+ },
+ {
+  "model": "socialaccount.socialtoken",
+  "pk": 1,
+  "fields": {
+   "app": null,
+   "account": 5,
+   "token": "gho_secret",
+   "token_secret": "",
+   "expires_at": null
+  }
+ },
+ {
+  "model": "mfa.authenticator",
+  "pk": 10,
+  "fields": {
+   "user": 1,
+   "type": "totp",
+   "data": {
+    "secret": "JBSWY3DPEHPK3PXP"
+   },
+   "created_at": "2025-06-01T00:00:00Z",
+   "last_used_at": null
+  }
+ },
+ {
+  "model": "mfa.authenticator",
+  "pk": 11,
+  "fields": {
+   "user": 1,
+   "type": "recovery_codes",
+   "data": {
+    "seed": "00ff",
+    "used_mask": 0
+   },
+   "created_at": "2025-06-01T00:00:00Z",
+   "last_used_at": null
+  }
+ },
+ {
+  "model": "mfa.authenticator",
+  "pk": 12,
+  "fields": {
+   "user": 1,
+   "type": "webauthn",
+   "data": {
+    "name": "MacBook",
+    "passwordless": true,
+    "credential": {
+     "type": "public-key",
+     "id": "q83vASNFZ4mrze8BI0VniQ",
+     "rawId": "q83vASNFZ4mrze8BI0VniQ",
+     "response": {
+      "clientDataJSON": "e30",
+      "attestationObject": "o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YViUo3mm9u6vuaVeN4wRgDTidR5oL6ufLTCrE9ISVYbOGUddAAAAKuqbjWZNAR0hPOS2tIy1ddQAEKvN7wEjRWeJq83vASNFZ4mlAQIDJiABIVggAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAiWCAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4_QA",
+      "transports": [
+       "internal",
+       "hybrid"
+      ]
+     }
+    }
+   },
+   "created_at": "2025-07-01T00:00:00Z",
+   "last_used_at": null
+  }
+ },
+ {
+  "model": "sessions.session",
+  "pk": "k3y0000000000000000000000000000a",
+  "fields": {
+   "session_data": ".eJyrVopPLC3JiC8tTi2Kz0xRslIyVNJBFktKTM5OzQNJJObkgIT1EpOT80vzSvTAaqDSxXqOQF5qXklmcmJJZn6eE1QXilEZicUZIHOSKINKtQCl4UMh:1xLFCq:sig",
+   "expire_date": "2026-11-08T00:00:00Z"
+  }
+ },
+ {
+  "model": "sessions.session",
+  "pk": "k3y0000000000000000000000000000b",
+  "fields": {
+   "session_data": "MDEyM2FiY2Q6eyJfYXV0aF91c2VyX2lkIjogIjIifQ==",
+   "expire_date": "2026-11-08T00:00:00Z"
+  }
+ },
+ {
+  "model": "sessions.session",
+  "pk": "k3y0000000000000000000000000000c",
+  "fields": {
+   "session_data": "eyJkamFuZ29fbGFuZ3VhZ2UiOiAiZW4ifQ:1xLFCq:sig",
+   "expire_date": "2026-11-08T00:00:00Z"
+  }
+ }
+]

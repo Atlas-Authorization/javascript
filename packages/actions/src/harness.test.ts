@@ -66,6 +66,16 @@ describe('runAction — captures api calls', () => {
     expect(result.denied).toBe(false);
   });
 
+  it('captures api.session.setCustomData on post_login', async () => {
+    const action = defineAction('post_login', (_event, api) => {
+      api.session.setCustomData('cart_id', 'c_1');
+      api.session.setCustomData('k'.repeat(80), 1);
+    });
+    const result = await runAction(action, createTestEvent('post_login'));
+    expect(result.sessionData).toEqual({ cart_id: 'c_1', ['k'.repeat(64)]: 1 });
+    expect(result.calls[0]).toEqual({ method: 'session.setCustomData', args: ['cart_id', 'c_1'] });
+  });
+
   it('accepts a bare handler as well as a DefinedAction', async () => {
     // A bare handler (not a DefinedAction), with explicit param types.
     const result = await runAction(
@@ -121,5 +131,95 @@ describe('runScript — the deployable code body', () => {
     const result = await runScript(`console.log('hi')`, createTestEvent('post_login'));
     expect(result.error).toBeTruthy();
     expect(result.logs).toEqual([]); // nothing reached the real stdout
+  });
+});
+
+describe('api.http in the harness', () => {
+  it('queues requests exactly as the platform would send them', async () => {
+    const action = defineAction('post_login', async (event, api) => {
+      api.http.post('https://hooks.example/atlas', { email: event.user.email }, { headers: { 'X-Token': event.secrets.TOKEN ?? '' } });
+      api.http.get('https://lookup.example/p', { saveResponseAs: 'profile' });
+    });
+    const result = await runAction(action, createTestEvent('post_login', { secrets: { TOKEN: 't' } }));
+    expect(result.error).toBeNull();
+    expect(result.httpRequests).toEqual([
+      {
+        method: 'POST',
+        url: 'https://hooks.example/atlas',
+        headers: { 'X-Token': 't', 'content-type': 'application/json' },
+        body: '{"email":"sample@example.com"}',
+        saveResponseAs: null,
+      },
+      { method: 'GET', url: 'https://lookup.example/p', headers: {}, body: null, saveResponseAs: 'profile' },
+    ]);
+  });
+
+  it('throws on what the sandbox refuses (http URLs, forbidden headers, too many)', async () => {
+    const plain = await runScript(`api.http.get('http://x.example/')`, createTestEvent('post_login'));
+    expect(plain.error).toMatch(/https:\/\//);
+    const host = await runScript(`api.http.post('https://x.example/', 'b', { headers: { host: 'y' } })`, createTestEvent('post_login'));
+    expect(host.error).toMatch(/set by Atlas/);
+    const many = await runScript(`for (let i = 0; i < 6; i++) api.http.get('https://x.example/' + i)`, createTestEvent('post_login'));
+    expect(many.error).toMatch(/at most 5/);
+  });
+
+  it('queues service-connector calls and refuses malformed ones', async () => {
+    const ok = await runScript(`api.connector.send('sms', 'send_sms', { to: '+15550001', body: 'hi' })`, createTestEvent('post_login'));
+    expect(ok.error).toBeNull();
+    expect(ok.connectorCalls).toEqual([{ name: 'sms', operation: 'send_sms', input: { to: '+15550001', body: 'hi' } }]);
+    const bad = await runScript(`api.connector.send('Bad Name', 'send_sms')`, createTestEvent('post_login'));
+    expect(bad.error).toMatch(/connector name/);
+    const many = await runScript(`for (let i = 0; i < 6; i++) api.connector.send('sms', 'send_sms')`, createTestEvent('post_login'));
+    expect(many.error).toMatch(/at most 5/);
+  });
+
+  it('the test event carries organizations and a country', () => {
+    const event = createTestEvent('post_login', {
+      user: { organizations: [{ id: 'org_1', slug: 'acme', name: 'Acme', role: 'org:admin' }] },
+      request: { country: 'DE' },
+    });
+    expect(event.user.organizations[0]!.role).toBe('org:admin');
+    expect(event.request.country).toBe('DE');
+    expect(createTestEvent('post_login').user.organizations).toEqual([]);
+  });
+});
+
+describe('EXT-01 api surface in the harness', () => {
+  it('captures lock, suppressClaim, user edits and sign-up shaping', async () => {
+    const result = await runScript(
+      `
+        api.access.lock('slow down');
+        api.accessToken.suppressClaim('email');
+        api.idToken.suppressClaim('name');
+        api.user.setBanned(true, 'fraud');
+        api.user.setEmailVerified(true);
+        api.user.setName('Ada');
+        api.signUp.prefill('company', 'Acme');
+        api.signUp.modify('country', 'DE');
+      `,
+      createTestEvent('pre_user_registration'),
+    );
+    expect(result.error).toBeNull();
+    expect(result.lockReason).toBe('slow down');
+    expect(result.suppressedAccessClaims).toEqual(['email']);
+    expect(result.suppressedIdClaims).toEqual(['name']);
+    expect(result.userEdits).toEqual({ banned: { value: true, reason: 'fraud' }, emailVerified: true, firstName: 'Ada' });
+    expect(result.signUpPrefill).toEqual({ company: 'Acme' });
+    expect(result.signUpModify).toEqual({ country: 'DE' });
+  });
+
+  it('builds a test event with context, sign-up fields and an organization', () => {
+    const event = createTestEvent('pre_member_add', { context: { x: 1 }, organization: { id: 'org_1', name: 'Acme', slug: 'acme' } });
+    expect(event.context).toEqual({ trigger: 'pre_member_add', x: 1 });
+    expect(event.organization.slug).toBe('acme');
+  });
+});
+
+describe('EXT-04 challenge api in the harness', () => {
+  it('captures the prompt and the accept verdict', async () => {
+    const created = await runScript(`api.challenge.set({ prompt: 'Q?', state: { a: 1 } });`, createTestEvent('custom_challenge_create'));
+    expect(created.challenge).toEqual({ prompt: 'Q?', hint: null, state: { a: 1 } });
+    const verified = await runScript(`api.challenge.accept({ amr: ['kba'] });`, createTestEvent('custom_challenge_verify'));
+    expect(verified.challengeAccept).toEqual({ amr: ['kba'] });
   });
 });

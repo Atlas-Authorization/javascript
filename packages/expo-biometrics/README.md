@@ -48,3 +48,22 @@ if (result.ok) {
 Use `isBiometricsAvailable(LocalAuthentication)` to decide whether to show an
 "unlock with Face ID" affordance at all. Pass `allowWhenUnavailable: true` to fall
 through on devices with no enrolled biometric instead of locking the user out.
+
+## Device-bound biometric sign-in
+
+`createDeviceKeySigner(keystore)` adapts the native keystore module you use for
+hardware-backed P-256 keys (Secure Enclave / Android Keystore) to the
+`DeviceKeySigner` that `registerDeviceKey` and `signInWithDeviceKey` from
+`@atlasauth/js` expect. Public keys (SPKI, X9.63 or `{ x, y }`) and DER or raw
+signatures are normalised to what Atlas verifies.
+
+```ts
+import { registerDeviceKey, signInWithDeviceKey } from '@atlasauth/js';
+import { createDeviceKeySigner } from '@atlasauth/expo-biometrics';
+
+const signer = createDeviceKeySigner({
+  createKey: ({ biometric }) => myKeystore.createKey({ biometric }), // returns the public key
+  sign: (message) => myKeystore.sign(message), // shows the biometric prompt
+});
+await registerDeviceKey({ client, signer, instanceId, platform: 'ios' });
+```

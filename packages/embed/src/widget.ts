@@ -1,3 +1,4 @@
+import { captureMarketing, type PasskeyPrfRequest } from '@atlasauth/js';
 import {
   initialFlow,
   BehaviorRecorder,
@@ -11,6 +12,11 @@ import {
   referralChallengeFlows,
   referralChallengeRequired,
   type ReferralConsent,
+  ACCOUNT_UX_DEFAULT,
+  accountUxFrom,
+  type AccountUx,
+  type MfaEnrollmentController,
+  PolicyAcceptanceController,
 } from '@atlasauth/js';
 import {
   cssVariables,
@@ -39,6 +45,7 @@ import { widgetDesign, type WidgetDesign } from './design';
 import { render, renderLoading } from './widget/render';
 import { handleRedirectLanding } from './widget/flow';
 import { startConditionalPasskey } from './widget/passkey';
+import { loadSignUpPolicies } from './widget/policies';
 
 /**
  * The framework-agnostic sign-in panel.
@@ -89,6 +96,14 @@ export interface WidgetOptions {
    * whose reason has no string here shows the server's message.
    */
   localization?: ErrorStrings;
+  /**
+   * Opt in to the WebAuthn `prf` extension on passkey sign-in. The widget
+   * asks the authenticator for a PRF output with these salts and dispatches an
+   * `atlas:passkey-prf` CustomEvent on the element with the results; they are
+   * never sent to Atlas. Markup: `data-atlas-passkey-prf="<salt>"` (one salt,
+   * encoded as UTF-8). Nothing is requested when unset.
+   */
+  passkeyPrf?: PasskeyPrfRequest;
   /** Injected in tests; defaults to the global fetch. */
   fetchImpl?: typeof fetch;
 }
@@ -118,6 +133,16 @@ export class AtlasWidget {
    * boxes. Reset whenever a fresh flow starts.
    */
   backupCodeMode = false;
+  /** The sign-up's policies (terms, privacy, …), or empty when the instance has none. */
+  policies = new PolicyAcceptanceController([]);
+  /** The sign-in's pending policies (`needs_policy_acceptance`), once loaded for that attempt. */
+  pendingPolicies: { attemptId: string | null; controller: PolicyAcceptanceController | null } | null = null;
+  /** Teardown for the policy UI of the current render (cleared by every render). */
+  policyDispose: (() => void)[] = [];
+  /** The MFA enrolment step's state and requests (`needs_mfa_enrollment`), created on first use. */
+  enrollment: MfaEnrollmentController | null = null;
+  /** "Text me a code instead" / "Email me a code instead" at the second factor: sending, sent, or refused. */
+  secondFactorCode: { attemptId: string; strategy: 'sms' | 'email_code'; busy?: boolean; sentTo?: string; error?: string } | null = null;
   /**
    * The email/username the user typed at the identifier step, kept so later steps
    * can show it as context ("Enter the code we sent to you@example.com") — the
@@ -145,6 +170,12 @@ export class AtlasWidget {
   conditionalAbort?: AbortController;
   /** §5.3 the email-link poll, while this tab waits for the link to be opened. */
   linkPoll: ReturnType<typeof setInterval> | null = null;
+  /**
+   * The instance's account settings (`account` on /v1/appearance): whether
+   * sign-up verification and password reset are emailed as a code, a link, or
+   * both — a link-only step shows "check your email" and polls.
+   */
+  account: AccountUx = { ...ACCOUNT_UX_DEFAULT };
   /** §7.5 whether the instance offers a "Remember me" checkbox at sign-in. */
   rememberMeEnabled = false;
   /** The current Remember-me choice — ticked by default (persistent session). */
@@ -209,11 +240,16 @@ export class AtlasWidget {
   async mount(): Promise<void> {
     injectStyles(this.root.ownerDocument ?? document);
     this.root.classList.add('atlas-embed-root');
+    // The panel speaks the language it was given, so assistive technology reads
+    // it in that language even when the host page is in another (WCAG 3.1.2).
+    if (this.options.locale && !this.root.hasAttribute('lang')) this.root.setAttribute('lang', this.options.locale);
     // An inline preset/design themes the very first (loading) paint.
     this.resolveDesign(null);
     this.applyTheme();
     this.applyInteraction();
     renderLoading(this);
+    // ADM-08 start capturing the campaign parameters this page was opened with (instance setting + consent decide).
+    void captureMarketing(this.client).catch(() => undefined);
 
     // A completed sign-in (OAuth/hosted handoff) redirected back to this page:
     // exchange the one-time ticket for cookies, scrub the URL, and finish.
@@ -248,6 +284,7 @@ export class AtlasWidget {
       // An emailed sign-in code / link is neither offered nor sent while email can't be delivered.
       this.emailDeliveryAvailable = data.email_delivery?.available ?? true;
       this.passwordSignUpEnabled = data.email_delivery?.password_sign_up ?? true;
+      this.account = accountUxFrom(data);
       this.signInWithAtlas = data.sign_in_with_atlas ?? { enabled: false };
       this.rememberMeEnabled = data.rememberMe === true;
       this.trustedDeviceEnabled = data.rememberDevice === true;
@@ -281,6 +318,7 @@ export class AtlasWidget {
     );
     this.applyInteraction();
     this.signUpFields = this.appearance?.signUpFields ?? [];
+    await loadSignUpPolicies(this);
     // §bot — begin passive behavioural collection once the form is up. Never
     // throws; captures timings/counts only, no field content.
     try {

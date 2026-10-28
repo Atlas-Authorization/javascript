@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { formatMoney, planPriceView, type PublicBillingPlan } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { currentUrl, navigateTo, useClass, useClasses, useErrorText, useMeClient, useText } from './components-shared';
 import type {
   AtlasBillingInvoice,
   AtlasBillingPlan,
   AtlasBillingSubscription,
+  AtlasFeatureCheck,
   AtlasPaymentMethod,
 } from './types';
 
@@ -30,6 +32,46 @@ export interface CheckoutParams {
   cancelUrl?: string;
   /** Redirect to the Checkout URL (default true). False → the URL is only returned. */
   redirect?: boolean;
+  /** Start on the plan's yearly price (when it has one). */
+  interval?: 'month' | 'year';
+}
+
+export interface ChangePlanParams {
+  planId: string;
+  interval?: 'month' | 'year';
+  /** Switch when the current period ends instead of now (prorated). */
+  atPeriodEnd?: boolean;
+  orgId?: string;
+  /** Change this subscription (e.g. one add-on) instead of the primary one. */
+  subscriptionId?: string;
+}
+
+/** The statuses in which a subscription is still running. */
+const LIVE_STATUSES = ['active', 'trialing', 'past_due'];
+
+/**
+ * Where a change / cancel / restore goes: one subscription by id, or (no id)
+ * the subject's primary subscription — the single-subscription behaviour.
+ */
+export function manageUrl(action: 'change' | 'cancel' | 'restore', subscriptionId?: string): string {
+  return subscriptionId
+    ? `/v1/client/billing/subscriptions/${encodeURIComponent(subscriptionId)}/${action}`
+    : `/v1/client/billing/subscription/${action}`;
+}
+
+/**
+ * Every subscription from the subject read: the server's `subscriptions[]`, or
+ * — from a server that predates several subscriptions — the one it reports.
+ */
+export function subscriptionsOf(read: AtlasBillingSubscription | null | undefined): AtlasBillingSubscription[] {
+  if (!read) return [];
+  if (Array.isArray(read.subscriptions)) return read.subscriptions;
+  return read.status !== null ? [read] : [];
+}
+
+/** The live add-on subscriptions among a subject's subscriptions. */
+export function liveAddonsOf(subscriptions: AtlasBillingSubscription[]): AtlasBillingSubscription[] {
+  return subscriptions.filter((s) => s.plan?.kind === 'addon' && LIVE_STATUSES.includes(String(s.status ?? '')));
 }
 
 /**
@@ -45,6 +87,7 @@ export function useBilling(opts: { orgId?: string } = {}) {
 
   const [plans, setPlans] = useState<AtlasBillingPlan[]>([]);
   const [subscription, setSubscription] = useState<AtlasBillingSubscription | null>(null);
+  const [subscriptions, setSubscriptions] = useState<AtlasBillingSubscription[]>([]);
   const [invoices, setInvoices] = useState<AtlasBillingInvoice[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<AtlasPaymentMethod | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -64,11 +107,17 @@ export function useBilling(opts: { orgId?: string } = {}) {
           `/v1/client/billing/payment_method${orgQuery}`,
         ),
       ]);
-      if (subRes.ok) setSubscription(subRes.data ?? null);
+      if (subRes.ok) {
+        setSubscription(subRes.data ?? null);
+        // Every subscription the subject holds (base + add-ons); an older server
+        // without the list reports just the one.
+        setSubscriptions(subscriptionsOf(subRes.data));
+      }
       if (invRes.ok && invRes.data) setInvoices(invRes.data.data ?? []);
       if (pmRes.ok) setPaymentMethod(pmRes.data?.payment_method ?? null);
     } else {
       setSubscription(null);
+      setSubscriptions([]);
       setInvoices([]);
       setPaymentMethod(null);
     }
@@ -86,6 +135,7 @@ export function useBilling(opts: { orgId?: string } = {}) {
         org_id: params.orgId ?? orgId,
         success_url: params.successUrl ?? currentUrl(),
         cancel_url: params.cancelUrl ?? currentUrl(),
+        ...(params.interval ? { interval: params.interval } : {}),
       });
       if (res.ok && res.data?.url && params.redirect !== false) navigateTo(res.data.url);
       return res;
@@ -94,10 +144,12 @@ export function useBilling(opts: { orgId?: string } = {}) {
   );
 
   const openPortal = useCallback(
-    async (params: { returnUrl?: string; orgId?: string; redirect?: boolean } = {}) => {
+    async (params: { returnUrl?: string; orgId?: string; redirect?: boolean; subscriptionId?: string } = {}) => {
       const res = await client.post<{ url: string }>('/v1/client/billing/portal', {
         org_id: params.orgId ?? orgId,
         return_url: params.returnUrl ?? currentUrl(),
+        // The portal of that subscription's provider (default: the primary one's).
+        ...(params.subscriptionId ? { subscription_id: params.subscriptionId } : {}),
       });
       if (res.ok && res.data?.url && params.redirect !== false) navigateTo(res.data.url);
       return res;
@@ -105,7 +157,81 @@ export function useBilling(opts: { orgId?: string } = {}) {
     [client, orgId],
   );
 
-  return { isLoaded, plans, subscription, invoices, paymentMethod, checkout, openPortal, reload };
+  /** Switch a live subscription to another plan or interval (no checkout needed). */
+  const changePlan = useCallback(
+    async (params: ChangePlanParams) => {
+      const res = await client.post<AtlasBillingSubscription>(manageUrl('change', params.subscriptionId), {
+        plan_id: params.planId,
+        org_id: params.orgId ?? orgId,
+        ...(params.interval ? { interval: params.interval } : {}),
+        schedule_at_period_end: params.atPeriodEnd === true,
+      });
+      if (res.ok) await reload();
+      return res;
+    },
+    [client, orgId, reload],
+  );
+
+  /** Cancel at the end of the period (default), or now with `{ immediately: true }`. */
+  const cancel = useCallback(
+    async (params: { immediately?: boolean; orgId?: string; subscriptionId?: string } = {}) => {
+      const res = await client.post<AtlasBillingSubscription>(manageUrl('cancel', params.subscriptionId), {
+        org_id: params.orgId ?? orgId,
+        immediately: params.immediately === true,
+      });
+      if (res.ok) await reload();
+      return res;
+    },
+    [client, orgId, reload],
+  );
+
+  /** Undo a cancellation scheduled for the end of the period. */
+  const restore = useCallback(
+    async (params: { orgId?: string; subscriptionId?: string } = {}) => {
+      const res = await client.post<AtlasBillingSubscription>(manageUrl('restore', params.subscriptionId), {
+        org_id: params.orgId ?? orgId,
+      });
+      if (res.ok) await reload();
+      return res;
+    },
+    [client, orgId, reload],
+  );
+
+  /**
+   * May the subject use `feature` (needing `required` units)? Asked live of an
+   * entitlement provider (Autumn, Commet) when the subject is on one, else from
+   * the resolved entitlement. For UI only — gate on the server or the token.
+   */
+  const check = useCallback(
+    async (feature: string, params: { required?: number; orgId?: string } = {}) => {
+      const q = new URLSearchParams({ feature });
+      if (params.required !== undefined) q.set('required', String(params.required));
+      const org = params.orgId ?? orgId;
+      if (org) q.set('org_id', org);
+      return client.get<AtlasFeatureCheck>(`/v1/client/billing/check?${q.toString()}`);
+    },
+    [client, orgId],
+  );
+
+  /** The live add-on subscriptions (everything beyond the primary one). */
+  const addons = liveAddonsOf(subscriptions);
+
+  return {
+    isLoaded,
+    plans,
+    subscription,
+    subscriptions,
+    addons,
+    invoices,
+    paymentMethod,
+    checkout,
+    openPortal,
+    changePlan,
+    cancel,
+    restore,
+    check,
+    reload,
+  };
 }
 
 /** §commerce Clerk-parity alias — just the `checkout` action from {@link useBilling}. */
@@ -116,8 +242,8 @@ export function useCheckout(opts: { orgId?: string } = {}) {
 
 /** §commerce Clerk-parity alias — the subject's subscription from {@link useBilling}. */
 export function useSubscription(opts: { orgId?: string } = {}) {
-  const { isLoaded, subscription, openPortal, reload } = useBilling(opts);
-  return { isLoaded, subscription, openPortal, reload };
+  const { isLoaded, subscription, subscriptions, addons, openPortal, changePlan, cancel, restore, reload } = useBilling(opts);
+  return { isLoaded, subscription, subscriptions, addons, openPortal, changePlan, cancel, restore, reload };
 }
 
 /** §commerce Clerk-parity alias — the subject's invoices from {@link useBilling}. */
@@ -133,45 +259,102 @@ export function usePaymentMethods(opts: { orgId?: string } = {}) {
 }
 
 /** Format a minor-unit amount (cents) as a currency string, best-effort. */
-function formatPrice(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount / 100);
-  } catch {
-    return `${(amount / 100).toFixed(2)} ${currency.toUpperCase()}`;
-  }
-}
+const formatPrice = (amount: number, currency: string): string => formatMoney(amount, currency);
+
+/** English defaults for the strings `<PricingTable>` adds beyond the localized commerce keys. */
+const PRICING_LABELS = {
+  monthly: 'Monthly',
+  yearly: 'Yearly',
+  perMonth: 'month',
+  perYear: 'year',
+  free: 'Free',
+  trial: (days: number) => `${days}-day free trial`,
+  useCode: (code: string) => `Use code ${code} at checkout`,
+};
+export type PricingLabels = Partial<typeof PRICING_LABELS>;
 
 /**
  * §commerce (Clerk `<PricingTable>`). Renders the instance's plans as cards with
- * price + features and a subscribe button that starts a real Stripe Checkout.
- * The plan the subject is currently on is marked as current (its button is
- * disabled and an "Manage billing" action opens the Billing Portal instead).
+ * a locale-formatted price, features and a subscribe button that starts a real
+ * provider Checkout. Shows a free-trial badge, a monthly/yearly switch when a
+ * plan has an annual price, and a plan's promotion (label, struck-through price,
+ * the code to enter at checkout). The plan the subject is on is marked current
+ * (its button opens the Billing Portal instead).
+ *
+ * `locale` defaults to the page language; `labels` overrides the English text
+ * this component adds (the subscribe / manage buttons stay localized as before).
+ * `audience` shows only user or organization plans (default: every plan).
  */
-export function PricingTable({ orgId }: { orgId?: string } = {}) {
-  const { isLoaded, plans, subscription, checkout, openPortal } = useBilling({ orgId });
+export function PricingTable({
+  orgId,
+  locale,
+  labels = {},
+  audience,
+}: { orgId?: string; locale?: string; labels?: PricingLabels; audience?: 'user' | 'org' } = {}) {
+  const { isLoaded, plans, subscription, subscriptions, checkout, openPortal, changePlan } = useBilling({ orgId });
   const { status } = useAtlas();
   const t = useText();
+  const L = { ...PRICING_LABELS, ...labels };
 
   const cardClass = useClass('card', 'atlas-card');
   const buttonClass = useClass('formButtonPrimary', 'atlas-button');
   const cls = useClasses();
 
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
+  const [interval, setIntervalChoice] = useState<'month' | 'year'>('month');
   const currentPlanId = subscription?.plan?.id ?? null;
+  // A subject with a live BASE subscription switches base plans in place
+  // (prorated) instead of a second checkout; add-ons are bought alongside.
+  const live = LIVE_STATUSES.includes(String(subscription?.status ?? '')) && subscription?.plan?.kind !== 'addon';
+  const heldAddons = new Map(liveAddonsOf(subscriptions).map((s) => [s.plan!.id, s]));
+  const pageLocale = locale ?? (typeof document !== 'undefined' ? document.documentElement.lang || undefined : undefined);
 
   if (!isLoaded) return <div data-atlas="pricing-table" aria-busy="true" />;
 
+  const shown = audience ? plans.filter((p) => p.audience === audience) : plans;
+  const hasAnnual = shown.some((p) => p.annual_available);
+
   return (
     <div className={cls('pricingTable', 'atlas-pricing-table')} data-atlas="pricing-table">
-      {plans.map((plan) => {
-        const isCurrent = plan.id === currentPlanId;
+      {hasAnnual ? (
+        <div role="group" aria-label="Billing interval" data-atlas="pricing-interval">
+          {(['month', 'year'] as const).map((i) => (
+            <button
+              key={i}
+              type="button"
+              className={cls('formButtonSecondary', 'atlas-button-secondary')}
+              aria-pressed={interval === i}
+              onClick={() => setIntervalChoice(i)}
+            >
+              {i === 'month' ? L.monthly : L.yearly}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {shown.map((plan) => {
+        const isAddon = plan.kind === 'addon';
+        const held = isAddon ? heldAddons.get(plan.id) : undefined;
+        const isCurrent = isAddon ? Boolean(held) : plan.id === currentPlanId;
+        const view = planPriceView(plan as PublicBillingPlan, { interval, locale: pageLocale });
         return (
-          <div key={plan.id} className={cardClass} data-atlas="pricing-plan" data-current={isCurrent}>
+          <div
+            key={plan.id}
+            className={cardClass}
+            data-atlas="pricing-plan"
+            data-current={isCurrent}
+            data-kind={isAddon ? 'addon' : 'base'}
+          >
             <h3 className={cls('planName', 'atlas-plan-name')}>{plan.name}</h3>
+            {view.promotionLabel ? <p data-atlas="pricing-promotion" className={cls('badge', 'atlas-badge')}>{view.promotionLabel}</p> : null}
             <p className={cls('price', 'atlas-price')}>
-              {formatPrice(plan.amount, plan.currency)}
-              <span className={cls('priceInterval', 'atlas-interval')}> / {plan.interval}</span>
+              {view.originalPrice ? <s data-atlas="pricing-original">{view.originalPrice}</s> : null}{' '}
+              {view.free ? L.free : view.price}
+              {view.free ? null : (
+                <span className={cls('priceInterval', 'atlas-interval')}> / {view.interval === 'year' ? L.perYear : L.perMonth}</span>
+              )}
             </p>
+            {view.trialDays ? <p data-atlas="pricing-trial" className={cls('badge', 'atlas-badge')}>{L.trial(view.trialDays)}</p> : null}
+            {view.promotionCode ? <p data-atlas="pricing-code" className={cls('text', 'atlas-text')}>{L.useCode(view.promotionCode)}</p> : null}
             {plan.features.length ? (
               <ul className={cls('list', 'atlas-list')}>
                 {plan.features.map((f, i) => (
@@ -184,7 +367,7 @@ export function PricingTable({ orgId }: { orgId?: string } = {}) {
                 type="button"
                 className={buttonClass}
                 data-atlas="manage-billing"
-                onClick={() => void openPortal()}
+                onClick={() => void openPortal(held?.id ? { subscriptionId: held.id } : {})}
               >
                 {t('commerce.manage')}
               </button>
@@ -195,7 +378,11 @@ export function PricingTable({ orgId }: { orgId?: string } = {}) {
                 disabled={status !== 'signed_in' || busyPlan === plan.id}
                 onClick={() => {
                   setBusyPlan(plan.id);
-                  void checkout({ planId: plan.id }).finally(() => setBusyPlan(null));
+                  const action =
+                    !isAddon && live && currentPlanId
+                      ? changePlan({ planId: plan.id })
+                      : checkout({ planId: plan.id, ...(plan.annual_available ? { interval } : {}) });
+                  void action.finally(() => setBusyPlan(null));
                 }}
               >
                 {t('commerce.subscribe')}

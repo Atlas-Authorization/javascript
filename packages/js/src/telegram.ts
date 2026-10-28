@@ -28,3 +28,30 @@ export interface TelegramSignInBody {
 export function telegramSignInBody(payload: TelegramWidgetUser): TelegramSignInBody {
   return { telegram: payload };
 }
+
+/** Body for `POST /v1/oauth/game_platform` with an Apple Game Center identity proof. */
+export interface GameCenterProof {
+  /** `teamPlayerID` (preferred) or `gamePlayerID`. */
+  player_id: string;
+  bundle_id: string;
+  public_key_url: string;
+  /** Base64 of the signature bytes. */
+  signature: string;
+  /** Base64 of the salt bytes. */
+  salt: string;
+  /** Milliseconds since epoch, as Game Center returns it. */
+  timestamp: number;
+  display_name?: string;
+}
+
+export type GamePlatformSignInBody =
+  | { provider: 'apple_game_center'; game_center: GameCenterProof }
+  | { provider: 'google_play_games'; server_auth_code: string };
+
+export function gameCenterSignInBody(proof: GameCenterProof): GamePlatformSignInBody {
+  return { provider: 'apple_game_center', game_center: proof };
+}
+
+export function playGamesSignInBody(serverAuthCode: string): GamePlatformSignInBody {
+  return { provider: 'google_play_games', server_auth_code: serverAuthCode };
+}

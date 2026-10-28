@@ -7,6 +7,7 @@ import {
   addServerHandler,
   addServerImports,
 } from '@nuxt/kit';
+import { VUE_COMPONENTS, VUE_COMPOSABLES } from './surface';
 
 /**
  * `@atlasauth/nuxt` — the official Nuxt 3 module for Atlas.
@@ -113,34 +114,15 @@ export default defineNuxtModule<ModuleOptions>({
     addPlugin({ src: resolver.resolve('./runtime/plugin'), mode: 'all' });
 
     // ---- auto-import the @atlasauth/vue composables ----------------------------
-    const composables = [
-      'useAtlas',
-      'useUser',
-      'useSession',
-      'useAuth',
-      'useOrganization',
-      'useSignIn',
-      'useSignUp',
-      'useFlow',
-    ];
+    const composables = VUE_COMPOSABLES;
     for (const name of composables) {
       addImports({ name, as: name, from: '@atlasauth/vue' });
     }
 
+    // The policy-acceptance pieces (usePolicies, PolicyConsent, PolicyClickwrap, PolicyAcceptStep,
+    // PolicyGate) ride along: <SignUp>/<SignIn> already use them, and custom forms can too.
     // ---- auto-register the @atlasauth/vue components ---------------------------
-    const components = [
-      'SignedIn',
-      'SignedOut',
-      'AtlasLoading',
-      'AtlasLoaded',
-      'Protect',
-      'SignIn',
-      'SignUp',
-      'UserButton',
-      'OrganizationSwitcher',
-      'UserProfile',
-      'OrganizationProfile',
-    ];
+    const components = VUE_COMPONENTS;
     for (const name of components) {
       addComponent({ name, export: name, filePath: '@atlasauth/vue' });
     }

@@ -1,0 +1,14 @@
+import passport from 'passport';
+import { Strategy as LocalStrategy } from 'passport-local';
+import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { findUser } from '../db';
+
+// TODO(atlas-migrate): passport-local: email/password sign-in runs on the Atlas sign-in page now (existing password hashes move with your users); delete this strategy and the login form, send users to /sign-in
+passport.use(new LocalStrategy((username, password, done) => findUser(username, password, done)));
+// TODO(atlas-migrate): passport-google-oauth20: enable Google under Social connections in the Atlas dashboard (its client id and secret move there); Atlas runs the OAuth callback, so delete this strategy and its callback route
+passport.use(new GoogleStrategy({ clientID: 'id', clientSecret: 'secret', callbackURL: '/auth/google/callback' }, (_a, _r, profile, done) => done(null, profile)));
+
+// TODO(atlas-migrate): passport.serializeUser/deserializeUser: there is no Passport login session any more; load your user record by getAuth(req).userId (the Atlas user id) where you need it
+passport.serializeUser((user: { id: string }, done) => done(null, user.id));
+// TODO(atlas-migrate): passport.serializeUser/deserializeUser: there is no Passport login session any more; load your user record by getAuth(req).userId (the Atlas user id) where you need it
+passport.deserializeUser((id: string, done) => findUser(id, null, done));

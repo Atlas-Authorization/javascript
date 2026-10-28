@@ -6,6 +6,7 @@ import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { fmtTime, printJson, renderTable, type Column } from '../output';
 import { requireArg, requireClient, wantsJson } from './shared';
+import { gallery, install, installs, publish, show, update } from './actions-gallery';
 
 const COLUMNS: Column<Action>[] = [
   { header: 'ID', get: (a) => a.id },
@@ -34,6 +35,8 @@ function parseTrigger(raw: string | undefined): ActionTrigger {
  *   deploy <file> --trigger <t> upload a file's code as a new action
  *   test <file> [--trigger <t>] dry-run the file OFFLINE through @atlasauth/actions
  *   logs <id>                   where to find an action's execution history
+ *   gallery | show | install | installs | update | publish
+ *                               the Actions gallery (see ./actions-gallery.ts)
  */
 export async function actions(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const sub = args.positionals[1];
@@ -112,11 +115,24 @@ export async function actions(ctx: RunContext, args: ParsedArgs): Promise<number
       return 0;
     }
 
+    case 'gallery':
+      return gallery(ctx, args);
+    case 'show':
+      return show(ctx, args);
+    case 'install':
+      return install(ctx, args);
+    case 'installs':
+      return installs(ctx, args);
+    case 'update':
+      return update(ctx, args);
+    case 'publish':
+      return publish(ctx, args);
+
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'actions ${sub}'. Try: list, deploy, test, logs.`
-          : 'actions needs a subcommand: list, deploy, test, logs.',
+          ? `Unknown subcommand 'actions ${sub}'. Try: list, deploy, test, logs, gallery, show, install, installs, update, publish.`
+          : 'actions needs a subcommand: list, deploy, test, logs, gallery, show, install, installs, update, publish.',
       );
   }
 }

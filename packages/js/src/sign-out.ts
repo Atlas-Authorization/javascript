@@ -15,6 +15,8 @@
  * the revoke never reached the server.
  */
 
+import { upstreamLogoutUrlFromBody } from './upstream-logout';
+
 /** What `signOut()` resolves with. */
 export interface SignOutResult {
   /**
@@ -28,6 +30,19 @@ export interface SignOutResult {
    * (multi-session). The SDK adopts it, so the user stays signed in as it.
    */
   activeSessionId?: string;
+  /**
+   * Set when the session came from an upstream OpenID provider with
+   * RP-initiated logout on: its end-session URL. The SDKs navigate there after
+   * the local sign-out unless `signOut({ upstreamLogout: false })`.
+   */
+  upstreamLogoutUrl?: string;
+  /**
+   * SAML Single Logout: the URL that ends the identity provider's session too.
+   * Present only when the revoked session came from a SAML connection with
+   * Single Logout on. Unless `signOut({ samlLogout: false })`, the browser has
+   * already been sent there.
+   */
+  samlLogoutUrl?: string;
 }
 
 /** The error `signOut({ strict: true })` rejects with when the revoke fails. */
@@ -59,6 +74,10 @@ export interface RevokeSessionOutcome {
   response?: Response;
   /** A parked session the server promoted to active, if any. */
   activeSessionId?: string;
+  /** The upstream provider's end-session URL, when it has RP-initiated logout on. */
+  upstreamLogoutUrl?: string;
+  /** SAML Single Logout: the URL that completes logout at the identity provider. */
+  samlLogoutUrl?: string;
 }
 
 /**
@@ -72,15 +91,27 @@ export interface RevokeSessionOutcome {
 export async function revokeSession(
   request: (path: string, init?: RequestInit) => Promise<Response>,
   sessionId: string,
-  options: { retries?: number } = {},
+  options: {
+    retries?: number;
+    /** Where an upstream (RP-initiated) logout returns the user — an allowed origin of the instance. */
+    returnUrl?: string;
+    /** SAML Single Logout: where the IdP returns the browser (an allowed origin). */
+    samlLogoutRedirectUrl?: string;
+  } = {},
 ): Promise<RevokeSessionOutcome> {
   const retries = Math.max(0, options.retries ?? 1);
   let status = 0;
   for (let attempt = 0; attempt <= retries; attempt++) {
     let response: Response;
     try {
-      response = await request(`/v1/client/sessions/${encodeURIComponent(sessionId)}/revoke`, {
+      const query = options.samlLogoutRedirectUrl
+        ? `?redirect_url=${encodeURIComponent(options.samlLogoutRedirectUrl)}`
+        : '';
+      response = await request(`/v1/client/sessions/${encodeURIComponent(sessionId)}/revoke${query}`, {
         method: 'POST',
+        ...(options.returnUrl
+          ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ return_url: options.returnUrl }) }
+          : {}),
       });
     } catch {
       status = 0;
@@ -89,18 +120,45 @@ export async function revokeSession(
     status = response.status;
     if (response.ok) {
       let activeSessionId: string | undefined;
+      let upstreamLogoutUrl: string | undefined;
+      let samlLogoutUrl: string | undefined;
       try {
-        const body = (await response.clone().json()) as { active_session_id?: unknown } | null;
+        const body = (await response.clone().json()) as {
+          active_session_id?: unknown;
+          saml_logout_url?: unknown;
+        } | null;
         if (typeof body?.active_session_id === 'string') activeSessionId = body.active_session_id;
+        upstreamLogoutUrl = upstreamLogoutUrlFromBody(body);
+        samlLogoutUrl = safeSamlLogoutUrl(body?.saml_logout_url);
       } catch {
         // A body we cannot read still means the revoke succeeded.
       }
-      return { revoked: true, status, response, ...(activeSessionId ? { activeSessionId } : {}) };
+      return {
+        revoked: true,
+        status,
+        response,
+        ...(activeSessionId ? { activeSessionId } : {}),
+        ...(upstreamLogoutUrl ? { upstreamLogoutUrl } : {}),
+        ...(samlLogoutUrl ? { samlLogoutUrl } : {}),
+      };
     }
     if (status === 404) return { revoked: true, status };
     if (status < 500 && status !== 429) break;
   }
   return { revoked: false, status };
+}
+
+/** Only an absolute https URL (or http on loopback, for local development) is followed. */
+export function safeSamlLogoutUrl(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  try {
+    const url = new URL(raw);
+    if (url.protocol === 'https:') return url.href;
+    if (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return url.href;
+  } catch {
+    // not a URL
+  }
+  return undefined;
 }
 
 const TOMBSTONE_KEY = 'atlas:signed-out-sessions';

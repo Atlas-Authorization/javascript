@@ -1,0 +1,9 @@
+// TODO(atlas-migrate): getLogtoContext(): read the session with auth() / currentUser() from @atlasauth/nextjs/server
+// TODO(atlas-migrate): signIn(): sign-in is the Atlas /sign-in page; link to it or render <SignInButton />
+import { getLogtoContext, signIn } from '@logto/next/server-actions';
+import { logtoConfig } from './logto';
+
+export default async function Home() {
+  const { isAuthenticated, claims } = await getLogtoContext(logtoConfig);
+  return <p>{isAuthenticated ? claims?.sub : 'signed out'}</p>;
+}

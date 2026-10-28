@@ -5,6 +5,9 @@
  * from the environment / CLI flags (see {@link resolveOptions}), builds the
  * server, and serves on stdin/stdout until the client disconnects.
  *
+ * Without ATLAS_SECRET_KEY it serves only the read-only docs tools
+ * (`search_atlas_docs`, `read_atlas_doc`) — what `atlas mcp install` sets up.
+ *
  * Claude Desktop config example (`claude_desktop_config.json`):
  *   {
  *     "mcpServers": {

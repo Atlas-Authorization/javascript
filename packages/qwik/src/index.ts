@@ -15,7 +15,11 @@ export * from './hooks';
 export * from './provider';
 export * from './control-components';
 export * from './components';
+export * from './ciba';
+export { ManageCiba } from './ciba-components';
 export * from './widget';
+export * from './policies';
+export * from './policy-components';
 export * from './protect';
 
 // The sign-out result and its strict-mode error, so callers need not depend on

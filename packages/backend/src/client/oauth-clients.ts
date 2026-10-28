@@ -1,7 +1,47 @@
+import { metadataQuery, type ProvisioningFields, type ProvisioningInput, type ProvisioningMetadata } from './compliance';
 import { enc, type RequestFn } from './request';
 import type { ListPage } from './types';
 
-export interface OAuthClient {
+export interface TrustedIssuer {
+  object: 'oauth_trusted_issuer';
+  id: string;
+  client_id: string;
+  issuer: string;
+  jwks: { keys: unknown[] } | null;
+  jwks_uri: string | null;
+  subject_mapping: 'user_id' | 'external_id' | 'email';
+  workload_kind: 'generic' | 'spiffe' | 'kubernetes' | 'github_actions' | 'gcp' | 'azure';
+  purpose: 'user_assertion' | 'client_auth' | 'both';
+  subject_pattern: string | null;
+  required_claims: Record<string, string> | null;
+  audiences: string[] | null;
+  created_at: number;
+}
+
+export interface TrustedIssuerInput {
+  issuer?: string;
+  jwks?: { keys: unknown[] };
+  jwks_uri?: string;
+  subject_mapping?: 'user_id' | 'external_id' | 'email';
+  workload_kind?: TrustedIssuer['workload_kind'];
+  tenant_id?: string;
+  purpose?: TrustedIssuer['purpose'];
+  subject_pattern?: string;
+  required_claims?: Record<string, string>;
+  audiences?: string[];
+}
+
+export interface WorkloadPreset {
+  object: 'workload_identity_preset';
+  kind: string;
+  title: string;
+  issuer: string | null;
+  jwks_uri: string | null;
+  subject_example: string;
+  notes: string;
+}
+
+export interface OAuthClient extends ProvisioningFields {
   object: 'oauth_client';
   id: string;
   client_id: string;
@@ -10,7 +50,7 @@ export interface OAuthClient {
   redirect_uris: string[];
   allowed_scopes: string[];
   grant_types: string[];
-  token_endpoint_auth_method: 'client_secret_basic' | 'client_secret_post' | 'none';
+  token_endpoint_auth_method: 'client_secret_basic' | 'client_secret_post' | 'none' | 'private_key_jwt' | 'workload_jwt';
   secret_prefix: string | null;
   /**
    * After a rotation with overlap: when the previous secret stops working (epoch
@@ -21,6 +61,8 @@ export interface OAuthClient {
   first_party: boolean;
   /** Where the client may send users after an RP-initiated logout. */
   post_logout_redirect_uris: string[];
+  /** UMA 2.0 claims-gathering redirect allowlist (exact match). */
+  claims_redirect_uris: string[];
   /** Back-channel logout endpoint Atlas POSTs a `logout_token` to, or null. */
   backchannel_logout_uri: string | null;
   /** Whether the back-channel `logout_token` must carry `sid`. */
@@ -35,8 +77,78 @@ export interface OAuthClient {
    * with no "Sign out?" page. First-party clients only.
    */
   skip_logout_confirmation?: boolean;
+  /** Refused at every OAuth endpoint while true (kept, not deleted). */
+  disabled?: boolean;
+  /** PKCE required even though the client is confidential. */
+  require_pkce?: boolean;
+  /** OIDC Core §8: `pairwise` clients see a per-sector `sub` instead of the user id. */
+  subject_type?: 'public' | 'pairwise';
+  sector_identifier_uri?: string | null;
+  /** When the current secret stops authenticating (epoch ms); null = never. */
+  client_secret_expires_at?: number | null;
+  /** `jwt` or `opaque` access tokens for this client; null = inherited from the API / instance. */
+  access_token_format?: AccessTokenFormat | null;
+  /** This client's token lifetime overrides (seconds); a null field is inherited. */
+  token_lifetimes?: OAuthTokenLifetimes;
   created_at: number;
   updated_at: number;
+}
+
+/** Signed JWT access tokens, or opaque references validated by introspection. */
+export type AccessTokenFormat = 'jwt' | 'opaque';
+
+/**
+ * Token lifetimes in seconds. A field left out (or null) inherits the API's,
+ * then the instance's, then Atlas's default. Bounds: access / id token 60–86400;
+ * refresh token 300–31536000 (idle ≤ absolute); authorization code 10–600;
+ * device code 60–1800.
+ */
+export interface OAuthTokenLifetimes {
+  access_token_ttl_seconds?: number | null;
+  id_token_ttl_seconds?: number | null;
+  refresh_token_absolute_ttl_seconds?: number | null;
+  refresh_token_idle_ttl_seconds?: number | null;
+  authorization_code_ttl_seconds?: number | null;
+  device_code_ttl_seconds?: number | null;
+}
+
+/** Access-token format and lifetimes, accepted on create and update. */
+export interface OAuthClientTokenFields {
+  /** `jwt` or `opaque`; null inherits. */
+  access_token_format?: AccessTokenFormat | null;
+  /** Replaces the overrides; null clears them all. */
+  token_lifetimes?: OAuthTokenLifetimes | null;
+}
+
+/** OIDC Core §8 subject settings, accepted on create and update. */
+export interface OAuthClientSubjectFields {
+  /** `public` (default): the user id. `pairwise`: a per-sector identifier. */
+  subject_type?: 'public' | 'pairwise';
+  /** https URL serving a JSON array of every redirect URI; its host is the sector. `null` clears it. */
+  sector_identifier_uri?: string | null;
+}
+
+/** An RFC 7591 §3 initial access token for dynamic client registration. */
+export interface OAuthInitialAccessToken {
+  object: 'oauth_initial_access_token';
+  id: string;
+  token_prefix: string;
+  description: string | null;
+  status: 'active' | 'expired' | 'used_up' | 'revoked';
+  max_uses: number | null;
+  use_count: number;
+  expires_at: number | null;
+  revoked_at: number | null;
+  last_used_at: number | null;
+  created_at: number;
+}
+
+export interface CreateInitialAccessTokenBody {
+  description?: string;
+  /** Lifetime in seconds (60 – 31536000); omit for no expiry. */
+  expires_in_seconds?: number;
+  /** Registrations allowed (1 – 1000000); omit for unlimited. */
+  max_uses?: number;
 }
 
 /**
@@ -46,6 +158,8 @@ export interface OAuthClient {
  */
 export interface OAuthClientLogoutFields {
   post_logout_redirect_uris?: string[];
+  /** UMA 2.0 claims-gathering redirect allowlist (exact match). */
+  claims_redirect_uris?: string[];
   backchannel_logout_uri?: string | null;
   backchannel_logout_session_required?: boolean;
   frontchannel_logout_uri?: string | null;
@@ -57,6 +171,9 @@ export interface OAuthClientLogoutFields {
 /** Create/rotate reveal the secret exactly once, alongside the client. */
 export interface OAuthClientWithSecret extends OAuthClient {
   client_secret?: string;
+  /** With a `secretRecipient`: the client secret sealed to it (then `client_secret` is absent). */
+  sealed_client_secret?: string;
+  secrets_sealed?: { algorithm: string; recipient: string; fields: string[] };
   note: string;
 }
 
@@ -66,6 +183,8 @@ export interface RotateOAuthClientSecretBody {
    * hours); 0 revokes it now (after a leak); at most 604800 (7 days).
    */
   overlap_seconds?: number;
+  /** How long the NEW secret authenticates, in seconds; omit for no expiry. */
+  secret_expires_in_seconds?: number;
 }
 
 /** The rotate response: the new secret (shown once) and when the old one stops working. */
@@ -88,23 +207,33 @@ export interface ClientGrant {
   updated_at: number;
 }
 
-export interface CreateOAuthClientBody extends OAuthClientLogoutFields {
+export interface CreateOAuthClientBody extends ProvisioningInput, OAuthClientLogoutFields, OAuthClientSubjectFields, OAuthClientTokenFields {
   name: string;
   redirect_uris: string[];
   allowed_scopes?: string[];
   grant_types?: string[];
-  token_endpoint_auth_method?: 'client_secret_basic' | 'client_secret_post' | 'none';
+  token_endpoint_auth_method?: 'client_secret_basic' | 'client_secret_post' | 'none' | 'workload_jwt';
   logo_url?: string;
   first_party?: boolean;
+  /** How long the issued secret authenticates, in seconds; omit for no expiry. */
+  secret_expires_in_seconds?: number;
+  /** Require PKCE. New clients default to true (confidential ones included); send false to opt out. */
+  require_pkce?: boolean;
 }
 
-export interface UpdateOAuthClientBody extends OAuthClientLogoutFields {
+export interface UpdateOAuthClientBody extends OAuthClientLogoutFields, OAuthClientSubjectFields, OAuthClientTokenFields {
+  /** Replaces the provisioning metadata. */
+  metadata?: ProvisioningMetadata;
   name?: string;
   redirect_uris?: string[];
   allowed_scopes?: string[];
-  token_endpoint_auth_method?: 'client_secret_basic' | 'client_secret_post' | 'none';
+  token_endpoint_auth_method?: 'client_secret_basic' | 'client_secret_post' | 'none' | 'workload_jwt';
   logo_url?: string | null;
   first_party?: boolean;
+  /** Refuse every OAuth flow for this client without deleting it. */
+  disabled?: boolean;
+  /** Require PKCE for this confidential client too. */
+  require_pkce?: boolean;
 }
 
 /** One client in a migration import. Idempotent per `client_id`. */
@@ -197,8 +326,9 @@ export function oauthClientsResource(request: RequestFn) {
     ): Promise<ListPage<ImportedOAuthClient>> {
       return request({ method: 'POST', path: '/v1/oauth_clients/import', body, idempotencyKey });
     },
-    list(): Promise<ListPage<OAuthClient>> {
-      return request({ method: 'GET', path: '/v1/oauth_clients' });
+    /** `metadata` filters on provisioning tags (`?metadata[key]=value`). */
+    list(params: { metadata?: ProvisioningMetadata } = {}): Promise<ListPage<OAuthClient>> {
+      return request({ method: 'GET', path: '/v1/oauth_clients', query: metadataQuery(params.metadata) });
     },
     get(id: string): Promise<OAuthClient> {
       return request({ method: 'GET', path: `/v1/oauth_clients/${enc(id)}` });
@@ -228,6 +358,20 @@ export function oauthClientsResource(request: RequestFn) {
     delete(id: string): Promise<{ object: 'oauth_client'; id: string; deleted: true; note: string }> {
       return request({ method: 'DELETE', path: `/v1/oauth_clients/${enc(id)}` });
     },
+    /**
+     * Per-application settings: allowed sign-in methods, hosted-page branding,
+     * the user-claim allow-list for ID tokens and userinfo, and writable traits.
+     */
+    appSettings: {
+      /** `GET /v1/oauth_clients/:id/app_settings` */
+      get(id: string): Promise<OAuthClientAppSettings> {
+        return request({ method: 'GET', path: `/v1/oauth_clients/${enc(id)}/app_settings` });
+      },
+      /** `PATCH /v1/oauth_clients/:id/app_settings` — fields sent replace the stored ones; null clears. */
+      update(id: string, body: OAuthClientAppSettingsPatch): Promise<OAuthClientAppSettings> {
+        return request({ method: 'PATCH', path: `/v1/oauth_clients/${enc(id)}/app_settings`, body });
+      },
+    },
     /** The client's back-channel logout delivery log, newest first. */
     listBackchannelDeliveries(
       id: string,
@@ -242,6 +386,79 @@ export function oauthClientsResource(request: RequestFn) {
     /** Send a test back-channel logout now and return what the receiver answered. */
     testBackchannelLogout(id: string): Promise<BackchannelLogoutTest> {
       return request({ method: 'POST', path: `/v1/oauth_clients/${enc(id)}/backchannel_logout/test` });
+    },
+
+    /** Set (or clear with null) the URLs of your own sign-in and consent pages for a client. */
+    setDelegatedUi(
+      id: string,
+      body: { login_url?: string | null; consent_url?: string | null },
+    ): Promise<{ object: 'oauth_client_delegated_ui'; client_id: string; login_url: string | null; consent_url: string | null }> {
+      return request({ method: 'PUT', path: `/v1/oauth_clients/${enc(id)}/delegated_ui`, body });
+    },
+    /** Delegated login: read, accept or reject the `login_challenge` your sign-in page received. */
+    loginRequests: {
+      get(loginChallenge: string): Promise<DelegatedLoginRequest> {
+        return request({ method: 'GET', path: '/v1/oauth_login_requests', query: { login_challenge: loginChallenge } });
+      },
+      accept(
+        loginChallenge: string,
+        body: { subject: string; remember?: boolean; amr?: string[]; acr?: string },
+      ): Promise<DelegatedRedirect> {
+        return request({ method: 'PUT', path: '/v1/oauth_login_requests/accept', query: { login_challenge: loginChallenge }, body });
+      },
+      reject(loginChallenge: string, body: DelegatedReject = {}): Promise<DelegatedRedirect> {
+        return request({ method: 'PUT', path: '/v1/oauth_login_requests/reject', query: { login_challenge: loginChallenge }, body });
+      },
+    },
+    /** Delegated consent: read, accept or reject the `consent_challenge` your consent page received. */
+    consentRequests: {
+      get(consentChallenge: string): Promise<DelegatedConsentRequest> {
+        return request({ method: 'GET', path: '/v1/oauth_consent_requests', query: { consent_challenge: consentChallenge } });
+      },
+      accept(consentChallenge: string, body: { grant_scope?: string[]; remember?: boolean } = {}): Promise<DelegatedRedirect> {
+        return request({ method: 'PUT', path: '/v1/oauth_consent_requests/accept', query: { consent_challenge: consentChallenge }, body });
+      },
+      reject(consentChallenge: string, body: DelegatedReject = {}): Promise<DelegatedRedirect> {
+        return request({ method: 'PUT', path: '/v1/oauth_consent_requests/reject', query: { consent_challenge: consentChallenge }, body });
+      },
+    },
+
+    /** RFC 7591 §3 initial access tokens for dynamic client registration. */
+    initialAccessTokens: {
+      list(): Promise<ListPage<OAuthInitialAccessToken>> {
+        return request({ method: 'GET', path: '/v1/oauth_initial_access_tokens' });
+      },
+      /** The `token` is in this response only. */
+      create(body: CreateInitialAccessTokenBody = {}): Promise<OAuthInitialAccessToken & { token: string; note: string }> {
+        return request({ method: 'POST', path: '/v1/oauth_initial_access_tokens', body });
+      },
+      revoke(id: string): Promise<OAuthInitialAccessToken> {
+        return request({ method: 'DELETE', path: `/v1/oauth_initial_access_tokens/${enc(id)}` });
+      },
+    },
+
+    /** Issuers whose signed tokens this client accepts (jwt-bearer grant, workload identity). */
+    trustedIssuers: {
+      list(clientId: string): Promise<ListPage<TrustedIssuer>> {
+        return request({ method: 'GET', path: `/v1/oauth_clients/${enc(clientId)}/trusted_issuers` });
+      },
+      create(clientId: string, body: TrustedIssuerInput): Promise<TrustedIssuer> {
+        return request({ method: 'POST', path: `/v1/oauth_clients/${enc(clientId)}/trusted_issuers`, body });
+      },
+      delete(clientId: string, issuerId: string): Promise<{ object: 'oauth_trusted_issuer'; id: string; deleted: true }> {
+        return request({ method: 'DELETE', path: `/v1/oauth_clients/${enc(clientId)}/trusted_issuers/${enc(issuerId)}` });
+      },
+    },
+
+    /** Workload identity federation helpers (SPIFFE, Kubernetes, GitHub Actions, GCP, Azure). */
+    workloadIdentity: {
+      presets(): Promise<ListPage<WorkloadPreset>> {
+        return request({ method: 'GET', path: '/v1/workload_identity/presets' });
+      },
+      cloudTrust(query: { provider: 'aws' | 'gcp' | 'azure'; audience: string; subject: string; tenant_id?: string }): Promise<Record<string, unknown>> {
+        const qs = new URLSearchParams(query as Record<string, string>).toString();
+        return request({ method: 'GET', path: `/v1/workload_identity/cloud_trust?${qs}` });
+      },
     },
 
     grants: {
@@ -269,4 +486,91 @@ export function oauthClientsResource(request: RequestFn) {
       },
     },
   };
+}
+
+export interface OAuthClientAppBranding {
+  heading?: string | null;
+  subheading?: string | null;
+  logo_url?: string | null;
+  primary_color?: string | null;
+}
+
+export interface OAuthClientAppSettingsPatch {
+  /** Method names (password, passkey, oauth_google, ...) or the families oauth and enterprise_sso. */
+  allowed_sign_in_methods?: string[] | null;
+  branding?: OAuthClientAppBranding | null;
+  /** User claims the app receives in ID tokens and userinfo; protocol claims always pass. */
+  claims_allowlist?: string[] | null;
+  /** Traits a session from this app may change. */
+  writable_traits?: string[] | null;
+  /** Overrides of the instance's risk-based MFA for sign-ins to this app. */
+  risk?: OAuthClientAppRisk | null;
+}
+
+export type OAuthClientRiskLevelAction = 'default' | 'allow' | 'notify' | 'mfa' | 'block';
+export interface OAuthClientAppRisk {
+  enabled?: boolean | null;
+  mode?: 'enforce' | 'audit' | null;
+  step_up_threshold?: 'low' | 'medium' | 'high' | null;
+  on_high_risk_no_factor?: 'allow' | 'block' | 'require_enroll' | null;
+  level_actions?: { medium?: OAuthClientRiskLevelAction | null; high?: OAuthClientRiskLevelAction | null } | null;
+  /** The refresh-time check for sessions that came from this app. */
+  mid_session?: { enabled?: boolean | null; action?: 'revoke' | 'notify' | 'audit' | null } | null;
+}
+
+export interface OAuthClientAppSettings {
+  object: 'app_settings';
+  client_id: string;
+  allowed_sign_in_methods: string[] | null;
+  branding: Required<OAuthClientAppBranding> | null;
+  claims_allowlist: string[] | null;
+  writable_traits: string[] | null;
+  risk: OAuthClientAppRisk | null;
+}
+
+export interface DelegatedClientRef {
+  id: string;
+  client_id: string;
+  name: string;
+  first_party?: boolean;
+}
+export interface DelegatedLoginRequest {
+  object: 'oauth_login_request';
+  client: DelegatedClientRef;
+  requested_scope: string[];
+  audience: string | null;
+  page: 'sign-in' | 'sign-up';
+  /** The Atlas user already signed in on this browser, if any. */
+  session_subject: string | null;
+  ui_locales: string | null;
+  login_hint: string | null;
+  expires_at: number;
+}
+export interface DelegatedConsentRequest {
+  object: 'oauth_consent_request';
+  subject: string;
+  client: DelegatedClientRef;
+  requested_scope: string[];
+  audience: string | null;
+  authorization_details: unknown[];
+  organization_id: string | null;
+  redirect_uri: string;
+  expires_at: number;
+}
+export interface DelegatedRedirect {
+  object: 'oauth_login_redirect' | 'oauth_consent_redirect';
+  /** Send the end user's browser here next. */
+  redirect_to: string;
+}
+export interface DelegatedReject {
+  error?:
+    | 'access_denied'
+    | 'login_required'
+    | 'interaction_required'
+    | 'consent_required'
+    | 'account_selection_required'
+    | 'unauthorized_client'
+    | 'temporarily_unavailable'
+    | 'server_error';
+  error_description?: string;
 }

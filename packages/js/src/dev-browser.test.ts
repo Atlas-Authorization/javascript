@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
-import { devBrowserToken, forgetDevBrowserToken, withDevBrowser } from './dev-browser';
+import { devBrowserToken, forgetDevBrowserToken, setPersistence, withDevBrowser } from './dev-browser';
 
 /**
  * The dev browser: a development instance's session survives on localhost
@@ -99,5 +99,44 @@ describe('withDevBrowser', () => {
 
     const once = withDevBrowser(DEV, f.impl);
     expect(withDevBrowser(DEV, once)).toBe(once);
+  });
+});
+
+describe('persistence modes', () => {
+  const exchange = () =>
+    fakeFetch(() => ({ status: 200, body: { object: 'session', id: 'sess_1', jwt: 'j', refresh_token: 'rt_p' } }));
+  const run = async () => {
+    await withDevBrowser(DEV, exchange().impl)(`${BASE}/v1/client/tickets/exchange`, {
+      method: 'POST',
+      body: JSON.stringify({ attempt_id: 'a', ticket: 't' }),
+    });
+  };
+  afterEach(() => {
+    setPersistence(undefined);
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('local (default) writes localStorage only', async () => {
+    await run();
+    expect(localStorage.length).toBeGreaterThan(0);
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it('session writes sessionStorage only', async () => {
+    setPersistence('session');
+    await run();
+    expect(sessionStorage.length).toBeGreaterThan(0);
+    expect(localStorage.length).toBe(0);
+    expect(devBrowserToken(DEV)).toBe('rt_p');
+  });
+
+  it('memory writes nothing to the browser but still presents the token', async () => {
+    setPersistence('memory');
+    await run();
+    expect(localStorage.length + sessionStorage.length).toBe(0);
+    expect(devBrowserToken(DEV)).toBe('rt_p');
+    forgetDevBrowserToken(DEV);
+    expect(devBrowserToken(DEV)).toBeNull();
   });
 });

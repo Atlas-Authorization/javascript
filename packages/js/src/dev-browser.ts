@@ -30,9 +30,36 @@ const REVOKE = /^\/v1\/client\/sessions\/[^/]+\/revoke$/;
 
 type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
+/**
+ * Where the dev-browser refresh token is kept: `local` (default, survives restarts and is shared
+ * by every tab), `session` (this tab only) or `memory` (this page load only, nothing written).
+ */
+export type PersistenceMode = 'local' | 'session' | 'memory';
+
+const memory = new Map<string, string>();
+const memoryStore: Store = {
+  getItem: (k) => memory.get(k) ?? null,
+  setItem: (k, v) => void memory.set(k, v),
+  removeItem: (k) => void memory.delete(k),
+};
+
+let mode: PersistenceMode = 'local';
+
+/** Choose the storage for this page. The FAPI client calls it from its `persistence` option. */
+export function setPersistence(next: PersistenceMode | undefined): void {
+  mode = next ?? 'local';
+}
+
+/** The storage in force (`local` unless set). Exposed for tests. */
+export function getPersistence(): PersistenceMode {
+  return mode;
+}
+
 function storage(): Store | null {
+  if (mode === 'memory') return memoryStore;
   try {
-    const s = (globalThis as { localStorage?: Store }).localStorage;
+    const g = globalThis as { localStorage?: Store; sessionStorage?: Store };
+    const s = mode === 'session' ? g.sessionStorage : g.localStorage;
     return s && typeof s.getItem === 'function' ? s : null;
   } catch {
     return null;

@@ -21,6 +21,7 @@ export * from './css-variables';
 export * from './fonts';
 export * from './client';
 export * from './render';
+export * from './adopt';
 export type {
   AtlasDesign,
   DesignBackground,

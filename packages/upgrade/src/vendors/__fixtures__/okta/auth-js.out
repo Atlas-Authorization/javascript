@@ -1,0 +1,12 @@
+import { OktaAuth } from '@okta/okta-auth-js';
+
+// TODO(atlas-migrate): new OktaAuth(config) outside a React app has no drop-in Atlas counterpart: in a Vue app use the createAtlas plugin from @atlasauth/vue, in Angular provideAtlas from @atlasauth/angular, otherwise the Atlas JS SDK (@atlasauth/js); sign-in then runs on your Atlas /sign-in page
+export const oktaAuth = new OktaAuth({
+  issuer: import.meta.env.VITE_OKTA_ISSUER,
+  clientId: import.meta.env.VITE_OKTA_CLIENT_ID,
+  redirectUri: `${window.location.origin}/login/callback`,
+});
+
+export async function signIn() {
+  if (!(await oktaAuth.isAuthenticated())) await oktaAuth.signInWithRedirect();
+}

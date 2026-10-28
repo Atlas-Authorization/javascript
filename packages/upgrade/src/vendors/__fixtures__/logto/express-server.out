@@ -1,0 +1,18 @@
+// TODO(atlas-migrate): handleAuthRoutes(): Atlas hosts sign-in, sign-out and callbacks; delete these routes and add atlasMiddleware() from @atlasauth/express
+// TODO(atlas-migrate): withLogto(): use atlasMiddleware() (reads the session) and requireAuth() (rejects signed-out requests) from @atlasauth/express; read the user with getAuth(req)
+import { handleAuthRoutes, withLogto } from '@logto/express';
+import express from 'express';
+
+// TODO(atlas-migrate): LOGTO_APP_ID: server code identifies the instance with ATLAS_SECRET_KEY; the browser uses ATLAS_PUBLISHABLE_KEY
+// TODO(atlas-migrate): LOGTO_APP_SECRET: server code uses ATLAS_SECRET_KEY (from the Atlas dashboard)
+// TODO(atlas-migrate): LOGTO_BASE_URL: not needed; add your app origin to the instance allowed origins in the Atlas dashboard
+const config = {
+  endpoint: process.env.ATLAS_ISSUER,
+  appId: process.env.LOGTO_APP_ID,
+  appSecret: process.env.LOGTO_APP_SECRET,
+  baseUrl: process.env.LOGTO_BASE_URL,
+};
+
+export const app = express();
+app.use(handleAuthRoutes(config));
+app.get('/me', withLogto(config), (req, res) => res.json(req.user));

@@ -1,0 +1,15 @@
+import { withAuth } from '@kinde-oss/kinde-auth-nextjs/middleware';
+
+export default withAuth(
+  async function middleware(req) {
+    console.log('signed in as', req.kindeAuth.user.id);
+  },
+  {
+    publicPaths: ['/', '/pricing'],
+    isAuthorized: ({ token }) => token.permissions.includes('view:dashboard'),
+  },
+);
+
+export const config = {
+  matcher: ['/((?!_next|favicon.ico).*)'],
+};

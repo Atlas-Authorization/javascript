@@ -51,7 +51,7 @@ export type ReferralSourceReader = () =>
 
 /** The browser sources the SDK reads, in the order it tries them. */
 export const REFERRAL_BROWSER_SOURCES = [
-  'referally',
+  'referalli',
   'rewardful',
   'tolt',
   'promotekit',
@@ -63,6 +63,7 @@ export type ReferralBrowserSource = (typeof REFERRAL_BROWSER_SOURCES)[number];
 
 /** The consent managers the SDK reads, in the order `auto` tries them. */
 export const CONSENT_PROVIDERS = [
+  'atlasconsent',
   'cookiemunch',
   'onetrust',
   'cookiebot',
@@ -74,6 +75,7 @@ export const CONSENT_PROVIDERS = [
   'klaro',
   'tcf',
   'consent_mode',
+  'gpc',
 ] as const;
 export type ConsentProvider = (typeof CONSENT_PROVIDERS)[number];
 
@@ -134,12 +136,12 @@ function found(source: string, code: unknown, clickId: unknown, anonId: unknown,
 
 /** Each known source: where its script or cookie keeps the referral. */
 const READERS: Record<ReferralBrowserSource, (page: DetectPage) => DetectedReferral | null> = {
-  // Referally's aff.js: aff.getReferral() → {code, clickId, anonId, ts}.
-  referally: ({ win }) => {
+  // Referalli's aff.js: aff.getReferral() → {code, clickId, anonId, ts}.
+  referalli: ({ win }) => {
     const aff = prop(win, 'aff');
     const r = call(prop(aff, 'getReferral'), aff);
     if (!isBag(r)) return null;
-    return found('referally', r.code, r.clickId ?? r.click_id, r.anonId ?? r.anon_id, r.ts);
+    return found('referalli', r.code, r.clickId ?? r.click_id, r.anonId ?? r.anon_id, r.ts);
   },
   // Rewardful's rw.js: Rewardful.referral (the referral id) and Rewardful.affiliate.token (the link code).
   rewardful: ({ win }) => {
@@ -173,7 +175,9 @@ export function customReferral(reader: ReferralSourceReader | undefined): Detect
 
 /** The first of `sources` with a referral on the page, or null. Unknown ids are skipped. */
 export function detectReferralSource(page: DetectPage, sources: readonly string[]): DetectedReferral | null {
-  for (const id of sources) {
+  for (const named of sources) {
+    // `referally` is the retired spelling of `referalli`.
+    const id = named === 'referally' ? 'referalli' : named;
     const read = (READERS as Record<string, ((p: DetectPage) => DetectedReferral | null) | undefined>)[id];
     if (!read) continue;
     let r: DetectedReferral | null = null;
@@ -271,6 +275,17 @@ const STANDARD = { necessary: 'necessary', preferences: 'preferences', statistic
 const has = (list: unknown, k: string) => Array.isArray(list) && list.includes(k);
 
 const MANAGERS: Record<ConsentProvider, Manager> = {
+  // The neutral consent contract any CMP adapter (or a shim for one) sets:
+  // window.__atlasConsent = { version: 1, has(category) → true | false | null }.
+  // null = no decision yet (never "declined"), so the referral stays in memory.
+  atlasconsent: {
+    present: (w) => prop(prop(w, '__atlasConsent'), 'version') === 1 && typeof prop(prop(w, '__atlasConsent'), 'has') === 'function',
+    ask: (w, category) => {
+      const c = prop(w, '__atlasConsent');
+      const v = call(prop(c, 'has'), c, category);
+      return v === true ? true : v === false ? false : undefined;
+    },
+  },
   // Cookie Munch: CookieMunch.consent → {necessary, preferences, statistics, marketing, <custom>…}.
   cookiemunch: {
     present: (w) => isBag(prop(prop(w, 'CookieMunch'), 'consent')),
@@ -390,6 +405,12 @@ const MANAGERS: Record<ConsentProvider, Manager> = {
         return bool(prop(e, 'update')) ?? bool(prop(e, 'default'));
       })(w, category);
     },
+  },
+  // Global Privacy Control: navigator.globalPrivacyControl === true is an
+  // opt-out of sale/sharing — it denies marketing and referrals, never grants.
+  gpc: {
+    present: (w) => prop(prop(w, 'navigator'), 'globalPrivacyControl') === true,
+    ask: (_w, category) => (category === 'marketing' || category === 'referrals' ? false : undefined),
   },
 };
 

@@ -17,6 +17,7 @@ import {
   type RedirectResult,
   type SignOutOptions,
   type SignOutResult,
+  type EndImpersonationResult,
   catalogLocale,
   SDK_HEADER,
   SignOutNotifier,
@@ -135,7 +136,7 @@ export interface AtlasClient extends AtlasStores {
    * second factor (no session was issued). Null in the ordinary case. `<SignIn>`
    * seeds itself from this so the user resumes at the 2FA step.
    */
-  pendingAttempt: { id: string; status: string } | null;
+  pendingAttempt: { id: string; status: string; policyToken?: string } | null;
   /** The session JWT; with `{ template }` a short-lived named-template token (e.g. `'chatly'`). */
   getToken(options?: { template?: string }): Promise<string | null>;
   /**
@@ -164,6 +165,13 @@ export interface AtlasClient extends AtlasStores {
    */
   signOut(options?: SignOutOptions): Promise<SignOutResult>;
   setActiveOrganization(organizationId: string | null): Promise<void>;
+  /**
+   * End the active impersonation ("return to admin"): the impersonator's own
+   * session on this browser becomes active again with no sign-in
+   * (`resumed: true`); with none, another account signed in here is adopted,
+   * or this browser is signed out.
+   */
+  endImpersonation(): Promise<EndImpersonationResult>;
   /** Re-boot from the Frontend API. Resolves true when a session now exists in this browser. */
   reload(): Promise<boolean>;
   /**
@@ -234,11 +242,11 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
    * before `<SignIn>` reads it — a needs_second_factor redirect carries a status
    * but no ticket, and that is what the 2FA resume seeds from.
    */
-  const pendingAttempt: { id: string; status: string } | null = (() => {
+  const pendingAttempt: { id: string; status: string; policyToken?: string } | null = (() => {
     if (typeof window === 'undefined') return null;
     const result = readRedirectResult(window.location.search);
     return result?.status && !result.ticket
-      ? { id: result.attemptId, status: result.status }
+      ? { id: result.attemptId, status: result.status, ...(result.policyToken ? { policyToken: result.policyToken } : {}) }
       : null;
   })();
 
@@ -424,6 +432,20 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
     await reload();
   }
 
+  async function endImpersonation(): Promise<EndImpersonationResult> {
+    const outcome = await guard.endImpersonation(cache.peek()?.sessionId ?? get(session)?.id ?? null);
+    if (!outcome.ended) return outcome;
+    if (!outcome.activeSessionId) {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      clearSession('user');
+      return outcome;
+    }
+    if (outcome.jwt) applyToken(outcome.jwt, outcome.activeSessionId);
+    await reload();
+    return outcome;
+  }
+
   async function boot(): Promise<void> {
     if (booted) return;
     booted = true;
@@ -515,6 +537,7 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
     getProviderToken,
     signOut,
     setActiveOrganization,
+    endImpersonation,
     reload,
     boot,
     loadInstanceDesign,

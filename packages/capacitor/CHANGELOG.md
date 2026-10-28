@@ -1,5 +1,13 @@
 # @atlasauth/capacitor changelog
 
+## 0.3.0 — 2026-10-24
+Requires `@atlasauth/js` with policy acceptance.
+- **Policy acceptance** (terms of service, privacy, any policy the app defines). The system-browser sign-in runs on Atlas's
+  hosted pages, which collect and hold for the policies themselves. For the app's own WebView screens, the handle gains
+  `policies()` (a `PolicyAcceptanceController` for a sign-up form), `pendingPolicies(attempt)`, `policyGate()` (in-app
+  re-acceptance with the session's bearer token) and `fapi`; new `locale` option. `mountPolicyGate(host, gate)` draws the
+  signed-in banner, and the DOM pieces (`mountPolicyConsent`, `mountPolicyClickwrap`, `mountPolicyAcceptStep`) are re-exported.
+
 ## 0.2.0
 
 ### Changed

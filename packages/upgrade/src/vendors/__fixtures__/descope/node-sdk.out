@@ -1,0 +1,20 @@
+// TODO(atlas-migrate): DescopeClient(): verify session tokens with AtlasBackend from @atlasauth/backend and manage users with the Atlas Backend API (createAtlasClient(), ATLAS_SECRET_KEY); each call on the client is marked where it is used
+import DescopeClient from '@descope/node-sdk';
+
+// TODO(atlas-migrate): DESCOPE_PROJECT_ID: the browser identifies the Atlas instance with ATLAS_PUBLISHABLE_KEY, server code with ATLAS_SECRET_KEY and ATLAS_ISSUER; keep the Descope project id only for descopeLegacyIssuer() while old Descope tokens are still accepted
+// TODO(atlas-migrate): DESCOPE_MANAGEMENT_KEY: the Atlas Backend API uses ATLAS_SECRET_KEY (from the Atlas dashboard)
+const descopeClient = DescopeClient({
+  projectId: process.env.DESCOPE_PROJECT_ID!,
+  managementKey: process.env.DESCOPE_MANAGEMENT_KEY,
+});
+
+export async function requireUser(sessionToken: string) {
+  // TODO(atlas-migrate): validateSession(): verify the Atlas session token with AtlasBackend from @atlasauth/backend: verify(token) resolves { ok, claims } instead of throwing, and claims.sub is the user id (add descopeLegacyIssuer({ projectId }) to legacyIssuers so Descope tokens issued before the switch keep verifying)
+  const { token } = await descopeClient.validateSession(sessionToken);
+  return token.sub;
+}
+
+export async function removeUser(loginId: string) {
+  // TODO(atlas-migrate): management.user.delete(): manage users, tenants and roles with the Atlas Backend API (createAtlasClient() from @atlasauth/backend, or atlasClient() from @atlasauth/nextjs/server) and ATLAS_SECRET_KEY
+  await descopeClient.management.user.delete(loginId);
+}

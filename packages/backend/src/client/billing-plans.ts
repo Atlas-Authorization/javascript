@@ -16,11 +16,23 @@ export interface BillingPlan {
   amount: string | null;
   currency: string;
   features: string[];
+  /** Numeric limits the plan grants (the `ent.limits` claim); `-1` = unlimited. */
+  limits?: Record<string, unknown>;
   audience: string;
   active: boolean;
+  /** stripe | polar | dodo | creem | chargebee | autumn | commet */
+  provider?: BillingProviderName;
+  /** The plan's price reference on its provider. */
+  provider_price_id?: string | null;
+  /** `base`: the subject's main plan. `addon`: bought alongside it; several may be live. */
+  kind?: 'base' | 'addon';
+  /** Autumn plans: the feature whose usage tracks the org's member count. */
+  seat_feature_id?: string | null;
   created_at: number;
   updated_at: number;
 }
+
+export type BillingProviderName = 'stripe' | 'polar' | 'dodo' | 'creem' | 'chargebee' | 'autumn' | 'commet';
 
 /**
  * A read view of who is subscribed. `status` is written ONLY by the verified
@@ -36,8 +48,56 @@ export interface BillingSubscription {
   stripe_subscription_id: string | null;
   stripe_customer_id: string | null;
   current_period_end: number | null;
+  provider?: BillingProviderName;
+  provider_subscription_id?: string | null;
+  provider_customer_id?: string | null;
+  quantity?: number;
+  cancel_at_period_end?: boolean;
+  /** What an entitlement provider (Autumn, Commet) reports this subscription grants. */
+  entitlements?: { features: string[]; limits: Record<string, number> } | null;
   created_at: number;
   updated_at: number;
+}
+
+/** How numeric limits merge when a subject holds several entitling subscriptions. */
+export interface BillingSettings {
+  object: 'billing_settings';
+  default_limit_merge: 'max' | 'sum';
+  limit_merge: Record<string, 'max' | 'sum'>;
+}
+
+export interface UpdateBillingSettingsBody {
+  default_limit_merge?: 'max' | 'sum';
+  /** Limit key → `max` | `sum`; replaces the stored map. */
+  limit_merge?: Record<string, 'max' | 'sum'>;
+}
+
+/** May a subject use a feature? */
+export interface CheckBillingFeatureBody {
+  subject_type: 'user' | 'org';
+  subject_id: string;
+  feature: string;
+  /** Units about to be used (default 1). */
+  required?: number;
+}
+
+export interface BillingFeatureCheck {
+  object: 'billing_feature_check';
+  feature: string;
+  allowed: boolean;
+  /** `provider`: asked live of Autumn/Commet; `atlas`: from the resolved entitlement. */
+  source: 'provider' | 'atlas';
+  provider: string | null;
+  remaining: number | null;
+  granted: number | null;
+  usage: number | null;
+  unlimited: boolean;
+}
+
+export interface ChangeBillingSubscriptionBody {
+  plan_id: string;
+  interval?: 'month' | 'year';
+  schedule_at_period_end?: boolean;
 }
 
 export interface CreateBillingPlanBody {
@@ -52,6 +112,13 @@ export interface CreateBillingPlanBody {
   /** One of `user`, `org`. Defaults to `user`. */
   audience?: string;
   active?: boolean;
+  limits?: Record<string, unknown>;
+  provider?: BillingProviderName;
+  provider_price_id?: string;
+  /** `base` (default) or `addon`. */
+  kind?: 'base' | 'addon';
+  /** Autumn: one of the plan's features; its usage follows the org's member count. */
+  seat_feature_id?: string | null;
 }
 
 export interface UpdateBillingPlanBody {
@@ -64,6 +131,12 @@ export interface UpdateBillingPlanBody {
   features?: string[];
   audience?: string;
   active?: boolean;
+  limits?: Record<string, unknown>;
+  provider?: BillingProviderName;
+  provider_price_id?: string;
+  kind?: 'base' | 'addon';
+  /** `null` clears it. */
+  seat_feature_id?: string | null;
 }
 
 /** Filter the subscription read view to one subject. */
@@ -90,6 +163,10 @@ export interface ReportBillingUsageBody {
   /** Non-negative. */
   quantity: number;
   idempotency_key: string;
+  /** Count against this provider feature (an Autumn feature id / Commet feature code). */
+  feature?: string;
+  /** Attribute to this subscription when the subject holds several. */
+  subscription_id?: string;
 }
 
 export interface BillingUsageReport {
@@ -127,6 +204,37 @@ export function billingResource(request: RequestFn) {
     },
     listSubscriptions(params?: ListSubscriptionsParams): Promise<ListPage<BillingSubscription>> {
       return request({ method: 'GET', path: '/v1/billing/subscriptions', query: { ...params } });
+    },
+    /** One subscription by id (a subject may hold several: a base plan + add-ons). */
+    getSubscription(id: string): Promise<BillingSubscription> {
+      return request({ method: 'GET', path: `/v1/billing/subscriptions/${enc(id)}` });
+    },
+    /** Move one subscription to another plan or interval (now, or at the period end). */
+    changeSubscription(id: string, body: ChangeBillingSubscriptionBody): Promise<BillingSubscription & { scheduled: boolean }> {
+      return request({ method: 'POST', path: `/v1/billing/subscriptions/${enc(id)}/change`, body });
+    },
+    /** Cancel one subscription at the period end (default) or now. */
+    cancelSubscription(id: string, body: { immediately?: boolean } = {}): Promise<BillingSubscription> {
+      return request({ method: 'POST', path: `/v1/billing/subscriptions/${enc(id)}/cancel`, body });
+    },
+    /** Undo a cancellation scheduled for the period end. */
+    restoreSubscription(id: string): Promise<BillingSubscription> {
+      return request({ method: 'POST', path: `/v1/billing/subscriptions/${enc(id)}/restore` });
+    },
+    /** Mirror a plan's features/limits from its provider (Autumn, Commet). */
+    syncPlanEntitlements(id: string): Promise<BillingPlan> {
+      return request({ method: 'POST', path: `/v1/billing/plans/${enc(id)}/sync_entitlements` });
+    },
+    /** How limits merge across a subject's several subscriptions. */
+    getSettings(): Promise<BillingSettings> {
+      return request({ method: 'GET', path: '/v1/billing/settings' });
+    },
+    updateSettings(body: UpdateBillingSettingsBody): Promise<BillingSettings> {
+      return request({ method: 'PUT', path: '/v1/billing/settings', body });
+    },
+    /** May a subject use a feature? Live from Autumn/Commet when the subject is on one. */
+    checkFeature(body: CheckBillingFeatureBody): Promise<BillingFeatureCheck> {
+      return request({ method: 'POST', path: '/v1/billing/check', body });
     },
     /**
      * Adopt an EXISTING Stripe subscription onto a user/org + plan, for

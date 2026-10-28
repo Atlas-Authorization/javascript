@@ -10,7 +10,7 @@
  * nobody can report; a button reading `signIn.submit` is one anyone can.
  */
 
-import { EMAIL_UNAVAILABLE_MESSAGE } from '@atlasauth/js';
+import { EMAIL_UNAVAILABLE_MESSAGE, POLICY_STRINGS } from '@atlasauth/js';
 
 export type Catalog = Record<string, string>;
 
@@ -22,6 +22,7 @@ export const EN_US: Catalog = {
   'signIn.submit': 'Continue',
   'signIn.forgotPassword': 'Forgot password?',
   'signIn.noAccount': 'No account?',
+  'signIn.lastUsed': 'Last used',
   'signIn.signUpLink': 'Sign up',
   'signIn.orDivider': 'or',
   'signIn.socialButton': 'Continue with {provider}',
@@ -32,6 +33,7 @@ export const EN_US: Catalog = {
   'signIn.linkSentTo': 'We sent a sign-in link to {email}. Open it on any device to continue.',
   'signIn.sending': 'Sending…',
   'signIn.resendCode': 'Resend code',
+  'signIn.emailCodeOption': 'Email me a code instead',
   'signIn.resendLink': 'Resend link',
   'signIn.passwordOption': 'Use your password instead',
   'signIn.magicLinkSent': 'Check your email for a sign-in link.',
@@ -56,6 +58,13 @@ export const EN_US: Catalog = {
   // Shown instead of the email + password form when the app can't deliver the
   // verification email (`emailDelivery.passwordSignUp === false`).
   'signUp.emailUnavailable': EMAIL_UNAVAILABLE_MESSAGE,
+  'signUp.passkeyOption': 'Sign up with a passkey instead',
+  'signUp.passwordOption': 'Sign up with a password instead',
+  'signUp.passkeyIntro': "No password needed: you'll sign in with a passkey saved on this device or in your password manager.",
+  'signUp.passkeyPrompt': 'Create a passkey to finish setting up your account.',
+  'signUp.passkeyCreate': 'Create passkey',
+  'signUp.passkeyCancelled': "The passkey wasn't created. Try again when you're ready.",
+  'signUp.linkSentTo': 'We sent a confirmation link to {email}. Open it on any device; this page continues on its own.',
 
   'captcha.prompt': 'Complete the security check to continue.',
   'captcha.required': 'Please complete the security check, then try again.',
@@ -75,6 +84,24 @@ export const EN_US: Catalog = {
   'mfa.usePasskey': 'Use a passkey instead',
   'mfa.useBackupCode': 'Use a recovery code',
   'mfa.submit': 'Verify',
+  'mfa.enrollChoose': 'Set up a second step for signing in.',
+  'mfa.enrollTotpOption': 'Use an authenticator app',
+  'mfa.enrollSmsOption': 'Use text messages',
+  'mfa.enrollScan': 'Scan this QR code with your authenticator app, or enter the setup key.',
+  'mfa.enrollQrAlt': 'QR code for your authenticator app',
+  'mfa.enrollSetupKey': 'Setup key',
+  'mfa.enrollPreparing': 'Setting up…',
+  'mfa.phoneLabel': 'Mobile number',
+  'mfa.phoneHint': 'Include the country code, for example +14155550101.',
+  'mfa.sendCode': 'Text me a code',
+  'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
+  'mfa.smsCodeOption': 'Text me a code instead',
+  'mfa.recoveryCodesTitle': 'Save your recovery codes',
+  'mfa.recoveryCodesHelp': "Each code works once. If you can't use your second step, sign in with one of these. Keep them somewhere safe: they won't be shown again.",
+  'mfa.recoveryCodesCopy': 'Copy codes',
+  'mfa.recoveryCodesCopied': 'Copied.',
+  'mfa.recoveryCodesDownload': 'Download as .txt',
+  'mfa.recoveryCodesSaved': "I've saved my codes",
 
   'reset.title': 'Reset your password',
   'reset.submit': 'Send reset code',
@@ -106,6 +133,38 @@ export const EN_US: Catalog = {
   'organization.members': 'Members',
   'organization.invite': 'Invite member',
   'organization.roleLabel': 'Role',
+  'organization.invitations': 'Invitations',
+  'organization.settings': 'Settings',
+  'organization.emailLabel': 'Email address',
+  'organization.sendInvite': 'Send invitation',
+  'organization.noInvitations': 'No pending invitations.',
+  'organization.remove': 'Remove',
+  'organization.revoke': 'Revoke',
+  'organization.resend': 'Resend',
+  'organization.you': '(you)',
+  'organization.leave': 'Leave organization',
+  'organization.leaveConfirm': 'Leave {name}? You will lose access until you are invited again.',
+  'organization.delete': 'Delete organization',
+  'organization.deleteConfirm': 'Delete {name} for every member? This cannot be undone.',
+  'organization.confirm': 'Confirm',
+  'organization.cancel': 'Cancel',
+  'organization.unnamedMember': 'Unnamed member',
+  'organization.passwordPrompt': 'Enter your password to confirm.',
+  'organization.roles': 'Roles',
+  'organization.roleName': 'Role name',
+  'organization.roleKey': 'Role key (for example org:auditor)',
+  'organization.rolePermissions': 'Permissions',
+  'organization.createRole': 'Create role',
+  'organization.saveRole': 'Save role',
+  'organization.editRole': 'Edit',
+  'organization.deleteRole': 'Delete',
+  'organization.noCustomRoles': 'This organization has no roles of its own yet.',
+  'impersonation.banner': 'You are signed in as {name} on someone else\'s behalf.',
+  'impersonation.returnToAdmin': 'Return to admin',
+  'impersonation.end': 'End impersonation',
+
+  // Policy acceptance (terms, privacy, any policy).
+  ...POLICY_STRINGS,
 
   'error.generic': 'Something went wrong. Please try again.',
   'error.network': 'We could not reach the server. Check your connection.',

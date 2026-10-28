@@ -1,0 +1,24 @@
+import { Route, Routes, useNavigate } from 'react-router-dom';
+import { Home } from './Home';
+import { OktaAuthCompat, toRelativeUrlCompat } from '@atlasauth/react/compat';
+import { AtlasProvider } from '@atlasauth/react';
+
+const oktaAuth = new OktaAuthCompat({
+  issuer: import.meta.env.VITE_ATLAS_FRONTEND_API,
+  clientId: import.meta.env.VITE_ATLAS_PUBLISHABLE_KEY,
+  redirectUri: window.location.origin + '/login/callback',
+});
+
+export default function App() {
+  const navigate = useNavigate();
+  const restoreOriginalUri = async (_oktaAuth: OktaAuthCompat, originalUri: string) => {
+    navigate(toRelativeUrlCompat(originalUri || '/', window.location.origin), { replace: true });
+  };
+  return (
+    <AtlasProvider publishableKey={import.meta.env.VITE_ATLAS_PUBLISHABLE_KEY!} frontendApi={import.meta.env.VITE_ATLAS_FRONTEND_API!}>
+      <Routes>
+        <Route path="/" element={<Home />} />
+      </Routes>
+    </AtlasProvider>
+  );
+}

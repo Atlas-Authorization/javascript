@@ -306,3 +306,20 @@ describe('fonts', () => {
     expect(designFontSheets(resolveDesign({ preset: 'atlas' }))).toEqual([]);
   });
 });
+
+describe('host page --atlas-host-* variables', () => {
+  it('wrap the mapped design values when hostVariables is on, and only then', async () => {
+    const { compileDesignCss: compile, hostVariableBridgeCss, HOST_VARIABLE_NAMES } = await import('./css');
+    const { resolveDesign: resolve } = await import('./resolve');
+    const d = resolve({ palette: { primary: '#123456' } });
+    const on = compile(d, { scope: '.atlas-root', hostVariables: true });
+    expect(on).toContain('--atlas-color-primary:var(--atlas-host-accent,#123456);');
+    expect(on).toMatch(/--atlas-focus-outline-color:var\(--atlas-host-focus-ring,#[0-9a-f]{6}\);/);
+    expect(compile(d, { scope: '.atlas-root' })).toContain('--atlas-color-primary:#123456;');
+    expect(hostVariableBridgeCss(['--atlas-host-accent'])).toBe(':where(.atlas-root){--atlas-color-primary:var(--atlas-host-accent);}');
+    expect(hostVariableBridgeCss([])).toBe('');
+    expect(HOST_VARIABLE_NAMES).toEqual(
+      expect.arrayContaining(['--atlas-host-accent', '--atlas-host-accent-ink', '--atlas-host-surface', '--atlas-host-ink', '--atlas-host-line', '--atlas-host-radius', '--atlas-host-font', '--atlas-host-focus-ring']),
+    );
+  });
+});

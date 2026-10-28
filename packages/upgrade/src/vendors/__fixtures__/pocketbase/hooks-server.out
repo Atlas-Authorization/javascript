@@ -1,0 +1,13 @@
+import PocketBase from 'pocketbase';
+
+import { pocketbaseAuthStoreCompat } from '@atlasauth/react/compat';
+
+export async function handle({ event, resolve }) {
+  event.locals.pb = new PocketBase('https://pb.example.com');
+  // TODO(atlas-migrate): pb.authStore.loadFromCookie(): Atlas keeps its own session cookie; read the session with auth() from @atlasauth/nextjs/server (or locals.auth in your framework's Atlas middleware) and delete this cookie handling
+  pocketbaseAuthStoreCompat.loadFromCookie(event.request.headers.get('cookie') || '');
+  const response = await resolve(event);
+  // TODO(atlas-migrate): pb.authStore.exportToCookie(): Atlas keeps its own session cookie; read the session with auth() from @atlasauth/nextjs/server (or locals.auth in your framework's Atlas middleware) and delete this cookie handling
+  response.headers.append('set-cookie', pocketbaseAuthStoreCompat.exportToCookie());
+  return response;
+}

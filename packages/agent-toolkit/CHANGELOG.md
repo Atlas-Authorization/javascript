@@ -1,5 +1,13 @@
 # @atlasauth/agent-toolkit changelog
 
+## 0.2.0 — 2026-10-28
+
+- Connection tools toolkit and adapters for OpenAI Agents, Mastra, LlamaIndex and Google ADK
+
+### Added
+- `createConnectionsToolkit()`: connection tools that run as the agent (list connections, list and run catalog actions, call a provider API through a connection, request access). No tool returns a provider token.
+- Adapters for the OpenAI Agents SDK, Mastra, LlamaIndex.TS and Google ADK (TypeScript), each loading its framework lazily.
+
 ## 0.1.0
 
 First published release.

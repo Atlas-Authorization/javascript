@@ -1,0 +1,15 @@
+source "https://rubygems.org"
+
+ruby "3.3.4"
+
+gem "rails", "~> 7.2.1"
+gem "pg", "~> 1.5"
+gem "puma", ">= 5.0"
+gem "devise", "~> 4.9"
+gem "devise-two-factor", "~> 6.0"
+gem "devise_invitable", "~> 2.0"
+gem "devise-pwned_password"
+gem "omniauth-google-oauth2"
+gem "omniauth-github", "~> 2.0"
+gem "omniauth-saml"
+gem "omniauth-rails_csrf_protection"

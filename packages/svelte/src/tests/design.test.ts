@@ -55,7 +55,7 @@ describe('<AtlasProvider> design support (same semantics as @atlasauth/react)', 
     const root = container.querySelector('.atlas-root')!;
     const cssFor = () =>
       document.head.querySelector(`style[data-atlas-design="${root.getAttribute('data-atlas-design')}"]`)?.textContent ?? '';
-    await waitFor(() => expect(cssFor()).toContain(`--atlas-color-primary:${resolved.palette.primary}`));
+    await waitFor(() => expect(cssFor()).toContain(`--atlas-color-primary:var(--atlas-host-accent,${resolved.palette.primary})`));
     expect(root.getAttribute('data-atlas-card')).toBe('glass');
   });
 });

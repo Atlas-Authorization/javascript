@@ -96,7 +96,7 @@ describe('composeDesign', () => {
     expect(c.active).toBe(true);
     expect(c.scope).toBe(`.atlas-root[data-atlas-design="${c.key}"]`);
     expect(c.css).toContain(`${c.scope}{`);
-    expect(c.css).toContain(`--atlas-color-primary:${instance.resolved.palette.primary}`);
+    expect(c.css).toContain(`--atlas-color-primary:var(--atlas-host-accent,${instance.resolved.palette.primary})`);
     expect(c.dataAttributes['data-atlas-design']).toBe(c.key);
     expect(composeDesign({ instance }).key).toBe(c.key);
     // The server's CSS text is never injected as-is.

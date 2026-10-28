@@ -1,0 +1,11 @@
+// TODO(atlas-migrate): getLoginFlow(): Atlas hosts sign-in: render <SignIn /> from @atlasauth/react, or link to /sign-in; delete the flow code
+// TODO(atlas-migrate): 'OryPageParams' from '@ory/nextjs/app': no Atlas counterpart — migrate it manually
+import { getLoginFlow, OryPageParams } from '@ory/nextjs/app';
+import config from '@/ory.config';
+import { SignIn } from '@atlasauth/react';
+
+export default async function LoginPage(props: OryPageParams) {
+  const flow = await getLoginFlow(config, props.searchParams);
+  if (!flow) return null;
+  return <SignIn />;
+}

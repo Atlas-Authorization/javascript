@@ -1,5 +1,13 @@
 # @atlasauth/design
 
+## 0.3.0 — 2026-10-24
+
+### Added
+
+- `compileDesignCss(…, { hostVariables: true })` lets a host page's `--atlas-host-*` variables win where set; `hostVariableBridgeCss()`, `HOST_VARIABLE_MAP`.
+- `adoptStylesheet()` / `adoptConstructable()` / `setStyleNonce()`: strict-CSP-friendly stylesheet injection (constructable sheets, else a nonced `<style>`).
+- Self-hosted brand fonts: `typography.font` / `headingFont` accept `custom-<hash>` ids (imported from a brand document).
+
 ## 0.2.0
 
 - **Added** `focusRingColor(primary, papers)`: the primary when it has 3:1 contrast (WCAG 1.4.11) against

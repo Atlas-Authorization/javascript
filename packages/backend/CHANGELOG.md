@@ -1,5 +1,187 @@
 # @atlasauth/backend changelog
 
+## 0.27.0 — 2026-10-28
+
+- SAML IdP (service providers, artifacts, attribute queries), WS-Federation, outbound provisioning connectors, SCIM custom resources and cloud access targets
+- OpenID provider: per-client signing/encryption, op key rotation, token-exchange profiles, refresh-token search and bulk revoke, federation resolve, verifiable-credential deferred issuance and presentation requests; `requireAcr`/`maxAge` step-up on access-token verification and `verifyTransactionToken`
+- Conditional access depth: report-only and impact replay, device assurance policies and pull integrations, risky users, containment, temporary access passes, email risk, authenticator policies
+- Workflows, chat integrations (Slack/Teams approvals), eligible access and activation, staged and recurring reviews, bundles, administrative units, organization application access and B2B connections
+- MCP gateway v2 (upstreams, packs, pins, user auth), connection actions and triggers, agent lifecycle and reviews, telemetry export
+- Authorization: tuple expiry, decision points, Cedar JSON and token authorization, FGA assertions/materializations/bulk import, customer-managed keys, coupons, credits, user merge, audit retention
+- Device-bound SSO registrations; SMTP2GO email transport
+
+## 0.26.0 — 2026-10-27
+
+### Added
+
+- `iga` client resource: identity governance (access catalog, access requests and approvals, grants, delegations, separation-of-duties rules, joiner/mover/leaver lifecycle, certification campaigns).
+- `desktopMfa` client resource: the desktop login MFA policy, enrolment codes and enrolled devices (`getPolicy`, `updatePolicy`, `createEnrolmentCode`, `listDevices`, `getDevice`, `revokeDevice`, `revokeOfflineCache`, `deleteDevice`).
+- `managedGrants` client resource (`list`, `get`, `narrow`, `revoke`): the OpenID Grant Management grants each OAuth client holds for each user.
+- `leastPrivilege` client resource (`report`, `get`, `exportCsv`, and applying the narrower grants with a `dryRun` preview): what each secret key, OAuth client, MCP gateway and agent holds against what it used.
+- `mcpGateways` gains `abac` (policy checks on every tool call) and `budgets` (`list`, `create`, `get`, `update`, `delete`, `usage`).
+- `fga.settings.get` / `fga.settings.update`: the instance's FGA result-cache lifetime, default consistency mode and tuple change-log retention.
+
+- `connections.token` now caches per client until shortly before `expires_at` and takes `minTtlSeconds`; new `connections.refreshToken` (force-refresh after a provider 401, with `staleAccessToken`), `connections.tokens` (batch read of up to 100), `connections.importConnections` and `connections.exportConnections` (sealed to your public key); `connections.delete(id, { revoke: true })`. `Connection` gains `refresh_failures`, `next_refresh_at` and a typed `last_error` with the provider's code and HTTP status.
+- `connections.revoke` returns `provider_revoked`, `provider_status`, `provider_error` and `local_cleared`.
+- Webhook event types `connection.refresh_failed`, `connection.reauthorization_required`, `connection.revoked`, `connection.scopes_changed`, `connection.recovered`.
+- Connections: `setCredentials`, `rotateCredentials`, `secretVersions`, `secret` (scope `connections:secret_read`), `oauth1Sign`, `webhooks.verify` and `webhooks.*Endpoint`; `token()` takes `subject` for delegated tokens; `Connection` reports `secret_expires_at`, `previous_valid_until` and `allowed_methods`.
+- `connections` client resource: `create`, `list`, `get`, `update` (including `owner` to transfer), `delete`, `connect`, `revoke`, `token` (needs the `connections:token` scope) and `oauthClients` (`set`, `list`, `get`, `delete`), with `host_params`, `environment` and the captured token fields typed.
+- ABAC data filtering: `abac.partialEvaluate` (the policies as a filter over an unknown resource or principal, with relationship conditions resolved and optional SQL or Prisma output) and `abac.accessibleResources` (the resources a principal may act on, paged). The filter helpers `evalFilter`, `filterToSql`, `filterToPrisma` and `filterToDrizzle` are exported.
+- AuthZEN 1.0 search: `abac.authzenSearchSubject`, `authzenSearchResource` and `authzenSearchAction`.
+- ABAC authoring: `abac.templates`, `abac.links`, `abac.schema` (`get`, `set`, `delete`, `validate`), `abac.diff` and `abac.diffSources`; `abac.test` results carry `coverage`.
+- `fga.listObjects` and the resource-role `accessible` call take `limit` and `starting_after`; `listObjects` returns `has_more` and `next_cursor`.
+- `authzDecisions` client resource (`list`, `iterate`, `get`, `stats`, `settings.get/update`): the authorization decision log and its capture settings.
+- `policyBundles` client resource (`export`, `list`, `current`, `get`, `verify`, `import` with `dry_run` / `prune`) and `verifyPolicyBundle`, which verifies a signed policy bundle offline against your instance JWKS and returns its policies and FGA models.
+- `fga.listUsers` / `fga.listAllUsers` and `openfga.listUsers` / `openfga.listAllUsers`: who has a relation on an object (users, usersets, the `type:*` wildcard with `excluded_users`), paged.
+- `fga.readChanges` and `openfga.readChanges`: the tuple change log, resumable with `continuation_token`.
+- Tuple conditions: `condition` on tuple keys and `context` on `check`, `batchCheck` items, `listObjects` and `listUsers`.
+- `consistency` / `consistency_token` on queries; writes and queries return a `consistency_token`.
+- Desktop login MFA passkeys: `DesktopPasskey` and the policy fields `passkey_scope`, `passkey_rp_id` and `passkey_require_uv`.
+- Connections: `token_family` on connections and `split_tenants` on connect, so one grant covering several accounts (Xero organisations) becomes one connection per account sharing one token set.
+- Custom OAuth providers: `revocation_endpoint`, `host_params_schema` and `data_only` (connect-time host templates for data-only providers).
+- OAuth clients: `claims_redirect_uris` for UMA 2.0 claims gathering.
+- Shared Signals receivers: the `sync_posture` action records device posture without touching sessions.
+- Verifiable credentials: mdoc issuer revocation checks (`revocation_policy`: off, best_effort or required).
+
+## 0.25.0 — 2026-10-26
+
+### Added
+
+- `mfaFactors` client resource for the additional authentication factors: `setYubicoSecret` / `removeYubicoSecret`, `setDuoSecret` / `removeDuoSecret` / `duoHealthCheck`, `setSmartCardSecret` / `removeSmartCardSecret` (all write-only), `yubikeys` (`list`, `register`, `remove`), `smartCardMappings` (`list`, `add`, `remove`) and `resetSecurityQuestions`.
+- `users.create({ mfa })` is typed (`ImportedMfa`): an authenticator (`totp`: SHA-1/256/512, 6 or 8 digits, 30 or 60 seconds) or a counter-based token (`hotp`), plus recovery codes.
+
+## 0.24.0 — 2026-10-25
+
+### Added
+
+- Moving from any auth vendor without signing anyone out: `createMigrationBridge` / `exchangeMigrationSession` (the vendor-neutral session bridge, `POST /v1/migrations/{source}/exchange`), per-vendor bridge presets (`listMigrationBridgePresets`, `resolveMigrationBridgePreset`, `registerMigrationBridgePreset`) for Auth0, Clerk, Cognito, Firebase, Supabase, WorkOS, Okta, Stytch, Keycloak, FusionAuth, Kinde, Descope, Frontegg and session-table sources, and an `extractToken` hook for vendor cookies encrypted with your app's secret. `createBetterAuthBridge` / `exchangeBetterAuthSession` now run on it, unchanged.
+- `migrations` client resource: `imports(source)` (`getPublicKey`, `rotatePublicKey`, `create`, `list`, `get`, `uploadPart`, `finalize`, `dryRun`, `apply`, `delete`, `upload`, `waitFor`), `bridge(source)` (`get`, `update`, `delete`) and `sources()`.
+
+## 0.23.0 — 2026-10-25
+
+### Added
+
+- `jwtTemplates.create` and `jwtTemplates.update` take `settings` (`lifetime_seconds` 10–86400, `audience`, `algorithm`, `signing_secret`); `JwtTemplate` returns `settings`. `update` accepts claims, settings or both.
+- `instance.integrations.rotateEventsSecret(id, { overlap_seconds })`: rotate an integration's event signing secret, with the old one still signing during the overlap.
+- `startDeviceAuthorization({ issuer, clientId, clientSecret?, scope?, resource? })` and `pollDeviceAuthorization(start)`: the RFC 8628 device flow against any instance's OAuth server, for a CLI of your own. `startOperatorLogin` / `pollOperatorLogin` now use them.
+- `authenticatedWithin(claims, maxAgeSeconds)` and `usedMultiFactor(claims)`: step-up checks on a verified token's `auth_time`, `acr` and `amr`.
+
+## 0.22.0 — 2026-10-25
+
+### Added
+
+- `platform.atlasIdApps.provisionedAccounts` (`list`, `create`, `get`, `remove`, `rotatePassword`): test and review accounts for a Sign in with Atlas app (reviewer logins, CI, demos), confined to that app. Passwords come back once. Takes `platform:atlas_id_apps:provision` or the per-app `atlas_id_apps:<app id>:provision` scope.
+- `platform.domains` (`list`, `claim`, `verify`, `remove`): the account's DNS-verified domains.
+- `test_mode` and `provisioned_verified_domains_only` on Sign in with Atlas apps (`update` accepts them); `AtlasErrorCodes.TEST_ACCOUNT_RESTRICTED`, `PROVISIONED_ACCOUNT_LIMIT_REACHED`, `DOMAIN_NOT_VERIFIED`.
+
+## 0.21.0 — 2026-10-24
+
+- Per-call integration audiences (`getToken({ for, cbid })`), partner platforms, operator tokens for partner products.
+
+## 0.20.0 — 2026-10-24
+
+### Added
+
+- `atlasIdGrants.preflight(appId)`: the setup check of a Sign in with Atlas app the instance manages (`GET /v1/atlas_id_apps/{id}/preflight`, `diagnostics:read`). `atlasIdGrants.listApps()` items carry `button_rendered_origins` and `managed_via`.
+- `platform.atlasIdApps.setManagedBy(id, instanceId | null)`: hand an app's grant handling to an instance (or take it back); app types carry `managed_via`.
+- `identity.sso.organizationId` / `identity.sso.type` (from the `sso_organization_id` / `sso_connection_type` claims) and the same claims on `SessionClaims`; the test issuer takes `sso: { organizationId, type }`.
+- `users.list({ include_deleted: true })`: also list soft-deleted users in their scrub window. The server now leaves deleted users out by default. `AtlasErrorCodes.MANAGED_WAF_NOT_CONFIGURED` (422 from managed WAF provision/deprovision with no configuration saved).
+- Sealed-secret fields (`sealed_secret`, `sealed_client_secret`, `sealed_webhook_secret`, `secrets_sealed`) on webhook endpoint, webhook secret, OAuth client and Sign in with Atlas app types.
+
+### Changed
+
+- `DryRunResult.mode` adds `rollback`; new optional `warnings`, `would_return_status`, `suppressed` and `validation_skipped`.
+
+## 0.19.0 — 2026-10-24
+
+### Added
+
+- `createAtlasClientFromEnv()`, `atlasConfigFromEnv()` and `apiBaseFromEnv()`: configure from `ATLAS_SECRET_KEY` and `ATLAS_API_BASE` or `ATLAS_API_URL`.
+- `fx.referalliCall` signs v1 and v2 and sends both header spellings; `requestId` option; `referalliSignatureV2`. `fx.referallyCall` stays as a deprecated alias.
+- Referral settings: `context_cookie` accepts a name or a list, `context_cookies`, `provider_aliases`, `capabilities`, `one_click` / `one_click_presets`, `providers[].aliases`.
+- `client.referrals` can start a one-click install: `POST /v1/instance/referrals/{preset}/install`.
+- `GET /v1/entitlements` (the standard entitlements shape) and `internal` on entitlement overrides.
+
+- Data rights: `privacy` — the data-rights executor protocol any DSAR orchestrator calls (`discover`, `preset`, `lookup`, `createRequest`, `getRequest`, `cancelRequest`) and the instance's orchestrator settings (`orchestrator.get/set/delete`).
+- `dataSubjectRequests.create` accepts the canonical data-rights types (`access`, `deletion`, `closure`, `restriction`, `rectification`, and the alias `erase`); `DataSubjectRequest` carries `canonical_type`, `source`, `case_id`, `external_case`, `trace_id`, `steps`, `retention` and `deletion_effective_at`.
+- `withOptions({ dryRun: true })`: every write is sent with `?dry_run=true` and resolves to a `DryRunResult` (`changes[{ section, before, after }]`) without changing anything.
+- Provisioning fields: `external_ref` and `metadata` on app, instance, secret key, OAuth client, webhook endpoint and Sign in with Atlas app creates (a repeat with the same ref returns the existing object, `idempotent_replay: true`); `metadata` filters on `oauthClients.list`, `webhooks.endpoints.list`, platform `apps.list`, `apps.secretKeys`, `atlasIdApps.list`; `metadataQuery()`.
+- Platform: `apps.sandboxTeardown()` (hard delete of sandbox-tagged resources, with a dry run), `apps.bulkDelete({ metadata, dry_run })`, `apps.cloneConfig()`, `apps.createSecretKey()`.
+- `notices` (`list`, `acknowledge`), `securityAdvisories` (`list`, `acknowledge`, `catalog`), `subProcessors.get()`, and `auditExports` (`list`, `get`, `create`, `update`, `delete`, `test`, `rotateSecret`) with the `AuditCloudEvent` type.
+- `AuditLog.actor` (`type`, `id`, `key_name`, `key_prefix`).
+- Atlas service status: `status` (`service` for the public `GET /v1/status` with component groups, regions and open incidents; `getSubscription`, `updateSubscription`, `disableSubscription`, `rotateFeed` for the incident subscription; `listIncidents`; `listDependencies`, `createDependency`, `getDependency`, `updateDependency`, `deleteDependency`, `refreshDependency` for upstream status pages), with the `StatusSubscription`, `StatusIncident`, `StatusIncidentEventData` and `StatusDependency` types.
+- Webhook events `status_incident.created`, `status_incident.updated` and `status_incident.resolved`.
+- `instance.integrationHealth({ only?, probe? })`, `instance.integrationHealthProviders()`, `instance.embed({ instance, origin?, shape? })`, `design.importBrand({ brandUrl } | { brand })`. `DesignSettings` gains `brand`, `precedence`, `sources`, `ignored`; `AtlasIdAppPreflight` gains `button_rendered_origins`, `authorize_requests_7d`, `fallback_origins`, `homepage_includes_script`.
+- Back-channel logout receivers: `handleBackchannelLogout()` (framework-agnostic), `expressBackchannelLogout()`, `fastifyBackchannelLogout()` / `fastifyBackchannelLogoutPlugin`, and `nextBackchannelLogout()` (also `fetchBackchannelLogout()` for any Fetch-API runtime). They verify the `logout_token`, call your `onLogout({ sub, sid })`, and answer 200, 400 (bad token, not retried) or 503 with `Retry-After` (retried).
+- `instance.preflight({ min_severity, include_suppressed })`, with the `suppressed` and `integrations` fields and the `security_posture` finding group.
+- `instance.unknownFieldsReport({ days })`: the unknown body fields your writes sent, per route, field and key.
+- `instance.openapiDiff({ since })`: operations added, deprecated and removed since a date.
+- `messaging.channel('email' | 'sms')`, and `NotConfigured`: unconfigured singletons now read as `{ configured: false }` instead of a 404 (`messaging.managedEmail.get()`, `messaging.developmentEmail.get()`).
+- `require_pkce` on `oauthClients.create` (new clients default to true).
+- `AtlasErrorCodes.ROUTE_NOT_FOUND`, and `docs_url`, `did_you_mean`, `allowed_methods` on `AtlasErrorItem`.
+
+### Changed
+
+- `ConfigChangelogEntry.changes` is always present (with `values_recorded`), plus `no_op` and `recorded`; `fields` is deprecated. `include_no_op` on `configChangelog.list`.
+
+## 0.18.0 — 2026-10-24
+
+### Added
+
+- Policy acceptance: `policies` (`list`, `create`, `get`, `update`, `delete`, `versions.list/create/get/update/delete/publish/retire`, `listAcceptances`, `exportAcceptancesCsv`, `forUser`, `settings.get/update` for the `pol` session claim) and `policySource` (`get`, `update`, `delete`, `test`, `sync`, `listDeliveries`) for the external policy source.
+- Policy source protocol v1 helpers for the system that serves policies: `verifyPolicyFeedRequest()` (Atlas's signed `GET {endpoint}/policies`) and `signPolicySourceEvent()` (`policy.published` / `policy.retired`), with the `PolicyFeed` types.
+- `RecordUserConsentBody` / `UserConsent`: `policy_version_id`, `content_sha256`, `display`, `scrolled_to_end`, `view_ms`, `locale`.
+
+## 0.17.0 — 2026-10-24
+
+### Added
+
+- Better Auth session bridge: `exchangeBetterAuthSession()` exchanges a Better Auth session for an Atlas session server to server with your secret key (forwarding the user's IP and user agent), plus `migrations.betterAuthBridge` to read and change the bridge settings.
+- `legacyIssuers` on `AtlasBackend`: accept Better Auth-issued JWTs for a bounded window during a migration, mapping `sub` to the Atlas user through `external_id`.
+- `betterAuthImports`: migrate from Better Auth with a sealed bundle (`getPublicKey`, `rotatePublicKey`, `create`, `uploadPart`, `finalize`, `upload` for all three, `dryRun`, `apply` to import or resume, `get`, `list`, `waitFor`, `delete`, `listJwks`, `deleteJwk`), with `BetterAuthImport`, `BetterAuthImportOptions`, the report types and `splitBundleParts`.
+
+## 0.16.0 — 2026-10-24
+
+### Added
+
+- `actionGallery` (`list`, `get`, `install`, `installs`, `update`) and `actionTemplates` (`list`, `create`, `get`, `update`, `delete`, `addVersion`, `submitVersion`, `deleteVersion`, `publish`, `unlist`) for the Actions gallery.
+- `ActionTestResult.http_requests` (what `api.http` queued in a dry run) and `organizations` / `country` on the sample event.
+- DPoP server nonces (RFC 9449 §8) in `createAccessTokenVerifier`: `dpopNonces` requires every DPoP proof to carry a nonce the API issued, answering `use_dpop_nonce` with a fresh nonce otherwise; every result carries `dpopNonce` for the `DPoP-Nonce` response header. `memoryDpopNonceSource()` (one process) and `hmacDpopNonceSource(secret)` (stateless, shared by every process — and every Atlas server SDK — holding the same secret).
+- Opaque access tokens: `createAccessTokenVerifier({ introspection: { clientId, clientSecret } })` validates a token that is not a JWT at the instance's introspection endpoint (RFC 7662), caching each answer (60 seconds by default, never past `exp`; inactive answers 10 seconds). `introspectJwts: true` checks JWTs live too, so a revoked grant is refused before the token expires. DPoP-bound opaque tokens keep their sender constraint (`cnf.jkt` from introspection). `createIntrospector` is the cache on its own.
+- OAuth clients: `access_token_format` (`jwt` | `opaque`) and `token_lifetimes` (`OAuthTokenLifetimes`) on create, update and reads. Resource servers: `access_token_format`, `refresh_token_absolute_ttl_seconds`, `refresh_token_idle_ttl_seconds`, `introspection_client_ids`.
+- `RotateSigningKeyBody.key` (`main` | `secondary`) and `SigningKeyRotation.secondary_kid` for KMS setups with one key per algorithm (`config.secondary`).
+- KMS-backed signing keys: `instanceSecurity.getSigningKeyProvider()` / `setSigningKeyProvider({ provider, config, credentials })` / `removeSigningKeyProvider()` for AWS KMS, Google Cloud KMS and Azure Key Vault; `SigningKey.provider`.
+- SSO connections: SAML Single Logout fields (`saml_single_logout`, `saml_idp_slo_url`, `saml_idp_slo_response_url`, `saml_idp_slo_binding`, `saml_idp_slo_soap_url` for back-channel logout) and `saml_require_encrypted_assertions`. Reads add `has_saml_encryption_key`, `has_previous_saml_encryption_key`, `saml_encryption_rotated_at`; `SamlMetadata.slo_url`. New `getSamlEncryptionKey()`, `createSamlEncryptionKey()` (generate or rotate), `retirePreviousSamlEncryptionKey()` and `deleteSamlEncryptionKey()` (`SamlEncryptionKey`).
+- Custom OAuth 2.0 / OpenID Connect login providers: `customOAuthProviders` (`list`, `get`, `create`, `update`, `delete`, `discover`, `previewProfileMapping`, and `signingKeys(id)` with `list` / `rotate` / `retire` for `private_key_jwt`), with `ProfileMapping`, `TokenEndpointAuthMethod`, upstream (RP-initiated and front-channel) logout and third-party initiated login settings. Enterprise OIDC connections take the same `profile_mapping`, `token_endpoint_auth_method`, `client_assertion_audience`, `logout` and `idp_initiated_login`, and report `upstream_urls`.
+- Attack protection: `dormant_accounts` (`DormantAccountsSettings`), readable and writable; `country_restrictions` / `device_accounts` typed. Risk-based MFA weights and signals gain `dormantAccount`. Email template key `account_reactivated`.
+- Sessions: `custom_data` on reads and on create; `sessions.setCustomData(id, data)` (replace, `null` clears) and `sessions.updateCustomData(id, patch)` (merge).
+- Billing: add-on plans (`kind: 'base' | 'addon'`) and several subscriptions per subject (`billing.getSubscription(id)`, and `changeSubscription` / `cancelSubscription` / `restoreSubscription` by subscription id); providers `chargebee`, `autumn` and `commet` (`BillingProviderName`); plan `limits` and Autumn `seat_feature_id`; `syncPlanEntitlements(id)`; `getSettings()` / `updateSettings()` for how limits merge across subscriptions (`max` | `sum`); `checkFeature({ subject_type, subject_id, feature, required })`; metered usage takes `feature` and `subscription_id`.
+- Vercel BotID: `botIdAttestationHandler({ secret, checkBotId })` (a fetch-style route handler for your Vercel deployment) and `createBotIdAttestation()`, which sign a BotID verdict for Atlas's `vercel_botid` captcha provider.
+- `instanceSecurity.setWalletRpcSecret({ chain_id, url })`: the wallet RPC endpoint for an EIP-155 chain (token gating and the Sign in with Ethereum ENS lookup); captcha secrets take `provider`.
+
+## 0.15.0 — 2026-10-23
+
+### Added
+
+- `createAccessTokenVerifier` / `verifyAccessToken`: verify Atlas-issued OAuth access tokens in your own API or MCP server — signature against the instance JWKS, issuer, expiry, access-token type, audience (RFC 8707), required scopes (scope + permissions) and DPoP sender constraint (RFC 9449, with a replay store). Failures return the status and the RFC 6750 / RFC 9728 `WWW-Authenticate` challenge (`resource_metadata`, `insufficient_scope`).
+- `protectedResourceMetadata` / `protectedResourceMetadataPath`: build and locate your API's RFC 9728 protected-resource metadata document.
+- `buildWwwAuthenticate`, `memoryDpopReplayStore`.
+- `createTestIssuer({ alg: 'ES256' })`: an ES256 test key, like an instance switched to ES256.
+- Backend API client: `instanceSecurity.listSigningKeys()` / `rotateSigningKey({ alg, grace_period_seconds, emergency })`; `oauthClients.initialAccessTokens.list()` / `create()` / `revoke()` (RFC 7591 §3); OAuth client fields `subject_type`, `sector_identifier_uri`, `client_secret_expires_at`, `disabled`, `require_pkce` and `secret_expires_in_seconds` on create / rotate; resource server `publish_resource_metadata` and a typed `signing_alg`.
+- `users.list({ external_id })`: find a user by the id it had in the system it was migrated from.
+- User search: `users.list()` takes `query`, `email_address`, `username`, `phone_number`, `banned`, `email_verified`, `organization_id`, `created_after` / `created_before`, `order_by`, `offset` and `include_total_count` (the page then carries `total_count`).
+- Timed bans: `users.ban(id, { reason, note, expires_in_seconds, expires_at })`; `User.ban_expires_at`.
+- App roles (instance-wide, no active organization needed): `appRoles.list()` / `create()` / `get()` / `update()` / `delete()` / `listUsers()` / `getForUser()` / `setForUser()` / `removeFromUser()`; `SessionClaims.app_roles` / `app_permissions` with `hasAppRole()` / `hasAppPermission()`.
+- `createAccessControl(statements)`: typed resource/action statements for app roles — `permission()`, `permissions()`, `allPermissions()`, `role()` (a definition ready for `appRoles.create`), and `can()` / `canAny()` against session claims.
+- API key controls: create / update bodies take `enabled`, `rate_limit` (`ApiKeyRateLimit`), `remaining`, and create also `prefix` and `expires_in_seconds`; `apiKeys.verify(secret, { required_scopes })` and a coded refusal of a live key (`insufficient_scope`, `rate_limited`, `usage_exhausted`, with `missing_scopes`, `retry_after_ms`, `remaining`).
+- SCIM tokens: `scopes` and `role_mappings` on create, and `scimTokens.update()`.
+- SSO connections: `attribute_mapping` (`SsoAttributeMapping`) and `oidc_scopes`; `domain_warnings` on the connection.
+- Email template keys `email_changed`, `verification_link`, `password_reset_link`; notification `email_changed`.
+
+### Changed
+
+- Every verifier (`AtlasBackend.verify`, the OIDC relying-party helpers, `verifyLogoutToken`, `createAccessTokenVerifier`) accepts ES256 as well as RS256, since an Atlas instance — or a single API — can now sign with ES256. Verification stays pinned to those two algorithms; `none`, HMAC and anything else are refused.
+
 ## 0.14.1
 
 ### Added

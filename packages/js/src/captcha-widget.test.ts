@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  fetchBotIdAttestation,
   flowNeedsCaptcha,
   isCaptchaError,
   isRenderableCaptcha,
@@ -11,7 +12,7 @@ import {
 const win = window as unknown as Record<string, unknown>;
 
 afterEach(() => {
-  for (const g of ['turnstile', 'hcaptcha', 'grecaptcha']) delete win[g];
+  for (const g of ['turnstile', 'hcaptcha', 'grecaptcha', 'captchafox']) delete win[g];
   for (const k of Object.keys(win)) if (k.startsWith('__atlasCaptchaLoad_')) delete win[k];
 });
 
@@ -62,6 +63,65 @@ describe('renderCaptchaWidget', () => {
     );
     expect(await handle.token).toBe('hc-token');
     expect(render.mock.calls[0]![1]).toMatchObject({ sitekey: 'k', size: 'invisible' });
+  });
+});
+
+describe('CaptchaFox', () => {
+  it('renders inline with the site key and resolves onVerify', async () => {
+    const render = vi.fn(async (_el: HTMLElement, opts: Record<string, unknown>) => {
+      setTimeout(() => (opts.onVerify as (t: string) => void)('cf-token'), 0);
+      return 'cf1';
+    });
+    const remove = vi.fn();
+    win.captchafox = { render, remove };
+    const handle = renderCaptchaWidget({ enabled: true, provider: 'captchafox', siteKey: 'k' }, container());
+    expect(await handle.token).toBe('cf-token');
+    expect(render.mock.calls[0]![1]).toMatchObject({ sitekey: 'k', mode: 'inline' });
+    handle.remove();
+    expect(remove).toHaveBeenCalledWith('cf1');
+  });
+
+  it('runs hidden mode through execute() for an invisible widget', async () => {
+    const render = vi.fn(async () => 'cf2');
+    const execute = vi.fn(async () => 'cf-hidden-token');
+    win.captchafox = { render, execute };
+    const handle = renderCaptchaWidget({ enabled: true, provider: 'captchafox', siteKey: 'k', widget: 'invisible' }, container());
+    expect(await handle.token).toBe('cf-hidden-token');
+    expect(execute).toHaveBeenCalledWith('cf2');
+    expect((render.mock.calls[0] as unknown[])[1]).toMatchObject({ mode: 'hidden' });
+  });
+});
+
+describe('Vercel BotID', () => {
+  it('is renderable only when the flow names its attestation route', () => {
+    expect(isRenderableCaptcha('vercel_botid')).toBe(false);
+    expect(isRenderableCaptcha('vercel_botid', { attestationUrl: '/api/atlas/botid' })).toBe(true);
+    expect(flowNeedsCaptcha({ enabled: true, provider: 'vercel_botid' })).toBe(false);
+    expect(flowNeedsCaptcha({ enabled: true, provider: 'vercel_botid', attestationUrl: '/api/atlas/botid' })).toBe(true);
+  });
+
+  it('POSTs the attestation route same-origin and returns its token', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ token: 'atlas_botid.v1.a.b' }), { status: 200 }));
+    expect(await fetchBotIdAttestation('/api/atlas/botid', fetchImpl as unknown as typeof fetch)).toBe('atlas_botid.v1.a.b');
+    expect(fetchImpl).toHaveBeenCalledWith('/api/atlas/botid', expect.objectContaining({ method: 'POST', credentials: 'same-origin' }));
+  });
+
+  it('rejects when the route fails or answers without a token', async () => {
+    const down = vi.fn(async () => new Response('{}', { status: 503 }));
+    await expect(fetchBotIdAttestation('/x', down as unknown as typeof fetch)).rejects.toThrow(/503/);
+    const empty = vi.fn(async () => new Response('{}', { status: 200 }));
+    await expect(fetchBotIdAttestation('/x', empty as unknown as typeof fetch)).rejects.toThrow(/missing/);
+  });
+
+  it('the widget handle resolves the fetched verdict', async () => {
+    const original = window.fetch;
+    window.fetch = vi.fn(async () => new Response(JSON.stringify({ token: 'atlas_botid.v1.c.d' }), { status: 200 })) as unknown as typeof fetch;
+    try {
+      const handle = renderCaptchaWidget({ enabled: true, provider: 'vercel_botid', attestationUrl: '/api/atlas/botid' }, container());
+      expect(await handle.token).toBe('atlas_botid.v1.c.d');
+    } finally {
+      window.fetch = original;
+    }
   });
 });
 

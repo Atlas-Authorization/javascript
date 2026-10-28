@@ -65,10 +65,16 @@ function run(
       settled = true;
       resolve({ nextCalled, nextError });
     };
+    // Settle on whichever the middleware does: call next(), or answer through
+    // res.json() (a 401). No timer: under load, JWKS + RS256 verification can
+    // take far longer than a fixed tick, and a timer turned that into a failure.
+    const answer = res.json.bind(res);
+    (res as unknown as { json: (body: unknown) => Response }).json = (body: unknown) => {
+      const out = answer(body);
+      finish(false, undefined);
+      return out;
+    };
     handler(req, res, (err?: unknown) => finish(true, err));
-    // Give the async resolveAuth a couple of microtask/macrotask ticks; if the
-    // middleware answered via res (401) instead of next(), resolve then.
-    setTimeout(() => finish(false, undefined), 20);
   });
 }
 

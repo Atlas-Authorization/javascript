@@ -1,0 +1,10 @@
+[
+  { "name": "auth", "path": "lib/auth.ts", "manual": ["Lucia database adapter", "new Lucia(adapter"] },
+  {
+    "name": "validate-request",
+    "path": "lib/validate-request.ts",
+    "manual": ["lucia.validateSession()", "lucia.sessionCookieName", "lucia.createSessionCookie()"]
+  },
+  { "name": "signup", "path": "app/signup/actions.ts", "manual": ["password hashing: Atlas owns passwords"] },
+  { "name": "v2-route", "path": "app/api/me/route.ts", "manual": ["auth.handleRequest()"] }
+]

@@ -1,10 +1,35 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { createPasskey, passkeysSupported } from '@atlasauth/js';
+import {
+  addPhoneNumber,
+  clearCibaPin,
+  decideCibaRequest,
+  getCibaPin,
+  listCibaRequests,
+  setCibaPin,
+  type CibaPinStatus,
+  type CibaRequest,
+  attemptPhoneNumberVerification,
+  createPasskey,
+  dismissPasskeyPrompt,
+  passkeyPromptDue,
+  reportPasskeyPromptEvent,
+  type PasskeyPromptDecision,
+  type PasskeyExtensionResults,
+  type PasskeyPrfRequest,
+  listPhoneNumbers,
+  passkeysSupported,
+  preparePhoneNumberVerification,
+  removePhoneNumber,
+  setPrimaryPhoneNumber,
+  type UserPhoneNumber,
+} from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { useUser } from './hooks';
 import { collectByType, useClass, useClasses, useErrorText, useMeClient, useText } from './components-shared';
+import { ReverificationPrompt, isReverificationCancelled, useReverification } from './reverification';
+import { ManageMoreFactors, ManageSecurityQuestions } from './account-factors';
 
 interface DeviceSession {
   id: string;
@@ -81,6 +106,91 @@ export function ActiveSessions() {
 }
 
 /**
+ * Sign-in requests apps start on the user's behalf (CIBA), with approve and deny, and the optional CIBA PIN apps
+ * must send as the user code. Renders nothing when there is no request, no PIN and no app that could ask.
+ */
+export function ManageCiba() {
+  const client = useMeClient();
+  const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
+  const button = cls('formButtonSecondary', 'atlas-button-secondary');
+  const [requests, setRequests] = useState<CibaRequest[]>([]);
+  const [pin, setPin] = useState<CibaPinStatus | null>(null);
+  const [newPin, setNewPin] = useState('');
+  const [password, setPassword] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const [r, p] = await Promise.all([listCibaRequests(client).catch(() => []), getCibaPin(client).catch(() => null)]);
+    setRequests(r);
+    setPin(p);
+  }, [client]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const run = async (fn: () => Promise<unknown>, fallback: string) => {
+    setMessage(null);
+    try {
+      await fn();
+      setNewPin('');
+      setPassword('');
+      await load();
+    } catch (e) {
+      setMessage(e instanceof Error && e.message ? e.message : fallback);
+    }
+  };
+
+  if (!requests.length && !(pin && (pin.set || pin.available))) return null;
+  return (
+    <section className={cardClass} data-atlas="manage-ciba">
+      {requests.length ? (
+        <>
+          <h2 className={cls('sectionTitle', 'atlas-section-title')}>Sign-in requests from apps</h2>
+          <ul className={cls('list', 'atlas-list')}>
+            {requests.map((r) => (
+              <li className={cls('listItem', 'atlas-list-item')} key={r.id}>
+                <strong>{r.client_name}</strong>
+                {r.binding_message ? <div>{r.binding_message}</div> : null}
+                <small>{r.scope.join(', ')}</small>
+                <button className={button} type="button" onClick={() => void run(() => decideCibaRequest(client, r.id, 'approve'), 'Could not approve.')}>
+                  Approve
+                </button>
+                <button className={button} type="button" onClick={() => void run(() => decideCibaRequest(client, r.id, 'deny'), 'Could not deny.')}>
+                  Deny
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {pin && (pin.set || pin.available) ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(() => setCibaPin(client, { pin: newPin, currentPassword: password }), 'Could not save the PIN.');
+          }}
+        >
+          <h2 className={cls('sectionTitle', 'atlas-section-title')}>CIBA PIN</h2>
+          <p>{pin.set ? 'You have a CIBA PIN.' : 'You have not set a CIBA PIN.'} Apps that start a sign-in request for you must send it.</p>
+          <input type="password" autoComplete="current-password" placeholder="Current password" aria-label="Current password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input type="password" inputMode="numeric" autoComplete="off" placeholder="6 to 12 digits" aria-label="New CIBA PIN" value={newPin} onChange={(e) => setNewPin(e.target.value)} />
+          <button className={button} type="submit">{pin.set ? 'Change PIN' : 'Set PIN'}</button>
+          {pin.set ? (
+            <button className={button} type="button" onClick={() => void run(() => clearCibaPin(client, { currentPassword: password }), 'Could not remove the PIN.')}>
+              Remove PIN
+            </button>
+          ) : null}
+          {message ? <small role="status">{message}</small> : null}
+        </form>
+      ) : message ? (
+        <small role="status">{message}</small>
+      ) : null}
+    </section>
+  );
+}
+
+/**
  * §2 The signed-in user's profile — name (editable) and email addresses. Another
  * composable piece of the account surface; writes go to `PATCH /v1/client/me` and
  * re-boot the provider so the rest of the app sees the change.
@@ -98,6 +208,7 @@ export function ProfileCard() {
   // address on an app that did not require verification) can be proven here:
   // send a code, then enter it.
   const [verifying, setVerifying] = useState<string | null>(null);
+  const [confirmingPrimary, setConfirmingPrimary] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [verifyError, setVerifyError] = useState<string | null>(null);
 
@@ -147,6 +258,37 @@ export function ProfileCard() {
     await reload();
   };
 
+  const makePrimary = async (id: string) => {
+    setVerifyError(null);
+    setSaving(true);
+    const res = await client.post<{ status?: string }>(`/v1/client/me/email_addresses/${id}/primary`);
+    setSaving(false);
+    if (!res.ok) {
+      setVerifyError('We could not change your primary email right now.');
+      return;
+    }
+    if (res.data?.status === 'pending_old_address_confirmation') {
+      setCode('');
+      setConfirmingPrimary(id);
+      return;
+    }
+    await reload();
+  };
+
+  const confirmPrimary = async () => {
+    if (!confirmingPrimary) return;
+    setVerifyError(null);
+    setSaving(true);
+    const res = await client.post(`/v1/client/me/email_addresses/${confirmingPrimary}/confirm_primary`, { code });
+    setSaving(false);
+    if (!res.ok) {
+      setVerifyError('That code was not accepted.');
+      return;
+    }
+    setConfirmingPrimary(null);
+    await reload();
+  };
+
   return (
     <section className={cardClass} data-atlas="profile-card">
       <h2 className={cls('sectionTitle', 'atlas-section-title')}>Profile</h2>
@@ -167,6 +309,27 @@ export function ProfileCard() {
             {email.email_address}
             {email.verified ? null : <em> — unverified</em>}
             {email.primary ? <em> — primary</em> : null}
+            {email.verified && !email.primary ? (
+              confirmingPrimary === email.id ? (
+                <span data-atlas="email-primary-confirm">
+                  <input
+                    className={cls('formFieldInput', 'atlas-account-input')}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="Code sent to your current email"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                  />
+                  <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={saving} onClick={() => void confirmPrimary()}>
+                    Confirm
+                  </button>
+                </span>
+              ) : (
+                <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={saving} onClick={() => void makePrimary(email.id)}>
+                  Make primary
+                </button>
+              )
+            ) : null}
             {email.verified ? null : verifying === email.id ? (
               <span data-atlas="email-verify">
                 <input
@@ -222,6 +385,9 @@ export function ManageMfa() {
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Turning 2FA off (and, when the app enabled it, turning it on) needs a recent
+  // sign-in; a stale session parks the call behind the "Confirm it's you" prompt.
+  const reverification = useReverification();
 
   const load = useCallback(async () => {
     const res = await client.get<{ data?: MfaFactor[]; backup_codes_remaining?: number }>(
@@ -240,9 +406,16 @@ export function ManageMfa() {
     setError(null);
     setBackupCodes(null);
     setBusy(true);
-    const res = await client.post<{ id: string; secret: string; uri: string; required_codes: number }>(
-      '/v1/client/me/mfa/totp',
-    );
+    let res;
+    try {
+      res = await reverification.withReverification(() =>
+        client.post<{ id: string; secret: string; uri: string; required_codes: number }>('/v1/client/me/mfa/totp'),
+      );
+    } catch (err) {
+      setBusy(false);
+      if (!isReverificationCancelled(err)) setError('Could not start enrollment.');
+      return;
+    }
     setBusy(false);
     if (!res.ok || !res.data) {
       setError(res.errors[0] ? errorText(res.errors[0]) : 'Could not start enrollment.');
@@ -272,8 +445,16 @@ export function ManageMfa() {
   };
 
   const disable = async (id: string) => {
+    setError(null);
     setBusy(true);
-    await client.request(`/v1/client/me/mfa/${id}`, { method: 'DELETE' }).catch(() => undefined);
+    try {
+      const res = await reverification.withReverification(() =>
+        client.request(`/v1/client/me/mfa/${id}`, { method: 'DELETE' }),
+      );
+      if (!res.ok) setError(res.errors[0] ? errorText(res.errors[0]) : 'Could not turn off two-factor.');
+    } catch (err) {
+      if (!isReverificationCancelled(err)) setError('Could not turn off two-factor.');
+    }
     await load();
     setBusy(false);
   };
@@ -304,7 +485,7 @@ export function ManageMfa() {
               inputMode="numeric"
               autoComplete="one-time-code"
               value={c}
-              placeholder={enroll.requiredCodes > 1 ? `Code ${i + 1}` : 'Enter the 6-digit code'}
+              placeholder={enroll.requiredCodes > 1 ? `Code ${i + 1}` : 'Enter the code from your app'}
               onChange={(e) => setCodes((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))}
             />
           ))}
@@ -328,6 +509,8 @@ export function ManageMfa() {
           Enable authenticator app
         </button>
       )}
+      <ManageMoreFactors onChanged={() => void load()} />
+      <ReverificationPrompt reverification={reverification} name="mfa-reverification" />
       {error ? (
         <p className={cls('alert', 'atlas-alert')} data-atlas="mfa-error" role="alert">
           {error}
@@ -351,7 +534,18 @@ interface Passkey {
  * removal, in one composable drop-in. Nothing renders the "Add" affordance when the
  * runtime has no WebAuthn support, so it degrades cleanly on older browsers.
  */
-export function ManagePasskeys() {
+export interface ManagePasskeysProps {
+  /**
+   * Request the WebAuthn `prf` extension when a passkey is added: a secret
+   * derived from the passkey and your salt, for client-side encryption keys. It
+   * never reaches Atlas.
+   */
+  prf?: PasskeyPrfRequest;
+  /** Receives the new passkey's client extension results (PRF support and outputs). */
+  onExtensionResults?: (results: PasskeyExtensionResults) => void;
+}
+
+export function ManagePasskeys({ prf, onExtensionResults }: ManagePasskeysProps = {}) {
   const client = useMeClient();
   const errorText = useErrorText();
   const cardClass = useClass('card', 'atlas-card');
@@ -361,6 +555,8 @@ export function ManagePasskeys() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const supported = passkeysSupported();
+  // Adding or removing a passkey needs a recent sign-in (STEP_UP_REQUIRED otherwise).
+  const reverification = useReverification();
 
   const load = useCallback(async () => {
     const res = await client.get<{ data?: Passkey[] }>('/v1/client/me/passkeys');
@@ -374,12 +570,18 @@ export function ManagePasskeys() {
     setError(null);
     setBusy(true);
     try {
-      const begin = await client.post<Record<string, unknown>>('/v1/client/me/passkeys/begin');
+      const begin = await reverification.withReverification(() =>
+        client.post<Record<string, unknown>>('/v1/client/me/passkeys/begin'),
+      );
       if (!begin.ok || !begin.data) {
         setError(begin.errors[0] ? errorText(begin.errors[0]) : 'Could not start passkey setup.');
         return;
       }
-      const body = await createPasskey(begin.data, { name: name.trim() || undefined });
+      const body = await createPasskey(begin.data, {
+        name: name.trim() || undefined,
+        ...(prf ? { prf } : {}),
+        ...(onExtensionResults ? { onExtensionResults } : {}),
+      });
       const finish = await client.post('/v1/client/me/passkeys/finish', body);
       if (!finish.ok) {
         setError(finish.errors[0] ? errorText(finish.errors[0]) : 'Could not save the passkey.');
@@ -395,8 +597,16 @@ export function ManagePasskeys() {
   };
 
   const remove = async (id: string) => {
+    setError(null);
     setBusy(true);
-    await client.request(`/v1/client/me/passkeys/${id}`, { method: 'DELETE' }).catch(() => undefined);
+    try {
+      const res = await reverification.withReverification(() =>
+        client.request(`/v1/client/me/passkeys/${id}`, { method: 'DELETE' }),
+      );
+      if (!res.ok) setError(res.errors[0] ? errorText(res.errors[0]) : 'Could not remove the passkey.');
+    } catch (err) {
+      if (!isReverificationCancelled(err)) setError('Could not remove the passkey.');
+    }
     await load();
     setBusy(false);
   };
@@ -435,8 +645,150 @@ export function ManagePasskeys() {
       ) : (
         <p className={cls('text', 'atlas-text')}>Passkeys are not supported in this browser.</p>
       )}
+      <ReverificationPrompt reverification={reverification} name="passkey-reverification" />
       {error ? (
         <p className={cls('alert', 'atlas-alert')} data-atlas="passkey-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * Manage phone numbers: add one (a code is texted to it), verify it, pick the
+ * primary, remove one. Adding, re-pointing the primary and removing need a recent
+ * sign-in; a stale session gets the "Confirm it's you" prompt and the action
+ * retries once the user re-authenticates.
+ */
+export function ManagePhoneNumbers() {
+  const client = useMeClient();
+  const errorText = useErrorText();
+  const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
+  const reverification = useReverification();
+  const [phones, setPhones] = useState<UserPhoneNumber[]>([]);
+  const [draft, setDraft] = useState('');
+  const [verifying, setVerifying] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setPhones(await listPhoneNumbers(client));
+    } catch {
+      setPhones([]);
+    }
+  }, [client]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const run = async (action: () => Promise<unknown>, fallback: string) => {
+    setError(null);
+    setBusy(true);
+    try {
+      await reverification.withReverification(action);
+      return true;
+    } catch (err) {
+      if (!isReverificationCancelled(err)) setError(err instanceof Error ? errorText(err) : fallback);
+      return false;
+    } finally {
+      setBusy(false);
+      await load();
+    }
+  };
+
+  const add = async () => {
+    const value = draft.trim();
+    if (!value) return;
+    let added: UserPhoneNumber | undefined;
+    const ok = await run(async () => {
+      added = await addPhoneNumber(client, value);
+    }, 'Could not add that number.');
+    if (ok && added) {
+      setDraft('');
+      setCode('');
+      setVerifying(added.id);
+    }
+  };
+
+  const confirm = async () => {
+    if (!verifying) return;
+    const ok = await run(() => attemptPhoneNumberVerification(client, verifying, code), 'That code was not accepted.');
+    if (ok) setVerifying(null);
+  };
+
+  return (
+    <section className={cardClass} data-atlas="manage-phone-numbers">
+      <h2 className={cls('sectionTitle', 'atlas-section-title')}>Phone numbers</h2>
+      <ul className={cls('list', 'atlas-list')} data-atlas="phone-list">
+        {phones.map((phone) => (
+          <li className={cls('listItem', 'atlas-list-item')} key={phone.id}>
+            {phone.phone_number}
+            {phone.verified ? null : <em> — unverified</em>}
+            {phone.primary ? <em> — primary</em> : null}
+            {phone.verified ? null : verifying === phone.id ? (
+              <span data-atlas="phone-verify">
+                <input
+                  className={cls('formFieldInput', 'atlas-account-input')}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="Code from the text"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+                <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void confirm()}>
+                  Confirm
+                </button>
+              </span>
+            ) : (
+              <button
+                className={cls('formButtonSecondary', 'atlas-button-secondary')}
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void run(() => preparePhoneNumberVerification(client, phone.id), 'Could not send a code.').then(
+                    (ok) => {
+                      if (ok) {
+                        setCode('');
+                        setVerifying(phone.id);
+                      }
+                    },
+                  )
+                }
+              >
+                Verify
+              </button>
+            )}
+            {phone.verified && !phone.primary ? (
+              <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void run(() => setPrimaryPhoneNumber(client, phone.id), 'Could not change the primary number.')}>
+                Make primary
+              </button>
+            ) : null}
+            <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void run(() => removePhoneNumber(client, phone.id), 'Could not remove that number.')}>
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div data-atlas="phone-add">
+        <input
+          className={cls('formFieldInput', 'atlas-account-input')}
+          type="tel"
+          autoComplete="tel"
+          placeholder="+15551234567"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void add()}>
+          Add phone number
+        </button>
+      </div>
+      <ReverificationPrompt reverification={reverification} name="phone-reverification" />
+      {error ? (
+        <p className={cls('alert', 'atlas-alert')} data-atlas="phone-error" role="alert">
           {error}
         </p>
       ) : null}
@@ -542,8 +894,11 @@ export function UserProfile({ children }: { children?: ReactNode } = {}) {
       {tab === 0 ? (
         <div data-atlas="user-profile-account" role="tabpanel">
           <ProfileCard />
+          <ManagePhoneNumbers />
           <ManageMfa />
+          <ManageSecurityQuestions />
           <ManagePasskeys />
+          <ManageCiba />
           <ActiveSessions />
         </div>
       ) : (
@@ -556,3 +911,65 @@ export function UserProfile({ children }: { children?: ReactNode } = {}) {
 }
 UserProfile.Page = UserProfilePage;
 UserProfile.Link = UserProfileLink;
+
+/**
+ * Post-sign-in "add a passkey" nudge. Renders nothing unless the instance's
+ * rollout says this user should see it (`accountUx.passkeyAdoption`) and the
+ * per-device cooldown has passed. "Add a passkey" runs the add ceremony;
+ * dismissing starts the cooldown. `onDecision` receives the rollout variant tag
+ * so the app can attach it to its own analytics.
+ */
+export function PasskeyPrompt({ onDecision, onAdded }: { onDecision?: (d: PasskeyPromptDecision) => void; onAdded?: () => void } = {}) {
+  const client = useMeClient();
+  const cardClass = useClass('card', 'atlas-card');
+  const cls = useClasses();
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!passkeysSupported()) return;
+    void (async () => {
+      const res = await client.get<PasskeyPromptDecision>('/v1/client/me/passkeys/prompt');
+      if (!res.ok || !res.data) return;
+      onDecision?.(res.data);
+      const due = passkeyPromptDue(res.data);
+      setShow(due);
+      if (due) void reportPasskeyPromptEvent(client, 'shown');
+    })();
+  }, [client]);
+
+  if (!show) return null;
+  const add = async () => {
+    setBusy(true);
+    try {
+      const begin = await client.post<Record<string, unknown>>('/v1/client/me/passkeys/begin');
+      if (!begin.ok || !begin.data) return;
+      const finish = await client.post('/v1/client/me/passkeys/finish', await createPasskey(begin.data));
+      if (finish.ok) {
+        void reportPasskeyPromptEvent(client, 'accepted');
+        setShow(false);
+        onAdded?.();
+      }
+    } catch {
+      // A cancelled WebAuthn prompt is not an error.
+    } finally {
+      setBusy(false);
+    }
+  };
+  const dismiss = () => {
+    void reportPasskeyPromptEvent(client, 'dismissed');
+    dismissPasskeyPrompt();
+    setShow(false);
+  };
+  return (
+    <section className={cardClass} data-atlas="passkey-prompt">
+      <h2 className={cls('sectionTitle', 'atlas-section-title')}>Sign in faster with a passkey</h2>
+      <button className={cls('formButtonPrimary', 'atlas-button')} type="button" disabled={busy} onClick={() => void add()}>
+        Add a passkey
+      </button>
+      <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={dismiss}>
+        Not now
+      </button>
+    </section>
+  );
+}

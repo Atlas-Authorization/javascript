@@ -19,6 +19,15 @@ export interface OpenFgaTupleKey {
   user: string;
   relation: string;
   object: string;
+  /** A model condition the tuple is bound to. */
+  condition?: { name: string; context?: Record<string, unknown> };
+}
+
+/** OpenFGA's `consistency` enum plus Atlas's consistency token (see ListUsers/Check docs). */
+export interface OpenFgaConsistencyOptions {
+  consistency?: 'UNSPECIFIED' | 'MINIMIZE_LATENCY' | 'HIGHER_CONSISTENCY';
+  /** A token from a write; the read reflects at least that write. Also sent as the `Atlas-Consistency-Token` header. */
+  consistency_token?: string;
 }
 
 /** Contextual tuples: either the OpenFGA `{ tuple_keys }` wrapper or a bare array. */
@@ -43,10 +52,12 @@ export interface WriteOpenFgaModelBody {
   [key: string]: unknown;
 }
 
-export interface OpenFgaCheckBody {
+export interface OpenFgaCheckBody extends OpenFgaConsistencyOptions {
   tuple_key: OpenFgaTupleKey;
   authorization_model_id?: string;
   contextual_tuples?: OpenFgaContextualTuples;
+  /** Values for condition parameters. */
+  context?: Record<string, unknown>;
 }
 
 export interface OpenFgaBatchCheckItem {
@@ -54,9 +65,10 @@ export interface OpenFgaBatchCheckItem {
   /** Keys the result; defaults to the item's index. */
   correlation_id?: string;
   contextual_tuples?: OpenFgaContextualTuples;
+  context?: Record<string, unknown>;
 }
 
-export interface OpenFgaBatchCheckBody {
+export interface OpenFgaBatchCheckBody extends OpenFgaConsistencyOptions {
   /** 1–100 checks. */
   checks: OpenFgaBatchCheckItem[];
   authorization_model_id?: string;
@@ -67,13 +79,56 @@ export interface OpenFgaExpandBody {
   authorization_model_id?: string;
 }
 
-export interface OpenFgaListObjectsBody {
+export interface OpenFgaListObjectsBody extends OpenFgaConsistencyOptions {
   /** Object type, e.g. `document`. */
   type: string;
   relation: string;
   user: string;
   authorization_model_id?: string;
   contextual_tuples?: OpenFgaContextualTuples;
+  context?: Record<string, unknown>;
+}
+
+export interface OpenFgaListUsersBody extends OpenFgaConsistencyOptions {
+  object: { type: string; id: string };
+  relation: string;
+  /** Exactly one filter; add `relation` to get usersets. */
+  user_filters: [{ type: string; relation?: string }];
+  authorization_model_id?: string;
+  contextual_tuples?: OpenFgaContextualTuples;
+  context?: Record<string, unknown>;
+  /** Atlas extension: 1–1000, default 1000. */
+  page_size?: number;
+  /** Atlas extension: the previous page's `continuation_token`. */
+  continuation_token?: string;
+}
+
+/** One listed user: a person/thing, a userset, or the public wildcard. */
+export type OpenFgaListedUser =
+  | { object: { type: string; id: string } }
+  | { userset: { type: string; id: string; relation: string } }
+  | { wildcard: { type: string } };
+
+export interface OpenFgaListUsersResult {
+  users: OpenFgaListedUser[];
+  excluded_users: Array<{ object: { type: string; id: string } }>;
+  /** Empty on the last page. */
+  continuation_token: string;
+}
+
+export interface OpenFgaReadChangesParams {
+  type?: string;
+  /** 1–100, default 50. */
+  page_size?: number;
+  continuation_token?: string;
+  /** RFC 3339. */
+  start_time?: string;
+}
+
+export interface OpenFgaTupleChange {
+  tuple_key: OpenFgaTupleKey;
+  operation: 'TUPLE_OPERATION_WRITE' | 'TUPLE_OPERATION_DELETE';
+  timestamp: string;
 }
 
 export interface OpenFgaReadBody {
@@ -94,7 +149,7 @@ export interface OpenFgaWriteBody {
 }
 
 export function openfgaResource(request: RequestFn) {
-  return {
+  const api = {
     stores: {
       list(): Promise<{ stores: OpenFgaStore[] }> {
         return request({ method: 'GET', path: '/v1/openfga/stores' });
@@ -160,6 +215,34 @@ export function openfgaResource(request: RequestFn) {
         body,
       });
     },
+    /**
+     * Who has `relation` on `object` (OpenFGA ListUsers): users, usersets and the
+     * wildcard with `excluded_users`. One page — see {@link listAllUsers}.
+     */
+    listUsers(store: string, body: OpenFgaListUsersBody): Promise<OpenFgaListUsersResult> {
+      return request({ method: 'POST', path: `/v1/openfga/stores/${enc(store)}/list-users`, body });
+    },
+    /** {@link listUsers} following `continuation_token` until every page is collected. */
+    async listAllUsers(store: string, body: OpenFgaListUsersBody): Promise<OpenFgaListUsersResult> {
+      let page = await api.listUsers(store, body);
+      const users = [...page.users];
+      while (page.continuation_token) {
+        page = await api.listUsers(store, { ...body, continuation_token: page.continuation_token });
+        users.push(...page.users);
+      }
+      return { ...page, users };
+    },
+    /** The tuple change log (OpenFGA ReadChanges); the token also resumes after the last page. */
+    readChanges(
+      store: string,
+      params: OpenFgaReadChangesParams = {},
+    ): Promise<{ changes: OpenFgaTupleChange[]; continuation_token: string }> {
+      return request({
+        method: 'GET',
+        path: `/v1/openfga/stores/${enc(store)}/changes`,
+        query: { ...params },
+      });
+    },
     read(
       store: string,
       body: OpenFgaReadBody = {},
@@ -171,4 +254,5 @@ export function openfgaResource(request: RequestFn) {
       return request({ method: 'POST', path: `/v1/openfga/stores/${enc(store)}/write`, body });
     },
   };
+  return api;
 }

@@ -112,3 +112,33 @@ describe('oauth providers (filters, display overrides, wallet settings)', () => 
     });
   });
 });
+
+describe('ATL track: preflight filters, unknown fields report, OpenAPI diff, singleton reads', () => {
+  it('passes min_severity and include_suppressed and types the suppressed list', async () => {
+    const { impl, calls } = mockFetch([
+      { body: { object: 'preflight', ok: true, checked_at: 1, min_severity: 'warning', findings: [], suppressed: [{ code: 'allowed_origin_session_cookie_unreachable', severity: 'info', subject: null, reason: 'redirect' }], integrations: [] } },
+    ]);
+    const r = await client(impl).instance.preflight({ min_severity: 'warning', include_suppressed: true });
+    expect(last(calls).url).toBe(`${API_URL}/v1/instance/preflight?min_severity=warning&include_suppressed=true`);
+    expect(r.suppressed![0]!.reason).toBe('redirect');
+  });
+
+  it('reads the unknown fields report and the OpenAPI diff', async () => {
+    const { impl, calls } = mockFetch([
+      { body: { object: 'unknown_fields_report', days: 7, retention_days: 90, strict_request_bodies: false, safe_to_enable_strict: true, data: [] } },
+      { body: { object: 'openapi_diff', since: '2026-10-15', version: '2026-10-23+abc1234', added: [], deprecated: [], removed: [] } },
+    ]);
+    const c = client(impl);
+    expect((await c.instance.unknownFieldsReport({ days: 7 })).safe_to_enable_strict).toBe(true);
+    expect(last(calls).url).toBe(`${API_URL}/v1/instance/unknown_fields_report?days=7`);
+    expect((await c.instance.openapiDiff({ since: '2026-10-15' })).version).toContain('+');
+    expect(last(calls).url).toBe(`${API_URL}/v1/openapi/diff?since=2026-10-15`);
+  });
+
+  it('reads one messaging channel, configured or not', async () => {
+    const { impl, calls } = mockFetch([{ body: { object: 'messaging_provider', configured: false, channel: 'email' } }]);
+    const r = await client(impl).messaging.channel('email');
+    expect(last(calls).url).toBe(`${API_URL}/v1/messaging_providers/email`);
+    expect('configured' in r && r.configured === false).toBe(true);
+  });
+});

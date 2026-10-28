@@ -1,12 +1,12 @@
 {
   "name": "@atlasauth/fga-js",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Atlas FGA (fine-grained, OpenFGA-shaped relationship authorization) client for JavaScript/TypeScript. Native, dependency-free, preconfigured for Atlas.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
   "keywords": [
@@ -27,6 +27,7 @@
   },
   "files": [
     "dist",
+    "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
   ]

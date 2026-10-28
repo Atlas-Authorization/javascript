@@ -1,0 +1,10 @@
+[
+  {
+    "name": "env",
+    "path": "lib/propelauth-config.ts",
+    "manual": [
+      "PROPELAUTH_API_KEY: replace with ATLAS_SECRET_KEY",
+      "PROPELAUTH_VERIFIER_KEY: remove once the zero-logout bridge is retired"
+    ]
+  }
+]

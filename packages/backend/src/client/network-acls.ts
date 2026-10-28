@@ -14,6 +14,8 @@ export interface NetworkAcl {
   action: NetworkAclAction;
   /** A single IP or CIDR range; refused at write time if malformed. */
   cidr: string;
+  /** The network zone this rule matches instead of `cidr`. */
+  zone_id: string | null;
   description: string | null;
   priority: number;
   enabled: boolean;
@@ -23,7 +25,9 @@ export interface NetworkAcl {
 
 export interface CreateNetworkAclBody {
   action: NetworkAclAction;
-  cidr: string;
+  /** A CIDR or address — or send `zone_id` instead (one of the two). */
+  cidr?: string;
+  zone_id?: string;
   description?: string | null;
   priority?: number;
   enabled?: boolean;
@@ -32,6 +36,7 @@ export interface CreateNetworkAclBody {
 export interface UpdateNetworkAclBody {
   action?: NetworkAclAction;
   cidr?: string;
+  zone_id?: string | null;
   description?: string | null;
   priority?: number;
   enabled?: boolean;

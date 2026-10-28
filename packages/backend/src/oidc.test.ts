@@ -3,6 +3,12 @@ import { AtlasOidcError, oidc, oidcCallback, oidcLogoutUrl, oidcStart, resetOidc
 import { AtlasBackend } from './verify';
 import { TEST_TOKEN_TAMPERS, createTestIssuer, type TestIssuer } from './testing';
 
+// Every test here starts its own test issuer, which generates a fresh RSA key
+// (that is the published helper's contract). RSA generation takes a random and,
+// on a loaded machine, multi-second stretch of CPU, so the default 5 s budget
+// measured the machine rather than the flow; nothing here asserts on speed.
+vi.setConfig({ testTimeout: 30_000 });
+
 /**
  * The relying-party flow end to end against the offline test issuer: start →
  * the fake authorization server → callback → verified identity. No network.

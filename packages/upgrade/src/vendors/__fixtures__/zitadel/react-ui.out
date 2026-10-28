@@ -1,0 +1,7 @@
+// TODO(atlas-migrate): SignInWithGoogle: Atlas's <SignIn /> shows the social providers you enable in the dashboard; delete this button
+// TODO(atlas-migrate): 'ThemeSwitch' from '@zitadel/react': ZITADEL login UI component: Atlas renders sign-in, sign-up and account pages (<SignIn />, <SignUp />, <UserProfile /> from @atlasauth/react)
+import { SignInWithGoogle, ThemeSwitch } from '@zitadel/react';
+
+export function Login() {
+  return <SignInWithGoogle />;
+}

@@ -58,6 +58,13 @@ export interface FlowResult {
   /** The attempt id, so a follow-up call (2FA, verification) targets it. */
   attemptId?: string;
   /**
+   * While the attempt is held at `needs_policy_acceptance`: the one-time proof
+   * `acceptPolicies` sends back (from the attempt, or from the redirect URL).
+   */
+  policyToken?: string;
+  /** While held at `needs_policy_acceptance`: the attempt's `pending_policies`, for `usePendingPolicies`. */
+  pendingPolicies?: unknown;
+  /**
    * The server's refusals. `reason` is its stable, finer-grained reason
    * (`form_password_incorrect`, …) — look it up as `error.<reason>` in a
    * `@atlasauth/localizations` bundle, or pass the bundle to

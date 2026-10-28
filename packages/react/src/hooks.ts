@@ -11,6 +11,7 @@ import {
 } from '@atlasauth/js';
 import { useAtlas, type AuthStatus } from './AtlasProvider';
 import { evaluate, type ProtectCondition } from './protect';
+import type { GetTokenOptions } from './active-atlas';
 import type { AtlasOrganizationMembership, AtlasSession, AtlasSessionResource, AtlasUser } from './types';
 
 /**
@@ -90,8 +91,8 @@ export interface UseAuthReturn {
   orgId: string | null;
   orgRole: string | null;
   /** Always fresh: refreshes first if the cached token is close to expiry. */
-  /** The session JWT; with `{ template }` a named-template token (e.g. `'chatly'`). */
-  getToken(options?: { template?: string }): Promise<string | null>;
+  /** The session JWT; with `{ for }` an integration token (e.g. `'chatly'`), with `{ template }` a named-template token. */
+  getToken(options?: GetTokenOptions): Promise<string | null>;
   /** §6.6 the user's own live access token at a connected social provider. */
   getProviderToken(provider: string): Promise<ProviderToken | null>;
   /**

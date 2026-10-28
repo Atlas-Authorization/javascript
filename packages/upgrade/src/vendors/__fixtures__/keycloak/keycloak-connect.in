@@ -1,0 +1,9 @@
+import session from 'express-session';
+import Keycloak from 'keycloak-connect';
+import express from 'express';
+
+const app = express();
+const store = new session.MemoryStore();
+const keycloak = new Keycloak({ store }, { realm: 'acme', 'auth-server-url': process.env.KEYCLOAK_URL });
+
+app.use(keycloak.middleware());

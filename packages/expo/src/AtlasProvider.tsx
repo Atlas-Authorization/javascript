@@ -1,9 +1,11 @@
 import { useState, createElement, type ReactElement } from 'react';
+import { FapiClient, resolveFrontendApi, type AttestationProvider } from '@atlasauth/js';
 import {
   AtlasProvider as ReactAtlasProvider,
   type AtlasProviderProps as ReactAtlasProviderProps,
 } from '@atlasauth/react';
 import { createCacheFetch } from './cache-fetch';
+import { ExpoFapiContext } from './fapi-context';
 import {
   createInMemoryTokenCache,
   DEFAULT_SESSION_KEY,
@@ -50,18 +52,30 @@ export interface AtlasProviderProps extends Omit<ReactAtlasProviderProps, 'fetch
   tokenKey?: string;
   /** Injectable for tests; defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
+  /** App Attest / Play Integrity provider, once the instance requires app attestation. Read once. */
+  attestation?: AttestationProvider;
 }
 
 export function AtlasProvider(props: AtlasProviderProps): ReactElement {
-  const { tokenCache, tokenKey = DEFAULT_SESSION_KEY, fetchImpl, ...rest } = props;
+  const { tokenCache, tokenKey = DEFAULT_SESSION_KEY, fetchImpl, attestation, ...rest } = props;
 
   // Built exactly once — the initializer runs on first render only, so the cache
   // (and the default in-memory one, when no adapter is passed) survives
   // re-renders rather than being re-created and losing the session every render.
   const [wiring] = useState(() => {
     const cache = tokenCache ?? createInMemoryTokenCache();
+    const cacheFetch = createCacheFetch({ cache, key: tokenKey, fetchImpl: fetchImpl ?? fetch });
     return {
-      cacheFetch: createCacheFetch({ cache, key: tokenKey, fetchImpl: fetchImpl ?? fetch }),
+      cacheFetch,
+      // The same bearer-authenticated transport for `@atlasauth/js` calls made outside the
+      // React provider's own client (policy acceptance, `useExpoFapiClient()`).
+      fapi: new FapiClient({
+        publishableKey: rest.publishableKey,
+        baseUrl: resolveFrontendApi(rest.frontendApi, { component: '<AtlasProvider> (expo)', allowSameOrigin: false }),
+        fetchImpl: cacheFetch,
+        locale: rest.locale,
+        attestation,
+      }),
       // Sign-out tombstones persist beside the token (there is no localStorage).
       tombstoneStore: tombstoneStoreFor(cache),
     };
@@ -71,5 +85,6 @@ export function AtlasProvider(props: AtlasProviderProps): ReactElement {
     ...rest,
     tombstoneStore: rest.tombstoneStore ?? wiring.tombstoneStore,
     fetchImpl: wiring.cacheFetch,
+    children: createElement(ExpoFapiContext.Provider, { value: wiring.fapi }, rest.children),
   });
 }

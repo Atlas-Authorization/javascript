@@ -1,0 +1,12 @@
+// TODO(atlas-migrate): provider/adapter config: enable this sign-in provider in the Atlas dashboard; move existing users with `atlas import --from authjs`
+import GitHub from 'next-auth/providers/github';
+import { nextAuthCompat } from '@atlasauth/nextjs/compat';
+
+export const { handlers, auth, signIn, signOut } = nextAuthCompat({
+  providers: [GitHub],
+  callbacks: {
+    session({ session }) {
+      return session;
+    },
+  },
+});

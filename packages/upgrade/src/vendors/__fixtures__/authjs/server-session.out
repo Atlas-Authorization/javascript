@@ -1,0 +1,10 @@
+import { redirect } from 'next/navigation';
+import { authOptions } from '@/lib/auth';
+import { getServerSessionCompat } from '@atlasauth/nextjs/compat';
+import type { NextAuthServerSession } from '@atlasauth/nextjs/compat';
+
+export default async function Dashboard() {
+  const session: NextAuthServerSession | null = await getServerSessionCompat(authOptions);
+  if (!session) redirect('/sign-in');
+  return <p>Signed in as {session.user?.email}</p>;
+}

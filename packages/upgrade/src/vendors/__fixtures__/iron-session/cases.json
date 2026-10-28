@@ -1,0 +1,10 @@
+[
+  { "name": "page", "path": "app/dashboard/page.tsx", "manual": ["getIronSession() is now auth()"] },
+  {
+    "name": "actions",
+    "path": "app/actions.ts",
+    "manual": ["getIronSession(): read the signed-in user", "session.save()", "session.destroy()"]
+  },
+  { "name": "api-route", "path": "pages/api/user.ts", "manual": ["withIronSessionApiRoute()", "req.session (iron-session)"] },
+  { "name": "seal", "path": "lib/invite.ts", "manual": ["sealData() / unsealData()", "SECRET_COOKIE_PASSWORD"] }
+]

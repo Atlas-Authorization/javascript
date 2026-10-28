@@ -1,5 +1,10 @@
 # @atlasauth/passport changelog
 
+## 0.1.1 — 2026-10-23
+
+### Changed
+- `AtlasStrategy` accepts ID tokens signed ES256 as well as RS256 (an Atlas instance can now sign with ES256).
+
 ## 0.1.0
 
 First published release.

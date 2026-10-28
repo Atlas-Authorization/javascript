@@ -1,0 +1,9 @@
+import { createRoot } from 'react-dom/client';
+import { FusionAuthProvider } from '@fusionauth/react-sdk';
+import { App } from './App';
+
+createRoot(document.getElementById('root')!).render(
+  <FusionAuthProvider clientId="abc" serverUrl="https://auth.example.com" redirectUri="https://app.example.com" mode="redirect">
+    <App />
+  </FusionAuthProvider>,
+);

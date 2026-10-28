@@ -135,6 +135,8 @@ export interface Session {
   expire_at: number;
   abandon_at: number;
   created_at: number;
+  /** Custom per-session data attached by the app's backend or a post_login Action; null when none. */
+  custom_data?: Record<string, unknown> | null;
 }
 
 // --- Organization + OrganizationMembership (client/organizations.ts) -------

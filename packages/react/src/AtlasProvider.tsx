@@ -12,6 +12,9 @@ import {
 } from 'react';
 import {
   FapiClient,
+  journeyRedirectFrom,
+  captureMarketing,
+  flushMarketing,
   SessionTombstones,
   catalogLocale,
   SignOutError,
@@ -27,6 +30,9 @@ import {
   type RedirectResult,
   resolveFrontendApi,
   revokeSession,
+  followUpstreamLogout,
+  endImpersonation as endImpersonationRequest,
+  type EndImpersonationResult,
   stripRedirectParams,
   type Channel,
   type ProviderToken,
@@ -38,6 +44,8 @@ import {
   runFrontChannelLogoutFromResponse,
   SDK_HEADER,
   SignOutNotifier,
+  getAtlasIdIntegrationToken,
+  getIntegrationToken,
   getTemplateToken,
   reportSdkAdvisory,
   sdkHeaderValue,
@@ -52,7 +60,8 @@ import {
 } from '@atlasauth/js';
 import { useStableReferralConsent } from './referral';
 import { ATLAS_REACT_SDK } from './version';
-import { resolveLocale, type SupportedLocale } from '@atlasauth/localizations';
+import { publishActiveAtlas, type GetTokenOptions } from './active-atlas';
+import { localeDirection, resolveLocale, type SupportedLocale } from '@atlasauth/localizations';
 import {
   classFor,
   instanceDesignFrom,
@@ -139,13 +148,14 @@ interface AtlasContextValue {
    * <SignIn> flow seeds itself from this so the user resumes at the 2FA step
    * instead of starting over.
    */
-  pendingAttempt: { id: string; status: string } | null;
+  pendingAttempt: { id: string; status: string; policyToken?: string } | null;
   /**
-   * The session JWT, or with `{ template }` a short-lived token from a named JWT
-   * template (e.g. `'chatly'` for a support-chat identity). Null when signed out
-   * or the template does not exist.
+   * The session JWT; with `{ for }` a short-lived token for a configured
+   * identity integration (a preset such as `'chatly'`, or a custom integration
+   * id); with `{ template }` a token from a named JWT template. Null when
+   * signed out, or the integration / template does not exist.
    */
-  getToken(options?: { template?: string }): Promise<string | null>;
+  getToken(options?: GetTokenOptions): Promise<string | null>;
   /**
    * Listen for sign-out on every path (this tab, another tab, session expiry,
    * a session ended elsewhere detected on the next refresh). Returns the
@@ -184,6 +194,13 @@ interface AtlasContextValue {
    * `useSessionList()`. Re-boots the client and nudges other tabs.
    */
   setActiveSession(session: string | { id: string }): Promise<void>;
+  /**
+   * End the active impersonation ("return to admin"). When the impersonation
+   * began in a browser where the impersonator was signed in, their own session
+   * becomes active again with no sign-in (`resumed: true`); otherwise another
+   * account signed in here is promoted, or the browser is signed out.
+   */
+  endImpersonation(): Promise<EndImpersonationResult>;
   /** Re-boot from the Frontend API. Resolves true when a session now exists in this browser. */
   reload(): Promise<boolean>;
 }
@@ -203,6 +220,12 @@ interface SessionSignal {
 
 export interface AtlasProviderProps {
   publishableKey: string;
+  /**
+   * Keep the session fresh across background throttling and sleep: when the tab becomes visible again or the
+   * network returns, refresh the token at once if it is expired or within 30 seconds of expiring, instead of
+   * waiting for a timer a sleeping browser may have delayed. Default true; `false` leaves refresh to the timer.
+   */
+  keepSessionAlive?: boolean;
   /**
    * The instance's Frontend API origin — REQUIRED.
    *
@@ -374,11 +397,11 @@ export function AtlasProvider(props: AtlasProviderProps) {
    * already in context before <SignIn> reads it — a needs_second_factor redirect
    * carries a status but no ticket, and that is what the 2FA resume seeds from.
    */
-  const [pendingAttempt] = useState<{ id: string; status: string } | null>(() => {
+  const [pendingAttempt] = useState<{ id: string; status: string; policyToken?: string } | null>(() => {
     if (typeof window === 'undefined') return null;
     const result = readRedirectResult(window.location.search);
     return result?.status && !result.ticket
-      ? { id: result.attemptId, status: result.status }
+      ? { id: result.attemptId, status: result.status, ...(result.policyToken ? { policyToken: result.policyToken } : {}) }
       : null;
   });
 
@@ -526,6 +549,22 @@ export function AtlasProvider(props: AtlasProviderProps) {
     };
   }, [status, claims, refresh]);
 
+  const keepAlive = props.keepSessionAlive !== false;
+  useEffect(() => {
+    if (!keepAlive || status !== 'signed_in' || typeof document === 'undefined') return;
+    const wake = () => {
+      if (document.visibilityState === 'hidden') return;
+      const token = cache.current.peek();
+      if (token && msUntilRefresh({ token, now: Date.now() }) <= 30_000) void refresh();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    return () => {
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+    };
+  }, [keepAlive, status, refresh]);
+
   /** §R3.2 tell sibling tabs that auth changed here, so they re-check. */
   const announceSessionChange = useCallback((signedOut?: string[]) => {
     const message: SessionSignal = signedOut?.length
@@ -639,12 +678,14 @@ export function AtlasProvider(props: AtlasProviderProps) {
         }
       }
       let exchanged = false;
+      let journeyUrl: string | null = null;
       if (result?.ticket) {
         const response = await call('/v1/client/tickets/exchange', {
           method: 'POST',
           body: JSON.stringify({ attempt_id: result.attemptId, ticket: result.ticket }),
         }).catch(() => undefined);
         exchanged = !!response?.ok;
+        journeyUrl = await journeyRedirectFrom(response);
       }
       if (fromUrl && typeof window !== 'undefined') {
         window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
@@ -655,6 +696,8 @@ export function AtlasProvider(props: AtlasProviderProps) {
       if (result?.ticket) announceSessionChange();
       // Signed in inside the Atlas popup: hand back to the opener and close.
       if (exchanged) void closeOAuthPopupAfterSignIn();
+      // The sign-in journey names where to go next (not inside a popup, which closes itself).
+      if (journeyUrl && typeof window !== 'undefined' && !window.opener) window.location.assign(journeyUrl);
     })();
     // Runs once on mount (empty deps): the redirect is handled exactly once, and
     // re-running would only re-read an already-scrubbed URL. `reload`/`call` are
@@ -662,7 +705,38 @@ export function AtlasProvider(props: AtlasProviderProps) {
   }, []);
 
   const getToken = useCallback(
-    async (options?: { template?: string }) => {
+    async (options?: GetTokenOptions) => {
+      if (options?.for && options.atlasIdAccessToken) {
+        // A Sign in with Atlas user who is not on this instance: the token is
+        // minted from their Atlas ID access token, with no session.
+        return (
+          (
+            await getAtlasIdIntegrationToken(fapiClientRef.current!, options.for, options.atlasIdAccessToken, {
+              dpop: options.dpop,
+              audience: options.audience,
+              cbid: options.cbid,
+              audienceParams: options.audienceParams,
+            })
+          )?.jwt ??
+          null
+        );
+      }
+      if (options?.for) {
+        // An integration token for the current session; minted fresh (never
+        // cached): short-lived and handed to the integrated service once.
+        const sessionId = cache.current.peek()?.sessionId ?? sessionIdRef.current;
+        if (!sessionId) return null;
+        return (
+          (
+            await getIntegrationToken(fapiClientRef.current!, sessionId, options.for, {
+              spaceId: options.spaceId,
+              audience: options.audience,
+              cbid: options.cbid,
+              audienceParams: options.audienceParams,
+            })
+          )?.jwt ?? null
+        );
+      }
       if (options?.template) {
         // A named-template token for the current session; minted fresh (never
         // cached): it is short-lived and usually handed to a third party once.
@@ -694,6 +768,17 @@ export function AtlasProvider(props: AtlasProviderProps) {
   const fapiClientRef = useRef(fapiClient);
   fapiClientRef.current = fapiClient;
 
+  // ADM-08 marketing attribution: capture the campaign parameters the visitor
+  // arrived with (instance setting + consent decide; a no-op otherwise), and send
+  // them for the user once they are signed in. The server only attributes a newly
+  // created user, so a returning user is untouched.
+  useEffect(() => {
+    void captureMarketing(fapiClient).catch(() => undefined);
+  }, [fapiClient]);
+  useEffect(() => {
+    if (status === 'signed_in') void flushMarketing(fapiClient).catch(() => undefined);
+  }, [status, fapiClient]);
+
   const getProviderToken = useCallback(
     (provider: string) => fetchProviderToken(fapiClient, provider),
     [fapiClient],
@@ -721,7 +806,10 @@ export function AtlasProvider(props: AtlasProviderProps) {
       if (sessionId) {
         // Remember it first: from here on nothing in this tab may re-adopt it.
         tombstones.current?.add(sessionId);
-        outcome = await revokeSession(call, sessionId);
+        outcome = await revokeSession(call, sessionId, {
+          ...(options?.returnUrl ? { returnUrl: options.returnUrl } : {}),
+          ...(options?.samlLogoutRedirectUrl ? { samlLogoutRedirectUrl: options.samlLogoutRedirectUrl } : {}),
+        });
         // OIDC Front-Channel Logout: let the apps signed in through this session
         // clear theirs in this browser (hidden iframes, capped at 5 s). Best-effort.
         if (options?.frontchannel !== false) await runFrontChannelLogoutFromResponse(outcome.response);
@@ -749,9 +837,31 @@ export function AtlasProvider(props: AtlasProviderProps) {
       if (!outcome.revoked && options?.strict) {
         throw new SignOutError(sessionId ?? '', outcome.status);
       }
-      return outcome.activeSessionId
-        ? { revoked: outcome.revoked, activeSessionId: outcome.activeSessionId }
-        : { revoked: outcome.revoked };
+      // Upstream (RP-initiated) logout: signed out locally, now end the upstream
+      // provider's session too — unless the app handles it itself.
+      // A browser follows one logout redirect: the upstream provider's first
+      // (it has no server-to-server fallback), else SAML Single Logout — not
+      // when another account was promoted (the user is still signed in here).
+      const followedUpstream =
+        outcome.upstreamLogoutUrl && options?.upstreamLogout !== false
+          ? followUpstreamLogout(outcome.upstreamLogoutUrl)
+          : false;
+      if (
+        !followedUpstream &&
+        outcome.samlLogoutUrl &&
+        options?.samlLogout !== false &&
+        !outcome.activeSessionId &&
+        typeof window !== 'undefined' &&
+        typeof window.location?.assign === 'function'
+      ) {
+        window.location.assign(outcome.samlLogoutUrl);
+      }
+      return {
+        revoked: outcome.revoked,
+        ...(outcome.activeSessionId ? { activeSessionId: outcome.activeSessionId } : {}),
+        ...(outcome.upstreamLogoutUrl ? { upstreamLogoutUrl: outcome.upstreamLogoutUrl } : {}),
+        ...(outcome.samlLogoutUrl ? { samlLogoutUrl: outcome.samlLogoutUrl } : {}),
+      };
     },
     [announceSessionChange, call, reload],
   );
@@ -793,6 +903,23 @@ export function AtlasProvider(props: AtlasProviderProps) {
     },
     [announceSessionChange, applyToken, call, reload],
   );
+
+  const endImpersonation = useCallback(async (): Promise<EndImpersonationResult> => {
+    const sessionId = cache.current.peek()?.sessionId ?? sessionIdRef.current;
+    if (!sessionId) return { ended: false, resumed: false, status: 0 };
+    const outcome = await endImpersonationRequest(call, sessionId);
+    if (!outcome.ended) return outcome;
+    // The impersonation session is over: never re-adopt it from a stale cookie.
+    tombstones.current?.add(sessionId);
+    if (outcome.activeSessionId && outcome.jwt) {
+      applyToken(outcome.jwt, outcome.activeSessionId);
+    } else if (!outcome.activeSessionId) {
+      notifier.current?.expect('user');
+    }
+    await reload();
+    announceSessionChange([sessionId]);
+    return outcome;
+  }, [announceSessionChange, applyToken, call, reload]);
 
   const catalog = useMemo(() => {
     // A built-in language bundle, then the app's own overrides key by key.
@@ -886,6 +1013,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
       broadcastSessionChange,
       setActiveOrganization,
       setActiveSession,
+      endImpersonation,
       reload,
     }),
     [
@@ -912,11 +1040,19 @@ export function AtlasProvider(props: AtlasProviderProps) {
       sessions,
       setActiveOrganization,
       setActiveSession,
+      endImpersonation,
       signOut,
       status,
       user,
     ],
   );
+
+  // The imperative compat helpers (`nextAuthSignOut()`, `getSupabaseUserCompat()`,
+  // …) act on the mounted provider without a hook: publish its state to them.
+  useEffect(() => {
+    publishActiveAtlas(value);
+  }, [value]);
+  useEffect(() => () => publishActiveAtlas(null), []);
 
   /**
    * The design configured in the Atlas dashboard, from `GET /v1/appearance`.
@@ -996,6 +1132,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
       <div
         {...rendered.attributes}
         className={classFor('root', appearance, 'atlas-root')}
+        dir={localeDirection(requestLocale)}
         style={style}
       >
         {children}

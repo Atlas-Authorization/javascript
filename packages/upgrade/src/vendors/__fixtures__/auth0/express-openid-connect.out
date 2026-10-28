@@ -1,0 +1,13 @@
+import express from 'express';
+// TODO(atlas-migrate): auth(config) from express-openid-connect: Atlas hosts sign-in, so this app no longer runs its own login, callback and session. Verify the Atlas session with app.use(atlasMiddleware({ jwksUrl: process.env.ATLAS_JWKS_URL, issuer: process.env.ATLAS_ISSUER })) from @atlasauth/express; req.oidc.user becomes getAuth(req) (and createAtlasClient().users.get(userId) for the profile)
+import { auth } from 'express-openid-connect';
+
+import { requireAuth } from '@atlasauth/express';
+
+const app = express();
+
+app.use(auth({ authRequired: false, baseURL: process.env.BASE_URL, issuerBaseURL: process.env.ISSUER_BASE_URL }));
+
+app.get('/profile', requireAuth(), (req, res) => {
+  res.send(JSON.stringify(req.oidc.user));
+});

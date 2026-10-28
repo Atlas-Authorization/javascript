@@ -1,0 +1,10 @@
+import { createAtlasMiddleware } from '@atlasauth/nextjs/compat';
+
+export default createAtlasMiddleware({
+  signInUrl: '/login',
+  publicRoutes: ['/', '/pricing', '/blog/(.*)']
+});
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+};

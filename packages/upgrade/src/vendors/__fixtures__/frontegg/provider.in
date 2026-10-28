@@ -1,0 +1,13 @@
+'use client';
+import { FronteggProvider } from '@frontegg/react';
+import type { ReactNode } from 'react';
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  return (
+    <FronteggProvider
+      contextOptions={{ baseUrl: 'https://app-demo.frontegg.com', clientId: 'abc' }}
+      hostedLoginBox>
+      {children}
+    </FronteggProvider>
+  );
+}

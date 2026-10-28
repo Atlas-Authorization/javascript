@@ -1,0 +1,1 @@
+{"users":[{"id":"u1","name":"Ada Lovelace","email":"ada@example.com","emailVerified":"2023-01-01T00:00:00.000Z","image":null},{"id":"u2","name":"No Mail","email":null}],"accounts":[{"userId":"u1","type":"oauth","provider":"github","providerAccountId":"4242"},{"userId":"u1","type":"email","provider":"email","providerAccountId":"ada@example.com"}]}

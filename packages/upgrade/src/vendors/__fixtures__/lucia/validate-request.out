@@ -1,0 +1,16 @@
+import { cookies } from 'next/headers';
+import { lucia } from './auth';
+
+export async function validateRequest() {
+  // TODO(atlas-migrate): lucia.sessionCookieName: Atlas reads its own __session cookie and Bearer header; drop this and read the session with auth() from @atlasauth/nextjs/server or getAuth(req) from @atlasauth/express
+  const sessionId = cookies().get(lucia.sessionCookieName)?.value ?? null;
+  if (!sessionId) return { user: null, session: null };
+  // TODO(atlas-migrate): lucia.validateSession(): Atlas verifies its own session: in Next.js call auth() from @atlasauth/nextjs/server ({ userId, sessionId }) or currentUser() for the profile, in Express getAuth(req) from @atlasauth/express, elsewhere new AtlasBackend({ jwksUrl, issuer }).authenticateRequest(request) from @atlasauth/backend
+  const result = await lucia.validateSession(sessionId);
+  if (result.session && result.session.fresh) {
+    // TODO(atlas-migrate): lucia.createSessionCookie(): sign-in and sign-up run on the Atlas pages, which create the session and set its cookie; delete this and send users to /sign-in (or render <SignIn /> / <SignUp /> from @atlasauth/react)
+    const cookie = lucia.createSessionCookie(result.session.id);
+    cookies().set(cookie.name, cookie.value, cookie.attributes);
+  }
+  return result;
+}

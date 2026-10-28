@@ -11,9 +11,34 @@ import type { CursorPage, CursorParams } from './types';
 export interface DataSubjectRequest {
   object: 'data_subject_request';
   id: string;
+  /** Atlas's kind: `export` | `erasure` | `restriction` | `rectification`. */
   type: string;
+  /** The shared data-rights word: `access` | `deletion` | `closure` | `restriction` | `rectification`. */
+  canonical_type?: string;
+  /** Alias of `canonical_type` in the executor protocol spelling. */
+  canonicalType?: string;
+  /** What opened it: `user` | `api` | `admin` | `orchestrator` | `atlas_id`. */
+  source?: string;
   status: string;
   user_id: string;
+  detail?: string | null;
+  /** The orchestrator's case id, when an orchestrator drives this request. */
+  case_id?: string | null;
+  /** The case Atlas opened at the instance's data-rights orchestrator. */
+  external_case?: {
+    product: string;
+    id: string | null;
+    status: string;
+    attempts: number;
+    last_error: string | null;
+    opened_at: number | null;
+    atlas_id_app_id?: string;
+  } | null;
+  trace_id?: string | null;
+  steps?: Array<{ name: string; status: string; reason?: string; at?: number }>;
+  retention?: Array<{ category: string; basis: string; until: string }>;
+  /** Erasures: when the account is erased (epoch ms). */
+  deletion_effective_at?: number | null;
   requested_by_type: string | null;
   requested_by_id: string | null;
   reason: string | null;
@@ -35,7 +60,16 @@ export interface ListDataSubjectRequestsParams extends CursorParams {
 
 /** Identify the subject by `user_id` OR `subject_email` (`user_id` wins if both are given). */
 export interface CreateDataSubjectRequestBody {
-  type: 'export' | 'erasure';
+  /** Atlas's words or the canonical vocabulary; the answer echoes `canonical_type`. */
+  type:
+    | 'export'
+    | 'erasure'
+    | 'erase'
+    | 'access'
+    | 'deletion'
+    | 'closure'
+    | 'restriction'
+    | 'rectification';
   user_id?: string;
   /** The subject's email (verified, else unverified), resolved to the user. */
   subject_email?: string;

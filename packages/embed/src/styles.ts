@@ -11,24 +11,27 @@
  * with a hard-coded fallback, so the widget looks right the instant it mounts —
  * before `GET /v1/appearance` resolves — and re-themes when it does.
  */
+import { adoptConstructable, applyStyleNonce } from '@atlasauth/design/runtime';
 export const STYLE_MARKER = 'atlas-embed-styles';
 
 export const EMBED_CSS = `
+/* The host page's --atlas-host-* variables (shared UI-kit names) restyle the widget
+   where the page sets them; explicit --atlas-embed-* settings still win. */
 .atlas-embed-root {
-  --_bg: var(--atlas-embed-color-background, #ffffff);
-  --_card: var(--atlas-embed-color-card, #ffffff);
-  --_text: var(--atlas-embed-color-text, #1c1c1f);
-  --_primary: var(--atlas-embed-color-primary, #5b5bd6);
-  --_on-primary: var(--atlas-embed-color-text-on-primary, #ffffff);
+  --_bg: var(--atlas-embed-color-background, var(--atlas-host-surface, #ffffff));
+  --_card: var(--atlas-embed-color-card, var(--atlas-host-surface, #ffffff));
+  --_text: var(--atlas-embed-color-text, var(--atlas-host-ink, #1c1c1f));
+  --_primary: var(--atlas-embed-color-primary, var(--atlas-host-accent, #5b5bd6));
+  --_on-primary: var(--atlas-embed-color-text-on-primary, var(--atlas-host-accent-ink, #ffffff));
   /* Keyboard focus ring — a solid outline. The widget sets it to the primary
      adjusted to 3:1 on the card/background (or the page's explicit ring). */
-  --_focus: var(--atlas-embed-color-focus-ring, var(--_primary));
-  --_border: var(--atlas-embed-color-border, #e4e4e9);
-  --_radius: var(--atlas-embed-border-radius, 10px);
+  --_focus: var(--atlas-embed-color-focus-ring, var(--atlas-host-focus-ring, var(--_primary)));
+  --_border: var(--atlas-embed-color-border, var(--atlas-host-line, #e4e4e9));
+  --_radius: var(--atlas-embed-border-radius, var(--atlas-host-radius, 10px));
   /* Transition tempo — the widget sets --atlas-embed-motion from motionSpeed and
      to 0s when animations are off; reduced-motion forces 0s below regardless. */
   --_motion: var(--atlas-embed-motion, 0.16s);
-  font-family: var(--atlas-embed-font-family, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+  font-family: var(--atlas-embed-font-family, var(--atlas-host-font, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif));
   color: var(--_text);
   box-sizing: border-box;
   display: block;
@@ -116,11 +119,12 @@ export const EMBED_CSS = `
 }
 .atlas-embed-social-search:focus { outline: 2px solid var(--_focus); outline-offset: -1px; }
 .atlas-embed-social-button[hidden] { display: none; }
-.atlas-embed-social-empty { font-size: 13px; color: #9ca3af; text-align: center; padding: 6px 0; }
+.atlas-embed-social-empty { font-size: 13px; color: #6b7280; color: color-mix(in srgb, var(--_text) 72%, transparent); text-align: center; padding: 6px 0; }
 .atlas-embed-social-empty[hidden] { display: none; }
 .atlas-embed-divider {
   display: flex; align-items: center; text-align: center; gap: 10px;
-  color: #9ca3af; font-size: 12px; margin: 14px 0;
+  /* 4.5:1 on the card (WCAG 1.4.3); follows the theme's text colour. */
+  color: #6b7280; color: color-mix(in srgb, var(--_text) 72%, transparent); font-size: 12px; margin: 14px 0;
 }
 .atlas-embed-divider::before, .atlas-embed-divider::after {
   content: ""; flex: 1; height: 1px; background: var(--_border);
@@ -137,7 +141,7 @@ export const EMBED_CSS = `
 .atlas-embed-password { position: relative; display: flex; align-items: center; }
 .atlas-embed-password .atlas-embed-input { width: 100%; padding-right: 54px; }
 .atlas-embed-password-toggle {
-  position: absolute; right: 6px; padding: 4px 7px; font: inherit; font-size: 12px; font-weight: 600;
+  position: absolute; right: 6px; padding: 4px 7px; min-height: 24px; min-width: 24px; font: inherit; font-size: 12px; font-weight: 600;
   cursor: pointer; color: var(--_primary); background: none; border: 0; border-radius: 6px;
 }
 .atlas-embed-password-toggle:hover { text-decoration: underline; }
@@ -166,8 +170,8 @@ fieldset.atlas-embed-field { border: 0; padding: 0; margin: 0 0 12px; }
   cursor: pointer; color: #6b7280; background: none; border: 0;
 }
 .atlas-embed-handle-back:hover { color: #374151; }
-.atlas-embed-error { display: block; font-size: 13px; color: #d64545; margin: 6px 0 0; }
-.atlas-embed-form-error { font-size: 13px; color: #d64545; margin: 0 0 12px; min-height: 0; }
+.atlas-embed-error { display: block; font-size: 13px; color: #c53030; margin: 6px 0 0; }
+.atlas-embed-form-error { font-size: 13px; color: #c53030; margin: 0 0 12px; min-height: 0; }
 /* A success/confirmation banner (e.g. after a force-login password reset). */
 .atlas-embed-flash {
   font-size: 13px; color: #0f7a4d; background: rgba(16,163,101,0.08);
@@ -183,6 +187,8 @@ fieldset.atlas-embed-field { border: 0; padding: 0; margin: 0 0 12px; }
 .atlas-embed-remember { display: flex; align-items: center; gap: 8px; margin: -2px 0 14px; font-size: 13px; color: var(--_text); cursor: pointer; }
 .atlas-embed-remember-check { width: 15px; height: 15px; flex: none; accent-color: var(--_primary); cursor: pointer; }
 .atlas-embed-note { font-size: 14px; color: #6b7280; text-align: center; margin: 8px 0; }
+.atlas-embed-mfa-qr { display: block; margin: 8px auto; width: 180px; height: 180px; image-rendering: pixelated; }
+.atlas-embed-mfa-key { font-family: ui-monospace, monospace; letter-spacing: 0.05em; }
 
 /* Verification step — a continuation of the email panel, not a new screen: the
    context line ("Enter the code we sent to …") + a way back, then a segmented
@@ -386,10 +392,19 @@ form > .atlas-embed-step-back { display: block; width: 100%; text-align: center;
 `;
 
 /** Inject the sheet once per document. Safe to call on every mount. */
+const adoptedDocs = new WeakSet<Document>();
+
 export function injectStyles(doc: Document = document): void {
-  if (doc.querySelector(`style[data-${STYLE_MARKER}]`)) return;
+  if (adoptedDocs.has(doc) || doc.querySelector(`style[data-${STYLE_MARKER}]`)) return;
+  // A constructable stylesheet needs no style-src under a strict CSP; else a
+  // <style> carrying the page's CSP nonce.
+  if (adoptConstructable(doc, STYLE_MARKER, EMBED_CSS)) {
+    adoptedDocs.add(doc);
+    return;
+  }
   const style = doc.createElement('style');
   style.setAttribute(`data-${STYLE_MARKER}`, '');
+  applyStyleNonce(doc, style);
   style.textContent = EMBED_CSS;
   (doc.head ?? doc.documentElement).appendChild(style);
 }

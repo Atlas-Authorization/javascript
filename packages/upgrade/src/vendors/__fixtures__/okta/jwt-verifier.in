@@ -1,0 +1,11 @@
+import OktaJwtVerifier from '@okta/jwt-verifier';
+
+const verifier = new OktaJwtVerifier({
+  issuer: process.env.OKTA_ISSUER!,
+});
+
+export async function authenticate(authorization: string) {
+  const token = authorization.replace(/^Bearer /, '');
+  const jwt = await verifier.verifyAccessToken(token, 'api://default');
+  return jwt.claims.sub;
+}

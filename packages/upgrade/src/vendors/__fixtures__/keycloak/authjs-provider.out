@@ -1,0 +1,10 @@
+// TODO(atlas-migrate): Keycloak provider (Auth.js): run `atlas migrate code --from authjs` for the Auth.js setup, then delete this provider; Atlas hosts sign-in
+import Keycloak from 'next-auth/providers/keycloak';
+
+// TODO(atlas-migrate): AUTH_KEYCLOAK_ID: the Auth.js Keycloak provider setting; delete it with the provider (Atlas hosts sign-in)
+// TODO(atlas-migrate): AUTH_KEYCLOAK_SECRET: the Auth.js Keycloak provider setting; delete it with the provider (Atlas hosts sign-in)
+const options = {
+  providers: [Keycloak({ clientId: process.env.AUTH_KEYCLOAK_ID, clientSecret: process.env.AUTH_KEYCLOAK_SECRET })],
+};
+
+export default options;

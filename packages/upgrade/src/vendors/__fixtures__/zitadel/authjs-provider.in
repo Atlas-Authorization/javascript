@@ -1,0 +1,6 @@
+import NextAuth from 'next-auth';
+import Zitadel from 'next-auth/providers/zitadel';
+
+export const { handlers, auth } = NextAuth({
+  providers: [Zitadel({ issuer: process.env.ZITADEL_ISSUER, clientId: '259394780999843073' })],
+});

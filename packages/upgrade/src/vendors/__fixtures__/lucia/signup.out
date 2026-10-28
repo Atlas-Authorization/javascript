@@ -1,0 +1,11 @@
+'use server';
+import { Argon2id } from 'oslo/password';
+import { generateIdFromEntropySize } from 'lucia';
+import { db } from '@/lib/db';
+
+export async function signup(username: string, password: string) {
+  // TODO(atlas-migrate): password hashing: Atlas owns passwords now (sign-up and sign-in collect, hash and verify them on the Atlas pages; existing hashes are imported with your users); delete this
+  const passwordHash = await new Argon2id().hash(password);
+  const userId = generateIdFromEntropySize(10);
+  await db.user.create({ data: { id: userId, username, passwordHash } });
+}

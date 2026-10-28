@@ -1,0 +1,1 @@
+{"Users":[{"Username":"c1","Attributes":[{"Name":"sub","Value":"aaaa-1111"},{"Name":"email","Value":"ada@example.com"},{"Name":"email_verified","Value":"true"},{"Name":"given_name","Value":"Ada"},{"Name":"custom:tenant","Value":"t1"}],"UserCreateDate":"2022-02-02T02:02:02.000Z","Enabled":true,"UserStatus":"CONFIRMED"}]}

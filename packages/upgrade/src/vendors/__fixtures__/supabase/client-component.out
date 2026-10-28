@@ -1,0 +1,38 @@
+'use client';
+import { useEffect, useState } from 'react';
+import { createClient } from '@/utils/supabase/client';
+
+import {
+  onSupabaseAuthStateChangeCompat,
+  supabaseSignInWithOAuthCompat,
+  supabaseSignOutCompat,
+} from '@atlasauth/react/compat';
+
+export function Login() {
+  const supabase = createClient();
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const { data } = onSupabaseAuthStateChangeCompat((_event, session) => {
+      setEmail(session?.user.email ?? null);
+    });
+    return () => data.subscription.unsubscribe();
+  }, [supabase]);
+
+  async function withGitHub() {
+    await supabaseSignInWithOAuthCompat({ provider: 'github', options: { redirectTo: '/account' } });
+  }
+
+  async function withPassword(password: string) {
+    // TODO(atlas-migrate): auth.signInWithPassword(): credentials are collected on the Atlas sign-in page now: replace this form with <SignIn /> (or send users to /sign-in)
+    await supabase.auth.signInWithPassword({ email: email ?? '', password });
+  }
+
+  return (
+    <div>
+      <button onClick={withGitHub}>GitHub</button>
+      <button onClick={() => withPassword('x')}>Password</button>
+      <button onClick={() => supabaseSignOutCompat()}>Sign out</button>
+    </div>
+  );
+}

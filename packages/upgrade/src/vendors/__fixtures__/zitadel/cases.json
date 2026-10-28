@@ -1,0 +1,46 @@
+[
+  {
+    "name": "authjs-provider",
+    "path": "auth.ts",
+    "manual": [
+      "ZITADEL sign-in is Atlas sign-in"
+    ]
+  },
+  {
+    "name": "react-ui",
+    "path": "components/login.tsx",
+    "manual": [
+      "SignInWithGoogle: Atlas's <SignIn /> shows the social providers",
+      "'ThemeSwitch' from '@zitadel/react': ZITADEL login UI component"
+    ]
+  },
+  {
+    "name": "node-sdk",
+    "path": "lib/verify.ts",
+    "manual": [
+      "introspect(): verify the Atlas session token",
+      "ServiceAccount: service accounts become Atlas API keys"
+    ]
+  },
+  {
+    "name": "env",
+    "path": "lib/env.ts",
+    "manual": [
+      "ZITADEL_SERVICE_USER_TOKEN: server code uses ATLAS_SECRET_KEY"
+    ]
+  },
+  {
+    "name": "grpc-client",
+    "path": "lib/zitadel.ts",
+    "manual": [
+      "'createUserServiceClient' from '@zitadel/client/v2': ZITADEL API client"
+    ]
+  },
+  {
+    "name": "auth-links",
+    "path": "components/nav.tsx",
+    "manual": [
+      "/oidc/v1/end_session: sign-out is an action in Atlas"
+    ]
+  }
+]

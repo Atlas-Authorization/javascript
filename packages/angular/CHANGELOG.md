@@ -1,5 +1,36 @@
 # @atlasauth/angular changelog
 
+## 0.12.0 — 2026-10-28
+
+- `ManageCiba` component lists sign-in approvals (approve or deny) and manages the CIBA PIN; mounted in the user profile.
+
+## 0.11.0 — 2026-10-24
+
+- Integrator platform release: see the Atlas changelog for 2026-10-24.
+
+## 0.10.0 — 2026-10-24
+
+### Added
+
+- **Policy acceptance** in `<atlas-sign-up>` and `<atlas-sign-in>` (consent block with in-page viewer, clickwrap line, unskippable scroll dialog, the `needs_policy_acceptance` step), plus `<atlas-policy-gate>`, `<atlas-policy-accept-step>` and the `[atlasPolicies]` directive; `AtlasFlowController` exposes `policies`. New `policy.*` strings.
+
+## 0.9.0 — 2026-10-23
+
+### Added
+
+- `<atlas-organization-audit-log>` (in `ATLAS_UI`) and `AtlasService.organizationAuditLog()` (a signal-backed `AtlasOrganizationAuditLog`): the active organization's audit trail for its admins, paged, with labels as inputs. Renders nothing for a member who may not read it. Appearance `elements` gain `list` and `listItem`.
+- **Recovery codes after enrolment.** Setting up a second factor at sign-in now shows the account's one-time recovery codes before the sign-in finishes, as the hosted page does: copy them, download them as a .txt file, then "I've saved my codes" continues. Before, the sign-in completed straight away and the codes were never shown. The codes are kept in memory only, never on the attempt or in storage. New strings (`mfa.recoveryCodesTitle`, `mfa.recoveryCodesHelp`, `mfa.recoveryCodesCopy`, `mfa.recoveryCodesCopied`, `mfa.recoveryCodesDownload`, `mfa.recoveryCodesSaved`) are in the catalog and in every `@atlasauth/localizations` bundle.
+- **MFA enrolment at sign-in works end to end.** When the app requires a second factor and the account has none, `<SignIn>` now fetches the authenticator setup and shows its QR code and the setup key, then asks for the code (one or two, as the app requires). Before, the step asked for codes without ever showing the setup.
+- **Text-message enrolment** where the app offers texted codes and can send them: the user picks "Use text messages", enters a phone number, and confirms with the texted code. When both methods are offered the user chooses, and can switch.
+- **"Text me a code instead"** at the second-factor step where the app offers texted codes, beside the existing "Email me a code instead".
+- The new strings are in the catalog (`mfa.enrollChoose`, `mfa.enrollTotpOption`, `mfa.enrollSmsOption`, `mfa.enrollScan`, `mfa.enrollQrAlt`, `mfa.enrollSetupKey`, `mfa.enrollPreparing`, `mfa.phoneLabel`, `mfa.phoneHint`, `mfa.sendCode`, `mfa.codeTextedTo`, `mfa.smsCodeOption`) and in every `@atlasauth/localizations` bundle.
+- "Email me a code instead" at the second factor showed its catalog key (`signIn.emailCodeOption`) unless a language bundle was passed; the English string is now in the default catalog.
+- Texted codes are offered only where the server says the app can text (`account.mfa` on `/v1/appearance`). A server that does not say gets the authenticator app only.
+
+### Changed
+
+- Built on `@atlasauth/js` 0.16.0.
+
 ## 0.8.0
 
 ### Changed

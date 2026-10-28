@@ -1,0 +1,30 @@
+import { createHash, randomBytes } from 'node:crypto';
+
+const cache = new Map<string, any>();
+
+export async function discover(issuer: string) {
+  if (!cache.has(issuer)) {
+    const res = await fetch(`${issuer}/.well-known/openid-configuration`);
+    cache.set(issuer, await res.json());
+  }
+  return cache.get(issuer);
+}
+
+export async function newPendingSignIn(issuer: string, clientId: string, redirectUri: string) {
+  const cfg = await discover(issuer);
+  const codeVerifier = randomBytes(32).toString('base64url');
+  const challenge = createHash('sha256').update(codeVerifier).digest('base64url');
+  const url = new URL(cfg.authorization_endpoint);
+  url.searchParams.set('client_id', clientId);
+  url.searchParams.set('code_challenge', challenge);
+  url.searchParams.set('code_challenge_method', 'S256');
+  url.searchParams.set('redirect_uri', redirectUri);
+  return { url: url.toString(), codeVerifier };
+}
+
+export async function completeSignIn(cfg: any, code: string, codeVerifier: string) {
+  const body = new URLSearchParams({ grant_type: 'authorization_code', code, code_verifier: codeVerifier });
+  return (await fetch(cfg.token_endpoint, { method: 'POST', body })).json();
+}
+
+export const logoutUrl = (cfg: any) => cfg.end_session_endpoint;

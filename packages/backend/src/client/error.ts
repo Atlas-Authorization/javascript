@@ -16,6 +16,12 @@ export interface AtlasErrorItem {
   message: string;
   param?: string;
   meta?: Record<string, unknown>;
+  /** The code's page in the error reference (https://atlasauth.net/errors/<code>). */
+  docs_url?: string;
+  /** `ROUTE_NOT_FOUND` only: the closest documented paths. */
+  did_you_mean?: string[];
+  /** `ROUTE_NOT_FOUND` only: the methods the path does support. */
+  allowed_methods?: string[];
 }
 
 export class AtlasApiError extends Error {
@@ -77,6 +83,14 @@ export const AtlasErrorCodes = {
   REFERRALS_NOT_CONFIGURED: 'REFERRALS_NOT_CONFIGURED',
   /** 409 — another user on the instance already holds that referral code. */
   REFERRAL_CODE_TAKEN: 'REFERRAL_CODE_TAKEN',
+  /** 422 — managed WAF provision/deprovision on an instance with no WAF configuration saved (`meta.action`). */
+  MANAGED_WAF_NOT_CONFIGURED: 'MANAGED_WAF_NOT_CONFIGURED',
+  /** 403 — a Sign in with Atlas test or review account used outside the app it was made for. */
+  TEST_ACCOUNT_RESTRICTED: 'TEST_ACCOUNT_RESTRICTED',
+  /** 409 — the account already holds its maximum number of test and review accounts (`meta.limit`). */
+  PROVISIONED_ACCOUNT_LIMIT_REACHED: 'PROVISIONED_ACCOUNT_LIMIT_REACHED',
+  /** 422 — the setting or address needs a domain the account has verified, and this one is not. */
+  DOMAIN_NOT_VERIFIED: 'DOMAIN_NOT_VERIFIED',
   /** The billing plan still has subscribers and cannot be removed. */
   PLAN_IN_USE: 'PLAN_IN_USE',
   /** The key is valid but for another API surface (e.g. a platform key on the Backend API). */
@@ -84,6 +98,8 @@ export const AtlasErrorCodes = {
   /** The key is unknown, revoked or malformed. */
   INVALID_KEY: 'INVALID_KEY',
   NOT_FOUND: 'NOT_FOUND',
+  /** No endpoint matches the method and path (a typo or a guessed route); see `did_you_mean`. */
+  ROUTE_NOT_FOUND: 'ROUTE_NOT_FOUND',
   VALIDATION_FAILED: 'VALIDATION_FAILED',
   RATE_LIMITED: 'RATE_LIMITED',
   /** An idempotency key was reused with a different request (e.g. another unit or amount). */
@@ -94,6 +110,8 @@ export const AtlasErrorCodes = {
   SESSION_IDLE_EXPIRED: 'SESSION_IDLE_EXPIRED',
   SESSION_EXPIRED: 'SESSION_EXPIRED',
   SCOPE_MISSING: 'SCOPE_MISSING',
+  INSUFFICIENT_SCOPE: 'INSUFFICIENT_SCOPE',
+  STEP_UP_REQUIRED: 'STEP_UP_REQUIRED',
   FORBIDDEN: 'FORBIDDEN',
   CONFLICT: 'CONFLICT',
 } as const;

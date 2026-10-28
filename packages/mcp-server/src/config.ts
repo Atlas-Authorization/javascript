@@ -7,7 +7,7 @@ import type { AtlasMcpServerOptions } from './server';
 export const ENV = {
   /** Instance secret key (`sk_...`). Required unless a `backend` is embedded. */
   SECRET_KEY: 'ATLAS_SECRET_KEY',
-  /** Atlas Backend-API base URL (optional; the client has a sensible default). */
+  /** Atlas Backend-API base URL (older name; `ATLAS_API_BASE` is read first and wins). */
   API_URL: 'ATLAS_API_URL',
   /** Comma-separated allowlist of tool NAMES; authoritative over scopes. */
   ALLOWED_TOOLS: 'ATLAS_MCP_ALLOWED_TOOLS',
@@ -56,7 +56,7 @@ export function resolveOptions(
   argv: readonly string[] = process.argv.slice(2),
 ): AtlasMcpServerOptions {
   const secretKey = parseFlag(argv, '--secret-key') ?? env[ENV.SECRET_KEY];
-  const apiUrl = parseFlag(argv, '--api-url') ?? env[ENV.API_URL];
+  const apiUrl = parseFlag(argv, '--api-url') ?? (env.ATLAS_API_BASE?.trim() || env[ENV.API_URL]?.trim() || undefined);
   const allowedTools = parseList(parseFlag(argv, '--allowed-tools') ?? env[ENV.ALLOWED_TOOLS]);
   const scopes = parseList(parseFlag(argv, '--scopes') ?? env[ENV.SCOPES]);
 

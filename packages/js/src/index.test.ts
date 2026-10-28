@@ -354,3 +354,11 @@ describe('the token cache never holds a refresh token', () => {
     expect(Object.keys(cache.peek()!)).toEqual(['jwt', 'expiresAt', 'sessionId']);
   });
 });
+
+import { gameCenterSignInBody, playGamesSignInBody } from './telegram';
+describe('game platform sign-in bodies', () => {
+  it('shapes the two providers', () => {
+    expect(playGamesSignInBody('4/x')).toEqual({ provider: 'google_play_games', server_auth_code: '4/x' });
+    expect(gameCenterSignInBody({ player_id: 'T:1', bundle_id: 'b', public_key_url: 'u', signature: 's', salt: 'a', timestamp: 1 }).provider).toBe('apple_game_center');
+  });
+});

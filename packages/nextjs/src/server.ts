@@ -90,7 +90,7 @@ export function backendConfigFromEnv(env: Env = readEnv()): AtlasClientConfig {
   if (!secretKey) {
     throw new Error('@atlasauth/nextjs/server: missing ATLAS_SECRET_KEY.');
   }
-  const apiUrl = pick(env, 'ATLAS_API_URL', 'NEXT_PUBLIC_ATLAS_API_URL');
+  const apiUrl = pick(env, 'ATLAS_API_BASE', 'ATLAS_API_URL', 'NEXT_PUBLIC_ATLAS_API_URL');
   return { secretKey, apiUrl };
 }
 
@@ -106,7 +106,7 @@ export function atlasClient(overrides: Partial<AtlasClientConfig> = {}): AtlasCl
   // from either source.
   return createAtlasClient({
     secretKey: overrides.secretKey ?? pick(env, 'ATLAS_SECRET_KEY') ?? '',
-    apiUrl: overrides.apiUrl ?? pick(env, 'ATLAS_API_URL', 'NEXT_PUBLIC_ATLAS_API_URL'),
+    apiUrl: overrides.apiUrl ?? pick(env, 'ATLAS_API_BASE', 'ATLAS_API_URL', 'NEXT_PUBLIC_ATLAS_API_URL'),
     fetch: overrides.fetch,
   });
 }

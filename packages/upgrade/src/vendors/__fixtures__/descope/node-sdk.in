@@ -1,0 +1,15 @@
+import DescopeClient from '@descope/node-sdk';
+
+const descopeClient = DescopeClient({
+  projectId: process.env.DESCOPE_PROJECT_ID!,
+  managementKey: process.env.DESCOPE_MANAGEMENT_KEY,
+});
+
+export async function requireUser(sessionToken: string) {
+  const { token } = await descopeClient.validateSession(sessionToken);
+  return token.sub;
+}
+
+export async function removeUser(loginId: string) {
+  await descopeClient.management.user.delete(loginId);
+}

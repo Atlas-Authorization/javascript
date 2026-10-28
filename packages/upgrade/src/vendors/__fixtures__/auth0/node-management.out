@@ -1,0 +1,8 @@
+// TODO(atlas-migrate): new ManagementClient(…): manage users, organizations and roles with createAtlasClient({ secretKey: process.env.ATLAS_SECRET_KEY }) from @atlasauth/backend
+import { ManagementClient } from 'auth0';
+
+export const management = new ManagementClient({
+  domain: 'acme.us.auth0.com',
+  clientId: process.env.MGMT_CLIENT_ID!,
+  clientSecret: process.env.MGMT_CLIENT_SECRET!,
+});

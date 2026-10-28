@@ -1,0 +1,24 @@
+'use client';
+import { getSessionToken, useDescope, useSession, useUser } from '@descope/nextjs-sdk/client';
+import { useCallback } from 'react';
+
+async function fetchOrders() {
+  const token = getSessionToken();
+  return fetch('/api/orders', { headers: { Authorization: `Bearer ${token}` } });
+}
+
+export function UserMenu() {
+  const { isAuthenticated, isSessionLoading } = useSession();
+  const { user, isUserLoading } = useUser();
+  const sdk = useDescope();
+  const logout = useCallback(() => sdk.logout(), [sdk]);
+  if (isSessionLoading || isUserLoading) return <p>Loading</p>;
+  if (!isAuthenticated) return null;
+  return (
+    <div>
+      <span>{user?.name ?? user?.email}</span>
+      <button onClick={() => fetchOrders()}>Orders</button>
+      <button onClick={logout}>Log out</button>
+    </div>
+  );
+}

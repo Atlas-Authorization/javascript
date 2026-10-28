@@ -1,0 +1,5 @@
+import { withMiddlewareAuthRequiredCompat } from '@atlasauth/nextjs/compat';
+
+export default withMiddlewareAuthRequiredCompat();
+
+export const config = { matcher: ['/dashboard/:path*'] };

@@ -1,0 +1,10 @@
+import okta from '@okta/okta-sdk-nodejs';
+
+import { createAtlasClient } from '@atlasauth/backend';
+
+// TODO(atlas-migrate): new okta.Client({ orgUrl, token }): use createAtlasClient({ secretKey: process.env.ATLAS_SECRET_KEY! }) from @atlasauth/backend. Its users, organizations and invitations resources replace Okta's users, groups and group memberships; method names differ, so move each call over
+const client = new okta.Client({ orgUrl: process.env.OKTA_ORG_URL, token: process.env.OKTA_API_TOKEN });
+
+export async function deactivate(userId: string) {
+  await client.userApi.deactivateUser({ userId });
+}

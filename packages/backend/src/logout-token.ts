@@ -1,12 +1,13 @@
 import { createLocalJWKSet, decodeProtectedHeader, jwtVerify } from 'jose';
 import { JwksCache, readKid, type Jwks } from './jwks-cache';
 import { JwksDiscovery, instanceIdFromPublishableKey } from './discovery';
+import { ATLAS_SIGNING_ALGS } from './algs';
 
 /**
  * OpenID Connect Back-Channel Logout 1.0 — verifying the `logout_token` Atlas
  * POSTs to your `backchannel_logout_uri` when a user's session ends.
  *
- * The checks are those of §2.6 of the spec: RS256 signature from the issuer's
+ * The checks are those of §2.6 of the spec: RS256 or ES256 signature from the issuer's
  * JWKS, `iss`, `aud` containing your client id, `iat` present (and not in the
  * future), `exp` when present, a `jti`, the back-channel-logout event, a `sid`
  * and/or `sub`, NO `nonce`, and a `typ` of `logout+jwt` when the header has one.
@@ -205,7 +206,7 @@ export async function checkLogoutToken(
   let payload: Record<string, unknown>;
   try {
     const verified = await jwtVerify(token, createLocalJWKSet(keys as never), {
-      algorithms: ['RS256'],
+      algorithms: ATLAS_SIGNING_ALGS,
       issuer: options.issuer,
       audience,
       clockTolerance: LOGOUT_TOKEN_CLOCK_SKEW_SECONDS,

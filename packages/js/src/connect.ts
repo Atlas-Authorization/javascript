@@ -98,3 +98,34 @@ export async function startConnect(provider: string, opts: ConnectOptions): Prom
   const { authorizationUrl } = await connectExternalAccount(provider, opts);
   if (typeof window !== 'undefined') window.location.assign(authorizationUrl);
 }
+
+/**
+ * Re-run the provider authorization for an ALREADY-linked account (to refresh a
+ * lapsed credential or grant more scopes). `externalAccountId` is the
+ * `external_account_id` of the connection. Resolves like {@link connectExternalAccount}.
+ */
+export async function reauthorizeExternalAccount(
+  externalAccountId: string,
+  opts: ConnectOptions,
+): Promise<ConnectStart> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const res = await doFetch(`${opts.api}/v1/client/me/external_accounts/${encodeURIComponent(externalAccountId)}/reauthorize`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-publishable-key': opts.publishableKey },
+    credentials: 'include',
+    body: JSON.stringify({ redirect_url: opts.redirectUrl, additional_scopes: opts.additionalScopes }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    provider?: string;
+    attempt_id?: string;
+    authorization_url?: string;
+    scopes?: string[];
+    errors?: { message?: string; code?: string }[];
+  };
+  if (!res.ok || !data.authorization_url) {
+    const err = new Error(data.errors?.[0]?.message ?? 'Could not start re-authorizing that provider.');
+    (err as { code?: string }).code = data.errors?.[0]?.code;
+    throw err;
+  }
+  return { provider: data.provider ?? '', attemptId: data.attempt_id ?? '', authorizationUrl: data.authorization_url, scopes: data.scopes ?? [] };
+}

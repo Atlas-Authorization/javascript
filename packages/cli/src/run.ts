@@ -1,16 +1,36 @@
 import { AtlasApiError } from '@atlasauth/backend';
 import { parse, type ParsedArgs } from './args';
 import { actions } from './commands/actions';
+import { pages } from './commands/pages';
 import { apiKeys } from './commands/api-keys';
 import { login, logout, whoami } from './commands/auth';
+import { keys, token } from './commands/operator';
 import { config } from './commands/config';
 import { init } from './commands/init';
-import { client, envCommand, preflight } from './commands/project-commands';
+import { importUsers } from './commands/import';
+import { info } from './commands/info';
+import { csp } from './commands/csp';
+import { fga } from './commands/fga';
+import { dev } from './commands/dev';
+import { listen } from './commands/listen';
+import { migrate } from './commands/migrate';
+import { moveOrigin } from './commands/move-origin';
+import { mcp } from './commands/mcp';
+import { client, doctor, envCommand, preflight } from './commands/project-commands';
 import { orgs } from './commands/orgs';
 import { referrals } from './commands/referrals';
 import { sessions } from './commands/sessions';
+import { status } from './commands/status';
 import { users } from './commands/users';
 import { webhooks } from './commands/webhooks';
+import { integrations } from './commands/integrations';
+import { idAccounts } from './commands/id-accounts';
+import { admin } from './commands/admin';
+import { partnerPlatforms } from './commands/partner-platforms';
+import {
+  AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS,
+  resourceCommand,
+} from './commands/resources';
 import type { RunContext } from './context';
 import { CliError } from './errors';
 import { COMMAND_HELP, TOP_HELP } from './help';
@@ -24,18 +44,52 @@ const COMMANDS: Record<string, Handler> = {
   login,
   logout,
   whoami,
+  token,
+  keys,
   users,
   orgs,
   'api-keys': apiKeys,
   webhooks,
+  integrations,
+  'partner-platforms': partnerPlatforms,
+  'id-accounts': idAccounts,
+  admin,
   sessions,
   config,
   actions,
+  pages,
   init,
   preflight,
+  doctor,
   env: envCommand,
   client,
   referrals,
+  status,
+  import: importUsers,
+  migrate,
+  info,
+  mcp,
+  listen,
+  dev,
+  'move-origin': moveOrigin,
+  csp,
+  fga,
+  workflows: resourceCommand('workflows', WORKFLOWS),
+  chat: resourceCommand('chat', CHAT),
+  cloud: resourceCommand('cloud', CLOUD),
+  'saml-idp': resourceCommand('saml-idp', SAML_IDP),
+  provisioning: resourceCommand('provisioning', PROVISIONING),
+  catalog: resourceCommand('catalog', CATALOG),
+  'device-sso': resourceCommand('device-sso', DEVICE_SSO),
+  'connection-actions': resourceCommand('connection-actions', CONNECTION_ACTIONS),
+  triggers: resourceCommand('triggers', TRIGGERS),
+  agents: resourceCommand('agents', AGENTS),
+  telemetry: resourceCommand('telemetry', TELEMETRY),
+  pdp: resourceCommand('pdp', PDP),
+  billing: resourceCommand('billing', BILLING),
+  audit: resourceCommand('audit', AUDIT),
+  federation: resourceCommand('federation', FEDERATION),
+  vc: resourceCommand('vc', VC),
 };
 
 /**

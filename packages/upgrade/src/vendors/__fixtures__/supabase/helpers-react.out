@@ -1,0 +1,21 @@
+import { createPagesBrowserClient } from '@supabase/auth-helpers-nextjs';
+import type { AppProps } from 'next/app';
+import { useState } from 'react';
+
+import { AtlasProvider } from '@atlasauth/react';
+import { useSupabaseUserCompat } from '@atlasauth/react/compat';
+
+function Header() {
+  const user = useSupabaseUserCompat();
+  return <header>{user?.email}</header>;
+}
+
+export default function App({ Component, pageProps }: AppProps) {
+  const [supabaseClient] = useState(() => createPagesBrowserClient());
+  return (
+    <AtlasProvider publishableKey={process.env.NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY!} frontendApi={process.env.NEXT_PUBLIC_ATLAS_FRONTEND_API!}>
+      <Header />
+      <Component {...pageProps} />
+    </AtlasProvider>
+  );
+}

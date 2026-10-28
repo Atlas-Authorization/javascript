@@ -1,0 +1,8 @@
+// TODO(atlas-migrate): useFusionAuth(): read the session with useAuth() / useUser() from @atlasauth/react (client) or auth() / currentUser() from @atlasauth/nextjs/server (server); login() → <SignInButton />, logout() → <SignOutButton /> or useAuth().signOut(), register() → link to /sign-up, isAuthenticated → useAuth().isSignedIn, user → useUser()
+// TODO(atlas-migrate): FusionAuthLoginButton: <SignInButton /> from @atlasauth/react
+import { useFusionAuth, FusionAuthLoginButton } from '@fusionauth/react-sdk';
+
+export function Header() {
+  const { isAuthenticated } = useFusionAuth();
+  return isAuthenticated ? <span>Hi</span> : <FusionAuthLoginButton />;
+}

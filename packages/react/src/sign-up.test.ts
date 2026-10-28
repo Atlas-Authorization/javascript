@@ -71,7 +71,12 @@ afterEach(() => {
 
 async function mount(
   component: typeof SignUp | typeof SignIn,
-  opts: { captchaFlows?: Record<string, unknown>; emailDelivery?: Record<string, boolean>; routes: Route[] },
+  opts: {
+    captchaFlows?: Record<string, unknown>;
+    emailDelivery?: Record<string, boolean>;
+    account?: Record<string, unknown>;
+    routes: Route[];
+  },
 ) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -88,6 +93,7 @@ async function mount(
         appearance: { legal: { termsUrl: null, privacyUrl: null, required: false }, signUpFields: [] },
         captchaFlows: opts.captchaFlows ?? {},
         ...(opts.emailDelivery ? { email_delivery: opts.emailDelivery } : {}),
+        ...(opts.account ? { account: opts.account } : {}),
       });
     }
     for (const route of opts.routes) {
@@ -165,6 +171,7 @@ describe('<SignUp> creates the account', () => {
       email: 'new@example.com',
       password: 'blue tangerine anvil 71!',
       consent: true,
+      device_id: expect.stringMatching(/^d_/),
     });
 
     setInput(el, 'code', '424242');
@@ -427,4 +434,147 @@ describe('email delivery', () => {
     expect(el.querySelector('[data-atlas-email-unavailable]')).toBeNull();
     expect(el.querySelector('input[name="password"]')).toBeNull();
   });
+});
+
+describe('<SignUp> passkey-only sign-up', () => {
+  const ACCOUNT = {
+    username: null,
+    last_sign_in_method: false,
+    email_verification: 'code',
+    password_reset: 'code',
+    email_second_factor: false,
+    passkey_sign_up: { email: 'optional' },
+  };
+
+  function fakeWebAuthn() {
+    const create = vi.fn(async () => ({
+      rawId: new Uint8Array([1, 2, 3]).buffer,
+      response: {
+        attestationObject: new Uint8Array([4, 5, 6]).buffer,
+        clientDataJSON: new Uint8Array([7, 8, 9]).buffer,
+      },
+    }));
+    vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {});
+    Object.defineProperty(navigator, 'credentials', { configurable: true, value: { create, get: vi.fn() } });
+    return create;
+  }
+
+  it('offers a passkey form (no password), then creates the passkey and the account', async () => {
+    const create = fakeWebAuthn();
+    const el = await mount(SignUp, {
+      account: ACCOUNT,
+      routes: [
+        (c) =>
+          c.path === '/v1/client/sign_ups/passkey'
+            ? json(
+                {
+                  id: 'sua_pk',
+                  object: 'sign_up_attempt',
+                  status: 'needs_first_factor',
+                  strategy: 'passkey',
+                  supported_first_factors: ['passkey'],
+                  poll_secret: 'ps_1',
+                },
+                201,
+              )
+            : undefined,
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_pk/passkey/begin'
+            ? json(
+                {
+                  challenge: 'Y2hhbGxlbmdl',
+                  rp: { id: 'example.com', name: 'Atlas' },
+                  user: { id: 'dXNlcl8x', name: 'user_1', displayName: 'user_1' },
+                  pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+                  excludeCredentials: [],
+                },
+                201,
+              )
+            : undefined,
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_pk/passkey/finish'
+            ? json({ id: 'sua_pk', object: 'sign_up_attempt', status: 'complete', ticket: 'tkt_pk' })
+            : undefined,
+      ],
+    });
+
+    const toggle = await vi.waitFor(() => {
+      const button = el.querySelector('[data-atlas-sign-up-mode="passkey"]') as HTMLButtonElement | null;
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    await act(async () => toggle.click());
+    expect(el.querySelector('input[name="password"]')).toBeNull();
+    expect((el.querySelector('input[name="email"]') as HTMLInputElement).required).toBe(false);
+
+    setInput(el, 'email', 'pk@example.com');
+    await submit(el);
+    expect(posts('/v1/client/sign_ups/passkey')[0]!.body).toEqual({ email: 'pk@example.com', consent: true });
+    expect(posts('/v1/client/sign_ups')).toHaveLength(0);
+
+    const createButton = await vi.waitFor(() => {
+      const step = el.querySelector('[data-atlas-passkey-sign-up] button') as HTMLButtonElement | null;
+      expect(step).not.toBeNull();
+      return step!;
+    });
+    await act(async () => createButton.click());
+    await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(posts('/v1/client/sign_ups/sua_pk/passkey/begin')[0]!.body).toEqual({ poll_secret: 'ps_1' });
+    expect(posts('/v1/client/sign_ups/sua_pk/passkey/finish')[0]!.body).toMatchObject({
+      poll_secret: 'ps_1',
+      challenge: 'Y2hhbGxlbmdl',
+      attestation_object: 'BAUG',
+      client_data_json: 'BwgJ',
+    });
+    expect(posts('/v1/client/tickets/exchange')[0]!.body).toMatchObject({ attempt_id: 'sua_pk', ticket: 'tkt_pk' });
+  });
+
+  it('shows no passkey option when the instance does not offer it', async () => {
+    fakeWebAuthn();
+    const el = await mount(SignUp, { account: { ...ACCOUNT, passkey_sign_up: null }, routes: [] });
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    expect(el.querySelector('[data-atlas-sign-up-mode]')).toBeNull();
+  });
+});
+
+describe('<SignUp> link-only verification', () => {
+  it('says to open the emailed link (no code field, no submit) and finishes when the poll completes', async () => {
+    let opened = false;
+    const el = await mount(SignUp, {
+      account: { username: null, last_sign_in_method: false, email_verification: 'link', password_reset: 'code' },
+      routes: [
+        (c) =>
+          c.method === 'POST' && c.path === '/v1/client/sign_ups'
+            ? json({ id: 'sua_l', object: 'sign_up_attempt', status: 'needs_email_verification', identifier: 'l@example.com', poll_secret: 'ps_l' }, 201)
+            : undefined,
+        (c) =>
+          c.method === 'GET' && c.path === '/v1/client/sign_ups/sua_l'
+            ? json(
+                opened
+                  ? { id: 'sua_l', object: 'sign_up_attempt', status: 'complete', ticket: 'tkt_l' }
+                  : { id: 'sua_l', object: 'sign_up_attempt', status: 'needs_email_verification' },
+              )
+            : undefined,
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'email', 'l@example.com');
+    setInput(el, 'password', 'blue tangerine anvil 71!');
+    await submit(el);
+
+    const notice = await vi.waitFor(() => {
+      const p = el.querySelector('[data-atlas-link-sent]');
+      expect(p).not.toBeNull();
+      return p!;
+    });
+    expect(notice.textContent).toContain('confirmation link to l@example.com');
+    expect(el.querySelector('input[name="code"]')).toBeNull();
+    expect(el.querySelector('button[type="submit"]')).toBeNull();
+    expect(el.querySelector('[data-atlas-resend]')?.textContent).toBe('Resend link');
+
+    opened = true;
+    await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1), { timeout: 6000 });
+    expect(posts('/v1/client/tickets/exchange')[0]!.body).toMatchObject({ attempt_id: 'sua_l', ticket: 'tkt_l' });
+  }, 10_000);
 });

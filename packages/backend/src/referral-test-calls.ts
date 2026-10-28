@@ -15,12 +15,12 @@ import {
  *  - the Atlas referral protocol (provider `webhook`): every call is a signed
  *    `POST {base}/<endpoint>` with `op` and `customerRef` in the body, signed
  *    like Atlas webhooks (`atlas-id`, `atlas-timestamp`, `atlas-signature`);
- *  - Referally (provider `referally`): `{base}/v1/auth/connections/{id}/…`,
- *    signed with `x-referally-signature: t=<unix s>,v1=<hex HMAC-SHA256>` over
+ *  - Referalli (provider `referalli`): `{base}/v1/auth/connections/{id}/…`,
+ *    signed with `x-referalli-signature: t=<unix s>,v1=<hex HMAC-SHA256>` over
  *    `"{t}.{payload}"`, where payload is the raw body for POST and the raw
  *    query string for GET.
  *
- * Both are also on {@link TestIssuer} (`referralCall`, `referallyCall`) with
+ * Both are also on {@link TestIssuer} (`referralCall`, `referalliCall`) with
  * the issuer's clock.
  */
 
@@ -84,51 +84,83 @@ export function signAtlasReferralCall(options: AtlasReferralCallOptions): Signed
   return signed(`${trimBase(options.baseUrl)}/${REFERRAL_OP_ENDPOINTS[options.op]}`, 'POST', headers, body);
 }
 
-/** The Referally API version Atlas pins on every call (`referally-version`). */
-export const REFERALLY_API_VERSION = '2026-10-21';
+/** The Referalli API version Atlas pins on every call (`referalli-version`). */
+export const REFERALLI_API_VERSION = '2026-10-21';
 
-/** The Referally connection calls Atlas makes. */
-export type ReferallyCallOp = 'signups' | 'erase' | 'export' | 'aliases' | 'users' | 'ping';
+/** The Referalli connection calls Atlas makes. */
+export type ReferalliCallOp = 'signups' | 'erase' | 'export' | 'aliases' | 'users' | 'signals' | 'ping';
 
-export interface ReferallyCallOptions {
-  /** Your Referally base URL (never hard-code it; read it from config). */
+export interface ReferalliCallOptions {
+  /** Your Referalli base URL (never hard-code it; read it from config). */
   baseUrl: string;
-  /** The Atlas connection id on Referally. */
+  /** The Atlas connection id on Referalli. */
   connectionId: string;
-  /** The connection secret Referally returned when the connection was created. */
+  /** The connection secret Referalli returned when the connection was created. */
   secret: string;
-  op: ReferallyCallOp;
+  op: ReferalliCallOp;
   /** The JSON body for POST calls. */
   body?: Record<string, unknown>;
   /** `export` only: the customer to export (sent as `?customerRef=`). */
   customerRef?: string;
   /** Epoch ms. Default: now. */
   now?: number;
+  /** The per-attempt request id (`x-referalli-id`). Default: derived from the time and op. */
+  requestId?: string;
 }
 
 /**
- * The `x-referally-signature` value for a payload: `t=<unix s>,v1=<hex
- * HMAC-SHA256(secret, "{t}.{payload}")>`.
+ * The v1-only `x-referalli-signature` value for a payload: `t=<unix s>,v1=<hex
+ * HMAC-SHA256(secret, "{t}.{payload}")>`. {@link signReferalliCall} sends v1 and
+ * v2 together.
  */
-export function referallySignature(secret: string, payload: string, unixSeconds: number): string {
+export function referalliSignature(secret: string, payload: string, unixSeconds: number): string {
   const mac = createHmac('sha256', secret).update(`${unixSeconds}.${payload}`).digest('hex');
   return `t=${unixSeconds},v1=${mac}`;
 }
 
-/** A Referally connection call, signed exactly as the Atlas `referally` adapter signs it. */
-export function signReferallyCall(options: ReferallyCallOptions): SignedReferralCall {
+/**
+ * The full signature header Atlas sends: v1 over "{t}.{payload}" plus v2 over
+ * "{t}.{METHOD}.{path?query}.{body}" (body empty for a GET), which binds the
+ * request to its endpoint.
+ */
+export function referalliSignatureV2(
+  secret: string,
+  parts: { method: 'GET' | 'POST'; pathAndQuery: string; payload: string },
+  unixSeconds: number,
+): string {
+  const body = parts.method === 'GET' ? '' : parts.payload;
+  const v2 = createHmac('sha256', secret)
+    .update(`${unixSeconds}.${parts.method}.${parts.pathAndQuery}.${body}`)
+    .digest('hex');
+  return `${referalliSignature(secret, parts.payload, unixSeconds)},v2=${v2}`;
+}
+
+/** A Referalli connection call, signed exactly as the Atlas `referalli` adapter signs it (v1 + v2, both header spellings). */
+export function signReferalliCall(options: ReferalliCallOptions): SignedReferralCall {
   const t = Math.floor((options.now ?? Date.now()) / 1000);
   const base = `${trimBase(options.baseUrl)}/v1/auth/connections/${encodeURIComponent(options.connectionId)}/${options.op}`;
-  const headers: Record<string, string> = { 'referally-version': REFERALLY_API_VERSION };
+  const requestId = options.requestId ?? `req_${t}_${options.op}`;
+  const headers: Record<string, string> = {
+    'referalli-version': REFERALLI_API_VERSION,
+    'referally-version': REFERALLI_API_VERSION,
+    'x-referalli-id': requestId,
+    'x-referally-id': requestId,
+  };
+  const sign = (method: 'GET' | 'POST', url: string, payload: string) => {
+    const u = new URL(url);
+    const signature = referalliSignatureV2(options.secret, { method, pathAndQuery: `${u.pathname}${u.search}`, payload }, t);
+    headers['x-referalli-signature'] = signature;
+    headers['x-referally-signature'] = signature;
+  };
   if (options.op === 'export') {
-    if (!options.customerRef) throw new Error('signReferallyCall: export needs customerRef.');
+    if (!options.customerRef) throw new Error('signReferalliCall: export needs customerRef.');
     const query = new URLSearchParams({ customerRef: options.customerRef }).toString();
-    headers['x-referally-signature'] = referallySignature(options.secret, query, t);
+    sign('GET', `${base}?${query}`, query);
     return signed(`${base}?${query}`, 'GET', headers);
   }
   const body = JSON.stringify(options.body ?? {});
   headers['content-type'] = 'application/json';
-  headers['x-referally-signature'] = referallySignature(options.secret, body, t);
+  sign('POST', base, body);
   return signed(base, 'POST', headers, body);
 }
 

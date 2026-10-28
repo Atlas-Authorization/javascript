@@ -1,0 +1,27 @@
+import PocketBase from 'pocketbase';
+
+export const pb = new PocketBase('https://pb.example.com');
+
+export function signedIn() {
+  return pb.authStore.isValid;
+}
+
+export function currentEmail() {
+  return pb.authStore.record?.email;
+}
+
+export async function login(email: string, password: string) {
+  return pb.collection('users').authWithPassword(email, password);
+}
+
+export async function signup(email: string, password: string) {
+  return pb.collection('users').create({ email, password, passwordConfirm: password });
+}
+
+export function logout() {
+  pb.authStore.clear();
+}
+
+export async function posts() {
+  return pb.collection('posts').getList(1, 20);
+}

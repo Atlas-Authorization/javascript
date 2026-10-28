@@ -1,4 +1,6 @@
+import { temporaryAccessResource, type CreateTemporaryAccessBody, type TemporaryAccessPass } from './risk-containment';
 import { enc, type RequestFn } from './request';
+import type { ImportedMfa } from './mfa-factors';
 import type { CursorPage, CursorParams, DeletedObject, ListPage, Metadata } from './types';
 
 /** A user as the BAPI serves it. `private_metadata` is never returned. */
@@ -11,7 +13,11 @@ export interface User {
   image_url: string | null;
   public_metadata: Metadata;
   mfa_enabled: boolean;
+  /** Factor classes this user must always use; empty = none. */
+  required_factors?: string[];
   banned: boolean;
+  /** A timed ban's expiry (epoch ms); null for a permanent ban or none. */
+  ban_expires_at?: number | null;
   locked: boolean;
   /** Epoch milliseconds, or null if never signed in. */
   last_sign_in_at: number | null;
@@ -182,7 +188,31 @@ export interface UserSession {
   created_at: number;
 }
 
-export type ListUsersParams = CursorParams;
+/** `GET /v1/users` search, filters and sort. Every filter is optional and they AND together. */
+export interface ListUsersParams extends CursorParams {
+  /** Substring match over id, names, username, emails, phone numbers and external_id. */
+  query?: string;
+  /** Exact (case-insensitive) match on any of the user's email addresses. */
+  email_address?: string;
+  username?: string;
+  phone_number?: string;
+  external_id?: string;
+  banned?: boolean;
+  /** true = has at least one verified email; false = has none. */
+  email_verified?: boolean;
+  /** Only members of this organization. */
+  organization_id?: string;
+  /** Unix ms bounds on `created_at` (inclusive). */
+  created_after?: number;
+  created_before?: number;
+  /** Default `-created_at`. `last_sign_in_at` orders page with `offset`, not `starting_after`. */
+  order_by?: 'created_at' | '-created_at' | 'last_sign_in_at' | '-last_sign_in_at';
+  offset?: number;
+  /** Adds `total_count` (a COUNT over the filters) to the page. */
+  include_total_count?: boolean;
+  /** Also list soft-deleted users still in their scrub window (each with `deleted_at` set). Default false. */
+  include_deleted?: boolean;
+}
 
 export interface CreateUserBody {
   email_address: string;
@@ -190,6 +220,8 @@ export interface CreateUserBody {
   first_name?: string;
   last_name?: string;
   email_verified?: boolean;
+  /** The user must choose a new password at their first sign-in (`update_password` required action). */
+  password_change_required?: boolean;
   public_metadata?: Metadata;
   private_metadata?: Metadata;
   unsafe_metadata?: Metadata;
@@ -205,9 +237,13 @@ export interface CreateUserBody {
   referral?: CreateUserReferralInput;
   /** The user's own referral code; unique per instance (`409 REFERRAL_CODE_TAKEN`). */
   referral_code?: string;
+  /** An existing authenticator (TOTP or HOTP) and recovery codes to import, so the user keeps their second factor. */
+  mfa?: ImportedMfa;
 }
 
 export interface UpdateUserBody {
+  /** Force a second factor at every sign-in; `null`/`[]` clears. */
+  required_factors?: Array<'totp' | 'sms' | 'passkey' | 'push'> | null;
   first_name?: string;
   last_name?: string;
   /**
@@ -230,12 +266,20 @@ export interface ReplaceUserMetadataBody {
 
 export function usersResource(request: RequestFn) {
   return {
-    /** `GET /v1/users` — cursor-paginated. */
-    list(params: ListUsersParams = {}): Promise<CursorPage<User>> {
+    /** `GET /v1/users` — search, filter and sort; cursor- (or offset-) paginated. */
+    list(params: ListUsersParams = {}): Promise<CursorPage<User> & { total_count?: number }> {
       return request({ method: 'GET', path: '/v1/users', query: { ...params } });
     },
     get(id: string): Promise<User> {
       return request({ method: 'GET', path: `/v1/users/${enc(id)}` });
+    },
+    /**
+     * Issue a temporary access pass: a time-limited code the user signs in with
+     * (`strategy: "temporary_access_pass"`), which counts as MFA for that sign-in and makes them register a
+     * passkey or second factor. The `code` is returned once.
+     */
+    createTemporaryAccess(id: string, body: CreateTemporaryAccessBody = {}): Promise<TemporaryAccessPass & { code: string }> {
+      return temporaryAccessResource(request).create(id, body);
     },
     create(body: CreateUserBody, idempotencyKey?: string): Promise<User> {
       return request({ method: 'POST', path: '/v1/users', body, idempotencyKey });
@@ -256,13 +300,21 @@ export function usersResource(request: RequestFn) {
     replaceMetadata(id: string, body: ReplaceUserMetadataBody): Promise<User> {
       return request({ method: 'PUT', path: `/v1/users/${enc(id)}/metadata`, body });
     },
-    ban(id: string): Promise<User> {
-      return request({ method: 'POST', path: `/v1/users/${enc(id)}/ban` });
+    /**
+     * `POST /v1/users/:id/ban` — ban and revoke every session. Permanent unless
+     * `expires_in_seconds` or `expires_at` (Unix ms) is sent: a timed ban lifts
+     * itself (`user.unbanned` is sent when it does).
+     */
+    ban(
+      id: string,
+      body: { reason?: string; note?: string; expires_in_seconds?: number; expires_at?: number } = {},
+    ): Promise<User> {
+      return request({ method: 'POST', path: `/v1/users/${enc(id)}/ban`, body });
     },
     unban(id: string): Promise<User> {
       return request({ method: 'POST', path: `/v1/users/${enc(id)}/unban` });
     },
-    lock(id: string, body: { duration_in_seconds?: number } = {}): Promise<User> {
+    lock(id: string, body: { duration_in_seconds?: number; reason?: string } = {}): Promise<User> {
       return request({ method: 'POST', path: `/v1/users/${enc(id)}/lock`, body });
     },
     unlock(id: string): Promise<User> {
@@ -477,6 +529,14 @@ export function usersResource(request: RequestFn) {
     deleteProfileImage(id: string): Promise<User> {
       return request({ method: 'DELETE', path: `/v1/users/${enc(id)}/profile_image` });
     },
+    /** `GET /v1/users/:id/device_keys` — the user's device keys (native biometric sign-in). */
+    listDeviceKeys(id: string): Promise<{ object: 'list'; data: DeviceKey[] }> {
+      return request({ method: 'GET', path: `/v1/users/${enc(id)}/device_keys` });
+    },
+    /** `DELETE /v1/users/:id/device_keys/:keyId` — revoke one device key. */
+    deleteDeviceKey(id: string, keyId: string): Promise<{ object: 'device_key'; id: string; deleted: true }> {
+      return request({ method: 'DELETE', path: `/v1/users/${enc(id)}/device_keys/${enc(keyId)}` });
+    },
     /** `DELETE /v1/users/:id/passkeys/:passkeyId` — remove one of the user's passkeys. */
     deletePasskey(
       id: string,
@@ -532,6 +592,121 @@ export function usersResource(request: RequestFn) {
      */
     erasureExport(id: string): Promise<UserErasureExport> {
       return request({ method: 'GET', path: `/v1/users/${enc(id)}/erasure_export` });
+    },
+    /**
+     * `POST /v1/users/:id/links` — mint an email-verification or password-reset
+     * link (and code) for a user WITHOUT sending it, for tools that deliver it
+     * themselves. The response is a credential: single-use, `expires_in_seconds`
+     * 60 to 86400 (default 3600), audited without the secret.
+     */
+    createLink(id: string, body: UserLinkBody, idempotencyKey?: string): Promise<UserLink> {
+      return request({ method: 'POST', path: `/v1/users/${enc(id)}/links`, body, idempotencyKey });
+    },
+    /**
+     * Advanced search: a boolean filter tree (and / or / not) over profile
+     * columns, traits and metadata, roles, MFA, last country and dates; plus
+     * export and saved views.
+     */
+    search: {
+      /** `POST /v1/users/search` */
+      query(body: UserSearchBody): Promise<CursorPage<User> & { total_count?: number }> {
+        return request({ method: 'POST', path: '/v1/users/search', body });
+      },
+      /** `POST /v1/users/search/export` — the matching users (up to 10,000) as CSV or NDJSON text. */
+      export(body: UserSearchExportBody): Promise<string> {
+        return request({ method: 'POST', path: '/v1/users/search/export', body, raw: true });
+      },
+      views: {
+        list(): Promise<{ object: 'list'; data: UserSearchView[]; has_more: boolean }> {
+          return request({ method: 'GET', path: '/v1/users/search/views' });
+        },
+        create(body: UserSearchViewBody & { name: string }, idempotencyKey?: string): Promise<UserSearchView> {
+          return request({ method: 'POST', path: '/v1/users/search/views', body, idempotencyKey });
+        },
+        update(id: string, body: UserSearchViewBody): Promise<UserSearchView> {
+          return request({ method: 'PATCH', path: `/v1/users/search/views/${enc(id)}`, body });
+        },
+        delete(id: string): Promise<{ object: 'user_search_view'; id: string; deleted: true }> {
+          return request({ method: 'DELETE', path: `/v1/users/search/views/${enc(id)}` });
+        },
+      },
+    },
+
+    /**
+     * Required actions: make a user owe a step at their next sign-in (any
+     * method). The sign-in holds until the user finishes it, except a `custom`
+     * step, which you close with `clear` once they have completed it in your app.
+     */
+    requiredActions: {
+      /** `POST /v1/users/:id/required_actions` — 201 when newly opened, 200 when it already was. */
+      request(id: string, body: RequiredActionBody, idempotencyKey?: string): Promise<RequiredAction> {
+        return request({ method: 'POST', path: `/v1/users/${enc(id)}/required_actions`, body, idempotencyKey });
+      },
+      /** `GET /v1/users/:id/required_actions` — what the user owes. */
+      list(id: string): Promise<{ object: 'list'; data: RequiredAction[]; has_more: boolean }> {
+        return request({ method: 'GET', path: `/v1/users/${enc(id)}/required_actions` });
+      },
+      /** `DELETE /v1/users/:id/required_actions/:requiredActionId` — withdraw it (or close a `custom` step). */
+      clear(id: string, requiredActionId: string, idempotencyKey?: string): Promise<{ object: 'required_action'; id: string; deleted: true }> {
+        return request({ method: 'DELETE', path: `/v1/users/${enc(id)}/required_actions/${enc(requiredActionId)}`, idempotencyKey });
+      },
+      /** `POST /v1/required_actions/bulk` — the same action for an organization's members or a list of user ids (max 5000). */
+      bulk(body: RequiredActionBody & ({ organization_id: string } | { user_ids: string[] }), idempotencyKey?: string): Promise<RequiredActionBulkResult> {
+        return request({ method: 'POST', path: '/v1/required_actions/bulk', body, idempotencyKey });
+      },
+    },
+    /** Notes an operator keeps on a user (never shown to the user). */
+    notes: {
+      /** `GET /v1/users/:id/notes` — pinned first, then newest. */
+      list(id: string): Promise<{ object: 'list'; data: UserNote[]; has_more: boolean; total_count: number }> {
+        return request({ method: 'GET', path: `/v1/users/${enc(id)}/notes` });
+      },
+      /** `POST /v1/users/:id/notes` */
+      create(id: string, body: { body: string; pinned?: boolean }, idempotencyKey?: string): Promise<UserNote> {
+        return request({ method: 'POST', path: `/v1/users/${enc(id)}/notes`, body, idempotencyKey });
+      },
+      /** `PATCH /v1/users/:id/notes/:noteId` */
+      update(id: string, noteId: string, body: { body?: string; pinned?: boolean }, idempotencyKey?: string): Promise<UserNote> {
+        return request({ method: 'PATCH', path: `/v1/users/${enc(id)}/notes/${enc(noteId)}`, body, idempotencyKey });
+      },
+      /** `DELETE /v1/users/:id/notes/:noteId` */
+      delete(id: string, noteId: string, idempotencyKey?: string): Promise<{ object: 'user_note'; id: string; deleted: true }> {
+        return request({ method: 'DELETE', path: `/v1/users/${enc(id)}/notes/${enc(noteId)}`, idempotencyKey });
+      },
+    },
+    /**
+     * `GET /v1/users/:id/history` — every recorded profile, metadata and status
+     * change, newest first, with values before and after.
+     */
+    history(id: string, params: { limit?: number; starting_after?: string; action?: string[] } = {}): Promise<UserHistoryPage> {
+      const q = new URLSearchParams();
+      if (params.limit !== undefined) q.set('limit', String(params.limit));
+      if (params.starting_after) q.set('starting_after', params.starting_after);
+      if (params.action?.length) q.set('action', params.action.join(','));
+      const qs = q.toString();
+      return request({ method: 'GET', path: `/v1/users/${enc(id)}/history${qs ? `?${qs}` : ''}` });
+    },
+    /** Family accounts: a minor's parental-consent state, and their guardians. */
+    minorStatus(id: string): Promise<MinorStatus> {
+      return request({ method: 'GET', path: `/v1/users/${enc(id)}/minor_status` });
+    },
+    /** Re-assess a user from their date-of-birth trait (for users created before age gating). */
+    assessMinor(id: string): Promise<MinorStatus> {
+      return request({ method: 'POST', path: `/v1/users/${enc(id)}/minor_status/assess` });
+    },
+    guardians: {
+      /** `POST /v1/users/:id/guardians` — a pending link with a one-time `consent_url`; `send_email` mails it. */
+      request(id: string, body: { email?: string; guardian_user_id?: string; relationship?: string; send_email?: boolean }, idempotencyKey?: string): Promise<GuardianLink & { consent_url: string; emailed: boolean }> {
+        return request({ method: 'POST', path: `/v1/users/${enc(id)}/guardians`, body, idempotencyKey });
+      },
+      /** Record consent obtained another way (a signed form, a call). */
+      approve(id: string, linkId: string, body: { note?: string } = {}): Promise<GuardianLink> {
+        return request({ method: 'POST', path: `/v1/users/${enc(id)}/guardians/${enc(linkId)}/approve`, body });
+      },
+      /** Withdraw a guardian link. */
+      revoke(id: string, linkId: string): Promise<GuardianLink> {
+        return request({ method: 'DELETE', path: `/v1/users/${enc(id)}/guardians/${enc(linkId)}` });
+      },
     },
     /** Graceful deletion with a cancellation window (`DELETE /v1/users/:id` stays the immediate path). */
     deletion: {
@@ -820,6 +995,14 @@ export interface RecordUserConsentBody {
   status?: 'accepted' | 'withdrawn';
   source?: string;
   metadata?: Record<string, unknown>;
+  /** Policy acceptance evidence: the exact version (must be that version of that policy). */
+  policy_version_id?: string;
+  /** Must equal the version's `content_sha256` when given. */
+  content_sha256?: string;
+  display?: 'checkbox' | 'scroll' | 'link';
+  scrolled_to_end?: boolean;
+  view_ms?: number;
+  locale?: string;
 }
 
 export interface UserConsent {
@@ -830,6 +1013,13 @@ export interface UserConsent {
   status: 'accepted' | 'withdrawn' | (string & {});
   source: string | null;
   metadata?: unknown;
+  /** Policy acceptance evidence (null on records made outside a policy flow). */
+  policy_version_id?: string | null;
+  content_sha256?: string | null;
+  display?: 'checkbox' | 'scroll' | 'link' | null;
+  scrolled_to_end?: boolean | null;
+  view_ms?: number | null;
+  locale?: string | null;
   created_at: number;
 }
 
@@ -905,6 +1095,17 @@ export interface UserProgressionEvent {
 }
 
 /** One sign-in identity on a user: the base Atlas anchor, or a linked provider. */
+/** A device-bound biometric sign-in key (public metadata only). */
+export interface DeviceKey {
+  object: 'device_key';
+  id: string;
+  label: string | null;
+  platform: string | null;
+  biometric_bound: boolean;
+  last_used_at: number | null;
+  created_at: number;
+}
+
 export interface Identity {
   object: 'identity';
   id: string;
@@ -936,4 +1137,155 @@ export interface OAuthAccessToken {
   expires_at: number | null;
   scopes: string[];
   refreshed: boolean;
+}
+
+export type UserSearchOp = 'eq' | 'ne' | 'in' | 'nin' | 'contains' | 'starts_with' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'exists';
+
+/** A condition `{ field, op, value }` or a group `{ and }` / `{ or }` / `{ not }`. */
+export type UserSearchFilter =
+  | { field: string; op: UserSearchOp; value?: unknown }
+  | { and: UserSearchFilter[] }
+  | { or: UserSearchFilter[] }
+  | { not: UserSearchFilter };
+
+export interface UserSearchBody {
+  filter?: UserSearchFilter;
+  /** Free text over id, names, username, emails and phones, ANDed with the filter. */
+  query?: string;
+  order_by?: string;
+  limit?: number;
+  starting_after?: string;
+  offset?: number;
+  include_total_count?: boolean;
+  include_deleted?: boolean;
+}
+
+export interface UserSearchExportBody extends Omit<UserSearchBody, 'limit' | 'starting_after' | 'offset' | 'include_total_count'> {
+  format?: 'csv' | 'ndjson';
+  fields?: string[];
+}
+
+export interface UserSearchViewBody {
+  name?: string;
+  filter?: UserSearchFilter;
+  order_by?: string | null;
+}
+
+export interface UserSearchView {
+  object: 'user_search_view';
+  id: string;
+  name: string;
+  filter: UserSearchFilter;
+  order_by: string | null;
+  created_by: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export type RequiredActionName = 'update_password' | 'verify_email' | 'accept_policy' | 'configure_mfa' | 'update_profile' | 'identity_verification' | 'custom';
+
+export interface RequiredActionBody {
+  action: RequiredActionName;
+  /** `custom` only: the https URL the user is sent to. */
+  url?: string;
+  reason?: string;
+}
+
+export interface RequiredAction {
+  object: 'required_action';
+  id: string;
+  user_id: string;
+  action: RequiredActionName;
+  url: string | null;
+  reason: string | null;
+  created_by: string | null;
+  created_at: number;
+}
+
+export interface RequiredActionBulkResult {
+  object: 'required_action_bulk_result';
+  action: RequiredActionName;
+  matched: number;
+  created: number;
+  already_open: number;
+  skipped: number;
+}
+
+export interface UserLinkBody {
+  type: 'password_reset' | 'email_verification';
+  /** One of the user's addresses; default the primary. */
+  email_address_id?: string;
+  expires_in_seconds?: number;
+}
+
+export interface UserLink {
+  object: 'user_link';
+  type: 'password_reset' | 'email_verification';
+  user_id: string;
+  email_address_id: string;
+  email_address: string;
+  /** Present when the instance delivers this proof as a link. */
+  url?: string;
+  /** Present when the instance delivers this proof as a code. */
+  code?: string;
+  /** Password reset only: the reset attempt the link and code belong to. */
+  attempt_id?: string;
+  expires_at: number;
+}
+
+export interface UserNote {
+  object: 'user_note';
+  id: string;
+  user_id: string;
+  body: string;
+  pinned: boolean;
+  author: { type: 'api_key' | 'dashboard_user'; id: string | null };
+  created_at: number;
+  updated_at: number;
+}
+
+export interface UserHistoryEntry {
+  object: 'user_history_entry';
+  id: string;
+  user_id: string;
+  action: string;
+  actor: { type: 'api_key' | 'dashboard_user' | 'user' | 'system'; id: string | null };
+  /** Each changed field; a password or private_metadata value carries `redacted: true` and no values. */
+  changes: Array<{ field: string; before?: unknown; after?: unknown; redacted?: boolean }>;
+  reason: string | null;
+  expires_at: number | null;
+  created_at: number;
+}
+
+export interface UserHistoryPage {
+  object: 'list';
+  data: UserHistoryEntry[];
+  has_more: boolean;
+  next_cursor: string | null;
+}
+
+export interface GuardianLink {
+  object: 'guardian_link';
+  id: string;
+  child_user_id: string;
+  guardian_user_id: string | null;
+  guardian_email: string | null;
+  relationship: string | null;
+  status: 'pending' | 'active' | 'declined' | 'revoked' | 'expired';
+  expires_at: number | null;
+  consent_method: 'email_link' | 'admin' | null;
+  consented_at: number | null;
+  created_at: number;
+}
+
+export interface MinorStatus {
+  object: 'minor_status';
+  /** not_required for anyone at or above the age of digital consent. */
+  status: 'not_required' | 'consent_required' | 'consented' | 'declined';
+  birthdate?: string;
+  age_at_assessment?: number;
+  consent_age?: number;
+  jurisdiction?: string | null;
+  consented_at?: number | null;
+  guardians: GuardianLink[];
 }

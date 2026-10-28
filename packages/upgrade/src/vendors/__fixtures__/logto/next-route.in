@@ -1,0 +1,6 @@
+import LogtoClient from '@logto/next';
+import { logtoConfig } from '../../../logto';
+
+const client = new LogtoClient(logtoConfig);
+
+export const GET = client.handleAuthRoutes();

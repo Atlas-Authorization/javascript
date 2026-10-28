@@ -1,0 +1,6 @@
+// TODO(atlas-migrate): LoginCallback: Atlas completes the sign-in callback itself; delete the /login/callback route (and the redirectUri that points at it)
+import { LoginCallback } from '@okta/okta-react';
+
+export default function Callback() {
+  return <LoginCallback loadingElement={<p>Signing you in…</p>} />;
+}

@@ -5,6 +5,7 @@ import { CliError } from '../errors';
 import { printJson } from '../output';
 import { httpFor } from '../project';
 import { maskSecret, resolveAuth, wantsJson } from './shared';
+import { deviceLogin } from './operator';
 
 /**
  * `atlas login` — prompt for an API URL + a secret key, PROVE the key works
@@ -18,6 +19,8 @@ import { maskSecret, resolveAuth, wantsJson } from './shared';
  */
 export async function login(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const { values } = args;
+  // `--device`: operator sign-in through Atlas's own sign-in page (no key stored).
+  if (values.device === true) return deviceLogin(ctx, args);
   const profile = str(values, 'profile') || 'default';
 
   const apiUrl =
@@ -31,7 +34,7 @@ export async function login(ctx: RunContext, args: ParsedArgs): Promise<number> 
   // Prove the credential before persisting it. A platform key (psk_, for
   // `atlas init`) is proven against the platform API instead.
   try {
-    if (secretKey.startsWith('psk_')) await httpFor(ctx, { secretKey, apiUrl }).get('/v1/platform/apps');
+    if (secretKey.startsWith('psk_') || /^atlas_(live|test)_psk_/.test(secretKey)) await httpFor(ctx, { secretKey, apiUrl }).get('/v1/platform/apps');
     else await ctx.makeClient({ secretKey, apiUrl }).users.list({ limit: 1 });
   } catch (err) {
     if (err instanceof AtlasApiError) {

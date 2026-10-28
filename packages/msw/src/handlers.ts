@@ -75,7 +75,8 @@ function requireSecretKey(mock: AtlasMock, request: Request): Response | null {
     );
   }
   const presented = header.slice('Bearer '.length).trim();
-  if (!presented.startsWith('sk_') || presented !== mock.instance.secretKey) {
+  // Either secret-key format: `sk_…` or `atlas_<env>_sk_…`.
+  if (!/^(sk_|atlas_(live|test)_sk_)/.test(presented) || presented !== mock.instance.secretKey) {
     return HttpResponse.json(
       errorBody('INVALID_KEY', 'The API key is invalid or has been revoked.'),
       { status: 401 },

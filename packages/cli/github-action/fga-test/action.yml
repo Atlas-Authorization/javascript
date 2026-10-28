@@ -1,0 +1,43 @@
+name: Atlas FGA tests
+description: Run OpenFGA-style test files (.fga.yaml) against the Atlas authorization engine and fail the job on any failing assertion.
+inputs:
+  files:
+    description: Test files, one per line or space separated (globs allowed).
+    required: true
+  api-url:
+    description: Atlas Backend API origin.
+    required: true
+  secret-key:
+    description: A secret key with the fga:read scope.
+    required: true
+  store:
+    description: Optional store id; its latest model is used when a file has no model of its own.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - shell: bash
+      env:
+        ATLAS_API_URL: ${{ inputs.api-url }}
+        ATLAS_SECRET_KEY: ${{ inputs.secret-key }}
+        FILES: ${{ inputs.files }}
+        STORE: ${{ inputs.store }}
+      run: |
+        status=0
+        shopt -s globstar nullglob
+        for pattern in $FILES; do
+          for f in $pattern; do
+            echo "::group::$f"
+            if [ -n "$STORE" ]; then
+              npx --yes @atlasauth/cli fga test "$f" --store "$STORE" || status=1
+            else
+              npx --yes @atlasauth/cli fga test "$f" || status=1
+            fi
+            echo "::endgroup::"
+          done
+        done
+        exit $status

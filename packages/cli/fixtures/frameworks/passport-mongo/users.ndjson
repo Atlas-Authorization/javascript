@@ -1,0 +1,2 @@
+{"_id":{"$oid":"64b000000000000000000001"},"username":"ada@example.com","email":"ada@example.com","salt":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","hash":"d209d7869b6e7deb","googleId":"110248495921238986420","createdAt":{"$date":"2024-05-06T07:08:09.000Z"}}
+{"_id":{"$oid":"64b000000000000000000002"},"email":"grace@example.com","password":"$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy","verified":true}

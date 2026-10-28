@@ -1,0 +1,7 @@
+// TODO(atlas-migrate): LogtoClient (@logto/next): replace handleAuthRoutes / withLogtoApiRoute / withLogtoSsr with the Atlas middleware (createAtlasMiddleware from @atlasauth/nextjs) and auth() / currentUser() from @atlasauth/nextjs/server; delete the /api/logto route
+import LogtoClient from '@logto/next';
+import { logtoConfig } from '../../../logto';
+
+const client = new LogtoClient(logtoConfig);
+
+export const GET = client.handleAuthRoutes();

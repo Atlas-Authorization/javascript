@@ -1,0 +1,31 @@
+// TODO(atlas-migrate): useSignInEmailPassword(): credentials are collected on the Atlas sign-in page now: render <SignIn /> (or send users to /sign-in)
+import { NhostClient, useSignInEmailPassword } from '@nhost/react';
+
+import { AtlasProvider } from '@atlasauth/react';
+
+import {
+  useNhostAuthenticationStatusCompat,
+  useNhostUserDataCompat,
+  useNhostSignOutCompat,
+} from '@atlasauth/react/compat';
+
+const nhost = new NhostClient({ subdomain: 'abc', region: 'eu-central-1' });
+
+function Header() {
+  const { isAuthenticated, isLoading } = useNhostAuthenticationStatusCompat();
+  const user = useNhostUserDataCompat();
+  const { signOut } = useNhostSignOutCompat();
+  const { signInEmailPassword } = useSignInEmailPassword();
+  if (isLoading) return null;
+  return isAuthenticated ? <button onClick={signOut}>{user?.displayName}</button> : <button onClick={() => signInEmailPassword('a', 'b')}>Sign in</button>;
+}
+
+export function App() {
+  return (
+    <AtlasProvider
+      publishableKey={process.env.NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY!}
+      frontendApi={process.env.NEXT_PUBLIC_ATLAS_FRONTEND_API!}>
+      <Header />
+    </AtlasProvider>
+  );
+}

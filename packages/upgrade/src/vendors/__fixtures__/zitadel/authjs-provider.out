@@ -1,0 +1,7 @@
+import NextAuth from 'next-auth';
+// TODO(atlas-migrate): ZITADEL sign-in is Atlas sign-in: remove the ZITADEL provider here, and migrate the rest of Auth.js with `atlas migrate code --from authjs`
+import Zitadel from 'next-auth/providers/zitadel';
+
+export const { handlers, auth } = NextAuth({
+  providers: [Zitadel({ issuer: process.env.ATLAS_ISSUER, clientId: '259394780999843073' })],
+});

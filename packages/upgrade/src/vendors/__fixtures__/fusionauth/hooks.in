@@ -1,0 +1,6 @@
+import { useFusionAuth, FusionAuthLoginButton } from '@fusionauth/react-sdk';
+
+export function Header() {
+  const { isAuthenticated } = useFusionAuth();
+  return isAuthenticated ? <span>Hi</span> : <FusionAuthLoginButton />;
+}

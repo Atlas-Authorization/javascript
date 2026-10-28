@@ -1,0 +1,14 @@
+import { createRoot } from 'react-dom/client';
+import { LogtoProvider } from '@logto/react';
+import { App } from './App';
+
+const config = {
+  endpoint: import.meta.env.VITE_LOGTO_ENDPOINT,
+  appId: import.meta.env.VITE_LOGTO_APP_ID,
+};
+
+createRoot(document.getElementById('root')!).render(
+  <LogtoProvider config={config}>
+    <App />
+  </LogtoProvider>,
+);

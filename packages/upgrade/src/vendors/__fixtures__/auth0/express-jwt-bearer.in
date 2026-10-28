@@ -1,0 +1,16 @@
+import express from 'express';
+import { auth, requiredScopes } from 'express-oauth2-jwt-bearer';
+
+const app = express();
+
+app.use(
+  auth({
+    issuerBaseURL: 'https://acme.us.auth0.com/',
+    audience: 'https://api.acme.test',
+    tokenSigningAlg: 'RS256',
+  }),
+);
+
+app.get('/api/orders', requiredScopes('read:orders'), (req, res) => {
+  res.json({ sub: req.auth?.payload.sub });
+});

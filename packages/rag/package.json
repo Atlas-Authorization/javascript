@@ -1,0 +1,21 @@
+{
+  "name": "@atlasauth/rag",
+  "version": "0.1.0",
+  "description": "Authorization-filtered retrieval for RAG: restrict a vector query to the documents a user may see, using Atlas FGA (list-objects / batch-check) or an Atlas ABAC filter.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
+    "test": "vitest run"
+  },
+  "keywords": ["atlas", "atlasauth", "rag", "authorization", "fga", "retrieval", "llm"],
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "CHANGELOG.md"]
+}

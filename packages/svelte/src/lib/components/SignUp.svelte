@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
+  import { awaitingPasskey, passkeysSupported } from '@atlasauth/js';
   import { signUp } from '../accessors';
   import AttemptFlow from './AttemptFlow.svelte';
+  import PasskeySignUpStep from './PasskeySignUpStep.svelte';
   import SignUpForm from './SignUpForm.svelte';
 
   /**
@@ -18,13 +20,27 @@
   const flowState = flow.state;
   const settings = flow.settings;
   onDestroy(() => flow.destroy());
+  onMount(() => {
+    void flow.loadPolicies();
+  });
 
   // Takes the stores as arguments so Svelte re-runs it when either changes.
   const drawn = (..._deps: unknown[]) => (flow.signUpCaptcha.needed ? flow.signUpCaptcha : null);
   $: captcha = drawn($settings, $flowState);
+
+  // Passkey-only sign-up, when the instance offers it and the browser can.
+  let mode: 'password' | 'passkey' = 'password';
+  $: offer = $settings?.account.passkeySignUp ?? null;
+  $: canPasskey = !!offer && passkeysSupported();
+  $: usingPasskey = mode === 'passkey' && canPasskey;
+  function switchMode() {
+    mode = usingPasskey ? 'password' : 'passkey';
+  }
 </script>
 
-{#if $flowState.attempt}
+{#if $flowState.attempt && awaitingPasskey($flowState.attempt)}
+  <PasskeySignUpStep busy={$flowState.busy} errors={$flowState.errors} onCreate={flow.createPasskey} />
+{:else if $flowState.attempt}
   <AttemptFlow
     attempt={$flowState.attempt}
     busy={$flowState.busy}
@@ -32,6 +48,8 @@
     sessionKept={$flowState.sessionKept}
     titleKey="signUp.title"
     onSubmit={flow.submit}
+    emailVerification={$settings?.account.emailVerification ?? 'code'}
+    onResend={flow.resendSignUp}
   />
 {:else}
   <SignUpForm
@@ -39,6 +57,9 @@
     busy={$flowState.busy}
     errors={$flowState.errors}
     {captcha}
-    onSubmit={flow.create}
+    policies={flow.policies}
+    onSubmit={usingPasskey ? flow.createWithPasskey : flow.create}
+    passkey={usingPasskey && offer ? { email: offer.email } : null}
+    onSwitchMode={canPasskey ? switchMode : undefined}
   />
 {/if}

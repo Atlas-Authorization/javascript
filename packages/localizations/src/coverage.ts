@@ -5,6 +5,21 @@ import { frFR } from './fr-FR';
 import { jaJP } from './ja-JP';
 import { nlNL } from './nl-NL';
 import { ptBR } from './pt-BR';
+import { arSA } from './ar-SA';
+import { heIL } from './he-IL';
+import { faIR } from './fa-IR';
+import { hiIN } from './hi-IN';
+import { zhCN } from './zh-CN';
+import { zhTW } from './zh-TW';
+import { koKR } from './ko-KR';
+import { itIT } from './it-IT';
+import { plPL } from './pl-PL';
+import { trTR } from './tr-TR';
+import { ruRU } from './ru-RU';
+import { svSE } from './sv-SE';
+import { idID } from './id-ID';
+import { viVN } from './vi-VN';
+import { thTH } from './th-TH';
 import type { Localization, LocalizationResource } from './types';
 
 /**
@@ -47,7 +62,7 @@ export function missingKeys(catalog: CatalogLike, reference: CatalogLike = enUS)
 }
 
 /** The canonical tag of every bundle this package ships. */
-export type CanonicalLocale = 'en-US' | 'es-ES' | 'fr-FR' | 'de-DE' | 'pt-BR' | 'ja-JP' | 'nl-NL';
+export type CanonicalLocale = 'en-US' | 'es-ES' | 'fr-FR' | 'de-DE' | 'pt-BR' | 'ja-JP' | 'nl-NL' | 'ar-SA' | 'he-IL' | 'fa-IR' | 'hi-IN' | 'zh-CN' | 'zh-TW' | 'ko-KR' | 'it-IT' | 'pl-PL' | 'tr-TR' | 'ru-RU' | 'sv-SE' | 'id-ID' | 'vi-VN' | 'th-TH';
 
 /**
  * Tags `resolveLocale` accepts, listed for autocompletion: every canonical tag
@@ -70,7 +85,37 @@ export type SupportedLocale =
   | 'ja'
   | 'ja-JP'
   | 'nl'
-  | 'nl-NL';
+  | 'nl-NL'
+  | 'ar'
+  | 'ar-SA'
+  | 'he'
+  | 'he-IL'
+  | 'fa'
+  | 'fa-IR'
+  | 'hi'
+  | 'hi-IN'
+  | 'zh'
+  | 'zh-CN'
+  | 'zh-Hant'
+  | 'zh-TW'
+  | 'ko'
+  | 'ko-KR'
+  | 'it'
+  | 'it-IT'
+  | 'pl'
+  | 'pl-PL'
+  | 'tr'
+  | 'tr-TR'
+  | 'ru'
+  | 'ru-RU'
+  | 'sv'
+  | 'sv-SE'
+  | 'id'
+  | 'id-ID'
+  | 'vi'
+  | 'vi-VN'
+  | 'th'
+  | 'th-TH';
 
 /**
  * Every shipped bundle, keyed by canonical tag. `en-US`, `es-ES`, `fr-FR`,
@@ -85,6 +130,21 @@ export const LOCALES: Readonly<Record<CanonicalLocale, Localization>> = Object.f
   'pt-BR': ptBR,
   'ja-JP': jaJP,
   'nl-NL': nlNL,
+  'ar-SA': arSA,
+  'he-IL': heIL,
+  'fa-IR': faIR,
+  'hi-IN': hiIN,
+  'zh-CN': zhCN,
+  'zh-TW': zhTW,
+  'ko-KR': koKR,
+  'it-IT': itIT,
+  'pl-PL': plPL,
+  'tr-TR': trTR,
+  'ru-RU': ruRU,
+  'sv-SE': svSE,
+  'id-ID': idID,
+  'vi-VN': viVN,
+  'th-TH': thTH,
 });
 
 /**
@@ -117,6 +177,41 @@ const TAGS: ReadonlyMap<string, Localization> = new Map<string, Localization>([
   ['nl', nlNL],
   ['nl-nl', nlNL],
   ['nl-be', nlNL],
+  ['ar', arSA],
+  ['ar-sa', arSA],
+  ['he', heIL],
+  ['iw', heIL],
+  ['he-il', heIL],
+  ['fa', faIR],
+  ['fa-ir', faIR],
+  ['hi', hiIN],
+  ['hi-in', hiIN],
+  ['zh', zhCN],
+  ['zh-cn', zhCN],
+  ['ko', koKR],
+  ['ko-kr', koKR],
+  ['it', itIT],
+  ['it-it', itIT],
+  ['pl', plPL],
+  ['pl-pl', plPL],
+  ['tr', trTR],
+  ['tr-tr', trTR],
+  ['ru', ruRU],
+  ['ru-ru', ruRU],
+  ['sv', svSE],
+  ['sv-se', svSE],
+  ['id', idID],
+  ['id-id', idID],
+  ['vi', viVN],
+  ['vi-vn', viVN],
+  ['th', thTH],
+  ['th-th', thTH],
+  ['zh-hant', zhTW],
+  ['zh-tw', zhTW],
+  ['zh-hk', zhTW],
+  ['zh-mo', zhTW],
+  ['zh-hans', zhCN],
+  ['zh-sg', zhCN],
 ]);
 
 /**
@@ -132,4 +227,16 @@ export function resolveLocale(tag: SupportedLocale | (string & {})): Localizatio
   const normalized = tag.trim().replace(/_/g, '-').toLowerCase();
   if (normalized === '') return undefined;
   return TAGS.get(normalized) ?? TAGS.get(normalized.split('-')[0]!);
+}
+
+const RTL_LANGUAGES: ReadonlySet<string> = new Set(['ar', 'he', 'iw', 'fa', 'ur', 'ps', 'sd', 'yi', 'dv', 'ku']);
+
+/**
+ * The text direction for a BCP-47 tag: `'rtl'` for Arabic, Hebrew, Persian and
+ * the other right-to-left languages, else `'ltr'`. Set it as `dir` on the
+ * element that hosts Atlas components (`<AtlasProvider>` does this itself).
+ */
+export function localeDirection(tag: string | null | undefined): 'ltr' | 'rtl' {
+  const lang = (tag ?? '').trim().replace(/_/g, '-').split('-')[0]!.toLowerCase();
+  return RTL_LANGUAGES.has(lang) ? 'rtl' : 'ltr';
 }

@@ -1,0 +1,30 @@
+import { Issuer, generators } from 'openid-client';
+
+const issuer = await Issuer.discover(process.env.OIDC_ISSUER!);
+const client = new issuer.Client({
+  client_id: process.env.OIDC_CLIENT_ID!,
+  client_secret: process.env.OIDC_CLIENT_SECRET!,
+  redirect_uris: ['https://app.example.com/callback'],
+  response_types: ['code'],
+});
+
+export function start(req, res) {
+  const state = generators.state();
+  const nonce = generators.nonce();
+  const codeVerifier = generators.codeVerifier();
+  const url = client.authorizationUrl({
+    scope: 'openid email profile',
+    state,
+    nonce,
+    code_challenge: generators.codeChallenge(codeVerifier),
+    code_challenge_method: 'S256',
+  });
+  res.redirect(url);
+}
+
+export async function finish(req, res) {
+  const params = client.callbackParams(req);
+  const tokenSet = await client.callback('https://app.example.com/callback', params, { state: req.session.state, nonce: req.session.nonce });
+  req.session.user = tokenSet.claims().sub;
+  res.redirect(client.endSessionUrl({ id_token_hint: tokenSet.id_token }));
+}

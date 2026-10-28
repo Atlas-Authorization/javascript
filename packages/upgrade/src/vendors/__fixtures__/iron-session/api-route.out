@@ -1,0 +1,8 @@
+import { withIronSessionApiRoute } from 'iron-session/next';
+import { sessionOptions } from '@/lib/session';
+
+// TODO(atlas-migrate): withIronSessionApiRoute(): unwrap the handler and read the user from the Atlas session instead: auth() from @atlasauth/nextjs/server once it moves to the App Router, or new AtlasBackend({ jwksUrl, issuer }).authenticateRequest(req) from @atlasauth/backend
+export default withIronSessionApiRoute(async function userRoute(req, res) {
+  // TODO(atlas-migrate): req.session (iron-session): the signed-in user comes from the Atlas session now (auth() / currentUser() from @atlasauth/nextjs/server, or new AtlasBackend({ jwksUrl, issuer }).authenticateRequest(req) from @atlasauth/backend); keep other data in Atlas user metadata or your database
+  res.json({ user: req.session.user ?? null });
+}, sessionOptions);

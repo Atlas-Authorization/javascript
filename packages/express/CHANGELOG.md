@@ -1,5 +1,31 @@
 # @atlasauth/express changelog
 
+## Unreleased
+
+## 0.6.0 — 2026-10-25
+
+### Added
+
+- `migrationBridge` option and `migrationBridge()` middleware: the Better Auth session bridge for any vendor (`source: 'auth0' | 'clerk' | 'cognito' | …`), reading the vendor's session cookie or token per its preset (or `cookieNames` / `extractToken`).
+
+## 0.5.0 — 2026-10-24
+
+### Added
+
+- `betterAuthBridge` option: during a migration from Better Auth, turns each user's Better Auth session into an Atlas session on their next request (once), clears the old cookie, and sends users who still owe a second factor to sign-in. With `secretKey`, exchanges run server to server at a per-app limit suited to a bulk cutover.
+
+## 0.4.0 — 2026-10-24
+
+### Added
+
+- `requireAccessToken` sets the `DPoP-Nonce` response header (on success and refusal) when the verifier is given `dpopNonces`.
+
+## 0.3.0 — 2026-10-23
+
+### Added
+
+- `requireAccessToken(options)`: middleware gating a route on an Atlas-issued OAuth access token for your API (audience, scopes, DPoP); sets `req.atlasToken`, answers failures with the `WWW-Authenticate` challenge. Re-exports `createAccessTokenVerifier`, `protectedResourceMetadata`, `protectedResourceMetadataPath`.
+
 ## 0.2.0
 
 ### Changed

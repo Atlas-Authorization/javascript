@@ -1,0 +1,7 @@
+import { CognitoJwtVerifier } from 'aws-jwt-verify';
+
+const verifier = CognitoJwtVerifier.create({ userPoolId: 'us-east-1_abc', tokenUse: 'id', clientId: 'client' });
+
+export async function verify(token: string) {
+  return verifier.verify(token);
+}

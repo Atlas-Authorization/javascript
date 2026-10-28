@@ -140,6 +140,8 @@ describe('sign-in / sign-up helpers', () => {
       fields: { company: 'Acme' },
       consent: true,
       captcha_token: 'tok-1',
+      // The stable device id rides on every sign-up start (accounts-per-device limit).
+      device_id: expect.stringMatching(/^d_/),
     });
     expect(next.errors).toEqual([{ code: 'CAPTCHA_FAILED', message: '[captcha.failed]' }]);
     await vi.waitFor(() => expect(ts.api.render).toHaveBeenCalledTimes(2));
@@ -167,6 +169,7 @@ describe('sign-in / sign-up helpers', () => {
       signUpFields: [],
       legal: { termsUrl: null, privacyUrl: null, required: false },
       emailDelivery: { available: true, passwordReset: true, passwordSignUp: true },
+      account: { username: null, lastSignInMethod: false, emailVerification: 'code', passwordReset: 'code', emailSecondFactor: false, passkeySignUp: null },
     });
     const { client } = scripted(() => ({
       body: {

@@ -1,15 +1,21 @@
 <script lang="ts">
   import {
+    confirmPolicies,
     localizedErrorMessage,
+    policyTranslator,
     type CaptchaController,
     type FieldError,
     type InstanceSettings,
+    type PolicyAcceptanceController,
     type PublicSignUpField,
   } from '@atlasauth/js';
+  import { onDestroy } from 'svelte';
   import { useAtlas } from '../context';
   import { classFor, type ElementKey } from '../appearance';
   import { translate } from '../i18n';
   import CaptchaSlot from './CaptchaSlot.svelte';
+  import PolicyClickwrap from './PolicyClickwrap.svelte';
+  import PolicyConsent from './PolicyConsent.svelte';
 
   /**
    * The create-account step of `<SignUp/>`: the instance's configured extra
@@ -26,6 +32,12 @@
   export let errors: FieldError[] = [];
   export let captcha: CaptchaController | null = null;
   export let onSubmit: (values: Record<string, string>, consent: boolean) => void;
+  /** Passkey-only sign-up: no password field; the email per the instance's mode. */
+  export let passkey: { email: 'off' | 'optional' | 'required' } | null = null;
+  /** Toggle between the password and passkey forms (only when both are offered). */
+  export let onSwitchMode: (() => void) | undefined = undefined;
+  /** The instance's policies (terms, privacy, …); they replace the legacy consent row. */
+  export let policies: PolicyAcceptanceController | null = null;
 
   const atlas = useAtlas();
   const cls = (key: ElementKey, base: string) => classFor(key, atlas.appearance, base);
@@ -35,12 +47,31 @@
 
   let values: Record<string, string> = {};
   let agreed = false;
+  let declined: string | null = null;
 
-  $: legal = settings?.legal;
+  // Re-evaluated whenever a policy is ticked, read or reloaded.
+  let policyTick = 0;
+  let watched: PolicyAcceptanceController | null = null;
+  let unwatch: (() => void) | null = null;
+  $: if (policies !== watched) {
+    unwatch?.();
+    watched = policies;
+    unwatch = policies ? policies.subscribe(() => (policyTick += 1)) : null;
+  }
+  onDestroy(() => unwatch?.());
+  const hasAny = (_tick: number, c: PolicyAcceptanceController | null) => !!c && c.policies.length > 0;
+  const okFor = (_tick: number, c: PolicyAcceptanceController | null) => !c || c.policies.length === 0 || c.canSubmit();
+  $: hasPolicies = hasAny(policyTick, policies);
+  // Instance policies replace the legacy single "I agree to the Terms" row.
+  $: legal = hasPolicies ? undefined : settings?.legal;
   $: showLegal = !!legal && (!!legal.termsUrl || !!legal.privacyUrl);
-  $: consentOk = !legal?.required || agreed;
+  $: policyOk = okFor(policyTick, policies);
+  $: consentOk = (!legal?.required || agreed) && policyOk;
   $: fields = settings?.signUpFields ?? [];
-  $: emailUnavailable = settings?.emailDelivery?.passwordSignUp === false;
+  $: emailUnavailable =
+    settings?.emailDelivery?.passwordSignUp === false && !(passkey && passkey.email !== 'required');
+  $: showEmail = !passkey || passkey.email !== 'off';
+  $: emailRequired = !passkey || passkey.email === 'required';
 
   const label = (f: PublicSignUpField) =>
     f.required ? f.label : t('signUp.optionalField', { label: f.label });
@@ -60,6 +91,15 @@
   function handleSubmit(event: Event) {
     event.preventDefault();
     if (!consentOk) return;
+    declined = null;
+    if (hasPolicies && policies) {
+      // Scroll-mode policies are read in their unskippable dialog first.
+      void confirmPolicies(policies, { t: policyTranslator(t) }).then((res) => {
+        if (res.ok) onSubmit({ ...values }, true);
+        else declined = res.declined;
+      });
+      return;
+    }
     onSubmit({ ...values }, legal?.required ? agreed : true);
   }
 </script>
@@ -149,22 +189,29 @@
         {/if}
       {/each}
 
-      <label class={cls('formField', 'atlas-field')}>
-        <span class={cls('formFieldLabel', 'atlas-field-label')}>{t('signUp.emailLabel')}</span>
-        <input
-          class={cls('formFieldInput', 'atlas-input')}
-          type="email"
-          name="email"
-          autocomplete="email"
-          required
-          value={values.email ?? ''}
-          on:input={(e) => (values.email = e.currentTarget.value)}
-        />
-        {#each errors.filter((e) => e.param === 'email') as error (error.code)}
-          <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
-        {/each}
-      </label>
+      {#if showEmail}
+        <label class={cls('formField', 'atlas-field')}>
+          <span class={cls('formFieldLabel', 'atlas-field-label')}
+            >{emailRequired ? t('signUp.emailLabel') : t('signUp.optionalField', { label: t('signUp.emailLabel') })}</span
+          >
+          <input
+            class={cls('formFieldInput', 'atlas-input')}
+            type="email"
+            name="email"
+            autocomplete="email"
+            required={emailRequired}
+            value={values.email ?? ''}
+            on:input={(e) => (values.email = e.currentTarget.value)}
+          />
+          {#each errors.filter((e) => e.param === 'email') as error (error.code)}
+            <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
+          {/each}
+        </label>
+      {/if}
 
+      {#if passkey}
+        <p class="atlas-text">{t('signUp.passkeyIntro')}</p>
+      {:else}
       <label class={cls('formField', 'atlas-field')}>
         <span class={cls('formFieldLabel', 'atlas-field-label')}>{t('signUp.passwordLabel')}</span>
         <input
@@ -180,6 +227,7 @@
           <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
         {/each}
       </label>
+      {/if}
 
       {#if showLegal && legal}
         <label class={cls('formField', 'atlas-consent')}>
@@ -202,6 +250,15 @@
         </label>
       {/if}
 
+      {#if hasPolicies && policies}
+        <PolicyConsent controller={policies} />
+        {#if declined}
+          <span class={cls('formFieldError', 'atlas-error')} role="alert" data-atlas-policy-declined="">
+            {t('policy.declined', { policy: declined })}
+          </span>
+        {/if}
+      {/if}
+
       {#if captcha}
         <CaptchaSlot controller={captcha} />
       {/if}
@@ -213,6 +270,22 @@
       >
         {t('signUp.submit')}
       </button>
+      {#if hasPolicies && policies}
+        <PolicyClickwrap controller={policies} />
+      {/if}
+      {#if onSwitchMode}
+        <div class="atlas-alternatives">
+          <button
+            type="button"
+            class={cls('formButtonSecondary', 'atlas-button-secondary')}
+            data-atlas-sign-up-mode={passkey ? 'password' : 'passkey'}
+            disabled={busy}
+            on:click={() => onSwitchMode?.()}
+          >
+            {t(passkey ? 'signUp.passwordOption' : 'signUp.passkeyOption')}
+          </button>
+        </div>
+      {/if}
     </form>
   {/if}
 </div>

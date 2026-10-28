@@ -1,0 +1,18 @@
+'use client';
+import { UserProvider, useUser } from '@auth0/nextjs-auth0/client';
+import type { ReactNode } from 'react';
+
+function Nav() {
+  const { user, isLoading } = useUser();
+  if (isLoading) return null;
+  return user ? <a href="/api/auth/logout">Logout</a> : <a href="/api/auth/login?returnTo=/dashboard">Login</a>;
+}
+
+export function Shell({ children }: { children: ReactNode }) {
+  return (
+    <UserProvider>
+      <Nav />
+      {children}
+    </UserProvider>
+  );
+}

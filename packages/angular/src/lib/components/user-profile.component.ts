@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { AtlasService } from '../atlas.service';
 import { classFor, type ElementKey } from '../appearance';
 import { translate } from '../i18n';
+import { ManageCibaComponent } from './manage-ciba.component';
 
 /**
  * `<atlas-user-profile>` — the signed-in user's account surface (emails,
@@ -11,6 +12,7 @@ import { translate } from '../i18n';
 @Component({
   selector: 'atlas-user-profile',
   standalone: true,
+  imports: [ManageCibaComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (atlas.user(); as user) {
@@ -67,6 +69,8 @@ import { translate } from '../i18n';
           <h2>{{ t('userProfile.securitySection') }}</h2>
           <p>{{ user.mfa_enabled ? '2FA on' : '2FA off' }}</p>
         </section>
+
+        <atlas-manage-ciba />
       </div>
     }
   `,

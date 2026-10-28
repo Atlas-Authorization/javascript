@@ -1,0 +1,6 @@
+import { authMiddleware } from '@descope/nextjs-sdk/server';
+
+export default authMiddleware({
+  projectId: process.env.DESCOPE_PROJECT_ID,
+  privateRoutes: ['/dashboard*', '/settings'],
+});

@@ -1,12 +1,17 @@
 import {
   AtlasBackend,
   ForbiddenError,
+  createBetterAuthBridge,
+  createMigrationBridge,
   createPkcePair,
   evaluate,
   hasFromClaims,
   redeemHandshake,
+  type MigrationBridgeDecision,
+  type MigrationTokenExtractor,
   type ProtectCondition,
   type SessionClaims,
+  type TokenFormat,
 } from '@atlasauth/backend';
 import { decideRoute, safeRedirect, type MiddlewareConfig } from './matcher';
 
@@ -42,11 +47,83 @@ export interface AtlasMiddlewareOptions extends MiddlewareConfig {
   /** Origin of the Atlas Frontend API (where `/v1/client/handshake` lives).
    *  Defaults to the origin of `jwksUrl`. */
   fapiOrigin?: string;
+  /**
+   * Moving from Better Auth: a visitor who still carries a Better Auth session
+   * cookie (and no Atlas session) is exchanged ONCE for an Atlas session — read
+   * server-side (the cookie is HttpOnly), Atlas cookies set, Better Auth cookies
+   * cleared — so the switch signs nobody out. Runs on page navigations (GET /
+   * HEAD), which re-enter on the same URL with the new session. A user who still
+   * owes a second factor is sent to `signInUrl` (default: the same URL) carrying
+   * the sign-in attempt, which the Atlas components continue. Requires
+   * `publishableKey` and the bridge being enabled for the instance.
+   */
+  betterAuthBridge?: boolean | BetterAuthBridgeConfig;
+  /**
+   * Moving from any other vendor (Auth0, Clerk, Cognito, Firebase, Supabase …):
+   * the same zero-logout exchange for that vendor's session cookie or token,
+   * on page navigations. Requires `publishableKey` and the bridge being enabled
+   * for the instance and source. See {@link MigrationBridgeConfig}.
+   */
+  migrationBridge?: MigrationBridgeConfig;
+}
+
+/** Options for {@link AtlasMiddlewareOptions.migrationBridge}. */
+export interface MigrationBridgeConfig {
+  /** The vendor you are moving from (`auth0`, `clerk`, `cognito`, `supabase`, …). */
+  source: string;
+  /** The bridge preset (default: the one named like `source`). */
+  preset?: string;
+  /** Variables the preset's cookie names need (`client_id`, `project_ref`, `frontend_api` …). */
+  presetVars?: Record<string, string>;
+  /** Cookie names to read instead of the preset's (`*` wildcards allowed). */
+  cookieNames?: string[];
+  /** Cookie names to clear after an exchange instead of the preset's. */
+  clearCookieNames?: string[];
+  tokenFormat?: TokenFormat;
+  /**
+   * Open an encrypted vendor cookie locally (nextjs-auth0, WorkOS AuthKit,
+   * Auth.js JWT sessions) and return the token inside.
+   */
+  extractToken?: MigrationTokenExtractor;
+  /** Also read `Authorization: Bearer` tokens from the vendor. */
+  bearer?: boolean;
+  /** The domain the old cookies were set on, so they clear. */
+  cookieDomain?: string;
+  /** Where a user who still owes a second factor finishes signing in. Default: the requested URL. */
+  signInUrl?: string;
+  /** The instance secret key: the exchange goes through the Backend API (recommended; see BetterAuthBridgeConfig.secretKey). */
+  secretKey?: string;
+  /** Backend API origin for the secret-key path. Default `https://api.atlasauth.net`. */
+  bapiBaseUrl?: string;
+}
+
+/** Options for {@link AtlasMiddlewareOptions.betterAuthBridge}. */
+export interface BetterAuthBridgeConfig {
+  /** Better Auth's `advanced.cookiePrefix` (default `better-auth`). */
+  cookiePrefix?: string;
+  /** The session cookie's full name, when the old app overrode it. */
+  cookieName?: string;
+  /** The domain the Better Auth cookies were set on (its cross-subdomain domain), so they clear. */
+  cookieDomain?: string;
+  /** Where a user who still owes a second factor finishes signing in. Default: the requested URL. */
+  signInUrl?: string;
+  /**
+   * The instance secret key (e.g. `process.env.ATLAS_SECRET_KEY`). Recommended:
+   * the exchange then goes through the Backend API, limited per instance with a
+   * ceiling sized for a bulk cutover, instead of the per-IP Frontend API limit
+   * your server would share across every user. The user's IP (`x-forwarded-for`
+   * as your platform sets it) and user agent are forwarded.
+   */
+  secretKey?: string;
+  /** Backend API origin for the secret-key path. Default `https://api.atlasauth.net`. */
+  bapiBaseUrl?: string;
 }
 
 /** Minimal shapes, so this package does not depend on Next.js at build time. */
 export interface EdgeRequest {
   nextUrl: { pathname: string; search?: string };
+  /** The HTTP method (NextRequest has it). Absent is treated as GET. */
+  method?: string;
   headers: { get(name: string): string | null };
   url?: string;
 }
@@ -152,6 +229,7 @@ export interface AtlasCookie {
   value: string;
   options: {
     path?: string;
+    domain?: string;
     httpOnly?: boolean;
     sameSite?: 'lax' | 'strict' | 'none';
     secure?: boolean;
@@ -183,7 +261,85 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
     fetchImpl: options.fetchImpl,
   });
 
+  const bridgeConfig: BetterAuthBridgeConfig | null = options.betterAuthBridge
+    ? options.betterAuthBridge === true
+      ? {}
+      : options.betterAuthBridge
+    : null;
+  if (bridgeConfig && !options.publishableKey) {
+    throw new Error('atlasMiddleware: `betterAuthBridge` needs `publishableKey`.');
+  }
+  if (options.migrationBridge && !options.publishableKey) {
+    throw new Error('atlasMiddleware: `migrationBridge` needs `publishableKey`.');
+  }
+  const fapiOrigin = options.fapiOrigin ?? new URL(options.jwksUrl).origin;
+  /** The session bridges, in order: Better Auth's, then the other vendor's. */
+  const bridges: Array<{ run: (request: EdgeRequest) => Promise<MigrationBridgeDecision>; signInUrl?: string }> = [];
+  if (bridgeConfig) {
+    bridges.push({
+      run: createBetterAuthBridge({
+        fapiOrigin,
+        publishableKey: options.publishableKey!,
+        cookiePrefix: bridgeConfig.cookiePrefix,
+        cookieName: bridgeConfig.cookieName,
+        betterAuthCookieDomain: bridgeConfig.cookieDomain,
+        secretKey: bridgeConfig.secretKey,
+        bapiBaseUrl: bridgeConfig.bapiBaseUrl,
+        fetchImpl: options.fetchImpl,
+      }),
+      signInUrl: bridgeConfig.signInUrl,
+    });
+  }
+  const vendor = options.migrationBridge;
+  if (vendor) {
+    bridges.push({
+      run: createMigrationBridge({
+        source: vendor.source,
+        preset: vendor.preset,
+        presetVars: vendor.presetVars,
+        cookieNames: vendor.cookieNames,
+        clearCookieNames: vendor.clearCookieNames,
+        tokenFormat: vendor.tokenFormat,
+        extractToken: vendor.extractToken,
+        bearer: vendor.bearer,
+        oldCookieDomain: vendor.cookieDomain,
+        fapiOrigin,
+        publishableKey: options.publishableKey!,
+        secretKey: vendor.secretKey,
+        bapiBaseUrl: vendor.bapiBaseUrl,
+        fetchImpl: options.fetchImpl,
+      }),
+      signInUrl: vendor.signInUrl,
+    });
+  }
+
   return async function decide(request: EdgeRequest): Promise<AtlasDecision> {
+    /**
+     * Better Auth session bridge. Only on a page navigation: the exchange is a
+     * one-time server-to-server call, and re-entering on the same URL is what
+     * lets every downstream reader (auth(), server components) see the new
+     * session. A non-GET request is left alone — the next navigation exchanges.
+     * A Better Auth session Atlas will never accept (invalid, expired, already
+     * exchanged) has its cookies cleared; one Atlas could not judge (bridge off,
+     * rate limited, unreachable) is kept for a later attempt.
+     */
+    const method = (request.method ?? 'GET').toUpperCase();
+    if (bridges.length && request.url && (method === 'GET' || method === 'HEAD')) {
+      for (const bridge of bridges) {
+        const outcome = await bridge.run(request);
+        if (outcome.action === 'signed_in') {
+          return { kind: 'redirect', location: request.url, auth: SIGNED_OUT, cookies: outcome.cookies };
+        }
+        if (outcome.action === 'needs_mfa') {
+          const target = bridge.signInUrl ? new URL(bridge.signInUrl, request.url).toString() : request.url;
+          return { kind: 'redirect', location: outcome.continuationUrl(target), auth: SIGNED_OUT, cookies: outcome.cookies };
+        }
+        if (outcome.action === 'refused' && outcome.cookies.length > 0) {
+          return { kind: 'redirect', location: request.url, auth: SIGNED_OUT, cookies: outcome.cookies };
+        }
+      }
+    }
+
     /**
      * Cross-domain satellite RETURN: the handshake endpoint bounced the browser
      * back with `?__atlas_hs=ok&__atlas_hu=<userId>&__atlas_hn=<nonce>`. Exchange

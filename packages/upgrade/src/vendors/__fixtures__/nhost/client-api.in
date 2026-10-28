@@ -1,0 +1,18 @@
+import { NhostClient } from '@nhost/nhost-js';
+
+export const nhost = new NhostClient({ subdomain: 'abc', region: 'eu-central-1' });
+
+export async function token() {
+  if (await nhost.auth.isAuthenticatedAsync()) return nhost.auth.getAccessToken();
+  return null;
+}
+
+export async function login(email: string, password: string) {
+  return nhost.auth.signIn({ email, password });
+}
+
+export function role() {
+  return nhost.auth.getHasuraClaim('default-role');
+}
+
+export const off = nhost.auth.onAuthStateChanged((event, session) => console.log(event, session?.user.id));

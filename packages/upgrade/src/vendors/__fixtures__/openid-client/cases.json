@@ -1,0 +1,1 @@
+[{"name":"login","path":"src/auth/login.ts","manual":["Issuer.discover","authorizationUrl()","callback()","endSessionUrl()","generators.state"]}]

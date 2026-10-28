@@ -189,3 +189,111 @@ describe('AtlasFlowController sign-in captcha', () => {
     flow.destroy();
   });
 });
+
+describe('AtlasFlowController passkey-only sign-up', () => {
+  const routes: Route[] = [
+    (c) =>
+      c.path === '/v1/client/sign_ups/passkey'
+        ? json({ id: 'sua_pk', object: 'sign_up_attempt', status: 'needs_first_factor', supported_first_factors: ['passkey'], poll_secret: 'ps_1' }, 201)
+        : undefined,
+    (c) =>
+      c.path === '/v1/client/sign_ups/sua_pk/passkey/begin'
+        ? json({ challenge: 'Y2hhbGxlbmdl', rp: { id: 'example.com', name: 'Atlas' }, user: { id: 'dXNlcl8x', name: 'u', displayName: 'u' }, pubKeyCredParams: [] }, 201)
+        : undefined,
+    (c) =>
+      c.path === '/v1/client/sign_ups/sua_pk/passkey/finish'
+        ? json({ id: 'sua_pk', object: 'sign_up_attempt', status: 'complete', ticket: 'tkt_pk' })
+        : undefined,
+  ];
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('createWithPasskey() sends no password; createPasskey() registers it and exchanges the ticket', async () => {
+    const create = vi.fn(async () => ({
+      rawId: new Uint8Array([1]).buffer,
+      response: { attestationObject: new Uint8Array([4, 5, 6]).buffer, clientDataJSON: new Uint8Array([7, 8, 9]).buffer },
+    }));
+    vi.stubGlobal('navigator', { credentials: { create, get: vi.fn() } });
+    const flow = await controller({ routes });
+
+    await flow.createWithPasskey({ email: '', password: 'ignored', company: 'Acme' });
+    expect(posts('/v1/client/sign_ups/passkey')[0]!.body).toEqual({ fields: { company: 'Acme' }, consent: true });
+    expect(flow.state().attempt?.status).toBe('needs_first_factor');
+    expect(flow.state().pollSecret).toBe('ps_1');
+
+    await flow.createPasskey();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(posts('/v1/client/sign_ups/sua_pk/passkey/finish')[0]!.body).toMatchObject({ poll_secret: 'ps_1' });
+    expect(posts('/v1/client/tickets/exchange')[0]!.body).toMatchObject({ attempt_id: 'sua_pk', ticket: 'tkt_pk' });
+    expect(reload).toHaveBeenCalled();
+    flow.destroy();
+  });
+
+  it('a cancelled prompt keeps the step and says so in the catalog wording', async () => {
+    vi.stubGlobal('navigator', {
+      credentials: {
+        create: vi.fn(async () => {
+          throw new Error('NotAllowedError');
+        }),
+        get: vi.fn(),
+      },
+    });
+    const flow = await controller({ routes });
+    await flow.createWithPasskey({});
+    await flow.createPasskey();
+    expect(flow.state().attempt?.status).toBe('needs_first_factor');
+    expect(flow.state().errors).toEqual([{ code: 'PASSKEY_CANCELLED', message: EN_US['signUp.passkeyCancelled'] }]);
+    expect(posts('/v1/client/sign_ups/sua_pk/passkey/finish')).toHaveLength(0);
+    flow.destroy();
+  });
+});
+
+describe('AtlasFlowController emailed second factor and sign-up resend', () => {
+  it('sendEmailSecondFactor() mails the code for this attempt and reports where it went; leaving the step clears it', async () => {
+    const flow = await controller({
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ins' ? json({ id: 'sia_1', status: 'needs_second_factor' }, 201) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' ? json({ sent_to: 'a•••@example.com' }) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/attempt_second_factor' ? json({ id: 'sia_1', status: 'complete', ticket: 'tk' }) : undefined),
+      ],
+    });
+    await flow.submit({ identifier: 'ada@example.com' });
+    expect(flow.state().attempt?.status).toBe('needs_second_factor');
+    await flow.sendEmailSecondFactor();
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor')[0]!.body).toEqual({ strategy: 'email_code' });
+    expect(flow.emailSecondFactor()).toEqual({ sentTo: 'a•••@example.com' });
+    await flow.submit({ code: '123456' });
+    expect(flow.emailSecondFactor()).toBeNull();
+    flow.destroy();
+  });
+
+  it('a refused send is reported, not thrown', async () => {
+    const flow = await controller({
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ins' ? json({ id: 'sia_2', status: 'needs_second_factor' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ins/sia_2/prepare_second_factor'
+            ? json({ errors: [{ code: 'TOO_MANY_REQUESTS', message: 'Slow down.' }] }, 429)
+            : undefined,
+      ],
+    });
+    await flow.submit({ identifier: 'ada@example.com' });
+    await flow.sendEmailSecondFactor();
+    expect(flow.emailSecondFactor()).toEqual({ error: 'Slow down.' });
+    flow.destroy();
+  });
+
+  it('resendSignUp() asks for a fresh verification email for the attempt', async () => {
+    const flow = await controller({
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_9', object: 'sign_up_attempt', status: 'needs_email_verification' }, 201) : undefined),
+        (c) => (c.path === '/v1/client/sign_ups/sua_9/prepare_verification' ? json({ id: 'sua_9', status: 'needs_email_verification' }) : undefined),
+      ],
+    });
+    await flow.create({ email: 'n@example.com', password: 'blue tangerine anvil 71!' });
+    await flow.resendSignUp();
+    expect(posts('/v1/client/sign_ups/sua_9/prepare_verification')).toHaveLength(1);
+    expect(flow.state().errors).toEqual([]);
+    expect(flow.state().attempt?.status).toBe('needs_email_verification');
+    flow.destroy();
+  });
+});

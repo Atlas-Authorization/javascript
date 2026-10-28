@@ -1,0 +1,23 @@
+[
+  {
+    "name": "app",
+    "path": "src/app.ts",
+    "manual": [
+      "express-session: Atlas keeps",
+      "passport.initialize() is now atlasMiddleware()",
+      "passport.session() removed",
+      "req.isAuthenticated() is now getAuth(req).isSignedIn"
+    ]
+  },
+  {
+    "name": "routes",
+    "path": "src/routes/auth.js",
+    "manual": ["passport.authenticate('local')", "passport.authenticate('jwt') is now requireAuth()", "req.user is no longer set", "req.logout()"]
+  },
+  {
+    "name": "strategies",
+    "path": "src/auth/passport.ts",
+    "manual": ["passport-local:", "passport-google-oauth20: enable Google", "passport.serializeUser/deserializeUser"]
+  },
+  { "name": "plain", "path": "src/math.ts", "unchanged": true }
+]

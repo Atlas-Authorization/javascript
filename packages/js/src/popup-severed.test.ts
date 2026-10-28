@@ -240,7 +240,10 @@ describe('localStorage fallback (no BroadcastChannel)', () => {
     const onResult = vi.fn();
     const stop = listenForPopupResult('nonce_storage_1', { onResult });
     const key = `atlas:${popupChannelName('nonce_storage_1')}`;
-    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    // Spy on the storage instance itself: after the OAuth starts above stored
+    // the SDK's device id, a Storage.prototype spy no longer sees the write
+    // under happy-dom.
+    const setItem = vi.spyOn(window.localStorage, 'setItem');
     window.dispatchEvent(
       new StorageEvent('storage', {
         key,

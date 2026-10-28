@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/design",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The Atlas design system: the structured design schema, presets, resolver, safe CSS compiler, contrast helpers and curated font list shared by Atlas hosted pages and SDK components.",
   "license": "MIT",
   "main": "./dist/index.js",
@@ -24,7 +24,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
   "keywords": ["atlas", "atlasauth", "design-system", "theme", "appearance", "auth"],
@@ -40,6 +40,7 @@
   },
   "files": [
     "dist",
+    "!dist/*.tsbuildinfo",
     "runtime",
     "README.md",
     "CHANGELOG.md"

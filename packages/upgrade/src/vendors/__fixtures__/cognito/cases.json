@@ -1,0 +1,16 @@
+[
+  { "name": "v6-client", "path": "components/profile.tsx", "manual": ["signIn(): credentials are collected on the Atlas sign-in page"] },
+  {
+    "name": "ui-react",
+    "path": "src/App.tsx",
+    "envStyle": "vite",
+    "manual": ["Amplify.configure(): remove the Auth (Cognito) section"]
+  },
+  {
+    "name": "v5-auth",
+    "path": "src/auth.ts",
+    "envStyle": "vite",
+    "manual": ["Auth.signUp(): sign-up runs on the Atlas sign-up page", "Hub.listen() on a non-auth channel: it stays on Amplify"]
+  },
+  { "name": "server-verify", "path": "lib/verify.ts", "manual": ["CognitoJwtVerifier: verify Atlas session tokens"] }
+]

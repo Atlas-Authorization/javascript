@@ -11,8 +11,12 @@
  * users who want the same API as an import.
  */
 export { AtlasWidget, type WidgetOptions } from './widget';
+export type { PasskeyPrfEventDetail } from './widget/passkey';
 export { defineElements, AtlasSignInElement, AtlasSignUpElement } from './element';
 export { mountSignIn, mountSignUp, type MountTarget } from './mount';
+export { mountLeadForm, type LeadFormOptions } from './lead-form';
+export { mountPricingTable, type PricingTableOptions } from './pricing';
+export { mountOrganizationAdmin, type OrgAdminOptions, type OrgAdminSection } from './org-admin';
 export { setScriptDefaults, readScriptTag, type ScriptDefaults } from './config';
 export { validateRedirect } from './redirect';
 export {

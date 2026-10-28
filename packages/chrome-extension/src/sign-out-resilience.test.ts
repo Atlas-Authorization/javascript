@@ -29,8 +29,13 @@ const TOKEN_KEY = '__atlas_session_token';
 function b64url(obj: unknown): string {
   return Buffer.from(JSON.stringify(obj)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-const jwtFor = (sid: string, n = 1) =>
-  `eyJhbGciOiJub25lIn0.${b64url({ sid, n, exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`;
+// One fixed `exp` for the whole file: jwtFor() must return the SAME string for
+// the same (sid, n) however long the test takes. Computing it per call made the
+// token change whenever a wall-clock second ticked between building the stored
+// token and building the expected one (a slow, loaded run), so an equality
+// check on the bearer failed although the right token was sent.
+const EXP = Math.floor(Date.now() / 1000) + 3600;
+const jwtFor = (sid: string, n = 1) => `eyJhbGciOiJub25lIn0.${b64url({ sid, n, exp: EXP })}.sig`;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

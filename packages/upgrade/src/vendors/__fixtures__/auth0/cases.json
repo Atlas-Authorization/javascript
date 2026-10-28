@@ -1,0 +1,88 @@
+[
+  {
+    "name": "react-provider",
+    "path": "src/main.tsx",
+    "envStyle": "vite",
+    "manual": [
+      "removed provider props with no Atlas counterpart: authorizationParams, cacheLocation"
+    ]
+  },
+  {
+    "name": "react-hooks",
+    "path": "src/Profile.tsx",
+    "envStyle": "vite"
+  },
+  {
+    "name": "nextjs-v3-client",
+    "path": "components/shell.tsx",
+    "manual": [
+      "/api/auth/logout: sign-out is an action in Atlas"
+    ]
+  },
+  {
+    "name": "nextjs-v3-server",
+    "path": "app/api/protected/route.ts"
+  },
+  {
+    "name": "nextjs-route",
+    "path": "app/api/auth/[auth0]/route.ts",
+    "manual": [
+      "this Auth0 route is no longer used"
+    ]
+  },
+  {
+    "name": "nextjs-v4",
+    "path": "lib/auth0.ts",
+    "manual": [
+      "AUTH0_CLIENT_SECRET: server code uses ATLAS_SECRET_KEY",
+      "AUTH0_SECRET (cookie encryption)",
+      "APP_BASE_URL: not needed"
+    ]
+  },
+  {
+    "name": "edge-middleware",
+    "path": "middleware.ts"
+  },
+  {
+    "name": "spa-js",
+    "path": "src/auth.ts",
+    "envStyle": "vite"
+  },
+  {
+    "name": "spa-js-class",
+    "path": "src/client.ts",
+    "envStyle": "vite",
+    "manual": [
+      "authorizationParams.audience/scope",
+      "exchangeToken(): custom token exchange",
+      "frontendApi now reads VITE_ATLAS_FRONTEND_API"
+    ]
+  },
+  {
+    "name": "express-jwt-bearer",
+    "path": "src/server.ts",
+    "envStyle": "node",
+    "manual": [
+      "requiredScopes(…): pass requiredScopes",
+      "requireAccessToken(): remove tokenSigningAlg",
+      "register this API as a resource server in Atlas"
+    ]
+  },
+  {
+    "name": "express-openid-connect",
+    "path": "src/app.ts",
+    "envStyle": "node",
+    "manual": [
+      "auth(config) from express-openid-connect",
+      "requireAuth() answers 401 instead of redirecting"
+    ]
+  },
+  {
+    "name": "node-management",
+    "path": "src/lib/management.ts",
+    "envStyle": "node",
+    "manual": [
+      "new ManagementClient(…): manage users, organizations and roles"
+    ]
+  }
+]

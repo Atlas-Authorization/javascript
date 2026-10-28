@@ -74,6 +74,116 @@ export function offeredFirstFactors(
   return strategies.filter((s) => !EMAIL_FIRST_FACTORS.includes(s));
 }
 
+/** The username rule an instance enforces (from `account.username`). */
+export interface UsernameRule {
+  minLength: number;
+  maxLength: number;
+  /** `default` = letters, digits and `. _ -`. */
+  charset: 'default' | 'alphanumeric' | 'alphanumeric_underscore';
+  requiredAtSignUp: boolean;
+}
+
+/** How an emailed proof arrives: a code to type, a link to click, or either. */
+export type EmailProofDelivery = 'code' | 'link' | 'both';
+
+/** `account`: what a sign-in / sign-up form needs to draw itself. */
+export interface AccountUx {
+  /** Null while usernames are off. */
+  username: UsernameRule | null;
+  /** Badge the method this browser last signed in with as "Last used". */
+  lastSignInMethod: boolean;
+  emailVerification: EmailProofDelivery;
+  passwordReset: EmailProofDelivery;
+  /** The second-factor step may offer "email me a code" ({@link prepareEmailSecondFactor}). */
+  emailSecondFactor: boolean;
+  /** The instance offers the custom challenge second factor (set only when true). */
+  customSecondFactor?: boolean;
+  /**
+   * Passkey-only sign-up ({@link startPasskeySignUp}), when the instance offers
+   * it: whether the form collects an email address. Null when not offered.
+   */
+  passkeySignUp: { email: 'off' | 'optional' | 'required' } | null;
+  /**
+   * The second factors a sign-in may set up or use, when the server says
+   * (`account.mfa`): an authenticator app, texted codes (on AND the app can
+   * text), and how many authenticator codes enrolment asks for. Absent on a
+   * server that does not say: the MFA steps then offer the authenticator app
+   * only (see `mfaChoicesFrom`).
+   */
+  mfa?: {
+    totp: boolean;
+    sms: boolean;
+    totpCodes: 1 | 2;
+    /** Counter tokens, YubiKeys, Duo, recovery questions and smart card sign-in. False/absent from an older server. */
+    hotp?: boolean;
+    yubikey?: boolean;
+    duo?: boolean;
+    securityQuestions?: boolean;
+    smartCard?: boolean;
+  };
+}
+
+/**
+ * What an older server (no `account`) is taken to mean: no usernames at
+ * sign-up, codes only, and no "Last used" hint (it has no endpoint for one).
+ */
+export const ACCOUNT_UX_DEFAULT: Readonly<AccountUx> = Object.freeze({
+  username: null,
+  lastSignInMethod: false,
+  emailVerification: 'code',
+  passwordReset: 'code',
+  emailSecondFactor: false,
+  passkeySignUp: null,
+});
+
+const proof = (v: unknown): EmailProofDelivery => (v === 'link' || v === 'both' ? v : 'code');
+
+/** Read `account` from a `/v1/client/environment` or `/v1/appearance` body. */
+export function accountUxFrom(body: unknown): AccountUx {
+  const raw = isRecord(body) && isRecord(body.account) ? body.account : null;
+  if (!raw) return { ...ACCOUNT_UX_DEFAULT };
+  const u = isRecord(raw.username) ? raw.username : null;
+  const n = (v: unknown, d: number) => (typeof v === 'number' && Number.isInteger(v) ? v : d);
+  return {
+    username: u
+      ? {
+          minLength: n(u.min_length, 3),
+          maxLength: n(u.max_length, 30),
+          charset:
+            u.charset === 'alphanumeric' || u.charset === 'alphanumeric_underscore' ? u.charset : 'default',
+          requiredAtSignUp: u.required_at_sign_up === true,
+        }
+      : null,
+    lastSignInMethod: raw.last_sign_in_method === true,
+    emailVerification: proof(raw.email_verification),
+    passwordReset: proof(raw.password_reset),
+    emailSecondFactor: raw.email_second_factor === true,
+    ...(raw.custom_second_factor === true ? { customSecondFactor: true } : {}),
+    ...(isRecord(raw.mfa)
+      ? {
+          mfa: {
+            totp: raw.mfa.totp !== false,
+            sms: raw.mfa.sms === true,
+            totpCodes: Number(raw.mfa.totp_codes ?? raw.mfa.totpCodes) >= 2 ? 2 : 1,
+            ...(raw.mfa.hotp === true ? { hotp: true } : {}),
+            ...(raw.mfa.yubikey === true ? { yubikey: true } : {}),
+            ...(raw.mfa.duo === true ? { duo: true } : {}),
+            ...(raw.mfa.security_questions === true ? { securityQuestions: true } : {}),
+            ...(raw.mfa.smart_card === true ? { smartCard: true } : {}),
+          } as const,
+        }
+      : {}),
+    passkeySignUp: isRecord(raw.passkey_sign_up)
+      ? {
+          email:
+            raw.passkey_sign_up.email === 'off' || raw.passkey_sign_up.email === 'optional'
+              ? raw.passkey_sign_up.email
+              : 'required',
+        }
+      : null,
+  };
+}
+
 /** One entry of the environment's `social_providers`. */
 export interface EnvironmentSocialProvider {
   provider: string;
@@ -103,6 +213,7 @@ export interface ClientEnvironment {
   strategies: Record<string, unknown>;
   emailDelivery: EmailDelivery;
   socialProviders: EnvironmentSocialProvider[];
+  account: AccountUx;
 }
 
 /** Read a `/v1/client/environment` body. Defensive: malformed parts read as empty. */
@@ -119,6 +230,7 @@ export function clientEnvironmentFrom(body: unknown): ClientEnvironment {
           (p) => isRecord(p) && typeof p.provider === 'string',
         ) as unknown as EnvironmentSocialProvider[])
       : [],
+    account: accountUxFrom(root),
   };
 }
 

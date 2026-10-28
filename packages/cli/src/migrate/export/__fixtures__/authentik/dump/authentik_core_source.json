@@ -1,0 +1,6 @@
+[
+  { "pbm_uuid": "eeeeeeee-0000-4000-8000-000000000001", "name": "GitHub", "slug": "github", "enabled": true },
+  { "pbm_uuid": "eeeeeeee-0000-4000-8000-000000000002", "name": "Corp Keycloak", "slug": "corp-keycloak", "enabled": true },
+  { "pbm_uuid": "eeeeeeee-0000-4000-8000-000000000003", "name": "Partner SAML", "slug": "partner-saml", "enabled": true },
+  { "pbm_uuid": "eeeeeeee-0000-4000-8000-000000000004", "name": "Corp LDAP", "slug": "ldap", "enabled": true }
+]

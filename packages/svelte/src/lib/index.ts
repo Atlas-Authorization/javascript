@@ -36,6 +36,7 @@ export {
   getSession,
   getAuth,
   getOrganization,
+  getOrganizationAuditLog,
   getToken,
   signIn,
   signUp,
@@ -44,6 +45,7 @@ export {
   type UseSession,
   type UseAuth,
   type UseOrganization,
+  type OrganizationAuditLogStore,
   type FlowController,
 } from './accessors';
 
@@ -58,8 +60,17 @@ export { default as SignIn } from './components/SignIn.svelte';
 export { default as SignUp } from './components/SignUp.svelte';
 export { default as UserButton } from './components/UserButton.svelte';
 export { default as UserProfile } from './components/UserProfile.svelte';
+export { default as ManageCiba } from './components/ManageCiba.svelte';
 export { default as OrganizationSwitcher } from './components/OrganizationSwitcher.svelte';
 export { default as OrganizationProfile } from './components/OrganizationProfile.svelte';
+export { default as OrganizationAuditLog } from './components/OrganizationAuditLog.svelte';
+export type { OrganizationAuditLogEntry, OrganizationAuditLogState } from '@atlasauth/js';
+export { default as ImpersonationBanner } from './components/ImpersonationBanner.svelte';
+// Policy acceptance (terms, privacy, any policy): the consent block, clickwrap line, sign-in step and in-app gate.
+export { default as PolicyConsent } from './components/PolicyConsent.svelte';
+export { default as PolicyClickwrap } from './components/PolicyClickwrap.svelte';
+export { default as PolicyAcceptStep } from './components/PolicyAcceptStep.svelte';
+export { default as PolicyGate } from './components/PolicyGate.svelte';
 
 // The instance's public sign-in / sign-up settings the prebuilt forms read
 // (`signUp().settings`, including `emailDelivery`), and the captcha types they render.

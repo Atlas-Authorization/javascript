@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { formatReport, runConformance } from '@atlasauth/referral-conformance';
 import { AtlasApiError } from '@atlasauth/backend';
 import { str, type ParsedArgs } from '../args';
 import type { RunContext } from '../context';
@@ -13,16 +14,30 @@ import { wantsJson } from './shared';
  * `atlas referrals connect | backfill | status`: referral attribution from the
  * terminal.
  *
- * `connect --provider referally` is bring-your-own-key: the Referally merchant
- * key is used for one call (it creates the Atlas connection on Referally) and
- * is never stored or printed. The connection id and secret Referally returns
+ * `connect --provider referalli` is bring-your-own-key: the Referalli merchant
+ * key is used for one call (it creates the Atlas connection on Referalli) and
+ * is never stored or printed. The connection id and secret Referalli returns
  * go straight onto the instance; the secret is never printed either.
  */
 
-/** The Referally API version pinned on every call. */
-export const REFERALLY_VERSION = '2026-10-21';
+/** The Referalli API version pinned on every call. */
+export const REFERALLI_VERSION = '2026-10-21';
 
-const PROVIDERS = ['referally', 'webhook'] as const;
+const PROVIDERS = ['referalli', 'webhook'] as const;
+
+/** The retired spelling of the Referalli provider id, flags and environment names, still accepted. */
+const LEGACY = {
+  provider: 'referally',
+  keyFlag: 'referally-key',
+  keyFileFlag: 'referally-key-file',
+  baseUrlEnv: 'REFERALLY_BASE_URL',
+  apiKeyEnv: 'REFERALLY_API_KEY',
+} as const;
+
+/** Print a one-line notice that an old name was used (stderr, so --json output stays clean). */
+function legacyNotice(ctx: RunContext, old: string, current: string): void {
+  ctx.io.err(`atlas: '${old}' is the old name of '${current}'. It still works; use '${current}'.`);
+}
 
 interface ReferralSettingsRead {
   enabled: boolean;
@@ -35,6 +50,7 @@ interface ReferralSettingsRead {
   auto_enroll_users?: boolean;
   forward_lifecycle?: boolean;
   missing?: string[];
+  updated_at?: number | null;
   connection?: {
     last_test?: { ok: boolean; at: number; http_status: number | null; error: string | null } | null;
     failed_calls_7d?: number;
@@ -165,8 +181,8 @@ export function parseCodeCsv(text: string): Record<string, string> {
   return out;
 }
 
-/** One call to the Referally merchant API with the merchant key. Throws a CliError naming `what` on failure. */
-async function referallyRequest(
+/** One call to the Referalli merchant API with the merchant key. Throws a CliError naming `what` on failure. */
+async function referalliRequest(
   ctx: RunContext,
   input: { baseUrl: string; key: string; method: 'GET' | 'POST' | 'PATCH'; path: string; body?: Record<string, unknown>; what: string },
 ): Promise<Record<string, unknown>> {
@@ -178,13 +194,13 @@ async function referallyRequest(
       headers: {
         authorization: `Bearer ${input.key}`,
         accept: 'application/json',
-        'referally-version': REFERALLY_VERSION,
+        'referalli-version': REFERALLI_VERSION,
         ...(input.body ? { 'content-type': 'application/json' } : {}),
       },
       ...(input.body ? { body: JSON.stringify(input.body) } : {}),
     });
   } catch (err) {
-    throw new CliError(`Could not reach Referally at ${input.baseUrl}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new CliError(`Could not reach Referalli at ${input.baseUrl}: ${err instanceof Error ? err.message : String(err)}`);
   }
   const text = await res.text();
   let json: Record<string, unknown> = {};
@@ -200,24 +216,24 @@ async function referallyRequest(
       (Array.isArray(err) && err[0] && typeof err[0] === 'object' && 'message' in err[0] ? String(err[0].message) : null) ??
       (typeof json.message === 'string' ? json.message : null);
     const hint = res.status === 401 || res.status === 403 ? ' Check the merchant key.' : '';
-    throw new CliError(`Referally refused to ${input.what} (HTTP ${res.status})${msg ? `: ${msg}` : ''}.${hint}`);
+    throw new CliError(`Referalli refused to ${input.what} (HTTP ${res.status})${msg ? `: ${msg}` : ''}.${hint}`);
   }
   return json;
 }
 
-async function referallyCreateConnection(
+async function referalliCreateConnection(
   ctx: RunContext,
   input: { baseUrl: string; key: string; body: Record<string, unknown> },
 ): Promise<{ id: string; secret: string; trackingToken?: string | null } & Record<string, unknown>> {
-  const json = await referallyRequest(ctx, { ...input, method: 'POST', path: '/v1/auth/connections', what: 'create the connection' });
+  const json = await referalliRequest(ctx, { ...input, method: 'POST', path: '/v1/auth/connections', what: 'create the connection' });
   if (typeof json.id !== 'string' || typeof json.secret !== 'string') {
-    throw new CliError('Referally answered without a connection id and secret.');
+    throw new CliError('Referalli answered without a connection id and secret.');
   }
   return json as { id: string; secret: string; trackingToken?: string | null };
 }
 
-/** The Referally topics two-way sync subscribes to (changes to a referral after sign-up). */
-export const REFERALLY_SYNC_TOPICS = [
+/** The Referalli topics two-way sync subscribes to (changes to a referral after sign-up). */
+export const REFERALLI_SYNC_TOPICS = [
   'referral.created',
   'referral.held',
   'referral.paused',
@@ -230,14 +246,14 @@ export const REFERALLY_SYNC_TOPICS = [
 /**
  * Whether the merchant key reaches live or test data: the org's `livemode`,
  * else the key prefix (rk_test_ = test; rk_live_ and older rk_ keys = live).
- * `known` is false when Referally reports no mode (no test mode there).
+ * `known` is false when Referalli reports no mode (no test mode there).
  */
-export async function referallyKeyMode(
+export async function referalliKeyMode(
   ctx: RunContext,
   input: { baseUrl: string; key: string },
 ): Promise<{ live: boolean; known: boolean }> {
   try {
-    const org = await referallyRequest(ctx, { ...input, method: 'GET', path: '/v1/org', what: 'read the organization' });
+    const org = await referalliRequest(ctx, { ...input, method: 'GET', path: '/v1/org', what: 'read the organization' });
     if (typeof org.livemode === 'boolean') return { live: org.livemode, known: true };
   } catch {
     /* fall back to the key prefix */
@@ -247,31 +263,122 @@ export async function referallyKeyMode(
   return { live: true, known: false };
 }
 
+/**
+ * `connect --provider referalli --oauth`: Atlas starts an OAuth install at
+ * Referalli. The merchant opens the printed link, picks an organization and
+ * program, and Referalli returns the connection secret to Atlas directly. The
+ * command waits until the instance shows the new connection, then pings it.
+ */
+async function connectWithOAuth(
+  ctx: RunContext,
+  args: ParsedArgs,
+  io: { http: ReturnType<typeof httpFor>; json: boolean; out: { out: (s: string) => void }; presetId: string },
+): Promise<number> {
+  const v = args.values;
+  const { http, json, out, presetId } = io;
+  const before = await http.get<ReferralSettingsRead>('/v1/instance/referrals');
+  let started: { authorize_url: string; expires_at: number };
+  try {
+    started = await http.post<{ authorize_url: string; expires_at: number }>(`/v1/instance/referrals/${encodeURIComponent(presetId)}/install`, {});
+  } catch (err) {
+    if (err instanceof AtlasApiError && err.status === 422) {
+      throw new CliError(
+        `One-click connect to '${presetId}' is not available on this Atlas. Connect with a key or the signing secret instead (atlas referrals connect --provider referalli --program <prg_…> --base-url <url> --referalli-key-file <path>, or --provider webhook --endpoint <url>).`,
+      );
+    }
+    throw err;
+  }
+  if (json) ctx.io.err(`atlas: open ${started.authorize_url}`);
+  else {
+    out.out('Open this link, choose your Referalli organization and program, and approve:');
+    out.out('');
+    out.out(`  ${started.authorize_url}`);
+    out.out('');
+    out.out('Waiting for Referalli to finish (the link is valid for 15 minutes)…');
+  }
+  const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const now = () => Date.now();
+  let after = before;
+  const changed = (s: ReferralSettingsRead) =>
+    s.signing_secret_set && (s.provider !== before.provider || s.connection_id !== before.connection_id || s.endpoint_url !== before.endpoint_url || s.updated_at !== before.updated_at);
+  while (!changed(after)) {
+    if (now() > started.expires_at) throw new CliError('The link expired before Referalli finished. Run the command again.');
+    await sleep(2000);
+    after = await http.get<ReferralSettingsRead>('/v1/instance/referrals');
+  }
+  const test = await http.post<TestRead>('/v1/instance/referrals/test', {});
+  const receivedAt = Date.now();
+  let enabled = false;
+  if (v.enable === true) {
+    if (!test.ok) ctx.io.err('atlas: not turning referrals on: the connection test failed.');
+    else {
+      await http.patch('/v1/instance/referrals', { enabled: true });
+      enabled = true;
+    }
+  }
+  if (json) {
+    printJson(ctx.io, { provider: after.provider, preset: presetId, connection_id: after.connection_id, program_id: after.program_id, test, enabled });
+  } else {
+    out.out(`Connected to ${presetId} (${after.connection_id ? `connection ${after.connection_id}` : (after.endpoint_url ?? 'endpoint set')}${after.program_id ? `, program ${after.program_id}` : ''}). No secret was shown or copied.`);
+    for (const line of describeTestLines(test, receivedAt)) ctx.io.out(line);
+    ctx.io.out(
+      enabled
+        ? 'Referral attribution is on.'
+        : v.enable === true
+          ? 'Referral attribution stays off until the test passes.'
+          : "Turn it on with 'atlas referrals connect --provider referalli --oauth --enable', or in the dashboard (Users → Referrals).",
+    );
+  }
+  return test.ok ? 0 : 1;
+}
+
 async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const v = args.values;
   const json = wantsJson(v);
-  const provider = str(v, 'provider') ?? 'referally';
+  let provider = str(v, 'provider') ?? 'referalli';
+  if (provider === LEGACY.provider) {
+    legacyNotice(ctx, '--provider referally', '--provider referalli');
+    provider = 'referalli';
+  }
   if (!(PROVIDERS as readonly string[]).includes(provider)) {
     throw new CliError(`--provider must be one of ${PROVIDERS.join(', ')}, got '${provider}'.`);
   }
   const cred = instanceCredential(ctx, args);
   const http = httpFor(ctx, cred);
+  // One-click: the platform asks the merchant for the organization and program and hands Atlas the secret.
+  // Any platform the deployment offers works (--preset <id>); Referalli is the default preset.
+  if (v.oauth === true) {
+    const presetId = str(v, 'preset') ?? (provider === 'webhook' ? null : 'referalli');
+    if (!presetId) throw new CliError('referrals connect --provider webhook --oauth needs --preset <id> (see one_click_presets in `atlas referrals status --json`).');
+    return connectWithOAuth(ctx, args, { http, json, out: json ? { out: () => undefined } : ctx.io, presetId });
+  }
   const product = str(v, 'product') ?? 'atlasauth';
   const out = json ? { out: () => undefined, err: ctx.io.err } : ctx.io;
 
   let patch: Record<string, unknown>;
   let summary: Record<string, unknown>;
 
-  if (provider === 'referally') {
+  if (provider === 'referalli') {
     const program = str(v, 'program');
-    if (!program) throw new CliError('referrals connect --provider referally needs --program <prg_…>.');
-    const baseRaw = str(v, 'base-url') ?? ctx.env.REFERALLY_BASE_URL?.trim();
-    if (!baseRaw) throw new CliError('Pass --base-url <your Referally base URL> (or set REFERALLY_BASE_URL).');
+    if (!program) throw new CliError('referrals connect --provider referalli needs --program <prg_…>.');
+    const legacyBase = ctx.env[LEGACY.baseUrlEnv]?.trim();
+    if (!ctx.env.REFERALLI_BASE_URL?.trim() && legacyBase) legacyNotice(ctx, LEGACY.baseUrlEnv, 'REFERALLI_BASE_URL');
+    const baseRaw = str(v, 'base-url') ?? ctx.env.REFERALLI_BASE_URL?.trim() ?? legacyBase;
+    if (!baseRaw) throw new CliError('Pass --base-url <your Referalli base URL> (or set REFERALLI_BASE_URL).');
     const baseUrl = httpsUrl(baseRaw, '--base-url');
-    const keyFile = str(v, 'referally-key-file');
-    const key = str(v, 'referally-key') ?? (keyFile ? readKeyFile(ctx, keyFile, 'the Referally key') : ctx.env.REFERALLY_API_KEY?.trim());
+    const oldKeyFile = str(v, LEGACY.keyFileFlag);
+    const oldKey = str(v, LEGACY.keyFlag);
+    if (oldKeyFile) legacyNotice(ctx, `--${LEGACY.keyFileFlag}`, '--referalli-key-file');
+    if (oldKey) legacyNotice(ctx, `--${LEGACY.keyFlag}`, '--referalli-key');
+    const legacyKey = ctx.env[LEGACY.apiKeyEnv]?.trim();
+    if (!ctx.env.REFERALLI_API_KEY?.trim() && legacyKey) legacyNotice(ctx, LEGACY.apiKeyEnv, 'REFERALLI_API_KEY');
+    const keyFile = str(v, 'referalli-key-file') ?? oldKeyFile;
+    const key =
+      str(v, 'referalli-key') ??
+      oldKey ??
+      (keyFile ? readKeyFile(ctx, keyFile, 'the Referalli key') : (ctx.env.REFERALLI_API_KEY?.trim() ?? legacyKey));
     if (!key) {
-      throw new CliError('Pass your Referally merchant key with --referally-key-file <path|-> (or --referally-key, or REFERALLY_API_KEY). It is used once and never stored.');
+      throw new CliError('Pass your Referalli merchant key with --referalli-key-file <path|-> (or --referalli-key, or REFERALLI_API_KEY). It is used once and never stored.');
     }
     const destination = str(v, 'destination');
     if (destination) httpsUrl(destination, '--destination');
@@ -280,18 +387,18 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
     // Test data for development instances, live data for production: a mix-up
     // would pay real partners for test sign-ups, or lose real ones.
     const instanceLive = instance.environment === 'production';
-    const mode = await referallyKeyMode(ctx, { baseUrl, key });
+    const mode = await referalliKeyMode(ctx, { baseUrl, key });
     if (mode.known && mode.live !== instanceLive) {
       const message =
-        `the Referally key reaches ${mode.live ? 'live' : 'test'} data but instance ${instance.id} is ` +
+        `the Referalli key reaches ${mode.live ? 'live' : 'test'} data but instance ${instance.id} is ` +
         `${instance.environment ?? 'not production'}. Use ${instanceLive ? 'a live (rk_live_…)' : 'a test (rk_test_…)'} key` +
         ` for it, or pass --allow-mode-mismatch.`;
       if (v['allow-mode-mismatch'] !== true) throw new CliError(message.charAt(0).toUpperCase() + message.slice(1));
       ctx.io.err(`atlas: warning: ${message.replace(/, or pass --allow-mode-mismatch\.$/, '.')}`);
     } else if (!mode.known && !instanceLive) {
-      ctx.io.err(`atlas: warning: Referally did not say whether this key reaches test data; instance ${instance.id} is ${instance.environment ?? 'not production'}.`);
+      ctx.io.err(`atlas: warning: Referalli did not say whether this key reaches test data; instance ${instance.id} is ${instance.environment ?? 'not production'}.`);
     }
-    const created = await referallyCreateConnection(ctx, {
+    const created = await referalliCreateConnection(ctx, {
       baseUrl,
       key,
       body: {
@@ -305,7 +412,7 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
     // Atlas always signs with v2: require it from the first call, so v1 is never accepted on this connection.
     let signatureV2 = true;
     try {
-      await referallyRequest(ctx, {
+      await referalliRequest(ctx, {
         baseUrl,
         key,
         method: 'PATCH',
@@ -319,7 +426,7 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
     }
     const trackingToken = str(v, 'tracking-token') ?? (typeof created.trackingToken === 'string' ? created.trackingToken : null);
     patch = {
-      provider: 'referally',
+      provider: 'referalli',
       endpoint_url: baseUrl,
       connection_id: created.id,
       signing_secret: created.secret,
@@ -331,35 +438,35 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
     try {
       saved = await http.patch<{ inbound?: { url?: string | null } }>('/v1/instance/referrals', patch);
     } catch (err) {
-      // The secret is shown once by Referally: keep it so the merchant can finish by hand.
+      // The secret is shown once by Referalli: keep it so the merchant can finish by hand.
       const saved = deliverSecret({
         io: out,
         env: ctx.env,
         product,
-        fileName: `referally-connection-${created.id}.env`,
-        entries: { REFERALLY_CONNECTION_ID: created.id, REFERALLY_CONNECTION_SECRET: created.secret },
-        label: 'The Referally connection secret (not saved on Atlas)',
+        fileName: `referalli-connection-${created.id}.env`,
+        entries: { REFERALLI_CONNECTION_ID: created.id, REFERALLI_CONNECTION_SECRET: created.secret },
+        label: 'The Referalli connection secret (not saved on Atlas)',
         force: v.force === true,
-        comment: `Referally connection ${created.id}: saving it on the Atlas instance failed. Paste it in Users → Referrals.`,
+        comment: `Referalli connection ${created.id}: saving it on the Atlas instance failed. Paste it in Users → Referrals.`,
       });
-      ctx.io.err(`atlas: the connection ${created.id} was created on Referally, but saving it on the instance failed.${saved.path ? ` Its secret is in ${saved.path}.` : ''}`);
+      ctx.io.err(`atlas: the connection ${created.id} was created on Referalli, but saving it on the instance failed.${saved.path ? ` Its secret is in ${saved.path}.` : ''}`);
       throw err;
     }
-    // Two-way sync: Referally's referral events go to the instance's inbound URL.
+    // Two-way sync: Referalli's referral events go to the instance's inbound URL.
     let syncEndpoint: string | null = null;
     const inboundUrl = saved?.inbound?.url ?? null;
     if (v['no-sync'] !== true && inboundUrl) {
       try {
-        const endpoint = await referallyRequest(ctx, {
+        const endpoint = await referalliRequest(ctx, {
           baseUrl,
           key,
           method: 'POST',
           path: '/v1/webhook-endpoints',
-          body: { url: inboundUrl, topics: [...REFERALLY_SYNC_TOPICS], legacySignature: false },
+          body: { url: inboundUrl, topics: [...REFERALLI_SYNC_TOPICS], legacySignature: false },
           what: 'register the referral event webhook',
         });
         if (typeof endpoint.id !== 'string' || typeof endpoint.secret !== 'string') {
-          throw new CliError('Referally answered without a webhook endpoint id and secret.');
+          throw new CliError('Referalli answered without a webhook endpoint id and secret.');
         }
         try {
           await http.patch('/v1/instance/referrals', { inbound_secret: endpoint.secret, inbound_endpoint_id: endpoint.id });
@@ -369,23 +476,23 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
             io: out,
             env: ctx.env,
             product,
-            fileName: `referally-webhook-${endpoint.id}.env`,
-            entries: { REFERALLY_WEBHOOK_ENDPOINT_ID: endpoint.id, REFERALLY_WEBHOOK_SECRET: endpoint.secret },
-            label: 'The Referally webhook secret (not saved on Atlas)',
+            fileName: `referalli-webhook-${endpoint.id}.env`,
+            entries: { REFERALLI_WEBHOOK_ENDPOINT_ID: endpoint.id, REFERALLI_WEBHOOK_SECRET: endpoint.secret },
+            label: 'The Referalli webhook secret (not saved on Atlas)',
             force: v.force === true,
-            comment: `Referally webhook ${endpoint.id}: saving it on the Atlas instance failed. Paste it as the inbound secret in Users → Referrals.`,
+            comment: `Referalli webhook ${endpoint.id}: saving it on the Atlas instance failed. Paste it as the inbound secret in Users → Referrals.`,
           });
           ctx.io.err(
-            `atlas: warning: the webhook ${endpoint.id} was registered on Referally, but saving its secret failed (${err instanceof Error ? err.message : String(err)}).${kept.path ? ` It is in ${kept.path}.` : ''}`,
+            `atlas: warning: the webhook ${endpoint.id} was registered on Referalli, but saving its secret failed (${err instanceof Error ? err.message : String(err)}).${kept.path ? ` It is in ${kept.path}.` : ''}`,
           );
         }
       } catch (err) {
         if (!(err instanceof CliError)) throw err;
-        ctx.io.err(`atlas: warning: ${err.message} Referral changes on Referally won't reach Atlas until it is registered (see the docs).`);
+        ctx.io.err(`atlas: warning: ${err.message} Referral changes on Referalli won't reach Atlas until it is registered (see the docs).`);
       }
     }
     summary = {
-      provider: 'referally',
+      provider: 'referalli',
       instance_id: instance.id,
       endpoint_url: baseUrl,
       connection_id: created.id,
@@ -396,8 +503,8 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
       sync_endpoint_id: syncEndpoint,
     };
     if (!json) {
-      out.out(`Created Referally connection ${created.id} for instance ${instance.id} and saved it (the secret was not printed).`);
-      if (syncEndpoint) out.out(`Referral changes on Referally sync back to Atlas (webhook ${syncEndpoint}).`);
+      out.out(`Created Referalli connection ${created.id} for instance ${instance.id} and saved it (the secret was not printed).`);
+      if (syncEndpoint) out.out(`Referral changes on Referalli sync back to Atlas (webhook ${syncEndpoint}).`);
     }
   } else {
     const endpoint = str(v, 'endpoint');
@@ -559,7 +666,7 @@ async function status(ctx: RunContext, args: ParsedArgs): Promise<number> {
   if (c) lines.push(`Failed (7 days):      ${c.failed_calls_7d ?? 0}    Retrying: ${c.retrying_calls ?? 0}`);
   const inbound = settings.inbound;
   if (inbound?.url) {
-    // Referally needs its own webhook secret; the Atlas protocol falls back to the signing secret.
+    // Referalli needs its own webhook secret; the Atlas protocol falls back to the signing secret.
     const syncing = inbound.secret_set || (settings.provider === 'webhook' && settings.signing_secret_set);
     lines.push(`Two-way sync:         ${syncing ? 'on' : 'off (no inbound secret)'}${inbound.endpoint_id ? ` (webhook ${inbound.endpoint_id})` : ''}`);
     lines.push(`Inbound URL:          ${inbound.url}`);
@@ -578,6 +685,69 @@ async function status(ctx: RunContext, args: ParsedArgs): Promise<number> {
   return findings.some((f) => f.severity === 'error') ? 1 : 0;
 }
 
+/**
+ * `atlas referrals conformance`: run the referral protocol conformance suite
+ * (@atlasauth/referral-conformance) against a platform, and optionally Atlas's
+ * own simulated sign-up against the connected instance.
+ *
+ * The platform defaults to the instance's configured Referalli endpoint and
+ * connection id; the connection secret is never readable from Atlas, so it
+ * comes from --secret-file (or '-' for stdin).
+ */
+async function conformance(ctx: RunContext, args: ParsedArgs): Promise<number> {
+  const v = args.values;
+  const json = wantsJson(v);
+  const http = httpFor(ctx, instanceCredential(ctx, args));
+  const settings = await http.get<ReferralSettingsRead>('/v1/instance/referrals');
+  // Any platform: `webhook` tests the generic Atlas referral protocol, `connection` the connection-API dialect
+  // (Referalli's). Default: what the instance is connected to.
+  const profileFlag = str(v, 'protocol');
+  if (profileFlag && profileFlag !== 'webhook' && profileFlag !== 'connection') {
+    throw new CliError(`--protocol must be webhook or connection, got '${profileFlag}'.`);
+  }
+  const profile = (profileFlag as 'webhook' | 'connection' | undefined) ?? (settings.provider === 'webhook' ? 'webhook' : 'connection');
+  const configured = settings.provider === 'webhook' || settings.provider === 'referalli';
+  const baseRaw = str(v, 'base-url') ?? (configured ? settings.endpoint_url : null);
+  if (!baseRaw) throw new CliError('Pass --base-url <the platform to test> (or connect a platform first).');
+  const baseUrl = httpsUrl(baseRaw, '--base-url');
+  const connectionId = str(v, 'connection-id') ?? (profile === 'webhook' ? 'n/a' : settings.connection_id);
+  if (!connectionId) throw new CliError('Pass --connection-id <id> (the connection the suite signs its calls for).');
+  const secretFile = str(v, 'secret-file');
+  if (!secretFile) {
+    throw new CliError('Pass --secret-file <path|-> with the connection secret. Atlas never shows it, so take it from the platform.');
+  }
+  const secret = readKeyFile(ctx, secretFile, 'the connection secret');
+  const only = str(v, 'only')
+    ?.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const report = await runConformance({
+    profile,
+    baseUrl,
+    connectionId,
+    secret,
+    ...(ctx.fetch ? { fetch: ctx.fetch } : {}),
+    ...(only?.length ? { only } : {}),
+  });
+  let simulation: Record<string, unknown> | null = null;
+  if (v.simulate === true) {
+    simulation = await http.post<Record<string, unknown>>('/v1/instance/referrals/simulate', {});
+  }
+  if (json) printJson(ctx.io, { ...report, simulation });
+  else {
+    for (const line of formatReport(report)) ctx.io.out(line);
+    if (simulation) {
+      ctx.io.out('');
+      ctx.io.out(
+        simulation.ok === true
+          ? `Atlas's simulated sign-up reached the platform (call ${String(simulation.call_id ?? '')}).`
+          : `Atlas's simulated sign-up failed: ${String((simulation.error as { message?: string } | null)?.message ?? 'no answer')}.`,
+      );
+    }
+  }
+  return report.ok && (simulation === null || simulation.ok === true) ? 0 : 1;
+}
+
 export async function referrals(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const sub = args.positionals[1];
   switch (sub) {
@@ -587,11 +757,13 @@ export async function referrals(ctx: RunContext, args: ParsedArgs): Promise<numb
       return backfill(ctx, args);
     case 'status':
       return status(ctx, args);
+    case 'conformance':
+      return conformance(ctx, args);
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'referrals ${sub}'. Try: connect, backfill, status.`
-          : 'referrals needs a subcommand: connect, backfill, status.',
+          ? `Unknown subcommand 'referrals ${sub}'. Try: connect, backfill, status, conformance.`
+          : 'referrals needs a subcommand: connect, backfill, status, conformance.',
       );
   }
 }

@@ -1,0 +1,14 @@
+[
+  { "name": "provider", "path": "app/providers.tsx", "manual": ["removed provider props with no Atlas counterpart: session, refetchInterval"] },
+  { "name": "client-hooks", "path": "components/user-menu.tsx" },
+  { "name": "server-session", "path": "app/dashboard/page.tsx" },
+  { "name": "pages-api", "path": "pages/api/me.ts", "unchanged": false, "manual": ["Pages-router getServerSession(req, res"] },
+  { "name": "v5-auth", "path": "auth.ts", "manual": ["the config passed to NextAuth() is now ignored", "provider/adapter config"] },
+  { "name": "v5-route", "path": "app/api/auth/[...nextauth]/route.ts", "unchanged": true, "manual": ["this Auth.js route is no longer used"] },
+  { "name": "middleware-reexport", "path": "middleware.ts", "manual": ["middleware now runs Atlas"] },
+  { "name": "middleware-v5", "path": "middleware.ts", "manual": ["middleware now runs Atlas"] },
+  { "name": "middleware-withauth", "path": "middleware.ts" },
+  { "name": "env", "path": "lib/env.ts", "manual": ["NEXTAUTH_SECRET: Atlas signs sessions itself"] },
+  { "name": "jwt-route", "path": "app/api/me/route.ts", "manual": ["getToken() is now (await auth()).claims"] },
+  { "name": "adapter", "path": "auth.ts", "manual": ["database adapter: Atlas stores users"] }
+]

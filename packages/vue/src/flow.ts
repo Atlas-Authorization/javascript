@@ -3,12 +3,27 @@ import {
   advanceWithCaptcha,
   atlasCaptchaLabels,
   createCaptchaController,
+  createPasskeySignUp,
   createSignUp,
+  finishPasskeySignUp,
   fetchInstanceSettings,
+  fetchLastSignInMethod,
+  createMfaEnrollment,
+  acknowledgeRecoveryCodes,
+  pendingRecoveryCodes,
+  mfaChoicesFrom,
+  prepareSecondFactorCode,
+  resendSignUpVerification,
   signInCaptchaOptions,
+  PolicyAcceptanceController,
+  loadPolicies as loadPolicyList,
+  initialFlow as emptyFlow,
   flowNeedsCaptcha,
   type CaptchaController,
   type InstanceSettings,
+  type MfaChoices,
+  type MfaEnrollmentController,
+  type MfaEnrollmentState,
 } from '@atlasauth/js';
 import {
   FapiClient,
@@ -45,6 +60,46 @@ export interface FlowController {
    */
   create(values: Record<string, string>, consent?: boolean): void;
   /**
+   * Start a passkey-only sign-up (`POST /v1/client/sign_ups/passkey`) from the
+   * create-account form's values — no password. Offered when the instance's
+   * `account.passkeySignUp` is set.
+   */
+  createWithPasskey(values: Record<string, string>, consent?: boolean): void;
+  /**
+   * The passkey-only sign-up's last step (`awaitingPasskey(attempt)`): run the
+   * browser ceremony; the server creates the account when it verifies.
+   */
+  createPasskey(): void;
+  /**
+   * "Email me a code instead" on the second-factor step (when the instance's
+   * `account.emailSecondFactor` is on): mails a code to the account's verified
+   * email; the code is then posted with {@link submit} like any 2FA code.
+   */
+  sendEmailSecondFactor(): Promise<{ sentTo?: string; error?: string }>;
+  /**
+   * "Text me a code instead" on the second-factor step (where the app offers
+   * texted codes, `mfaChoices().sms`): texts a code to the account's enrolled
+   * phone; the code is then posted with {@link submit}.
+   */
+  sendSmsSecondFactor(): Promise<{ sentTo?: string; error?: string }>;
+  /** What the app lets the MFA steps offer (from {@link settings}). */
+  mfaChoices(): MfaChoices;
+  /**
+   * The MFA enrolment step (`needs_mfa_enrollment`): the authenticator app's
+   * setup (QR code, setup key) or a texted code. Started and reset with the flow.
+   */
+  enrollment: MfaEnrollmentController;
+  /** {@link enrollment}'s state, for templates. */
+  enrollmentState: ShallowRef<MfaEnrollmentState>;
+  /**
+   * "I've saved my codes": after an enrolment the flow holds its one-time
+   * recovery codes (`pendingRecoveryCodes(state)`, in memory only) and waits
+   * for this before exchanging the ticket and finishing the sign-in.
+   */
+  saveRecoveryCodes(): void;
+  /** Resend a sign-up's emailed code / link (the earlier one stops working). Resolves whether it was sent. */
+  resendSignUp(): Promise<boolean>;
+  /**
    * Ask the server to email a sign-in code or link for the current first-factor
    * step (`prepare_first_factor`). Resolves whether it was sent; the code is then
    * posted with {@link submit}, and a link is collected by the poll.
@@ -56,10 +111,24 @@ export interface FlowController {
    * or when the server could not be reached.
    */
   settings: ShallowRef<InstanceSettings | null>;
+  /**
+   * The method this browser last signed in with (`password`, `oauth_github`, …)
+   * for the "Last used" hint; null when none, or the instance turned it off.
+   */
+  lastMethod: ShallowRef<string | null>;
   /** The sign-in captcha (identifier step / `needs_captcha` challenge). */
   captcha: CaptchaController;
   /** The sign-up captcha (the create-account step). */
   signUpCaptcha: CaptchaController;
+  /**
+   * The instance's policies (terms, privacy, …) for the create-account form:
+   * `create` sends their acceptances and reloads them after a refusal.
+   */
+  policies: PolicyAcceptanceController;
+  /** Load the sign-up's policies into {@link policies} (`<SignUp>` calls it on mount). */
+  loadPolicies(): Promise<void>;
+  /** The user declined a policy a sign-in was waiting on: cancels the attempt and says why. */
+  declinePolicy(title: string): void;
 }
 
 export function useFlow(): FlowController {
@@ -68,6 +137,7 @@ export function useFlow(): FlowController {
   // factor), so the user resumes at the demanded step instead of starting over.
   const state = shallowRef<FlowState>(flowFromPending(atlas.pendingAttempt));
   const settings = shallowRef<InstanceSettings | null>(null);
+  const lastMethod = shallowRef<string | null>(null);
   const t = (key: string) => translate(atlas.catalog, key);
 
   const client = new FapiClient({
@@ -93,6 +163,11 @@ export function useFlow(): FlowController {
   // Stays busy until this browser actually holds the session: the completion
   // alone says nothing about whether the cookie was kept.
   const finish = async (next: FlowState) => {
+    // An enrolment's recovery codes are shown first; `saveRecoveryCodes` finishes.
+    if (pendingRecoveryCodes(next)) {
+      state.value = { ...next, busy: false };
+      return;
+    }
     if (next.attempt?.status !== 'complete') {
       state.value = next;
       return;
@@ -119,11 +194,71 @@ export function useFlow(): FlowController {
     })();
   };
 
+  const policies = new PolicyAcceptanceController([]);
+  const loadPolicies = async () => {
+    policies.setPolicies(await loadPolicyList(client, { locale: atlas.locale ?? undefined }));
+  };
+  const declinePolicy = (title: string) => {
+    state.value = { ...emptyFlow, errors: [{ code: 'POLICY_DECLINED', message: translate(atlas.catalog, 'policy.declined', { policy: title }) }] };
+  };
+
   const create = (values: Record<string, string>, consent = true) => {
     void (async () => {
       state.value = { ...state.value, busy: true, errors: [] };
-      await finish(await createSignUp(client, values, { consent, captcha: signUpCaptcha, t }));
+      await finish(await createSignUp(client, values, { consent, captcha: signUpCaptcha, t, policies }));
     })();
+  };
+
+  const createWithPasskey = (values: Record<string, string>, consent = true) => {
+    void (async () => {
+      state.value = { ...state.value, busy: true, errors: [] };
+      await finish(await createPasskeySignUp(client, values, { consent, captcha: signUpCaptcha, t, policies }));
+    })();
+  };
+
+  const createPasskey = () => {
+    void (async () => {
+      state.value = { ...state.value, busy: true, errors: [] };
+      await finish(await finishPasskeySignUp(client, state.value, { t }));
+    })();
+  };
+
+  const sendSecondFactorCode = async (strategy: 'sms' | 'email_code'): Promise<{ sentTo?: string; error?: string }> => {
+    const id = state.value.attempt?.id;
+    if (!id) return { error: t('error.generic') };
+    try {
+      return await prepareSecondFactorCode(client, id, strategy);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : t('error.generic') };
+    }
+  };
+  const sendEmailSecondFactor = () => sendSecondFactorCode('email_code');
+  const sendSmsSecondFactor = () => sendSecondFactorCode('sms');
+
+  const mfaChoices = () => mfaChoicesFrom(settings.value?.account);
+  const enrollment = createMfaEnrollment(client, mfaChoices);
+  const enrollmentState = shallowRef<MfaEnrollmentState>(enrollment.state);
+  const stopEnrollment = enrollment.subscribe((next) => {
+    enrollmentState.value = next;
+  });
+  watch(
+    [() => state.value.attempt?.id ?? null, () => state.value.attempt?.status],
+    ([id, status]) => {
+      if (id && status === 'needs_mfa_enrollment') enrollment.start(id);
+      else enrollment.reset();
+    },
+    { immediate: true },
+  );
+  onScopeDispose(stopEnrollment);
+
+  const saveRecoveryCodes = () => {
+    void finish(acknowledgeRecoveryCodes(state.value));
+  };
+
+  const resendSignUp = async (): Promise<boolean> => {
+    state.value = { ...state.value, busy: true, errors: [] };
+    state.value = await resendSignUpVerification(client, state.value);
+    return state.value.errors.length === 0;
   };
 
   const prepare = async (strategy: 'email_code' | 'email_link') => {
@@ -146,6 +281,11 @@ export function useFlow(): FlowController {
   if (typeof window !== 'undefined') {
     void fetchInstanceSettings(client).then((loaded) => {
       if (loaded) settings.value = loaded;
+      if (loaded?.account.lastSignInMethod) {
+        void fetchLastSignInMethod(client).then((m) => {
+          lastMethod.value = m;
+        });
+      }
     });
   }
   onScopeDispose(() => {
@@ -192,7 +332,28 @@ export function useFlow(): FlowController {
 
   onScopeDispose(stopPolling);
 
-  return { state, submit, create, prepare, settings, captcha, signUpCaptcha };
+  return {
+    state,
+    submit,
+    create,
+    createWithPasskey,
+    createPasskey,
+    sendEmailSecondFactor,
+    sendSmsSecondFactor,
+    mfaChoices,
+    enrollment,
+    enrollmentState,
+    saveRecoveryCodes,
+    resendSignUp,
+    prepare,
+    settings,
+    lastMethod,
+    captcha,
+    signUpCaptcha,
+    policies,
+    loadPolicies,
+    declinePolicy,
+  };
 }
 
 /** §10.2 `useSignIn()` — drive a sign-in attempt. */

@@ -1,0 +1,40 @@
+{
+  "name": "@atlasauth/pdp",
+  "version": "0.1.0",
+  "description": "Atlas local policy decision point: verifies a signed policy bundle offline and evaluates ABAC (Cedar-subset) policies and FGA (ReBAC) checks in-process or as a localhost sidecar.",
+  "main": "./dist/index.js",
+  "types": "./dist/types/pdp/src/index.d.ts",
+  "bin": {
+    "atlas-pdp": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/types/pdp/src/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "node build.mjs && tsc -p tsconfig.build.json",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "esbuild": "^0.21.5",
+    "jose": "^5.9.6",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "keywords": ["atlas", "atlasauth", "authorization", "pdp", "cedar", "fga", "openfga", "authzen", "policy"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "!dist/*.tsbuildinfo",
+    "README.md",
+    "CHANGELOG.md"
+  ]
+}

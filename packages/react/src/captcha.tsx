@@ -48,7 +48,7 @@ export function useCaptcha(
     atlasLabels?: Partial<AtlasCaptchaLabels>;
   },
 ): CaptchaController {
-  const needed = options.active && !!flow && isRenderableCaptcha(flow.provider);
+  const needed = options.active && !!flow && isRenderableCaptcha(flow.provider, flow);
   const eager = options.eager ?? flow?.widget !== 'invisible';
 
   const container = useRef<HTMLDivElement | null>(null);

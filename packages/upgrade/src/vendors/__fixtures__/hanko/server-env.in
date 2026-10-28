@@ -1,0 +1,5 @@
+const api = process.env.HANKO_API_URL;
+const key = process.env.HANKO_API_KEY;
+
+export const jwks = `${api}/.well-known/jwks.json`;
+export const headers = { authorization: `Bearer ${key}` };

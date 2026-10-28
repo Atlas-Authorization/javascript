@@ -1,0 +1,9 @@
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '../auth/[...nextauth]';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // TODO(atlas-migrate): Pages-router getServerSession(req, res, …): call getServerSessionCompat() from an App Router server component or route handler, or verify the session token with AtlasBackend from @atlasauth/backend
+  const session = await getServerSession(req, res, authOptions);
+  res.json({ email: session?.user?.email ?? null });
+}

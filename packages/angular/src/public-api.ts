@@ -25,12 +25,19 @@ export { UserButtonComponent } from './lib/components/user-button.component';
 export { OrganizationSwitcherComponent } from './lib/components/organization-switcher.component';
 export { UserProfileComponent } from './lib/components/user-profile.component';
 export { OrganizationProfileComponent } from './lib/components/organization-profile.component';
+export { ManageCibaComponent } from './lib/components/manage-ciba.component';
+export { OrganizationAuditLogComponent } from './lib/components/organization-audit-log.component';
+export { AtlasOrganizationAuditLog } from './lib/components/organization-audit-log';
+export type { OrganizationAuditLogEntry, OrganizationAuditLogState, OrganizationAuditLogOptions } from '@atlasauth/js';
+export { ImpersonationBannerComponent } from './lib/components/impersonation-banner.component';
 export { AttemptFlowComponent } from './lib/components/attempt-flow.component';
 export {
   SignUpFormComponent,
   type SignUpFormSubmit,
 } from './lib/components/sign-up-form.component';
 export { AtlasCaptchaSlotDirective } from './lib/directives/captcha-slot.directive';
+// Policy acceptance (terms, privacy, any policy): consent block / clickwrap host, sign-in step, in-app gate.
+export { AtlasPoliciesDirective, PolicyAcceptStepComponent, PolicyGateComponent } from './lib/components/policy-host';
 export { AtlasFlowController } from './lib/components/flow-controller';
 export { ATLAS_UI } from './lib/atlas.ui';
 

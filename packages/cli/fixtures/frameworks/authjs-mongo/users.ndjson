@@ -1,0 +1,1 @@
+{"_id":{"$oid":"65f1c0ffee0000000000000a"},"name":"Mongo User","email":"mongo@example.com","emailVerified":{"$date":"2025-01-02T03:04:05.000Z"}}

@@ -5,6 +5,7 @@
   import { translate } from '../i18n';
   import { FapiClient } from '../fapi';
   import { ATLAS_SVELTE_SDK } from '../version';
+  import ManageCiba from './ManageCiba.svelte';
 
   /** §10.2 `<UserProfile/>` — the account-management card. */
   const atlas = useAtlas();
@@ -101,5 +102,7 @@
       <h2>{t('userProfile.securitySection')}</h2>
       <p>{current.mfa_enabled ? '2FA on' : '2FA off'}</p>
     </section>
+
+    <ManageCiba />
   </div>
 {/if}

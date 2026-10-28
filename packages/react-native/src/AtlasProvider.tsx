@@ -58,6 +58,8 @@ export interface AtlasProviderProps {
    * the store is created.
    */
   getCaptchaToken?: AtlasStoreConfig['getCaptchaToken'];
+  /** App Attest / Play Integrity provider, once the instance requires app attestation. Read once. */
+  attestation?: AtlasStoreConfig['attestation'];
   children: ReactNode;
 }
 
@@ -73,6 +75,7 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
       fetchImpl: props.fetchImpl,
       locale: props.locale,
       getCaptchaToken: props.getCaptchaToken,
+      attestation: props.attestation,
     }),
   );
 

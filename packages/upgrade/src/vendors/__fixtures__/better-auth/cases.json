@@ -1,0 +1,7 @@
+[
+  { "name": "client", "path": "lib/auth-client.ts", "manual": ["the Better Auth config passed here is now ignored", "Better Auth client plugin", "NEXT_PUBLIC_BETTER_AUTH_URL: not needed"] },
+  { "name": "server", "path": "lib/auth.ts", "manual": ["the Better Auth config passed here is now ignored", "Better Auth server config (adapter/plugin)", "nextCookies(): Atlas sets its own cookies"] },
+  { "name": "route", "path": "app/api/auth/[...all]/route.ts", "manual": ["this Better Auth route is no longer used"] },
+  { "name": "middleware", "path": "middleware.ts" },
+  { "name": "component", "path": "components/account.tsx", "unchanged": true }
+]

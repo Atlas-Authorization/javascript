@@ -1,0 +1,12 @@
+'use client';
+import { authClient } from '@/lib/auth-client';
+
+export function Account() {
+  const { data: session, isPending } = authClient.useSession();
+  if (isPending) return null;
+  return session ? (
+    <button onClick={() => authClient.signOut()}>Sign out {session.user.email}</button>
+  ) : (
+    <button onClick={() => authClient.signIn.social({ provider: 'github', callbackURL: '/dashboard' })}>Sign in</button>
+  );
+}

@@ -1,0 +1,14 @@
+'use client';
+import { stytch } from '../lib/stytch';
+import type { ReactNode } from 'react';
+import { AtlasProvider } from '@atlasauth/react';
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  return (
+    <AtlasProvider
+      publishableKey={process.env.NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY!}
+      frontendApi={process.env.NEXT_PUBLIC_ATLAS_FRONTEND_API!}>
+      {children}
+    </AtlasProvider>
+  );
+}

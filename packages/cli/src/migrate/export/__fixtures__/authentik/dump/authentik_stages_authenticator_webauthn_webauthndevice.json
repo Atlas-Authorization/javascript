@@ -1,0 +1,4 @@
+[
+  { "id": 1, "name": "YubiKey 5", "credential_id": "AQIDBAUGBwgJCgsMDQ4PEA", "public_key": "pQECAyYgASFYIEhFVFhSb290S2V5WENvb3JkaW5hdGUxMjM0NTY3OA", "sign_count": 4, "rp_id": "auth.example.com", "created_on": "2024-02-05T10:00:00Z", "last_t": "2026-10-01T12:00:00Z", "aaguid": "cb69481e-8ff7-4039-93ec-0a2729a154a8", "user_id": 2, "device_type_id": "cb69481e-8ff7-4039-93ec-0a2729a154a8" },
+  { "id": 2, "name": "Old key", "credential_id": "EBEPDg0MCwoJCAcGBQQDAgE", "public_key": "pQECAyYgASFYIE9sZEtleVhDb29yZGluYXRlQUJDREVGR0hJSktMTU4", "sign_count": 0, "rp_id": "", "created_on": "2022-01-01T10:00:00Z", "aaguid": "00000000-0000-0000-0000-000000000000", "user_id": 1 }
+]

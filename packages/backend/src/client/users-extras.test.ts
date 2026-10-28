@@ -138,6 +138,16 @@ describe('users: writes', () => {
     expect(last().url).toBe(`${API_URL}/v1/users/user_1/passkeys/pk_1`);
   });
 
+  it('listDeviceKeys / deleteDeviceKey', async () => {
+    const { atlas, last } = setup({ object: 'list', data: [] });
+    await atlas.users.listDeviceKeys('user_1');
+    expect(last().method).toBe('GET');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/device_keys`);
+    await atlas.users.deleteDeviceKey('user_1', 'dvk_1');
+    expect(last().method).toBe('DELETE');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/device_keys/dvk_1`);
+  });
+
   it('importIdentity / removeIdentityByProvider', async () => {
     const { atlas, last } = setup({ object: 'identity', id: 'idn_1' });
     await atlas.users.importIdentity('user_1', {
@@ -165,6 +175,83 @@ describe('users: writes', () => {
     expect(last().url).toBe(`${API_URL}/v1/users/user_1/erasure_acks`);
     expect(last().headers['idempotency-key']).toBe('idem-1');
     expect(json(last().body)).toEqual({ source: 'billing-app', payload: { invoices: 3 } });
+  });
+
+  it('createLink POSTs the type and expiry', async () => {
+    const { atlas, last } = setup({ object: 'user_link', type: 'password_reset' }, 201);
+    await atlas.users.createLink('user_1', { type: 'password_reset', expires_in_seconds: 600 }, 'idem-3');
+    expect(last().method).toBe('POST');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/links`);
+    expect(last().headers['idempotency-key']).toBe('idem-3');
+    expect(json(last().body)).toEqual({ type: 'password_reset', expires_in_seconds: 600 });
+  });
+
+  it('search query / export / views', async () => {
+    const { atlas, last } = setup({ data: [], has_more: false });
+    const filter = { field: 'traits.plan', op: 'eq', value: 'pro' } as const;
+    await atlas.users.search.query({ filter, limit: 5 });
+    expect(last().method).toBe('POST');
+    expect(last().url).toBe(`${API_URL}/v1/users/search`);
+    expect(json(last().body)).toEqual({ filter, limit: 5 });
+
+    await atlas.users.search.views.create({ name: 'Pros', filter });
+    expect(last().url).toBe(`${API_URL}/v1/users/search/views`);
+    await atlas.users.search.views.update('usv_1', { name: 'P' });
+    expect(last().method).toBe('PATCH');
+    expect(last().url).toBe(`${API_URL}/v1/users/search/views/usv_1`);
+    await atlas.users.search.views.delete('usv_1');
+    expect(last().method).toBe('DELETE');
+  });
+
+  it('minor status and guardians', async () => {
+    const { atlas, last } = setup({ object: 'minor_status', status: 'consent_required', guardians: [] });
+    await atlas.users.minorStatus('user_1');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/minor_status`);
+    await atlas.users.guardians.request('user_1', { email: 'p@example.com', send_email: true });
+    expect(last().method).toBe('POST');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/guardians`);
+    await atlas.users.guardians.approve('user_1', 'grdn_1', { note: 'form' });
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/guardians/grdn_1/approve`);
+    await atlas.users.guardians.revoke('user_1', 'grdn_1');
+    expect(last().method).toBe('DELETE');
+  });
+
+  it('notes create / list / update / delete and history', async () => {
+    const { atlas, last } = setup({ object: 'user_note', id: 'unote_1' }, 201);
+    await atlas.users.notes.create('user_1', { body: 'VIP', pinned: true });
+    expect(last().method).toBe('POST');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/notes`);
+    expect(json(last().body)).toEqual({ body: 'VIP', pinned: true });
+    await atlas.users.notes.list('user_1');
+    expect(last().method).toBe('GET');
+    await atlas.users.notes.update('user_1', 'unote_1', { pinned: false });
+    expect(last().method).toBe('PATCH');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/notes/unote_1`);
+    await atlas.users.notes.delete('user_1', 'unote_1');
+    expect(last().method).toBe('DELETE');
+    await atlas.users.history('user_1', { limit: 10, starting_after: 'uhist_9', action: ['user.banned', 'user.locked'] });
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/history?limit=10&starting_after=uhist_9&action=user.banned%2Cuser.locked`);
+  });
+
+  it('requiredActions request / list / clear / bulk', async () => {
+    const { atlas, last } = setup({ object: 'required_action', id: 'ura_1' }, 201);
+    await atlas.users.requiredActions.request('user_1', { action: 'update_password' }, 'idem-2');
+    expect(last().method).toBe('POST');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/required_actions`);
+    expect(last().headers['idempotency-key']).toBe('idem-2');
+    expect(json(last().body)).toEqual({ action: 'update_password' });
+
+    await atlas.users.requiredActions.list('user_1');
+    expect(last().method).toBe('GET');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/required_actions`);
+
+    await atlas.users.requiredActions.clear('user_1', 'ura_1');
+    expect(last().method).toBe('DELETE');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/required_actions/ura_1`);
+
+    await atlas.users.requiredActions.bulk({ action: 'verify_email', user_ids: ['a', 'b'] });
+    expect(last().url).toBe(`${API_URL}/v1/required_actions/bulk`);
+    expect(json(last().body)).toEqual({ action: 'verify_email', user_ids: ['a', 'b'] });
   });
 
   it('deletion schedule / cancel / finalize', async () => {

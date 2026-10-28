@@ -1,0 +1,46 @@
+[
+  {
+    "id": "b5dd5267-b462-48be-b70d-bcd6f1bbe7a5",
+    "public_id": "b5dd5267-b462-48be-b70d-bcd6f1bbe7a5",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "name": "John Doe",
+    "given_name": "John",
+    "family_name": "Doe",
+    "picture": "https://example.com/john.png",
+    "created_at": "2020-12-31 23:59:59",
+    "updated_at": "2020-12-31 23:59:59"
+  },
+  {
+    "id": "c04c8f0a-1010-4a11-8a11-101010101010",
+    "public_id": "d15d9f1b-2020-4b22-8b22-202020202020",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "name": null,
+    "given_name": null,
+    "family_name": null,
+    "picture": null,
+    "created_at": "2021-03-04 05:06:07",
+    "updated_at": "2020-12-31 23:59:59"
+  },
+  {
+    "id": "e0282f3f-b211-4f0e-b777-6fabc69287c9",
+    "public_id": "e0282f3f-b211-4f0e-b777-6fabc69287c9",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "name": null,
+    "given_name": null,
+    "family_name": null,
+    "picture": null,
+    "created_at": "2020-12-31 23:59:59",
+    "updated_at": "2020-12-31 23:59:59"
+  },
+  {
+    "id": "1d6a4824-d935-4980-8f18-8ee5d6efe2fc",
+    "public_id": "1d6a4824-d935-4980-8f18-8ee5d6efe2fc",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "name": null,
+    "given_name": null,
+    "family_name": null,
+    "picture": null,
+    "created_at": "2020-12-31 23:59:59",
+    "updated_at": "2020-12-31 23:59:59"
+  }
+]

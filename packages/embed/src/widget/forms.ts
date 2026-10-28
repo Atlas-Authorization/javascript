@@ -1,9 +1,20 @@
-import { EMAIL_UNAVAILABLE_MESSAGE, nextStep, passkeysSupported, planFirstFactor, resetStep, type FieldError } from '@atlasauth/js';
+import {
+  EMAIL_UNAVAILABLE_MESSAGE,
+  awaitingSignUpLink,
+  initialResetFlow,
+  nextStep,
+  passkeysSupported,
+  planFirstFactor,
+  resetStep,
+  type FieldError,
+} from '@atlasauth/js';
 import type { AtlasWidget } from '../widget';
 import { COPY } from './constants';
 import { cls, doc, el, submitButton } from './dom';
 import { render } from './render';
-import { sendEmailFactor, startReset, submit, submitReset, submitSignUp } from './flow';
+import { mountSignUpPolicies, policyT } from './policies';
+import { resendSignUp, sendEmailFactor, startReset, submit, submitReset, submitSignUp } from './flow';
+import { renderEnrollment, renderSecondFactorAlternatives, submitEnrollment } from './mfa';
 
 /**
  * §5.4 the reset sub-flow panel: email → emailed code → (2FA) → new password →
@@ -26,10 +37,17 @@ export function renderReset(w: AtlasWidget): HTMLElement {
   let subtitle: string | null = null;
   let submitLabel = 'Continue';
   let showSubmit = true;
+  // How the instance emails the reset: a code, a link, or one email with both.
+  const delivery = w.account.passwordReset;
   switch (step) {
     case 'request':
-      subtitle = 'Enter your email and we’ll send you a reset code.';
-      submitLabel = 'Send reset code';
+      subtitle =
+        delivery === 'link'
+          ? 'Enter your email and we’ll send you a reset link.'
+          : delivery === 'both'
+            ? 'Enter your email and we’ll send you a reset link and code.'
+            : 'Enter your email and we’ll send you a reset code.';
+      submitLabel = delivery === 'link' ? 'Send reset link' : 'Send reset code';
       fieldInto(w, form, inputs, errors, 'email', 'Email address', 'email', 'username');
       {
         const emailField = inputs.get('email');
@@ -40,6 +58,32 @@ export function renderReset(w: AtlasWidget): HTMLElement {
       }
       break;
     case 'collect_email_code':
+      if (delivery === 'link') {
+        // Nothing to type: the link carries the proof, and this tab follows the
+        // attempt (it continues on its own once the link is opened, anywhere).
+        showSubmit = false;
+        subtitle = 'Check your email';
+        const note = el(
+          w,
+          'p',
+          'atlas-embed-note',
+          w.enteredIdentifier
+            ? `We sent a reset link to ${w.enteredIdentifier}. Open it on any device; this page continues on its own.`
+            : 'We sent you a reset link. Open it on any device; this page continues on its own.',
+        );
+        note.setAttribute('data-atlas-link-sent', '');
+        form.appendChild(note);
+        const again = el(w, 'button', 'atlas-embed-step-back', 'Send another link') as HTMLButtonElement;
+        again.type = 'button';
+        again.setAttribute('data-atlas-resend', '');
+        again.disabled = w.busy;
+        again.addEventListener('click', () => {
+          w.resetFlow = { ...initialResetFlow };
+          void submitReset(w, { email: w.enteredIdentifier ?? '' });
+        });
+        form.appendChild(again);
+        break;
+      }
       subtitle = w.enteredIdentifier
         ? `Enter the code we sent to ${w.enteredIdentifier}`
         : 'Enter the code we sent to your email';
@@ -54,6 +98,8 @@ export function renderReset(w: AtlasWidget): HTMLElement {
       submitLabel = 'Set new password';
       fieldInto(w, form, inputs, errors, 'password', 'New password', 'password', 'new-password');
       inputs.get('password')?.setAttribute('data-atlas-autofocus', '');
+      // A user who set security questions answers them before the new password is accepted.
+      (flow.securityQuestions ?? []).forEach((question, i) => fieldInto(w, form, inputs, errors, `security_answer_${i}`, question, 'text', 'off'));
       break;
     default:
       showSubmit = false;
@@ -231,6 +277,7 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
     codeFieldInto(w, form, inputs, errors, name, label, autofocus);
 
   let showSubmit = true;
+  let submitLabel: string = COPY[w.mode].submit;
   // Secondary actions drawn under the submit button (resend, other factors).
   const trailing: HTMLElement[] = [];
   switch (stepKind) {
@@ -357,24 +404,56 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
         row.appendChild(el(w, 'span', 'atlas-embed-remember-text', 'Remember this device'));
         form.appendChild(row);
       }
+      // "Text me a code instead" / "Email me a code instead", where the app offers them.
+      renderSecondFactorAlternatives(w, trailing);
       break;
-    case 'collect_email_code':
-      addCodeField('code', 'Verification code', true);
+    case 'collect_email_code': {
+      const linkOnly = awaitingSignUpLink(w.state.attempt, w.account.emailVerification);
+      if (linkOnly) {
+        // Nothing to type: this tab polls and continues once the link is opened.
+        showSubmit = false;
+        const who = w.enteredIdentifier ?? (w.state.attempt as { identifier?: string | null } | null)?.identifier ?? '';
+        const note = el(
+          w,
+          'p',
+          'atlas-embed-note',
+          who
+            ? `We sent a confirmation link to ${who}. Open it on any device; this page continues on its own.`
+            : 'We sent you a confirmation link. Open it on any device; this page continues on its own.',
+        );
+        note.setAttribute('data-atlas-link-sent', '');
+        form.appendChild(note);
+      } else {
+        addCodeField('code', 'Verification code', true);
+      }
+      // A sign-up can ask for a fresh email (the earlier code / link stops working).
+      if (w.state.attempt?.object === 'sign_up_attempt') {
+        const again = el(w, 'button', 'atlas-embed-step-back', linkOnly ? 'Resend link' : 'Resend code') as HTMLButtonElement;
+        again.type = 'button';
+        again.setAttribute('data-atlas-resend', '');
+        again.disabled = w.busy;
+        again.addEventListener('click', () => void resendSignUp(w));
+        trailing.push(again);
+      }
       break;
+    }
     case 'collect_new_password':
       addField('password', 'New password', 'password', 'new-password');
       break;
-    case 'enroll_second_factor':
-      addCodeField('code', 'Authenticator code', true);
-      addCodeField('secondCode', 'Next code', false);
+    case 'enroll_second_factor': {
+      // The authenticator app (QR code, setup key, its code) or a texted code.
+      const label = renderEnrollment(w, form, { addField, addCodeField, trailing }, submitLabel);
+      if (label === null) showSubmit = false;
+      else submitLabel = label;
       break;
+    }
     default:
       showSubmit = false;
       form.appendChild(el(w, 'p', 'atlas-embed-note', 'Please continue in your application.'));
   }
 
   if (showSubmit) {
-    form.appendChild(submitButton(w, COPY[w.mode].submit));
+    form.appendChild(submitButton(w, submitLabel));
   }
   for (const node of trailing) form.appendChild(node);
 
@@ -415,6 +494,10 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
     // §5.3 carry the "remember this device" choice into the second-factor submit.
     if (stepKind === 'collect_second_factor' && w.trustedDeviceEnabled && w.rememberDevice) {
       values.remember_device = 'true';
+    }
+    if (stepKind === 'enroll_second_factor') {
+      void submitEnrollment(w, values);
+      return;
     }
     void submit(w, values);
   });
@@ -602,23 +685,43 @@ export function renderSignUpForm(w: AtlasWidget): HTMLElement {
 
   // §5.1 legal consent — links, and a checkbox that gates the button when
   // agreement is required (no re-render, so typed values are never lost).
-  const consent = renderLegalConsent(w);
+  // Instance policies (terms, privacy, …) replace the legacy single consent row.
+  let button: HTMLButtonElement;
+  const policies = mountSignUpPolicies(w, () => {
+    if (button) button.disabled = w.busy || !policies?.canSubmit();
+  });
+  const consent = policies ? null : renderLegalConsent(w);
   if (consent) form.appendChild(consent.row);
+  if (policies) form.appendChild(policies.consent);
 
-  const button = submitButton(w, COPY[w.mode].submit);
-  const consentOk = () => !consent?.checkbox || consent.checkbox.checked;
+  button = submitButton(w, COPY[w.mode].submit);
+  const consentOk = () => (policies ? policies.canSubmit() : !consent?.checkbox || consent.checkbox.checked);
   button.disabled = w.busy || !consentOk();
   consent?.checkbox?.addEventListener('change', () => {
     button.disabled = w.busy || !consentOk();
   });
   form.appendChild(button);
+  if (policies) form.appendChild(policies.clickwrap);
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const values: Record<string, string> = {};
     for (const [name, read] of readers) values[name] = read();
     // §5.1 carry the consent tick to the server (true when there is no gate).
-    void submitSignUp(w, values, consentOk());
+    if (!policies) {
+      void submitSignUp(w, values, consentOk());
+      return;
+    }
+    // Scroll-mode policies are read in their dialog first; declining cancels the sign-up.
+    void policies.read().then((ok) => {
+      if (ok) {
+        void submitSignUp(w, values, true);
+        return;
+      }
+      const declined = w.policies.policies.find((p) => !w.policies.isChecked(p.key))?.title ?? '';
+      w.state = { ...w.state, errors: [{ code: 'POLICY_DECLINED', message: policyT(w)('policy.declined', { policy: declined }) }] };
+      render(w);
+    });
   });
 
   return form;

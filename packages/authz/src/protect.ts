@@ -23,6 +23,14 @@ export interface ProtectCondition {
   plan?: string;
   /** A granted feature (Clerk `has({ feature })`) — an entry in the `fea` claim. */
   feature?: string;
+  /** An app-level (instance-wide) role key the user must hold. Needs no organization. */
+  appRole?: string;
+  /** An app-level permission the user's app roles must grant. Needs no organization. */
+  appPermission?: string;
+  /** Any of these app-level permissions (OR). */
+  anyAppPermission?: readonly string[];
+  /** All of these app-level permissions (AND). */
+  allAppPermissions?: readonly string[];
 }
 
 export type ProtectReason =
@@ -72,6 +80,22 @@ export function evaluate(
   }
   if (condition.feature !== undefined && !(claims.fea ?? []).includes(condition.feature)) {
     return { allowed: false, reason: 'missing_entitlement' };
+  }
+
+  // App-level roles/permissions are instance-wide: like entitlements they need
+  // no active organization, so they are checked before the org-context gate.
+  const appHeld = new Set(claims.app_permissions ?? []);
+  if (condition.appRole !== undefined && !(claims.app_roles ?? []).includes(condition.appRole)) {
+    return { allowed: false, reason: 'missing_permission' };
+  }
+  if (condition.appPermission !== undefined && !appHeld.has(condition.appPermission)) {
+    return { allowed: false, reason: 'missing_permission' };
+  }
+  if (condition.anyAppPermission && !condition.anyAppPermission.some((p) => appHeld.has(p))) {
+    return { allowed: false, reason: 'missing_permission' };
+  }
+  if (condition.allAppPermissions && !condition.allAppPermissions.every((p) => appHeld.has(p))) {
+    return { allowed: false, reason: 'missing_permission' };
   }
 
   if (!wantsOrgContext(condition)) return { allowed: true };

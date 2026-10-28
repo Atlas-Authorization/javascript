@@ -58,7 +58,7 @@ describe('FAPI environment bootstrap', () => {
     const body = await res.json();
     expect(body.errors[0].code).toBe('VALIDATION_FAILED');
     expect(body.errors[0].param).toBe('publishable_key');
-    expect(body.errors[0].docs_url).toContain('/docs/errors/validation_failed');
+    expect(body.errors[0].docs_url).toContain('/errors/validation_failed');
   });
 });
 

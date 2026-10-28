@@ -1,0 +1,11 @@
+import React from 'react';
+
+import { UserProfile } from '@atlasauth/react';
+
+export function Account() {
+  return (
+    <section>
+      <UserProfile></UserProfile>
+    </section>
+  );
+}

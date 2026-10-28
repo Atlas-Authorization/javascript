@@ -1,0 +1,14 @@
+[
+  {
+    "id": "6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "provider_id": "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+    "raw_metadata_xml": "<EntityDescriptor entityID=\"https://idp.corp.example/metadata\"/>",
+    "issuer": "https://idp.corp.example/metadata",
+    "sso_url": "https://idp.corp.example/sso",
+    "certificates_pem": "-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIJAKHBfpegPjMCMA0GCSqGSIb3DQEBCwUA\n-----END CERTIFICATE-----",
+    "last_fetched_at": "2020-12-31 23:59:59",
+    "created_at": "2020-12-31 23:59:59",
+    "updated_at": "2020-12-31 23:59:59"
+  }
+]
