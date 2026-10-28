@@ -492,7 +492,7 @@ importers:
         version: link:../js
       '@react-native-google-signin/google-signin':
         specifier: '>=13'
-        version: 16.1.5(expo@58.0.21)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)
+        version: 16.2.0(expo@58.0.21)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)
       react-native:
         specifier: '>=0.73'
         version: 0.88.1(@babel/core@7.29.7)(react@18.3.1)
@@ -5198,8 +5198,8 @@ packages:
   '@poppinss/exception@1.2.3':
     resolution: {integrity: sha512-dCED+QRChTVatE9ibtoaxc+WkdzOSjYTKi/+uacHWIsfodVfpsueo3+DKpgU5Px8qXjgmXkSvhXvSCz3fnP9lw==}
 
-  '@react-native-google-signin/google-signin@16.1.5':
-    resolution: {integrity: sha512-9rmMwACzHK9Cbd0Yp7efg5uWgiYoLwmNAJh4gRCuMcSQH+qplpK7E4d1Q4tbsD8M9jvvVtRX2Z0AP9wwBKmPrQ==}
+  '@react-native-google-signin/google-signin@16.2.0':
+    resolution: {integrity: sha512-Rbc7kpvF79hPmRy2C4KLV3BapqXStNxcLKckJv2JWgWqE1CuhNByQTSxT2ixWMZTF25IXcBBwptcRdRvmJSdtg==}
     peerDependencies:
       expo: '>=52.0.40'
       react: '*'
@@ -18828,7 +18828,7 @@ snapshots:
 
   '@poppinss/exception@1.2.3': {}
 
-  '@react-native-google-signin/google-signin@16.1.5(expo@58.0.21)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)':
+  '@react-native-google-signin/google-signin@16.2.0(expo@58.0.21)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)':
     dependencies:
       react: 18.3.1
       react-native: 0.88.1(@babel/core@7.29.7)(react@18.3.1)
