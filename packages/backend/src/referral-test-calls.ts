@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from './edge-crypto';
 import {
   REFERRAL_OP_ENDPOINTS,
   REFERRAL_PROTOCOL_USER_AGENT,

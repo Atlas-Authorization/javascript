@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/nextjs",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -37,6 +37,7 @@
   "devDependencies": {
     "typescript": "^5.6.3",
     "vitest": "^2.1.4",
+    "esbuild": "^0.21.5",
     "jose": "^5.9.6",
     "next": "^15.0.0"
   },

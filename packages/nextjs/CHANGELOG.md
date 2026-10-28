@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.8.1 — 2026-10-28
+
+### Fixed
+
+- Next.js 15 edge `middleware.ts` builds again: the middleware no longer pulls `node:crypto` into the edge bundle (via `@atlasauth/backend` 0.27.1).
+
 ## 0.8.0 — 2026-10-25
 
 ### Added

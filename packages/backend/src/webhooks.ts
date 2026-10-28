@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from './edge-crypto';
 
 /**
  * §12.2 — verify an inbound Atlas webhook, for the CUSTOMER consuming events.

@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from './edge-crypto';
 
 /**
  * Vercel BotID for Atlas — the server half that runs on YOUR Vercel deployment.

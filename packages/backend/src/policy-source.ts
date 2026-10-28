@@ -1,4 +1,4 @@
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from './edge-crypto';
 
 /**
  * Atlas policy source protocol v1 — helpers for the system that SERVES an

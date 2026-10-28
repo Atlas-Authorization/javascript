@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.27.1 — 2026-10-28
+
+### Fixed
+
+- The package entry no longer imports `node:crypto`: webhook, policy-feed, bot-id and referral signing use @noble/hashes and Web Crypto, so it bundles for edge and worker runtimes (Next.js 15 edge middleware). Public API unchanged.
+
 ## 0.27.0 — 2026-10-28
 
 - SAML IdP (service providers, artifacts, attribute queries), WS-Federation, outbound provisioning connectors, SCIM custom resources and cloud access targets
