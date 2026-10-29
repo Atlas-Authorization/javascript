@@ -2385,8 +2385,8 @@ packages:
   '@dxup/unimport@0.1.2':
     resolution: {integrity: sha512-/B8YJGPzaYq1NbsQmwgP8EZqg40NpTw4ZB3suuI0TplbxKHeK94jeaawLmVhCv+YwUnOpiWEz9U6SeThku/8JQ==}
 
-  '@electron-internal/extract-zip@1.0.7':
-    resolution: {integrity: sha512-+ZdkmRVBonPJwpZBFQr9y4pY8DP6lgbm+Pj5pQzSFrnDGiBAi3Pee1jivAsgK61Ct4W8SGUHVtl7FNbm5c6rgg==}
+  '@electron-internal/extract-zip@1.0.8':
+    resolution: {integrity: sha512-8iajeLFbzNwM0m3AsQZSZgYREWglAImyGvvFSWU34FgMW8sHlzdwj9QKvv9dgN7jMP591EFUF/sLOC3Jl9YIjQ==}
     engines: {node: '>=22.12.0'}
 
   '@electron/get@5.1.0':
@@ -15898,7 +15898,7 @@ snapshots:
 
   '@dxup/unimport@0.1.2': {}
 
-  '@electron-internal/extract-zip@1.0.7': {}
+  '@electron-internal/extract-zip@1.0.8': {}
 
   '@electron/get@5.1.0':
     dependencies:
@@ -21997,7 +21997,7 @@ snapshots:
 
   electron@45.1.0:
     dependencies:
-      '@electron-internal/extract-zip': 1.0.7
+      '@electron-internal/extract-zip': 1.0.8
       '@electron/get': 5.1.0
       '@types/node': 24.19.2
     transitivePeerDependencies:
