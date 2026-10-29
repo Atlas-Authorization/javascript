@@ -1177,13 +1177,13 @@ importers:
     devDependencies:
       '@solidjs/testing-library':
         specifier: ^0.8.10
-        version: 0.8.10(solid-js@1.9.17)
+        version: 0.8.10(solid-js@1.9.18)
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
       solid-js:
         specifier: ^1.8.0
-        version: 1.9.17
+        version: 1.9.18
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -1207,7 +1207,7 @@ importers:
         version: link:../js
       '@sveltejs/kit':
         specifier: '>=1'
-        version: 3.1.0(@sveltejs/vite-plugin-svelte@3.1.2(svelte@4.2.20)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2)))(svelte@4.2.20)(typescript@5.9.3)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))
+        version: 3.1.1(@sveltejs/vite-plugin-svelte@3.1.2(svelte@4.2.20)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2)))(svelte@4.2.20)(typescript@5.9.3)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))
     devDependencies:
       '@sveltejs/package':
         specifier: ^2.3.7
@@ -5698,8 +5698,8 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@sveltejs/kit@3.1.0':
-    resolution: {integrity: sha512-JTWlq2HQlkqx6vIoxhC0R6sc4WVqbQoRyEmr5YlqKmiYbzY1U3awtSWTmjMLlS056a49AmkQR6rnNANXIE8B0Q==}
+  '@sveltejs/kit@3.1.1':
+    resolution: {integrity: sha512-BiEMvekYXE9Gu/YhWJ/yJ0WDLH1PX/dmjuAeFp5rrtdmgdzkjt7DvimlSP+/U4tgposl7pkE20luHpcnc6BgRw==}
     engines: {node: '>=22.17'}
     hasBin: true
     peerDependencies:
@@ -12865,8 +12865,8 @@ packages:
     resolution: {integrity: sha512-9ZV9zg8vN8hO3Y25DhR7nUkJ1VDnBhq5O/JrXhFT9s6+F0gqytSASTHVfCFc2mJXaTfARroErplXlzFWwETZqQ==}
     engines: {node: '>=10.2.0'}
 
-  solid-js@1.9.17:
-    resolution: {integrity: sha512-4GAmLOWPfNV8H9Jfn2LSFTpNEG6jiOKPiwd5lnLGQtehHaX6l3TOLzJqQ7mqwB/3k1Yy3zyumFVopmc/tm34ow==}
+  solid-js@1.9.18:
+    resolution: {integrity: sha512-CHGO5YFk6Y9m/1YSxVtKnXfrW7JD3Tmof8HmR4z6TmCPsS8efo8LnzIR8CQh3cUvffqYm6DWyBFfk8dQw1CNQQ==}
 
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
@@ -19263,16 +19263,16 @@ snapshots:
 
   '@socket.io/component-emitter@3.1.2': {}
 
-  '@solidjs/testing-library@0.8.10(solid-js@1.9.17)':
+  '@solidjs/testing-library@0.8.10(solid-js@1.9.18)':
     dependencies:
       '@testing-library/dom': 10.4.2
-      solid-js: 1.9.17
+      solid-js: 1.9.18
 
   '@speed-highlight/core@1.2.24': {}
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@sveltejs/kit@3.1.0(@sveltejs/vite-plugin-svelte@3.1.2(svelte@4.2.20)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2)))(svelte@4.2.20)(typescript@5.9.3)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))':
+  '@sveltejs/kit@3.1.1(@sveltejs/vite-plugin-svelte@3.1.2(svelte@4.2.20)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2)))(svelte@4.2.20)(typescript@5.9.3)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       '@standard-schema/spec': 1.1.0
@@ -28957,7 +28957,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  solid-js@1.9.17:
+  solid-js@1.9.18:
     dependencies:
       csstype: 3.2.3
       seroval: 1.6.12
