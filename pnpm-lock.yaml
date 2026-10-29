@@ -6472,8 +6472,8 @@ packages:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
     engines: {node: '>=8'}
 
-  ansi-regex@6.4.0:
-    resolution: {integrity: sha512-KzTVk2tCWAHtYrvvvaP8bJKJq2pVinhLcGEQdtLIYPbmNGNyYe8QwNaTUYQp2J7/vIsUKt5QCqAfUkYyG9DkOw==}
+  ansi-regex@6.5.0:
+    resolution: {integrity: sha512-zhvbbbdt1kbw7EJ9OQoxmQcuaNR9P5kTj7e/YdmOSU10aHWbycofJxA6jKfoEy3vlLdctOF9ZHaxLtmSm998wQ==}
     engines: {node: '>=12'}
 
   ansi-styles@3.2.1:
@@ -9188,8 +9188,8 @@ packages:
   graphemer@1.4.0:
     resolution: {integrity: sha512-EtKwoO6kxCL9WO5xipiHTZlSzBm7WLT627TqC/uVRd0HKmq8NXyebnNYxDoBi7wt8eTWrUrKXCOVaFq9x1kgag==}
 
-  graphql-compose@9.2.3:
-    resolution: {integrity: sha512-p8BhmB5WVJgws4syq7wBeeu4nsHHYzCv6agv/J94eW6jpl8pBvPXm4wK+t+Fo3jxZrw29WtBLQQbK51pMsaRaA==}
+  graphql-compose@9.3.0:
+    resolution: {integrity: sha512-ujUDV32r3nNOzaFnq3kjZrAD+YTU4PhTdfX9nu8M84xFdVrGHdxMmRE8LQbg4jIQkBdc1gmKFxSdHJn1f8nmqQ==}
     peerDependencies:
       graphql: ^14.2.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
@@ -20223,7 +20223,7 @@ snapshots:
 
   ansi-regex@5.0.1: {}
 
-  ansi-regex@6.4.0: {}
+  ansi-regex@6.5.0: {}
 
   ansi-styles@3.2.1:
     dependencies:
@@ -23696,7 +23696,7 @@ snapshots:
       gatsby-core-utils: 4.16.0
       gatsby-sharp: 1.16.0
       graphql: 16.14.2
-      graphql-compose: 9.2.3(graphql@16.14.2)
+      graphql-compose: 9.3.0(graphql@16.14.2)
       import-from: 4.0.0
       joi: 17.13.9
       mime: 3.0.0
@@ -23836,7 +23836,7 @@ snapshots:
       globby: 11.1.0
       got: 11.8.6
       graphql: 16.14.2
-      graphql-compose: 9.2.3(graphql@16.14.2)
+      graphql-compose: 9.3.0(graphql@16.14.2)
       graphql-http: 1.23.1(graphql@16.14.2)
       graphql-tag: 2.12.7(graphql@16.14.2)
       hasha: 5.2.2
@@ -24138,7 +24138,7 @@ snapshots:
 
   graphemer@1.4.0: {}
 
-  graphql-compose@9.2.3(graphql@16.14.2):
+  graphql-compose@9.3.0(graphql@16.14.2):
     dependencies:
       graphql: 16.14.2
       graphql-type-json: 0.3.2(graphql@16.14.2)
@@ -29171,7 +29171,7 @@ snapshots:
 
   strip-ansi@7.2.0:
     dependencies:
-      ansi-regex: 6.4.0
+      ansi-regex: 6.5.0
 
   strip-bom@3.0.0: {}
 
