@@ -37,6 +37,8 @@ export const enUS: LocalizationResource = {
   'signIn.emailCodeOption': 'Email me a code instead',
   'signIn.emailLinkOption': 'Email me a sign-in link instead',
   'signIn.passwordOption': 'Use your password instead',
+  'signIn.passkeyButton': 'Sign in with a passkey',
+  'signIn.passkeyCancelled': 'Passkey sign-in didn\'t finish. Try again, or use another way to sign in.',
 
   'signUp.title': 'Create your account',
   'signUp.submit': 'Continue',

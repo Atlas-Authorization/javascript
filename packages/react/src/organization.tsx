@@ -19,6 +19,7 @@ import {
   OrganizationLogStreams,
   OrganizationSsoConnection,
   OrganizationWebhooks,
+  AppWebhookEndpoints,
 } from './organization-admin';
 
 export function OrganizationSwitcher() {
@@ -269,6 +270,7 @@ export type OrganizationAdminSection =
   | 'apiKeys'
   | 'ipAllowlist'
   | 'webhooks'
+  | 'appWebhooks'
   | 'auditLog';
 
 const ADMIN_SECTIONS: Record<OrganizationAdminSection, () => ReactNode> = {
@@ -279,6 +281,7 @@ const ADMIN_SECTIONS: Record<OrganizationAdminSection, () => ReactNode> = {
   apiKeys: () => <OrganizationApiKeys />,
   ipAllowlist: () => <OrganizationIpAllowlist />,
   webhooks: () => <OrganizationWebhooks />,
+  appWebhooks: () => <AppWebhookEndpoints />,
   auditLog: () => <OrganizationAuditLog />,
 };
 

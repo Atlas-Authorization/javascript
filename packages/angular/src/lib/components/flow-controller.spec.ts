@@ -57,7 +57,7 @@ afterEach(() => {
   delete g.turnstile;
 });
 
-async function controller(opts: { captchaFlows?: Record<string, unknown>; routes: Route[] }) {
+async function controller(opts: { captchaFlows?: Record<string, unknown>; signInWithAtlas?: Record<string, unknown>; routes: Route[] }) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const call: Call = {
@@ -71,6 +71,7 @@ async function controller(opts: { captchaFlows?: Record<string, unknown>; routes
         object: 'appearance',
         appearance: { legal: { termsUrl: null, privacyUrl: null, required: false }, signUpFields: [] },
         captchaFlows: opts.captchaFlows ?? {},
+        ...(opts.signInWithAtlas ? { sign_in_with_atlas: opts.signInWithAtlas } : {}),
       });
     }
     for (const route of opts.routes) {
@@ -295,5 +296,44 @@ describe('AtlasFlowController emailed second factor and sign-up resend', () => {
     expect(flow.state().errors).toEqual([]);
     expect(flow.state().attempt?.status).toBe('needs_email_verification');
     flow.destroy();
+  });
+});
+
+describe('AtlasFlowController Sign in with Atlas', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('reads the connection from /v1/appearance and starts the SSO sign-in', async () => {
+    const assign = vi.fn();
+    vi.stubGlobal('window', { location: { href: 'https://app.example.com/login', assign } });
+    const flow = await controller({
+      signInWithAtlas: { enabled: true, connection_id: 'ssoc_1' },
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ins/sso' ? json({ authorization_url: 'https://id.example/authorize?x=1' }) : undefined),
+      ],
+    });
+    expect(flow.settings()?.signInWithAtlas).toEqual({ connectionId: 'ssoc_1' });
+    await flow.signInWithAtlas('ssoc_1');
+    expect(posts('/v1/client/sign_ins/sso')[0]!.body).toMatchObject({
+      connection_id: 'ssoc_1',
+      redirect_url: 'https://app.example.com/login',
+    });
+    expect(assign).toHaveBeenCalledWith('https://id.example/authorize?x=1');
+    expect(flow.signInWithAtlasError()).toBeNull();
+  });
+
+  it("keeps the server's message when it cannot start, and has no connection when the instance has it off", async () => {
+    vi.stubGlobal('window', { location: { href: 'https://app.example.com/login', assign: vi.fn() } });
+    const flow = await controller({
+      signInWithAtlas: { enabled: false },
+      routes: [
+        (c) =>
+          c.path === '/v1/client/sign_ins/sso'
+            ? json({ errors: [{ code: 'VALIDATION_FAILED', message: 'Not active.' }] }, 422)
+            : undefined,
+      ],
+    });
+    expect(flow.settings()?.signInWithAtlas).toBeUndefined();
+    await flow.signInWithAtlas('ssoc_1');
+    expect(flow.signInWithAtlasError()).toBe('Not active.');
   });
 });

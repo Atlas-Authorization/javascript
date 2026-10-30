@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
-  import { lastUsedMethodLabel, pendingRecoveryCodes, signUp as hostedSignUp } from '@atlasauth/js';
+  import { onDestroy, onMount } from 'svelte';
+  import { lastUsedMethodLabel, passkeysSupported, pendingRecoveryCodes, signUp as hostedSignUp } from '@atlasauth/js';
   import { signIn } from '../accessors';
   import { useAtlas } from '../context';
   import { classFor } from '../appearance';
@@ -58,12 +58,48 @@
   // Takes the stores as arguments so Svelte re-runs it when either changes.
   const drawn = (..._deps: unknown[]) => (flow.captcha.needed ? flow.captcha : null);
   $: captcha = drawn($settings, $flowState);
+
+  // "Sign in with Atlas", when the instance has it on (from /v1/appearance).
+  $: atlasConnection = !$flowState.attempt ? $settings?.signInWithAtlas?.connectionId ?? null : null;
+  let atlasError: string | null = null;
+  async function continueWithAtlas() {
+    if (!atlasConnection) return;
+    atlasError = null;
+    atlasError = (await flow.signInWithAtlas(atlasConnection)).error ?? null;
+  }
+  // Passkey sign-in on the first step, as the hosted page: the button and autofill.
+  // `supported` is read after mount so the server render matches the first client render.
+  let supported = false;
+  onMount(() => {
+    supported = passkeysSupported();
+  });
+  $: passkeyOffered = supported && !$flowState.attempt && $settings?.passkeySignIn === true;
+  $: if (passkeyOffered) flow.passkey.armAutofill();
+  else flow.passkey.stopAutofill();
+  function submitIdentifier(values: Record<string, string>) {
+    flow.passkey.stopAutofill();
+    flow.submit(values);
+  }
 </script>
 
 {#if lastLabel}
   <p class={classFor('badge', atlas.appearance, 'atlas-text atlas-last-used-hint')} data-atlas="last-used" data-atlas-method={$lastMethod}>
     {t('signIn.lastUsed')}: {lastLabel}
   </p>
+{/if}
+
+{#if atlasConnection && !recoveryCodes}
+  <button
+    type="button"
+    class={classFor('socialButton', atlas.appearance, 'atlas-social-button')}
+    data-atlas-provider="atlas"
+    on:click={continueWithAtlas}
+  >
+    {t('signIn.continueWithAtlas')}
+  </button>
+  {#if atlasError}
+    <p class={classFor('formFieldError', atlas.appearance, 'atlas-error')} role="alert">{atlasError}</p>
+  {/if}
 {/if}
 
 {#if recoveryCodes}
@@ -75,7 +111,7 @@
   errors={$flowState.errors}
   sessionKept={$flowState.sessionKept}
   titleKey="signIn.title"
-  onSubmit={flow.submit}
+  onSubmit={submitIdentifier}
   onPrepare={flow.prepare}
   onEmailSecondFactor={$settings?.account.emailSecondFactor ? flow.sendEmailSecondFactor : null}
   onSmsSecondFactor={$settings && flow.mfaChoices().sms ? flow.sendSmsSecondFactor : null}
@@ -85,6 +121,18 @@
   {captcha}
   onPolicyDecline={flow.declinePolicy}
 />
+{/if}
+
+{#if passkeyOffered && !recoveryCodes}
+  <button
+    type="button"
+    class={classFor('socialButton', atlas.appearance, 'atlas-social-button atlas-passkey-button')}
+    data-atlas-passkey-sign-in=""
+    disabled={$flowState.busy}
+    on:click={() => flow.passkey.signIn()}
+  >
+    {t('signIn.passkeyButton')}
+  </button>
 {/if}
 
 {#if promptHref}

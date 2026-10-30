@@ -34,6 +34,8 @@ export const hiIN: LocalizationResource = {
   'signIn.emailCodeOption': 'इसके बजाय मुझे ईमेल से कोड भेजें',
   'signIn.emailLinkOption': 'इसके बजाय मुझे ईमेल से साइन इन लिंक भेजें',
   'signIn.passwordOption': 'इसके बजाय अपने पासवर्ड का उपयोग करें',
+  'signIn.passkeyButton': 'पासकी से साइन इन करें',
+  'signIn.passkeyCancelled': 'पासकी से साइन इन पूरा नहीं हुआ। फिर से कोशिश करें या किसी दूसरे तरीके से साइन इन करें।',
 
   'signUp.title': 'अपना खाता बनाएं',
   'signUp.submit': 'जारी रखें',

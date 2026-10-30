@@ -153,6 +153,43 @@ describe('<ApiKeys/>', () => {
     expect(el.textContent).not.toContain('ak_0456_supersecret');
   });
 
+  it('lays read/write scopes out as a grid and locks the scopes a ticked one implies', async () => {
+    const { el, calls } = await mount((url, init) => {
+      if (url.endsWith('/v1/client/me/api_keys') && init.method === 'POST') {
+        return json({ ...KEY, id: 'eak_3', secret: 'ak_0789_grid' }, 201);
+      }
+      if (url.endsWith('/v1/client/me/api_keys')) {
+        return json(
+          listBody([], {
+            allowed_scopes: ['calls:read', 'calls:write', 'leads:read', 'leads:write', 'admin'],
+            scope_implications: { 'calls:write': ['calls:read'], admin: ['*'] },
+          }),
+        );
+      }
+      return undefined;
+    });
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="api-keys-empty"]')).not.toBeNull());
+    await click(button(el, 'Create key'));
+    const grid = el.querySelector('[data-atlas="api-key-scope-grid"]') as HTMLElement;
+    expect(grid.querySelectorAll('tbody tr')).toHaveLength(2);
+    const box = (scope: string) => el.querySelector(`[data-atlas-scope="${scope}"]`) as HTMLInputElement;
+
+    await act(async () => box('calls:write').click());
+    expect(box('calls:read').checked).toBe(true);
+    expect(box('calls:read').disabled).toBe(true);
+    expect(box('leads:read').checked).toBe(false);
+
+    await act(async () => box('admin').click());
+    expect(box('leads:write').checked && box('leads:write').disabled).toBe(true);
+    await act(async () => box('admin').click());
+    expect(box('leads:write').checked).toBe(false);
+
+    await click(button(el.querySelector('[data-atlas="api-key-create"]') as HTMLElement, 'Create key'));
+    const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/client/me/api_keys'))!;
+    // Only the explicitly chosen scope is sent; the implied one comes from the instance.
+    expect(post.body).toEqual({ scopes: ['calls:write'] });
+  });
+
   it('prompts for the password on STEP_UP_REQUIRED, then finishes the create', async () => {
     let stepped = false;
     const { el, calls } = await mount((url, init) => {

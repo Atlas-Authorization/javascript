@@ -34,6 +34,8 @@ export const arSA: LocalizationResource = {
   'signIn.emailCodeOption': 'أرسل لي رمزًا عبر البريد الإلكتروني بدلًا من ذلك',
   'signIn.emailLinkOption': 'أرسل لي رابط تسجيل الدخول عبر البريد الإلكتروني بدلًا من ذلك',
   'signIn.passwordOption': 'استخدم كلمة المرور بدلًا من ذلك',
+  'signIn.passkeyButton': 'تسجيل الدخول باستخدام مفتاح مرور',
+  'signIn.passkeyCancelled': 'لم يكتمل تسجيل الدخول بمفتاح المرور. حاول مرة أخرى أو استخدم طريقة أخرى.',
 
   'signUp.title': 'أنشئ حسابك',
   'signUp.submit': 'متابعة',

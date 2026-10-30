@@ -55,7 +55,8 @@ describe('backward compatibility (no design anywhere)', () => {
     // then the "Last used" sign-in badge and hint (.atlas-badge, .atlas-last-used*),
     // then the error colour #c53030 (4.5:1 contrast on white), then the profile
     // traits / profile completion layout (.atlas-profile-traits, .atlas-profile-completion),
-    // then logical properties for right-to-left locales (inset-inline-end, text-align:start).
+    // then logical properties for right-to-left locales (inset-inline-end, text-align:start),
+    // then the disabled passkey sign-in button (.atlas-passkey-button:disabled).
     expect(designKey(ATLAS_BASE_CSS)).toBe(BASE_CSS_HASH);
   });
 
@@ -190,4 +191,4 @@ describe('element keys', () => {
   });
 });
 
-const BASE_CSS_HASH = 'v92jkl';
+const BASE_CSS_HASH = '1dda2hi';

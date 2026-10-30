@@ -26,6 +26,7 @@ export const EN_US: Catalog = {
   'signIn.signUpLink': 'Sign up',
   'signIn.orDivider': 'or',
   'signIn.socialButton': 'Continue with {provider}',
+  'signIn.continueWithAtlas': 'Continue with Atlas',
   'signIn.emailCodeLabel': 'Verification code',
   'signIn.emailCodeOption': 'Email me a code',
   'signIn.emailLinkOption': 'Email me a sign-in link',
@@ -36,6 +37,8 @@ export const EN_US: Catalog = {
   'signIn.resendCode': 'Resend code',
   'signIn.resendLink': 'Resend link',
   'signIn.passwordOption': 'Use your password instead',
+  'signIn.passkeyButton': 'Sign in with a passkey',
+  'signIn.passkeyCancelled': "Passkey sign-in didn't finish. Try again, or use another way to sign in.",
   'signIn.signedIn': 'You\'re signed in.',
   'signIn.sessionNotKept':
     'You signed in, but this browser didn\'t keep the session. If it blocks third-party cookies, allow cookies for this site and try again.',

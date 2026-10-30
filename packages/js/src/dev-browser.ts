@@ -140,10 +140,79 @@ async function bodyOf(response: Response): Promise<Record<string, unknown> | nul
  */
 const WRAPPED = Symbol.for('atlas.devBrowser');
 
+/**
+ * One in-flight ticket exchange per ticket, page-wide.
+ *
+ * A page whose effects run twice (React StrictMode in development, a remounted
+ * provider) would POST the same one-time ticket twice; the second call would
+ * fail with 400 and log a console error although the sign-in worked. Every
+ * caller of `POST /v1/client/tickets/exchange` for the same attempt + ticket
+ * shares the first request, and each gets its own copy of the response. A
+ * finished exchange is kept for {@link EXCHANGE_SHARE_MS} so a remount just
+ * after it still reuses the answer instead of spending the ticket again.
+ * Shares are kept per underlying fetch: a remount wrapping the same fetch shares,
+ * a different fetch (another client, a test's fresh mock) never sees them.
+ */
+const EXCHANGE_SHARE_MS = 10_000;
+let exchangesByFetch = new WeakMap<object, Map<string, Promise<Response>>>();
+
+function exchangeKey(init: RequestInit | undefined): string | null {
+  if (typeof init?.body !== 'string') return null;
+  try {
+    const body = JSON.parse(init.body) as { attempt_id?: unknown; ticket?: unknown };
+    return typeof body.attempt_id === 'string' && typeof body.ticket === 'string' ? `${body.attempt_id}\0${body.ticket}` : null;
+  } catch {
+    return null;
+  }
+}
+
+function sharedExchange(
+  owner: typeof fetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  send: () => Promise<Response>,
+): Promise<Response> {
+  const key = (init?.method ?? 'GET').toUpperCase() === 'POST' && pathOf(input) === EXCHANGE ? exchangeKey(init) : null;
+  if (!key) return send();
+  const shares = exchangesByFetch.get(owner) ?? new Map<string, Promise<Response>>();
+  exchangesByFetch.set(owner, shares);
+  let first = shares.get(key);
+  if (!first) {
+    first = send();
+    shares.set(key, first);
+    const forget = () => {
+      if (shares.get(key) === first) shares.delete(key);
+    };
+    // A failed exchange is not shared later (a retry should really retry); a success is, briefly.
+    first.then(
+      (r) => {
+        if (!r.ok) return forget();
+        const timer = setTimeout(forget, EXCHANGE_SHARE_MS);
+        (timer as { unref?: () => void }).unref?.();
+      },
+      forget,
+    );
+  }
+  return first.then((r) => r.clone());
+}
+
+/** Test hook: forget shared exchanges. */
+export function resetSharedExchanges(): void {
+  exchangesByFetch = new WeakMap();
+}
+
 export function withDevBrowser(publishableKey: string, fetchImpl: typeof fetch): typeof fetch {
   // A provider hands its (already wrapped) fetch to the FAPI client too: wrap once.
-  if (!publishableKey.startsWith('pk_test_') || (fetchImpl as unknown as Record<symbol, unknown>)[WRAPPED]) return fetchImpl;
-  const wrapped = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  if ((fetchImpl as unknown as Record<symbol, unknown>)[WRAPPED]) return fetchImpl;
+  if (!publishableKey.startsWith('pk_test_')) {
+    // Production keys: only the one-exchange-per-ticket share.
+    const shared = (input: RequestInfo | URL, init?: RequestInit) => sharedExchange(fetchImpl, input, init, () => fetchImpl(input, init));
+    (shared as unknown as Record<symbol, unknown>)[WRAPPED] = true;
+    return shared as typeof fetch;
+  }
+  const wrapped = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+    sharedExchange(fetchImpl, input, init, () => devBrowserFetch(input, init));
+  const devBrowserFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (!devBrowserEnabled(publishableKey)) return fetchImpl(input, init);
     const path = pathOf(input);
     const method = (init?.method ?? 'GET').toUpperCase();

@@ -60,6 +60,32 @@ export interface MintedSession {
   custom_data?: Record<string, unknown> | null;
 }
 
+export interface CreateBrowserTicketParams {
+  /** The user the browser signs in as. */
+  user_id: string;
+  /** Where the ready `url` lands: one of the instance's allowed origins. Without it, no `url`. */
+  redirect_url?: string;
+  /** Ticket lifetime in seconds, 1 to 300 (default 60). */
+  expires_in_seconds?: number;
+}
+
+/**
+ * A one-time browser sign-in ticket (`POST /v1/sessions` with
+ * `mode: "browser_ticket"`). Redeem `ticket` with
+ * `POST /v1/client/sign_ins {strategy:"ticket"}`, or open `url` in the browser.
+ */
+export interface BrowserTicket {
+  object: 'browser_ticket';
+  id: string;
+  user_id: string;
+  ticket: string;
+  url: string | null;
+  redirect_url: string | null;
+  expires_in: number;
+  /** ISO 8601. */
+  expires_at: string;
+}
+
 /** A JWT minted from a named JWT template. */
 /** An identity-integration token (claims: /schemas/integration-token-v1.json). */
 export interface SessionIntegrationToken {
@@ -125,6 +151,15 @@ export function sessionsResource(request: RequestFn) {
      */
     create(params: CreateSessionParams): Promise<MintedSession> {
       return request({ method: 'POST', path: '/v1/sessions', body: { ...params } });
+    },
+    /**
+     * `POST /v1/sessions` with `mode: "browser_ticket"` — a one-time ticket that
+     * signs a BROWSER in as the user (support handoffs, E2E). No session is
+     * minted here; the browser gets one through the normal ticket exchange. The
+     * successor of the deprecated `signInTokens.create()`.
+     */
+    createBrowserTicket(params: CreateBrowserTicketParams): Promise<BrowserTicket> {
+      return request({ method: 'POST', path: '/v1/sessions', body: { ...params, mode: 'browser_ticket' } });
     },
     /** `GET /v1/sessions?user_id=` — requires a user_id. */
     list(params: ListSessionsParams): Promise<ListPage<Session>> {

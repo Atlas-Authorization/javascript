@@ -17,6 +17,7 @@ import { mfaFactorsResource } from './mfa-factors';
 import { actorTokensResource } from './actor-tokens';
 import { invitationsResource } from './invitations';
 import { webhooksResource } from './webhooks';
+import { appEventsResource } from './app-events';
 import { signInTokensResource } from './sign-in-tokens';
 import { auditLogsResource } from './audit-logs';
 import { jwtTemplatesResource } from './jwt-templates';
@@ -161,6 +162,8 @@ function buildNamespaces(request: RequestFn) {
     actorTokens: actorTokensResource(request),
     invitations: invitationsResource(request),
     webhooks: webhooksResource(request),
+    // Application webhooks: your own events, sent to your customers' (organizations') endpoints.
+    appEvents: appEventsResource(request),
     signInTokens: signInTokensResource(request),
     auditLogs: auditLogsResource(request),
     jwtTemplates: jwtTemplatesResource(request),
@@ -356,6 +359,7 @@ export * from './flags';
 export * from './users';
 export * from './sessions';
 export * from './organizations';
+export * from './app-events';
 export * from './roles';
 export * from './app-roles';
 export * from './groups';

@@ -104,6 +104,11 @@ export { createAtlasClient } from './client';
 export type { AtlasClient } from './client';
 export * from './client';
 
+// A local, authoritative mirror of end-user API keys (mint/import/revoke at
+// Atlas, verify locally against sha256, sync from the revocation feed).
+export { createKeyMirror, memoryKeyMirrorStore, hashApiKeySecret } from './key-mirror';
+export type { KeyMirror, KeyMirrorOptions, KeyMirrorStore, MirroredApiKey, MirrorVerification, MirrorImportInput } from './key-mirror';
+
 // §1.3(c) dev/test tooling — offline fixtures for verifying Atlas-minted
 // session JWTs with no network call (Clerk's `@clerk/testing` equivalent).
 // Its own module, so it never sits on the hot verification path.

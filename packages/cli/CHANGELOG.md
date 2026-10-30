@@ -1,5 +1,11 @@
 # @atlasauth/cli changelog
 
+## Unreleased
+
+### Fixed
+
+- `atlas info` now redacts suite-format keys (`atlas_live_sk_…`, `atlas_test_psk_…`, webhook secrets and the rest). It used to print them in full, and the key prefix line now recognises them.
+
 ## 0.15.0 — 2026-10-28
 
 - New commands: `workflows`, `chat`, `cloud` (`cloud login <target>` prints the https launch URL), `device-sso`, `connection-actions`, `triggers`, `agents`, `telemetry`, `pdp`, `billing`, `audit`, `federation`, `vc`

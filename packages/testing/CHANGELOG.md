@@ -1,5 +1,14 @@
 # @atlasauth/testing changelog
 
+## Unreleased
+
+### Added
+- `signInAs(page, userId, { secretKey, redirectUrl? })` in `@atlasauth/testing/playwright`: signs the page in as a user through the real Atlas sign-in (a one-time URL from `POST /v1/testing/sign_in_url`, development instances), then waits for the SDK to finish the exchange.
+- `getSignInUrl()` (framework-neutral, for Cypress tasks, WebDriver, Puppeteer) and `AtlasSignInError`. These throw on failure instead of failing soft.
+
+### Fixed
+- `getTestingToken()` reads the `jwt` field the Backend API returns; it resolved to `null` before, so the testing token was never attached.
+
 ## 0.2.0
 
 ### Added

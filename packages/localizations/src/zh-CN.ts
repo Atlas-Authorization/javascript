@@ -35,6 +35,8 @@ export const zhCN: LocalizationResource = {
   'signIn.emailCodeOption': '改为通过电子邮件发送验证码',
   'signIn.emailLinkOption': '改为通过电子邮件发送登录链接',
   'signIn.passwordOption': '改为使用密码',
+  'signIn.passkeyButton': '使用通行密钥登录',
+  'signIn.passkeyCancelled': '通行密钥登录未完成。请重试或使用其他方式登录。',
 
   'signUp.title': '创建账户',
   'signUp.submit': '继续',

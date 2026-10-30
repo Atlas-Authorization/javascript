@@ -1,10 +1,13 @@
 'use client';
 
-import { useCallback, useMemo, useRef, type ReactNode, type ButtonHTMLAttributes } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ButtonHTMLAttributes } from 'react';
 import {
   mintNativeNonce,
   nativeSignIn,
+  passkeysSupported,
   pendingRecoveryCodes,
+  signInWithPasskey,
+  startConditionalPasskeySignIn,
   startOauthPopup,
   startOauthRedirect,
   type OAuthPopupHandlers,
@@ -26,6 +29,8 @@ import {
   type ProviderUnavailableReason,
 } from './flow';
 import { ATLAS_REACT_SDK } from './version';
+import { useClass, useText } from './components-shared';
+import type { CaptchaController } from './captcha';
 
 export function SignIn(props: FlowProps = {}) {
   const t = usePolicyText();
@@ -33,6 +38,16 @@ export function SignIn(props: FlowProps = {}) {
     afterUrl: props.afterUrl,
     referral: props.referral,
     referralConsent: props.referralConsent,
+  });
+  const passkey = usePasskeySignIn({
+    client,
+    finish,
+    setState,
+    captcha,
+    // Only on the first step, before an attempt exists (as the hosted page).
+    atStart: !state.attempt,
+    prf: props.passkeyPrf,
+    onExtensionResults: props.onPasskeyExtensionResults,
   });
 
   return (
@@ -45,7 +60,11 @@ export function SignIn(props: FlowProps = {}) {
         sessionKept={state.sessionKept}
         titleKey="signIn.title"
         hideTitle={props.hideTitle}
-        onSubmit={submit}
+        onSubmit={(values) => {
+          // Typing an identifier supersedes the passkey autofill request.
+          passkey.stopAutofill();
+          submit(values);
+        }}
         captcha={<CaptchaSlot controller={captcha} />}
         prepared={state.prepared ?? null}
         onPrepare={prepare}
@@ -63,6 +82,7 @@ export function SignIn(props: FlowProps = {}) {
       {/* Social buttons belong on the first step, not mid-flow (e.g. during a
           second factor). `!state.attempt` is exactly the initial identifier step. */}
       {state.attempt?.status !== 'complete' ? <SignUpPrompt signUpUrl={props.signUpUrl} afterUrl={props.afterUrl} /> : null}
+      {passkey.offered ? <PasskeySignInButton busy={state.busy} onClick={passkey.signIn} /> : null}
       {!state.attempt ? (
         <SocialSignInButtons
           client={client}
@@ -74,6 +94,104 @@ export function SignIn(props: FlowProps = {}) {
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * Passkey sign-in for the embedded `<SignIn>`, as the hosted page does it: a
+ * "Sign in with a passkey" button on the first step when the instance has
+ * passkeys on and the browser supports WebAuthn, plus conditional (autofill)
+ * mediation so saved passkeys appear in the identifier field's suggestions
+ * (`autocomplete="username webauthn"`). The finish sets the session cookies, so
+ * completing goes through the same `finish` as every other method (re-boot,
+ * `afterUrl`). A passkey without user verification on an account that owes MFA
+ * continues at the second-factor step. PRF outputs go to `onExtensionResults` only.
+ */
+function usePasskeySignIn(input: {
+  client: FapiClient;
+  finish: (next: FlowState) => Promise<void>;
+  setState: (update: (current: FlowState) => FlowState) => void;
+  captcha: CaptchaController;
+  atStart: boolean;
+  prf?: FlowProps['passkeyPrf'];
+  onExtensionResults?: FlowProps['onPasskeyExtensionResults'];
+}) {
+  const { instanceSettings } = useAtlas();
+  const t = useText();
+  const { client, finish, setState, captcha, atStart, prf, onExtensionResults } = input;
+  // Read after mount: the server render has no WebAuthn, and the first client render must match it.
+  const [supported, setSupported] = useState(false);
+  useEffect(() => setSupported(passkeysSupported()), []);
+  const offered = atStart && supported && instanceSettings?.passkeySignIn === true;
+  const autofill = useRef<AbortController | null>(null);
+  const extension = useRef({ prf, onExtensionResults });
+  extension.current = { prf, onExtensionResults };
+
+  const complete = useCallback(
+    (next: FlowState) =>
+      finish({
+        ...next,
+        errors: next.errors.map((e) => (e.code === 'PASSKEY_CANCELLED' ? { ...e, message: t('signIn.passkeyCancelled') } : e)),
+      }),
+    [finish, t],
+  );
+
+  const stopAutofill = useCallback(() => {
+    autofill.current?.abort();
+    autofill.current = null;
+  }, []);
+
+  // Armed while the first step shows; an always-on sign-in captcha needs the user
+  // to act, so the button takes it instead of a background request.
+  useEffect(() => {
+    if (!offered || captcha.needed) return;
+    const controller = new AbortController();
+    autofill.current = controller;
+    void startConditionalPasskeySignIn(client, {
+      signal: controller.signal,
+      ...(extension.current.prf ? { prf: extension.current.prf } : {}),
+      ...(extension.current.onExtensionResults ? { onExtensionResults: extension.current.onExtensionResults } : {}),
+      onResult: (next) => {
+        setState((current) => ({ ...current, busy: true, errors: [] }));
+        void complete(next);
+      },
+    });
+    return () => controller.abort();
+  }, [offered, captcha.needed, client, complete, setState]);
+
+  const signIn = useCallback(() => {
+    stopAutofill();
+    void (async () => {
+      setState((current) => ({ ...current, busy: true, errors: [] }));
+      let spent = false;
+      const next = await signInWithPasskey(client, {
+        // An always-on sign-in captcha: its token rides in the begin.
+        captcha: captcha.needed
+          ? async () => {
+              const token = await captcha.getToken();
+              if (token) spent = true;
+              return token;
+            }
+          : null,
+        ...(extension.current.prf ? { prf: extension.current.prf } : {}),
+        ...(extension.current.onExtensionResults ? { onExtensionResults: extension.current.onExtensionResults } : {}),
+      });
+      if (spent) captcha.reset();
+      await complete(next);
+    })();
+  }, [captcha, client, complete, setState, stopAutofill]);
+
+  return { offered, signIn, stopAutofill };
+}
+
+/** The "Sign in with a passkey" button on the first step of `<SignIn>`. */
+function PasskeySignInButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  const t = useText();
+  const className = useClass('socialButton', 'atlas-social-button atlas-passkey-button');
+  return (
+    <button type="button" className={className} data-atlas-passkey-sign-in="" disabled={busy} onClick={onClick}>
+      {t('signIn.passkeyButton')}
+    </button>
   );
 }
 

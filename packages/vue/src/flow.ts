@@ -3,6 +3,7 @@ import {
   advanceWithCaptcha,
   atlasCaptchaLabels,
   createCaptchaController,
+  createPasskeySignInController,
   createPasskeySignUp,
   createSignUp,
   finishPasskeySignUp,
@@ -24,6 +25,7 @@ import {
   type MfaChoices,
   type MfaEnrollmentController,
   type MfaEnrollmentState,
+  type PasskeySignInController,
 } from '@atlasauth/js';
 import {
   FapiClient,
@@ -129,6 +131,12 @@ export interface FlowController {
   loadPolicies(): Promise<void>;
   /** The user declined a policy a sign-in was waiting on: cancels the attempt and says why. */
   declinePolicy(title: string): void;
+  /**
+   * Passkey sign-in (the "Sign in with a passkey" button and passkey autofill on
+   * the identifier field), offered when `settings.passkeySignIn` is on. The
+   * outcome goes through the same completion as every sign-in.
+   */
+  passkey: PasskeySignInController;
 }
 
 export function useFlow(): FlowController {
@@ -234,6 +242,17 @@ export function useFlow(): FlowController {
   };
   const sendEmailSecondFactor = () => sendSecondFactorCode('email_code');
   const sendSmsSecondFactor = () => sendSecondFactorCode('sms');
+
+  const passkey = createPasskeySignInController({
+    client,
+    onStart: () => {
+      state.value = { ...state.value, busy: true, errors: [] };
+    },
+    onResult: finish,
+    captcha: () => captcha,
+    cancelledMessage: () => t('signIn.passkeyCancelled'),
+  });
+  onScopeDispose(() => passkey.stopAutofill());
 
   const mfaChoices = () => mfaChoicesFrom(settings.value?.account);
   const enrollment = createMfaEnrollment(client, mfaChoices);
@@ -353,6 +372,7 @@ export function useFlow(): FlowController {
     policies,
     loadPolicies,
     declinePolicy,
+    passkey,
   };
 }
 

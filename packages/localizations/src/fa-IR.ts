@@ -35,6 +35,8 @@ export const faIR: LocalizationResource = {
   'signIn.emailCodeOption': 'به‌جای آن، کد را به ایمیل من بفرستید',
   'signIn.emailLinkOption': 'به‌جای آن، پیوند ورود را به ایمیل من بفرستید',
   'signIn.passwordOption': 'به‌جای آن، از گذرواژه استفاده کنید',
+  'signIn.passkeyButton': 'ورود با گذرکلید',
+  'signIn.passkeyCancelled': 'ورود با گذرکلید کامل نشد. دوباره تلاش کنید یا از روش دیگری وارد شوید.',
 
   'signUp.title': 'ایجاد حساب کاربری',
   'signUp.submit': 'ادامه',

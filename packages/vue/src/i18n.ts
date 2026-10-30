@@ -23,6 +23,7 @@ export const EN_US: Catalog = {
   'signIn.forgotPassword': 'Forgot password?',
   'signIn.noAccount': 'No account?',
   'signIn.lastUsed': 'Last used',
+  'signIn.continueWithAtlas': 'Continue with Atlas',
   'signIn.signUpLink': 'Sign up',
   'signIn.orDivider': 'or',
   'signIn.socialButton': 'Continue with {provider}',
@@ -36,6 +37,8 @@ export const EN_US: Catalog = {
   'signIn.emailCodeOption': 'Email me a code instead',
   'signIn.resendLink': 'Resend link',
   'signIn.passwordOption': 'Use your password instead',
+  'signIn.passkeyButton': 'Sign in with a passkey',
+  'signIn.passkeyCancelled': "Passkey sign-in didn't finish. Try again, or use another way to sign in.",
   'signIn.magicLinkSent': 'Check your email for a sign-in link.',
   'signIn.signedIn': 'You\'re signed in.',
   'signIn.sessionNotKept':

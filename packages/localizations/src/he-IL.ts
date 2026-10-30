@@ -34,6 +34,8 @@ export const heIL: LocalizationResource = {
   'signIn.emailCodeOption': 'שלחו לי קוד באימייל',
   'signIn.emailLinkOption': 'שלחו לי קישור לכניסה באימייל',
   'signIn.passwordOption': 'שימוש בסיסמה שלך',
+  'signIn.passkeyButton': 'כניסה באמצעות מפתח גישה',
+  'signIn.passkeyCancelled': 'הכניסה באמצעות מפתח הגישה לא הושלמה. נסו שוב או השתמשו בשיטה אחרת.',
 
   'signUp.title': 'יצירת החשבון שלך',
   'signUp.submit': 'המשך',

@@ -171,3 +171,66 @@ export function verifyWebhook<T = unknown>(input: VerifyWebhookInput): WebhookVe
     return { verified: true, deliveryId: id, timestamp };
   }
 }
+
+/** Standard Webhooks header names, as application webhooks send them (lower-case). */
+export const STANDARD_WEBHOOK_HEADERS = {
+  id: 'webhook-id',
+  timestamp: 'webhook-timestamp',
+  signature: 'webhook-signature',
+} as const;
+
+export interface VerifyStandardWebhookInput {
+  /** The RAW request body as received — a string or Buffer, NOT a parsed object. */
+  body: string | Buffer;
+  headers: HeadersLike;
+  /** The endpoint's `whsec_…` secret. */
+  secret: string;
+  now?: Date;
+  /** Override the ±replay tolerance in seconds (default 300). */
+  toleranceSec?: number;
+}
+
+/**
+ * Verify an APPLICATION webhook (the events an app publishes to its customers'
+ * endpoints through Atlas): Standard Webhooks — `webhook-id`,
+ * `webhook-timestamp` (seconds), `webhook-signature: v1,<base64>` (one entry
+ * per secret during a rotation), HMAC-SHA256 over `<id>.<timestamp>.<rawBody>`
+ * keyed with the base64-decoded part of `whsec_<base64>`. Any Standard Webhooks
+ * library verifies the same deliveries; this one has no dependencies. Never
+ * throws: `{ verified, reason?, event?, deliveryId?, timestamp? }`, where
+ * `deliveryId` (the `webhook-id`) is stable across retries — dedupe on it.
+ *
+ * ```ts
+ * const { verified, event } = verifyStandardWebhook({ body: rawBody, headers: req.headers, secret: 'whsec_…' });
+ * ```
+ */
+export function verifyStandardWebhook<T = unknown>(input: VerifyStandardWebhookInput): WebhookVerifyResult<T> {
+  const raw = typeof input.body === 'string' ? input.body : input.body.toString('utf8');
+  const id = readHeader(input.headers, STANDARD_WEBHOOK_HEADERS.id);
+  const timestampRaw = readHeader(input.headers, STANDARD_WEBHOOK_HEADERS.timestamp);
+  const signature = readHeader(input.headers, STANDARD_WEBHOOK_HEADERS.signature);
+  if (!id || !timestampRaw || !signature) return { verified: false, reason: 'missing_headers' };
+
+  const provided = parseSignatures(signature);
+  if (provided.length === 0) return { verified: false, reason: 'malformed_signature' };
+
+  const timestamp = /^\d+$/.test(timestampRaw) ? Number(timestampRaw) : NaN;
+  const nowSec = Math.floor((input.now ?? new Date()).getTime() / 1000);
+  if (!Number.isFinite(timestamp) || Math.abs(nowSec - timestamp) > (input.toleranceSec ?? REPLAY_TOLERANCE_MS / 1000)) {
+    return { verified: false, reason: 'stale_timestamp' };
+  }
+
+  const key = Buffer.from(input.secret.startsWith('whsec_') ? input.secret.slice('whsec_'.length) : input.secret, 'base64');
+  const expected = Buffer.from(createHmac('sha256', key).update(`${id}.${timestamp}.${raw}`).digest('base64'));
+  let matched = false;
+  for (const candidate of provided) {
+    const a = Buffer.from(candidate);
+    if (a.length === expected.length && timingSafeEqual(a, expected)) matched = true;
+  }
+  if (!matched) return { verified: false, reason: 'signature_mismatch' };
+  try {
+    return { verified: true, event: JSON.parse(raw) as T, deliveryId: id, timestamp };
+  } catch {
+    return { verified: true, deliveryId: id, timestamp };
+  }
+}

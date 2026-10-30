@@ -37,6 +37,9 @@ function joinUrl(base: string, path: string): string {
  */
 function readToken(data: unknown): string | null {
   if (!data || typeof data !== 'object') return null;
+  // The Backend API answers `{ object: 'testing_token', jwt, token_use, expires_in }`.
+  const jwt = (data as { jwt?: unknown }).jwt;
+  if (typeof jwt === 'string' && jwt.length > 0) return jwt;
   const flat = (data as { token?: unknown }).token;
   if (typeof flat === 'string' && flat.length > 0) return flat;
   const nested = (data as { testing_token?: { token?: unknown } }).testing_token;
@@ -58,7 +61,7 @@ function readToken(data: unknown): string | null {
  *
  * Contract:
  * - `POST {apiUrl}/v1/testing_tokens` with `Authorization: Bearer <secretKey>`.
- * - A 2xx response body shaped `{ token: string }` (or `{ testing_token: { token } }`)
+ * - A 2xx response body `{ jwt: string, ... }` (older `{ token }` / `{ testing_token: { token } }` shapes too)
  *   resolves to that token string.
  * - The token is short-lived and single-run; mint a fresh one per test run (see
  *   {@link atlasSetup}, which caches one for you).

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
-import { devBrowserToken, forgetDevBrowserToken, setPersistence, withDevBrowser } from './dev-browser';
+import { devBrowserToken, forgetDevBrowserToken, resetSharedExchanges, setPersistence, withDevBrowser } from './dev-browser';
 
 /**
  * The dev browser: a development instance's session survives on localhost
@@ -33,6 +33,7 @@ function fakeFetch(answer: (url: string, method: string) => { status: number; bo
 afterEach(() => {
   forgetDevBrowserToken(DEV);
   forgetDevBrowserToken(PROD);
+  resetSharedExchanges();
 });
 
 describe('withDevBrowser', () => {
@@ -92,7 +93,6 @@ describe('withDevBrowser', () => {
   it('does nothing for a production key, and wraps a fetch only once', async () => {
     const f = fakeFetch(() => ({ status: 200, body: { id: 'sess_1', refresh_token: 'rt_live' } }));
     const prod = withDevBrowser(PROD, f.impl);
-    expect(prod).toBe(f.impl);
     await prod(`${BASE}/v1/client/tickets/exchange`, { method: 'POST', body: '{}' });
     expect(f.seen[0]!.body).toEqual({});
     expect(devBrowserToken(PROD)).toBeNull();
@@ -112,6 +112,7 @@ describe('persistence modes', () => {
     });
   };
   afterEach(() => {
+    resetSharedExchanges();
     setPersistence(undefined);
     localStorage.clear();
     sessionStorage.clear();
@@ -138,5 +139,52 @@ describe('persistence modes', () => {
     expect(devBrowserToken(DEV)).toBe('rt_p');
     forgetDevBrowserToken(DEV);
     expect(devBrowserToken(DEV)).toBeNull();
+  });
+});
+
+describe('one ticket exchange per ticket (StrictMode double effects)', () => {
+  const body = JSON.stringify({ attempt_id: 'sia_dup', ticket: 'tkt_dup' });
+
+  for (const key of [DEV, PROD]) {
+    it(`two exchanges of the same ticket send one request and both succeed (${key.slice(0, 7)})`, async () => {
+      const f = fakeFetch(() => ({ status: 200, body: { object: 'session', id: 'sess_1', jwt: 'j' } }));
+      const doFetch = withDevBrowser(key, f.impl);
+      const url = `${BASE}/v1/client/tickets/exchange`;
+      const [a, b] = await Promise.all([doFetch(url, { method: 'POST', body }), doFetch(url, { method: 'POST', body })]);
+      expect(f.seen.filter((s) => s.url.endsWith('/tickets/exchange'))).toHaveLength(1);
+      expect(a.status).toBe(200);
+      expect(b.status).toBe(200);
+      // Each caller reads its own body.
+      expect((await a.json()).id).toBe('sess_1');
+      expect((await b.json()).id).toBe('sess_1');
+      // A remount right after the first finished still reuses it.
+      const c = await doFetch(url, { method: 'POST', body });
+      expect((await c.json()).id).toBe('sess_1');
+      expect(f.seen.filter((s) => s.url.endsWith('/tickets/exchange'))).toHaveLength(1);
+    });
+  }
+
+  it('a re-wrap of the same fetch shares; a different fetch (another client, a fresh test mock) never does', async () => {
+    const ok = () => fakeFetch(() => ({ status: 200, body: { object: 'session', id: 'sess_1', jwt: 'j' } }));
+    const url = `${BASE}/v1/client/tickets/exchange`;
+    const f = ok();
+    await withDevBrowser(PROD, f.impl)(url, { method: 'POST', body });
+    await withDevBrowser(PROD, f.impl)(url, { method: 'POST', body });
+    expect(f.seen).toHaveLength(1);
+    const g = ok();
+    await withDevBrowser(PROD, g.impl)(url, { method: 'POST', body });
+    expect(g.seen).toHaveLength(1);
+  });
+
+  it('a different ticket is its own request, and a failed exchange is not reused', async () => {
+    let status = 400;
+    const f = fakeFetch(() => ({ status, body: { errors: [{ code: 'VERIFICATION_EXPIRED' }] } }));
+    const doFetch = withDevBrowser(PROD, f.impl);
+    const url = `${BASE}/v1/client/tickets/exchange`;
+    expect((await doFetch(url, { method: 'POST', body })).status).toBe(400);
+    status = 200;
+    expect((await doFetch(url, { method: 'POST', body })).status).toBe(200);
+    await doFetch(url, { method: 'POST', body: JSON.stringify({ attempt_id: 'sia_other', ticket: 'tkt_other' }) });
+    expect(f.seen).toHaveLength(3);
   });
 });

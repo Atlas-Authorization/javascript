@@ -70,6 +70,7 @@ button.atlas-link:focus-visible{outline:2px solid var(--atlas-color-focus-ring,v
 
 .atlas-social-button:hover{filter:brightness(.98);}
 .atlas-social-button:active{filter:brightness(.94);}
+.atlas-passkey-button:disabled{opacity:.6;cursor:not-allowed;filter:none;}
 .atlas-social-label{font-weight:500;}
 .atlas-social-icon{flex:0 0 auto;display:inline-flex;line-height:0;}
 /* Size the brand mark the server inlines (provider-icons.ts). Without this the

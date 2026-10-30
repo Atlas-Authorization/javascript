@@ -35,6 +35,8 @@ export const viVN: LocalizationResource = {
   'signIn.emailCodeOption': 'Gửi mã qua email',
   'signIn.emailLinkOption': 'Gửi liên kết đăng nhập qua email',
   'signIn.passwordOption': 'Dùng mật khẩu',
+  'signIn.passkeyButton': 'Đăng nhập bằng khóa truy cập (passkey)',
+  'signIn.passkeyCancelled': 'Chưa hoàn tất đăng nhập bằng khóa truy cập. Hãy thử lại hoặc dùng cách khác.',
 
   'signUp.title': 'Tạo tài khoản',
   'signUp.submit': 'Tiếp tục',

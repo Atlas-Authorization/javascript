@@ -19,6 +19,7 @@
  * ```
  */
 import { getTestingToken } from './testing-token';
+import { AtlasSignInError, getSignInUrl } from './sign-in-as';
 
 /**
  * The query parameter the testing token rides on. Atlas FAPI reads it to waive
@@ -127,4 +128,63 @@ export async function setupAtlasTestingToken(
 
   await options.page.route(glob, createTestingTokenRoute(token));
   return token;
+}
+
+/** Structural subset of Playwright's `Page` that {@link signInAs} drives. */
+export interface PlaywrightNavigablePage {
+  /** The current URL. */
+  url(): string;
+  goto(url: string): Promise<unknown>;
+  waitForURL?(url: (url: URL) => boolean, options?: { timeout?: number }): Promise<void>;
+}
+
+/** Options for {@link signInAs}. */
+export interface SignInAsOptions {
+  /** A development instance secret key (`sk_test_...`). */
+  secretKey: string;
+  /**
+   * Where the browser lands, signed in. Defaults to the page's current URL, so
+   * `await page.goto('/'); await signInAs(page, userId, …)` signs in on that page.
+   */
+  redirectUrl?: string;
+  /** @default `https://api.atlasauth.net` */
+  apiUrl?: string;
+  fetchImpl?: typeof fetch;
+  /** How long to wait for the SDK to finish the exchange, in ms. @default 15000 */
+  timeout?: number;
+}
+
+/**
+ * Sign the Playwright `page` in as `userId` through the real Atlas sign-in:
+ * mints a one-time URL (`POST /v1/testing/sign_in_url`, development instances),
+ * opens it, and waits until the Atlas SDK on the landing page has exchanged the
+ * ticket (it removes `__atlas_ticket` from the address bar when done).
+ *
+ * ```ts
+ * import { signInAs } from '@atlasauth/testing/playwright';
+ *
+ * test('dashboard', async ({ page }) => {
+ *   await signInAs(page, 'user_123', { secretKey: process.env.ATLAS_SECRET_KEY!, redirectUrl: 'http://localhost:3000/dashboard' });
+ *   await expect(page.getByText('Welcome back')).toBeVisible();
+ * });
+ * ```
+ *
+ * Throws {@link AtlasSignInError} when the URL cannot be minted (production key,
+ * unknown user, a redirect origin the instance does not allow).
+ */
+export async function signInAs(page: PlaywrightNavigablePage, userId: string, options: SignInAsOptions): Promise<void> {
+  const redirectUrl = options.redirectUrl ?? page.url();
+  if (!/^https?:\/\//.test(redirectUrl)) {
+    throw new AtlasSignInError('signInAs needs an http(s) redirectUrl: pass one, or page.goto() your app first.', 0);
+  }
+  const { url } = await getSignInUrl({
+    secretKey: options.secretKey,
+    userId,
+    redirectUrl,
+    apiUrl: options.apiUrl,
+    fetchImpl: options.fetchImpl,
+  });
+  await page.goto(url);
+  // The SDK strips the ticket from the URL once the session cookies are set.
+  await page.waitForURL?.((u) => !u.searchParams.has('__atlas_ticket'), { timeout: options.timeout ?? 15_000 });
 }

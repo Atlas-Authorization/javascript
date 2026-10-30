@@ -22,6 +22,7 @@ import {
   downloadRecoveryCodes,
   pendingRecoveryCodes,
   signUp as hostedSignUp,
+  startSignInWithAtlas,
   type AttemptView,
   PolicyAcceptanceController,
   confirmPolicies,
@@ -428,7 +429,8 @@ const AttemptFlow = defineComponent({
     const fields = (step: Step): VNode[] => {
       switch (step.kind) {
         case 'collect_identifier':
-          return [field('identifier', 'signIn.identifierLabel', 'email')];
+          // `webauthn`: saved passkeys appear in this field's autofill while <SignIn> holds a conditional request.
+          return [field('identifier', 'signIn.identifierLabel', 'email', 'username webauthn')];
         case 'collect_first_factor': {
           const identifier = props.attempt?.identifier ?? '';
           const plan = firstFactorPlan();
@@ -771,11 +773,33 @@ export const SignIn = defineComponent({
     signUpUrl: { type: null as unknown as PropType<string | null | undefined>, default: undefined },
   },
   setup(props) {
-    const { state, submit, prepare, captcha, settings, lastMethod, sendEmailSecondFactor, sendSmsSecondFactor, mfaChoices, enrollment, enrollmentState, saveRecoveryCodes, declinePolicy } =
+    const { state, submit, prepare, captcha, settings, lastMethod, sendEmailSecondFactor, sendSmsSecondFactor, mfaChoices, enrollment, enrollmentState, saveRecoveryCodes, declinePolicy, passkey } =
       useFlow();
     const atlas = useAtlas();
     const t = useText();
     const cls = useClass();
+    // "Sign in with Atlas", when the instance has it on (from /v1/appearance).
+    const atlasError = ref<string | null>(null);
+    const startAtlas = async (connectionId: string) => {
+      if (typeof window === 'undefined') return;
+      atlasError.value = null;
+      const client = new FapiClient({ publishableKey: atlas.publishableKey, baseUrl: atlas.frontendApi, locale: atlas.locale, sdk: ATLAS_VUE_SDK });
+      const started = await startSignInWithAtlas(client, connectionId, window.location.href);
+      if ('url' in started) window.location.assign(started.url);
+      else atlasError.value = started.error;
+    };
+    // Passkey sign-in on the first step, as the hosted page: the button and autofill.
+    // `supported` is read after mount so the server render matches the first client render.
+    const supported = ref(false);
+    onMounted(() => {
+      supported.value = passkeysSupported();
+    });
+    const passkeyOffered = () => supported.value && !state.value.attempt && settings.value?.passkeySignIn === true;
+    watch(passkeyOffered, (on) => (on ? passkey.armAutofill() : passkey.stopAutofill()));
+    const submitIdentifier = (values: Record<string, string>) => {
+      passkey.stopAutofill();
+      submit(values);
+    };
     const signUpHref = (): string | null => {
       if (props.signUpUrl === null) return null;
       if (props.signUpUrl) return props.signUpUrl;
@@ -801,7 +825,7 @@ export const SignIn = defineComponent({
         errors: state.value.errors,
         sessionKept: state.value.sessionKept,
         titleKey: 'signIn.title',
-        onSubmit: submit,
+        onSubmit: submitIdentifier,
         captcha: captcha.needed ? captcha : null,
         emailDelivery: settings.value?.emailDelivery ?? null,
         onPrepare: prepare,
@@ -813,6 +837,20 @@ export const SignIn = defineComponent({
         onRecoveryCodesSaved: saveRecoveryCodes,
         onPolicyDecline: declinePolicy,
       });
+      const passkeyButton = passkeyOffered()
+        ? h(
+            'button',
+            {
+              key: 'passkey',
+              type: 'button',
+              class: cls('socialButton', 'atlas-social-button atlas-passkey-button'),
+              'data-atlas-passkey-sign-in': '',
+              disabled: state.value.busy,
+              onClick: () => void passkey.signIn(),
+            },
+            t('signIn.passkeyButton'),
+          )
+        : null;
       const lastLabel = !state.value.attempt ? lastUsedMethodLabel(lastMethod.value, t) : null;
       const hint = lastLabel
         ? h(
@@ -821,11 +859,30 @@ export const SignIn = defineComponent({
             `${t('signIn.lastUsed')}: ${lastLabel}`,
           )
         : null;
-      if (!href && !hint) return flow;
-      if (!href) return [hint, flow];
+      const atlasConnection = !state.value.attempt ? settings.value?.signInWithAtlas?.connectionId : undefined;
+      const atlasButton = atlasConnection
+        ? h('div', { key: 'sign-in-with-atlas' }, [
+            h(
+              'button',
+              {
+                type: 'button',
+                class: cls('socialButton', 'atlas-social-button'),
+                'data-atlas': 'social-signin',
+                'data-atlas-provider': 'atlas',
+                onClick: () => void startAtlas(atlasConnection),
+              },
+              t('signIn.continueWithAtlas'),
+            ),
+            atlasError.value ? h('p', { class: 'atlas-error', role: 'alert' }, atlasError.value) : null,
+          ])
+        : null;
+      if (!href && !hint && !atlasButton && !passkeyButton) return flow;
+      if (!href) return [...(hint ? [hint] : []), ...(atlasButton ? [atlasButton] : []), flow, ...(passkeyButton ? [passkeyButton] : [])];
       return [
         ...(hint ? [hint] : []),
+        ...(atlasButton ? [atlasButton] : []),
         flow,
+        ...(passkeyButton ? [passkeyButton] : []),
         h('p', { key: 'sign-up-prompt', class: cls('footerAction', 'atlas-footer'), 'data-atlas-sign-up-prompt': '' }, [
           `${t('signIn.noAccount')} `,
           h('a', { class: 'atlas-link', href }, t('signIn.signUpLink')),

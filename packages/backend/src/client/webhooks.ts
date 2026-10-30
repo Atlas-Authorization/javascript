@@ -157,6 +157,8 @@ export interface WebhookEndpointSettings {
   /** An event destination instead of an HTTPS url. */
   destination?: WebhookDestination;
   destination_credentials?: WebhookDestinationCredentials;
+  /** false = switched off: nothing is delivered until it is enabled (on create too). Default true. */
+  active?: boolean;
 }
 
 export interface CreateWebhookEndpointBody extends WebhookEndpointSettings, ProvisioningInput {
@@ -167,7 +169,6 @@ export interface CreateWebhookEndpointBody extends WebhookEndpointSettings, Prov
 /** Change an endpoint in place. The signing secret is kept. */
 export interface UpdateWebhookEndpointBody extends WebhookEndpointSettings {
   url?: string;
-  active?: boolean;
   /** Replaces the provisioning metadata. */
   metadata?: ProvisioningMetadata;
 }

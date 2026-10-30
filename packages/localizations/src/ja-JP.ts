@@ -33,6 +33,8 @@ export const jaJP: Localization = {
   'signIn.emailCodeOption': '代わりにメールでコードを受け取る',
   'signIn.emailLinkOption': '代わりにメールでサインインリンクを受け取る',
   'signIn.passwordOption': '代わりにパスワードを使う',
+  'signIn.passkeyButton': 'パスキーでサインイン',
+  'signIn.passkeyCancelled': 'パスキーでのサインインが完了しませんでした。もう一度お試しいただくか、別の方法でサインインしてください。',
 
   'signUp.title': 'アカウントを作成',
   'signUp.submit': '続行',

@@ -155,10 +155,11 @@ export interface FlowProps {
    */
   googleButton?: GoogleButtonMode;
   /**
-   * Request the WebAuthn `prf` extension when `<SignUp>` creates a passkey: a
-   * secret derived from the passkey and your salt, for client-side encryption
-   * keys. The outputs go to {@link FlowProps.onPasskeyExtensionResults} only and
-   * never reach Atlas.
+   * Request the WebAuthn `prf` extension in the passkey ceremony: when `<SignUp>`
+   * creates a passkey, and when `<SignIn>` signs in with one (the button or
+   * autofill). A secret derived from the passkey and your salt, for client-side
+   * encryption keys. The outputs go to {@link FlowProps.onPasskeyExtensionResults}
+   * only and never reach Atlas.
    */
   passkeyPrf?: PasskeyPrfRequest;
   /** Receives the passkey ceremony's client extension results (the PRF outputs). */
@@ -318,7 +319,8 @@ export function AttemptFlow({
   const fields = () => {
     switch (step.kind) {
       case 'collect_identifier':
-        return [field('identifier', 'signIn.identifierLabel', 'email')];
+        // `webauthn`: saved passkeys appear in this field's autofill while <SignIn> holds a conditional request.
+        return [field('identifier', 'signIn.identifierLabel', 'email', { autoComplete: 'username webauthn' })];
       case 'collect_first_factor':
         if (noFirstFactor) {
           return [

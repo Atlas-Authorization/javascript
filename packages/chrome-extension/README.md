@@ -18,6 +18,23 @@ to every request by hand, as a bearer.
 | `@atlasauth/chrome-extension/background` | no | the service worker |
 | `@atlasauth/chrome-extension/react` | yes (peer) | popup / options / side panel |
 
+## Sign in
+
+```ts
+import { signInWithWebAuthFlow } from '@atlasauth/chrome-extension/background';
+
+const session = await signInWithWebAuthFlow({
+  frontendApi: 'https://fapi.your-instance.atlasauth.net',
+  publishableKey: 'pk_...',
+  clientId: 'your-extension-oauth-client-id',
+});
+const jwt = await session.getToken(); // Authorization: Bearer for your backend
+```
+
+Needs the `"identity"` permission. Register `chrome.identity.getRedirectURL()`
+(`https://<extension-id>.chromiumapp.org/`) as the redirect URI of a public,
+first-party OAuth client. See the "Sign in from a browser extension" guide.
+
 ## Background service worker
 
 ```ts

@@ -35,6 +35,8 @@ export const esES: LocalizationResource = {
   'signIn.emailCodeOption': 'Envíame un código por correo',
   'signIn.emailLinkOption': 'Envíame un enlace de inicio de sesión',
   'signIn.passwordOption': 'Usar mi contraseña',
+  'signIn.passkeyButton': 'Iniciar sesión con una llave de acceso',
+  'signIn.passkeyCancelled': 'No se completó el inicio de sesión con la llave de acceso. Inténtalo de nuevo o usa otro método.',
 
   'signUp.title': 'Crea tu cuenta',
   'signUp.submit': 'Continuar',

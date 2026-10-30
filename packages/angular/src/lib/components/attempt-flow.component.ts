@@ -36,6 +36,7 @@ interface StepField {
   name: string;
   labelKey: string;
   type: string;
+  autocomplete?: string;
 }
 
 /**
@@ -165,6 +166,7 @@ interface StepField {
                 [class]="cls('formFieldInput', 'atlas-input')"
                 [type]="f.type"
                 [attr.name]="f.name"
+                [attr.autocomplete]="f.autocomplete ?? null"
                 [value]="values[f.name] ?? ''"
                 (input)="setValue(f.name, $any($event.target).value)"
               />
@@ -460,7 +462,8 @@ export class AttemptFlowComponent {
     const step = this.step();
     switch (step.kind) {
       case 'collect_identifier':
-        return [{ kind: 'input', name: 'identifier', labelKey: 'signIn.identifierLabel', type: 'email' }];
+        // `webauthn`: saved passkeys appear in this field's autofill while <atlas-sign-in> holds a conditional request.
+        return [{ kind: 'input', name: 'identifier', labelKey: 'signIn.identifierLabel', type: 'email', autocomplete: 'username webauthn' }];
       case 'collect_first_factor': {
         if (this.preparedFactor === 'email_code') {
           return [{ kind: 'input', name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];

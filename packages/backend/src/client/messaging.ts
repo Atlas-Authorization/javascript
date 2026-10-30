@@ -415,18 +415,38 @@ export interface ManagedEmail {
     last_complaint_at: number | null;
   };
   reputation: 'your_provider_account';
-  /** On create (Brevo and Resend) and verify (Resend): whether the bounce / complaint webhook was registered on your account. */
+  /** Whether the bounce / complaint webhook is registered on your Resend or Brevo account. */
   feedback_webhook?: 'registered' | 'not_registered';
+  /** That webhook's id on your account. */
+  feedback_webhook_id?: string | null;
+  /** Why the last registration failed; null once it is registered. */
+  feedback_webhook_error?: string | null;
   /** DNS automation, when set. The token is never returned. */
-  dns: { provider: string; token_set: boolean } | null;
+  dns: ManagedEmailDnsAutomation | null;
   failure_reason: string | null;
   last_checked_at: number | null;
   verified_at: number | null;
   created_at: number;
   updated_at: number;
-  /** Create only, with `dns`: the zone and the records Atlas wrote. */
-  dns_result?: Record<string, unknown>;
   next_step?: string;
+}
+
+/**
+ * DNS automation runs in the background: `create` with `dns` answers at once
+ * (202) and Atlas writes the records, then checks with your provider until the
+ * domain is verified. Poll `get()` (or call `verify()`).
+ */
+export interface ManagedEmailDnsAutomation {
+  provider: string;
+  token_set: boolean;
+  /** `pending` (records not written yet) → `verifying` → `verified`; `failed` when Atlas stopped (see `last_error`). */
+  status?: 'pending' | 'verifying' | 'verified' | 'failed' | null;
+  /** The last DNS write or provider check error, `CODE: message`. */
+  last_error?: string | null;
+  attempts?: number;
+  /** Epoch ms of the next background step; null when nothing is due. */
+  next_check_at?: number | null;
+  started_at?: number | null;
 }
 
 export interface CreateManagedEmailBody {
@@ -584,7 +604,11 @@ export function messagingResource(request: RequestFn) {
       get(): Promise<ManagedEmail | NotConfigured<'managed_email'>> {
         return request({ method: 'GET', path: '/v1/messaging_providers/email/managed' });
       },
-      /** Register the sending domain; returns the DNS `records` to publish. */
+      /**
+       * Register the sending domain; returns the DNS `records` to publish. With
+       * `dns`, Atlas writes them and verifies in the background: the call
+       * returns at once and `dns.status` tracks the progress.
+       */
       create(body: CreateManagedEmailBody): Promise<ManagedEmail> {
         return request({ method: 'POST', path: '/v1/messaging_providers/email/managed', body });
       },

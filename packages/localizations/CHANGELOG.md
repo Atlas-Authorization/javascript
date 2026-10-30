@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `signIn.passkeyButton` and `signIn.passkeyCancelled` in every bundle.
+
 ## 0.11.0 — 2026-10-26
 
 ### Changed

@@ -164,11 +164,15 @@ describe('info helpers', () => {
     expect(keyPrefix('sk_live_abc')).toBe('sk_live_');
     expect(keyPrefix('pk_test_ins_1')).toBe('pk_test_');
     expect(keyPrefix('psk_123')).toBe('psk_');
+    expect(keyPrefix('atlas_live_sk_4fGqAbC')).toBe('atlas_live_sk_');
   });
 
   it('redactSecrets masks secret-shaped tokens', () => {
     expect(redactSecrets(`key=${SECRET} ok`)).toBe('key=sk_live_[redacted] ok');
     expect(redactSecrets('whsec_abcdefghij and pk_live_ins_1')).toBe('whsec_[redacted] and pk_live_ins_1');
+    // The suite format, which the legacy-only pattern let through in the clear.
+    expect(redactSecrets('key atlas_live_sk_4fGqAbCdEfGh123 here')).toBe('key atlas_live_sk_[redacted] here');
+    expect(redactSecrets('atlas_test_psk_AbCdEfGh1234')).toBe('atlas_test_psk_[redacted]');
   });
 
   it('compareVersions orders releases and prereleases', () => {

@@ -70,6 +70,9 @@ function referalliLike(opts: Opts = {}): Promise<{ server: Server; baseUrl: stri
         return opts.export404 ? error(404, 'customer_not_found') : send(200, { data: [] });
       case 'signals':
         return body.signal === 'not_a_signal' ? error(400, 'invalid_signal') : send(200, { referrals: [] });
+      case 'partners':
+        // Like Referalli: the partner is found or created by email, so it is required.
+        return typeof body.email === 'string' ? send(201, { ok: true }) : error(400, 'validation_error');
       default:
         return send(200, {});
     }

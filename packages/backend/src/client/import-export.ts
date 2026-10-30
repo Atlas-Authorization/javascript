@@ -64,6 +64,9 @@ export interface ImportUserRow {
   verified?: boolean;
   first_name?: string;
   last_name?: string;
+  /** The profile picture: an https URL, stored as given. `profile_image_url` is an alias. */
+  image_url?: string;
+  profile_image_url?: string;
   username?: string;
   public_metadata?: unknown;
   private_metadata?: unknown;

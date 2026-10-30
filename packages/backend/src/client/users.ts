@@ -40,6 +40,29 @@ export interface User {
   referral_code?: string | null;
   /** The user's own referral link, when they are a referrer. */
   referral_link?: string | null;
+  /**
+   * Every linked provider identity (sign-in, connect, imported on create or by
+   * bulk import); the same set `identities.list` returns. (Absent from servers
+   * older than this field.)
+   */
+  external_accounts?: UserExternalAccount[];
+}
+
+/** A provider identity linked to a user. Tokens are never included. */
+export interface UserExternalAccount {
+  object: 'external_account';
+  id: string;
+  provider: string;
+  provider_user_id: string;
+  /** The provider's address at the last sign-in or import: a snapshot, not proof of ownership. */
+  provider_email: string | null;
+  email_verified: boolean;
+  first_name?: string | null;
+  last_name?: string | null;
+  /** The provider's avatar for this identity. */
+  image_url?: string | null;
+  /** Epoch milliseconds. */
+  connected_at: number;
 }
 
 /** The inbound referral the referral platform matched for a user. */
@@ -219,6 +242,10 @@ export interface CreateUserBody {
   password?: string;
   first_name?: string;
   last_name?: string;
+  /** The profile picture: an https URL, stored as given. */
+  image_url?: string;
+  /** Alias of `image_url`. */
+  profile_image_url?: string;
   email_verified?: boolean;
   /** The user must choose a new password at their first sign-in (`update_password` required action). */
   password_change_required?: boolean;
@@ -246,6 +273,10 @@ export interface UpdateUserBody {
   required_factors?: Array<'totp' | 'sms' | 'passkey' | 'push'> | null;
   first_name?: string;
   last_name?: string;
+  /** The profile picture: an https URL; `null` clears. */
+  image_url?: string | null;
+  /** Alias of `image_url`. */
+  profile_image_url?: string | null;
   /**
    * Your own id for the user; `null` clears. With referral attribution on, a
    * change after sign-up is forwarded to the referral platform as an alias,

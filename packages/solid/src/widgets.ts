@@ -18,6 +18,7 @@ import {
   advanceWithCaptcha,
   atlasCaptchaLabels,
   createCaptchaController,
+  createPasskeySignInController,
   createSignUp,
   PolicyAcceptanceController,
   confirmPolicies,
@@ -33,11 +34,13 @@ import {
   flowNeedsCaptcha,
   nextStep,
   offeredFirstFactors,
+  passkeysSupported,
   pollAttempt,
   prepareFactor,
   planFirstFactor,
   shouldKeepPolling,
   signInCaptchaOptions,
+  startSignInWithAtlas,
   type CaptchaController,
   type FlowState,
   type InstanceSettings,
@@ -70,10 +73,10 @@ type FlowErrors = FlowState['errors'];
 /** A labelled, UNCONTROLLED input — its value is read from the form's
  * `FormData` on submit, which sidesteps per-keystroke signal churn for a plain
  * auth form. */
-function field(name: string, label: string, type = 'text'): JSX.Element {
+function field(name: string, label: string, type = 'text', autocomplete?: string): JSX.Element {
   return h('label', { class: 'atlas-field' }, [
     h('span', label),
-    h('input', { class: 'atlas-input', name, type }),
+    h('input', { class: 'atlas-input', name, type, ...(autocomplete ? { autocomplete } : {}) }),
   ]);
 }
 
@@ -105,6 +108,8 @@ export const SIGN_UP_TEXT: Record<string, string> = {
   'signUp.privacy': 'Privacy Policy',
   'signUp.and': 'and',
   'signUp.emailUnavailable': EMAIL_UNAVAILABLE_MESSAGE,
+  'signIn.passkeyButton': 'Sign in with a passkey',
+  'signIn.passkeyCancelled': "Passkey sign-in didn't finish. Try again, or use another way to sign in.",
   'captcha.prompt': 'Complete the security check to continue.',
   'captcha.required': 'Please complete the security check, then try again.',
   'captcha.failed': "The security check didn't pass. Please try again.",
@@ -114,6 +119,7 @@ export const SIGN_UP_TEXT: Record<string, string> = {
   'captcha.puzzleConfirm': 'Confirm',
   'captcha.puzzleTile': 'Picture {n}',
   'captcha.puzzleAlternative': "Can't do the picture check? Use a longer automatic check instead.",
+  'signIn.continueWithAtlas': 'Continue with Atlas',
 };
 
 const t = (key: string, vars: Record<string, string> = {}) =>
@@ -143,7 +149,8 @@ function captchaSlot(controller: CaptchaController, drawn: () => boolean): JSX.E
 function renderFields(kind: string): JSX.Element {
   switch (kind) {
     case 'collect_identifier':
-      return [field('identifier', 'Email', 'email')];
+      // `webauthn`: saved passkeys appear in this field's autofill while <SignIn> holds a conditional request.
+      return [field('identifier', 'Email', 'email', 'username webauthn')];
     case 'collect_first_factor':
       return [field('password', 'Password', 'password')];
     case 'collect_second_factor':
@@ -519,6 +526,20 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     return nextStep(attempt).kind;
   });
 
+  // Passkey sign-in on the first step, as the hosted page: the button and autofill.
+  const passkey = createPasskeySignInController({
+    client: fapi,
+    onStart: () => setState((s) => ({ ...s, busy: true, errors: [] })),
+    onResult: finish,
+    captcha: () => captcha,
+    cancelledMessage: () => t('signIn.passkeyCancelled'),
+  });
+  const passkeyOffered = createMemo(
+    () => props.mode === 'sign-in' && kind() === 'collect_identifier' && settings()?.passkeySignIn === true && passkeysSupported(),
+  );
+  createEffect(() => (passkeyOffered() ? passkey.armAutofill() : passkey.stopAutofill()));
+  onCleanup(() => passkey.stopAutofill());
+
   // §email delivery: the first factors this app can offer, keyed as a string so
   // the inputs are re-created only when the offer itself changes.
   const firstFactor = createMemo(() => {
@@ -565,6 +586,19 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
   const signUpBlocked = () =>
     kind() === 'create_account' && settings()?.emailDelivery?.passwordSignUp === false;
 
+  // "Sign in with Atlas", when the instance has it on (from /v1/appearance).
+  const atlasConnection = () =>
+    props.mode === 'sign-in' && !state().attempt ? settings()?.signInWithAtlas?.connectionId ?? null : null;
+  const [atlasError, setAtlasError] = createSignal<string | null>(null);
+  const continueWithAtlas = async () => {
+    const connectionId = atlasConnection();
+    if (!connectionId || isServer) return;
+    setAtlasError(null);
+    const started = await startSignInWithAtlas(fapi, connectionId, window.location.href);
+    if ('url' in started) window.location.assign(started.url);
+    else setAtlasError(started.error);
+  };
+
   return h(
     'form',
     {
@@ -573,11 +607,25 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         event.preventDefault();
         const values = formValues(event.currentTarget as HTMLFormElement);
         if (kind() === 'create_account') startCreate(values);
-        else submit(values);
+        else {
+          passkey.stopAutofill();
+          submit(values);
+        }
       },
     },
     [
       h('h1', { class: 'atlas-title' }, props.title),
+      () =>
+        atlasConnection()
+          ? [
+              h(
+                'button',
+                { type: 'button', class: 'atlas-social-button', 'data-atlas-provider': 'atlas', onClick: () => void continueWithAtlas() },
+                t('signIn.continueWithAtlas'),
+              ),
+              atlasError() ? h('p', { class: 'atlas-error', role: 'alert' }, atlasError()!) : null,
+            ]
+          : null,
       () => renderErrors(state().errors, client.localization),
       () => {
         if (kind() === 'create_account') return signUpBlocked() ? emailUnavailable() : renderSignUpFields(settings(), hasPolicies());
@@ -601,6 +649,20 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         () => (kind() === 'collect_identifier' || kind() === 'collect_captcha') && captchaDrawn(),
       ),
       () => renderSubmit(kind(), state().busy, signUpBlocked() || awaitingEmail(), kind() === 'create_account' && policiesBlocked()),
+      () =>
+        passkeyOffered()
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'atlas-social-button atlas-passkey-button',
+                'data-atlas-passkey-sign-in': '',
+                disabled: () => state().busy,
+                onClick: () => void passkey.signIn(),
+              },
+              t('signIn.passkeyButton'),
+            )
+          : null,
       () =>
         kind() === 'create_account' && !signUpBlocked() && hasPolicies()
           ? policyHost('p', (el) => mountPolicyClickwrap(el, policies, { t: pt }))

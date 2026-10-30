@@ -32,6 +32,18 @@ export interface InstanceSettings {
    * `username` entry is already in {@link signUpFields}.
    */
   account: AccountUx;
+  /**
+   * "Sign in with Atlas" when the instance has it on (`sign_in_with_atlas` in
+   * `/v1/appearance`): the SSO connection a "Continue with Atlas" button starts
+   * with {@link startSignInWithAtlas}. Absent when it is off.
+   */
+  signInWithAtlas?: { connectionId: string };
+  /**
+   * Passkey sign-in is on (`strategies.passkey`): the sign-in form offers
+   * "Sign in with a passkey" and passkey autofill on the identifier field, where
+   * the browser supports WebAuthn. False on an older server that does not say.
+   */
+  passkeySignIn?: boolean;
 }
 
 /** One configurable sign-up field, exactly as `/v1/appearance` resolves it. */
@@ -120,7 +132,46 @@ export function instanceSettingsFrom(body: unknown): InstanceSettings {
     });
   }
 
-  return { captchaFlows, signUpFields, legal, emailDelivery: emailDeliveryFrom(root), account };
+  const strategies = isRecord(root.strategies) ? root.strategies : {};
+  const atlas = isRecord(root.sign_in_with_atlas) ? root.sign_in_with_atlas : null;
+  const signInWithAtlas =
+    atlas && atlas.enabled === true && typeof atlas.connection_id === 'string' && atlas.connection_id
+      ? { connectionId: atlas.connection_id }
+      : undefined;
+
+  return {
+    captchaFlows,
+    signUpFields,
+    legal,
+    emailDelivery: emailDeliveryFrom(root),
+    account,
+    passkeySignIn: strategies.passkey === true,
+    ...(signInWithAtlas ? { signInWithAtlas } : {}),
+  };
+}
+
+/**
+ * Start "Sign in with Atlas": `POST /v1/client/sign_ins/sso` for the instance's
+ * Atlas connection, returning the authorization URL to send the browser to (it
+ * comes back to `redirectUrl` signed in). Resolves `{ error }` with the server's
+ * message when it cannot start.
+ */
+export async function startSignInWithAtlas(
+  client: FapiClient,
+  connectionId: string,
+  redirectUrl: string,
+): Promise<{ url: string } | { error: string }> {
+  try {
+    const res = await client.post<{ authorization_url?: string }>('/v1/client/sign_ins/sso', {
+      connection_id: connectionId,
+      redirect_url: redirectUrl,
+    });
+    const url = res.data?.authorization_url;
+    if (res.ok && url) return { url };
+    return { error: res.errors?.[0]?.message ?? 'Could not start Sign in with Atlas.' };
+  } catch {
+    return { error: 'Could not start Sign in with Atlas.' };
+  }
 }
 
 /**

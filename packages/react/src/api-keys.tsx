@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import {
   ApiKeyRequestError,
   createApiKey,
+  impliedScopes,
   listApiKeys,
+  scopeGrid,
   revokeApiKey,
   updateApiKey,
   type CreateUserApiKeyInput,
@@ -33,6 +35,8 @@ export interface UseApiKeysResult {
   /** The scopes / claim names a new key may carry (instance allowlists). */
   allowedScopes: string[];
   allowedClaims: string[];
+  /** Instance scope implications (`calls:write` ⇒ `calls:read`); `*` = every scope. */
+  scopeImplications: Record<string, string[]>;
   maxActiveKeys: number;
   activeCount: number;
   error: string | null;
@@ -56,9 +60,10 @@ export function useApiKeys(options: { organizationId?: string } = {}): UseApiKey
     data: UserApiKey[];
     allowedScopes: string[];
     allowedClaims: string[];
+    scopeImplications: Record<string, string[]>;
     maxActiveKeys: number;
     activeCount: number;
-  }>({ data: [], allowedScopes: [], allowedClaims: [], maxActiveKeys: 0, activeCount: 0 });
+  }>({ data: [], allowedScopes: [], allowedClaims: [], scopeImplications: {}, maxActiveKeys: 0, activeCount: 0 });
 
   const reload = useCallback(async () => {
     try {
@@ -116,6 +121,7 @@ export function useApiKeys(options: { organizationId?: string } = {}): UseApiKey
     keys: list.data,
     allowedScopes: list.allowedScopes,
     allowedClaims: list.allowedClaims,
+    scopeImplications: list.scopeImplications,
     maxActiveKeys: list.maxActiveKeys,
     activeCount: list.activeCount,
     error,
@@ -456,21 +462,15 @@ export function ApiKeys(props: ApiKeysProps) {
             </select>
           </label>
           {api.allowedScopes.length > 0 ? (
-            <fieldset className={cls('formField', 'atlas-field')}>
-              <legend className={cls('formFieldLabel', 'atlas-field-label')}>{t('apiKeys.scopesLabel')}</legend>
-              {api.allowedScopes.map((scope) => (
-                <label key={scope}>
-                  <input
-                    type="checkbox"
-                    checked={scopes.includes(scope)}
-                    onChange={(e) =>
-                      setScopes((prev) => (e.target.checked ? [...prev, scope] : prev.filter((s) => s !== scope)))
-                    }
-                  />{' '}
-                  {scope}
-                </label>
-              ))}
-            </fieldset>
+            <ScopePicker
+              allowedScopes={api.allowedScopes}
+              implications={api.scopeImplications}
+              selected={scopes}
+              onChange={setScopes}
+              legend={t('apiKeys.scopesLabel')}
+              fieldClass={cls('formField', 'atlas-field')}
+              legendClass={cls('formFieldLabel', 'atlas-field-label')}
+            />
           ) : null}
           {renderClaims ? renderClaims(claimsCtx) : null}
           <button className={cls('formButtonPrimary', 'atlas-button')} type="button" disabled={busy} onClick={() => void submit()}>
@@ -490,6 +490,72 @@ export function ApiKeys(props: ApiKeysProps) {
         </button>
       )}
     </section>
+  );
+}
+
+/**
+ * The create form's scope choices. When the vocabulary has `<resource>:read` /
+ * `<resource>:write` scopes they render as a resource × read/write grid; any other
+ * scope is a plain checkbox below it. A scope implied by a ticked one (per the
+ * instance implications, e.g. write ⇒ read) shows ticked and locked: the key gets
+ * it anyway, so only the explicitly chosen scopes are sent.
+ */
+function ScopePicker(props: {
+  allowedScopes: string[];
+  implications: Record<string, string[]>;
+  selected: string[];
+  onChange(next: string[]): void;
+  legend: string;
+  fieldClass: string;
+  legendClass: string;
+}) {
+  const { allowedScopes, implications, selected, onChange } = props;
+  const implied = new Set(
+    impliedScopes(selected, implications, allowedScopes).filter((s) => !selected.includes(s)),
+  );
+  const box = (scope: string) => (
+    <input
+      type="checkbox"
+      aria-label={scope}
+      data-atlas-scope={scope}
+      checked={selected.includes(scope) || implied.has(scope)}
+      disabled={implied.has(scope)}
+      onChange={(e) =>
+        onChange(e.target.checked ? [...selected, scope] : selected.filter((s) => s !== scope))
+      }
+    />
+  );
+  const grid = scopeGrid(allowedScopes);
+  const flat = grid ? grid.other : allowedScopes;
+  return (
+    <fieldset className={props.fieldClass}>
+      <legend className={props.legendClass}>{props.legend}</legend>
+      {grid ? (
+        <table data-atlas="api-key-scope-grid">
+          <thead>
+            <tr>
+              <th scope="col" />
+              <th scope="col">read</th>
+              <th scope="col">write</th>
+            </tr>
+          </thead>
+          <tbody>
+            {grid.rows.map((row) => (
+              <tr key={row.resource}>
+                <th scope="row">{row.resource}</th>
+                <td>{row.read ? box(row.read) : null}</td>
+                <td>{row.write ? box(row.write) : null}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      {flat.map((scope) => (
+        <label key={scope}>
+          {box(scope)} {scope}
+        </label>
+      ))}
+    </fieldset>
   );
 }
 

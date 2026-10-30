@@ -195,6 +195,14 @@ describe('namespace routing (method + path + payload per namespace)', () => {
     expect(out).toMatchObject({ id: 's1', jwt: 'j', refresh_token: 'r' });
   });
 
+  it('sessions: createBrowserTicket sends mode browser_ticket', async () => {
+    const { impl, calls } = mockFetch([{ body: { object: 'browser_ticket', id: 'v1', user_id: 'u1', ticket: 't', url: null, redirect_url: null, expires_in: 60, expires_at: 'x' } }]);
+    const out = await client(impl).sessions.createBrowserTicket({ user_id: 'u1', redirect_url: 'https://app.acme.test/' });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/sessions` });
+    expect(JSON.parse(String(last(calls).body))).toEqual({ user_id: 'u1', redirect_url: 'https://app.acme.test/', mode: 'browser_ticket' });
+    expect(out.ticket).toBe('t');
+  });
+
   it('organizations: nested memberships/invitations/domains/groupRoles', async () => {
     const { impl, calls } = mockFetch([{ body: {} }]);
     const c = client(impl);
@@ -459,6 +467,10 @@ describe('parity wave: the full-breadth namespaces reach every BAPI resource', (
     expect(last(calls)).toMatchObject({ method: 'PUT', url: `${API_URL}/v1/instance/privacy_orchestrator` });
     await c.privacy.orchestrator.delete();
     expect(last(calls)).toMatchObject({ method: 'DELETE', url: `${API_URL}/v1/instance/privacy_orchestrator` });
+    await c.privacy.integration.connect({ preset: 'cookiemunch', site_id: 'site_acme', api_key: 'k_0123456789abcdef' });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/instance/privacy_integrations/connect` });
+    await c.privacy.integration.get();
+    expect(last(calls)).toMatchObject({ method: 'GET', url: `${API_URL}/v1/instance/privacy_integrations` });
   });
 
   it('connectors & instance: radiusClients, ltiPlatforms, instance, instanceSecurity, tokens', async () => {

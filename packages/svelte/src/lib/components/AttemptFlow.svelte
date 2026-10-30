@@ -90,6 +90,7 @@
     name: string;
     labelKey: string;
     type: string;
+    autocomplete?: string;
   }
 
   let values: Record<string, string> = {};
@@ -176,7 +177,8 @@
   $: fields = ((): Field[] => {
     switch (step.kind) {
       case 'collect_identifier':
-        return [{ name: 'identifier', labelKey: 'signIn.identifierLabel', type: 'email' }];
+        // `webauthn`: saved passkeys appear in this field's autofill while <SignIn> holds a conditional request.
+        return [{ name: 'identifier', labelKey: 'signIn.identifierLabel', type: 'email', autocomplete: 'username webauthn' }];
       case 'collect_first_factor':
         if (sent === 'email_code') {
           return [{ name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
@@ -403,6 +405,7 @@
             class={cls('formFieldInput', 'atlas-input')}
             type={f.type}
             name={f.name}
+            autocomplete={f.autocomplete}
             value={values[f.name] ?? ''}
             on:input={(e) => (values[f.name] = e.currentTarget.value)}
           />

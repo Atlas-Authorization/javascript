@@ -4,9 +4,11 @@ import {
   Input,
   OnDestroy,
   OnInit,
+  computed,
+  effect,
   inject,
 } from '@angular/core';
-import { lastUsedMethodLabel, signUp as hostedSignUp } from '@atlasauth/js';
+import { lastUsedMethodLabel, passkeysSupported, signUp as hostedSignUp } from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
 import { translate } from '../i18n';
 import { AttemptFlowComponent } from './attempt-flow.component';
@@ -34,6 +36,14 @@ import { AtlasFlowController } from './flow-controller';
         {{ t('signIn.lastUsed') }}: {{ label }}
       </p>
     }
+    @if (atlasConnection(); as connectionId) {
+      <button type="button" class="atlas-social-button" data-atlas-provider="atlas" (click)="flow.signInWithAtlas(connectionId)">
+        {{ t('signIn.continueWithAtlas') }}
+      </button>
+      @if (flow.signInWithAtlasError(); as message) {
+        <p class="atlas-error" role="alert">{{ message }}</p>
+      }
+    }
     @if (flow.recoveryCodes(); as codes) {
       <atlas-recovery-codes [codes]="codes" [busy]="flow.state().busy" (saved)="flow.saveRecoveryCodes()"></atlas-recovery-codes>
     } @else {
@@ -48,7 +58,7 @@ import { AtlasFlowController } from './flow-controller';
       [preparedFactor]="flow.preparedFactor()"
       [offerEmailSecondFactor]="flow.settings()?.account?.emailSecondFactor === true"
       [emailedSecondFactor]="flow.emailSecondFactor()"
-      (submitFlow)="flow.submit($event)"
+      (submitFlow)="submitIdentifier($event)"
       (chooseFactor)="flow.prepare($event)"
       [offerSmsSecondFactor]="flow.settings() !== null && flow.mfaChoices().sms"
       [textedSecondFactor]="flow.smsSecondFactor()"
@@ -58,6 +68,17 @@ import { AtlasFlowController } from './flow-controller';
       (smsSecondFactor)="flow.sendSmsSecondFactor()"
       (policyDeclined)="flow.declinePolicy($event)"
     ></atlas-attempt-flow>
+    }
+    @if (flow.passkeyOffered() && !flow.recoveryCodes()) {
+      <button
+        type="button"
+        class="atlas-social-button atlas-passkey-button"
+        data-atlas-passkey-sign-in=""
+        [disabled]="flow.state().busy"
+        (click)="flow.passkey.signIn()"
+      >
+        {{ t('signIn.passkeyButton') }}
+      </button>
     }
     @if (flow.state().attempt?.status !== 'complete' && signUpHref(); as href) {
       <p class="atlas-footer" data-atlas-sign-up-prompt="">
@@ -88,6 +109,12 @@ export class SignInComponent implements OnInit, OnDestroy {
     return lastUsedMethodLabel(this.flow.lastMethod(), (key) => this.t(key));
   }
 
+  /** The "Sign in with Atlas" connection, on the first step, when the instance has it on. */
+  protected atlasConnection(): string | null {
+    if (this.flow.state().attempt || this.flow.recoveryCodes()) return null;
+    return this.flow.settings()?.signInWithAtlas?.connectionId ?? null;
+  }
+
   protected signUpHref(): string | null {
     if (this.signUpUrl === null) return null;
     if (this.signUpUrl) return this.signUpUrl;
@@ -110,7 +137,17 @@ export class SignInComponent implements OnInit, OnDestroy {
     (key) => translate(this.atlas.localization, key),
   );
 
+  // Passkey autofill runs while the first step offers passkeys (a computed, so it re-arms only when that changes).
+  private readonly passkeyOffered = computed(() => this.flow.passkeyOffered());
+  protected readonly passkeyAutofill = effect(() => (this.passkeyOffered() ? this.flow.passkey.armAutofill() : this.flow.passkey.stopAutofill()));
+
+  protected submitIdentifier(values: Record<string, string>): void {
+    this.flow.passkey.stopAutofill();
+    void this.flow.submit(values);
+  }
+
   ngOnInit(): void {
+    if (typeof window !== 'undefined') this.flow.passkeySupported.set(passkeysSupported());
     // If seeded from a pending attempt that is already pollable, start polling.
     this.flow.syncPolling();
     // §5 the instance's captcha settings (switching captcha on in the dashboard

@@ -4,7 +4,7 @@ import { getScriptDefaults } from './config';
 import type { MountTarget } from './mount';
 
 /** The tenant-admin sections the embed can mount for an organization. */
-export type OrgAdminSection = 'sso' | 'directory' | 'domains' | 'logStreams' | 'apiKeys' | 'ipAllowlist' | 'webhooks';
+export type OrgAdminSection = 'sso' | 'directory' | 'domains' | 'logStreams' | 'apiKeys' | 'ipAllowlist' | 'webhooks' | 'appWebhooks';
 
 export interface OrgAdminOptions {
   section: OrgAdminSection;
@@ -39,7 +39,7 @@ function rows(items: Array<{ id: string; text: string }>, action: string, run: (
 
 /**
  * Mount one tenant-admin section (SSO, directory sync, domains, log streams, API
- * keys, sign-in IP allowlist or webhooks) into an element. Plain DOM, no
+ * keys, sign-in IP allowlist, webhooks, or the app's own webhook endpoints) into an element. Plain DOM, no
  * framework: it re-renders itself after every change, shows a secret the server
  * returns once exactly once, and renders nothing for a caller the server refuses
  * (not an admin, or not the active organization).
@@ -57,6 +57,8 @@ export function mountOrganizationAdmin(target: MountTarget, options: OrgAdminOpt
   const client: FapiClient = createClient({ publishableKey, frontendApi, locale: options.locale ?? defaults.locale, fetchImpl: options.fetchImpl });
   const org = options.organizationId;
   let secret: string | null = null;
+  // appWebhooks: the endpoint whose delivery log is open.
+  let openEndpoint: string | null = null;
   let message: string | null = null;
   let alive = true;
 
@@ -126,6 +128,58 @@ export function mountOrganizationAdmin(target: MountTarget, options: OrgAdminOpt
           rows(list.map((w) => ({ id: w.id, text: `${w.url} — ${w.health}` })), 'Remove', (id) => guarded(() => api.deleteWebhook(client, org, id))),
           label,
           button('Add endpoint', () => void withSecret(() => api.createWebhook(client, org, { url: field.value.trim() }))),
+        ];
+      }
+      case 'appWebhooks': {
+        // Endpoints for the APP's own events (Standard Webhooks signed), with the catalog picker.
+        const [list, types] = await Promise.all([api.listAppWebhooks(client, org), api.listAppEventTypes(client, org)]);
+        const [label, field] = input('HTTPS endpoint', 'url', 'https://example.com/webhooks');
+        const picks = types.map((t) => {
+          const box = h('input', { type: 'checkbox', value: t.type, 'aria-label': t.type }) as HTMLInputElement;
+          return { box, el: h('label', { class: 'atlas-text' }, box, ` ${t.type}${t.description ? ` — ${t.description}` : ''}`) };
+        });
+        const items: El[] = [];
+        for (const w of list) {
+          const li = h('li', { 'data-id': w.id, 'data-health': w.health }, `${w.url} — ${w.health} — ${w.enabled_events.includes('*') ? 'all events' : w.enabled_events.join(', ')} `);
+          li.append(
+            button('Send test', () => void guarded(async () => {
+              const r = await api.testAppWebhook(client, org, w.id);
+              if (r.status !== 'success') throw new Error(`Test failed: ${r.error ?? `HTTP ${r.http_status}`}`);
+            }), false),
+            w.active
+              ? button('Pause', () => void guarded(() => api.updateAppWebhook(client, org, w.id, { active: false })), false)
+              : button('Enable', () => void guarded(async () => {
+                  await api.updateAppWebhook(client, org, w.id, { active: true });
+                  if (w.health !== 'healthy') await api.replayAppWebhook(client, org, w.id);
+                }), false),
+            button('Reveal secret', () => void withSecret(() => api.revealAppWebhookSecret(client, org, w.id)), false),
+            button('Rotate secret', () => void withSecret(() => api.rotateAppWebhookSecret(client, org, w.id)), false),
+            button('Deliveries', () => {
+              openEndpoint = openEndpoint === w.id ? null : w.id;
+              void render();
+            }, false),
+            button('Remove', () => void guarded(() => api.deleteAppWebhook(client, org, w.id)), false),
+          );
+          if (openEndpoint === w.id) {
+            const deliveries = await api.appWebhookDeliveries(client, org, w.id);
+            li.append(
+              rows(
+                deliveries.map((d) => ({ id: d.id, text: `${d.event_type ?? '—'} · ${d.status}${d.http_status ? ` · HTTP ${d.http_status}` : ''} · ${new Date(d.created_at).toLocaleString()}` })),
+                'Redeliver',
+                (id) => guarded(() => api.redeliverAppWebhook(client, org, w.id, id)),
+              ),
+            );
+          }
+          items.push(li);
+        }
+        return [
+          h('ul', { class: 'atlas-list' }, ...items),
+          label,
+          h('fieldset', { class: 'atlas-field' }, h('legend', {}, 'Events (none selected = all)'), ...picks.map((p) => p.el)),
+          button('Add endpoint', () => {
+            const chosen = picks.filter((p) => p.box.checked).map((p) => p.box.value);
+            void withSecret(() => api.createAppWebhook(client, org, { url: field.value.trim(), enabled_events: chosen.length ? chosen : ['*'] }));
+          }),
         ];
       }
       case 'directory': {

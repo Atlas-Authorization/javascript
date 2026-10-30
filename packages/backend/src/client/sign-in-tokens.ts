@@ -18,6 +18,10 @@ export interface CreateSignInTokenBody {
 
 export function signInTokensResource(request: RequestFn) {
   return {
+    /**
+     * @deprecated The sign-in token API is deprecated (sunset 2027-04-01). Use
+     * `sessions.createBrowserTicket()`: the same one-time ticket, plus a ready URL.
+     */
     create(body: CreateSignInTokenBody, idempotencyKey?: string): Promise<SignInToken> {
       return request({ method: 'POST', path: '/v1/sign_in_tokens', body, idempotencyKey });
     },
@@ -26,7 +30,7 @@ export function signInTokensResource(request: RequestFn) {
      * before its 60-second window elapses.
      *
      * @deprecated The sign-in token API is deprecated (sunset 2027-04-01).
-     * Mint a session directly with `sessions.create()` instead.
+     * Use `sessions.createBrowserTicket()` (or `sessions.create()` for a server-side session).
      */
     revoke(id: string): Promise<{ object: 'sign_in_token'; id: string; revoked: true }> {
       return request({ method: 'POST', path: `/v1/sign_in_tokens/${enc(id)}/revoke` });

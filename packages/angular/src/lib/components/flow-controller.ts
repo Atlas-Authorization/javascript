@@ -4,11 +4,13 @@ import {
   advanceWithCaptcha,
   atlasCaptchaLabels,
   createCaptchaController,
+  createPasskeySignInController,
   createPasskeySignUp,
   createSignUp,
   finishPasskeySignUp,
   fetchInstanceSettings,
   fetchLastSignInMethod,
+  startSignInWithAtlas,
   createMfaEnrollment,
   acknowledgeRecoveryCodes,
   pendingRecoveryCodes,
@@ -33,6 +35,7 @@ import {
   type MfaChoices,
   type MfaEnrollmentController,
   type MfaEnrollmentState,
+  type PasskeySignInController,
 } from '@atlasauth/js';
 import { EN_US, translate } from '../i18n';
 
@@ -102,6 +105,13 @@ export class AtlasFlowController {
    * {@link create} sends their acceptances and reloads them after a refusal.
    */
   readonly policies = new PolicyAcceptanceController([]);
+  /**
+   * Passkey sign-in (the "Sign in with a passkey" button and passkey autofill on
+   * the identifier field). The outcome goes through the same completion as every sign-in.
+   */
+  readonly passkey: PasskeySignInController;
+  /** Whether this browser can run WebAuthn; `<atlas-sign-in>` sets it after it is created in a browser. */
+  readonly passkeySupported = signal(false);
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private identifier = '';
 
@@ -118,8 +128,35 @@ export class AtlasFlowController {
     this.enrollment = createMfaEnrollment(this.client, () => this.mfaChoices());
     this.enrollmentState = signal<MfaEnrollmentState>(this.enrollment.state);
     this.enrollment.subscribe((next) => this.enrollmentState.set(next));
+    this.passkey = createPasskeySignInController({
+      client: this.client,
+      onStart: () => this.state.update((current) => ({ ...current, busy: true, errors: [] })),
+      onResult: (next) => this.finish(next),
+      captcha: () => this.captcha,
+      cancelledMessage: () => this.t('signIn.passkeyCancelled'),
+    });
     this.syncCaptcha();
     this.syncEnrollment();
+  }
+
+  /** Why "Continue with Atlas" could not start (the server's message); null otherwise. */
+  readonly signInWithAtlasError = signal<string | null>(null);
+
+  /**
+   * "Continue with Atlas" (when `settings().signInWithAtlas` is set): starts the
+   * SSO sign-in and sends the browser to Atlas.
+   */
+  async signInWithAtlas(connectionId: string): Promise<void> {
+    if (typeof window === 'undefined') return;
+    this.signInWithAtlasError.set(null);
+    const started = await startSignInWithAtlas(this.client, connectionId, window.location.href);
+    if ('url' in started) window.location.assign(started.url);
+    else this.signInWithAtlasError.set(started.error);
+  }
+
+  /** "Sign in with a passkey" is offered: the first step, the instance turned passkey sign-in on, and the browser can. */
+  passkeyOffered(): boolean {
+    return this.passkeySupported() && !this.state().attempt && this.settings()?.passkeySignIn === true;
   }
 
   /** What the app lets the MFA steps offer (from {@link settings}). */
@@ -414,6 +451,7 @@ export class AtlasFlowController {
 
   /** Release the poll timer and the captcha widgets — call from the component's `ngOnDestroy`. */
   destroy(): void {
+    this.passkey.stopAutofill();
     this.stopPolling();
     this.captcha.destroy();
     this.signUpCaptcha.destroy();

@@ -227,7 +227,7 @@ Uploads send the raw image bytes with their content type. A `Blob` brings its ow
 
 ### API key spend caps
 
-Give an end-user API key caps per unit and period (`request`, `day`, `month` or `total`), then meter what each call costs. A debit that would exceed a cap is refused without recording anything; it resolves with `allowed: false` rather than throwing.
+Give an end-user API key caps per unit and period (`request`, `second`, `minute`, `day`, `month` or `total`; `{ unit: 'requests', amount: 600, period: 'minute' }` is a per-key rate limit), then meter what each call costs. A debit that would exceed a cap is refused without recording anything; it resolves with `allowed: false` rather than throwing.
 
 ```ts
 const key = await atlas.apiKeys.create({
@@ -252,7 +252,24 @@ const { usage } = await atlas.apiKeys.getUsage(key.id); // used / remaining / re
 await atlas.apiKeys.update(key.id, { limits: null }); // remove the caps
 ```
 
-`apiKeys.verify(secret)` also returns the key's `name`, `scopes`, `constraints`, `limits` and current `usage`.
+`apiKeys.verify(secret)` also returns the key's `name`, `scopes`, `effective_scopes` (expanded through the instance scope implications), `constraints`, `limits` and current `usage`.
+
+### A local API key mirror
+
+`createKeyMirror` keeps your own table authoritative: mint and import at Atlas, verify locally against the sha256 with no network call, revoke locally first, and pull revokes made elsewhere from the revocation feed.
+
+```ts
+import { createKeyMirror, memoryKeyMirrorStore } from '@atlasauth/backend';
+
+const mirror = createKeyMirror({ store: memoryKeyMirrorStore(), apiKeys: atlas.apiKeys });
+const { secret } = await mirror.mint({ subject_type: 'organization', subject_id: 'org_123', scopes: ['calls:write'] });
+const result = await mirror.verify(presented, { requiredScopes: ['calls:write'] }); // local, no network call
+await mirror.revoke(keyId); // local first, then Atlas
+setInterval(() => void mirror.sync(), 15_000); // revocation feed
+// await mirror.applyWebhook(event) for verified api_key.* webhooks
+```
+
+Back `KeyMirrorStore` (`put`, `get`, `getByHash`, `markRevoked`, `getCursor`, `setCursor`) with your own table in production.
 
 ### Session keep-alive
 

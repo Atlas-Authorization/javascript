@@ -35,6 +35,8 @@ export const ptBR: LocalizationResource = {
   'signIn.emailCodeOption': 'Enviar um código por e-mail',
   'signIn.emailLinkOption': 'Enviar um link de acesso por e-mail',
   'signIn.passwordOption': 'Usar minha senha',
+  'signIn.passkeyButton': 'Entrar com uma chave de acesso',
+  'signIn.passkeyCancelled': 'O login com a chave de acesso não foi concluído. Tente novamente ou use outro método.',
 
   'signUp.title': 'Crie sua conta',
   'signUp.submit': 'Continuar',

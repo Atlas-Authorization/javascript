@@ -12,6 +12,8 @@ import {
   type OrganizationLogStream,
   type OrganizationSsoInput,
   type OrganizationSsoView,
+  type OrganizationAppEventType,
+  type OrganizationWebhookDelivery,
   type OrganizationWebhookEndpoint,
 } from '@atlasauth/js';
 import { useOrganization } from './hooks';
@@ -449,6 +451,179 @@ export function OrganizationWebhooks({ labels = {} }: { labels?: Labels } = {}) 
         className={cls('formButtonPrimary', 'atlas-button')}
         disabled={!url.trim()}
         onClick={() => void admin.act(() => organizationAdmin.createWebhook(client, organization.id, { url: url.trim() })).then((r) => { if (r) { setUrl(''); setSecret(r.secret); } })}
+      >
+        {labels.add ?? 'Add endpoint'}
+      </button>
+    </Section>
+  );
+}
+
+interface AppWebhooksData {
+  endpoints: OrganizationWebhookEndpoint[];
+  types: OrganizationAppEventType[];
+}
+
+const loadAppWebhooks = async (c: FapiClient, org: string): Promise<AppWebhooksData> => {
+  const [endpoints, types] = await Promise.all([organizationAdmin.listAppWebhooks(c, org), organizationAdmin.listAppEventTypes(c, org)]);
+  return { endpoints, types };
+};
+
+/**
+ * `<AppWebhookEndpoints/>` — the drop-in portal where your customer's admins
+ * register endpoints for YOUR app's events (published with `POST /v1/app_events`):
+ * add or edit an endpoint with an event-type picker from your catalog, reveal or
+ * rotate its `whsec_` secret, send a signed test, read the delivery log,
+ * redeliver one delivery, and re-enable plus replay an endpoint that was
+ * auto-disabled. Needs `org:webhooks:manage` (or the admin role) in the active
+ * organization; renders nothing otherwise.
+ */
+export function AppWebhookEndpoints({ labels = {} }: { labels?: Labels } = {}) {
+  const admin = useAdminData<AppWebhooksData>(loadAppWebhooks);
+  const client = useMeClient();
+  const { organization } = useOrganization();
+  const cls = useClasses();
+  const [url, setUrl] = useState('');
+  const [description, setDescription] = useState('');
+  const [picked, setPicked] = useState<string[]>([]);
+  const [secret, setSecret] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [deliveries, setDeliveries] = useState<OrganizationWebhookDelivery[]>([]);
+  if (!organization) return null;
+  const org = organization.id;
+  const types = admin.data?.types ?? [];
+  const button = cls('formButtonSecondary', 'atlas-button-secondary');
+
+  const showDeliveries = async (endpointId: string) => {
+    if (open === endpointId) return setOpen(null);
+    const rows = await admin.act(() => organizationAdmin.appWebhookDeliveries(client, org, endpointId));
+    setDeliveries(rows ?? []);
+    setOpen(endpointId);
+  };
+  const toggle = (type: string) => setPicked((p) => (p.includes(type) ? p.filter((t) => t !== type) : [...p, type]));
+
+  return (
+    <Section name="app-webhook-endpoints" title={labels.title ?? 'Webhooks'} admin={admin}>
+      {notice ? (
+        <p className={cls('text', 'atlas-text')} role="status">
+          {notice}
+        </p>
+      ) : null}
+      <ul className={cls('list', 'atlas-list')}>
+        {admin.data?.endpoints.map((w) => (
+          <li key={w.id} className={cls('listItem', 'atlas-audit-item')} data-health={w.health}>
+            <div>
+              <strong>{w.url}</strong> — {w.health === 'disabled' ? (labels.disabled ?? 'disabled after repeated failures') : w.health}
+              {w.description ? <small> {w.description}</small> : null}
+              <small> {w.enabled_events.includes('*') ? (labels.allEvents ?? 'All events') : w.enabled_events.join(', ')}</small>
+            </div>
+            <button
+              type="button"
+              className={button}
+              onClick={() =>
+                void admin
+                  .act(() => organizationAdmin.testAppWebhook(client, org, w.id))
+                  .then((r) => r && setNotice(r.status === 'success' ? (labels.testOk ?? `Test delivered (HTTP ${r.http_status}).`) : `${labels.testFailed ?? 'Test failed'}: ${r.error ?? `HTTP ${r.http_status}`}`))
+              }
+            >
+              {labels.test ?? 'Send test'}
+            </button>
+            {w.active ? (
+              <button type="button" className={button} onClick={() => void admin.act(() => organizationAdmin.updateAppWebhook(client, org, w.id, { active: false }))}>
+                {labels.pause ?? 'Pause'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={button}
+                onClick={() =>
+                  void admin
+                    .act(async () => {
+                      await organizationAdmin.updateAppWebhook(client, org, w.id, { active: true });
+                      // Re-send what it missed while failing or disabled; nothing when it never failed.
+                      return w.health === 'healthy' ? null : organizationAdmin.replayAppWebhook(client, org, w.id);
+                    })
+                    .then((r) => r && setNotice(`${labels.replayed ?? 'Re-enabled; events queued again'}: ${r.queued}`))
+                }
+              >
+                {labels.enable ?? 'Enable'}
+              </button>
+            )}
+            <button type="button" className={button} onClick={() => void admin.act(() => organizationAdmin.revealAppWebhookSecret(client, org, w.id)).then((r) => r && setSecret(r.secret))}>
+              {labels.reveal ?? 'Reveal secret'}
+            </button>
+            <button type="button" className={button} onClick={() => void admin.act(() => organizationAdmin.rotateAppWebhookSecret(client, org, w.id)).then((r) => r && setSecret(r.secret))}>
+              {labels.rotate ?? 'Rotate secret'}
+            </button>
+            <button type="button" className={button} aria-expanded={open === w.id} onClick={() => void showDeliveries(w.id)}>
+              {labels.deliveries ?? 'Deliveries'}
+            </button>
+            <button type="button" className={button} onClick={() => void admin.act(() => organizationAdmin.deleteAppWebhook(client, org, w.id))}>
+              {labels.remove ?? 'Remove'}
+            </button>
+            {open === w.id ? (
+              <ul className={cls('list', 'atlas-list')} data-atlas="app-webhook-deliveries">
+                {deliveries.length === 0 ? <li className={cls('text', 'atlas-text')}>{labels.noDeliveries ?? 'No deliveries yet.'}</li> : null}
+                {deliveries.map((d) => (
+                  <li key={d.id} className={cls('listItem', 'atlas-audit-item')} data-status={d.status}>
+                    {d.event_type ?? '—'} · {d.status}
+                    {d.http_status ? ` · HTTP ${d.http_status}` : ''} · {new Date(d.created_at).toLocaleString()}
+                    <button
+                      type="button"
+                      className={button}
+                      onClick={() =>
+                        void admin
+                          .act(() => organizationAdmin.redeliverAppWebhook(client, org, w.id, d.id))
+                          .then((r) => r && setNotice(labels.redelivered ?? 'Queued for redelivery.'))
+                      }
+                    >
+                      {labels.redeliver ?? 'Redeliver'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      <OneTimeSecret value={secret} note={labels.copyNow ?? 'Copy the signing secret (whsec_…) now and store it with your receiver.'} />
+      <Field label={labels.url ?? 'HTTPS endpoint'}>
+        <input className={cls('formFieldInput', 'atlas-input')} type="url" placeholder="https://example.com/webhooks" value={url} onChange={(e) => setUrl(e.target.value)} />
+      </Field>
+      <Field label={labels.description ?? 'Description'}>
+        <input className={cls('formFieldInput', 'atlas-input')} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </Field>
+      <fieldset className={cls('formField', 'atlas-field')} data-atlas="app-event-picker">
+        <legend className={cls('formFieldLabel', 'atlas-field-label')}>{labels.events ?? 'Events (none selected = all)'}</legend>
+        {types.map((t) => (
+          <label key={t.id} className={cls('text', 'atlas-text')}>
+            <input type="checkbox" checked={picked.includes(t.type)} onChange={() => toggle(t.type)} /> {t.type}
+            {t.description ? <small> — {t.description}</small> : null}
+          </label>
+        ))}
+      </fieldset>
+      <button
+        type="button"
+        className={cls('formButtonPrimary', 'atlas-button')}
+        disabled={!url.trim()}
+        onClick={() =>
+          void admin
+            .act(() =>
+              organizationAdmin.createAppWebhook(client, org, {
+                url: url.trim(),
+                enabled_events: picked.length ? picked : ['*'],
+                ...(description.trim() ? { description: description.trim() } : {}),
+              }),
+            )
+            .then((r) => {
+              if (r) {
+                setUrl('');
+                setDescription('');
+                setPicked([]);
+                setSecret(r.secret);
+              }
+            })
+        }
       >
         {labels.add ?? 'Add endpoint'}
       </button>

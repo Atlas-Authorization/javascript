@@ -54,4 +54,29 @@ describe('organizationAdmin', () => {
     const denied = fakeClient(() => ({ ok: false, status: 404, data: null, errors: [{ code: 'NOT_FOUND', message: 'nope' }] }));
     await expect(admin.getDirectory(denied.client, 'org_2')).rejects.toBeInstanceOf(OrganizationRequestError);
   });
+
+  it('application webhooks: the app_webhook_endpoints calls and the picker catalog', async () => {
+    const { client, calls } = fakeClient(() => ok({ data: [] }));
+    await admin.listAppEventTypes(client, 'org_1');
+    await admin.createAppWebhook(client, 'org_1', { url: 'https://h.example.com', enabled_events: ['call.completed'] });
+    await admin.updateAppWebhook(client, 'org_1', 'wh_1', { active: true });
+    await admin.revealAppWebhookSecret(client, 'org_1', 'wh_1');
+    await admin.testAppWebhook(client, 'org_1', 'wh_1');
+    await admin.appWebhookDeliveries(client, 'org_1', 'wh_1');
+    await admin.redeliverAppWebhook(client, 'org_1', 'wh_1', 'whd_1');
+    await admin.replayAppWebhook(client, 'org_1', 'wh_1');
+    const base = '/v1/client/organizations/org_1';
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      `GET ${base}/app_event_types`,
+      `POST ${base}/app_webhook_endpoints`,
+      `PATCH ${base}/app_webhook_endpoints/wh_1`,
+      `POST ${base}/app_webhook_endpoints/wh_1/reveal_secret`,
+      `POST ${base}/app_webhook_endpoints/wh_1/test?wait=10s`,
+      `GET ${base}/app_webhook_endpoints/wh_1/deliveries`,
+      `POST ${base}/app_webhook_endpoints/wh_1/deliveries/whd_1/redeliver`,
+      `POST ${base}/app_webhook_endpoints/wh_1/replay`,
+    ]);
+    expect(calls[1]!.body).toEqual({ url: 'https://h.example.com', enabled_events: ['call.completed'] });
+    expect(calls[7]!.body).toEqual({ since: 'failing_since' });
+  });
 });

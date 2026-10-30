@@ -74,6 +74,8 @@ export interface LocalizationResource {
   'signIn.emailCodeOption': string;
   'signIn.emailLinkOption': string;
   'signIn.passwordOption': string;
+  'signIn.passkeyButton': string;
+  'signIn.passkeyCancelled': string;
 
   // --- Sign up ---------------------------------------------------------------
   'signUp.title': string;

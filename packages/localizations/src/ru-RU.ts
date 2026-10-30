@@ -35,6 +35,8 @@ export const ruRU: LocalizationResource = {
   'signIn.emailCodeOption': 'Отправить код на почту',
   'signIn.emailLinkOption': 'Отправить ссылку для входа на почту',
   'signIn.passwordOption': 'Использовать пароль',
+  'signIn.passkeyButton': 'Войти с ключом доступа',
+  'signIn.passkeyCancelled': 'Вход с ключом доступа не завершён. Попробуйте ещё раз или выберите другой способ.',
 
   'signUp.title': 'Создайте аккаунт',
   'signUp.submit': 'Продолжить',

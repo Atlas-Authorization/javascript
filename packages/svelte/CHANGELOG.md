@@ -1,5 +1,9 @@
 # @atlasauth/svelte changelog
 
+## Unreleased
+
+- `<SignIn>` offers "Sign in with a passkey" and passkey autofill on the identifier field when the instance enables passkeys.
+
 ## 0.12.0 — 2026-10-28
 
 - `ManageCiba` component lists sign-in approvals (approve or deny) and manages the CIBA PIN; mounted in the user profile.

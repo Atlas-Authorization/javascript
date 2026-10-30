@@ -34,6 +34,8 @@ export const trTR: LocalizationResource = {
   'signIn.emailCodeOption': 'Bunun yerine e-postayla kod gönderin',
   'signIn.emailLinkOption': 'Bunun yerine e-postayla oturum açma bağlantısı gönderin',
   'signIn.passwordOption': 'Bunun yerine parolanızı kullanın',
+  'signIn.passkeyButton': 'Geçiş anahtarıyla oturum açın',
+  'signIn.passkeyCancelled': 'Geçiş anahtarıyla oturum açma tamamlanmadı. Tekrar deneyin veya başka bir yöntem kullanın.',
 
   'signUp.title': 'Hesabınızı oluşturun',
   'signUp.submit': 'Devam',

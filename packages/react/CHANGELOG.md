@@ -1,5 +1,12 @@
 # @atlasauth/react changelog
 
+## Unreleased
+
+### Added
+
+- `<ApiKeys/>` renders a resource by read/write scope grid (`ScopePicker`). Implied scopes show as checked and locked, and only the scopes you choose are sent. `useApiKeys()` exposes `scopeImplications`.
+- `<SignIn/>` offers "Sign in with a passkey" and passkey autofill on the identifier field (`autocomplete="username webauthn"`) when the instance enables passkeys. `passkeyPrf` and `onPasskeyExtensionResults` now apply to passkey sign-in too.
+
 ## 0.23.1 — 2026-10-28
 
 - The SDK reports its own version correctly again (the previous release still identified itself as the release before).

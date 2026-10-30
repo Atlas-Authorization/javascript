@@ -170,7 +170,9 @@ describe('sign-in / sign-up helpers', () => {
       legal: { termsUrl: null, privacyUrl: null, required: false },
       emailDelivery: { available: true, passwordReset: true, passwordSignUp: true },
       account: { username: null, lastSignInMethod: false, emailVerification: 'code', passwordReset: 'code', emailSecondFactor: false, passkeySignUp: null },
+      passkeySignIn: false,
     });
+    expect(instanceSettingsFrom({ strategies: { passkey: true } }).passkeySignIn).toBe(true);
     const { client } = scripted(() => ({
       body: {
         appearance: { legal: { termsUrl: 'https://t', required: true }, signUpFields: [{ key: 'k', label: 'K' }] },

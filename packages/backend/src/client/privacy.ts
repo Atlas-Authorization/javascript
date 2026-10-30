@@ -118,6 +118,39 @@ export interface PrivacyOrchestratorInput {
   completion_webhook_url?: string | null;
 }
 
+/** One call that wires a consent manager / orchestrator both ways (`POST /v1/instance/privacy_integrations/connect`). */
+export interface PrivacyIntegrationConnectInput {
+  /** An orchestrator preset (`cookiemunch`) or `custom`. */
+  preset: string;
+  /** The orchestrator-side site (Cookie Munch: the site id). Required by the cookiemunch preset. */
+  site_id?: string;
+  /** The key the orchestrator issued to Atlas for opening cases (optional on a re-run). */
+  api_key?: string;
+  partner_link_id?: string;
+  /** The webhook URL the orchestrator shows for this instance's executor connection (optional on a re-run). */
+  completion_webhook_url?: string;
+  /** Overrides for `PUT /v1/instance/cookie_consent` (merged over the preset), or false to leave it alone. */
+  cookie_consent?: Record<string, unknown> | false;
+  /** Further orchestrator fields (name, case_url, cancel_url, sign_requests, …). */
+  orchestrator?: Omit<PrivacyOrchestratorInput, 'provider' | 'site_id' | 'api_key' | 'partner_link_id' | 'completion_webhook_url'>;
+  /** The executor key: privacy:* scopes only (default privacy:execute + privacy:grants:revoke). */
+  key?: { name?: string; scopes?: string[]; expires_at?: number | string; allowed_ips?: string[]; allowed_origins?: string[] };
+}
+
+export interface PrivacyIntegration {
+  object: 'privacy_integration';
+  preset: string | null;
+  /** Banner on, orchestrator and its completion webhook set, executor key live. */
+  connected: boolean;
+  cookie_consent: Record<string, unknown> & { enabled: boolean };
+  privacy_orchestrator: PrivacyOrchestrator;
+  dsr_webhook: PrivacyOrchestrator['completion_webhook'];
+  /** `secret` only on the connect that minted it; `idempotent_replay` on a re-run. */
+  executor_key: (Record<string, unknown> & { id: string; scopes: string[]; secret?: string; idempotent_replay?: boolean }) | null;
+  /** Connect only: the consent-manager site check. */
+  warnings?: Array<{ code: string; message: string }>;
+}
+
 export function privacyResource(request: RequestFn) {
   return {
     /** What this executor speaks (public). */
@@ -153,6 +186,16 @@ export function privacyResource(request: RequestFn) {
       },
       delete(): Promise<PrivacyOrchestrator & { deleted: boolean }> {
         return request({ method: 'DELETE', path: '/v1/instance/privacy_orchestrator' });
+      },
+    },
+    integration: {
+      /** The consent manager, orchestrator, completion webhook and executor key, in one view. */
+      get(): Promise<PrivacyIntegration> {
+        return request({ method: 'GET', path: '/v1/instance/privacy_integrations' });
+      },
+      /** Wire all of it in one idempotent call; the executor key's secret comes back once. */
+      connect(body: PrivacyIntegrationConnectInput): Promise<PrivacyIntegration> {
+        return request({ method: 'POST', path: '/v1/instance/privacy_integrations/connect', body });
       },
     },
   };

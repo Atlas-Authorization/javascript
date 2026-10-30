@@ -96,6 +96,25 @@ export interface InstanceUpdateResult {
   inactive_methods?: InactiveMethod[];
   /** Methods that still work, minus the parts that need email. */
   limited_methods?: LimitedMethod[];
+  /**
+   * What the write did not do as sent: `origin_still_referenced` (a removed
+   * origin URLs still point at) and, on a lenient write, `unknown_field` (an
+   * auth_config key that was ignored and not stored; `hint` names the endpoint
+   * for a setting that has its own, e.g. branding → PATCH /v1/branding).
+   */
+  warnings?: InstanceUpdateWarning[];
+}
+
+/** One entry of {@link InstanceUpdateResult.warnings}. */
+export interface InstanceUpdateWarning {
+  code: 'origin_still_referenced' | 'unknown_field' | (string & {});
+  message: string;
+  /** unknown_field: the full path, e.g. `auth_config.strategies.atlasId`. */
+  field?: string;
+  hint?: string;
+  did_you_mean?: string;
+  /** origin_still_referenced: the removed origin. */
+  origin?: string;
 }
 
 /**
@@ -666,6 +685,48 @@ export interface IntegrationTokenResponse {
   jwks_uri?: string;
 }
 
+/** "Sign in with Atlas" on the instance (`GET/PATCH /v1/instance/sign_in_with_atlas`). */
+export interface SignInWithAtlasSettings {
+  object: 'sign_in_with_atlas';
+  /** Whether the embedded and hosted sign-in show "Continue with Atlas". */
+  enabled: boolean;
+  /** The SSO connection the button starts; null when off. */
+  connection_id: string | null;
+  /** `instance_toggle`: Atlas created the connection and its Atlas ID app. `linked`: an existing connection of yours. */
+  managed_via: 'instance_toggle' | 'linked' | null;
+  connection_status: string | null;
+  /** Whether this deployment can offer Sign in with Atlas at all. */
+  available: boolean;
+  /** The Atlas issuer the connection must point at. */
+  issuer: string | null;
+  /** Active OIDC connections to that issuer that could be linked. */
+  candidates: { id: string; client_id: string | null; managed_by_this_instance: boolean }[];
+}
+
+export interface UpdateSignInWithAtlasBody {
+  enabled: boolean;
+  /** Link this existing connection (an active OIDC connection to the Atlas issuer). Omit to pick or create one. */
+  connection_id?: string | null;
+}
+
+/** Where the hosted pages send the browser (`GET/PATCH /v1/instance/hosted_pages`). */
+export interface HostedPagesSettings {
+  object: 'hosted_pages';
+  /** `/hosted/sign-in` answers 302 here; null serves the hosted page. */
+  sign_in_url: string | null;
+  sign_up_url: string | null;
+  user_url: string | null;
+  /** The hosted pages these settings apply to. */
+  hosted: { sign_in: string; sign_up: string; user: string };
+}
+
+/** Each URL https on one of the instance's allowed origins; null clears it. */
+export interface UpdateHostedPagesBody {
+  sign_in_url?: string | null;
+  sign_up_url?: string | null;
+  user_url?: string | null;
+}
+
 export function instanceResource(request: RequestFn) {
   return {
     get(): Promise<Instance> {
@@ -673,6 +734,28 @@ export function instanceResource(request: RequestFn) {
     },
     update(body: UpdateInstanceBody): Promise<InstanceUpdateResult> {
       return request({ method: 'PATCH', path: '/v1/instance', body });
+    },
+    /**
+     * "Sign in with Atlas": read it, or turn it on or off. `enabled: true` links
+     * an existing connection to the Atlas issuer (or the one named by
+     * `connection_id`), else creates one.
+     */
+    signInWithAtlas: {
+      get(): Promise<SignInWithAtlasSettings> {
+        return request({ method: 'GET', path: '/v1/instance/sign_in_with_atlas' });
+      },
+      update(body: UpdateSignInWithAtlasBody): Promise<SignInWithAtlasSettings> {
+        return request({ method: 'PATCH', path: '/v1/instance/sign_in_with_atlas', body });
+      },
+    },
+    /** Send the hosted sign-in, sign-up and account pages to your app's own pages (302). */
+    hostedPages: {
+      get(): Promise<HostedPagesSettings> {
+        return request({ method: 'GET', path: '/v1/instance/hosted_pages' });
+      },
+      update(body: UpdateHostedPagesBody): Promise<HostedPagesSettings> {
+        return request({ method: 'PATCH', path: '/v1/instance/hosted_pages', body });
+      },
     },
     /** Check your setup in one call: configuration the server can see is broken or risky. */
     preflight(params: PreflightParams = {}): Promise<PreflightReport> {

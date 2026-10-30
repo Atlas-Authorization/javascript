@@ -1,5 +1,14 @@
 # @atlasauth/js changelog
 
+## Unreleased
+
+### Added
+
+- `scopeImplications` on the user's API key list, plus the `impliedScopes()` and `scopeGrid()` helpers for a resource by read/write scope picker.
+- `signInWithPasskey`, `startConditionalPasskeySignIn` and `createPasskeySignInController`: usernameless passkey sign-in (button and autofill) for any prebuilt or custom form; a cancelled prompt is a `PASSKEY_CANCELLED` error, never a throw.
+- `InstanceSettings.passkeySignIn` says whether the instance offers passkey sign-in.
+- One `POST /v1/client/tickets/exchange` per ticket: a second exchange of the same ticket within 10 seconds (React StrictMode, a double-mounted router) shares the first answer instead of failing with 400.
+
 ## 0.26.1 — 2026-10-28
 
 - The SDK reports its own version correctly again (the previous release still identified itself as the release before).

@@ -41,7 +41,7 @@ export interface ConformanceCase {
   profile?: CaseProfile;
   id: string;
   title: string;
-  area: 'auth' | 'ping' | 'signup' | 'erase' | 'export' | 'alias' | 'user' | 'signal' | 'errors';
+  area: 'auth' | 'ping' | 'signup' | 'erase' | 'export' | 'alias' | 'user' | 'partner' | 'signal' | 'errors';
   op: CaseOp;
   method: 'GET' | 'POST';
   body?: Record<string, unknown>;
@@ -325,6 +325,24 @@ export const CONFORMANCE_CASES: readonly ConformanceCase[] = [
     why: 'Atlas forwards email, name and suspension changes; name may be null.',
   },
   {
+    id: 'partner.with_email',
+    title: "Registering a user's own code (with their email) is accepted, or 409 when the code is taken",
+    area: 'partner',
+    op: 'partners',
+    method: 'POST',
+    body: {
+      customerRef: 'conformance_partner_{run}',
+      code: 'CONF{run}',
+      email: 'conformance+partner@example.com',
+      emailHash: 'b'.repeat(64),
+      name: 'Conformance Partner',
+    },
+    sign: 'valid',
+    connection: 'known',
+    expect: { status: [200, 201, 204, 409] },
+    why: "Atlas sends the user's primary verified email (and name, when it has one) so the platform can find or create the partner the code belongs to. 409 = code taken; anything else must be a success.",
+  },
+  {
     id: 'signal.email_verified',
     title: 'An email_verified signal answers with the referrals it changed',
     area: 'signal',
@@ -472,9 +490,9 @@ export const WEBHOOK_CONFORMANCE_CASES: readonly ConformanceCase[] = [
   W({
     id: 'webhook.partner_unsupported_or_ok',
     title: 'Registering a user-chosen code is accepted, 409 when taken, or 404/405/501 when unsupported',
-    area: 'signup',
+    area: 'partner',
     op: 'partners',
-    body: { op: 'partner', customerRef: 'conformance_partner_{run}', code: 'CONF{run}', emailHash: null },
+    body: { op: 'partner', customerRef: 'conformance_partner_{run}', code: 'CONF{run}', emailHash: 'b'.repeat(64) },
     sign: 'valid',
     expect: { status: [200, 201, 204, 404, 405, 409, 501] },
     why: 'This is what the `partner` capability means: Atlas can register a user-chosen code. 409 = code taken.',

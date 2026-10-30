@@ -34,6 +34,8 @@ export const koKR: LocalizationResource = {
   'signIn.emailCodeOption': '대신 이메일로 코드 받기',
   'signIn.emailLinkOption': '대신 이메일로 로그인 링크 받기',
   'signIn.passwordOption': '대신 비밀번호 사용하기',
+  'signIn.passkeyButton': '패스키로 로그인',
+  'signIn.passkeyCancelled': '패스키 로그인이 완료되지 않았습니다. 다시 시도하거나 다른 방법으로 로그인하세요.',
 
   'signUp.title': '계정 만들기',
   'signUp.submit': '계속',

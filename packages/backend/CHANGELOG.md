@@ -1,5 +1,15 @@
 # @atlasauth/backend changelog
 
+## Unreleased
+
+### Added
+
+- `createKeyMirror({ store, apiKeys })`: a local, authoritative mirror of end-user API keys. It mints and imports keys at Atlas, revokes locally first, verifies against sha256 with no network call, `sync()` reads the revocation feed and `applyWebhook()` handles `api_key.*` events. Also `memoryKeyMirrorStore()` and `hashApiKeySecret()`.
+- `privacy.integration.connect()` / `.get()`: one call that wires a consent manager and orchestrator both ways (`/v1/instance/privacy_integrations`).
+- Types: `second` / `minute` limit periods, `effective_scopes` on verification, and `scopes` / `import` on `ApiKey` and `CreateApiKeyBody`.
+- `sessions.createBrowserTicket({ user_id, redirect_url?, expires_in_seconds? })`: a one-time ticket (and, with `redirect_url`, a ready URL) that signs a browser in as the user, through `POST /v1/sessions` with `mode: "browser_ticket"`. The successor of `signInTokens.create()`, now marked deprecated.
+- `testMode.createSignInUrl({ user_id, redirect_url })`: `POST /v1/testing/sign_in_url` on development instances.
+
 ## 0.27.1 — 2026-10-28
 
 ### Fixed

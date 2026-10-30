@@ -54,7 +54,12 @@ afterEach(() => {
 
 async function mountFlow(
   component: typeof SignIn | typeof SignUp,
-  opts: { captchaFlows?: Record<string, unknown>; emailDelivery?: Record<string, unknown>; routes: Route[] },
+  opts: {
+    captchaFlows?: Record<string, unknown>;
+    emailDelivery?: Record<string, unknown>;
+    signInWithAtlas?: Record<string, unknown>;
+    routes: Route[];
+  },
 ) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -71,6 +76,7 @@ async function mountFlow(
         appearance: { legal: { termsUrl: null, privacyUrl: null, required: false }, signUpFields: [] },
         captchaFlows: opts.captchaFlows ?? {},
         ...(opts.emailDelivery ? { email_delivery: opts.emailDelivery } : {}),
+        ...(opts.signInWithAtlas ? { sign_in_with_atlas: opts.signInWithAtlas } : {}),
       });
     }
     for (const route of opts.routes) {
@@ -327,5 +333,54 @@ describe('email delivery', () => {
       strategy: 'email_code',
       code: '123456',
     });
+  });
+});
+
+describe('<SignIn> Sign in with Atlas', () => {
+  it('offers "Continue with Atlas" when the instance has it on, and starts the SSO sign-in', async () => {
+    const assign = vi.fn();
+    const original = Object.getOwnPropertyDescriptor(window, 'location')!;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        href: 'https://app.example.com/login',
+        origin: 'https://app.example.com',
+        protocol: 'https:',
+        host: 'app.example.com',
+        hostname: 'app.example.com',
+        pathname: '/login',
+        search: '',
+        hash: '',
+        assign,
+      },
+    });
+    try {
+      const el = await mountFlow(SignIn, {
+        signInWithAtlas: { enabled: true, connection_id: 'ssoc_1' },
+        routes: [
+          (c) =>
+            c.path === '/v1/client/sign_ins/sso' ? json({ authorization_url: 'https://id.example/authorize?x=1' }) : undefined,
+        ],
+      });
+      const button = await vi.waitFor(() => {
+        const b = el.querySelector('[data-atlas-provider="atlas"]') as HTMLButtonElement | null;
+        expect(b).not.toBeNull();
+        return b!;
+      });
+      expect(button.textContent).toContain('Continue with Atlas');
+      button.click();
+      await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('https://id.example/authorize?x=1'));
+      expect(posts('/v1/client/sign_ins/sso')[0]!.body).toMatchObject({
+        connection_id: 'ssoc_1',
+        redirect_url: 'https://app.example.com/login',
+      });
+    } finally {
+      Object.defineProperty(window, 'location', original);
+    }
+  });
+
+  it('shows no Atlas button when the instance has it off', async () => {
+    const el = await mountFlow(SignIn, { signInWithAtlas: { enabled: false }, routes: [] });
+    expect(el.querySelector('[data-atlas-provider="atlas"]')).toBeNull();
   });
 });

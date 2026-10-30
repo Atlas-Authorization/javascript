@@ -1,4 +1,5 @@
 import type { RequestFn } from './request';
+import type { BrowserTicket } from './sessions';
 
 /** The production instance's paired development (test-mode) sibling. */
 export interface TestInstance {
@@ -28,6 +29,13 @@ export interface TestingToken {
   expires_in: number;
 }
 
+/** A one-time URL that signs a browser in as a user (`POST /v1/testing/sign_in_url`). */
+export interface TestingSignInUrl extends Omit<BrowserTicket, 'object' | 'url' | 'redirect_url'> {
+  object: 'testing_sign_in_url';
+  url: string;
+  redirect_url: string;
+}
+
 export function testModeResource(request: RequestFn) {
   return {
     /**
@@ -47,6 +55,14 @@ export function testModeResource(request: RequestFn) {
     /** Mint a testing token. Development instances only (403 TESTING_UNAVAILABLE otherwise). */
     createTestingToken(): Promise<TestingToken> {
       return request({ method: 'POST', path: '/v1/testing_tokens' });
+    },
+    /**
+     * A ready one-time URL that signs a browser in as `user_id` and lands on
+     * `redirect_url` (an allowed origin or localhost). Development instances only
+     * (403 TESTING_UNAVAILABLE otherwise). `@atlasauth/testing` wraps it as `signInAs`.
+     */
+    createSignInUrl(body: { user_id: string; redirect_url: string; expires_in_seconds?: number }): Promise<TestingSignInUrl> {
+      return request({ method: 'POST', path: '/v1/testing/sign_in_url', body });
     },
   };
 }

@@ -43,6 +43,11 @@ export interface UserApiKeyList {
   allowedScopes: string[];
   /** The claim names a new key may set. */
   allowedClaims: string[];
+  /**
+   * The instance scope implications (`{ "calls:write": ["calls:read"], "admin": ["*"] }`).
+   * Holding a key scope also grants the listed ones; `*` = every scope.
+   */
+  scopeImplications: Record<string, string[]>;
   /** The most active keys this user (or organization) may hold. */
   maxActiveKeys: number;
   /** Active (unrevoked, unexpired) keys held now. */
@@ -130,6 +135,7 @@ export async function listApiKeys(
     data: UserApiKey[];
     allowed_scopes?: string[];
     allowed_claims?: string[];
+    scope_implications?: Record<string, string[]>;
     max_active_keys?: number;
     active_count?: number;
   }>(client, `${BASE}${query}`, { method: 'GET' });
@@ -137,6 +143,7 @@ export async function listApiKeys(
     data: body.data ?? [],
     allowedScopes: body.allowed_scopes ?? [],
     allowedClaims: body.allowed_claims ?? [],
+    scopeImplications: body.scope_implications ?? {},
     maxActiveKeys: body.max_active_keys ?? 0,
     activeCount: body.active_count ?? 0,
   };
@@ -179,4 +186,63 @@ export async function revokeApiKey(
     `${BASE}/${encodeURIComponent(id)}/revoke`,
     { method: 'POST' },
   );
+}
+
+/**
+ * The scopes `selected` grants once the instance implications are applied (the
+ * same closure verify answers with as `effective_scopes`). `*` expands to every
+ * scope the instance names — `allowedScopes` plus both sides of the map.
+ */
+export function impliedScopes(
+  selected: readonly string[],
+  implications: Record<string, string[]>,
+  allowedScopes: readonly string[] = [],
+): string[] {
+  const vocab = new Set(allowedScopes);
+  for (const [from, tos] of Object.entries(implications)) {
+    vocab.add(from);
+    for (const t of tos) if (t !== '*') vocab.add(t);
+  }
+  const out = new Set(selected);
+  const queue = [...selected];
+  while (queue.length > 0) {
+    for (const to of implications[queue.pop()!] ?? []) {
+      for (const t of to === '*' ? vocab : [to]) {
+        if (!out.has(t)) {
+          out.add(t);
+          queue.push(t);
+        }
+      }
+    }
+  }
+  return [...out].sort();
+}
+
+/** One row of a resource × read/write grid: the scope behind each cell, when it exists. */
+export interface ScopeGridRow {
+  resource: string;
+  read?: string;
+  write?: string;
+}
+
+/**
+ * Lay a scope vocabulary out as a resource × read/write grid: every
+ * `<resource>:read` / `<resource>:write` scope becomes a row, anything else
+ * (`admin`, `reports:export`) is returned in `other`. `null` when no scope fits
+ * the grid, so a UI falls back to a flat checkbox list.
+ */
+export function scopeGrid(allowedScopes: readonly string[]): { rows: ScopeGridRow[]; other: string[] } | null {
+  const rows = new Map<string, ScopeGridRow>();
+  const other: string[] = [];
+  for (const scope of allowedScopes) {
+    const m = /^(.+):(read|write)$/.exec(scope);
+    if (!m) {
+      other.push(scope);
+      continue;
+    }
+    const row = rows.get(m[1]!) ?? { resource: m[1]! };
+    row[m[2] as 'read' | 'write'] = scope;
+    rows.set(m[1]!, row);
+  }
+  return rows.size > 0 ? { rows: [...rows.values()], other } : null;
 }

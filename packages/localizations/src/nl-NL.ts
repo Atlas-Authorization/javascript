@@ -34,6 +34,8 @@ export const nlNL: Localization = {
   'signIn.emailCodeOption': 'Stuur me liever een code',
   'signIn.emailLinkOption': 'Stuur me liever een inloglink',
   'signIn.passwordOption': 'Gebruik liever mijn wachtwoord',
+  'signIn.passkeyButton': 'Inloggen met een passkey',
+  'signIn.passkeyCancelled': 'Inloggen met de passkey is niet voltooid. Probeer het opnieuw of log op een andere manier in.',
 
   'signUp.title': 'Maak je account aan',
   'signUp.submit': 'Doorgaan',

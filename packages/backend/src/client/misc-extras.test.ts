@@ -185,6 +185,11 @@ describe('testMode', () => {
     expect(last().method).toBe('POST');
     expect(last().url).toBe(`${API_URL}/v1/testing_tokens`);
     expect(last().body).toBeUndefined();
+
+    await atlas.testMode.createSignInUrl({ user_id: 'user_1', redirect_url: 'http://localhost:3000/' });
+    expect(last().method).toBe('POST');
+    expect(last().url).toBe(`${API_URL}/v1/testing/sign_in_url`);
+    expect(last().json).toEqual({ user_id: 'user_1', redirect_url: 'http://localhost:3000/' });
   });
 });
 

@@ -460,6 +460,15 @@ export interface ListReferralCallsParams {
   starting_after?: string;
 }
 
+/**
+ * What a settings write stored differently from what was sent: `renamed` (a
+ * retired provider name such as `referally`, stored as `referalli`) and
+ * `defaulted` (a newly picked platform's tracking cookies filled in).
+ */
+export type ReferralSettingsWarning =
+  | { code: 'renamed'; field: string; from: string; to: string; message: string }
+  | { code: 'defaulted'; field: string; to: string[]; message: string };
+
 export function referralsResource(request: RequestFn) {
   return {
     /** `GET /v1/instance/referrals` — settings, connection status and the supported providers. */
@@ -467,7 +476,7 @@ export function referralsResource(request: RequestFn) {
       return request({ method: 'GET', path: '/v1/instance/referrals' });
     },
     /** `PATCH /v1/instance/referrals` — partial update; secrets are write-only. */
-    update(body: UpdateReferralSettingsBody, idempotencyKey?: string): Promise<ReferralSettings> {
+    update(body: UpdateReferralSettingsBody, idempotencyKey?: string): Promise<ReferralSettings & { warnings?: ReferralSettingsWarning[] }> {
       return request({ method: 'PATCH', path: '/v1/instance/referrals', body, idempotencyKey });
     },
     /**

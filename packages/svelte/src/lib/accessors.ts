@@ -4,11 +4,13 @@ import {
   advanceWithCaptcha,
   atlasCaptchaLabels,
   createCaptchaController,
+  createPasskeySignInController,
   createPasskeySignUp,
   createSignUp,
   finishPasskeySignUp,
   fetchInstanceSettings,
   fetchLastSignInMethod,
+  startSignInWithAtlas,
   flowNeedsCaptcha,
   signInCaptchaOptions,
   flowFromPending,
@@ -36,6 +38,7 @@ import {
   type MfaChoices,
   type MfaEnrollmentController,
   type MfaEnrollmentState,
+  type PasskeySignInController,
 } from '@atlasauth/js';
 import { useAtlas, type AuthStatus } from './context';
 import { translate } from './i18n';
@@ -297,6 +300,18 @@ export interface FlowController {
   loadPolicies(): Promise<void>;
   /** The user declined a policy a sign-in was waiting on: cancels the attempt and says why. */
   declinePolicy(title: string): void;
+  /**
+   * "Continue with Atlas" (when `settings.signInWithAtlas` is set): starts the
+   * SSO sign-in and sends the browser to Atlas. Resolves the server's message
+   * when it could not start.
+   */
+  signInWithAtlas(connectionId: string): Promise<{ error?: string }>;
+  /**
+   * Passkey sign-in (the "Sign in with a passkey" button and passkey autofill on
+   * the identifier field), offered when `settings.passkeySignIn` is on. The
+   * outcome goes through the same completion as every sign-in.
+   */
+  passkey: PasskeySignInController;
   /** Stop the magic-link poll loop and remove the captcha widgets — call from `onDestroy`. */
   destroy(): void;
 }
@@ -482,13 +497,32 @@ function createFlow(): FlowController {
     return next.errors.length === 0;
   }
 
+  const passkey = createPasskeySignInController({
+    client,
+    onStart: () => state.set({ ...get(state), busy: true, errors: [] }),
+    onResult: finish,
+    captcha: () => captcha,
+    cancelledMessage: () => t('signIn.passkeyCancelled'),
+  });
+
   function destroy(): void {
+    passkey.stopAutofill();
     stopPolling();
     unsubscribeCaptcha();
     unsubscribeEnrollment();
     unsubscribeEnrollmentStep();
     captcha.destroy();
     signUpCaptcha.destroy();
+  }
+
+  async function signInWithAtlas(connectionId: string): Promise<{ error?: string }> {
+    if (typeof window === 'undefined') return {};
+    const started = await startSignInWithAtlas(client, connectionId, window.location.href);
+    if ('url' in started) {
+      window.location.assign(started.url);
+      return {};
+    }
+    return { error: started.error };
   }
 
   return {
@@ -512,6 +546,8 @@ function createFlow(): FlowController {
     policies,
     loadPolicies,
     declinePolicy,
+    signInWithAtlas,
+    passkey,
     destroy,
   };
 }

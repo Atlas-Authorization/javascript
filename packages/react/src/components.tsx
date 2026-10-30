@@ -79,6 +79,7 @@ export {
   OrganizationApiKeys,
   OrganizationIpAllowlist,
   OrganizationWebhooks,
+  AppWebhookEndpoints,
 } from './organization-admin';
 export type { OrganizationProfileProps } from './organization';
 

@@ -107,15 +107,19 @@ export interface InfoReport {
   };
 }
 
-/** `sk_live_abc…` → `sk_live_`; anything else → its first 3 chars. */
+/** `atlas_live_sk_abc…` → `atlas_live_sk_`, `sk_live_abc…` → `sk_live_`; anything else → its first 3 chars. */
 export function keyPrefix(key: string): string {
-  const m = /^([a-z]+_(?:live|test)_)/.exec(key) ?? /^([a-z]+_)/.exec(key);
+  const m =
+    /^(atlas_(?:live|test)_[a-z]+_)/.exec(key) ?? /^([a-z]+_(?:live|test)_)/.exec(key) ?? /^([a-z]+_)/.exec(key);
   return m ? m[1]! : `${key.slice(0, 3)}…`;
 }
 
 /** Mask anything that looks like an Atlas (or other bearer) secret in free text. */
 export function redactSecrets(text: string): string {
-  return text.replace(/\b((?:sk|psk|rk|whsec|ak|fck|cft)_(?:(?:live|test)_)?)[A-Za-z0-9_-]{6,}/g, '$1[redacted]');
+  return text.replace(
+    /\b((?:atlas_(?:live|test)_(?:sk|psk|dsk|whsec|pl|at)_)|(?:sk|psk|rk|whsec|ak|fck|cft)_(?:(?:live|test)_)?)[A-Za-z0-9_-]{6,}/g,
+    '$1[redacted]',
+  );
 }
 
 /** Dotted-number compare that tolerates prerelease tags (`1.2.0-rc.1` < `1.2.0`). */

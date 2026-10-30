@@ -5,7 +5,7 @@ import { OrganizationRequestError } from './organizations';
  * The org-admin Frontend API behind the in-app admin widgets
  * (`<OrganizationSsoConnection/>`, `<OrganizationDirectory/>`,
  * `<OrganizationDomains/>`, `<OrganizationLogStreams/>`, `<OrganizationApiKeys/>`,
- * `<OrganizationIpAllowlist/>`, `<OrganizationWebhooks/>`). Every call is scoped
+ * `<OrganizationIpAllowlist/>`, `<OrganizationWebhooks/>`, `<AppWebhookEndpoints/>`). Every call is scoped
  * to the ACTIVE organization and needs the manage-members permission; a refused
  * call throws {@link OrganizationRequestError} (404 for another organization,
  * 403 for a member without the permission).
@@ -128,6 +128,21 @@ export interface OrganizationWebhookDelivery {
   created_at: number;
 }
 
+export interface OrganizationAppEventType {
+  object: 'app_event_type';
+  id: string;
+  type: string;
+  description: string | null;
+}
+
+export interface OrganizationWebhookTestResult {
+  object: 'webhook_test_result';
+  delivery_id: string;
+  status: 'success' | 'failed';
+  http_status: number | null;
+  error: string | null;
+}
+
 const enc = encodeURIComponent;
 const base = (organizationId: string) => `/v1/client/organizations/${enc(organizationId)}`;
 
@@ -219,4 +234,40 @@ export const organizationAdmin = {
     call<{ secret: string; overlap_seconds: number }>(c, `${base(org)}/webhook_endpoints/${enc(endpointId)}/rotate_secret`, send('POST')),
   webhookDeliveries: async (c: FapiClient, org: string, endpointId: string) =>
     (await call<Page<OrganizationWebhookDelivery>>(c, `${base(org)}/webhook_endpoints/${enc(endpointId)}/deliveries`, send('GET'))).data,
+
+  /* Application webhooks: the app's own events, sent to this organization's endpoints (Standard Webhooks signed) */
+  /** The app's event catalog for the picker (deprecated types left out). */
+  listAppEventTypes: async (c: FapiClient, org: string) =>
+    (await call<Page<OrganizationAppEventType>>(c, `${base(org)}/app_event_types`, send('GET'))).data,
+  listAppWebhooks: async (c: FapiClient, org: string) =>
+    (await call<Page<OrganizationWebhookEndpoint>>(c, `${base(org)}/app_webhook_endpoints`, send('GET'))).data,
+  /** The returned `whsec_` secret is shown once (or with `revealAppWebhookSecret`). */
+  createAppWebhook: (c: FapiClient, org: string, input: { url: string; enabled_events?: string[]; description?: string }) =>
+    call<OrganizationWebhookEndpoint & { secret: string }>(c, `${base(org)}/app_webhook_endpoints`, send('POST', input)),
+  updateAppWebhook: (
+    c: FapiClient,
+    org: string,
+    endpointId: string,
+    input: { url?: string; enabled_events?: string[]; description?: string | null; active?: boolean },
+  ) => call<OrganizationWebhookEndpoint>(c, `${base(org)}/app_webhook_endpoints/${enc(endpointId)}`, send('PATCH', input)),
+  deleteAppWebhook: (c: FapiClient, org: string, endpointId: string) =>
+    call<{ id: string; deleted: true }>(c, `${base(org)}/app_webhook_endpoints/${enc(endpointId)}`, send('DELETE')),
+  revealAppWebhookSecret: (c: FapiClient, org: string, endpointId: string) =>
+    call<{ secret: string }>(c, `${base(org)}/app_webhook_endpoints/${enc(endpointId)}/reveal_secret`, send('POST')),
+  rotateAppWebhookSecret: (c: FapiClient, org: string, endpointId: string) =>
+    call<{ secret: string; overlap_seconds: number }>(c, `${base(org)}/app_webhook_endpoints/${enc(endpointId)}/rotate_secret`, send('POST')),
+  /** Sends a signed `webhook.test` now and returns the attempt (status, http_status, error). */
+  testAppWebhook: (c: FapiClient, org: string, endpointId: string) =>
+    call<OrganizationWebhookTestResult>(c, `${base(org)}/app_webhook_endpoints/${enc(endpointId)}/test?wait=10s`, send('POST')),
+  appWebhookDeliveries: async (c: FapiClient, org: string, endpointId: string) =>
+    (await call<Page<OrganizationWebhookDelivery>>(c, `${base(org)}/app_webhook_endpoints/${enc(endpointId)}/deliveries`, send('GET'))).data,
+  redeliverAppWebhook: (c: FapiClient, org: string, endpointId: string, deliveryId: string) =>
+    call<{ id: string; event_id: string; status: string }>(
+      c,
+      `${base(org)}/app_webhook_endpoints/${enc(endpointId)}/deliveries/${enc(deliveryId)}/redeliver`,
+      send('POST'),
+    ),
+  /** Re-send what the endpoint missed since it started failing (after re-enabling it). */
+  replayAppWebhook: (c: FapiClient, org: string, endpointId: string, since: number | 'failing_since' = 'failing_since') =>
+    call<{ queued: number; has_more: boolean }>(c, `${base(org)}/app_webhook_endpoints/${enc(endpointId)}/replay`, send('POST', { since })),
 };

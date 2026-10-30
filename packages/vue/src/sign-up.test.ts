@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { defineComponent, h, nextTick, shallowRef, type App, type Component } from 'vue';
 import { mount, type VueWrapper } from '@vue/test-utils';
 import { ATLAS_INJECTION_KEY } from './context';
@@ -89,6 +89,7 @@ async function mountFlow(
     captchaFlows?: Record<string, unknown>;
     emailDelivery?: Record<string, boolean>;
     account?: Record<string, unknown>;
+    signInWithAtlas?: Record<string, unknown>;
     routes: Route[];
   },
 ) {
@@ -109,6 +110,7 @@ async function mountFlow(
           captchaFlows: opts.captchaFlows ?? {},
           ...(opts.emailDelivery ? { email_delivery: opts.emailDelivery } : {}),
           ...(opts.account ? { account: opts.account } : {}),
+          ...(opts.signInWithAtlas ? { sign_in_with_atlas: opts.signInWithAtlas } : {}),
         });
       }
       for (const route of opts.routes) {
@@ -657,5 +659,47 @@ describe('<SignIn> MFA enrolment and the texted second factor', () => {
     await vi.waitFor(() => expect(w.find('[data-atlas="sms-second-factor-sent"]').exists()).toBe(true));
     expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor')[0]!.body).toEqual({ strategy: 'sms' });
     expect(w.find('[data-atlas="sms-second-factor-sent"]').text()).toContain('+1•••0101');
+  });
+});
+
+describe('<SignIn> Sign in with Atlas', () => {
+  it('draws "Continue with Atlas" when the instance has it on and starts the SSO sign-in for its connection', async () => {
+    const assign = vi.fn();
+    const original = Object.getOwnPropertyDescriptor(window, 'location');
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        href: 'https://app.example.com/login',
+        origin: 'https://app.example.com',
+        protocol: 'https:',
+        host: 'app.example.com',
+        hostname: 'app.example.com',
+        pathname: '/login',
+        search: '',
+        hash: '',
+        assign,
+      },
+    });
+    onTestFinished(() => {
+      if (original) Object.defineProperty(window, 'location', original);
+    });
+    const w = await mountFlow(SignIn, {
+      signInWithAtlas: { enabled: true, connection_id: 'ssoc_atlas' },
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ins/sso' ? json({ authorization_url: 'https://id.example/authorize' }) : undefined),
+      ],
+    });
+    const button = w.find('[data-atlas-provider="atlas"]');
+    expect(button.exists()).toBe(true);
+    expect(button.text()).toBe('Continue with Atlas');
+    await button.trigger('click');
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sso')).toHaveLength(1));
+    expect(posts('/v1/client/sign_ins/sso')[0]!.body).toMatchObject({ connection_id: 'ssoc_atlas', redirect_url: 'https://app.example.com/login' });
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('https://id.example/authorize'));
+  });
+
+  it('draws no Atlas button while it is off', async () => {
+    const w = await mountFlow(SignIn, { signInWithAtlas: { enabled: false }, routes: [] });
+    expect(w.find('[data-atlas-provider="atlas"]').exists()).toBe(false);
   });
 });

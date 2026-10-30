@@ -34,6 +34,8 @@ export const svSE: LocalizationResource = {
   'signIn.emailCodeOption': 'Skicka en kod via e-post i stället',
   'signIn.emailLinkOption': 'Skicka en inloggningslänk via e-post i stället',
   'signIn.passwordOption': 'Använd ditt lösenord i stället',
+  'signIn.passkeyButton': 'Logga in med en nyckel (passkey)',
+  'signIn.passkeyCancelled': 'Inloggningen med nyckeln slutfördes inte. Försök igen eller logga in på ett annat sätt.',
 
   'signUp.title': 'Skapa ditt konto',
   'signUp.submit': 'Fortsätt',

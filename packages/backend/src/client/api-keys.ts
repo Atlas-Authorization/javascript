@@ -18,6 +18,8 @@ export interface ApiKey {
   /** Enough to tell two keys apart in a listing; not enough to use one. */
   prefix: string;
   claims: Record<string, unknown>;
+  /** Delegated-token / verify scopes on the key; null when none are set. */
+  scopes?: string[] | null;
   /** Per-key spend caps, or `null` when the key has none. */
   limits?: ApiKeyLimit[] | null;
   /** Each cap with its current-window usage (empty when the key has no caps). */
@@ -50,8 +52,12 @@ export interface ApiKeyControls {
   remaining?: number | null;
 }
 
-/** The window a spend cap counts over. `request` caps a single debit; `day`/`month` are UTC calendar windows; `total` never resets. */
-export type ApiKeyLimitPeriod = 'request' | 'day' | 'month' | 'total';
+/**
+ * The window a spend cap counts over. `request` caps a single debit; `second`/`minute`
+ * are fixed rate windows aligned to the UTC clock; `day`/`month` are UTC calendar
+ * windows; `total` never resets.
+ */
+export type ApiKeyLimitPeriod = 'request' | 'second' | 'minute' | 'day' | 'month' | 'total';
 
 /** A per-key spend cap, metered with {@link apiKeysResource} `recordUsage`. */
 export interface ApiKeyLimit {
@@ -80,7 +86,7 @@ export interface ApiKeyLimitState {
 /** A raw usage counter for one unit in its current window. */
 export interface ApiKeyUsageCounter {
   unit: string;
-  period: 'day' | 'month' | 'total';
+  period: 'second' | 'minute' | 'day' | 'month' | 'total';
   used: number;
   window_start: number;
   /** Epoch ms the window ends; null for `total`. */
@@ -147,8 +153,15 @@ export interface CreateApiKeyBody extends ApiKeyControls {
   expires_in_seconds?: number;
   /** Custom secret prefix (e.g. `acme` gives `acme_<id>_<secret>`). */
   prefix?: string;
+  /** Scopes the key carries (checked by verify's `required_scopes`). */
+  scopes?: string[];
   /** Per-key spend caps, metered with `recordUsage`. */
   limits?: ApiKeyLimit[] | null;
+  /**
+   * Import an existing key by its hash instead of minting one: the response has
+   * no `secret`, and the original secret verifies from then on.
+   */
+  import?: { secret_hash: string; hash_algorithm?: 'sha256' | 'sha256_hex'; prefix: string };
 }
 
 export interface UpdateApiKeyBody extends ApiKeyControls {
@@ -189,6 +202,12 @@ export type ApiKeyVerification =
       name?: string | null;
       claims: Record<string, unknown>;
       scopes?: string[] | null;
+      /**
+       * The held scopes expanded through the instance scope implications
+       * (`calls:write` ⇒ `calls:read`, `admin` ⇒ `*`). `required_scopes` is checked
+       * against this set; equals the held scopes when none are configured.
+       */
+      effective_scopes?: string[];
       constraints?: Record<string, unknown>;
       /** The key's spend caps (null when none). */
       limits?: ApiKeyLimit[] | null;

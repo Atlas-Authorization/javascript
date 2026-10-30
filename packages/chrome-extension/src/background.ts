@@ -21,3 +21,4 @@
 export * from './storage';
 export * from './client';
 export * from './native-session';
+export * from './web-auth-flow';

@@ -23,6 +23,10 @@ const MOVE = { from: 'https://old.example.com', to: 'https://new.example.com', d
 // [method, path+query, expected JSON body (undefined = none), call]
 const BAPI: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
   ['POST', '/v1/instance/move_origin', MOVE, (c) => c.instance.moveOrigin(MOVE)],
+  ['GET', '/v1/instance/sign_in_with_atlas', undefined, (c) => c.instance.signInWithAtlas.get()],
+  ['PATCH', '/v1/instance/sign_in_with_atlas', { enabled: true, connection_id: 'ssoc_1' }, (c) => c.instance.signInWithAtlas.update({ enabled: true, connection_id: 'ssoc_1' })],
+  ['GET', '/v1/instance/hosted_pages', undefined, (c) => c.instance.hostedPages.get()],
+  ['PATCH', '/v1/instance/hosted_pages', { sign_in_url: 'https://app.example.com/login' }, (c) => c.instance.hostedPages.update({ sign_in_url: 'https://app.example.com/login' })],
   ['GET', '/v1/federation', undefined, (c) => c.federation.get()],
   ['POST', '/v1/federation/resolve', { entity_id: 'https://rp.example.com' }, (c) => c.federation.resolve({ entity_id: 'https://rp.example.com' })],
   ['GET', '/v1/vc/deferred?status=pending', undefined, (c) => c.vc.deferred.list({ status: 'pending' })],

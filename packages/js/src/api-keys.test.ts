@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FapiClient } from './fapi';
-import { ApiKeyRequestError, createApiKey, listApiKeys, revokeApiKey, updateApiKey } from './api-keys';
+import {
+  ApiKeyRequestError,
+  createApiKey,
+  impliedScopes,
+  listApiKeys,
+  revokeApiKey,
+  scopeGrid,
+  updateApiKey,
+} from './api-keys';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -37,7 +45,7 @@ describe('end-user API key client', () => {
     const list = await listApiKeys(client, { organizationId: 'org_1' });
     expect(calls[0]!.url).toBe('https://fapi.example/v1/client/me/api_keys?organization_id=org_1');
     expect(calls[0]!.init.credentials).toBe('include');
-    expect(list).toEqual({ data: [KEY], allowedScopes: ['r'], allowedClaims: ['c'], maxActiveKeys: 5, activeCount: 1 });
+    expect(list).toEqual({ data: [KEY], allowedScopes: ['r'], allowedClaims: ['c'], scopeImplications: {}, maxActiveKeys: 5, activeCount: 1 });
   });
 
   it('creates with snake_case fields and returns the one-time secret', async () => {
@@ -79,5 +87,24 @@ describe('end-user API key client', () => {
     expect(calls[0]!.init.method).toBe('PATCH');
     expect((await revokeApiKey(client, 'eak_1')).revoked).toBe(true);
     expect(calls[1]!.url).toBe('https://fapi.example/v1/client/me/api_keys/eak_1/revoke');
+  });
+});
+
+describe('scope helpers', () => {
+  it('impliedScopes follows implications transitively; * is the named vocabulary only', () => {
+    const imp = { 'calls:write': ['calls:read'], admin: ['*'], a: ['b'], b: ['a'] };
+    expect(impliedScopes(['calls:write'], imp)).toEqual(['calls:read', 'calls:write']);
+    expect(impliedScopes(['a'], imp)).toEqual(['a', 'b']);
+    expect(impliedScopes(['admin'], imp, ['x:read'])).toEqual(['a', 'admin', 'b', 'calls:read', 'calls:write', 'x:read']);
+  });
+  it('scopeGrid groups resource:read/write and returns the rest as other', () => {
+    expect(scopeGrid(['calls:read', 'calls:write', 'leads:read', 'admin'])).toEqual({
+      rows: [
+        { resource: 'calls', read: 'calls:read', write: 'calls:write' },
+        { resource: 'leads', read: 'leads:read' },
+      ],
+      other: ['admin'],
+    });
+    expect(scopeGrid(['admin', 'reports:export'])).toBeNull();
   });
 });
