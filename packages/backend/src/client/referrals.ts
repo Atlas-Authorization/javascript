@@ -349,10 +349,17 @@ export interface ReferralRetryFailedResult {
 export interface ReferralBackfillBody {
   /** ISO 8601 date or date-time: users who signed up at or after it. */
   since: string;
-  /** customerRef → code (a CSV, for example). Wins over `code_metadata_path`. */
+  /** customerRef → the code the user ARRIVED with (who referred them). Wins over `code_metadata_path`. */
   codes?: Record<string, string>;
-  /** Where a stored code lives on the user, e.g. `public_metadata.referral_code`. */
+  /** Where a stored arrival code lives on the user, e.g. `public_metadata.referral_code`. */
   code_metadata_path?: string;
+  /**
+   * customerRef → the user's OWN code (the one they share). Kept on the user and
+   * sent to the platform before the sign-up, so it is not replaced. Each code once.
+   */
+  own_codes?: Record<string, string>;
+  /** Where a stored own code lives, e.g. `public_metadata.my_code`. `own_codes` wins. */
+  own_code_metadata_path?: string;
 }
 
 /** A backfill job. Users already reported are skipped. */
@@ -366,6 +373,12 @@ export interface ReferralBackfillJob {
   code_metadata_path?: string | null;
   /** How many codes were given in `codes`. */
   codes_given?: number;
+  own_code_metadata_path?: string | null;
+  own_codes_given?: number;
+  /** Users whose own code was stored and queued to the platform. */
+  own_codes_set?: number;
+  /** customerRefs whose own code another user already holds (not set), up to 100. */
+  own_codes_taken?: string[];
   users_scanned: number;
   /** Already reported, or no code while auto-enroll is off. */
   users_skipped: number;

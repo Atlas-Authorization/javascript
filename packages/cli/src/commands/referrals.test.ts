@@ -417,6 +417,39 @@ describe('atlas referrals backfill', () => {
     expect(io.stdout()).toContain('Backfill rbf_1: completed (3 users, 2 calls queued, 1 skipped, 2 sent, 0 failed).');
   });
 
+  it("sends each user's own codes from --own-map and --own-metadata-path and names the ones taken", async () => {
+    const io = captureIO();
+    const calls: Call[] = [];
+    const code = await run(
+      ['referrals', 'backfill', '--since', '2026-01-01', '--own-map', 'own.csv', '--own-metadata-path', 'public_metadata.my_code'],
+      makeCtx(
+        io,
+        calls,
+        {
+          'POST /v1/instance/referrals/backfill': {
+            id: 'rbf_2',
+            status: 'running',
+            own_codes_set: 1,
+            own_codes_taken: ['usr_2'],
+            calls: { pending: 2, succeeded: 0, failed: 0, skipped: 0, held: 0 },
+          },
+        },
+        { readFile: () => 'usr_1,ALICEOWN\nusr_2,TAKEN1\n' },
+      ),
+    );
+    expect(code).toBe(0);
+    expect(calls[0]!.body).toEqual({
+      since: '2026-01-01',
+      own_codes: { usr_1: 'ALICEOWN', usr_2: 'TAKEN1' },
+      own_code_metadata_path: 'public_metadata.my_code',
+    });
+    expect(io.stdout()).toContain('1 own code(s) kept.');
+    expect(io.stderr()).toContain('already belong to another user, not set: usr_2');
+    const io2 = captureIO();
+    expect(await run(['referrals', 'backfill', '--since', '2026-01-01', '--own-map', 'x'], makeCtx(io2, [], {}, { readFile: () => 'usr_1,!!' }))).toBe(1);
+    expect(io2.stderr()).toContain("--own-map line 1: '!!' is not a valid code");
+  });
+
   it('validates --since, --map and --metadata-path', async () => {
     const io = captureIO();
     expect(await run(['referrals', 'backfill'], makeCtx(io, [], {}))).toBe(1);

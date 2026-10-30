@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.29.0 — 2026-10-30
+
+### Added
+
+- `referrals.backfill()` takes `own_codes` and `own_code_metadata_path` to keep each user's own referral code; the job reports `own_codes_set` and `own_codes_taken`.
+
 ## 0.28.0 — 2026-10-30
 
 ### Added

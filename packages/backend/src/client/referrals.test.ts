@@ -84,8 +84,8 @@ const OPS: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
   [
     'POST',
     '/v1/instance/referrals/backfill',
-    { since: '2026-01-01', codes: { usr_1: 'ABC123' }, code_metadata_path: 'public_metadata.referral_code' },
-    (c) => c.referrals.backfill({ since: '2026-01-01', codes: { usr_1: 'ABC123' }, code_metadata_path: 'public_metadata.referral_code' }),
+    { since: '2026-01-01', codes: { usr_1: 'ABC123' }, code_metadata_path: 'public_metadata.referral_code', own_codes: { usr_2: 'MINE01' } },
+    (c) => c.referrals.backfill({ since: '2026-01-01', codes: { usr_1: 'ABC123' }, code_metadata_path: 'public_metadata.referral_code', own_codes: { usr_2: 'MINE01' } }),
   ],
   ['GET', '/v1/instance/referrals/backfill/rbf_1', undefined, (c) => c.referrals.getBackfill('rbf_1')],
   ['GET', '/v1/instance/hooks/before_user_create', undefined, (c) => c.userHooks.getBeforeUserCreate()],

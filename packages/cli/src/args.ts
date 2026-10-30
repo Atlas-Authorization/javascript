@@ -137,6 +137,8 @@ const OPTIONS = {
   since: { type: 'string' },
   map: { type: 'string' },
   'metadata-path': { type: 'string' },
+  'own-map': { type: 'string' },
+  'own-metadata-path': { type: 'string' },
   wait: { type: 'boolean' },
   // import --from <vendor>.
   from: { type: 'string' },

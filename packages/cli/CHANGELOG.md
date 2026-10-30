@@ -1,5 +1,11 @@
 # @atlasauth/cli changelog
 
+## 0.17.0 — 2026-10-30
+
+### Added
+
+- `atlas referrals backfill --own-map <file.csv>` and `--own-metadata-path <path>`: keep each user's own referral code (the one they share) through a backfill. The command reports how many were kept and names the customer refs whose code another user already holds.
+
 ## 0.16.0 — 2026-10-30
 
 ### Fixed

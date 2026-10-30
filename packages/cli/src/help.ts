@@ -310,7 +310,8 @@ Usage:
   atlas referrals connect --provider webhook --endpoint <https-url>
         [--secret-file <path|->] [--program <id>] [--auto-enroll] [--enable]
   atlas referrals backfill --since <YYYY-MM-DD> [--map <file.csv>]
-        [--metadata-path public_metadata.referral_code] [--wait]
+        [--metadata-path public_metadata.referral_code]
+        [--own-map <file.csv>] [--own-metadata-path public_metadata.my_code] [--wait]
   atlas referrals status
   atlas referrals conformance [--protocol webhook|connection] [--base-url <url>] [--connection-id <id>] --secret-file <path|->
         [--only <case ids or areas>] [--simulate]
@@ -345,6 +346,10 @@ and written to a 0600 file for you to configure on the platform.
 
 backfill reports users who signed up since the date, with their real sign-up
 time. --map reads customerRef,code lines; --metadata-path reads a stored code.
+Those are the codes users ARRIVED with. To keep each user's OWN code (the one
+they share), use --own-map (customerRef,code lines) or --own-metadata-path:
+Atlas stores it and sends it to the platform before the sign-up, so the
+platform does not hand out a new one.
 
 status prints the connection, its health and the referral preflight findings;
 it exits 1 when one is an error.

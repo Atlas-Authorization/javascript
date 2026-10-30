@@ -90,6 +90,8 @@ interface BackfillJob {
   users_scanned?: number | null;
   users_skipped?: number | null;
   calls_queued?: number | null;
+  own_codes_set?: number | null;
+  own_codes_taken?: string[] | null;
   truncated?: boolean;
   next_since?: number | null;
   calls?: { pending: number; succeeded: number; failed: number; skipped: number; held: number } | null;
@@ -166,7 +168,7 @@ export function describeTestLines(test: TestRead, receivedAt: number): string[] 
 }
 
 /** A `customerRef,code` CSV → map; throws on a bad line. A header row is skipped. */
-export function parseCodeCsv(text: string): Record<string, string> {
+export function parseCodeCsv(text: string, flag = '--map'): Record<string, string> {
   const out: Record<string, string> = {};
   const lines = text.split(/\r?\n/);
   lines.forEach((line, i) => {
@@ -174,8 +176,8 @@ export function parseCodeCsv(text: string): Record<string, string> {
     if (!l || l.startsWith('#')) return;
     const [ref, code] = l.split(/[;,\t]/).map((x) => x.trim().replace(/^"(.*)"$/, '$1'));
     if (i === 0 && /^(customer_?ref|user_?id|external_?id|user)$/i.test(ref ?? '')) return;
-    if (!ref || !code) throw new CliError(`--map line ${i + 1}: expected customerRef,code.`);
-    if (!/^[A-Za-z0-9_-]{3,64}$/.test(code)) throw new CliError(`--map line ${i + 1}: '${code}' is not a valid code.`);
+    if (!ref || !code) throw new CliError(`${flag} line ${i + 1}: expected customerRef,code.`);
+    if (!/^[A-Za-z0-9_-]{3,64}$/.test(code)) throw new CliError(`${flag} line ${i + 1}: '${code}' is not a valid code.`);
     out[ref] = code;
   });
   return out;
@@ -581,26 +583,37 @@ async function backfill(ctx: RunContext, args: ParsedArgs): Promise<number> {
   if (!since || !/^\d{4}-\d{2}-\d{2}(T.*)?$/.test(since) || Number.isNaN(Date.parse(since))) {
     throw new CliError('referrals backfill needs --since <YYYY-MM-DD>.');
   }
-  const mapFile = str(v, 'map');
-  let codes: Record<string, string> | undefined;
-  if (mapFile) {
+  const readMap = (flag: string, file: string | undefined) => {
+    if (!file) return undefined;
     let text: string;
     try {
-      text = ctx.readFile(mapFile === '-' ? '/dev/stdin' : mapFile);
+      text = ctx.readFile(file === '-' ? '/dev/stdin' : file);
     } catch {
-      throw new CliError(`Could not read ${mapFile}.`);
+      throw new CliError(`Could not read ${file}.`);
     }
-    codes = parseCodeCsv(text);
-  }
-  const metadataPath = str(v, 'metadata-path');
-  if (metadataPath && !/^(public|private|unsafe)_metadata(\.[A-Za-z0-9_-]{1,64}){1,4}$/.test(metadataPath)) {
-    throw new CliError(`--metadata-path must look like public_metadata.referral_code, got '${metadataPath}'.`);
-  }
+    return parseCodeCsv(text, `--${flag}`);
+  };
+  const checkPath = (flag: 'metadata-path' | 'own-metadata-path') => {
+    const p = str(v, flag);
+    if (p && !/^(public|private|unsafe)_metadata(\.[A-Za-z0-9_-]{1,64}){1,4}$/.test(p)) {
+      throw new CliError(`--${flag} must look like public_metadata.referral_code, got '${p}'.`);
+    }
+    return p;
+  };
+  const mapFile = str(v, 'map');
+  const ownMapFile = str(v, 'own-map');
+  if (mapFile === '-' && ownMapFile === '-') throw new CliError('Only one of --map and --own-map can read stdin.');
+  const codes = readMap('map', mapFile);
+  const ownCodes = readMap('own-map', ownMapFile);
+  const metadataPath = checkPath('metadata-path');
+  const ownMetadataPath = checkPath('own-metadata-path');
   const http = httpFor(ctx, instanceCredential(ctx, args));
   let job = await http.post<BackfillJob>('/v1/instance/referrals/backfill', {
     since,
     ...(codes && Object.keys(codes).length ? { codes } : {}),
     ...(metadataPath ? { code_metadata_path: metadataPath } : {}),
+    ...(ownCodes && Object.keys(ownCodes).length ? { own_codes: ownCodes } : {}),
+    ...(ownMetadataPath ? { own_code_metadata_path: ownMetadataPath } : {}),
   });
   const running = (s: string) => s === 'queued' || s === 'running' || s === 'pending';
   if (v.wait === true) {
@@ -620,6 +633,11 @@ async function backfill(ctx: RunContext, args: ParsedArgs): Promise<number> {
     ].filter(Boolean);
     ctx.io.out(`Backfill ${job.id}: ${job.status}${counts.length ? ` (${counts.join(', ')})` : ''}.`);
     if (codes) ctx.io.out(`${Object.keys(codes).length} code(s) read from ${mapFile}.`);
+    if (ownCodes) ctx.io.out(`${Object.keys(ownCodes).length} own code(s) read from ${ownMapFile}.`);
+    if (typeof job.own_codes_set === 'number' && (ownCodes || ownMetadataPath)) ctx.io.out(`${job.own_codes_set} own code(s) kept.`);
+    if (job.own_codes_taken?.length) {
+      ctx.io.err(`atlas: ${job.own_codes_taken.length} own code(s) already belong to another user, not set: ${job.own_codes_taken.join(', ')}`);
+    }
     if (running(job.status) && v.wait !== true) ctx.io.out("Add --wait to follow it, or watch the delivery log in the dashboard.");
     if (job.truncated && job.next_since) {
       ctx.io.out(`Stopped at the cap. Run it again with --since ${new Date(job.next_since).toISOString().slice(0, 10)} for the rest.`);
