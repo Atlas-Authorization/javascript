@@ -11,7 +11,7 @@ import { instanceCredential } from './project-commands';
 import { wantsJson } from './shared';
 
 /**
- * `atlas referrals connect | backfill | status`: referral attribution from the
+ * `atlas referrals connect | backfill | resync | status`: referral attribution from the
  * terminal.
  *
  * `connect --provider referalli` is bring-your-own-key: the Referalli merchant
@@ -647,6 +647,24 @@ async function backfill(ctx: RunContext, args: ParsedArgs): Promise<number> {
   return job.status === 'failed' || (job.calls?.failed ?? 0) > 0 ? 1 : 0;
 }
 
+async function resync(ctx: RunContext, args: ParsedArgs): Promise<number> {
+  const userId = args.positionals[2];
+  if (!userId) throw new CliError('referrals resync needs a user id: atlas referrals resync <user_id> [--dry-run].');
+  const http = httpFor(ctx, instanceCredential(ctx, args));
+  const res = await http.post<{ user_id: string; call_id: string | null; call_status: string | null; error: string | null; referral: { referral_code?: string | null; referral_link?: string | null } | null }>(
+    `/v1/users/${encodeURIComponent(userId)}/referral/resync${args.values['dry-run'] === true ? '?dry_run=true' : ''}`,
+    {},
+  );
+  if (wantsJson(args.values)) printJson(ctx.io, res);
+  else {
+    ctx.io.out(`Re-reported ${res.user_id}: call ${res.call_id ?? '-'} ${res.call_status ?? 'not sent'}${args.values['dry-run'] === true ? ' (dry run, nothing sent)' : ''}.`);
+    if (res.error) ctx.io.err(`atlas: ${res.error}`);
+    const code = res.referral?.referral_code;
+    if (code) ctx.io.out(`Referral code ${code}${res.referral?.referral_link ? `, link ${res.referral.referral_link}` : ''}.`);
+  }
+  return res.call_status === 'failed' ? 1 : 0;
+}
+
 const FINDING_COLUMNS: Column<PreflightFinding>[] = [
   { header: 'SEVERITY', get: (f) => f.severity },
   { header: 'CODE', get: (f) => f.code },
@@ -773,6 +791,8 @@ export async function referrals(ctx: RunContext, args: ParsedArgs): Promise<numb
       return connect(ctx, args);
     case 'backfill':
       return backfill(ctx, args);
+    case 'resync':
+      return resync(ctx, args);
     case 'status':
       return status(ctx, args);
     case 'conformance':
@@ -780,8 +800,8 @@ export async function referrals(ctx: RunContext, args: ParsedArgs): Promise<numb
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'referrals ${sub}'. Try: connect, backfill, status, conformance.`
-          : 'referrals needs a subcommand: connect, backfill, status, conformance.',
+          ? `Unknown subcommand 'referrals ${sub}'. Try: connect, backfill, resync, status, conformance.`
+          : 'referrals needs a subcommand: connect, backfill, resync, status, conformance.',
       );
   }
 }

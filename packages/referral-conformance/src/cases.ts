@@ -334,7 +334,6 @@ export const CONFORMANCE_CASES: readonly ConformanceCase[] = [
       customerRef: 'conformance_partner_{run}',
       code: 'CONF{run}',
       email: 'conformance+partner@example.com',
-      emailHash: 'b'.repeat(64),
       name: 'Conformance Partner',
     },
     sign: 'valid',

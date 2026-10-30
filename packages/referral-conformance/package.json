@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/referral-conformance",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Conformance suite for the Atlas referral protocol (the Referalli connection API): recorded signed calls with the answers a server must give, a runner, and recorded inbound events. Run it against your own referral platform in CI.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

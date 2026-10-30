@@ -380,6 +380,28 @@ describe('atlas referrals connect --provider webhook', () => {
   });
 });
 
+describe('atlas referrals resync', () => {
+  it('re-reports one user, with a dry run flag, and prints the code and link', async () => {
+    const io = captureIO();
+    const calls: Call[] = [];
+    const code = await run(
+      ['referrals', 'resync', 'user_1', '--dry-run'],
+      makeCtx(io, calls, {
+        'POST /v1/users/user_1/referral/resync?dry_run=true': {
+          user_id: 'user_1',
+          call_id: 'rfc_1',
+          call_status: 'succeeded',
+          error: null,
+          referral: { referral_code: 'ENROLLED1', referral_link: 'https://app.example.com/join?ref=ENROLLED1' },
+        },
+      }),
+    );
+    expect(code).toBe(0);
+    expect(io.stdout()).toContain('Re-reported user_1: call rfc_1 succeeded (dry run, nothing sent).');
+    expect(io.stdout()).toContain('Referral code ENROLLED1, link https://app.example.com/join?ref=ENROLLED1.');
+  });
+});
+
 describe('atlas referrals backfill', () => {
   it('sends since + codes from a CSV and follows the job with --wait', async () => {
     const io = captureIO();

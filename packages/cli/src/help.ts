@@ -63,7 +63,7 @@ Commands:
   doctor                     Integration health: webhooks, logout, referrals, email, consent (exit 1 on a failure)
   env                        Print deploy variables: public values + secret file paths
   client rotate              Rotate an OAuth client secret straight into its file
-  referrals connect|backfill|status
+  referrals connect|backfill|resync|status
                              Connect a referral platform, backfill, check the connection
   status                     Atlas status, incidents that concern the instance and its
                              upstream status pages; non-zero exit on an outage
@@ -312,6 +312,7 @@ Usage:
   atlas referrals backfill --since <YYYY-MM-DD> [--map <file.csv>]
         [--metadata-path public_metadata.referral_code]
         [--own-map <file.csv>] [--own-metadata-path public_metadata.my_code] [--wait]
+  atlas referrals resync <user_id> [--dry-run]      re-report one user and apply the answer (code, link)
   atlas referrals status
   atlas referrals conformance [--protocol webhook|connection] [--base-url <url>] [--connection-id <id>] --secret-file <path|->
         [--only <case ids or areas>] [--simulate]

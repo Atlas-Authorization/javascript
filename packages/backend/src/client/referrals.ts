@@ -347,8 +347,12 @@ export interface ReferralRetryFailedResult {
 
 /** `POST /v1/instance/referrals/backfill`. */
 export interface ReferralBackfillBody {
-  /** ISO 8601 date or date-time: users who signed up at or after it. */
-  since: string;
+  /** ISO 8601 date or date-time: users who signed up at or after it. Optional when `user_ids` is given. */
+  since?: string;
+  /** Only these users (Atlas ids), up to 10,000: re-report a chosen set. */
+  user_ids?: string[];
+  /** Report users already reported again; their stored arrival context and sign-up time are kept. */
+  force?: boolean;
   /** customerRef → the code the user ARRIVED with (who referred them). Wins over `code_metadata_path`. */
   codes?: Record<string, string>;
   /** Where a stored arrival code lives on the user, e.g. `public_metadata.referral_code`. */
@@ -370,6 +374,9 @@ export interface ReferralBackfillJob {
   status: string;
   /** Epoch ms. */
   since: number;
+  /** How many `user_ids` the request named (0 = everyone since `since`). */
+  user_ids_given?: number;
+  force?: boolean;
   code_metadata_path?: string | null;
   /** How many codes were given in `codes`. */
   codes_given?: number;
@@ -543,8 +550,8 @@ export function referralsResource(request: RequestFn) {
      * users with their real sign-up time. Referrals must be on (`422
      * REFERRALS_NOT_CONFIGURED` otherwise). Returns the job; poll {@link getBackfill}.
      */
-    backfill(body: ReferralBackfillBody, idempotencyKey?: string): Promise<ReferralBackfillJob> {
-      return request({ method: 'POST', path: '/v1/instance/referrals/backfill', body, idempotencyKey });
+    backfill(body: ReferralBackfillBody, idempotencyKey?: string, options: { dryRun?: boolean } = {}): Promise<ReferralBackfillJob> {
+      return request({ method: 'POST', path: '/v1/instance/referrals/backfill', body, idempotencyKey, ...(options.dryRun ? { query: { dry_run: true } } : {}) });
     },
     /** `GET /v1/instance/referrals/backfill/:id`. */
     getBackfill(id: string): Promise<ReferralBackfillJob> {

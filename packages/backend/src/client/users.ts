@@ -118,6 +118,19 @@ export interface UserReferralFlag {
   risk_level: 'low' | 'medium' | 'high' | null;
 }
 
+/** `POST /v1/users/:id/referral/resync`: the user's sign-up call sent again, and where the answer left their referral. */
+export interface UserReferralResync {
+  object: 'referral_resync';
+  user_id: string;
+  /** The sign-up call in the referral delivery log. */
+  call_id: string | null;
+  call_status: 'pending' | 'succeeded' | 'retrying' | 'failed' | 'held' | 'skipped' | null;
+  /** Why the call did not succeed, when it did not. */
+  error: string | null;
+  /** The user's referral record after the answer (as `GET /v1/users/:id/referral`). */
+  referral: Record<string, unknown> | null;
+}
+
 /**
  * The `data` of a `user.referral_attributed` webhook: the referral platform
  * answered after `user.created` was sent.
@@ -369,6 +382,24 @@ export function usersResource(request: RequestFn) {
         body,
         idempotencyKey,
       });
+    },
+    referral: {
+      /**
+       * `POST /v1/users/:id/referral/resync` — re-report one user to the referral
+       * platform: the sign-up call goes out again now (same customerRef, original
+       * sign-up time, stored arrival context) and the answer (code, link, partner)
+       * is applied. For a user whose earlier answer is final on the platform's
+       * side but has since been fixed (e.g. `enroll_email_taken`). `dryRun`
+       * previews it without sending anything.
+       */
+      resync(id: string, options: { dryRun?: boolean } = {}, idempotencyKey?: string): Promise<UserReferralResync> {
+        return request({
+          method: 'POST',
+          path: `/v1/users/${enc(id)}/referral/resync`,
+          idempotencyKey,
+          ...(options.dryRun ? { query: { dry_run: true } } : {}),
+        });
+      },
     },
     delete(id: string): Promise<DeletedObject> {
       return request({ method: 'DELETE', path: `/v1/users/${enc(id)}` });
