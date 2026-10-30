@@ -1,6 +1,6 @@
 # @atlasauth/chrome-extension changelog
 
-## Unreleased
+## 0.5.0 — 2026-10-30
 
 - `signInWithWebAuthFlow()`: sign in through `chrome.identity.launchWebAuthFlow` (or Firefox `browser.identity`) against the instance, with PKCE and `state`, and get back a refreshing session in `chrome.storage` whose JWT your backend verifies with the instance JWKS.
 

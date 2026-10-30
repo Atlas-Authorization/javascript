@@ -1,6 +1,6 @@
 # @atlasauth/cli changelog
 
-## Unreleased
+## 0.16.0 — 2026-10-30
 
 ### Fixed
 

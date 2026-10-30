@@ -1,6 +1,6 @@
 # @atlasauth/angular changelog
 
-## Unreleased
+## 0.13.0 — 2026-10-30
 
 - `<atlas-sign-in>` offers "Sign in with a passkey" and passkey autofill on the identifier field when the instance enables passkeys.
 

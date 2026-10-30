@@ -1,6 +1,6 @@
 # @atlasauth/js changelog
 
-## Unreleased
+## 0.27.0 — 2026-10-30
 
 ### Added
 

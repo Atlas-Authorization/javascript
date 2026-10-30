@@ -1,6 +1,6 @@
 # @atlasauth/localizations changelog
 
-## Unreleased
+## 0.12.0 — 2026-10-30
 
 - `signIn.passkeyButton` and `signIn.passkeyCancelled` in every bundle.
 

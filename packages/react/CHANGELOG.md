@@ -1,6 +1,6 @@
 # @atlasauth/react changelog
 
-## Unreleased
+## 0.24.0 — 2026-10-30
 
 ### Added
 

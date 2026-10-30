@@ -1,6 +1,6 @@
 # @atlasauth/testing changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-30
 
 ### Added
 - `signInAs(page, userId, { secretKey, redirectUrl? })` in `@atlasauth/testing/playwright`: signs the page in as a user through the real Atlas sign-in (a one-time URL from `POST /v1/testing/sign_in_url`, development instances), then waits for the SDK to finish the exchange.

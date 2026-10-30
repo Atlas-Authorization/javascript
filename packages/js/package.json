@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/js",
-  "version": "0.26.1",
+  "version": "0.27.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

@@ -1,6 +1,6 @@
 # @atlasauth/svelte changelog
 
-## Unreleased
+## 0.13.0 — 2026-10-30
 
 - `<SignIn>` offers "Sign in with a passkey" and passkey autofill on the identifier field when the instance enables passkeys.
 
