@@ -19826,14 +19826,14 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 1.2.0
 
-  '@vitest/mocker@2.1.9(msw@2.15.0(@types/node@20.19.43)(typescript@5.9.3))(vite@5.4.21(@types/node@20.19.43)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))':
+  '@vitest/mocker@2.1.9(msw@2.15.0(@types/node@20.19.43)(typescript@5.9.3))(vite@5.4.21(@types/node@22.20.5)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))':
     dependencies:
       '@vitest/spy': 2.1.9
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
       msw: 2.15.0(@types/node@20.19.43)(typescript@5.9.3)
-      vite: 5.4.21(@types/node@20.19.43)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2)
+      vite: 5.4.21(@types/node@22.20.5)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2)
 
   '@vitest/mocker@2.1.9(msw@2.15.0(@types/node@22.20.5)(typescript@5.9.3))(vite@5.4.21(@types/node@22.20.5)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))':
     dependencies:
@@ -19844,14 +19844,14 @@ snapshots:
       msw: 2.15.0(@types/node@22.20.5)(typescript@5.9.3)
       vite: 5.4.21(@types/node@22.20.5)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2)
 
-  '@vitest/mocker@2.1.9(msw@2.15.0(@types/node@24.19.2)(typescript@5.9.3))(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))':
+  '@vitest/mocker@2.1.9(msw@2.15.0(@types/node@24.19.2)(typescript@5.9.3))(vite@5.4.21(@types/node@22.20.5)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))':
     dependencies:
       '@vitest/spy': 2.1.9
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
       msw: 2.15.0(@types/node@24.19.2)(typescript@5.9.3)
-      vite: 5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2)
+      vite: 5.4.21(@types/node@22.20.5)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2)
 
   '@vitest/pretty-format@2.1.9':
     dependencies:
@@ -30354,7 +30354,7 @@ snapshots:
   vitest@2.1.9(@types/node@20.19.43)(happy-dom@15.11.7)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@20.19.43)(typescript@5.9.3))(sass@1.107.0)(terser@5.51.2):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(msw@2.15.0(@types/node@20.19.43)(typescript@5.9.3))(vite@5.4.21(@types/node@20.19.43)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))
+      '@vitest/mocker': 2.1.9(msw@2.15.0(@types/node@20.19.43)(typescript@5.9.3))(vite@5.4.21(@types/node@22.20.5)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
@@ -30428,7 +30428,7 @@ snapshots:
   vitest@2.1.9(@types/node@24.19.2)(happy-dom@15.11.7)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@24.19.2)(typescript@5.9.3))(sass@1.107.0)(terser@5.51.2):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(msw@2.15.0(@types/node@24.19.2)(typescript@5.9.3))(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))
+      '@vitest/mocker': 2.1.9(msw@2.15.0(@types/node@24.19.2)(typescript@5.9.3))(vite@5.4.21(@types/node@22.20.5)(less@4.9.1)(lightningcss@1.33.0)(sass@1.107.0)(terser@5.51.2))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
