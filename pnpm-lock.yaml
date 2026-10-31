@@ -329,7 +329,7 @@ importers:
         version: link:../js
       electron:
         specifier: '>=28'
-        version: 45.2.0
+        version: 45.2.1
     devDependencies:
       typescript:
         specifier: ^5.6.3
@@ -7956,8 +7956,8 @@ packages:
   electron-to-chromium@1.5.470:
     resolution: {integrity: sha512-omO9daK1eC5K0AFhIYtCcKsxm1erRC/SNr9I1RtPZrgdcR5KdAkPT8jtaoPgNhMsUf/zcslmDev4T7KqiDEa9w==}
 
-  electron@45.2.0:
-    resolution: {integrity: sha512-OLQ7ct4TEbXfIctVwId+3RlWGrHr/hVJdCJqwnFWmfsttWAyHdwUhSvJHr/k6j4K+3HxSWg6agFizEv8IHqEBw==}
+  electron@45.2.1:
+    resolution: {integrity: sha512-t433yuo8Kh8WG/mTStnPRT/NtpWw8A+caNLJgeU0tS/FlfOkeNEntFsac4ViLgDxZOmDe7BeSkOANVqrqNHhDA==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -22007,7 +22007,7 @@ snapshots:
 
   electron-to-chromium@1.5.470: {}
 
-  electron@45.2.0:
+  electron@45.2.1:
     dependencies:
       '@electron-internal/extract-zip': 1.0.8
       '@electron/get': 5.1.0
