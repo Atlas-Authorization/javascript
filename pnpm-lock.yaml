@@ -14260,8 +14260,8 @@ packages:
   wcwidth@1.0.1:
     resolution: {integrity: sha512-XHPEwS0q6TaxcvG85+8EYkbiCux2XtWG2mkc47Ng2A77BQu9+DqIOJldST4HgPkuea7dvKSj5VgX3P1d4rW8Tg==}
 
-  weak-lru-cache@1.2.2:
-    resolution: {integrity: sha512-DEAoo25RfSYMuTGc9vPJzZcZullwIqRDSI9LOy+fkCJPi6hykCnfKaXTuPBDuXAUcqHXyOgFtHNp/kB2FjYHbw==}
+  weak-lru-cache@1.2.3:
+    resolution: {integrity: sha512-pF0uTATIDYJFeEX4GDD5zjOe2jU9EJbBRcpcGPonUcao7eSp2hl6VA0b2Ims9jisMX33x6zgnozvaBCEsXNGPw==}
 
   webidl-conversions@3.0.1:
     resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
@@ -25211,7 +25211,7 @@ snapshots:
       node-addon-api: 4.3.0
       node-gyp-build-optional-packages: 5.0.3
       ordered-binary: 1.6.3
-      weak-lru-cache: 1.2.2
+      weak-lru-cache: 1.2.3
     optionalDependencies:
       '@lmdb/lmdb-darwin-arm64': 2.5.2
       '@lmdb/lmdb-darwin-x64': 2.5.2
@@ -25226,7 +25226,7 @@ snapshots:
       node-addon-api: 4.3.0
       node-gyp-build-optional-packages: 5.0.3
       ordered-binary: 1.6.3
-      weak-lru-cache: 1.2.2
+      weak-lru-cache: 1.2.3
     optionalDependencies:
       '@lmdb/lmdb-darwin-arm64': 2.5.3
       '@lmdb/lmdb-darwin-x64': 2.5.3
@@ -30510,7 +30510,7 @@ snapshots:
     dependencies:
       defaults: 1.0.4
 
-  weak-lru-cache@1.2.2: {}
+  weak-lru-cache@1.2.3: {}
 
   webidl-conversions@3.0.1: {}
 
