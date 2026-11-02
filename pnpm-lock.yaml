@@ -99,7 +99,7 @@ importers:
         version: link:../backend
       astro:
         specifier: '>=4'
-        version: 7.4.4(@capacitor/preferences@6.0.4(@capacitor/core@6.2.3))(@types/node@24.19.2)(db0@0.3.4)(esbuild@0.28.2)(ioredis@5.11.1)(jiti@2.7.0)(less@4.9.1)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
+        version: 7.4.5(@capacitor/preferences@6.0.4(@capacitor/core@6.2.3))(@types/node@24.19.2)(db0@0.3.4)(esbuild@0.28.2)(ioredis@5.11.1)(jiti@2.7.0)(less@4.9.1)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
     devDependencies:
       jose:
         specifier: ^5.9.6
@@ -6668,8 +6668,8 @@ packages:
     resolution: {integrity: sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==}
     hasBin: true
 
-  astro@7.4.4:
-    resolution: {integrity: sha512-e+BzhGCaIY/H1tV/BQPTbOPZVZ8wuu6+bbpc+3oSMH2UgoB1l9peSGASk6nswtYra9PO9OoMREhldKtQkZ5TVw==}
+  astro@7.4.5:
+    resolution: {integrity: sha512-n5lET11/qnrOWn4wNpXxD9g2VKkTIa162hHgrkMPChMQC5q/xh2lY2OerK5mpsEAFCNmXsYA7NISE+9Uo7Cxxg==}
     engines: {node: '>=22.23.4', npm: '>=9.6.5', pnpm: '>=7.1.0'}
     hasBin: true
     peerDependencies:
@@ -16972,7 +16972,7 @@ snapshots:
       postcss: 8.5.32
       resolve-from: 5.0.0
     optionalDependencies:
-      expo: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
+      expo: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -20590,7 +20590,7 @@ snapshots:
 
   astring@1.9.0: {}
 
-  astro@7.4.4(@capacitor/preferences@6.0.4(@capacitor/core@6.2.3))(@types/node@24.19.2)(db0@0.3.4)(esbuild@0.28.2)(ioredis@5.11.1)(jiti@2.7.0)(less@4.9.1)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1):
+  astro@7.4.5(@capacitor/preferences@6.0.4(@capacitor/core@6.2.3))(@types/node@24.19.2)(db0@0.3.4)(esbuild@0.28.2)(ioredis@5.11.1)(jiti@2.7.0)(less@4.9.1)(sass@1.107.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       '@astrojs/compiler-rs': 0.5.2
       '@astrojs/internal-helpers': 0.13.0
@@ -20875,7 +20875,7 @@ snapshots:
       react-refresh: 0.14.2
     optionalDependencies:
       '@babel/runtime': 7.29.10
-      expo: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
+      expo: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
     transitivePeerDependencies:
       - '@babel/core'
       - supports-color
@@ -23137,7 +23137,7 @@ snapshots:
 
   expo-keep-awake@58.0.3(expo@58.0.22)(react@18.3.1):
     dependencies:
-      expo: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
+      expo: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
       react: 18.3.1
 
   expo-linking@58.0.15(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.9.3):
