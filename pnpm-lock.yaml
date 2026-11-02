@@ -34,7 +34,7 @@ importers:
         version: link:../backend
       ai:
         specifier: '>=4.0.0'
-        version: 7.0.159(zod@3.25.76)
+        version: 7.0.160(zod@3.25.76)
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -1376,8 +1376,8 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@ai-sdk/gateway@4.0.132':
-    resolution: {integrity: sha512-ppStDEz96g+JEuxGiVTP29OKBjPyYZXRxs38wnq3427U2QbZtxe6TukrgSAAq0n4yaHvSvVAWJY9kBlW8XudYg==}
+  '@ai-sdk/gateway@4.0.133':
+    resolution: {integrity: sha512-6DmtrnwvTZG6RFhZscsnUX0XKxA+o2Y/EkZUGWWqFITez/gvOGG/PRKITjwPupUci5vbORThwqkbCj1/066Reg==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -6442,8 +6442,8 @@ packages:
     resolution: {integrity: sha512-4I7Td01quW/RpocfNayFdFVk1qSuoh0E7JrbRJ16nH01HhKFQ88INq9Sd+nd72zqRySlr9BmDA8xlEJ6vJMrYA==}
     engines: {node: '>=8'}
 
-  ai@7.0.159:
-    resolution: {integrity: sha512-4e/BwDoKJlMNYZaqERcTbGte+4TwroN9qKnCprog/XVfD9InzVPlhCviDhN452JIRrRsYg9BT0WsQ2C3Ds2mVQ==}
+  ai@7.0.160:
+    resolution: {integrity: sha512-h48o8i8NTDuHUZhiLDm9NHufEk/L3dkrJ8E9liXMcd4K4hAdI8bfamtbRJylyQeKQ599mnWNplTvyH/SbtpolQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -14750,7 +14750,7 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@ai-sdk/gateway@4.0.132(zod@3.25.76)':
+  '@ai-sdk/gateway@4.0.133(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 4.0.35
       '@ai-sdk/provider-utils': 5.0.72(zod@3.25.76)
@@ -20346,9 +20346,9 @@ snapshots:
       clean-stack: 2.2.0
       indent-string: 4.0.0
 
-  ai@7.0.159(zod@3.25.76):
+  ai@7.0.160(zod@3.25.76):
     dependencies:
-      '@ai-sdk/gateway': 4.0.132(zod@3.25.76)
+      '@ai-sdk/gateway': 4.0.133(zod@3.25.76)
       '@ai-sdk/provider': 4.0.35
       '@ai-sdk/provider-utils': 5.0.72(zod@3.25.76)
       zod: 3.25.76
