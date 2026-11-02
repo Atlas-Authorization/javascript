@@ -431,3 +431,38 @@ describe('plan messages name the file the user passed', () => {
     expect(clean.stdout()).not.toMatch(/atlas-apply-/);
   });
 });
+
+describe('webhook endpoints managed by a connected platform', () => {
+  const managed = { object: 'webhook_endpoint', id: 'we_m', url: 'https://cmp.example.com/hooks/atlas', enabled_events: ['user.deleted'], active: true, managed_by: 'cookiemunch' };
+  const own = { object: 'webhook_endpoint', id: 'we_o', url: 'https://app.example.com/hook', enabled_events: ['*'], active: true, managed_by: null };
+
+  it('plan lists it under its own heading, never as "Live but not in", and --check stays clean', async () => {
+    const api = new FakeApi();
+    api.webhooks = [managed, own];
+    const path = file({ webhook_endpoints: [{ url: own.url, enabled_events: ['*'], active: true }] });
+    const io = captureIO();
+    expect(await run(['plan', path, '--check'], ctx(io, api))).toBe(0);
+    expect(io.stdout()).toContain('Managed by a connected platform');
+    expect(io.stdout()).toContain('https://cmp.example.com/hooks/atlas (cookiemunch)');
+    expect(io.stdout()).not.toContain('Live but not in');
+  });
+
+  it('--prune never deletes it, while an ordinary unlisted endpoint is still pruned', async () => {
+    const api = new FakeApi();
+    api.webhooks = [managed, own];
+    const path = file({ webhook_endpoints: [] });
+    expect(await run(['apply', path, '--yes', '--prune'], ctx(captureIO(), api))).toBe(0);
+    const deletes = api.writes.filter((w) => w.method === 'DELETE').map((w) => w.path);
+    expect(deletes).toEqual(['/v1/webhook_endpoints/we_o']);
+  });
+
+  it('export leaves it out', async () => {
+    const api = new FakeApi();
+    api.webhooks = [managed, own];
+    const out = join(dir, 'export-managed');
+    expect(await run(['config', 'export', '--dir', out], ctx(captureIO(), api))).toBe(0);
+    const text = readFileSync(join(out, 'webhook_endpoints.json'), 'utf8');
+    expect(text).toContain(own.url);
+    expect(text).not.toContain(managed.url);
+  });
+});

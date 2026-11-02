@@ -28,6 +28,8 @@ interface LiveEntry {
   config: Config;
   /** The server id/name used to address an update or delete. */
   id: string;
+  /** Owned by a connected platform (its id): listed apart, never diffed, pruned or exported. */
+  managedBy?: string;
 }
 
 /**
@@ -459,6 +461,7 @@ function registry(): ResourceSpec[] {
           key: String(r.url ?? ''),
           id: String(r.id ?? ''),
           config: pick(r, WEBHOOK_KEYS),
+          ...(typeof r.managed_by === 'string' && r.managed_by ? { managedBy: r.managed_by } : {}),
         }));
       },
       async create(http, config) {
@@ -973,7 +976,7 @@ async function writeExport(http: ConfigHttp, dir: string, format: Format): Promi
       writeFileSync(join(dir, `${spec.type}.${ext}`), serialize(withoutMarkers(live), format));
       fileCount += 1;
     } else {
-      const entries = await spec.fetchLive(http);
+      const entries = (await spec.fetchLive(http)).filter((e) => !e.managedBy);
       // Deterministic: entries sorted by natural key, keys sorted inside each.
       const sorted = [...entries].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
       const doc = sorted.map((e) => canonicalize(e.config));
@@ -1015,6 +1018,8 @@ export interface ConfigPlan {
   changes: PlannedChange[];
   unchanged: number;
   skippedDeletes: Change[];
+  /** Live resources owned by a connected platform: shown for information, never changed. */
+  managed: Array<{ type: string; key: string; managedBy: string }>;
 }
 
 /**
@@ -1037,6 +1042,7 @@ export async function planConfigImport(
   const changes: PlannedChange[] = [];
   let unchanged = 0;
   const skippedDeletes: Change[] = [];
+  const managed: ConfigPlan['managed'] = [];
 
   for (const spec of registry()) {
     const file = `${spec.type}.${ext}`;
@@ -1068,7 +1074,9 @@ export async function planConfigImport(
     const desiredList = asArray(parsed);
     const desiredByKey = new Map<string, Config>();
     for (const cfg of desiredList) desiredByKey.set(spec.keyOf(cfg), cfg);
-    const live = await spec.fetchLive(http);
+    const all = await spec.fetchLive(http);
+    for (const e of all) if (e.managedBy) managed.push({ type: spec.type, key: e.key, managedBy: e.managedBy });
+    const live = all.filter((e) => !e.managedBy);
     const liveByKey = new Map(live.map((e) => [e.key, e]));
 
     for (const [key, cfg] of desiredByKey) {
@@ -1103,7 +1111,7 @@ export async function planConfigImport(
       }
     }
   }
-  return { changes, unchanged, skippedDeletes };
+  return { changes, unchanged, skippedDeletes, managed };
 }
 
 /** True for a non-empty object whose every leaf is `null` (a file that only clears fields). */
@@ -1260,6 +1268,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
           changes: rows,
           unchanged: plan.unchanged,
           unmanaged_live: deletes.map((d) => ({ type: d.type, key: d.key || null })),
+          managed_by_platform: plan.managed.map((m) => ({ type: m.type, key: m.key, managed_by: m.managedBy })),
           has_changes: pending > 0,
         },
         null,
@@ -1281,6 +1290,11 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
       ctx.io.out('');
       ctx.io.out(`Live but not in ${where} (kept; pass --prune to plan their deletion):`);
       for (const d of deletes) ctx.io.out(`    ${d.type}${d.key ? ` ${d.key}` : ''}`);
+    }
+    if (plan.managed.length) {
+      ctx.io.out('');
+      ctx.io.out('Managed by a connected platform (not part of this file; never pruned):');
+      for (const m of plan.managed) ctx.io.out(`    ${m.type} ${m.key} (${m.managedBy})`);
     }
     if (pending === 0) ctx.io.out(`No drift: the instance matches ${where}.`);
   }

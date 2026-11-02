@@ -64,6 +64,8 @@ export interface WebhookEndpoint extends ProvisioningFields {
   active: boolean;
   /** A third-party receiver: preflight does not flag its host. */
   external?: boolean;
+  /** The connected platform that created and holds this endpoint (read-only); null for one you created. */
+  managed_by?: string | null;
   signature_versions?: Array<'v1' | 'v2'>;
   destination?: WebhookDestination & { credentials_set?: boolean };
   health?: 'healthy' | 'failing' | 'disabled';

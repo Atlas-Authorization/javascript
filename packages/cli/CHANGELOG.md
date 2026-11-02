@@ -1,5 +1,11 @@
 # @atlasauth/cli changelog
 
+## 0.21.0 — 2026-11-02
+
+### Changed
+
+- Webhook endpoints a connected platform created and holds (`managed_by` set) are no longer part of the managed set: `atlas plan` lists them under "Managed by a connected platform" (`managed_by_platform` in `--json`) instead of "Live but not in …", `--prune` never deletes them, and `config export` omits them.
+
 ## 0.20.0 — 2026-11-02
 
 ### Added

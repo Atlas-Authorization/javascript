@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.34.0 — 2026-11-02
+
+### Added
+
+- `WebhookEndpoint.managed_by`: the connected platform that created and holds the endpoint, or `null`.
+
 ## 0.33.0 — 2026-11-02
 
 ### Added
