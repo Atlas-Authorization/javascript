@@ -6893,8 +6893,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  baseline-browser-mapping@2.11.34:
-    resolution: {integrity: sha512-Aqr8mA1kIvyJ3UY5YAY7ib8LSo1DmDMbMnVqGPtsKW1LxaFQFwn9Eb3yvq2fUKJsRvaXjnAV7R5osqETapzNiA==}
+  baseline-browser-mapping@2.11.35:
+    resolution: {integrity: sha512-GNk8KX52CHqeNKGk8+7tZnQab/2k1t/BgrUHPKNdijzpEhF1saPQZHVKb6m5loSAxB39gyrTYw34Qf9CQ3u1qQ==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -8024,8 +8024,8 @@ packages:
     engines: {node: '>=0.10.0'}
     hasBin: true
 
-  electron-to-chromium@1.5.472:
-    resolution: {integrity: sha512-s4+nfT29b0FKpVKoaIxl2pWsoNcn7A/nMPSrxayw4T3BsmPeV2lF9Y06BsAQeMGhCTQ4nYJ5XST7jkqe4ZEqFw==}
+  electron-to-chromium@1.5.473:
+    resolution: {integrity: sha512-9njcRQK+6FOXNAWw5g+h2RPiyazqo5RFMVJ39ZMHjDHUNnnFlhnOGV7O0WmJetODDx19ES5p+FLi+KCVFQGugw==}
 
   electron@45.2.1:
     resolution: {integrity: sha512-t433yuo8Kh8WG/mTStnPRT/NtpWw8A+caNLJgeU0tS/FlfOkeNEntFsac4ViLgDxZOmDe7BeSkOANVqrqNHhDA==}
@@ -20970,7 +20970,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  baseline-browser-mapping@2.11.34: {}
+  baseline-browser-mapping@2.11.35: {}
 
   bcrypt-pbkdf@1.0.2:
     dependencies:
@@ -21090,9 +21090,9 @@ snapshots:
 
   browserslist@4.29.5:
     dependencies:
-      baseline-browser-mapping: 2.11.34
+      baseline-browser-mapping: 2.11.35
       caniuse-lite: 1.0.30001820
-      electron-to-chromium: 1.5.472
+      electron-to-chromium: 1.5.473
       node-releases: 2.0.63
       update-browserslist-db: 1.3.4(browserslist@4.29.5)
 
@@ -22211,7 +22211,7 @@ snapshots:
       jake: 10.9.4
     optional: true
 
-  electron-to-chromium@1.5.472: {}
+  electron-to-chromium@1.5.473: {}
 
   electron@45.2.1:
     dependencies:
