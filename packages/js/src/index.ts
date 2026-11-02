@@ -87,6 +87,7 @@ export * from './account-hints';
 export * from './custom-challenge';
 // Identity verification (document and selfie) through the app's verification service.
 export * from './identity-verification';
+export * from './avatar';
 // Identity governance: request access, approve, review, delegate.
 export * from './iga';
 export * from './resource-sharing';

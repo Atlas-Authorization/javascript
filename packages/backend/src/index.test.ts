@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { AtlasBackend, hasPermission, hasRole } from './verify';
-import { JwksCache, REFETCH_INTERVAL_MS, readKid } from './jwks-cache';
+import { JwksCache, REFETCH_INTERVAL_MS, cacheControlTtl, readKid } from './jwks-cache';
 
 const ISSUER = 'https://bright-fox-42.fapi.atlas.dev';
 const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
@@ -418,6 +418,73 @@ describe('JWKS caching and kid-miss refetch', () => {
 
     const cache = new JwksCache({ url: JWKS_URL, fetchImpl: junk });
     expect(await cache.get('kid-1')).toBeNull();
+  });
+
+  it('honours Cache-Control max-age within bounds when asked to', async () => {
+    const bounds = { minTtlMs: 60_000, maxTtlMs: 3_600_000 };
+    expect(cacheControlTtl('public, max-age=600', bounds)).toBe(600_000);
+    expect(cacheControlTtl('max-age=5', bounds)).toBe(60_000);
+    expect(cacheControlTtl('max-age=999999', bounds)).toBe(3_600_000);
+    expect(cacheControlTtl('no-store', bounds)).toBe(60_000);
+    expect(cacheControlTtl('public', bounds)).toBeUndefined();
+    expect(cacheControlTtl(null, bounds)).toBeUndefined();
+
+    const { jwks, kid } = await keyring();
+    const fetchImpl = vi.fn(
+      async () => new Response(JSON.stringify(jwks), { status: 200, headers: { 'cache-control': 'max-age=120' } }),
+    ) as unknown as typeof fetch;
+    let clock = 1_000_000;
+    const cache = new JwksCache({ url: JWKS_URL, fetchImpl, now: () => clock, ttlMs: 600_000, cacheControl: bounds });
+    await cache.get(kid);
+    clock += 119_000;
+    await cache.get(kid);
+    expect(calls(fetchImpl)).toBe(1);
+    clock += 2_000; // past the server's 120 s, well inside the 600 s default
+    await cache.get(kid);
+    expect(calls(fetchImpl)).toBe(2);
+  });
+
+  it('bounds stale-on-error and does not retry a failure inside the window', async () => {
+    const { jwks, kid } = await keyring();
+    let failing = false;
+    const fetchImpl = vi.fn(async () => {
+      if (failing) throw new Error('ECONNREFUSED');
+      return new Response(JSON.stringify(jwks), { status: 200 });
+    }) as unknown as typeof fetch;
+    let clock = 1_000_000;
+    const cache = new JwksCache({ url: JWKS_URL, fetchImpl, now: () => clock, ttlMs: 600_000, maxStaleMs: 1_800_000 });
+    await cache.get(kid);
+
+    failing = true;
+    clock += 600_001; // expired: refetch fails, the stale set still serves
+    expect((await cache.get(kid))!.keys[0]!.kid).toBe(kid);
+    const afterFailure = calls(fetchImpl);
+    for (let i = 0; i < 50; i++) {
+      clock += 10;
+      expect(await cache.get(kid)).not.toBeNull();
+    }
+    expect(calls(fetchImpl)).toBe(afterFailure); // no fetch storm during the outage
+    expect(cache.lastOutcome).toBe('throttled');
+
+    clock += 1_800_000; // past TTL + maxStale: fail closed
+    expect(await cache.get(kid)).toBeNull();
+
+    failing = false;
+    clock += REFETCH_INTERVAL_MS;
+    expect((await cache.get(kid))!.keys[0]!.kid).toBe(kid); // recovers on the next allowed attempt
+  });
+
+  it('throttles retries of a failed first fetch in bounded mode', async () => {
+    const dead = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    }) as unknown as typeof fetch;
+    let clock = 1_000_000;
+    const cache = new JwksCache({ url: JWKS_URL, fetchImpl: dead, now: () => clock, maxStaleMs: 0 });
+    for (let i = 0; i < 20; i++) {
+      clock += 10;
+      expect(await cache.get(`forged-${i}`)).toBeNull();
+    }
+    expect(calls(dead)).toBe(1);
   });
 
   it('reads the kid from a token header', async () => {

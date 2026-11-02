@@ -72,8 +72,38 @@ Failures throw `AtlasOidcError` with a stable `code`:
 | `token_exchange_failed` | The token endpoint refused the code or client (`oauthError`, `status`). |
 | `invalid_token` | The ID token failed a check: algorithm, signature, `iss`, `aud`/`azp`, `nonce`, `exp`/`iat` or `at_hash`. |
 | `discovery_failed` | The discovery document or the signing keys could not be fetched or don't match the issuer. |
+| `reauthentication_required` | `start` asked for `maxAge` and the ID token's `auth_time` is older (or missing). |
+| `subject_mismatch` | `start` asked for `expectedSub` (a step-up) and a different user signed in. |
 
 Every error from `callback` carries `clearCookie`: send it with your error page too.
+
+`start` also takes `uiLocales`, `maxAge` (the callback then enforces `auth_time`), `returnTo` (a same-site path, returned as `identity.returnTo`) and `expectedSub`. The identity carries `sid` (the Atlas session id) and `authTime`.
+
+### `@atlasauth/backend/rp`: Request → Response handlers for any runtime
+
+The same flow as `(Request) => Response` handlers, plus step-up, session keep-alive and sign-out. This entry point loads only Web standards and `jose`, so it runs on Node 18+, Deno, Bun and Workers.
+
+```ts
+import { createRelyingParty } from '@atlasauth/backend/rp';
+
+const rp = createRelyingParty({
+  issuer: process.env.ATLAS_ISSUER!,
+  clientId: process.env.ATLAS_CLIENT_ID!,
+  clientSecret: process.env.ATLAS_CLIENT_SECRET!,
+  redirectUri: 'https://app.example.com/auth/callback',
+  secret: process.env.SESSION_SECRET!,      // 32+ characters
+  secretKey: process.env.ATLAS_SECRET_KEY,  // for touchIfDue and server-side revoke
+  postLogoutRedirectUri: 'https://app.example.com/',
+});
+
+const startResponse = await rp.start(request);                  // 302 to /oauth2/authorize
+const { user, tokens, response } = await rp.callback(request);  // user.sub, user.sid, user.auth_time, ...
+const stepUp = await rp.requireRecentAuth(request, 300, { sub: user.sub, authTime: user.auth_time }); // null or a 302
+const touch = await rp.touchIfDue(user.sid!, lastTouchedAt);    // 'skipped' | 'touched' | 'ended'
+const signOut = await rp.signOut({ idToken: tokens.id_token, sid: user.sid });
+```
+
+It also exports `LogoutTokenVerifier`, `fetchBackchannelLogout` and `verifyAtlasWebhook` / `verifyAtlasWebhookRequest` (Web Crypto).
 
 ### Next.js (App Router)
 

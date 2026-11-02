@@ -49,7 +49,9 @@ export type AtlasOidcErrorCode =
   | 'invalid_token'
   | 'token_exchange_failed'
   | 'access_denied'
-  | 'discovery_failed';
+  | 'discovery_failed'
+  | 'reauthentication_required'
+  | 'subject_mismatch';
 
 export class AtlasOidcError extends Error {
   readonly code: AtlasOidcErrorCode;
@@ -123,6 +125,28 @@ export interface OidcStartOptions extends OidcBaseOptions {
    * `access_denied`); the identity's `organization` is then that org.
    */
   organization?: string;
+  /** OIDC `ui_locales`: the language(s) for the hosted pages, e.g. `fr` or `de-CH en`. */
+  uiLocales?: string;
+  /**
+   * OIDC `max_age` in seconds: the user must have authenticated within this
+   * window, else Atlas asks them to sign in again. The callback then REQUIRES
+   * an `auth_time` inside the window (OIDC Core §3.1.2.1), so a token from an
+   * older sign-in is refused with `reauthentication_required`. `0` forces a
+   * fresh sign-in.
+   */
+  maxAge?: number;
+  /**
+   * A same-site path (`/settings?tab=security`) to return to after sign-in. It
+   * rides in the sealed flow cookie and comes back as `identity.returnTo`.
+   * Anything that is not a plain path (`//host`, `https://…`, `/\host`) is
+   * refused, so it can never become an open redirect.
+   */
+  returnTo?: string;
+  /**
+   * The `sub` this sign-in must end as (a step-up for a user who is already
+   * signed in). The callback refuses any other user with `subject_mismatch`.
+   */
+  expectedSub?: string;
   /**
    * Any other authorize parameters. They cannot override the ones this helper
    * owns (`response_type`, `client_id`, `redirect_uri`, `state`, `nonce`,
@@ -189,6 +213,16 @@ export async function oidcStart(options: OidcStartOptions): Promise<OidcStartRes
   if (options.loginHint) url.searchParams.set('login_hint', options.loginHint);
   if (options.audienceHint) url.searchParams.set('audience_hint', options.audienceHint);
   if (options.organization) url.searchParams.set('organization', options.organization);
+  if (options.uiLocales) url.searchParams.set('ui_locales', options.uiLocales);
+  if (options.maxAge !== undefined) {
+    if (!Number.isSafeInteger(options.maxAge) || options.maxAge < 0) {
+      throw new TypeError('oidc: `maxAge` must be a whole number of seconds, 0 or more.');
+    }
+    url.searchParams.set('max_age', String(options.maxAge));
+  }
+  if (options.returnTo !== undefined && !isSafeReturnTo(options.returnTo)) {
+    throw new TypeError('oidc: `returnTo` must be a path on this site, starting with a single `/`.');
+  }
 
   const payload: FlowPayload = {
     s: state,
@@ -198,6 +232,9 @@ export async function oidcStart(options: OidcStartOptions): Promise<OidcStartRes
     i: stripSlash(options.issuer),
     c: options.clientId,
     t: Math.floor(clock(options) / 1000),
+    ...(options.maxAge !== undefined ? { m: options.maxAge } : {}),
+    ...(options.returnTo !== undefined ? { u: options.returnTo } : {}),
+    ...(options.expectedSub ? { x: options.expectedSub } : {}),
   };
   const value = await sealFlow(payload, options.secret);
   const cookie = serializeCookie(options.cookieName ?? OIDC_FLOW_COOKIE, value, {
@@ -347,6 +384,16 @@ export interface OidcIdentity {
   emailVerified: boolean;
   name: string | null;
   /**
+   * The Atlas session this sign-in was made in (`sid`). Store it on your own
+   * session row: it is the id for `POST /v1/sessions/{id}/touch` and
+   * `/revoke`, and the `sid` a back-channel logout_token names.
+   */
+  sid: string | null;
+  /** When the user last authenticated (`auth_time`, epoch seconds), or null when the token has none. */
+  authTime: number | null;
+  /** The `returnTo` path `start` was given, or null. */
+  returnTo: string | null;
+  /**
    * The organization the sign-in was made in (`org_id`, `org_slug`,
    * `org_role`, `org_permissions`): the `organization` you asked for, the
    * enterprise SSO connection's organization, or the user's active one. Null
@@ -449,6 +496,20 @@ async function runCallback(
   });
 
   const sub = claims.sub as string;
+  const authTime = typeof claims.auth_time === 'number' && Number.isFinite(claims.auth_time) ? claims.auth_time : null;
+  if (flow.m !== undefined) {
+    // OIDC Core §3.1.2.1: with max_age the client must check auth_time itself.
+    const tolerance = options.clockToleranceSec ?? 60;
+    if (authTime === null || nowSec - authTime > flow.m + tolerance) {
+      throw new AtlasOidcError(
+        'reauthentication_required',
+        `The sign-in is older than the ${flow.m} seconds this request allowed (max_age). Ask the user to sign in again.`,
+      );
+    }
+  }
+  if (flow.x !== undefined && !timingSafeEqual(sub, flow.x)) {
+    throw new AtlasOidcError('subject_mismatch', 'A different user signed in than the one asked to confirm it is them.');
+  }
   const expiresIn = typeof tokens.expires_in === 'number' ? tokens.expires_in : Number(tokens.expires_in);
   const expiresAt = Number.isFinite(expiresIn) && expiresIn > 0
     ? clock(options) + expiresIn * 1000
@@ -460,6 +521,9 @@ async function runCallback(
     email: typeof claims.email === 'string' ? claims.email : null,
     emailVerified: claims.email_verified === true,
     name: typeof claims.name === 'string' ? claims.name : null,
+    sid: typeof claims.sid === 'string' && claims.sid ? claims.sid : null,
+    authTime,
+    returnTo: flow.u !== undefined && isSafeReturnTo(flow.u) ? flow.u : null,
     organization: oidcOrganizationOf(claims),
     organizations: oidcOrganizationsOf(claims),
     sso: oidcSsoOf(claims),
@@ -825,6 +889,9 @@ interface FlowPayload {
   /** issuer */ i: string;
   /** client id */ c: string;
   /** started at, epoch seconds */ t: number;
+  /** max_age, seconds */ m?: number;
+  /** return-to path */ u?: string;
+  /** expected sub (step-up) */ x?: string;
 }
 
 const SEALED_PREFIX = 's1.';
@@ -890,6 +957,9 @@ async function openFlow(value: string, secret?: string): Promise<FlowPayload | n
     const parsed = JSON.parse(new TextDecoder().decode(json)) as Partial<FlowPayload>;
     const fields = ['s', 'n', 'v', 'r', 'i', 'c'] as const;
     if (!fields.every((f) => typeof parsed[f] === 'string') || typeof parsed.t !== 'number') return null;
+    if (parsed.m !== undefined && (!Number.isSafeInteger(parsed.m) || parsed.m < 0)) return null;
+    if (parsed.u !== undefined && typeof parsed.u !== 'string') return null;
+    if (parsed.x !== undefined && typeof parsed.x !== 'string') return null;
     return parsed as FlowPayload;
   } catch (error) {
     if (error instanceof TypeError && /secret/.test(error.message)) throw error;
@@ -984,6 +1054,11 @@ function isSecureUrl(value: string): boolean {
 }
 
 const stripSlash = (value: string) => value.replace(/\/+$/, '');
+
+/** A plain same-site path: one leading `/`, no scheme or authority, no backslash or control characters. */
+export function isSafeReturnTo(value: string): boolean {
+  return /^\/(?![\/\\])[^\\\u0000-\u001f\u007f]*$/.test(value);
+}
 
 function randomToken(): string {
   return base64url(crypto.getRandomValues(new Uint8Array(32)));

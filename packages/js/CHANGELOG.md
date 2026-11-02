@@ -1,5 +1,11 @@
 # @atlasauth/js changelog
 
+## 0.28.0 — 2026-11-01
+
+### Added
+
+- `setAvatar(client, file)` and `removeAvatar(client)`: upload (PNG, JPEG, GIF or WebP, 5 MB max) or remove the signed-in user's profile picture.
+
 ## 0.27.0 — 2026-10-30
 
 ### Added

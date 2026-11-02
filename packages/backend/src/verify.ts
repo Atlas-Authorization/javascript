@@ -231,6 +231,14 @@ export interface AtlasBackendOptions {
   /** Expected `iss`. Required — an unchecked issuer accepts any Atlas instance. */
   issuer: string;
   /**
+   * Earlier issuers of THIS instance, also accepted: its old sign-in host while
+   * the instance moves to a new one (a custom domain or a path mount going
+   * active). The keys are the instance's own, so nothing else changes. The
+   * instance's discovery document lists them in `atlas_previous_issuers` with
+   * an `accepted_until`; remove them after that.
+   */
+  previousIssuers?: readonly string[];
+  /**
    * §7.3 optional azp allowlist. When set, a token minted for a different
    * origin is refused, which is what stops a token issued to one of the
    * customer's apps being replayed against another.
@@ -395,7 +403,9 @@ export class AtlasBackend {
         // Pinned. Without this, a token whose header says `alg: none` — or any
         // algorithm the key material can be coerced into — verifies.
         algorithms: ATLAS_SIGNING_ALGS,
-        issuer: this.options.issuer,
+        issuer: this.options.previousIssuers?.length
+          ? [this.options.issuer, ...this.options.previousIssuers]
+          : this.options.issuer,
         // §S4 enforce `aud` ONLY when the caller configured an expected audience.
         // Unset leaves `aud` unchecked, so a token carrying its default
         // instance-id audience still verifies (backwards compatible).

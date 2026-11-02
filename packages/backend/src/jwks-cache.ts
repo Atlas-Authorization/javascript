@@ -45,6 +45,32 @@ export interface JwksCacheDeps {
   now?: () => number;
   ttlMs?: number;
   refetchIntervalMs?: number;
+  /**
+   * Honour the JWKS response's `Cache-Control: max-age` as the TTL, clamped to
+   * these bounds (`no-store` / `no-cache` count as the minimum). Without it the
+   * fixed `ttlMs` applies whatever the server says.
+   */
+  cacheControl?: { minTtlMs: number; maxTtlMs: number };
+  /**
+   * Bound stale-on-error: when a refetch fails, keep serving the cached keys
+   * only until they are this much past their TTL, then return null (verify
+   * fails closed). A failed attempt is also not retried inside
+   * `refetchIntervalMs`, so an outage cannot become a fetch storm. Omitted =
+   * serve the cached keys indefinitely (the historical behaviour).
+   */
+  maxStaleMs?: number;
+}
+
+/** The TTL a `Cache-Control` header asks for, clamped to `bounds`; undefined when it says nothing. */
+export function cacheControlTtl(
+  header: string | null,
+  bounds: { minTtlMs: number; maxTtlMs: number },
+): number | undefined {
+  if (!header) return undefined;
+  if (/(?:^|,)\s*(?:no-store|no-cache)\s*(?:,|$)/i.test(header)) return bounds.minTtlMs;
+  const m = /(?:^|,)\s*max-age\s*=\s*"?(\d+)"?/i.exec(header);
+  if (!m) return undefined;
+  return Math.min(bounds.maxTtlMs, Math.max(bounds.minTtlMs, Number(m[1]) * 1000));
 }
 
 export type FetchOutcome = 'fresh' | 'cached' | 'refetched' | 'throttled' | 'failed';
@@ -53,6 +79,9 @@ export class JwksCache {
   private cached: Jwks | null = null;
   private fetchedAt = 0;
   private lastAttemptAt = 0;
+  /** The TTL of the cached set (from Cache-Control when honoured). */
+  private ttl: number | null = null;
+  private lastAttemptFailed = false;
   /** Exposed so a caller can assert the rate limit actually bit. */
   lastOutcome: FetchOutcome = 'fresh';
   /** Why the last attempt produced no keys (e.g. a discovery failure), for diagnostics. */
@@ -99,7 +128,7 @@ export class JwksCache {
     }
 
     const now = this.now;
-    const ttl = this.deps.ttlMs ?? DEFAULT_TTL_MS;
+    const ttl = this.ttl ?? this.deps.ttlMs ?? DEFAULT_TTL_MS;
     const interval = this.deps.refetchIntervalMs ?? REFETCH_INTERVAL_MS;
 
     const expired = !this.cached || now - this.fetchedAt >= ttl;
@@ -108,6 +137,16 @@ export class JwksCache {
     if (!expired && !kidMiss) {
       this.lastOutcome = 'cached';
       return this.cached;
+    }
+
+    /**
+     * Bounded mode: a failed attempt is not retried inside the window (an
+     * outage must not turn every request into an outbound fetch), and stale
+     * keys are served only up to maxStaleMs past their TTL.
+     */
+    if (this.deps.maxStaleMs !== undefined && this.lastAttemptFailed && now - this.lastAttemptAt < interval) {
+      this.lastOutcome = 'throttled';
+      return this.staleOrNull(now, ttl);
     }
 
     /**
@@ -130,8 +169,9 @@ export class JwksCache {
         url = await this.deps.resolveUrl!();
       } catch (error) {
         this.lastOutcome = 'failed';
+        this.lastAttemptFailed = true;
         this.lastError = error instanceof Error ? error.message : String(error);
-        return this.cached;
+        return this.staleOrNull(now, ttl);
       }
     }
 
@@ -146,6 +186,10 @@ export class JwksCache {
 
       this.cached = body;
       this.fetchedAt = now;
+      this.ttl = this.deps.cacheControl
+        ? (cacheControlTtl(response.headers.get('cache-control'), this.deps.cacheControl) ?? null)
+        : null;
+      this.lastAttemptFailed = false;
       this.lastError = null;
       this.lastOutcome = kidMiss ? 'refetched' : 'fresh';
       return this.cached;
@@ -153,9 +197,17 @@ export class JwksCache {
       // Keep serving what we have. A JWKS outage should degrade to "new keys
       // do not work yet", not "nobody can authenticate".
       this.lastOutcome = 'failed';
+      this.lastAttemptFailed = true;
       this.lastError = `JWKS fetch from ${url} failed: ${error instanceof Error ? error.message : String(error)}`;
-      return this.cached;
+      return this.staleOrNull(now, ttl);
     }
+  }
+
+  /** The cached set on a failure: always, unless maxStaleMs bounds how stale it may be. */
+  private staleOrNull(now: number, ttl: number): Jwks | null {
+    if (!this.cached) return null;
+    if (this.deps.maxStaleMs !== undefined && now - this.fetchedAt >= ttl + this.deps.maxStaleMs) return null;
+    return this.cached;
   }
 
   /** Test and diagnostic surface — never used for a security decision. */
@@ -169,8 +221,11 @@ export function readKid(jwt: string): string | undefined {
   const [header] = jwt.split('.');
   if (!header) return undefined;
   try {
+    // atob, not Buffer: this runs on workers and Deno too.
+    const b64 = header.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(b64 + '==='.slice((b64.length + 3) % 4));
     const decoded = JSON.parse(
-      Buffer.from(header.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'),
+      new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))),
     ) as { kid?: string };
     return typeof decoded.kid === 'string' ? decoded.kid : undefined;
   } catch {

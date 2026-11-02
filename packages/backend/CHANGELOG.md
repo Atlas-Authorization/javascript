@@ -1,5 +1,18 @@
 # @atlasauth/backend changelog
 
+## 0.30.0 — 2026-11-01
+
+### Added
+
+- `@atlasauth/backend/rp`: `createRelyingParty()` with `start(request)` / `callback(request)` as `(Request) => Response` handlers for any framework or runtime, `requireRecentAuth()` (step-up bound to the same user), `touchIfDue()` (`POST /v1/sessions/{id}/touch` at most every N minutes), `revokeSession()` and `signOut()` (server-side revoke, then the `/oauth2/logout` redirect). The entry point loads only Web standards and `jose`.
+- `verifyAtlasWebhook()` / `verifyAtlasWebhookRequest()`: webhook verification on Web Crypto (no `Buffer`), same checks as `verifyWebhook()`.
+- `oidc.start` takes `uiLocales`, `maxAge`, `returnTo` and `expectedSub`; the callback enforces `auth_time` against `maxAge` (`reauthentication_required`) and the user against `expectedSub` (`subject_mismatch`). The identity carries `sid`, `authTime` and `returnTo`.
+- Package `exports` for `.`, `./rp` and `./testing`.
+
+### Fixed
+
+- `readKid()` decodes with `atob`, so logout-token verification picks the right key on runtimes without `Buffer`.
+
 ## 0.29.0 — 2026-10-30
 
 ### Added

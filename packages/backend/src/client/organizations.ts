@@ -10,9 +10,47 @@ export interface Organization {
   image_url: string | null;
   public_metadata: Metadata;
   max_allowed_memberships: number;
-  created_by: string;
+  /** null when your backend created the organization without a creator. */
+  created_by: string | null;
+  /** Your own id for this customer; unique per instance. */
+  external_id: string | null;
+  /** Role key → your product's name for it (echoed as the `org_role_mapped` token claim). */
+  role_mappings: Record<string, string> | null;
+  /** On create with `owner_email` only: the invitation sent to that address. */
+  owner_invitation?: {
+    object: 'organization_invitation';
+    id: string;
+    email: string;
+    role: string;
+    status: string;
+    expires_at: number | null;
+  };
   created_at: number;
   updated_at: number;
+}
+
+/** GET /v1/organizations/{id}: the organization plus its SSO setup. */
+export interface OrganizationDetail extends Organization {
+  sso?: {
+    connections: { id: string; type: string; status: 'draft' | 'active' | 'disabled' }[];
+    /** The SCIM 2.0 base URL to give this organization's identity provider. */
+    scim_base_url: string;
+  };
+}
+
+/** GET /v1/organizations/by_domain/{domain}: the owning organization and the matched domain. */
+export interface OrganizationByDomain extends Organization {
+  domain: { object: 'org_domain'; id: string; domain: string; status: OrgDomainStatus; verified_at: number | null };
+}
+
+export type OrgDomainStatus = 'pending' | 'verified' | 'failed';
+export type OrgDomainVerificationMethod = 'dns_txt' | 'well_known' | 'email';
+
+export interface ListOrganizationsParams extends CursorParams {
+  /** Only the organization with this external_id. */
+  external_id?: string;
+  /** public_metadata equality filters, sent as ?metadata[key]=value (AND). */
+  metadata?: Record<string, string>;
 }
 
 export interface OrganizationMembership {
@@ -21,6 +59,12 @@ export interface OrganizationMembership {
   organization_id: string;
   user_id: string;
   role: string;
+  /**
+   * Who manages the role: `scim`, `sso:<connection id>` or `ldap:<connection id>`
+   * (the identity provider keeps it in step), `directory_sync`, `manual` (set
+   * through the API or dashboard), or null (joined by invitation, or older rows).
+   */
+  role_source?: string | null;
   created_at: number;
 }
 
@@ -41,7 +85,7 @@ export interface OrgDomain {
   id: string;
   organization_id: string;
   domain: string;
-  status: string;
+  status: OrgDomainStatus;
   auto_join: boolean;
   default_role_id: string | null;
   verification: {
@@ -49,6 +93,13 @@ export interface OrgDomain {
     record_type: 'TXT';
     record_value: string;
   };
+  /** Every way to prove the domain. */
+  verification_methods: {
+    dns_txt: { record_name: string; record_type: 'TXT'; record_value: string };
+    well_known: { url: string; body: string; content_type: string };
+    email: { addresses: string[]; sent_to: string | null; expires_at: number | null };
+  };
+  verification_method: OrgDomainVerificationMethod | null;
   verified_at: number | null;
   last_checked_at: number | null;
   created_at: number;
@@ -239,11 +290,22 @@ export interface OrganizationEntitlements {
 export interface CreateOrganizationBody {
   name: string;
   slug: string;
-  created_by: string;
+  /** Seated with the creator role; omit (or null) for a backend-created organization with no members yet. */
+  created_by?: string | null;
+  external_id?: string;
+  public_metadata?: Metadata;
+  private_metadata?: Metadata;
+  /** Invites this address with the creator role (org:admin by default). */
+  owner_email?: string;
+  role_mappings?: Record<string, string>;
   max_allowed_memberships?: number;
 }
 
 export interface UpdateOrganizationBody {
+  /** null clears it. */
+  external_id?: string | null;
+  /** null clears them. */
+  role_mappings?: Record<string, string> | null;
   name?: string;
   slug?: string;
   image_url?: string;
@@ -294,11 +356,26 @@ export interface OrganizationWebhookEndpointBody {
 
 export function organizationsResource(request: RequestFn) {
   return {
-    list(params: CursorParams = {}): Promise<CursorPage<Organization>> {
-      return request({ method: 'GET', path: '/v1/organizations', query: { ...params } });
+    list(params: ListOrganizationsParams = {}): Promise<CursorPage<Organization>> {
+      const { metadata, ...rest } = params;
+      const query: Record<string, string | number | boolean | undefined> = { ...rest };
+      for (const [k, v] of Object.entries(metadata ?? {})) query[`metadata[${k}]`] = v;
+      return request({ method: 'GET', path: '/v1/organizations', query });
     },
-    get(id: string): Promise<Organization> {
+    get(id: string): Promise<OrganizationDetail> {
       return request({ method: 'GET', path: `/v1/organizations/${enc(id)}` });
+    },
+    /** The organization owning a domain (or an email address's domain). Verified domains only unless includeUnverified. */
+    findByDomain(domain: string, opts: { includeUnverified?: boolean } = {}): Promise<OrganizationByDomain> {
+      return request({
+        method: 'GET',
+        path: `/v1/organizations/by_domain/${enc(domain)}`,
+        query: opts.includeUnverified ? { include_unverified: 'true' } : {},
+      });
+    },
+    /** `GET /v1/organizations/:id/policy`. */
+    getPolicy(id: string): Promise<OrganizationPolicy> {
+      return request({ method: 'GET', path: `/v1/organizations/${enc(id)}/policy` });
     },
     create(body: CreateOrganizationBody, idempotencyKey?: string): Promise<Organization> {
       return request({ method: 'POST', path: '/v1/organizations', body, idempotencyKey });
@@ -361,8 +438,13 @@ export function organizationsResource(request: RequestFn) {
       update(
         orgId: string,
         userId: string,
-        body: { role: string },
-      ): Promise<{ object: 'organization_membership'; role: string; updated: true }> {
+        /**
+         * `role_source`: `manual` takes the role out of directory control; `scim`,
+         * `sso:<connection id>` or `ldap:<connection id>` hands it back to that source.
+         * A role sent alone counts as `manual`.
+         */
+        body: { role?: string; role_source?: string },
+      ): Promise<{ object: 'organization_membership'; role?: string; role_source?: string | null; updated: true }> {
         return request({
           method: 'PATCH',
           path: `/v1/organizations/${enc(orgId)}/memberships/${enc(userId)}`,
@@ -430,10 +512,28 @@ export function organizationsResource(request: RequestFn) {
           idempotencyKey,
         });
       },
-      verify(orgId: string, domainId: string): Promise<OrgDomain & { verified: boolean }> {
+      /** Check now. No body = the DNS TXT check; `well_known` fetches the file; `email` takes the emailed code. */
+      verify(
+        orgId: string,
+        domainId: string,
+        body?: { method?: OrgDomainVerificationMethod; code?: string },
+      ): Promise<OrgDomain & { verified: boolean }> {
         return request({
           method: 'POST',
           path: `/v1/organizations/${enc(orgId)}/domains/${enc(domainId)}/verify`,
+          ...(body ? { body } : {}),
+        });
+      },
+      /** Email a 6-digit code to admin@ (or another administrative mailbox) at the domain, via your own email provider. */
+      sendVerificationEmail(
+        orgId: string,
+        domainId: string,
+        body: { address?: 'admin' | 'administrator' | 'hostmaster' | 'postmaster' | 'webmaster' } = {},
+      ): Promise<OrgDomain & { sent_to: string }> {
+        return request({
+          method: 'POST',
+          path: `/v1/organizations/${enc(orgId)}/domains/${enc(domainId)}/verification_email`,
+          body,
         });
       },
       delete(

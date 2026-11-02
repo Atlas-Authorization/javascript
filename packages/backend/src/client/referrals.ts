@@ -222,6 +222,8 @@ export interface ReferralSettings {
   auto_enroll_users: boolean;
   /** e.g. `https://app.example.com/join?ref={code}`; builds `referral_link`. */
   link_template: string | null;
+  /** The partner portal linked from the hosted account page's "Refer a friend" panel. */
+  partner_portal_url: string | null;
   /** How long a sign-up waits for the platform (100-5000 ms, default 3000). */
   timeout_ms: number;
   security: ReferralSecuritySettings;
@@ -241,8 +243,10 @@ export interface ReferralSettings {
   forward_lifecycle?: boolean;
   /** Mirror the result into `public_metadata.referral` (default false). */
   mirror_to_public_metadata?: boolean;
-  /** Add a `referral_code` claim (the user's own code) to ID tokens and sessions. */
+  /** Add `referral_code` (the user's own code) and `referral_link` (when stored) claims to ID tokens and sessions. */
   include_referral_claims?: boolean;
+  /** Report the first sign-in of an Atlas ID account to a Sign in with Atlas app this instance manages as a sign-up (default false). */
+  report_linked_atlas_id_signups?: boolean;
   /** What the chosen provider still needs before referrals can be enabled. */
   missing?: string[];
   connection?: ReferralConnectionStatus | null;
@@ -286,6 +290,8 @@ export interface UpdateReferralSettingsBody {
   auto_enroll_users?: boolean;
   /** An https URL containing `{code}`. */
   link_template?: string | null;
+  /** https URL of the partner portal (shown on the hosted account page), or null to remove it. */
+  partner_portal_url?: string | null;
   /** 100-5000. */
   timeout_ms?: number;
   /** Partial: only the security fields sent change. */
@@ -300,6 +306,7 @@ export interface UpdateReferralSettingsBody {
   forward_lifecycle?: boolean;
   mirror_to_public_metadata?: boolean;
   include_referral_claims?: boolean;
+  report_linked_atlas_id_signups?: boolean;
 }
 
 /** `POST /v1/instance/referrals/test`. */

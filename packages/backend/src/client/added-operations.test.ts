@@ -165,6 +165,7 @@ const BAPI: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
   ['POST', '/v1/oauth_clients/oac_1/backchannel_logout/test', undefined, (c) => c.oauthClients.testBackchannelLogout('oac_1')],
   ['POST', '/v1/users/user_1/sessions/revoke', { revoke_grants: true }, (c) => c.users.revokeSessions('user_1', { revoke_grants: true })],
   ['POST', '/v1/domains', { host: 'auth.example.com', dns: { provider: 'cloudflare', api_token: 'tok' } }, (c) => c.domains.create({ host: 'auth.example.com', dns: { provider: 'cloudflare', api_token: 'tok' } })],
+  ['POST', '/v1/domains', { method: 'path', hostname: 'app.example.com', base_path: '/__atlas' }, (c) => c.domains.create({ method: 'path', hostname: 'app.example.com', base_path: '/__atlas' })],
   ['GET', '/v1/partner_platforms', undefined, (c) => c.partnerPlatforms.list()],
   ['GET', '/v1/partner_platforms/cookiemunch', undefined, (c) => c.partnerPlatforms.get('cookiemunch')],
   ['PUT', '/v1/partner_platforms/cookiemunch', { allowed_sources: ['dv-1'] }, (c) => c.partnerPlatforms.set('cookiemunch', { allowed_sources: ['dv-1'] })],

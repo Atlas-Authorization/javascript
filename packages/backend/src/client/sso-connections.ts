@@ -44,6 +44,10 @@ export interface SsoConnection {
   saml_idp_slo_soap_url?: string | null;
   /** Assertions that are not encrypted to the connection's key are refused. */
   saml_require_encrypted_assertions?: boolean;
+  /** A custom ACS path on your own frontend API domain (SAML migration); null = the standard ACS. */
+  saml_acs_path?: string | null;
+  /** GitHub as the identity provider: only members of these GitHub orgs / teams ("org/team-slug") sign in. */
+  github_access?: { allowed_organizations: string[]; allowed_teams: string[] } | null;
   /** An SP encryption key pair is set up (the private key is never returned). */
   has_saml_encryption_key?: boolean;
   /** A key rotation is in progress (the previous key is still accepted). */
@@ -121,6 +125,10 @@ export interface CreateSsoConnectionBody {
   saml_idp_slo_soap_url?: string | null;
   /** Requires an encryption key (see `createSamlEncryptionKey`). */
   saml_require_encrypted_assertions?: boolean;
+  /** A custom ACS path on your own frontend API domain (SAML migration), e.g. /saml/acs/acme; null clears. */
+  saml_acs_path?: string | null;
+  /** GitHub as the identity provider (oidc type; oidc_issuer may be left out); null removes it. */
+  github_access?: { allowed_organizations?: string[]; allowed_teams?: string[] } | null;
   discourse_secret?: string;
   discourse_provider_url?: string;
   allowed_domains?: string[];

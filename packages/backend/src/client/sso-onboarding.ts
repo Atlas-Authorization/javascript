@@ -28,6 +28,8 @@ export interface SsoOnboardingProfile {
   allow_scim: boolean;
   /** The Admin Portal tasks this profile's tickets may perform. */
   intents: SsoPortalIntent[];
+  /** Where "Finish" on the hosted setup page sends the admin. */
+  return_url: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -44,6 +46,8 @@ export interface SsoOnboardingTicket {
   organization_id: string;
   sso_connection_id: string | null;
   status: string;
+  /** This ticket's return_url (null = the profile's applies). */
+  return_url: string | null;
   expires_at: number;
   created_at: number;
   completed_at: number | null;
@@ -56,6 +60,8 @@ export interface IssuedSsoOnboardingTicket extends SsoOnboardingTicket {
   /** The hosted URL the end-customer's IT admin opens (no dashboard account). */
   url: string;
   expires_in: number;
+  /** Where "Finish" will send the admin: the ticket's return_url, else the profile's. */
+  effective_return_url: string | null;
 }
 
 export interface CreateSsoOnboardingProfileBody {
@@ -68,6 +74,8 @@ export interface CreateSsoOnboardingProfileBody {
   allow_scim?: boolean;
   /** Admin Portal tasks to grant; omit for the classic SSO (+ domain) profile. */
   intents?: SsoPortalIntent[];
+  /** https, on one of your allowed origins. */
+  return_url?: string | null;
 }
 
 export interface CreateSsoOnboardingTicketBody {
@@ -75,12 +83,15 @@ export interface CreateSsoOnboardingTicketBody {
   organization_id?: string | null;
   /** Clamped to a 5-minute…30-day band; defaults to 3 days. */
   expires_in_seconds?: number;
+  /** Overrides the profile's return_url for this ticket. */
+  return_url?: string | null;
 }
 
 export function ssoOnboardingResource(request: RequestFn) {
   return {
-    list(): Promise<ListPage<SsoOnboardingProfile>> {
-      return request({ method: 'GET', path: '/v1/sso_onboarding_profiles' });
+    /** With `name`, only the profiles with exactly that name ("find or create"). */
+    list(params: { name?: string } = {}): Promise<ListPage<SsoOnboardingProfile>> {
+      return request({ method: 'GET', path: '/v1/sso_onboarding_profiles', query: { ...params } });
     },
     get(id: string): Promise<SsoOnboardingProfile> {
       return request({ method: 'GET', path: `/v1/sso_onboarding_profiles/${enc(id)}` });

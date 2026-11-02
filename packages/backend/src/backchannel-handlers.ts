@@ -40,7 +40,7 @@ export interface BackchannelLogoutResponse {
 export function readLogoutToken(body: unknown): string | undefined {
   if (typeof body === 'string') return new URLSearchParams(body).get('logout_token') ?? undefined;
   if (body instanceof URLSearchParams) return body.get('logout_token') ?? undefined;
-  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(body)) return readLogoutToken(body.toString('utf8'));
+  if (body instanceof Uint8Array) return readLogoutToken(new TextDecoder().decode(body)); // a Node Buffer is a Uint8Array
   if (body && typeof body === 'object') {
     const v = (body as Record<string, unknown>).logout_token;
     if (typeof v === 'string') return v;

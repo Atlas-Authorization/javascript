@@ -36,9 +36,18 @@ export interface User {
    * older than this field.)
    */
   referral?: UserReferral | null;
-  /** The user's own referral code, when they are a referrer. */
+  /**
+   * The user's own referral code: set once the referral platform enrolled the
+   * user as a partner (its answer carried a code) or an admin set one; null
+   * otherwise (not enrolled, referrals off, or the code was cleared).
+   */
   referral_code?: string | null;
-  /** The user's own referral link, when they are a referrer. */
+  /**
+   * The user's own share link: the link the referral platform returned for
+   * the partner, else the referral settings' `link_template` with `{code}`
+   * replaced by the URL-encoded code. Null while there is no code (or neither
+   * a platform link nor a template).
+   */
   referral_link?: string | null;
   /**
    * Every linked provider identity (sign-in, connect, imported on create or by
@@ -984,6 +993,12 @@ export interface UserOrganizationMembership {
   organization_id: string;
   organization_slug: string;
   role: string;
+  /**
+   * Who manages the role: `scim`, `sso:<connection id>` or `ldap:<connection id>`
+   * (the identity provider keeps it in step), `directory_sync`, `manual` (set
+   * through the API or dashboard), or null (joined by invitation, or older rows).
+   */
+  role_source?: string | null;
   plan: string | null;
   joined_at: number;
 }

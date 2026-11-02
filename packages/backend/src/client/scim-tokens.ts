@@ -21,6 +21,10 @@ export interface ScimToken {
 /** Create reveals the usable secret exactly once. */
 export interface ScimTokenWithSecret extends ScimToken {
   secret: string;
+  /** The SCIM 2.0 base URL to give the identity provider with this token. */
+  scim_base_url: string;
+  /** `no_sso_connection` = the organization has no SSO connection yet. */
+  warnings: { code: 'no_sso_connection'; message: string }[];
   note: string;
 }
 

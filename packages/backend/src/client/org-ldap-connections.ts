@@ -9,6 +9,14 @@ export interface OrgLdapAttributeMap {
   firstName?: string;
   lastName?: string;
   username?: string;
+  /** The groups attribute (default memberOf), read for group_role_mappings. */
+  groups?: string;
+}
+
+/** A directory group DN → organization role key. */
+export interface OrgLdapGroupRoleMapping {
+  group: string;
+  role: string;
 }
 
 /** An organization-owned LDAP / Active Directory connection. Never the bind password. */
@@ -24,6 +32,7 @@ export interface OrgLdapConnection {
   start_tls: boolean;
   require_consent_screen: boolean;
   attributes: OrgLdapAttributeMap;
+  group_role_mappings: OrgLdapGroupRoleMapping[];
   has_bind_password: boolean;
   default_role_id: string | null;
   created_at: number;
@@ -44,6 +53,8 @@ export interface UpdateOrgLdapConnectionBody {
   /** Ask the person to confirm the sign-in before it completes (the sign-in response then carries `consent_required`). */
   require_consent_screen?: boolean;
   attributes?: OrgLdapAttributeMap;
+  /** The first mapping whose group the person is in picks their role when they are seated; null clears. */
+  group_role_mappings?: OrgLdapGroupRoleMapping[] | null;
   /** Service-account password. Write-only; re-encrypted only when supplied. */
   bind_password?: string;
   default_role_id?: string | null;

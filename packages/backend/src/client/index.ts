@@ -106,6 +106,7 @@ import { configChangelogResource, eventsResource, usageResource } from './activi
 import { analyticsResource } from './analytics-reports';
 import { appCatalogResource } from './app-catalog';
 import { cloudAccessResource, samlIdpResource, wsfedConnectionsResource } from './saml-idp';
+import { jwtConnectionsResource } from './jwt-connections';
 import { journeysResource } from './journeys';
 import { marketingResource } from './marketing';
 import { logoutNotifyEndpointsResource } from './logout-notify-endpoints';
@@ -301,6 +302,7 @@ function buildNamespaces(request: RequestFn) {
     samlIdp: samlIdpResource(request),
     cloudAccess: cloudAccessResource(request),
     wsfedConnections: wsfedConnectionsResource(request),
+    jwtConnections: jwtConnectionsResource(request),
     journeys: journeysResource(request),
     marketing: marketingResource(request),
     configChangelog: configChangelogResource(request),
@@ -449,6 +451,7 @@ export * from './activity';
 export * from './analytics-reports';
 export * from './app-catalog';
 export * from './saml-idp';
+export * from './jwt-connections';
 export * from './journeys';
 export * from './marketing';
 export * from './pca';
