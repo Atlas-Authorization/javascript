@@ -304,6 +304,30 @@ describe('atlas referrals connect --provider referalli: test vs live, v2 and syn
     expect(io.stderr()).toBe('');
   });
 
+  it("sends the instance's app origins with the connection, never a wildcard", async () => {
+    const io = captureIO();
+    const remote: Remote = [];
+    const instance = {
+      id: 'ins_1',
+      environment: 'production',
+      allowed_origins: ['https://app.example.com/', 'https://*.wild.example.com', { origin: 'https://shop.example.com', integration: 'redirect' }],
+      frontend_api_host: 'clerk.example.com',
+    };
+    expect(await run(args, makeCtx(io, [], { ...ATLAS, 'GET /v1/instance': instance, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referalliApi(remote) }))).toBe(0);
+    expect(JSON.parse(sent(remote, 'POST', '/v1/auth/connections')!.init.body as string).allowedOrigins).toEqual([
+      'https://app.example.com',
+      'https://clerk.example.com',
+      'https://shop.example.com',
+    ]);
+  });
+
+  it('--enable carries the identity-backfill opt-out onto the enabling write', async () => {
+    const io = captureIO();
+    const calls: Call[] = [];
+    expect(await run([...args, '--enable', '--no-identity-backfill'], makeCtx(io, calls, { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referalliApi([]) }))).toBe(0);
+    expect(calls.some((c) => c.method === 'PATCH' && JSON.stringify(c.body) === JSON.stringify({ enabled: true, backfill_existing_users: false }))).toBe(true);
+  });
+
   it('--no-sync registers no webhook; a refused webhook or v2 switch is a warning, not a failure', async () => {
     const io = captureIO();
     const remote: Remote = [];

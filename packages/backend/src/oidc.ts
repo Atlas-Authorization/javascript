@@ -321,6 +321,8 @@ export interface AtlasIdTokenClaims {
   org_slug?: string;
   org_role?: string;
   org_permissions?: string[];
+  org_external_id?: string;
+  org_role_mapped?: string;
   orgs?: OidcOrganizationMembership[];
   sso_connection_id?: string;
   sso_organization_id?: string;

@@ -1,5 +1,24 @@
 # @atlasauth/cli changelog
 
+## 0.19.0 — 2026-11-02
+
+### Added
+
+- `atlas referrals connect` sends the instance's app origins to the platform (`allowedOrigins` on the connection), and `--enable` makes Atlas read the referral code of existing users (10 per second at most); `--no-identity-backfill` skips that.
+
+### Fixed
+
+- An explicit `null` in a config file now clears a nullable field on update (`login_url`, `consent_url`, `logo_url`, `backchannel_logout_uri`, branding, hook `url`, ...); an absent key stays unmanaged. The plan shows `value -> null` and is clean afterwards.
+- `atlas plan` / `atlas config plan` no longer report drift on a freshly applied instance. Without `--prune` they compare only the keys the file sets (singletons and collection rows, recursively); `--prune` keeps the full comparison and shows unset keys.
+- OAuth clients round-trip every field the API returns and accepts: `post_logout_redirect_uris`, `claims_redirect_uris`, `backchannel_logout_uri`, `backchannel_logout_session_required`, `frontchannel_logout_*`, `skip_logout_confirmation`, `refresh_touches_session`, `require_verified_email`, `require_pkce`, `login_url`, `consent_url`, `subject_type`, `sector_identifier_uri`, `access_token_format`, `token_lifetimes`.
+- `instance.allowed_origins` accepts strings and `{ origin, integration }` objects and compares them as the same thing; `auth_config.originIntegrations` is ignored in the comparison, and integration hints are kept when the file lists plain strings.
+- `webhook_endpoints[].active` is sent on create, so a paused endpoint is never live, even briefly.
+
+### Added
+
+- New file sections `email_provider`, `hooks.before_user_create` and `branding`, applied, planned and exported (secrets only through `--secrets-file` / env, shown as `(secret set)`). Apply order: `email_provider` first, `hooks` after `oauth_clients`, `branding` last.
+- `--force-hook` on `apply` / `config import`: enable a `before_user_create` hook although its test call fails. Without it, a 409 `HOOK_TEST_FAILED` is reported with the hook left unchanged.
+
 ## 0.18.1 — 2026-11-02
 
 Depends on `@atlasauth/backend` 0.31.1 (0.18.0 pinned 0.31.0, which was never published). No code changes.

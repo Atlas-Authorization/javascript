@@ -43,7 +43,7 @@ atlas api-keys list | create --subject-type <t> --subject-id <id> | revoke <id>
 atlas webhooks list | create --url <url> [--events a,b]
 atlas sessions revoke <id>
 atlas config   export [--dir <path>] [--format json|yaml]
-atlas config   import [--dir <path>] [--format json|yaml] [--dry-run] [--prune]
+atlas config   import [--dir <path>] [--format json|yaml] [--dry-run] [--prune] [--force-hook]
 atlas plan     [<file|dir>] [--check] [--json] [--secrets-file <dotenv>]
 atlas apply    [<file|dir>] [--yes] [--check] [--prune] [--secrets-file <dotenv>] [--out <dir>]
 atlas init     --product <name> [--domain <d>] [--instance-env development|production] ...
@@ -120,7 +120,7 @@ atlas config import --dir ./atlas-config --prune   # also delete removed resourc
 ```
 
 Managed resource types (the same set the Terraform provider manages):
-`instance` (auth config + allowed origins), `oauth_clients`, `oauth_providers`,
+`instance` (auth config + allowed origins), `email_provider`, `hooks` (`before_user_create`), `branding`, `oauth_clients`, `oauth_providers`,
 `sso_connections`, `resource_servers`, `jwt_templates`, `roles`,
 `webhook_endpoints`, `billing_plans`, `redirect_urls`, `org_settings_schema`,
 `notification_templates`, `email_templates`, `organization_policies`.
@@ -141,7 +141,9 @@ Rules that make it safe and repeatable:
 the resource types above (or a directory from `config export`), shows the plan,
 asks before applying (`--yes` skips the question; needed without a terminal),
 and applies. Re-running it is a no-op. `atlas plan atlas.yaml` shows the
-field-level diff without writing.
+field-level diff without writing; without `--prune` it compares only the keys
+the file sets. `--force-hook` enables a `before_user_create` hook whose test
+call fails (otherwise the server refuses with 409 `HOOK_TEST_FAILED`).
 
 ```yaml
 # atlas.yaml

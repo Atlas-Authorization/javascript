@@ -135,3 +135,13 @@ describe('referral protocol v2 ops', () => {
     expect(r.protocolVersion).toBe('2026-10-21');
   });
 });
+
+describe('customerMetadata', () => {
+  it('carries the user id, and the external id only when there is one', async () => {
+    const { customerMetadata } = await import('./referrals');
+    expect(customerMetadata({ id: 'user_1' })).toEqual({ atlas_user_id: 'user_1' });
+    expect(customerMetadata({ id: 'user_1', external_id: null })).toEqual({ atlas_user_id: 'user_1' });
+    expect(customerMetadata({ id: 'user_1', external_id: 'e1' })).toEqual({ atlas_user_id: 'user_1', atlas_external_id: 'e1' });
+    expect(customerMetadata({ id: 'user_1', externalId: 'e2' })).toEqual({ atlas_user_id: 'user_1', atlas_external_id: 'e2' });
+  });
+});

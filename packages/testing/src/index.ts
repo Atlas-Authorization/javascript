@@ -18,6 +18,8 @@ export { getTestingToken } from './testing-token';
 export type { GetTestingTokenOptions } from './testing-token';
 export { AtlasSignInError, getSignInUrl } from './sign-in-as';
 export type { GetSignInUrlOptions, SignInUrl } from './sign-in-as';
+export { getSessionToken } from './session-token';
+export type { GetSessionTokenOptions } from './session-token';
 
 // Offline token fixtures for backend unit tests: session tokens, ID tokens, a
 // fake token endpoint (`issuer.fetch`) and the six negative cases. The same

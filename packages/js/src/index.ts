@@ -6,6 +6,7 @@ export * from './impersonation';
 // The safer sign-out every framework provider drives (tombstones, background revoke).
 export * from './sign-out-guard';
 export * from './token-cache';
+export * from './session-global';
 export * from './tab-election';
 export * from './attempt';
 export * from './first-factor';

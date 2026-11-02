@@ -224,6 +224,23 @@ async function referalliRequest(
   return json;
 }
 
+/** The exact origins of an instance's app: its allowed origins (no wildcards) and its Frontend API host. */
+export function appOrigins(instance: { allowed_origins?: unknown[]; frontend_api_host?: string | null }): string[] {
+  const out = new Set<string>();
+  const add = (raw: unknown) => {
+    if (typeof raw !== 'string' || raw.includes('*')) return;
+    try {
+      const u = new URL(raw);
+      if (u.protocol === 'https:' || u.protocol === 'http:') out.add(u.origin);
+    } catch {
+      /* not a URL */
+    }
+  };
+  for (const o of instance.allowed_origins ?? []) add(typeof o === 'object' && o !== null ? (o as { origin?: unknown }).origin : o);
+  if (instance.frontend_api_host) add(`https://${instance.frontend_api_host}`);
+  return [...out].sort();
+}
+
 async function referalliCreateConnection(
   ctx: RunContext,
   input: { baseUrl: string; key: string; body: Record<string, unknown> },
@@ -414,7 +431,7 @@ async function connectWithOAuth(
   if (v.enable === true) {
     if (!test.ok) ctx.io.err('atlas: not turning referrals on: the connection test failed.');
     else {
-      await http.patch('/v1/instance/referrals', { enabled: true });
+      await http.patch('/v1/instance/referrals', { enabled: true, ...(v['no-identity-backfill'] === true ? { backfill_existing_users: false } : {}) });
       enabled = true;
     }
   }
@@ -475,7 +492,7 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
     const destination = str(v, 'destination');
     if (destination) httpsUrl(destination, '--destination');
 
-    const instance = await http.get<{ id: string; environment?: string }>('/v1/instance');
+    const instance = await http.get<{ id: string; environment?: string; allowed_origins?: unknown[]; frontend_api_host?: string | null }>('/v1/instance');
     // Test data for development instances, live data for production: a mix-up
     // would pay real partners for test sign-ups, or lose real ones.
     const instanceLive = instance.environment === 'production';
@@ -490,8 +507,11 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
     } else if (!mode.known && !instanceLive) {
       ctx.io.err(`atlas: warning: Referalli did not say whether this key reaches test data; instance ${instance.id} is ${instance.environment ?? 'not production'}.`);
     }
+    // The app's origins travel with the connection (Referalli's widget CORS then needs no dashboard step); kept current by Atlas afterwards.
+    const origins = appOrigins(instance);
     const enrollment = {
       ...(v['auto-enroll'] === true ? { autoEnrollUsers: true } : {}),
+      ...(origins.length ? { allowedOrigins: origins } : {}),
       ...(destination ? { destinationUrl: destination } : {}),
     };
     const current = await http.get<ReferralSettingsRead>('/v1/instance/referrals');
@@ -717,7 +737,7 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
     if (!test.ok) {
       ctx.io.err('atlas: not turning referrals on: the connection test failed.');
     } else {
-      await http.patch('/v1/instance/referrals', { enabled: true });
+      await http.patch('/v1/instance/referrals', { enabled: true, ...(v['no-identity-backfill'] === true ? { backfill_existing_users: false } : {}) });
       enabled = true;
     }
   }

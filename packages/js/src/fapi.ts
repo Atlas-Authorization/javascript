@@ -16,6 +16,7 @@ import {
 import { deviceId } from './telemetry';
 import { attestationHeaderFor, isAttestationGuarded, type AttestationProvider } from './attestation';
 import { parsePolicyAcceptances } from './policy-acceptance';
+import { registerClientSession } from './session-global';
 
 /**
  * The FAPI client and the sign-in flow driver.
@@ -44,6 +45,11 @@ export interface FapiClientOptions {
    * live in cookies and are not affected.
    */
   persistence?: PersistenceMode;
+  /**
+   * Register this client as the page's `window.Atlas.session` source (when no
+   * other SDK already is). On by default in a browser; `false` opts out.
+   */
+  exposeSession?: boolean;
   /**
    * The app's UI language as a BCP-47 tag (`"es"`, `"pt-BR"`). When set, every
    * request carries it as `Accept-Language`, so the server writes its error
@@ -132,6 +138,7 @@ export class FapiClient {
     // survive client-side navigation that drops it before the user signs up.
     rememberReferralLanding();
     if (options.persistence) setPersistence(options.persistence);
+    if (options.exposeSession !== false && typeof window !== 'undefined') registerClientSession(this);
   }
 
   /** Which instance's referral config this client shares (one fetch per page). */

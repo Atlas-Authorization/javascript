@@ -74,3 +74,7 @@ export type { CaptchaFlowKey, CaptchaWidgetMode, FlowCaptcha } from '@atlasauth/
 // live on their own entry point, `@atlasauth/react/compat`, so the main API
 // stays Atlas-named.
 export type { GetTokenOptions } from './active-atlas';
+
+// The "refer a friend" panel from a referral platform's widget, authenticated with the Atlas session.
+export { ReferralPanel, useReferral, referralFromUser, referralWidgetSrc, DEFAULT_REFERRAL_WIDGET_BASE } from './referral-panel';
+export type { ReferralPanelProps, UserReferral } from './referral-panel';

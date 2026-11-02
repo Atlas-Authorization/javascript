@@ -13,7 +13,7 @@ import {
   type Format,
   type Json,
 } from '../serialize';
-import { DEFAULT_API_URL } from '@atlasauth/backend';
+import { AtlasApiError, DEFAULT_API_URL } from '@atlasauth/backend';
 import { envApiUrl, resolveAuth } from './shared';
 import { parseDotenv, productDir, writeSecretFile } from '../secrets';
 
@@ -54,7 +54,19 @@ interface SingletonSpec {
   type: string;
   /** The current document, or null when none is set (a 404). */
   fetchLive(http: ConfigHttp): Promise<Config | null>;
-  apply(http: ConfigHttp, config: Config): Promise<void>;
+  apply(http: ConfigHttp, config: Config, opts: ApplyOpts): Promise<void>;
+  /**
+   * Bring the live and the desired document to one comparable (and printable)
+   * shape: both forms of an origin list, a secret shown as "(secret set)". Only
+   * the comparison and the plan output use it; apply always sends the file as written.
+   */
+  normalize?(config: Config): Config;
+}
+
+/** Flags that reach a singleton's apply. */
+interface ApplyOpts {
+  /** Enable a hook even when its test call fails (`?force=true`). */
+  forceHook: boolean;
 }
 
 type ResourceSpec = CollectionSpec | SingletonSpec;
@@ -78,12 +90,15 @@ function pick<T extends Record<string, unknown>>(row: T, keys: readonly string[]
   return out;
 }
 
-/** The write body for a create/update: strip null/undefined so the API never sees them. */
-function compact(config: Config): Record<string, Json> {
+/**
+ * The write body: strip null/undefined. On a PATCH (`keepNull`) an explicit file
+ * `null` is kept so it clears a nullable field; an absent key stays unmanaged.
+ */
+function compact(config: Config, keepNull = false): Record<string, Json> {
   const out: Record<string, Json> = {};
   if (config && typeof config === 'object' && !Array.isArray(config)) {
     for (const [k, v] of Object.entries(config)) {
-      if (v === null || v === undefined) continue;
+      if (v === undefined || (v === null && !keepNull)) continue;
       out[k] = v;
     }
   }
@@ -106,24 +121,75 @@ function enc(segment: string): string {
  */
 function registry(): ResourceSpec[] {
   const specs: ResourceSpec[] = [
+    // 0. Email provider — first, because email sign-in strategies need one. Secrets
+    //    (api_key, …) are write-only: the live side shows "(secret set)", never a value.
+    {
+      kind: 'singleton',
+      type: 'email_provider',
+      async fetchLive(http) {
+        let p: Record<string, unknown>;
+        try {
+          p = await http.get<Record<string, unknown>>('/v1/messaging_providers/email');
+        } catch (err) {
+          if (isNotFound(err)) return null;
+          throw err;
+        }
+        if (!p || p.configured === false) return null;
+        const config: Record<string, Json> = { ...obj((p.config ?? null) as Json) };
+        const set = obj((p.secrets_set ?? null) as Json);
+        const names = Array.isArray(p.secrets_set) ? (p.secrets_set as string[]) : Object.keys(set).filter((k) => set[k] === true);
+        for (const k of names) config[k] = SECRET_SET;
+        return pick({ ...p, config }, ['transport', 'from_address', 'config']);
+      },
+      async apply(http, config) {
+        await http.put('/v1/messaging_providers/email', compact(withoutMarkers(config)));
+      },
+      normalize: (c) => redactSecrets(c, ['config']),
+    },
+
     // 1. Instance config (auth_config + allowed origins) — the §9.3 singleton.
     {
       kind: 'singleton',
       type: 'instance',
       async fetchLive(http) {
-        const inst = await http.get<{ allowed_origins?: Json; auth_config?: Json }>('/v1/instance');
-        return {
-          allowed_origins: inst.allowed_origins ?? [],
-          auth_config: inst.auth_config ?? {},
-        };
+        const inst = await http.get<{ allowed_origins?: Json; allowed_origin_integrations?: Json; auth_config?: Json }>('/v1/instance');
+        const hints = obj(inst.allowed_origin_integrations ?? null);
+        const origins = originStrings(inst.allowed_origins ?? []).map((o): Json => (hints[o] ? { origin: o, integration: hints[o]! } : o));
+        return { allowed_origins: origins, auth_config: stripOriginIntegrations(inst.auth_config ?? {}) };
       },
       async apply(http, config) {
         const c = compact(config);
-        // A file without allowed_origins leaves the live origins alone (a partial
-        // document, e.g. one produced by `atlas migrate better-auth config`).
-        const body: Record<string, Json> = { auth_config: c.auth_config ?? {} };
-        if (c.allowed_origins !== undefined) body.allowed_origins = c.allowed_origins;
+        // Integration hints live in auth_config.originIntegrations server-side and a
+        // write replaces auth_config, so carry the live hints over for any origin the
+        // file names as a plain string (the plan ignores hints the file does not set).
+        const live = await http.get<{ allowed_origin_integrations?: Json; auth_config?: Json }>('/v1/instance');
+        const liveHints = obj(live.allowed_origin_integrations ?? null);
+        const authConfig: Record<string, Json> = stripOriginIntegrations(c.auth_config ?? {});
+        const body: Record<string, Json> = { auth_config: authConfig };
+        if (c.allowed_origins !== undefined) {
+          // A file without allowed_origins leaves the live origins alone (a partial
+          // document, e.g. one produced by `atlas migrate better-auth config`).
+          body.allowed_origins = (Array.isArray(c.allowed_origins) ? c.allowed_origins : []).map((e): Json =>
+            typeof e === 'string' && liveHints[e] ? { origin: e, integration: liveHints[e]! } : e,
+          );
+        } else {
+          const kept = obj(live.auth_config ?? null).originIntegrations;
+          if (kept !== undefined) authConfig.originIntegrations = kept;
+        }
         await http.patch('/v1/instance', body);
+      },
+      normalize(c) {
+        const d = obj(c);
+        const hints: Record<string, Json> = {};
+        for (const e of Array.isArray(d.allowed_origins) ? d.allowed_origins : []) {
+          const o = obj(e);
+          if (o.integration) hints[String(o.origin)] = o.integration;
+        }
+        const out: Record<string, Json> = {};
+        if (d.allowed_origins !== undefined) out.allowed_origins = originStrings(d.allowed_origins);
+        if (Object.keys(hints).length) out.allowed_origin_integrations = hints;
+        if (d.auth_config !== undefined) out.auth_config = stripOriginIntegrations(d.auth_config);
+        return out;
       },
     },
 
@@ -180,11 +246,48 @@ function registry(): ResourceSpec[] {
         await http.post('/v1/oauth_clients', compact(config));
       },
       async update(http, live, config) {
-        await http.patch(`/v1/oauth_clients/${enc(live.id)}`, compact(config));
+        await http.patch(`/v1/oauth_clients/${enc(live.id)}`, compact(config, true));
       },
       async remove(http, live) {
         await http.delete(`/v1/oauth_clients/${enc(live.id)}`);
       },
+    },
+
+    // 4b. Hooks — after the clients. before_user_create: url, timeout_ms, fail_closed,
+    //     enabled; the signing secret is write-only ("(secret set)").
+    {
+      kind: 'singleton',
+      type: 'hooks',
+      async fetchLive(http) {
+        let h: Record<string, unknown>;
+        try {
+          h = await http.get<Record<string, unknown>>('/v1/instance/hooks/before_user_create');
+        } catch (err) {
+          if (isNotFound(err)) return null;
+          throw err;
+        }
+        if (!h || (h.url == null && h.enabled !== true)) return null;
+        const bu = pick(h, ['url', 'timeout_ms', 'fail_closed', 'enabled']) as Record<string, Json>;
+        if (h.signing_secret_set === true) bu.signing_secret = SECRET_SET;
+        return { before_user_create: bu };
+      },
+      async apply(http, config, opts) {
+        const bu = compact(obj(withoutMarkers(config)).before_user_create ?? {}, true);
+        if (Object.keys(bu).length === 0) return;
+        try {
+          await http.patch(`/v1/instance/hooks/before_user_create${opts.forceHook ? '?force=true' : ''}`, bu);
+        } catch (err) {
+          const refused = err instanceof AtlasApiError && err.status === 409 ? err.errors.find((e) => e.code === 'HOOK_TEST_FAILED') : undefined;
+          if (refused) {
+            throw new CliError(
+              `hooks.before_user_create: enabling was refused because the hook test call failed (HOOK_TEST_FAILED): ${refused.message} ` +
+                'The hook was left as it was. Deploy the route, or pass --force-hook to enable it anyway.',
+            );
+          }
+          throw err;
+        }
+      },
+      normalize: (c) => redactSecrets(c, ['before_user_create']),
     },
 
     // 5. Social / enterprise OAuth providers — key = the catalog provider slug.
@@ -226,7 +329,7 @@ function registry(): ResourceSpec[] {
         await http.post('/v1/custom_oauth_providers', compact(config));
       },
       async update(http, live, config) {
-        const body = compact(config);
+        const body = compact(config, true);
         delete body.provider_key; // immutable
         await http.patch(`/v1/custom_oauth_providers/${enc(live.id)}`, body);
       },
@@ -254,7 +357,7 @@ function registry(): ResourceSpec[] {
         await http.post('/v1/resource_servers', body);
       },
       async update(http, live, config) {
-        const body = compact(config);
+        const body = compact(config, true);
         delete body.identifier; // immutable
         delete body.signing_alg; // read-only
         await http.patch(`/v1/resource_servers/${enc(live.id)}`, body);
@@ -363,10 +466,12 @@ function registry(): ResourceSpec[] {
         await http.post('/v1/webhook_endpoints', {
           url: c.url,
           enabled_events: c.enabled_events ?? [],
+          // Sent on create so a paused endpoint is never live, even briefly.
+          ...(typeof c.active === 'boolean' ? { active: c.active } : {}),
         });
       },
       async update(http, live, config) {
-        await http.patch(`/v1/webhook_endpoints/${enc(live.id)}`, compact(config));
+        await http.patch(`/v1/webhook_endpoints/${enc(live.id)}`, compact(config, true));
       },
       async remove(http, live) {
         await http.delete(`/v1/webhook_endpoints/${enc(live.id)}`);
@@ -389,7 +494,7 @@ function registry(): ResourceSpec[] {
         await http.post('/v1/sso_connections', compact(config));
       },
       async update(http, live, config) {
-        const body = compact(config);
+        const body = compact(config, true);
         delete body.type; // fixed at creation; PATCH does not take it
         await http.patch(`/v1/sso_connections/${enc(live.id)}`, body);
       },
@@ -415,7 +520,7 @@ function registry(): ResourceSpec[] {
         await http.post('/v1/billing/plans', compact(config));
       },
       async update(http, live, config) {
-        const body = compact(config);
+        const body = compact(config, true);
         delete body.slug; // immutable
         await http.patch(`/v1/billing/plans/${enc(live.id)}`, body);
       },
@@ -441,7 +546,7 @@ function registry(): ResourceSpec[] {
         await http.post('/v1/notification_templates', compact(config));
       },
       async update(http, live, config) {
-        const body = compact(config);
+        const body = compact(config, true);
         delete body.name; // the name is the URL key
         await http.put(`/v1/notification_templates/${enc(live.id)}`, body);
       },
@@ -512,6 +617,27 @@ function registry(): ResourceSpec[] {
       // No delete: pruning a policy would silently loosen an org's security, so
       // org policies are never deleted by import (reported as skipped).
     },
+
+    // 12. Branding — the hosted-page appearance; a partial merge on write (PATCH).
+    {
+      kind: 'singleton',
+      type: 'branding',
+      async fetchLive(http) {
+        let b: Record<string, Json>;
+        try {
+          b = await http.get<Record<string, Json>>('/v1/branding');
+        } catch (err) {
+          if (isNotFound(err)) return null;
+          throw err;
+        }
+        const { object: _o, resolved: _r, ...fields } = b ?? {};
+        const out = compact(fields);
+        return Object.keys(out).length ? out : null;
+      },
+      async apply(http, config) {
+        await http.patch('/v1/branding', compact(config, true));
+      },
+    },
   ];
   return specs;
 }
@@ -524,6 +650,22 @@ const OAUTH_CLIENT_KEYS = [
   'token_endpoint_auth_method',
   'logo_url',
   'first_party',
+  'post_logout_redirect_uris',
+  'claims_redirect_uris',
+  'backchannel_logout_uri',
+  'backchannel_logout_session_required',
+  'frontchannel_logout_uri',
+  'frontchannel_logout_session_required',
+  'skip_logout_confirmation',
+  'refresh_touches_session',
+  'require_verified_email',
+  'require_pkce',
+  'login_url',
+  'consent_url',
+  'subject_type',
+  'sector_identifier_uri',
+  'access_token_format',
+  'token_lifetimes',
 ] as const;
 const OAUTH_PROVIDER_KEYS = [
   'provider',
@@ -619,6 +761,45 @@ function obj(config: Config): Record<string, Json> {
   return config && typeof config === 'object' && !Array.isArray(config)
     ? (config as Record<string, Json>)
     : {};
+}
+
+/** What a write-only secret looks like on the live side, and in a plan. */
+const SECRET_SET = '(secret set)';
+const SECRET_KEY = /(secret|token|password|passwd|api_?key|private_?key)/i;
+
+/**
+ * Show each secret value under `groups` as "(secret set)" so a plan never echoes it
+ * and compares equal to the live "(secret set)". An unresolved \${VAR} stays visible
+ * (apply refuses it), as does an empty value.
+ */
+function redactSecrets(config: Config, groups: string[]): Config {
+  const out = { ...obj(config) };
+  const mask = (g: Record<string, Json>): Record<string, Json> =>
+    Object.fromEntries(
+      Object.entries(g).map(([k, v]) => [k, SECRET_KEY.test(k) && typeof v === 'string' && v !== '' && !/^\$\{[A-Z0-9_]+\}$/.test(v) ? SECRET_SET : v]),
+    );
+  for (const g of groups) if (out[g] && typeof out[g] === 'object' && !Array.isArray(out[g])) out[g] = mask(obj(out[g]!));
+  return out;
+}
+
+/** A document without any "(secret set)" marker: what an export writes and what apply sends. */
+function withoutMarkers(value: Json): Json {
+  if (Array.isArray(value)) return value.map(withoutMarkers);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== SECRET_SET).map(([k, v]) => [k, withoutMarkers(v)]));
+  }
+  return value;
+}
+
+/** An origin list in either form (strings, or { origin, integration }) as plain strings. */
+function originStrings(list: Json): string[] {
+  return (Array.isArray(list) ? list : []).map((e) => (typeof e === 'string' ? e : String(obj(e).origin ?? '')));
+}
+
+/** auth_config without the integration hints, which belong to allowed_origins. */
+function stripOriginIntegrations(authConfig: Json): Record<string, Json> {
+  const { originIntegrations: _hints, ...rest } = obj(authConfig);
+  return rest;
 }
 
 /** A stable natural key for an SSO connection, which has no name field. */
@@ -731,7 +912,7 @@ async function writeExport(http: ConfigHttp, dir: string, format: Format): Promi
     if (spec.kind === 'singleton') {
       const live = await spec.fetchLive(http);
       if (live === null) continue; // nothing to write (e.g. no schema registered)
-      writeFileSync(join(dir, `${spec.type}.${ext}`), serialize(live, format));
+      writeFileSync(join(dir, `${spec.type}.${ext}`), serialize(withoutMarkers(live), format));
       fileCount += 1;
     } else {
       const entries = await spec.fetchLive(http);
@@ -785,9 +966,10 @@ export interface ConfigPlan {
  */
 export async function planConfigImport(
   http: ConfigHttp,
-  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean },
+  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; forceHook?: boolean },
 ): Promise<ConfigPlan> {
   const { dir, format, env, prune } = opts;
+  const applyOpts: ApplyOpts = { forceHook: opts.forceHook === true };
   const ext = format === 'json' ? 'json' : 'yaml';
   if (!existsSync(dir)) {
     throw new CliError(`Config directory not found: ${dir}. Run 'atlas config export' first.`);
@@ -807,12 +989,20 @@ export async function planConfigImport(
 
     if (spec.kind === 'singleton') {
       const desired = parsed;
-      const live = await spec.fetchLive(http);
-      if (live !== null && deepEqual(desired, live)) {
+      const liveRaw = await spec.fetchLive(http);
+      const norm = spec.normalize ?? ((c: Config) => c);
+      const desiredN = norm(desired);
+      // A section that only clears fields (all null) against nothing live is already satisfied.
+      if (liveRaw === null && onlyNulls(desiredN)) {
         unchanged += 1;
         continue;
       }
-      changes.push({ type: spec.type, action: live === null ? 'create' : 'update', key: '', ...(live === null ? {} : { before: live }), after: desired, apply: () => spec.apply(http, desired) });
+      const live = liveRaw === null ? null : comparable(norm(liveRaw), desiredN, prune);
+      if (live !== null && deepEqual(desiredN, live)) {
+        unchanged += 1;
+        continue;
+      }
+      changes.push({ type: spec.type, action: live === null ? 'create' : 'update', key: '', ...(live === null ? {} : { before: live }), after: desiredN, apply: () => spec.apply(http, desired, applyOpts) });
       continue;
     }
 
@@ -827,14 +1017,14 @@ export async function planConfigImport(
       const existing = liveByKey.get(key);
       if (!existing) {
         changes.push({ type: spec.type, action: 'create', key, after: cfg, apply: () => spec.create(http, cfg) });
-      } else if (!deepEqual(cfg, existing.config)) {
+      } else if (!deepEqual(cfg, comparable(existing.config, cfg, prune))) {
         if (!spec.update) {
           throw new CliError(
             `${spec.type} '${key}' changed but is immutable; recreate it instead.`,
           );
         }
         const upd = spec.update;
-        changes.push({ type: spec.type, action: 'update', key, before: existing.config, after: cfg, apply: () => upd(http, existing, cfg) });
+        changes.push({ type: spec.type, action: 'update', key, before: comparable(existing.config, cfg, prune), after: cfg, apply: () => upd(http, existing, cfg) });
       } else {
         unchanged += 1;
       }
@@ -856,6 +1046,36 @@ export async function planConfigImport(
     }
   }
   return { changes, unchanged, skippedDeletes };
+}
+
+/** True for a non-empty object whose every leaf is `null` (a file that only clears fields). */
+function onlyNulls(x: Json | undefined): boolean {
+  if (x === null) return true;
+  if (typeof x !== 'object' || Array.isArray(x) || x === undefined) return false;
+  const vals = Object.values(x);
+  return vals.length > 0 && vals.every(onlyNulls);
+}
+
+/**
+ * The live document as the plan compares it. With `--prune` the whole live
+ * document (keys the file leaves unset show as drift). Without it only the keys
+ * the file sets, recursively, so a freshly applied file plans clean. A desired
+ * `null` means "unset", so it matches a live key that is absent.
+ */
+function comparable(live: Config, desired: Config, prune: boolean): Config {
+  if (prune) return live;
+  const isObj = (x: Json | undefined): x is { [k: string]: Json } => x !== null && typeof x === 'object' && !Array.isArray(x);
+  if (!isObj(live) || !isObj(desired)) return live;
+  const out: { [k: string]: Json } = {};
+  for (const k of Object.keys(desired)) {
+    const l = live[k];
+    if (l === undefined || l === null) {
+      if (desired[k] === null) out[k] = null;
+      continue;
+    }
+    out[k] = comparable(l, desired[k]!, false);
+  }
+  return out;
 }
 
 /** The stored credential of a named profile (one profile per environment). */
@@ -921,7 +1141,7 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
   const dryRun = values['dry-run'] === true;
   const prune = values.prune === true;
 
-  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune });
+  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune, forceHook: values['force-hook'] === true });
   printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
 
   if (dryRun) return 0;
@@ -1115,7 +1335,7 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
   try {
     const kept = keepingSecrets(requireHttp(ctx, values), str(values, 'out') || productDir(ctx.env, 'atlas'));
     const prune = values.prune === true;
-    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune });
+    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, forceHook: values['force-hook'] === true });
     printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun: false, prune });
     if (plan.changes.length === 0) {
       ctx.io.out('No changes to apply.');

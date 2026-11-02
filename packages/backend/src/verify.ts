@@ -94,6 +94,10 @@ export interface SessionClaims {
   org_slug?: string;
   org_role?: string;
   org_permissions?: string[];
+  /** The organization's external_id (your tenant id). */
+  org_external_id?: string;
+  /** Your product's name for org_role (the organization's role_mappings). */
+  org_role_mapped?: string;
   /**
    * Enterprise SSO: present only when the session was signed in through an
    * enterprise SSO connection. `sso_organization_id` is the organization that

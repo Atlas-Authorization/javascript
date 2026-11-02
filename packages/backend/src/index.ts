@@ -91,6 +91,7 @@ export type {
 
 // §12.2 inbound webhook verification for consumers.
 export * from './webhooks';
+export * from './webhook-dedupe';
 
 // The Atlas referral protocol, for a referral platform receiving Atlas's signed calls.
 export * from './referrals';

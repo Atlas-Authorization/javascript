@@ -594,8 +594,8 @@ describe('atlas apply / atlas plan (one config file)', () => {
 
   it('refuses an unknown resource type and a missing path', async () => {
     const io = captureIO();
-    expect(await run(['apply', file({ email_provider: {} }), '--yes'], ctx(io, new MockApi(seedState())))).toBe(1);
-    expect(io.stderr()).toContain('unknown resource type(s) email_provider');
+    expect(await run(['apply', file({ not_a_section: {} }), '--yes'], ctx(io, new MockApi(seedState())))).toBe(1);
+    expect(io.stderr()).toContain('unknown resource type(s) not_a_section');
     const missing = captureIO();
     expect(await run(['plan', join(dir, 'nope.yaml')], ctx(missing, new MockApi(seedState())))).toBe(1);
     expect(missing.stderr()).toContain('Config not found');

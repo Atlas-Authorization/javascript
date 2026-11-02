@@ -42,6 +42,8 @@ const OPTIONS = {
   format: { type: 'string' },
   'dry-run': { type: 'boolean' },
   prune: { type: 'boolean' },
+  // apply / config import: enable a before_user_create hook even if its test call fails.
+  'force-hook': { type: 'boolean' },
   // actions.
   trigger: { type: 'string' },
   // actions install / update: secret values from a dotenv file, never argv.
@@ -132,6 +134,7 @@ const OPTIONS = {
   'tracking-token': { type: 'string' },
   'link-template': { type: 'string' },
   'no-sync': { type: 'boolean' },
+  'no-identity-backfill': { type: 'boolean' },
   'allow-mode-mismatch': { type: 'boolean' },
   endpoint: { type: 'string' },
   'secret-file': { type: 'string' },

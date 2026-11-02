@@ -38,6 +38,12 @@ export interface ReferralProviderCapabilities {
   user?: boolean;
   /** Answers a ping (org, program, clock) for the connection test. */
   ping?: boolean;
+  /** Answers a read of a user's own code and link; Atlas fills a user's code after a sign-in and for existing users on connect. */
+  identity?: boolean;
+  /** Takes the instance's app origins on its connection. */
+  origins?: boolean;
+  /** Mints a token for the platform's live widget (the hosted account page's referrals panel). */
+  widget_token?: boolean;
   /** Sends referral changes made after sign-up to Atlas (two-way sync). */
   inbound?: boolean;
 }
@@ -247,6 +253,8 @@ export interface ReferralSettings {
   include_referral_claims?: boolean;
   /** Report the first sign-in of an Atlas ID account to a Sign in with Atlas app this instance manages as a sign-up (default false). */
   report_linked_atlas_id_signups?: boolean;
+  /** What the hosted account page's referrals panel draws: the static code and link (default), or the platform's live widget. */
+  hosted_panel?: 'link' | 'widget';
   /** What the chosen provider still needs before referrals can be enabled. */
   missing?: string[];
   connection?: ReferralConnectionStatus | null;
@@ -307,6 +315,9 @@ export interface UpdateReferralSettingsBody {
   mirror_to_public_metadata?: boolean;
   include_referral_claims?: boolean;
   report_linked_atlas_id_signups?: boolean;
+  hosted_panel?: 'link' | 'widget';
+  /** Not stored. false skips reading the referral code of existing users when this write connects the platform (default true). */
+  backfill_existing_users?: boolean;
 }
 
 /** `POST /v1/instance/referrals/test`. */

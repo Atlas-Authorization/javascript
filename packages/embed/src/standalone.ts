@@ -17,6 +17,7 @@ import { mountOrganizationAdmin } from './org-admin';
 import { mountPricingTable } from './pricing';
 import { mountLeadForm } from './lead-form';
 import { readScriptTag, setScriptDefaults } from './config';
+import { createClient } from './client';
 
 export interface AtlasGlobal {
   mountSignIn: typeof mountSignIn;
@@ -27,13 +28,12 @@ export interface AtlasGlobal {
   mountPricingTable: typeof mountPricingTable;
   /** Mount a lead / newsletter signup form. */
   mountLeadForm: typeof mountLeadForm;
+  /** `session.getToken()` / `getIdToken()` / `user` / `isSignedIn`: see `@atlasauth/js`. Present when the script tag carries a key and FAPI origin. */
+  session?: import('@atlasauth/js').AtlasSessionGlobal;
+  billing?: import('@atlasauth/js').AtlasBillingGlobal;
   defineElements: typeof defineElements;
-}
-
-declare global {
-  interface Window {
-    Atlas?: AtlasGlobal;
-  }
+  /** Other scripts may add their own keys to the shared global. */
+  [key: string]: unknown;
 }
 
 function currentScript(): HTMLScriptElement | null {
@@ -50,7 +50,12 @@ function currentScript(): HTMLScriptElement | null {
 function boot(): void {
   setScriptDefaults(readScriptTag(currentScript()));
   defineElements();
-  window.Atlas = { mountSignIn, mountSignUp, mountOrganizationAdmin, mountPricingTable, mountLeadForm, defineElements };
+  const defaults = readScriptTag(currentScript());
+  // The client registers `window.Atlas.session` (extended below, never clobbered).
+  if (defaults.publishableKey && defaults.frontendApi) {
+    createClient({ publishableKey: defaults.publishableKey, frontendApi: defaults.frontendApi, locale: defaults.locale });
+  }
+  window.Atlas = Object.assign(window.Atlas ?? {}, { mountSignIn, mountSignUp, mountOrganizationAdmin, mountPricingTable, mountLeadForm, defineElements }) as AtlasGlobal;
 }
 
 boot();

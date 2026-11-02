@@ -59,6 +59,8 @@ export interface PartnerPlatformRegistration {
   signature: { header: string; scheme: string; format: string; jwks_url: string; tolerance_seconds: number };
   send_to: { contact: string; docs: string } | null;
   token_prefix: string | null;
+  /** Where the partner asks Atlas for a narrow data-rights key (`mintFrom: "atlas"`); null when it does not. */
+  executor_key_url: string | null;
   next_step: string;
 }
 

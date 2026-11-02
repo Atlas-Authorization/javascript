@@ -37,6 +37,60 @@ export interface UpdateBeforeUserCreateHookBody {
   signing_secret?: string | null;
   timeout_ms?: number;
   fail_closed?: boolean;
+  /**
+   * Skip the signed test call that turning the hook on (or changing the url or
+   * signing_secret of an enabled one) otherwise makes first; without it a hook
+   * that does not answer is refused with 409 `HOOK_TEST_FAILED`.
+   */
+  force?: boolean;
+}
+
+/** `data.request` of a `user.before_create` call: the authorize request behind the sign-up (null for each absent value). */
+export interface BeforeUserCreateRequestContext {
+  client_id: string | null;
+  /** The authorize request's `app_context` (opaque, at most 512 bytes). Browser-supplied: verify it. */
+  app_context: string | null;
+  login_hint: string | null;
+}
+
+/** `data.invitation` of a `user.before_create` call: the pending instance invitation for the sign-up address. */
+export interface BeforeUserCreateInvitation {
+  id: string;
+  email: string;
+  public_metadata: Record<string, unknown>;
+  /** Alias of `public_metadata`. */
+  app_metadata: Record<string, unknown>;
+  /** Whether the address is proven yet; the metadata lands on the user once it is. */
+  email_verified: boolean;
+}
+
+/** The body Atlas posts to a `before_user_create` hook (verify it with `verifyWebhook` first). */
+export interface BeforeUserCreateEvent {
+  object: 'event';
+  id: string;
+  type: 'user.before_create';
+  timestamp: number;
+  instance_id: string;
+  /** true only for a test call (`POST …/test`): answer, but reserve nothing. */
+  test: boolean;
+  data: {
+    user: {
+      id: string;
+      external_id: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      username: string | null;
+      email_addresses: string[];
+      phone_numbers: string[];
+      public_metadata: Record<string, unknown>;
+      unsafe_metadata: Record<string, unknown>;
+      created_at: number;
+    };
+    strategy: string;
+    referral: Record<string, unknown> | null;
+    request: BeforeUserCreateRequestContext;
+    invitation: BeforeUserCreateInvitation | null;
+  };
 }
 
 /** `POST …/test`: a sample draft sent to the hook; nothing is stored. */

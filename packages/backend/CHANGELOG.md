@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.32.0 — 2026-11-02
+
+### Added
+
+- `customerMetadata(user)` returns `{ atlas_user_id, atlas_external_id? }` for payment-provider customers, so a referral platform can match payments to users.
+
 ## 0.31.1 — 2026-11-02
 
 Republish of 0.31.0 (that version number could not be published). No code changes.

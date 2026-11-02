@@ -307,7 +307,7 @@ Usage:
   atlas referrals connect --provider referalli --program <prg_…> --base-url <url>
         [--referalli-key-file <path|-> | --referalli-key <rk_…>]
         [--auto-enroll] [--destination <url>] [--tracking-token <token>] [--link-template <url>]
-        [--enable] [--no-sync] [--allow-mode-mismatch]
+        [--enable] [--no-sync] [--no-identity-backfill] [--allow-mode-mismatch]
   atlas referrals connect --oauth [--preset <id>] [--enable]   (default preset: referalli)
   atlas referrals connect --provider webhook --endpoint <https-url>
         [--secret-file <path|->] [--program <id>] [--auto-enroll] [--enable]
@@ -336,7 +336,10 @@ printed), saves the connection id and secret on the instance, and runs a ping.
 It requires v2 signatures on the connection from the start and registers a
 Referalli webhook that sends referral changes (voided, approved, reassigned…)
 back to Atlas, limited to --program (programIds), so other programs in a shared
-organization never reach the instance; --no-sync skips the webhook. It is safe to
+organization never reach the instance; --no-sync skips the webhook. The instance's app origins
+(allowed origins and Frontend API host) are sent with the connection, and Atlas keeps them current
+when they change. With --enable, Atlas also reads the referral code of every existing user from
+Referalli (10 per second at most); --no-identity-backfill skips that. It is safe to
 run again: the instance's existing connection and webhook are reused and updated
 in place (an unscoped webhook is re-scoped), never duplicated. The tracking token
 and link template are read from Referalli (GET /v1/org, the link domain); a link
@@ -705,13 +708,14 @@ Usage:
 
 Usage:
   atlas config export [--dir <path>] [--format json|yaml]
-  atlas config import [--dir <path>] [--format json|yaml] [--dry-run] [--prune]
+  atlas config import [--dir <path>] [--format json|yaml] [--dry-run] [--prune] [--force-hook]
   atlas config plan   [--dir <path>] [--format json|yaml] [--prune] [--check|--exit-code] [--json]
   atlas config promote --from <profile> --to <profile> [--dry-run] [--prune] [--yes] [--format json|yaml]
 
 export  Read the instance's current config (instance/auth config, OAuth clients
         and providers, SSO connections, resource servers, JWT templates, roles,
         webhook endpoints, billing plans, redirect URLs, org settings schema,
+        email provider, before_user_create hook, branding,
         notification and email templates, org policies) and write a deterministic
         directory tree — one file per resource type, keys sorted, SECRETS OMITTED.
 
@@ -719,6 +723,7 @@ import  Diff the directory against live config and apply creates/updates
         idempotently. A resource type with no file is left untouched.
           --dry-run   print the plan and apply nothing
           --prune     also delete live resources absent from the config
+          --force-hook  enable a before_user_create hook even if its test call fails
           --dir       config directory (default: ./atlas-config)
           --format    json (default) or yaml
 
@@ -801,29 +806,34 @@ Object.assign(COMMAND_HELP, {
   apply: `atlas apply — make the instance match a config file (plan, confirm, apply)
 
 Usage:
-  atlas apply [<file|dir>] [--yes] [--prune] [--secrets-file <dotenv>] [--out <dir>] [--format json|yaml]
+  atlas apply [<file|dir>] [--yes] [--prune] [--force-hook] [--secrets-file <dotenv>] [--out <dir>] [--format json|yaml]
   atlas apply [<file|dir>] --check
 
 <file>  One JSON or YAML document keyed by resource type, for example:
           instance:            { auth_config: {...}, allowed_origins: [...] }
           redirect_urls:       [ { url: ... } ]
           oauth_clients:       [ { name: ..., redirect_uris: [...] } ]
-          webhook_endpoints:   [ { url: ..., enabled_events: [...] } ]
+          webhook_endpoints:   [ { url: ..., enabled_events: [...], active: false } ]
+          email_provider:      { transport: brevo, from_address: ..., config: { api_key: "\${BREVO_KEY}" } }
+          hooks:               { before_user_create: { url: ..., timeout_ms, fail_closed, enabled } }
+          branding:            { applicationName: ..., logoUrl: ... }
         or a directory from 'atlas config export' (default ./atlas-config).
 
 Shows the plan, asks before applying (--yes skips the question; needed without a
-terminal), then applies creates and updates in a fixed order: instance,
-org_settings_schema, redirect_urls, oauth_clients, oauth_providers,
+terminal), then applies creates and updates in a fixed order: email_provider, instance,
+org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers,
 custom_oauth_providers, resource_servers, jwt_templates, permissions, roles,
 webhook_endpoints, sso_connections, billing_plans, notification_templates,
-email_templates, organization_policies. Re-running is a no-op.
+email_templates, organization_policies, branding. Re-running is a no-op.
+Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
-  --prune         also delete live resources missing from the config
+  --prune         also delete live resources missing from the config, and compare every live key
+  --force-hook    enable the before_user_create hook even when its test call fails (409)
   --secrets-file  dotenv file for \${VAR} placeholders; refused unless mode 0600
   --out <dir>     where a new client or webhook secret is saved (mode 0600;
                   default ~/.config/atlas). It is shown only once.
-Applying stops if any \${VAR} is unresolved. The email provider is not part of
-config files: set it up first, then apply sign-in methods that send email.`,
+Applying stops if any \${VAR} is unresolved. Provider and hook secrets come only from
+\${VAR} placeholders (--secrets-file) and are shown as "(secret set)", never echoed.`,
   plan: `atlas plan — read-only drift diff of a config file or directory
 
 Usage:

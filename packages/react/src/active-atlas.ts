@@ -3,6 +3,7 @@
  * its state here on every change. Kept dependency-free so the provider and the
  * compat module do not import each other.
  */
+import { announceSessionChange, installSessionGlobal, type SessionGlobalTokenOptions } from '@atlasauth/js';
 import type { AtlasUser, SessionClaims } from './types';
 
 export type AuthStatus = 'loading' | 'signed_in' | 'signed_out';
@@ -49,6 +50,16 @@ export interface ActiveAtlas {
 }
 
 let active: ActiveAtlas | null = null;
+let unregisterGlobal: (() => void) | null = null;
+
+/** `window.Atlas.session` reads whichever provider is mounted right now. */
+function exposeGlobal(): void {
+  if (unregisterGlobal || typeof window === 'undefined') return;
+  unregisterGlobal = installSessionGlobal({
+    getToken: async (o: SessionGlobalTokenOptions) => (active ? active.getToken(o) : null),
+    user: () => (active?.status === 'signed_in' && active.user ? { ...active.user, external_id: (active.claims as { external_id?: string } | null)?.external_id ?? null } : null),
+  });
+}
 const listeners = new Set<(atlas: ActiveAtlas | null) => void>();
 
 /**
@@ -58,6 +69,12 @@ const listeners = new Set<(atlas: ActiveAtlas | null) => void>();
  */
 export function publishActiveAtlas(next: ActiveAtlas | null): void {
   active = next;
+  if (next) exposeGlobal();
+  else {
+    unregisterGlobal?.();
+    unregisterGlobal = null;
+  }
+  if (next && next.status !== 'loading') announceSessionChange(next.status === 'signed_in' ? (next.user?.id ?? null) : null);
   for (const listener of [...listeners]) {
     try {
       listener(next);

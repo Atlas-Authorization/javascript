@@ -1,5 +1,11 @@
 # @atlasauth/embed changelog
 
+## 0.16.0 — 2026-11-02
+
+### Added
+
+- `embed.js` exposes `window.Atlas.session` (when the script tag carries a key and FAPI origin) and no longer replaces an existing `window.Atlas`.
+
 ## 0.15.0 — 2026-10-30
 
 ## 0.14.0 — 2026-10-26

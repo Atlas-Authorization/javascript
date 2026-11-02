@@ -337,3 +337,14 @@ export function verifyReferralRequest(input: VerifyReferralRequestInput): Referr
     call,
   };
 }
+
+/**
+ * The metadata to put on a payment-provider customer (Stripe `metadata`, and the
+ * like) so any referral platform can match the payment to the Atlas user:
+ * `{ atlas_user_id, atlas_external_id? }`. `atlas_external_id` is left out when
+ * the user has no `external_id`.
+ */
+export function customerMetadata(user: { id: string; external_id?: string | null; externalId?: string | null }): Record<string, string> {
+  const external = user.external_id ?? user.externalId;
+  return { atlas_user_id: user.id, ...(external ? { atlas_external_id: external } : {}) };
+}

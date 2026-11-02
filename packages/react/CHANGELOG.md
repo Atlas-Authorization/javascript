@@ -1,5 +1,12 @@
 # @atlasauth/react changelog
 
+## 0.25.0 — 2026-11-02
+
+### Added
+
+- `<ReferralPanel program=... />` mounts a referral platform's widget with the Atlas session token (renders nothing when signed out), and `useReferral()` returns `{ code, linkUrl }`.
+- `<AtlasProvider>` registers `window.Atlas.session` and `window.Atlas.billing.customerMetadata()` through the active-atlas registry.
+
 ## 0.24.0 — 2026-10-30
 
 ### Added

@@ -1,5 +1,11 @@
 # @atlasauth/testing changelog
 
+## 0.4.0 — 2026-11-02
+
+### Added
+
+- `getSessionToken({ secretKey, userId | email })` returns `{ jwt, sessionId }` for a test user on a development instance; a production key is refused.
+
 ## 0.3.0 — 2026-10-30
 
 ### Added

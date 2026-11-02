@@ -1,5 +1,11 @@
 # @atlasauth/js changelog
 
+## 0.29.0 — 2026-11-02
+
+### Added
+
+- `window.Atlas.session` (`getToken`, `getIdToken`, `user`, `isSignedIn`) and `window.Atlas.billing.customerMetadata()`: any page script can get the current session JWT (null when signed out), and an `atlas:session` event fires when the user changes. A `FapiClient` registers it in a browser unless `exposeSession: false`; an existing `window.Atlas` is extended, never replaced. Exports `installSessionGlobal`, `createClientSessionSource`, `customerMetadataFor`.
+
 ## 0.28.0 — 2026-11-01
 
 ### Added
