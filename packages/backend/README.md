@@ -103,7 +103,11 @@ const touch = await rp.touchIfDue(user.sid!, lastTouchedAt);    // 'skipped' | '
 const signOut = await rp.signOut({ idToken: tokens.id_token, sid: user.sid });
 ```
 
+Or wire all three routes in one line with `rp.handle(request)` (sign-in, callback and sign-out; `null` for any other path), giving `onSignedIn(user, tokens, request, result)` and `onSignOut(request)` in the config. `forwardParams: ['ref']` passes extra query parameters from your sign-in URL to `/oauth2/authorize`.
+
 It also exports `LogoutTokenVerifier`, `fetchBackchannelLogout` and `verifyAtlasWebhook` / `verifyAtlasWebhookRequest` (Web Crypto).
+
+The same entry point is published on its own as [`@atlasauth/rp`](https://www.npmjs.com/package/@atlasauth/rp), whose only dependency is `jose`.
 
 ### Next.js (App Router)
 

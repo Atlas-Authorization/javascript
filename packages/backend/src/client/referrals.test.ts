@@ -21,7 +21,7 @@ const OPS: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
   ['GET', '/v1/instance/referrals', undefined, (c) => c.referrals.get()],
   ['POST', '/v1/instance/referrals/referalli/install', { return_to: 'https://dash.example.com/x' }, (c) => c.referrals.install('referalli', { return_to: 'https://dash.example.com/x' })],
   ['POST', '/v1/instance/referrals/acme/install', {}, (c) => c.referrals.install('acme')],
-  ['PATCH', '/v1/instance/referrals', { context_cookie: ['referalli_ctx', 'referally_ctx'] }, (c) => c.referrals.update({ context_cookie: ['referalli_ctx', 'referally_ctx'] })],
+  ['PATCH', '/v1/instance/referrals', { context_cookies: ['referalli_ctx', 'referally_ctx'] }, (c) => c.referrals.update({ context_cookies: ['referalli_ctx', 'referally_ctx'] })],
   ['GET', '/v1/entitlements?subject_type=org&subject_id=org_1', undefined, (c) => c.entitlements.get({ subject_type: 'org', subject_id: 'org_1' })],
   [
     'PATCH',

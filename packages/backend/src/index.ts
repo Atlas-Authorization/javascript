@@ -140,12 +140,9 @@ export type {
   SignedReferralCall,
 } from './referral-test-calls';
 
-// Proof-Carrying Authority (agentic auth): offline verifier + framework-agnostic guard,
-// beside the session-token verifier above.
-export { verifyPCActn } from './pca/verify';
-export type { PcaVerdict, PcaContext, VerifyPCActnOptions } from './pca/verify';
-export { requirePCA, defaultExtract, memoryPcaStore } from './pca/require-pca';
-export type { RequirePcaOptions, PcaGuardResult, PcaRequestLike, PcaStateStore } from './pca/require-pca';
+// Proof-Carrying Authority (agentic auth) lives at `@atlasauth/backend/pca`, so this entry
+// stays Edge-safe and installs no PCA code for apps that don't use it.
+
 
 // Protecting your own API / MCP server with Atlas-issued OAuth access tokens:
 // local verification (aud, scopes, DPoP) + RFC 6750/9728 challenges + metadata.

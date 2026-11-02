@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import { str, type ParsedArgs, type Values } from '../args';
 import { createConfigHttp, isNotFound, type ConfigHttp } from '../config-http';
 import type { RunContext } from '../context';
@@ -15,6 +15,7 @@ import {
 } from '../serialize';
 import { DEFAULT_API_URL } from '@atlasauth/backend';
 import { envApiUrl, resolveAuth } from './shared';
+import { parseDotenv, productDir, writeSecretFile } from '../secrets';
 
 // ───────────────────────────── resource model ─────────────────────────────
 
@@ -688,7 +689,7 @@ export async function config(ctx: RunContext, args: ParsedArgs): Promise<number>
     case 'import':
       return importConfig(ctx, args.values);
     case 'plan':
-      return planConfig(ctx, args.values);
+      return planConfig(ctx, args.values, { dir: resolveDir(args.values), format: resolveFormat(args.values), env: readSecretsEnv(ctx, args.values) });
     case 'promote':
       return promoteConfig(ctx, args.values);
     default:
@@ -920,7 +921,7 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
   const dryRun = values['dry-run'] === true;
   const prune = values.prune === true;
 
-  const plan = await planConfigImport(http, { dir, format, env: ctx.env, prune });
+  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune });
   printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
 
   if (dryRun) return 0;
@@ -957,12 +958,11 @@ const show = (v: Json | undefined) => (v === undefined ? '(unset)' : typeof v ==
  * Field-level for updates, `--json` for tooling, and `--exit-code` to exit 2
  * when there is drift so CI can gate on it. Never writes anything.
  */
-async function planConfig(ctx: RunContext, values: Values): Promise<number> {
+async function planConfig(ctx: RunContext, values: Values, source: ConfigSource): Promise<number> {
   const http = requireHttp(ctx, values);
-  const dir = resolveDir(values);
-  const format = resolveFormat(values);
+  const { dir, format, env } = source;
   const prune = values.prune === true;
-  const plan = await planConfigImport(http, { dir, format, env: ctx.env, prune });
+  const plan = await planConfigImport(http, { dir, format, env, prune });
   const deletes: Change[] = prune ? [] : plan.skippedDeletes;
   const all: Change[] = plan.changes;
   const rows = all.map((c) => ({
@@ -1005,7 +1005,173 @@ async function planConfig(ctx: RunContext, values: Values): Promise<number> {
     }
     if (pending === 0) ctx.io.out('No drift: the instance matches the config directory.');
   }
-  return values['exit-code'] === true && pending > 0 ? 2 : 0;
+  return wantsCheck(values) && pending > 0 ? 2 : 0;
+}
+
+/** `--check` (CI) and `--exit-code` (Terraform's name) both mean: exit 2 when there is drift. */
+const wantsCheck = (values: Values) => values['exit-code'] === true || values.check === true;
+
+/** Where a plan reads its desired config from: a directory of per-type files, and the env for `${VAR}`. */
+interface ConfigSource {
+  dir: string;
+  format: Format;
+  env: NodeJS.ProcessEnv;
+}
+
+/**
+ * The environment `${VAR}` placeholders resolve against: the process env, then
+ * `--secrets-file` (a dotenv file) on top. The file holds credentials, so it
+ * must be readable by its owner only (mode 0600 or stricter); anything looser
+ * is refused rather than read. POSIX only: Windows has no such mode bits.
+ */
+export function readSecretsEnv(ctx: RunContext, values: Values): NodeJS.ProcessEnv {
+  const file = str(values, 'secrets-file');
+  if (!file) return ctx.env;
+  let mode: number;
+  try {
+    mode = statSync(file).mode;
+  } catch {
+    throw new CliError(`--secrets-file not found: ${file}.`);
+  }
+  if (process.platform !== 'win32' && (mode & 0o077) !== 0) {
+    throw new CliError(
+      `--secrets-file ${file} is readable by others (mode ${(mode & 0o777).toString(8)}). Run 'chmod 600 ${file}' and try again.`,
+    );
+  }
+  return { ...ctx.env, ...parseDotenv(ctx.readFile(file)) };
+}
+
+/** `${VAR}` placeholders still in a planned change (no env value and no --secrets-file entry). */
+export function unresolvedPlaceholders(changes: Change[]): string[] {
+  const names = new Set<string>();
+  for (const c of changes) {
+    for (const m of JSON.stringify(c.after ?? null).matchAll(/\$\{([A-Z0-9_]+)\}/g)) names.add(m[1]!);
+  }
+  return [...names].sort();
+}
+
+/** The resource types a single config file may hold, in the order they are applied. */
+export function configTypes(): string[] {
+  return registry().map((s) => s.type);
+}
+
+/**
+ * Resolve `atlas plan|apply [<path>]`: a directory of per-type files (as
+ * `atlas config export` writes), or ONE file whose top-level keys are resource
+ * types (`instance`, `webhook_endpoints`, …), split into a temp directory.
+ * `cleanup` removes that temp directory.
+ */
+function resolveSource(ctx: RunContext, args: ParsedArgs): ConfigSource & { cleanup: () => void } {
+  const path = args.positionals[1] ?? resolveDir(args.values);
+  const env = readSecretsEnv(ctx, args.values);
+  let isFile = false;
+  try {
+    isFile = statSync(path).isFile();
+  } catch {
+    throw new CliError(`Config not found: ${path}. Pass a config file (atlas.yaml / atlas.json) or a directory from 'atlas config export'.`);
+  }
+  if (!isFile) return { dir: path, format: resolveFormat(args.values), env, cleanup: () => undefined };
+
+  const ext = extname(path).toLowerCase();
+  const format: Format = ext === '.yaml' || ext === '.yml' ? 'yaml' : ext === '.json' ? 'json' : resolveFormat(args.values);
+  const doc = deserialize(ctx.readFile(path), format);
+  if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
+    throw new CliError(`${path} must be an object keyed by resource type (${configTypes().join(', ')}).`);
+  }
+  const known = new Set(configTypes());
+  const unknown = Object.keys(doc).filter((k) => !known.has(k));
+  if (unknown.length) {
+    throw new CliError(`${path}: unknown resource type(s) ${unknown.join(', ')}. Known: ${configTypes().join(', ')}.`);
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'atlas-apply-'));
+  for (const [type, value] of Object.entries(doc)) writeFileSync(join(dir, `${type}.json`), serialize(value, 'json'));
+  return { dir, format: 'json', env, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+/**
+ * `atlas plan [<file|dir>]`: the read-only diff of `atlas config plan`, taking
+ * a single config file as well. `--check` exits 2 on drift for CI.
+ */
+export async function planCommand(ctx: RunContext, args: ParsedArgs): Promise<number> {
+  const source = resolveSource(ctx, args);
+  try {
+    return await planConfig(ctx, args.values, source);
+  } finally {
+    source.cleanup();
+  }
+}
+
+/**
+ * `atlas apply [<file|dir>]`: plan, show it, confirm, then apply in the fixed
+ * resource order (see {@link configTypes}). `--yes` skips the question (needed
+ * when there is no terminal); `--check` only plans and exits 2 on drift.
+ * Refuses to apply while any `${VAR}` placeholder is unresolved, so a missing
+ * secret is never sent as the literal text.
+ */
+export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<number> {
+  const values = args.values;
+  if (values.check === true || values['exit-code'] === true) return planCommand(ctx, args);
+  const source = resolveSource(ctx, args);
+  try {
+    const kept = keepingSecrets(requireHttp(ctx, values), str(values, 'out') || productDir(ctx.env, 'atlas'));
+    const prune = values.prune === true;
+    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune });
+    printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun: false, prune });
+    if (plan.changes.length === 0) {
+      ctx.io.out('No changes to apply.');
+      return 0;
+    }
+    const missing = unresolvedPlaceholders(plan.changes);
+    if (missing.length) {
+      throw new CliError(`Unresolved placeholder(s): ${missing.map((n) => `\${${n}}`).join(', ')}. Set them in the environment or in --secrets-file.`);
+    }
+    if (values.yes !== true) {
+      const answer = (await ctx.prompt.text(`Apply ${plan.changes.length} change(s)? [y/N]`, { default: 'n' })).trim().toLowerCase();
+      if (answer !== 'y' && answer !== 'yes') {
+        ctx.io.out('Nothing applied.');
+        return 1;
+      }
+    }
+    for (const change of plan.changes) await change.apply();
+    ctx.io.out(`Applied ${plan.changes.length} change(s).`);
+    for (const path of kept.saved) ctx.io.out(`A new secret was written to ${path} (mode 0600). It is shown only once.`);
+    return 0;
+  } finally {
+    source.cleanup();
+  }
+}
+
+/**
+ * The API, but a create that answers with a one-time secret (a new OAuth
+ * client's `client_secret`, a new webhook endpoint's `secret`) writes it to a
+ * 0600 dotenv file in `dir` (default `~/.config/atlas`, or `--out`) instead of
+ * dropping it. The file names are the hosted-redirect env names.
+ */
+function keepingSecrets(http: ConfigHttp, dir: string): { http: ConfigHttp; saved: string[] } {
+  const saved: string[] = [];
+  const wrapped: ConfigHttp = {
+    get: <T>(path: string) => http.get<T>(path),
+    put: <T>(path: string, body: unknown) => http.put<T>(path, body),
+    patch: <T>(path: string, body: unknown) => http.patch<T>(path, body),
+    delete: (path: string, body?: unknown) => http.delete(path, body),
+    async post<T>(path: string, body: unknown): Promise<T> {
+      const res = await http.post<T>(path, body);
+      const r = (res ?? {}) as Record<string, unknown>;
+      const id = String(r.id ?? r.client_id ?? 'new').replace(/[^A-Za-z0-9_-]/g, '_');
+      let entries: Record<string, string> | null = null;
+      if (path === '/v1/oauth_clients' && typeof r.client_secret === 'string') {
+        entries = { ATLAS_CLIENT_ID: String(r.client_id ?? ''), ATLAS_CLIENT_SECRET: r.client_secret };
+      } else if (path === '/v1/webhook_endpoints' && typeof r.secret === 'string') {
+        entries = { ATLAS_WEBHOOK_SECRET: r.secret };
+      }
+      if (entries) {
+        const kind = path === '/v1/oauth_clients' ? 'oauth-client' : 'webhook';
+        saved.push(writeSecretFile(dir, `${kind}-${id}.env`, entries, { comment: `Written by atlas apply. ${kind} ${id}.` }).path);
+      }
+      return res;
+    },
+  };
+  return { http: wrapped, saved };
 }
 
 export function printPlan(

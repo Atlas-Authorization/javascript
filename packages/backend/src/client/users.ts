@@ -19,6 +19,8 @@ export interface User {
   /** A timed ban's expiry (epoch ms); null for a permanent ban or none. */
   ban_expires_at?: number | null;
   locked: boolean;
+  /** One account state, as the ID token's `account_status` (deactivation is a ban). Also on user webhooks. */
+  status?: 'active' | 'suspended' | 'banned';
   /** Epoch milliseconds, or null if never signed in. */
   last_sign_in_at: number | null;
   created_at: number;

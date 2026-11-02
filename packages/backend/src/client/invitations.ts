@@ -15,6 +15,10 @@ export interface Invitation {
 export interface CreateInvitationBody {
   email_address: string;
   public_metadata?: Metadata;
+  /** When it expires: epoch ms or an ISO 8601 date-time, at most 365 days ahead. Default 7 days. */
+  expires_at?: number | string;
+  /** Alternative to `expires_at`: 1 to 365 days from now. Send one or the other. */
+  expires_in_days?: number;
 }
 
 /** A per-entry failure from a bulk create; `index` points into the request array. */

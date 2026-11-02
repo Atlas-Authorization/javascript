@@ -107,8 +107,9 @@ const OPTIONS = {
   framework: { type: 'string' },
   manifest: { type: 'string', multiple: true },
   'no-atlas': { type: 'boolean' },
-  // config plan.
+  // config plan / plan / apply: exit 2 on drift (`--check` is the CI spelling).
   'exit-code': { type: 'boolean' },
+  check: { type: 'boolean' },
   // referrals connect / backfill.
   provider: { type: 'string' },
   program: { type: 'string' },
@@ -129,6 +130,7 @@ const OPTIONS = {
   'auto-enroll': { type: 'boolean' },
   destination: { type: 'string' },
   'tracking-token': { type: 'string' },
+  'link-template': { type: 'string' },
   'no-sync': { type: 'boolean' },
   'allow-mode-mismatch': { type: 'boolean' },
   endpoint: { type: 'string' },

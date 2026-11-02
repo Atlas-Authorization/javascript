@@ -53,6 +53,12 @@ export interface OAuthClient extends ProvisioningFields {
   token_endpoint_auth_method: 'client_secret_basic' | 'client_secret_post' | 'none' | 'private_key_jwt' | 'workload_jwt';
   secret_prefix: string | null;
   /**
+   * Create and update responses only: the origins this write added to the
+   * instance's allowed_origins (`add_redirect_origins`, or automatically for a
+   * client a connected integration signs users in with).
+   */
+  added_origins?: string[];
+  /**
    * After a rotation with overlap: when the previous secret stops working (epoch
    * ms). Null when only the current secret is accepted.
    */
@@ -77,6 +83,14 @@ export interface OAuthClient extends ProvisioningFields {
    * with no "Sign out?" page. First-party clients only.
    */
   skip_logout_confirmation?: boolean;
+  /**
+   * The app's sign-in follows its Atlas session: each refresh keeps that
+   * session alive, and once it has ended the refresh fails (`invalid_grant`).
+   * First-party clients only.
+   */
+  refresh_touches_session?: boolean;
+  /** No authorization code is issued for a user whose primary email is not verified. */
+  require_verified_email?: boolean;
   /** Refused at every OAuth endpoint while true (kept, not deleted). */
   disabled?: boolean;
   /** PKCE required even though the client is confidential. */
@@ -166,6 +180,11 @@ export interface OAuthClientLogoutFields {
   frontchannel_logout_session_required?: boolean;
   /** Skip the logout confirmation page. First-party clients only (`422` otherwise). */
   skip_logout_confirmation?: boolean;
+  /**
+   * A refresh_token grant also slides the Atlas session it came from, and an
+   * ended Atlas session refuses the refresh. First-party clients only (`422` otherwise).
+   */
+  refresh_touches_session?: boolean;
 }
 
 /** Create/rotate reveal the secret exactly once, alongside the client. */
@@ -174,6 +193,19 @@ export interface OAuthClientWithSecret extends OAuthClient {
   /** With a `secretRecipient`: the client secret sealed to it (then `client_secret` is absent). */
   sealed_client_secret?: string;
   secrets_sealed?: { algorithm: string; recipient: string; fields: string[] };
+  /** Where and until when a generated secret can be fetched once more (`revealSecret`). Absent for a chosen secret. */
+  client_secret_reveal?: { path: string; expires_at: number };
+  note: string;
+}
+
+/** `revealSecret`: the secret the latest create or rotate generated (once, within 10 minutes). */
+export interface OAuthClientSecretReveal {
+  object: 'oauth_client_secret';
+  id: string;
+  client_id: string;
+  client_secret: string;
+  secret_prefix: string | null;
+  client_secret_expires_at: number | null;
   note: string;
 }
 
@@ -217,8 +249,14 @@ export interface CreateOAuthClientBody extends ProvisioningInput, OAuthClientLog
   first_party?: boolean;
   /** How long the issued secret authenticates, in seconds; omit for no expiry. */
   secret_expires_in_seconds?: number;
+  /** Your own secret (32-256 random printable characters); omit and Atlas generates one. */
+  client_secret?: string;
+  /** Issue no authorization code for a user whose primary email is not verified. Default false. */
+  require_verified_email?: boolean;
   /** Require PKCE. New clients default to true (confidential ones included); send false to opt out. */
   require_pkce?: boolean;
+  /** Also add the redirect URIs' origins to allowed_origins (append only; listed in `added_origins`). */
+  add_redirect_origins?: boolean;
 }
 
 export interface UpdateOAuthClientBody extends OAuthClientLogoutFields, OAuthClientSubjectFields, OAuthClientTokenFields {
@@ -234,6 +272,10 @@ export interface UpdateOAuthClientBody extends OAuthClientLogoutFields, OAuthCli
   disabled?: boolean;
   /** Require PKCE for this confidential client too. */
   require_pkce?: boolean;
+  /** Issue no authorization code for a user whose primary email is not verified. */
+  require_verified_email?: boolean;
+  /** Also add the redirect URIs' origins to allowed_origins (append only; listed in `added_origins`). */
+  add_redirect_origins?: boolean;
 }
 
 /** One client in a migration import. Idempotent per `client_id`. */
@@ -317,6 +359,19 @@ export interface BackchannelLogoutTest {
   body_excerpt: string | null;
 }
 
+/** The result of {@link oauthClientsResource}'s `logout`. */
+export interface OAuthClientLogout {
+  object: 'oauth_client_logout';
+  client_id: string;
+  sid: string;
+  /** `revoked`: this call ended the Atlas session. `already_ended`: it had already ended. */
+  session: 'revoked' | 'already_ended';
+  /** This client's refresh grants under the sid that were revoked (offline_access included). */
+  grants_revoked: number;
+  /** Back-channel logouts queued, to this client and every other app signed in through the session. */
+  backchannel_logouts: number;
+}
+
 export function oauthClientsResource(request: RequestFn) {
   return {
     /** Bulk-import OAuth clients for a migration, optionally with pre-hashed secrets. */
@@ -355,6 +410,13 @@ export function oauthClientsResource(request: RequestFn) {
         idempotencyKey,
       });
     },
+    /**
+     * The secret the latest create or rotate generated, once more: within 10
+     * minutes, a single time, while it is still current. 410 afterwards (rotate).
+     */
+    revealSecret(id: string): Promise<OAuthClientSecretReveal> {
+      return request({ method: 'POST', path: `/v1/oauth_clients/${enc(id)}/secret/reveal` });
+    },
     delete(id: string): Promise<{ object: 'oauth_client'; id: string; deleted: true; note: string }> {
       return request({ method: 'DELETE', path: `/v1/oauth_clients/${enc(id)}` });
     },
@@ -382,6 +444,17 @@ export function oauthClientsResource(request: RequestFn) {
         path: `/v1/oauth_clients/${enc(id)}/backchannel_deliveries`,
         query: { ...query },
       });
+    },
+    /**
+     * Sign a user out of this app AND of Atlas in one call
+     * (`POST /v1/oauth_clients/:id/logout`): revokes this client's grants under
+     * `sid` and the Atlas session itself (every other app gets a back-channel
+     * logout). `id` is the client id or its public `client_id`; `sid` is the
+     * id_token's `sid`. Needs `oauth_clients:write` and `sessions:write`. No
+     * browser redirect to `/oauth2/logout` is needed afterwards.
+     */
+    logout(id: string, sid: string, idempotencyKey?: string): Promise<OAuthClientLogout> {
+      return request({ method: 'POST', path: `/v1/oauth_clients/${enc(id)}/logout`, body: { sid }, idempotencyKey });
     },
     /** Send a test back-channel logout now and return what the receiver answered. */
     testBackchannelLogout(id: string): Promise<BackchannelLogoutTest> {

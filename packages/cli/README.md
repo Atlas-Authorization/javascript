@@ -44,6 +44,8 @@ atlas webhooks list | create --url <url> [--events a,b]
 atlas sessions revoke <id>
 atlas config   export [--dir <path>] [--format json|yaml]
 atlas config   import [--dir <path>] [--format json|yaml] [--dry-run] [--prune]
+atlas plan     [<file|dir>] [--check] [--json] [--secrets-file <dotenv>]
+atlas apply    [<file|dir>] [--yes] [--check] [--prune] [--secrets-file <dotenv>] [--out <dir>]
 atlas init     --product <name> [--domain <d>] [--instance-env development|production] ...
 atlas preflight [--instance <id> | --product <name>] [--fail-on error|warning]
 atlas env      --product <name> --format dotenv|coolify|vercel
@@ -132,5 +134,51 @@ Rules that make it safe and repeatable:
   `${ENV_VAR}` placeholder in the file; it is resolved from the environment.
 - **Non-destructive.** `import` never deletes without `--prune`, and a resource
   type with no file is left untouched (only committed types are managed).
+
+### One file: `atlas apply` and `atlas plan`
+
+`atlas apply atlas.yaml` takes one JSON or YAML file whose top-level keys are
+the resource types above (or a directory from `config export`), shows the plan,
+asks before applying (`--yes` skips the question; needed without a terminal),
+and applies. Re-running it is a no-op. `atlas plan atlas.yaml` shows the
+field-level diff without writing.
+
+```yaml
+# atlas.yaml
+instance:
+  allowed_origins: [https://app.example.com]
+  auth_config:
+    signUpMode: restricted
+redirect_urls:
+  - url: https://app.example.com/auth/callback
+webhook_endpoints:
+  - url: https://app.example.com/webhooks/atlas
+    enabled_events: [user.created, user.updated, session.revoked]
+```
+
+```sh
+atlas plan atlas.yaml --check     # CI: exit 2 when the instance differs
+atlas apply atlas.yaml            # plan, confirm, apply
+atlas apply atlas.yaml --yes --secrets-file .atlas.secrets   # non-interactive
+```
+
+- **CI gate.** `--check` (on `plan`, `apply` and `config plan`; alias `--exit-code`)
+  exits 2 when there is drift and never writes.
+- **Secrets.** `${VAR}` placeholders resolve from the environment, then from
+  `--secrets-file` (a dotenv file). The file must be readable only by you
+  (`chmod 600`); anything looser is refused. `apply` stops before writing if a
+  placeholder is still unresolved.
+- **New secrets.** When `apply` creates an OAuth client or a webhook endpoint,
+  the one-time `client_secret` / signing secret goes to a mode-0600 dotenv file
+  (`~/.config/atlas`, or `--out <dir>`) and the CLI prints the path.
+- **Order.** The CLI applies resource types in a fixed order: `instance`,
+  `org_settings_schema`, `redirect_urls`, `oauth_clients`, `oauth_providers`,
+  `custom_oauth_providers`, `resource_servers`, `jwt_templates`, `permissions`,
+  `roles`, `webhook_endpoints`, `sso_connections`, `billing_plans`,
+  `notification_templates`, `email_templates`, `organization_policies`. The
+  ordering is done by the CLI, not by the server. The email provider and the
+  `before_user_create` hook are not part of config files: set up the email
+  provider (your own Resend or Brevo account) before you apply sign-in methods
+  that send email, or they stay listed as inactive until you do.
 
 Ship it on push with the [`atlas-deploy` GitHub Action](../../actions/atlas-deploy).

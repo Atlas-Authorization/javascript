@@ -79,9 +79,13 @@ type Remote = Array<{ url: string; init: RequestInit }>;
 /** An in-memory Referalli merchant API, routed by `METHOD path`; `over` replaces answers (404 for anything unknown). */
 function referalliApi(record: Remote, over: Record<string, { status: number; body: unknown }> = {}) {
   const routes: Record<string, { status: number; body: unknown }> = {
-    'GET /v1/org': { status: 200, body: { id: 'org_1', livemode: true } },
-    'POST /v1/auth/connections': { status: 201, body: { id: 'conn_1', secret: CONN_SECRET, trackingToken: 'tt_pub_1', signupsUrl: 'x' } },
+    'GET /v1/org': { status: 200, body: { id: 'org_1', livemode: true, trackingToken: 'tk_org_1' } },
+    // Lists answer as plain arrays under the pinned API version.
+    'GET /v1/auth/connections': { status: 200, body: [] },
+    'POST /v1/auth/connections': { status: 201, body: { id: 'conn_1', secret: CONN_SECRET, signupsUrl: 'x' } },
     'PATCH /v1/auth/connections/conn_1': { status: 200, body: { id: 'conn_1', signatureVersion: 'v2' } },
+    'GET /v1/branding': { status: 200, body: { linkDomain: null, linkDomainStatus: 'none' } },
+    'GET /v1/webhook-endpoints': { status: 200, body: [] },
     'POST /v1/webhook-endpoints': { status: 201, body: { id: 'whe_1', url: INBOUND_URL, secret: WEBHOOK_SECRET } },
     ...over,
   };
@@ -118,8 +122,11 @@ describe('atlas referrals connect --provider referalli', () => {
     expect(code).toBe(0);
     expect(remote.map((r) => `${r.init.method ?? 'GET'} ${r.url}`)).toEqual([
       'GET https://referrals.example.com/v1/org',
+      'GET https://referrals.example.com/v1/auth/connections',
       'POST https://referrals.example.com/v1/auth/connections',
       'PATCH https://referrals.example.com/v1/auth/connections/conn_1',
+      'GET https://referrals.example.com/v1/branding',
+      'GET https://referrals.example.com/v1/webhook-endpoints',
       'POST https://referrals.example.com/v1/webhook-endpoints',
     ]);
     for (const r of remote) {
@@ -132,6 +139,8 @@ describe('atlas referrals connect --provider referalli', () => {
       url: INBOUND_URL,
       topics: ['referral.created', 'referral.held', 'referral.paused', 'referral.resumed', 'referral.approved', 'referral.voided', 'referral.reassigned'],
       legacySignature: false,
+      // Only this program's referral events: a shared organization's other products never reach the instance.
+      programIds: ['prg_1'],
     });
     expect(JSON.parse(sent(remote, 'POST', '/v1/auth/connections')!.init.body as string)).toEqual({
       provider: 'atlas',
@@ -142,28 +151,32 @@ describe('atlas referrals connect --provider referalli', () => {
     });
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
       'GET /v1/instance',
+      'GET /v1/instance/referrals',
       'PATCH /v1/instance/referrals',
       'PATCH /v1/instance/referrals',
       'POST /v1/instance/referrals/test',
       'PATCH /v1/instance/referrals',
     ]);
-    expect(calls[1]!.body).toEqual({
+    expect(calls[2]!.body).toEqual({
       provider: 'referalli',
       endpoint_url: 'https://referrals.example.com',
       connection_id: 'conn_1',
       signing_secret: CONN_SECRET,
       program_id: 'prg_1',
       auto_enroll_users: true,
-      tracking_token: 'tt_pub_1',
+      // From the org (GET /v1/org): the tracked link is {base}/go/{trackingToken}/{code}.
+      tracking_token: 'tk_org_1',
+      link_template: 'https://referrals.example.com/go/tk_org_1/{code}',
     });
-    expect(calls[2]!.body).toEqual({ inbound_secret: WEBHOOK_SECRET, inbound_endpoint_id: 'whe_1' });
-    expect(calls[4]!.body).toEqual({ enabled: true });
+    expect(calls[3]!.body).toEqual({ inbound_secret: WEBHOOK_SECRET, inbound_endpoint_id: 'whe_1' });
+    expect(calls[5]!.body).toEqual({ enabled: true });
     const all = io.stdout() + io.stderr();
     expect(all).not.toContain(MERCHANT_KEY);
     expect(all).not.toContain(CONN_SECRET);
     expect(all).not.toContain(WEBHOOK_SECRET);
     expect(io.stderr()).toBe('');
-    expect(io.stdout()).toContain('Referral changes on Referalli sync back to Atlas (webhook whe_1).');
+    expect(io.stdout()).toContain('Referral changes on Referalli sync back to Atlas (webhook whe_1, program prg_1 only).');
+    expect(io.stdout()).not.toContain('Left to do');
     expect(io.stdout()).toContain('Organization:       Acme');
     expect(io.stdout()).toContain('Program:            Main (prg_1)');
     expect(io.stdout()).toContain('Referral attribution is on.');
@@ -340,6 +353,136 @@ describe('atlas referrals connect --provider referalli: test vs live, v2 and syn
     expect(readFileSync(file, 'utf8')).toContain(`REFERALLI_WEBHOOK_SECRET=${WEBHOOK_SECRET}`);
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(io.stdout() + io.stderr()).not.toContain(WEBHOOK_SECRET);
+  });
+});
+
+describe('atlas referrals connect --provider referalli: re-runs, scope and what is left', () => {
+  const args = ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://r.example.com', '--referalli-key', MERCHANT_KEY];
+  const EXISTING = {
+    'GET /v1/auth/connections': { status: 200, body: [{ id: 'conn_1', provider: 'atlas', instanceId: 'ins_1', programId: 'prg_1' }] },
+    'GET /v1/webhook-endpoints': { status: 200, body: { object: 'list', data: [{ id: 'whe_1', url: INBOUND_URL, programIds: null, topics: ['*'] }] } },
+    'PATCH /v1/webhook-endpoints/whe_1': { status: 200, body: { id: 'whe_1', programIds: ['prg_1'] } },
+  };
+
+  it('reuses the connection and the webhook Atlas already holds, re-scopes an unscoped webhook, and creates nothing', async () => {
+    const io = captureIO();
+    const calls: Call[] = [];
+    const remote: Remote = [];
+    const code = await run(
+      [...args, '--json'],
+      makeCtx(
+        io,
+        calls,
+        {
+          ...ATLAS,
+          'GET /v1/instance/referrals': {
+            provider: 'referalli',
+            connection_id: 'conn_1',
+            signing_secret_set: true,
+            link_template: 'https://app.example.com/r/{code}',
+            tracking_token: null,
+            inbound: { url: INBOUND_URL, secret_set: true, endpoint_id: 'whe_1', last_event: null },
+          },
+          'POST /v1/instance/referrals/test': PING_OK,
+        },
+        { fetch: referalliApi(remote, EXISTING) },
+      ),
+    );
+    expect(code).toBe(0);
+    expect(sent(remote, 'POST', '/v1/auth/connections')).toBeUndefined();
+    expect(sent(remote, 'POST', '/v1/webhook-endpoints')).toBeUndefined();
+    expect(remote.some((r) => r.url.endsWith('/rotate-secret'))).toBe(false);
+    expect(JSON.parse(sent(remote, 'PATCH', '/v1/webhook-endpoints/whe_1')!.init.body as string)).toMatchObject({ programIds: ['prg_1'], legacySignature: false });
+    // A link template set before is kept: no branding read, none sent.
+    expect(sent(remote, 'GET', '/v1/branding')).toBeUndefined();
+    const patches = calls.filter((c) => c.method === 'PATCH');
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!.body).toEqual({
+      provider: 'referalli',
+      endpoint_url: 'https://r.example.com',
+      connection_id: 'conn_1',
+      program_id: 'prg_1',
+      tracking_token: 'tk_org_1',
+    });
+    expect(JSON.parse(io.stdout())).toMatchObject({
+      reused: true,
+      connection_id: 'conn_1',
+      sync_endpoint_id: 'whe_1',
+      sync_program_ids: ['prg_1'],
+      link_template: 'https://app.example.com/r/{code}',
+      tracking_token: 'tk_org_1',
+      left_to_do: null,
+    });
+  });
+
+  it('rotates the secrets Atlas does not hold instead of creating a second connection or webhook', async () => {
+    const io = captureIO();
+    const calls: Call[] = [];
+    const remote: Remote = [];
+    const ROTATED = 'rcs_rotated_secret_never_printed';
+    const ROTATED_HOOK = 'whsec_rotated_never_printed';
+    const code = await run(
+      args,
+      makeCtx(io, calls, { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, {
+        fetch: referalliApi(remote, {
+          ...EXISTING,
+          'POST /v1/auth/connections/conn_1/rotate-secret': { status: 200, body: { id: 'conn_1', secret: ROTATED } },
+          'POST /v1/webhook-endpoints/whe_1/rotate-secret': { status: 200, body: { id: 'whe_1', secret: ROTATED_HOOK } },
+        }),
+      }),
+    );
+    expect(code).toBe(0);
+    expect(sent(remote, 'POST', '/v1/auth/connections')).toBeUndefined();
+    expect(sent(remote, 'POST', '/v1/webhook-endpoints')).toBeUndefined();
+    const patches = calls.filter((c) => c.method === 'PATCH').map((c) => c.body as Record<string, unknown>);
+    expect(patches[0]).toMatchObject({ connection_id: 'conn_1', signing_secret: ROTATED });
+    expect(patches[1]).toEqual({ inbound_secret: ROTATED_HOOK, inbound_endpoint_id: 'whe_1' });
+    expect(io.stdout()).toContain('Reused Referalli connection conn_1 for instance ins_1 and updated it (new secret saved, not printed).');
+    expect(io.stdout() + io.stderr()).not.toContain(ROTATED);
+    expect(io.stdout() + io.stderr()).not.toContain(ROTATED_HOOK);
+  });
+
+  it('refuses a second program for the same instance before changing anything', async () => {
+    const io = captureIO();
+    const calls: Call[] = [];
+    const remote: Remote = [];
+    const code = await run(
+      args,
+      makeCtx(io, calls, ATLAS, {
+        fetch: referalliApi(remote, {
+          'GET /v1/auth/connections': { status: 200, body: [{ id: 'conn_9', provider: 'atlas', instanceId: 'ins_1', programId: 'prg_other' }] },
+        }),
+      }),
+    );
+    expect(code).toBe(1);
+    expect(io.stderr()).toContain('already has connection conn_9 for instance ins_1, in program prg_other');
+    expect(io.stderr()).toContain('--program prg_other');
+    expect(remote.some((r) => r.init.method === 'POST' || r.init.method === 'PATCH')).toBe(false);
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+  });
+
+  it('prints the exact settings call left to do when Referalli gives no tracking token', async () => {
+    const remoteOver = { 'GET /v1/org': { status: 200, body: { id: 'org_1', livemode: true } } };
+    const io = captureIO();
+    expect(await run(args, makeCtx(io, [], { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referalliApi([], remoteOver) }))).toBe(0);
+    expect(io.stdout()).toContain('Left to do: tracking_token and link_template could not be read from Referalli. Set them with PATCH /v1/instance/referrals:');
+    expect(io.stdout()).toContain('"tracking_token":"<your Referalli tracking token (tk_…), from GET /v1/org on Referalli>"');
+    expect(io.stdout()).toContain('"link_template":"https://<your Referalli link host>/go/<tracking token>/{code}"');
+
+    const io2 = captureIO();
+    expect(await run([...args, '--json'], makeCtx(io2, [], { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, { fetch: referalliApi([], remoteOver) }))).toBe(0);
+    expect(JSON.parse(io2.stdout()).left_to_do).toMatchObject({ method: 'PATCH', path: '/v1/instance/referrals', body: { tracking_token: expect.any(String), link_template: expect.any(String) } });
+  });
+
+  it('uses the active link domain for the link template', async () => {
+    const calls: Call[] = [];
+    await run(
+      args,
+      makeCtx(captureIO(), calls, { ...ATLAS, 'POST /v1/instance/referrals/test': PING_OK }, {
+        fetch: referalliApi([], { 'GET /v1/branding': { status: 200, body: { linkDomain: 'go.example.com', linkDomainStatus: 'active' } } }),
+      }),
+    );
+    expect(calls.find((c) => c.method === 'PATCH')!.body).toMatchObject({ link_template: 'https://go.example.com/go/tk_org_1/{code}' });
   });
 });
 
@@ -524,6 +667,64 @@ describe('atlas referrals status', () => {
     expect(out).toContain('Last event:           referral.voided → applied at 2026-10-22T09:00:00.000Z');
     expect(out).toContain('referrals_clock_skew');
     expect(out).not.toContain('email_sender_unverified');
+  });
+
+  it('--json prints a machine-readable status, with the webhook scope read from Referalli when a key is given', async () => {
+    const io = captureIO();
+    const remote: Remote = [];
+    const code = await run(
+      ['referrals', 'status', '--json'],
+      makeCtx(
+        io,
+        [],
+        {
+          'GET /v1/instance/referrals': {
+            enabled: true,
+            provider: 'referalli',
+            endpoint_url: 'https://r.example.com',
+            program_id: 'prg_1',
+            connection_id: 'conn_1',
+            signing_secret_set: true,
+            link_template: 'https://r.example.com/go/tk_1/{code}',
+            tracking_token: null,
+            connection: { last_test: { ok: true, at: 1, http_status: 200, error: null }, last_success_at: 2 },
+            inbound: { url: INBOUND_URL, secret_set: true, endpoint_id: 'whe_1', last_event: { at: 3, type: 'referral.voided', outcome: 'applied' } },
+          },
+          'GET /v1/instance/preflight': { findings: [] },
+        },
+        {
+          fetch: referalliApi(remote, { 'GET /v1/webhook-endpoints/whe_1': { status: 200, body: { id: 'whe_1', programIds: null } } }),
+          env: { XDG_CONFIG_HOME: home, REFERALLI_API_KEY: MERCHANT_KEY },
+        },
+      ),
+    );
+    expect(code).toBe(0);
+    const out = JSON.parse(io.stdout());
+    expect(out.status).toEqual({
+      enabled: true,
+      provider: 'referalli',
+      connection_id: 'conn_1',
+      program_id: 'prg_1',
+      signing_secret_set: true,
+      webhook: { endpoint_id: 'whe_1', url: INBOUND_URL, secret_set: true, scope: 'all_programs', program_ids: null },
+      link_template_set: true,
+      tracking_token_set: false,
+      last_sync: { at: 3, type: 'referral.voided', outcome: 'applied' },
+      last_test: { ok: true, at: 1, http_status: 200, error: null },
+      last_success_at: 2,
+      missing: [],
+    });
+    expect(out.settings.connection_id).toBe('conn_1');
+    expect(io.stdout()).not.toContain(MERCHANT_KEY);
+
+    // No merchant key: the scope is unknown, and Referalli is not called.
+    const io2 = captureIO();
+    const remote2: Remote = [];
+    await run(['referrals', 'status', '--json'], makeCtx(io2, [], {
+      'GET /v1/instance/referrals': { enabled: false, provider: 'referalli', endpoint_url: 'https://r.example.com', connection_id: 'conn_1', inbound: { url: INBOUND_URL, secret_set: true, endpoint_id: 'whe_1', last_event: null } },
+    }, { fetch: referalliApi(remote2) }));
+    expect(JSON.parse(io2.stdout()).status.webhook).toMatchObject({ endpoint_id: 'whe_1', scope: 'unknown', program_ids: null });
+    expect(remote2).toHaveLength(0);
   });
 
   it('exits 1 on a referral preflight error', async () => {

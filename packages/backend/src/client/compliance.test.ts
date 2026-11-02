@@ -62,4 +62,12 @@ describe('provisioning, notices, advisories, sub-processors and audit export', (
     expect(calls[3]!.url).toBe('https://api.test/v1/platform/apps/ins_1/clone_config');
     expect(calls[4]!.url).toBe('https://api.test/v1/platform/apps/ins_1/secret_keys');
   });
+
+  it('platform: apps.list passes the name / external_ref filters and paging', async () => {
+    const { calls, fetchImpl } = stub({});
+    const platform = createAtlasPlatformClient({ platformKey: 'psk_x', apiUrl: 'https://api.test', fetch: fetchImpl });
+    await platform.apps.list({ name: 'Acme', external_ref: 'acme/prod', limit: 10, starting_after: 'ins_1' });
+    const url = new URL(calls[0]!.url);
+    expect(Object.fromEntries(url.searchParams)).toEqual({ name: 'Acme', external_ref: 'acme/prod', limit: '10', starting_after: 'ins_1' });
+  });
 });

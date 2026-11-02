@@ -181,10 +181,21 @@ export function instanceSecurityResource(request: RequestFn) {
       return request({ method: 'PATCH', path: '/v1/instance/security', body });
     },
 
-    /** Store the captcha provider secret. Refused while the provider is `none`. */
+    /**
+     * Store the captcha provider secret. Refused while the provider is `none`.
+     * With `site_key`, also switch `auth_config.captcha` to `provider` with that
+     * site key in the same atomic write (e.g. from the built-in `atlas` captcha
+     * to Turnstile).
+     */
     setCaptchaSecret(
-      body: { secret: string; provider?: string },
-    ): Promise<{ object: 'captcha_secret'; provider: string; set: true }> {
+      body: { secret: string; provider?: string; site_key?: string },
+    ): Promise<{
+      object: 'captcha_secret';
+      provider: string;
+      set: true;
+      switched: boolean;
+      captcha?: Record<string, unknown>;
+    }> {
       return request({ method: 'PUT', path: '/v1/instance/captcha_secret', body });
     },
     deleteCaptchaSecret(): Promise<{ object: 'captcha_secret'; provider: string; deleted: true }> {

@@ -10,11 +10,12 @@
  *     never silently reordered.
  *
  *  2. THE CODEC. JSON is the robust default. YAML is offered for readable diffs
- *     in a repo; our YAML is a deliberately small, fully-specified subset where
- *     every map key and every scalar is JSON-encoded, so it is unambiguous to
- *     parse, round-trips exactly (newlines, URL-shaped keys, unicode and all),
- *     and is still valid YAML (JSON is a YAML subset).
+ *     in a repo; we WRITE a small subset where every map key and every scalar is
+ *     JSON-encoded (it round-trips exactly: newlines, URL-shaped keys, unicode),
+ *     and READ any YAML, so a hand-written atlas.yaml works too.
  */
+
+import { parse as parseYamlDocument } from 'yaml';
 
 export type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
 export type Format = 'json' | 'yaml';
@@ -115,134 +116,14 @@ function isEmptyContainer(v: Json): boolean {
 
 // ─────────────────────────────── YAML parse ───────────────────────────────
 
-interface Line {
-  indent: number;
-  content: string;
-}
-
+/**
+ * Any YAML 1.2 document: our own export (JSON-encoded keys and scalars) and a
+ * hand-written atlas.yaml with plain keys alike.
+ */
 function parseYaml(text: string): Json {
-  const lines: Line[] = [];
-  for (const raw of text.split('\n')) {
-    if (raw.trim() === '') continue;
-    const indent = raw.length - raw.replace(/^ +/, '').length;
-    lines.push({ indent, content: raw.slice(indent) });
-  }
-  if (lines.length === 0) return null;
-  const first = lines[0]!;
-  // A whole-document scalar or empty container (`42`, `"x"`, `true`, `[]`, `{}`)
-  // is a single line that is neither a sequence item nor a `"key":` entry.
-  if (lines.length === 1 && !isSeqLine(first.content) && !looksLikeMapEntry(first.content)) {
-    return parseScalar(first.content, 0);
-  }
-  const [value, next] = parseBlock(lines, 0, first.indent);
-  if (next !== lines.length) {
-    throw new Error(`atlas config: malformed YAML near line ${next + 1}.`);
-  }
-  return value;
-}
-
-function isSeqLine(content: string): boolean {
-  return content === '-' || content.startsWith('- ');
-}
-
-/** True when a line is a `"<json-key>":` map entry (vs. a bare scalar document). */
-function looksLikeMapEntry(content: string): boolean {
-  if (!content.startsWith('"')) return false;
   try {
-    return content[jsonStringEnd(content) + 1] === ':';
-  } catch {
-    return false;
-  }
-}
-
-function parseBlock(lines: Line[], pos: number, indent: number): [Json, number] {
-  const first = lines[pos]!;
-  if (first.content === '-' || first.content.startsWith('- ')) {
-    return parseSeq(lines, pos, indent);
-  }
-  return parseMap(lines, pos, indent);
-}
-
-function parseMap(lines: Line[], pos: number, indent: number): [Json, number] {
-  const out: { [k: string]: Json } = {};
-  let i = pos;
-  while (i < lines.length && lines[i]!.indent === indent) {
-    const line = lines[i]!;
-    if (line.content.startsWith('- ') || line.content === '-') break;
-    const { key, rest } = splitKey(line.content, i);
-    if (rest === '') {
-      // Nested block on the following, more-indented lines.
-      if (i + 1 >= lines.length || lines[i + 1]!.indent <= indent) {
-        throw new Error(`atlas config: expected a nested block after '${key}:' (line ${i + 1}).`);
-      }
-      const [value, next] = parseBlock(lines, i + 1, lines[i + 1]!.indent);
-      out[key] = value;
-      i = next;
-    } else {
-      out[key] = parseScalar(rest, i);
-      i += 1;
-    }
-  }
-  return [out, i];
-}
-
-function parseSeq(lines: Line[], pos: number, indent: number): [Json, number] {
-  const out: Json[] = [];
-  let i = pos;
-  while (i < lines.length && lines[i]!.indent === indent) {
-    const line = lines[i]!;
-    if (!(line.content === '-' || line.content.startsWith('- '))) break;
-    const rest = line.content === '-' ? '' : line.content.slice(2);
-    if (rest === '') {
-      if (i + 1 >= lines.length || lines[i + 1]!.indent <= indent) {
-        throw new Error(`atlas config: expected a nested block after '-' (line ${i + 1}).`);
-      }
-      const [value, next] = parseBlock(lines, i + 1, lines[i + 1]!.indent);
-      out.push(value);
-      i = next;
-    } else {
-      out.push(parseScalar(rest, i));
-      i += 1;
-    }
-  }
-  return [out, i];
-}
-
-/** Split `"<json-key>": <rest>` (or `"<json-key>":`) into the decoded key and the rest. */
-function splitKey(content: string, lineNo: number): { key: string; rest: string } {
-  if (!content.startsWith('"')) {
-    throw new Error(`atlas config: expected a quoted key (line ${lineNo + 1}): ${content}`);
-  }
-  const end = jsonStringEnd(content);
-  const key = JSON.parse(content.slice(0, end + 1)) as string;
-  let after = content.slice(end + 1);
-  if (!after.startsWith(':')) {
-    throw new Error(`atlas config: expected ':' after key (line ${lineNo + 1}): ${content}`);
-  }
-  after = after.slice(1);
-  return { key, rest: after.startsWith(' ') ? after.slice(1) : after };
-}
-
-/** Find the index of the closing quote of the JSON string that starts at index 0. */
-function jsonStringEnd(s: string): number {
-  let i = 1;
-  while (i < s.length) {
-    if (s[i] === '\\') {
-      i += 2;
-      continue;
-    }
-    if (s[i] === '"') return i;
-    i += 1;
-  }
-  throw new Error(`atlas config: unterminated quoted string: ${s}`);
-}
-
-function parseScalar(rest: string, lineNo: number): Json {
-  if (rest === '[]') return [];
-  if (rest === '{}') return {};
-  try {
-    return JSON.parse(rest) as Json;
-  } catch {
-    throw new Error(`atlas config: invalid scalar (line ${lineNo + 1}): ${rest}`);
+    return (parseYamlDocument(text) ?? null) as Json;
+  } catch (err) {
+    throw new Error(`atlas config: invalid YAML: ${(err as Error).message}`);
   }
 }

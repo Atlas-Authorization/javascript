@@ -152,6 +152,16 @@ export interface ListPlatformAppsParams {
   include_archived?: boolean;
   /** Only apps whose provisioning metadata matches every pair. */
   metadata?: ProvisioningMetadata;
+  /** Only the app with this name (exact, case-insensitive). */
+  name?: string;
+  /** Only apps whose name starts with this (case-insensitive). */
+  name_prefix?: string;
+  /** Only the app created with this `external_ref`. */
+  external_ref?: string;
+  /** Page size; omit to get every app. */
+  limit?: number;
+  /** Cursor: the last app id of the previous page. */
+  starting_after?: string;
 }
 
 export interface CreatePlatformInstanceBody extends ProvisioningInput {

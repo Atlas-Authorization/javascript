@@ -5,7 +5,7 @@ import { pages } from './commands/pages';
 import { apiKeys } from './commands/api-keys';
 import { login, logout, whoami } from './commands/auth';
 import { keys, token } from './commands/operator';
-import { config } from './commands/config';
+import { applyCommand, config, planCommand } from './commands/config';
 import { init } from './commands/init';
 import { importUsers } from './commands/import';
 import { info } from './commands/info';
@@ -56,6 +56,8 @@ const COMMANDS: Record<string, Handler> = {
   admin,
   sessions,
   config,
+  plan: planCommand,
+  apply: applyCommand,
   actions,
   pages,
   init,

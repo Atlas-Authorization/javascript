@@ -1,5 +1,22 @@
 # @atlasauth/cli changelog
 
+## 0.18.0 — 2026-11-02
+
+### Fixed
+
+- `atlas referrals connect --provider referalli` registers the two-way sync webhook limited to `--program` (`programIds: [<program>]`). It used to register it for every program, so a shared Referalli organization sent other products' referral events to the instance. A webhook an earlier run registered for every program is re-scoped in place.
+- `connect` is idempotent: a second run reuses the instance's existing Referalli connection (one per instance) and sync webhook and updates them in place, never creating a duplicate. A secret the instance does not already hold is rotated on Referalli and saved (never printed). A connection for the instance in another program is refused with the program to use.
+- `connect` sets `tracking_token` (from the Referalli organization) and `link_template` (`{link host}/go/{tracking token}/{code}`, on the active link domain when there is one); a link template set before is kept. What it cannot read is printed as the exact `PATCH /v1/instance/referrals` body left to send (`left_to_do` with `--json`).
+
+### Added
+
+- `connect --link-template <url>`.
+- `atlas referrals status --json` prints a `status` object (connection id, program, webhook endpoint id, URL and program scope, `link_template_set`, `tracking_token_set`, last sync, last test) next to the raw `settings`. The webhook scope is read from Referalli when a merchant key is given (`--referalli-key-file` or `REFERALLI_API_KEY`); otherwise it is `unknown`. The text output shows the link template, tracking token and, when known, the webhook scope.
+
+### Dependencies
+
+- Pulls `@atlasauth/backend` 0.31.0, which depends on the published `@atlasauth/pca` ^0.4.3 instead of the deprecated 0.1.0, and `@atlasauth/upgrade` 0.7.0, which drops the deprecated `jscodeshift` 0.16 chain (`rimraf@2`, `glob@7`, `inflight`).
+
 ## 0.17.0 — 2026-10-30
 
 ### Added

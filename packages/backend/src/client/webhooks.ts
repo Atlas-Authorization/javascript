@@ -183,6 +183,8 @@ export interface WebhookTestResult {
   object: 'webhook_test_result';
   delivery_id: string;
   event_id: string;
+  /** The exact URL the attempt was POSTed to. */
+  url: string;
   status: 'success' | 'failed';
   http_status: number | null;
   latency_ms: number | null;
@@ -310,6 +312,8 @@ export interface WebhookDeliveryQueued {
   object: 'webhook_delivery';
   id: string;
   event_id: string;
+  /** The URL the worker will POST to (only on a test). */
+  url?: string;
   status: string;
   note: string;
 }

@@ -204,9 +204,9 @@ export interface ReferralSettings {
   api_key_set: boolean;
   /** Query parameters that carry a referral code, in priority order (default `ref`, `via`, `aff`). */
   url_params: string[];
-  /** The first tracking cookie read under consent; null = never read a cookie. `context_cookies` lists them all. */
+  /** Compatibility: the first entry of `context_cookies` (null when none). Read `context_cookies`. */
   context_cookie: string | null;
-  /** Every tracking cookie, in the order they are tried. */
+  /** Every tracking cookie read under consent, in the order they are tried (empty = none). The canonical field. */
   context_cookies?: string[];
   /** Retired spellings of `provider` that are still accepted on write. */
   provider_aliases?: string[];
@@ -281,9 +281,9 @@ export interface UpdateReferralSettingsBody {
   inbound_endpoint_id?: string | null;
   /** 1-10 names of `[A-Za-z0-9_.-]{1,40}`. */
   url_params?: string[];
-  /** A cookie name, or a list of up to 5 tried in order; null clears. */
+  /** @deprecated The older name of `context_cookies`, still accepted: a cookie name, or a list of up to 5 tried in order; null clears. */
   context_cookie?: string | string[] | null;
-  /** The same with a list; wins over `context_cookie`. */
+  /** Up to 5 cookie names tried in order; [] or null clears. The canonical field; wins over `context_cookie`. */
   context_cookies?: string[] | null;
   consent_category?: string;
   consent_fallback_category?: string | null;

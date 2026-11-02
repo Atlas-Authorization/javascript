@@ -6,9 +6,12 @@ import type { RequestFn } from './request';
  * `atlas-id`, `atlas-timestamp`, `atlas-signature`, verify with
  * {@link verifyWebhook}) with an event of type `user.before_create`, and stamps
  * the `external_id` and metadata you answer. A referral call then goes out
- * with your id. Slow or failing hooks never block a sign-up.
+ * with your id. Slow or failing hooks do not block a sign-up unless the hook
+ * is set `fail_closed`.
  *
- * Answer `{ external_id?, public_metadata?, private_metadata?, unsafe_metadata? }`.
+ * Answer `{ external_id?, public_metadata?, private_metadata?, unsafe_metadata? }`,
+ * or refuse the sign-up with `{ deny: true, reason? }` (or HTTP 403): the
+ * person gets 403 `SIGN_UP_DENIED` with your reason and no user is kept.
  */
 
 export interface BeforeUserCreateHook {
@@ -19,6 +22,8 @@ export interface BeforeUserCreateHook {
   signing_secret_set: boolean;
   /** At most 5000, default 3000. */
   timeout_ms: number;
+  /** Refuse the sign-up when the hook times out, errors or answers badly. Default false. */
+  fail_closed: boolean;
   /** The last call Atlas made to the hook. */
   last_call: { at: number; status: string | null; error: string | null } | null;
   updated_at: number | null;
@@ -31,6 +36,7 @@ export interface UpdateBeforeUserCreateHookBody {
   /** Write-only; `null` clears. */
   signing_secret?: string | null;
   timeout_ms?: number;
+  fail_closed?: boolean;
 }
 
 /** `POST …/test`: a sample draft sent to the hook; nothing is stored. */
@@ -38,10 +44,13 @@ export interface BeforeUserCreateHookTest {
   ok: boolean;
   latency_ms: number;
   answer?: {
-    external_id: string | null;
-    public_metadata: Record<string, unknown> | null;
-    private_metadata_set: boolean;
-    unsafe_metadata: Record<string, unknown> | null;
+    /** Set when the hook denied the sample sign-up. */
+    deny?: true;
+    reason?: string | null;
+    external_id?: string | null;
+    public_metadata?: Record<string, unknown> | null;
+    private_metadata_set?: boolean;
+    unsafe_metadata?: Record<string, unknown> | null;
   };
   error?: { code: string; message: string };
 }

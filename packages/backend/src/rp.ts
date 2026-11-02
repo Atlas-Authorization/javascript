@@ -1,6 +1,12 @@
 /**
- * `@atlasauth/backend/rp`: the server-side relying party for the hosted
+ * `@atlasauth/backend/rp` (also published alone as `@atlasauth/rp`, whose
+ * only dependency is `jose`): the server-side relying party for the hosted
  * redirect, as `(Request) => Response` handlers for any framework.
+ *
+ *   const rp = createRelyingParty({ ...settings, onSignedIn: (user, tokens) => yourSession(user) });
+ *   const response = await rp.handle(request); // sign-in, callback and sign-out; null for any other path
+ *
+ * Or route them yourself:
  *
  *   const rp = createRelyingParty({ issuer, clientId, clientSecret, redirectUri, secret, secretKey });
  *   app.get('/auth/sign-in', (req) => rp.start(req));
@@ -22,7 +28,8 @@
  * algorithm pinned, `iss`, `aud`/`azp`, `exp`/`iat`, `nonce`, `at_hash`) plus
  * the Atlas session calls a relying party that keeps its own session needs:
  * keep-alive (`POST /v1/sessions/{id}/touch`) and server-side sign-out
- * (`POST /v1/sessions/{id}/revoke`).
+ * (`POST /v1/sessions/{id}/revoke`, or with `serverSignOut` the one-call
+ * `POST /v1/oauth_clients/{id}/logout`).
  */
 import {
   AtlasOidcError,
@@ -89,11 +96,55 @@ export interface RelyingPartyConfig {
   apiUrl?: string;
   /** Flow cookie name. Default `atlas_oidc`. */
   cookieName?: string;
+  /**
+   * Sign out with ONE server call, `POST /v1/oauth_clients/{clientId}/logout`
+   * (the key needs `oauth_clients:write` as well as `sessions:write`): it
+   * revokes this app's grants and the Atlas session, so `signOut` redirects
+   * straight to the post-logout URI (or `/`) without the `/oauth2/logout` hop.
+   * Off by default: revoke via `/v1/sessions/{id}/revoke`, then `/oauth2/logout`.
+   */
+  serverSignOut?: boolean;
   /** Minimum time between two keep-alive calls for one session. Default 5 minutes. */
   touchIntervalMs?: number;
   fetchImpl?: typeof fetch;
   /** A clock in epoch milliseconds, for tests. */
   now?: () => number;
+  /**
+   * More query parameters to pass from your sign-in URL to `/oauth2/authorize`
+   * unchanged, for example `['ref', 'utm_source']` for referral attribution.
+   * Only the names listed here are forwarded; a value over 512 characters is
+   * dropped. The parameters this helper owns (`state`, `nonce`, `redirect_uri`,
+   * `scope`, `return_to`, ...) are refused at setup.
+   */
+  forwardParams?: string[];
+  /**
+   * The paths {@link RelyingParty.handle} answers. Defaults: `signIn`
+   * `/auth/sign-in`, `callback` the path of `redirectUri`, `signOut` `/auth/sign-out`.
+   */
+  routes?: { signIn?: string; callback?: string; signOut?: string };
+  /**
+   * Called by {@link RelyingParty.handle} after a verified sign-in: create your
+   * own session here. Return a `Response` to answer with it, or nothing to
+   * answer with `result.response` (a 302 to the return path) after appending
+   * your session cookie to it. The sign-in cookie is cleared either way.
+   */
+  onSignedIn?: (
+    user: RelyingPartyUser,
+    tokens: RelyingPartyTokens,
+    request: Request,
+    result: CallbackResult,
+  ) => Promise<Response | void> | Response | void;
+  /**
+   * Called by {@link RelyingParty.handle} when the callback fails with an
+   * {@link AtlasOidcError}. Default: a plain `400`. The sign-in cookie is cleared either way.
+   */
+  onSignInError?: (error: AtlasOidcError, request: Request) => Promise<Response> | Response;
+  /**
+   * Called by {@link RelyingParty.handle} on the sign-out path: end your own
+   * session and return the Atlas `sid` and `idToken` you kept, plus the
+   * `setCookies` that clear your session cookie.
+   */
+  onSignOut?: (request: Request) => Promise<SignOutOptions | void> | SignOutOptions | void;
 }
 
 /** Who signed in: the ID-token claims an app needs, in the token's own names. */
@@ -159,6 +210,8 @@ export interface SignOutOptions {
   /** Override the configured `postLogoutRedirectUri`. */
   postLogoutRedirectUri?: string;
   state?: string;
+  /** `Set-Cookie` values to send on the redirect, for example the one that clears your session cookie. */
+  setCookies?: string[];
 }
 
 export interface RecentAuthOptions {
@@ -174,7 +227,8 @@ export interface RelyingParty {
   /**
    * Begin sign-in: a 302 to `/oauth2/authorize` with the sign-in cookie set.
    * `prompt`, `login_hint`, `ui_locales`, `max_age`, `organization` and
-   * `return_to` on the request's query are passed through; `overrides` win.
+   * `return_to` on the request's query are passed through, as are the
+   * `forwardParams` you configured; `overrides` win (`extraParams` merge).
    */
   start(request: Request, overrides?: StartOverrides): Promise<Response>;
   /**
@@ -206,10 +260,21 @@ export interface RelyingParty {
   revokeSession(sid: string): Promise<'revoked' | 'not_found'>;
   /**
    * Sign-out: with a `sid` and a `secretKey`, revokes the Atlas session
-   * server-side first, then 302s the browser to `/oauth2/logout`. End your own
-   * session (clear your cookie on this response) as well.
+   * server-side first, then 302s the browser to `/oauth2/logout`. With
+   * `serverSignOut`, one call ends this app's grants and the Atlas session and
+   * the 302 goes straight to the post-logout URI. End your own session (clear
+   * your cookie on this response) as well.
    */
   signOut(options?: SignOutOptions): Promise<Response>;
+  /**
+   * All three routes in one handler: `GET` on the sign-in path runs `start`,
+   * `GET` on the callback path runs `callback` then `onSignedIn`, and `POST`
+   * or `GET` on the sign-out path runs `onSignOut` then `signOut`. Any other
+   * request gets `null`, so your app answers it. Needs `onSignedIn`.
+   *
+   *   export default { fetch: async (req) => (await rp.handle(req)) ?? app(req) };
+   */
+  handle(request: Request): Promise<Response | null>;
 }
 
 const PASSTHROUGH: ReadonlyArray<[string, keyof StartOverrides]> = [
@@ -219,6 +284,23 @@ const PASSTHROUGH: ReadonlyArray<[string, keyof StartOverrides]> = [
   ['organization', 'organization'],
   ['return_to', 'returnTo'],
 ];
+
+/** Parameters `forwardParams` may not name: the helper sets them, or they mean something else here. */
+const NOT_FORWARDABLE = new Set([
+  'response_type',
+  'client_id',
+  'redirect_uri',
+  'state',
+  'nonce',
+  'code_challenge',
+  'code_challenge_method',
+  'scope',
+  'return_to',
+  'id_token_hint',
+  'request',
+  'request_uri',
+]);
+const MAX_FORWARDED_VALUE = 512;
 
 const DEFAULT_TOUCH_INTERVAL_MS = 5 * 60_000;
 /** How long a `requireRecentAuth(…, 0)` confirmation counts, in seconds. */
@@ -231,6 +313,12 @@ export function createRelyingParty(config: RelyingPartyConfig): RelyingParty {
   }
   const afterSignIn = config.afterSignInPath ?? '/';
   if (!isSafeReturnTo(afterSignIn)) throw new TypeError('createRelyingParty: `afterSignInPath` must be a path starting with a single `/`.');
+  const forwardParams = config.forwardParams ?? [];
+  for (const name of forwardParams) {
+    if (typeof name !== 'string' || !/^[A-Za-z0-9_.-]{1,64}$/.test(name) || NOT_FORWARDABLE.has(name)) {
+      throw new TypeError(`createRelyingParty: \`forwardParams\` cannot forward ${JSON.stringify(name)}: use a plain parameter name the helper does not set itself.`);
+    }
+  }
   const base = {
     issuer: config.issuer,
     clientId: config.clientId,
@@ -254,7 +342,13 @@ export function createRelyingParty(config: RelyingPartyConfig): RelyingParty {
     }
     const maxAge = query.get('max_age');
     if (maxAge !== null && /^\d{1,9}$/.test(maxAge)) fromQuery.maxAge = Number(maxAge);
-    const { url, cookie } = await oidcStart({ ...base, scope: config.scope, ...fromQuery, ...overrides });
+    const forwarded: Record<string, string> = {};
+    for (const name of forwardParams) {
+      const v = query.get(name);
+      if (v && v.length <= MAX_FORWARDED_VALUE) forwarded[name] = v;
+    }
+    const extraParams = { ...forwarded, ...overrides.extraParams };
+    const { url, cookie } = await oidcStart({ ...base, scope: config.scope, ...fromQuery, ...overrides, extraParams });
     return redirect(url, [cookie]);
   }
 
@@ -345,6 +439,19 @@ export function createRelyingParty(config: RelyingPartyConfig): RelyingParty {
   }
 
   async function signOut(options: SignOutOptions = {}): Promise<Response> {
+    if (config.serverSignOut && options.sid && config.secretKey) {
+      const url = `${(config.apiUrl ?? DEFAULT_API_URL).replace(/\/+$/, '')}/v1/oauth_clients/${encodeURIComponent(config.clientId)}/logout`;
+      const res = await doFetch(url, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${config.secretKey}`, accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify({ sid: options.sid }),
+      });
+      // 404: this instance has no such session any more, so there is nothing left to end.
+      if (!res.ok && res.status !== 404) throw new AtlasApiError(res.status, errorsOf(await res.json().catch(() => null)));
+      const target = new URL(options.postLogoutRedirectUri ?? config.postLogoutRedirectUri ?? '/', 'http://relative.invalid');
+      if (options.state) target.searchParams.set('state', options.state);
+      return redirect(target.origin === 'http://relative.invalid' ? `${target.pathname}${target.search}` : target.toString(), []);
+    }
     if (options.sid && config.secretKey) await revokeSession(options.sid);
     const url = await oidcLogoutUrl({
       ...base,
@@ -352,10 +459,43 @@ export function createRelyingParty(config: RelyingPartyConfig): RelyingParty {
       idTokenHint: options.idToken,
       state: options.state,
     });
-    return redirect(url, []);
+    return redirect(url, options.setCookies ?? []);
   }
 
-  return { start, callback, requireRecentAuth, touchIfDue, revokeSession, signOut };
+  async function handle(request: Request): Promise<Response | null> {
+    if (!config.onSignedIn) throw new TypeError('handle: `onSignedIn` is not configured; it is where your app creates its session.');
+    const { pathname } = new URL(request.url);
+    const method = request.method.toUpperCase();
+    const routes = config.routes ?? {};
+    if (method === 'GET' && pathname === (routes.signIn ?? '/auth/sign-in')) return start(request);
+    if (method === 'GET' && pathname === (routes.callback ?? new URL(config.redirectUri).pathname)) {
+      let result: CallbackResult;
+      try {
+        result = await callback(request);
+      } catch (error) {
+        if (!(error instanceof AtlasOidcError)) throw error;
+        const failed = config.onSignInError
+          ? await config.onSignInError(error, request)
+          : new Response('Sign-in failed. Please try again.', { status: 400, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
+        return withCookie(failed, error.clearCookie);
+      }
+      const own = await config.onSignedIn(result.user, result.tokens, request, result);
+      return own instanceof Response ? withCookie(own, result.identity.clearCookie) : result.response;
+    }
+    if ((method === 'POST' || method === 'GET') && pathname === (routes.signOut ?? '/auth/sign-out')) {
+      return signOut((await config.onSignOut?.(request)) ?? {});
+    }
+    return null;
+  }
+
+  return { start, callback, requireRecentAuth, touchIfDue, revokeSession, signOut, handle };
+}
+
+/** A copy of `response` with mutable headers and one more `Set-Cookie`. */
+function withCookie(response: Response, cookie: string | undefined): Response {
+  const out = new Response(response.body, response);
+  if (cookie) out.headers.append('set-cookie', cookie);
+  return out;
 }
 
 /** A 302 built with `new Response` (not `Response.redirect`), so its headers stay mutable. */

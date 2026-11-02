@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.7.0 — 2026-11-02
+
+### Changed
+
+- Depends on `jscodeshift` ^17.3.0 (was ^0.16.1). 0.16 pulled deprecated packages (`temp` → `rimraf@2` → `glob@7` → `inflight`) into every install, including `npx @atlasauth/cli`. Only the jscodeshift core API is used, which 17 keeps unchanged (17 needs Node 16 or later).
+
 ## 0.6.0 — 2026-10-26
 
 ### Changed

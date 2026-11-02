@@ -92,6 +92,8 @@ interface PreflightFinding {
   code: string;
   message: string;
   fix: string;
+  /** Known and accepted (never on an error): shown, not counted. */
+  acknowledged?: { reason: string };
 }
 
 const FINDING_COLUMNS: Column<PreflightFinding>[] = [
@@ -109,8 +111,10 @@ export async function preflight(ctx: RunContext, args: ParsedArgs): Promise<numb
   const cred = instanceCredential(ctx, args);
   const report = await httpFor(ctx, cred).get<{ ok: boolean; findings: PreflightFinding[] }>('/v1/instance/preflight');
   const findings = report.findings ?? [];
-  const errors = findings.filter((f) => f.severity === 'error').length;
-  const warnings = findings.filter((f) => f.severity === 'warning').length;
+  const counted = findings.filter((f) => !f.acknowledged);
+  const errors = counted.filter((f) => f.severity === 'error').length;
+  const warnings = counted.filter((f) => f.severity === 'warning').length;
+  const acknowledged = findings.length - counted.length;
   const failed = errors > 0 || (failOn === 'warning' && warnings > 0);
 
   if (wantsJson(args.values)) {
@@ -120,11 +124,16 @@ export async function preflight(ctx: RunContext, args: ParsedArgs): Promise<numb
   } else {
     ctx.io.out(renderTable(FINDING_COLUMNS, findings));
     ctx.io.out('');
-    for (const f of findings.filter((x) => x.severity !== 'info')) {
+    for (const f of counted.filter((x) => x.severity !== 'info')) {
       ctx.io.out(`${f.code}: ${f.fix}`);
     }
+    for (const f of findings.filter((x) => x.acknowledged)) {
+      ctx.io.out(`${f.code}: acknowledged (${f.acknowledged!.reason})`);
+    }
     ctx.io.out('');
-    ctx.io.out(`${errors} error(s), ${warnings} warning(s), ${findings.length - errors - warnings} info.`);
+    ctx.io.out(
+      `${errors} error(s), ${warnings} warning(s), ${counted.length - errors - warnings} info${acknowledged ? `, ${acknowledged} acknowledged` : ''}.`,
+    );
   }
   if (failed) {
     ctx.io.err(

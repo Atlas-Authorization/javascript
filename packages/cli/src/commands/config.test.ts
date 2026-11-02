@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AtlasApiError } from '@atlasauth/backend';
@@ -532,5 +532,115 @@ describe('config promote', () => {
     expect((await attempt(['--from', 'staging', '--to', 'nope'])).err).toContain("No profile named 'nope'");
     expect((await attempt(['--from', 'staging', '--to', 'staging'])).err).toContain('same profile');
     expect((await attempt(['--from', 'staging'])).err).toContain('--to');
+  });
+});
+
+describe('atlas apply / atlas plan (one config file)', () => {
+  const withPrompt = (c: RunContext, answer: string): RunContext => ({ ...c, prompt: { text: async () => answer, secret: async () => '' } });
+  const file = (doc: unknown, name = 'atlas.json') => {
+    const path = join(dir, name);
+    writeFileSync(path, JSON.stringify(doc, null, 2));
+    return path;
+  };
+  const newUrl = { redirect_urls: [{ url: 'https://app.example.com/cb' }, { url: 'https://app.example.com/cb2' }, { url: 'https://app.example.com/new' }] };
+
+  it('--check (and config plan --check) exit 2 on drift and write nothing; 0 when in sync', async () => {
+    const api = new MockApi(seedState());
+    const path = file(newUrl);
+    expect(await run(['apply', path, '--check'], ctx(captureIO(), api))).toBe(2);
+    expect(await run(['plan', path, '--check'], ctx(captureIO(), api))).toBe(2);
+    expect(api.writes).toEqual([]);
+    const inSync = file({ redirect_urls: [{ url: 'https://app.example.com/cb' }, { url: 'https://app.example.com/cb2' }] }, 'same.json');
+    expect(await run(['plan', inSync, '--check'], ctx(captureIO(), api))).toBe(0);
+
+    await run(['config', 'export', '--dir', dir], ctx(captureIO(), api));
+    const drifted = seedState();
+    (drifted.roles as Array<{ name: string }>)[0]!.name = 'Writer';
+    expect(await run(['config', 'plan', '--dir', dir, '--check'], ctx(captureIO(), new MockApi(drifted)))).toBe(2);
+  });
+
+  it('asks before applying: no answer applies nothing, --yes or "y" applies', async () => {
+    const path = file(newUrl);
+    const refused = new MockApi(seedState());
+    const io = captureIO();
+    expect(await run(['apply', path], withPrompt(ctx(io, refused), ''))).toBe(1);
+    expect(io.stdout()).toContain('+ create redirect_urls https://app.example.com/new');
+    expect(io.stdout()).toContain('Nothing applied.');
+    expect(refused.writes).toEqual([]);
+
+    const yes = new MockApi(seedState());
+    expect(await run(['apply', path, '--yes'], ctx(captureIO(), yes))).toBe(0);
+    expect(yes.writes).toEqual([{ method: 'POST', path: '/v1/redirect_urls', body: { url: 'https://app.example.com/new' } }]);
+
+    const typed = new MockApi(seedState());
+    expect(await run(['apply', path], withPrompt(ctx(captureIO(), typed), 'y'))).toBe(0);
+    expect(typed.writes).toHaveLength(1);
+  });
+
+  it('reads YAML and a directory too; an unchanged config applies nothing without asking', async () => {
+    const yamlPath = join(dir, 'atlas.yaml');
+    writeFileSync(yamlPath, 'redirect_urls:\n  - url: https://app.example.com/cb\n  - url: https://app.example.com/cb2\n');
+    const api = new MockApi(seedState());
+    const io = captureIO();
+    expect(await run(['apply', yamlPath], ctx(io, api)), io.stderr() + io.stdout()).toBe(0);
+    expect(io.stdout()).toContain('No changes to apply.');
+    expect(api.writes).toEqual([]);
+
+    const exported = mkdtempSync(join(tmpdir(), 'atlas-apply-dir-'));
+    await run(['config', 'export', '--dir', exported], ctx(captureIO(), api));
+    expect(await run(['apply', exported, '--check'], ctx(captureIO(), api))).toBe(0);
+    rmSync(exported, { recursive: true, force: true });
+  });
+
+  it('refuses an unknown resource type and a missing path', async () => {
+    const io = captureIO();
+    expect(await run(['apply', file({ email_provider: {} }), '--yes'], ctx(io, new MockApi(seedState())))).toBe(1);
+    expect(io.stderr()).toContain('unknown resource type(s) email_provider');
+    const missing = captureIO();
+    expect(await run(['plan', join(dir, 'nope.yaml')], ctx(missing, new MockApi(seedState())))).toBe(1);
+    expect(missing.stderr()).toContain('Config not found');
+  });
+
+  it('--secrets-file fills ${VAR} placeholders and must be mode 0600', async () => {
+    const path = file({ oauth_clients: [{ name: 'Web App', redirect_uris: ['https://x/y'], token_hint: '${A_TOKEN}' }] });
+    const secrets = join(dir, 'secrets.env');
+    writeFileSync(secrets, 'A_TOKEN=from-file\n');
+    if (process.platform !== 'win32') {
+      chmodSync(secrets, 0o644);
+      const io = captureIO();
+      expect(await run(['apply', path, '--yes', '--secrets-file', secrets], ctx(io, new MockApi({ ...seedState(), oauth_clients: [] })))).toBe(1);
+      expect(io.stderr()).toContain('chmod 600');
+    }
+    chmodSync(secrets, 0o600);
+    const api = new MockApi({ ...seedState(), oauth_clients: [] });
+    expect(await run(['apply', path, '--yes', '--secrets-file', secrets], ctx(captureIO(), api))).toBe(0);
+    expect((api.writes.find((w) => w.path === '/v1/oauth_clients')!.body as { token_hint: string }).token_hint).toBe('from-file');
+  });
+
+  it('keeps a one-time client secret from a create in a 0600 file under --out', async () => {
+    class SecretApi extends MockApi {
+      override async post<T>(path: string, body: unknown): Promise<T> {
+        await super.post(path, body);
+        return (path === '/v1/oauth_clients' ? { id: 'oc_1', client_id: 'cid_1', client_secret: 'once-only' } : {}) as T;
+      }
+    }
+    const out = mkdtempSync(join(tmpdir(), 'atlas-apply-out-'));
+    const path = file({ oauth_clients: [{ name: 'Web App', redirect_uris: ['https://x/y'] }] });
+    const io = captureIO();
+    expect(await run(['apply', path, '--yes', '--out', out], ctx(io, new SecretApi({ ...seedState(), oauth_clients: [] })))).toBe(0);
+    const saved = join(out, 'oauth-client-oc_1.env');
+    expect(io.stdout()).toContain(saved);
+    expect(readFileSync(saved, 'utf8')).toContain('ATLAS_CLIENT_SECRET=once-only');
+    if (process.platform !== 'win32') expect(statSync(saved).mode & 0o777).toBe(0o600);
+    rmSync(out, { recursive: true, force: true });
+  });
+
+  it('never applies while a ${VAR} placeholder is unresolved', async () => {
+    const path = file({ oauth_clients: [{ name: 'Web App', redirect_uris: ['https://x/y'], token_hint: '${MISSING_TOKEN}' }] });
+    const api = new MockApi({ ...seedState(), oauth_clients: [] });
+    const io = captureIO();
+    expect(await run(['apply', path, '--yes'], ctx(io, api))).toBe(1);
+    expect(io.stderr()).toContain('${MISSING_TOKEN}');
+    expect(api.writes).toEqual([]);
   });
 });

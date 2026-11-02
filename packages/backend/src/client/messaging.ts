@@ -507,7 +507,14 @@ export interface MessagingTestResult {
   object: 'messaging_test';
   channel: string;
   sent_to: string;
+  /** Always true: a provider refusal is a 502 error whose meta says what the provider answered. */
   ok: true;
+  accepted: boolean;
+  /** The transport that accepted it (resend, smtp, twilio, ...). */
+  provider: string;
+  provider_message_id: string | null;
+  /** SMTP: the server reply line (carries the queue id). */
+  provider_response?: string;
 }
 
 export interface DeletedMessagingProvider {

@@ -1,0 +1,52 @@
+{
+  "name": "@atlasauth/rp",
+  "version": "0.1.0",
+  "description": "The Atlas server-side relying party for the hosted redirect as (Request) => Response handlers: sign-in, callback, sign-out, step-up, session keep-alive, back-channel logout and webhook checks. Node 18+, Deno, Bun and Workers. One dependency: jose.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/rp.cjs",
+  "module": "./dist/rp.mjs",
+  "types": "./dist/types/rp.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/types/rp.d.ts",
+      "import": "./dist/rp.mjs",
+      "require": "./dist/rp.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node build.mjs",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
+    "test": "vitest run"
+  },
+  "keywords": ["atlas", "atlasauth", "oidc", "openid-connect", "relying-party", "auth", "workers", "deno", "bun"],
+  "dependencies": {
+    "jose": "^5.9.6"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "!dist/*.tsbuildinfo",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alphajew420/ssoly.git",
+    "directory": "packages/rp"
+  },
+  "homepage": "https://github.com/alphajew420/ssoly/tree/main/packages/rp#readme",
+  "bugs": {
+    "url": "https://github.com/alphajew420/ssoly/issues"
+  }
+}

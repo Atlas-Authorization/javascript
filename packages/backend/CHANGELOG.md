@@ -1,5 +1,26 @@
 # @atlasauth/backend changelog
 
+## 0.31.0 — 2026-11-02
+
+### Breaking
+
+- Proof-Carrying Authority moved to its own entry: import `verifyPCActn`, `requirePCA`, `defaultExtract`, `memoryPcaStore` and their types from `@atlasauth/backend/pca`, and install `@atlasauth/pca` (now an optional peer dependency, `^0.4.3`). The main entry no longer loads it, so it stays Edge-safe (Next.js middleware) and apps that don't use PCA install none of it.
+
+### Added
+
+- `@atlasauth/backend/rp`: `rp.handle(request)` answers the sign-in, callback and sign-out paths in one handler (`null` for any other path). Hooks on `createRelyingParty`: `onSignedIn(user, tokens, request, result)` (create your session; return a `Response` or append to `result.response`), `onSignInError(error, request)` and `onSignOut(request)`; `routes` sets the paths.
+- `forwardParams`: query parameters on the sign-in URL forwarded to `/oauth2/authorize` unchanged (for example referral or campaign parameters). Parameters the helper owns are refused at setup. `start(request, { extraParams })` now merges with them.
+- `signOut({ setCookies })`: extra `Set-Cookie` values on the sign-out redirect.
+- The same entry point is published alone as `@atlasauth/rp` (one dependency: `jose`).
+
+### Security
+
+- Depends on the published `@atlasauth/pca` `^0.4.3` (was `0.1.0`, deprecated on npm: its hardware-attestation verifiers accepted malleable evidence). `verifyPCActn`, `requirePCA`, `defaultExtract` and `memoryPcaStore` (and their types) are now the hardened implementations from `@atlasauth/pca`, re-exported unchanged. Options are a superset of the old ones, but the guard is stricter: `requirePCA` is default-deny and needs `audience`, a `budgetStore` (replay counter), a `hooks.revocation` checker and a `context()` returning your authorized `plan` (or `require` set to the checks you enforce); a PCActn with a signed `aud` fails when no audience is given; string bodies are parsed with the strict JSON profile. See the `@atlasauth/pca` README.
+
+### Changed
+
+- `ReferralSettings`: `context_cookies` is the canonical field (read and write). `context_cookie` stays, as the first cookie on read and an accepted older name on write.
+
 ## 0.30.0 — 2026-11-01
 
 ### Added

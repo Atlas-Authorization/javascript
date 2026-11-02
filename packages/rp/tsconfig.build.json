@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // esbuild (build.mjs) emits the JS; tsc only emits the type declarations of
+  // the shared source, rooted at packages/backend/src.
+  "compilerOptions": {
+    "rootDir": "../backend/src",
+    "outDir": "./dist/types",
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "sourceMap": false,
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
+  },
+  "files": ["../backend/src/rp.ts"],
+  "include": []
+}

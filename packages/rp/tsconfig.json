@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  // The package has no source of its own: it ships packages/backend/src/rp.ts
+  // (see build.mjs). Only its tests live here.
+  "include": ["src/**/*"],
+  "exclude": []
+}

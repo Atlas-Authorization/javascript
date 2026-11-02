@@ -47,6 +47,7 @@ interface ReferralSettingsRead {
   connection_id: string | null;
   signing_secret_set: boolean;
   tracking_token?: string | null;
+  link_template?: string | null;
   auto_enroll_users?: boolean;
   forward_lifecycle?: boolean;
   missing?: string[];
@@ -253,16 +254,115 @@ export const REFERALLI_SYNC_TOPICS = [
 export async function referalliKeyMode(
   ctx: RunContext,
   input: { baseUrl: string; key: string },
-): Promise<{ live: boolean; known: boolean }> {
+): Promise<{ live: boolean; known: boolean; org: Record<string, unknown> | null }> {
+  const org = await referalliTry(ctx, { ...input, path: '/v1/org', what: 'read the organization' });
+  if (typeof org?.livemode === 'boolean') return { live: org.livemode, known: true, org };
+  if (input.key.startsWith('rk_test_')) return { live: false, known: true, org };
+  if (input.key.startsWith('rk_live_')) return { live: true, known: true, org };
+  return { live: true, known: false, org };
+}
+
+/** A best-effort Referalli read: null when it fails (an older Referalli, a key without access). */
+async function referalliTry(
+  ctx: RunContext,
+  input: { baseUrl: string; key: string; path: string; what: string },
+): Promise<Record<string, unknown> | null> {
   try {
-    const org = await referalliRequest(ctx, { ...input, method: 'GET', path: '/v1/org', what: 'read the organization' });
-    if (typeof org.livemode === 'boolean') return { live: org.livemode, known: true };
-  } catch {
-    /* fall back to the key prefix */
+    return await referalliRequest(ctx, { ...input, method: 'GET' });
+  } catch (err) {
+    if (err instanceof CliError) return null;
+    throw err;
   }
-  if (input.key.startsWith('rk_test_')) return { live: false, known: true };
-  if (input.key.startsWith('rk_live_')) return { live: true, known: true };
-  return { live: true, known: false };
+}
+
+/** A Referalli list answer: a plain array (API version 2026-10-21) or a `{ data: [...] }` page. */
+export function referalliList(body: unknown): Record<string, unknown>[] {
+  const rows = Array.isArray(body) ? body : body && typeof body === 'object' && Array.isArray((body as { data?: unknown }).data) ? (body as { data: unknown[] }).data : [];
+  return rows.filter((r): r is Record<string, unknown> => !!r && typeof r === 'object' && !Array.isArray(r));
+}
+
+/** Referalli's public tracked link for a code: `{host}/go/{trackingToken}/{code}`, on the org's link domain once it is active. */
+export function referalliLinkTemplate(baseUrl: string, trackingToken: string, branding: Record<string, unknown> | null): string {
+  const domain = branding?.linkDomainStatus === 'active' && typeof branding.linkDomain === 'string' && branding.linkDomain ? branding.linkDomain : null;
+  return `${domain ? `https://${domain}` : baseUrl}/go/${encodeURIComponent(trackingToken)}/{code}`;
+}
+
+/** The merchant key from --referalli-key / --referalli-key-file / REFERALLI_API_KEY (or their old names); never printed. */
+function referalliKeyFrom(ctx: RunContext, v: ParsedArgs['values']): string | undefined {
+  const oldKeyFile = str(v, LEGACY.keyFileFlag);
+  const oldKey = str(v, LEGACY.keyFlag);
+  if (oldKeyFile) legacyNotice(ctx, `--${LEGACY.keyFileFlag}`, '--referalli-key-file');
+  if (oldKey) legacyNotice(ctx, `--${LEGACY.keyFlag}`, '--referalli-key');
+  const legacyKey = ctx.env[LEGACY.apiKeyEnv]?.trim();
+  if (!ctx.env.REFERALLI_API_KEY?.trim() && legacyKey) legacyNotice(ctx, LEGACY.apiKeyEnv, 'REFERALLI_API_KEY');
+  const keyFile = str(v, 'referalli-key-file') ?? oldKeyFile;
+  return (
+    str(v, 'referalli-key') ??
+    oldKey ??
+    (keyFile ? readKeyFile(ctx, keyFile, 'the Referalli key') : (ctx.env.REFERALLI_API_KEY?.trim() || legacyKey || undefined))
+  );
+}
+
+/** The `programIds` a Referalli webhook endpoint is limited to: null or [] means every program in the organization. */
+export function webhookScope(endpoint: Record<string, unknown> | null): { scope: 'program' | 'all_programs' | 'unknown'; program_ids: string[] | null } {
+  if (!endpoint) return { scope: 'unknown', program_ids: null };
+  const ids = Array.isArray(endpoint.programIds) ? endpoint.programIds.filter((x): x is string => typeof x === 'string') : [];
+  return ids.length ? { scope: 'program', program_ids: ids } : { scope: 'all_programs', program_ids: null };
+}
+
+/**
+ * The two-way sync webhook on Referalli, limited to the connected program
+ * (`programIds: [program]`) so another product's referrals in a shared
+ * organization never reach this instance. Idempotent: an endpoint already
+ * pointing at this instance's inbound URL is reused and re-scoped in place
+ * (an unscoped one from an earlier run is repaired); its secret is rotated
+ * only when Atlas does not hold it (`held`: the endpoint whose secret Atlas
+ * stores). `secret` is null when nothing new needs saving.
+ */
+async function referalliSyncEndpoint(
+  ctx: RunContext,
+  input: { baseUrl: string; key: string; url: string; program: string; held: string | null },
+): Promise<{ id: string; secret: string | null; duplicates: string[] }> {
+  const { baseUrl, key } = input;
+  const scope = { topics: [...REFERALLI_SYNC_TOPICS], legacySignature: false, programIds: [input.program] };
+  const listed = await referalliTry(ctx, { baseUrl, key, path: '/v1/webhook-endpoints', what: 'list the webhook endpoints' });
+  const mine = referalliList(listed).filter((e) => e.url === input.url && typeof e.id === 'string');
+  const found = mine.find((e) => e.id === input.held) ?? mine[0];
+  if (!found) {
+    const endpoint = await referalliRequest(ctx, {
+      baseUrl,
+      key,
+      method: 'POST',
+      path: '/v1/webhook-endpoints',
+      body: { url: input.url, ...scope },
+      what: 'register the referral event webhook',
+    });
+    if (typeof endpoint.id !== 'string' || typeof endpoint.secret !== 'string') {
+      throw new CliError('Referalli answered without a webhook endpoint id and secret.');
+    }
+    return { id: endpoint.id, secret: endpoint.secret, duplicates: [] };
+  }
+  const id = found.id as string;
+  const duplicates = mine.filter((e) => e !== found).map((e) => e.id as string);
+  await referalliRequest(ctx, {
+    baseUrl,
+    key,
+    method: 'PATCH',
+    path: `/v1/webhook-endpoints/${encodeURIComponent(id)}`,
+    body: scope,
+    what: 'limit the referral event webhook to the program',
+  });
+  if (id === input.held) return { id, secret: null, duplicates };
+  const rotated = await referalliRequest(ctx, {
+    baseUrl,
+    key,
+    method: 'POST',
+    path: `/v1/webhook-endpoints/${encodeURIComponent(id)}/rotate-secret`,
+    body: {},
+    what: 'rotate the referral event webhook secret',
+  });
+  if (typeof rotated.secret !== 'string') throw new CliError('Referalli answered without a webhook secret.');
+  return { id, secret: rotated.secret, duplicates };
 }
 
 /**
@@ -368,17 +468,7 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
     const baseRaw = str(v, 'base-url') ?? ctx.env.REFERALLI_BASE_URL?.trim() ?? legacyBase;
     if (!baseRaw) throw new CliError('Pass --base-url <your Referalli base URL> (or set REFERALLI_BASE_URL).');
     const baseUrl = httpsUrl(baseRaw, '--base-url');
-    const oldKeyFile = str(v, LEGACY.keyFileFlag);
-    const oldKey = str(v, LEGACY.keyFlag);
-    if (oldKeyFile) legacyNotice(ctx, `--${LEGACY.keyFileFlag}`, '--referalli-key-file');
-    if (oldKey) legacyNotice(ctx, `--${LEGACY.keyFlag}`, '--referalli-key');
-    const legacyKey = ctx.env[LEGACY.apiKeyEnv]?.trim();
-    if (!ctx.env.REFERALLI_API_KEY?.trim() && legacyKey) legacyNotice(ctx, LEGACY.apiKeyEnv, 'REFERALLI_API_KEY');
-    const keyFile = str(v, 'referalli-key-file') ?? oldKeyFile;
-    const key =
-      str(v, 'referalli-key') ??
-      oldKey ??
-      (keyFile ? readKeyFile(ctx, keyFile, 'the Referalli key') : (ctx.env.REFERALLI_API_KEY?.trim() ?? legacyKey));
+    const key = referalliKeyFrom(ctx, v);
     if (!key) {
       throw new CliError('Pass your Referalli merchant key with --referalli-key-file <path|-> (or --referalli-key, or REFERALLI_API_KEY). It is used once and never stored.');
     }
@@ -400,17 +490,49 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
     } else if (!mode.known && !instanceLive) {
       ctx.io.err(`atlas: warning: Referalli did not say whether this key reaches test data; instance ${instance.id} is ${instance.environment ?? 'not production'}.`);
     }
-    const created = await referalliCreateConnection(ctx, {
-      baseUrl,
-      key,
-      body: {
-        provider: 'atlas',
-        instanceId: instance.id,
-        programId: program,
-        ...(v['auto-enroll'] === true ? { autoEnrollUsers: true } : {}),
-        ...(destination ? { destinationUrl: destination } : {}),
-      },
-    });
+    const enrollment = {
+      ...(v['auto-enroll'] === true ? { autoEnrollUsers: true } : {}),
+      ...(destination ? { destinationUrl: destination } : {}),
+    };
+    const current = await http.get<ReferralSettingsRead>('/v1/instance/referrals');
+    // Re-runs reuse the instance's connection, updated in place: Referalli keeps one per instance per organization.
+    const listed = await referalliTry(ctx, { baseUrl, key, path: '/v1/auth/connections', what: 'list the connections' });
+    const existing = referalliList(listed).find((c) => c.provider === 'atlas' && c.instanceId === instance.id && typeof c.id === 'string');
+    if (existing && typeof existing.programId === 'string' && existing.programId !== program) {
+      throw new CliError(
+        `Referalli already has connection ${String(existing.id)} for instance ${instance.id}, in program ${existing.programId}. ` +
+          `It allows one per instance: run again with --program ${existing.programId}, or delete that connection on Referalli first.`,
+      );
+    }
+    let connectionId: string;
+    // Null when Atlas already holds the reused connection's secret.
+    let secret: string | null = null;
+    let createdToken: string | null = null;
+    if (existing) {
+      connectionId = existing.id as string;
+      if (current.connection_id !== connectionId || !current.signing_secret_set) {
+        // Atlas does not hold this connection's secret: rotate it (the old one keeps verifying for 24 hours).
+        const rotated = await referalliRequest(ctx, {
+          baseUrl,
+          key,
+          method: 'POST',
+          path: `/v1/auth/connections/${encodeURIComponent(connectionId)}/rotate-secret`,
+          body: {},
+          what: 'rotate the connection secret',
+        });
+        if (typeof rotated.secret !== 'string') throw new CliError('Referalli answered without a connection secret.');
+        secret = rotated.secret;
+      }
+    } else {
+      const created = await referalliCreateConnection(ctx, {
+        baseUrl,
+        key,
+        body: { provider: 'atlas', instanceId: instance.id, programId: program, ...enrollment },
+      });
+      connectionId = created.id;
+      secret = created.secret;
+      createdToken = typeof created.trackingToken === 'string' ? created.trackingToken : null;
+    }
     // Atlas always signs with v2: require it from the first call, so v1 is never accepted on this connection.
     let signatureV2 = true;
     try {
@@ -418,74 +540,94 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
         baseUrl,
         key,
         method: 'PATCH',
-        path: `/v1/auth/connections/${encodeURIComponent(created.id)}`,
-        body: { signatureVersion: 'v2' },
-        what: 'require v2 signatures on the connection',
+        path: `/v1/auth/connections/${encodeURIComponent(connectionId)}`,
+        body: { signatureVersion: 'v2', ...(existing ? enrollment : {}) },
+        what: existing ? 'update the connection' : 'require v2 signatures on the connection',
       });
     } catch (err) {
       signatureV2 = false;
       ctx.io.err(`atlas: warning: ${err instanceof Error ? err.message : String(err)} It switches to v2 on Atlas's first call anyway.`);
     }
-    const trackingToken = str(v, 'tracking-token') ?? (typeof created.trackingToken === 'string' ? created.trackingToken : null);
+    // The org's public tracking token (GET /v1/org) builds Referalli's tracked links; a link template set before is kept.
+    const orgToken = typeof mode.org?.trackingToken === 'string' ? mode.org.trackingToken : null;
+    const trackingToken = str(v, 'tracking-token') ?? orgToken ?? createdToken;
+    let linkTemplate = str(v, 'link-template') ?? null;
+    if (!linkTemplate && !current.link_template && trackingToken) {
+      const branding = await referalliTry(ctx, { baseUrl, key, path: '/v1/branding', what: 'read the link domain' });
+      linkTemplate = referalliLinkTemplate(baseUrl, trackingToken, branding);
+    }
     patch = {
       provider: 'referalli',
       endpoint_url: baseUrl,
-      connection_id: created.id,
-      signing_secret: created.secret,
+      connection_id: connectionId,
+      ...(secret ? { signing_secret: secret } : {}),
       program_id: program,
       ...(v['auto-enroll'] === true ? { auto_enroll_users: true } : {}),
       ...(trackingToken ? { tracking_token: trackingToken } : {}),
+      ...(linkTemplate ? { link_template: linkTemplate } : {}),
     };
     let saved: { inbound?: { url?: string | null } } | undefined;
     try {
       saved = await http.patch<{ inbound?: { url?: string | null } }>('/v1/instance/referrals', patch);
     } catch (err) {
       // The secret is shown once by Referalli: keep it so the merchant can finish by hand.
-      const saved = deliverSecret({
-        io: out,
-        env: ctx.env,
-        product,
-        fileName: `referalli-connection-${created.id}.env`,
-        entries: { REFERALLI_CONNECTION_ID: created.id, REFERALLI_CONNECTION_SECRET: created.secret },
-        label: 'The Referalli connection secret (not saved on Atlas)',
-        force: v.force === true,
-        comment: `Referalli connection ${created.id}: saving it on the Atlas instance failed. Paste it in Users → Referrals.`,
-      });
-      ctx.io.err(`atlas: the connection ${created.id} was created on Referalli, but saving it on the instance failed.${saved.path ? ` Its secret is in ${saved.path}.` : ''}`);
-      throw err;
-    }
-    // Two-way sync: Referalli's referral events go to the instance's inbound URL.
-    let syncEndpoint: string | null = null;
-    const inboundUrl = saved?.inbound?.url ?? null;
-    if (v['no-sync'] !== true && inboundUrl) {
-      try {
-        const endpoint = await referalliRequest(ctx, {
-          baseUrl,
-          key,
-          method: 'POST',
-          path: '/v1/webhook-endpoints',
-          body: { url: inboundUrl, topics: [...REFERALLI_SYNC_TOPICS], legacySignature: false },
-          what: 'register the referral event webhook',
-        });
-        if (typeof endpoint.id !== 'string' || typeof endpoint.secret !== 'string') {
-          throw new CliError('Referalli answered without a webhook endpoint id and secret.');
-        }
-        try {
-          await http.patch('/v1/instance/referrals', { inbound_secret: endpoint.secret, inbound_endpoint_id: endpoint.id });
-          syncEndpoint = endpoint.id;
-        } catch (err) {
-          const kept = deliverSecret({
+      const kept = secret
+        ? deliverSecret({
             io: out,
             env: ctx.env,
             product,
-            fileName: `referalli-webhook-${endpoint.id}.env`,
-            entries: { REFERALLI_WEBHOOK_ENDPOINT_ID: endpoint.id, REFERALLI_WEBHOOK_SECRET: endpoint.secret },
-            label: 'The Referalli webhook secret (not saved on Atlas)',
+            fileName: `referalli-connection-${connectionId}.env`,
+            entries: { REFERALLI_CONNECTION_ID: connectionId, REFERALLI_CONNECTION_SECRET: secret },
+            label: 'The Referalli connection secret (not saved on Atlas)',
             force: v.force === true,
-            comment: `Referalli webhook ${endpoint.id}: saving it on the Atlas instance failed. Paste it as the inbound secret in Users → Referrals.`,
-          });
+            comment: `Referalli connection ${connectionId}: saving it on the Atlas instance failed. Paste it in Users → Referrals.`,
+          })
+        : { path: undefined };
+      ctx.io.err(
+        `atlas: the connection ${connectionId} ${existing ? 'exists' : 'was created'} on Referalli, but saving it on the instance failed.${kept.path ? ` Its secret is in ${kept.path}.` : ''}`,
+      );
+      throw err;
+    }
+    // Two-way sync: Referalli's referral events for this program go to the instance's inbound URL.
+    let syncEndpoint: string | null = null;
+    let syncScope: string[] | null = null;
+    const inboundUrl = saved?.inbound?.url ?? null;
+    if (v['no-sync'] !== true && inboundUrl) {
+      try {
+        const sync = await referalliSyncEndpoint(ctx, {
+          baseUrl,
+          key,
+          url: inboundUrl,
+          program,
+          held: current.inbound?.secret_set ? (current.inbound.endpoint_id ?? null) : null,
+        });
+        if (!sync.secret) {
+          syncEndpoint = sync.id;
+          syncScope = [program];
+        } else {
+          try {
+            await http.patch('/v1/instance/referrals', { inbound_secret: sync.secret, inbound_endpoint_id: sync.id });
+            syncEndpoint = sync.id;
+            syncScope = [program];
+          } catch (err) {
+            const kept = deliverSecret({
+              io: out,
+              env: ctx.env,
+              product,
+              fileName: `referalli-webhook-${sync.id}.env`,
+              entries: { REFERALLI_WEBHOOK_ENDPOINT_ID: sync.id, REFERALLI_WEBHOOK_SECRET: sync.secret },
+              label: 'The Referalli webhook secret (not saved on Atlas)',
+              force: v.force === true,
+              comment: `Referalli webhook ${sync.id}: saving it on the Atlas instance failed. Paste it as the inbound secret in Users → Referrals.`,
+            });
+            ctx.io.err(
+              `atlas: warning: the webhook ${sync.id} was registered on Referalli, but saving its secret failed (${err instanceof Error ? err.message : String(err)}).${kept.path ? ` It is in ${kept.path}.` : ''}`,
+            );
+          }
+        }
+        if (sync.duplicates.length) {
           ctx.io.err(
-            `atlas: warning: the webhook ${endpoint.id} was registered on Referalli, but saving its secret failed (${err instanceof Error ? err.message : String(err)}).${kept.path ? ` It is in ${kept.path}.` : ''}`,
+            `atlas: warning: Referalli has more webhook endpoints for this instance (${sync.duplicates.join(', ')}). Atlas cannot verify their deliveries; delete them on Referalli.`,
           );
         }
       } catch (err) {
@@ -493,20 +635,37 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
         ctx.io.err(`atlas: warning: ${err.message} Referral changes on Referalli won't reach Atlas until it is registered (see the docs).`);
       }
     }
+    // What connect could not set: the exact settings call that finishes it.
+    const leftToDo: Record<string, string> = {};
+    if (!(trackingToken ?? current.tracking_token)) leftToDo.tracking_token = '<your Referalli tracking token (tk_…), from GET /v1/org on Referalli>';
+    if (!(linkTemplate ?? current.link_template)) leftToDo.link_template = 'https://<your Referalli link host>/go/<tracking token>/{code}';
     summary = {
       provider: 'referalli',
       instance_id: instance.id,
       endpoint_url: baseUrl,
-      connection_id: created.id,
+      connection_id: connectionId,
+      reused: Boolean(existing),
       program_id: program,
-      tracking_token: trackingToken,
+      tracking_token: trackingToken ?? current.tracking_token ?? null,
+      link_template: linkTemplate ?? current.link_template ?? null,
       livemode: mode.known ? mode.live : null,
       signature_v2_required: signatureV2,
       sync_endpoint_id: syncEndpoint,
+      sync_program_ids: syncScope,
+      left_to_do: Object.keys(leftToDo).length ? { method: 'PATCH', path: '/v1/instance/referrals', body: leftToDo } : null,
     };
     if (!json) {
-      out.out(`Created Referalli connection ${created.id} for instance ${instance.id} and saved it (the secret was not printed).`);
-      if (syncEndpoint) out.out(`Referral changes on Referalli sync back to Atlas (webhook ${syncEndpoint}).`);
+      out.out(
+        existing
+          ? `Reused Referalli connection ${connectionId} for instance ${instance.id} and updated it${secret ? ' (new secret saved, not printed)' : ''}.`
+          : `Created Referalli connection ${connectionId} for instance ${instance.id} and saved it (the secret was not printed).`,
+      );
+      if (syncEndpoint) out.out(`Referral changes on Referalli sync back to Atlas (webhook ${syncEndpoint}, program ${program} only).`);
+      if (Object.keys(leftToDo).length) {
+        out.out(`Left to do: ${Object.keys(leftToDo).join(' and ')} could not be read from Referalli. Set them with PATCH /v1/instance/referrals:`);
+        out.out(`  ${JSON.stringify(leftToDo)}`);
+        out.out('  (or run this again with --tracking-token <tk_…> and --link-template <url with {code}>)');
+      }
     }
   } else {
     const endpoint = str(v, 'endpoint');
@@ -681,8 +840,47 @@ async function status(ctx: RunContext, args: ParsedArgs): Promise<number> {
   } catch (err) {
     if (!(err instanceof AtlasApiError)) throw err;
   }
+  // The sync webhook's program scope lives on Referalli: read it when a merchant key is given (never required).
+  const inbound = settings.inbound;
+  let webhook: Record<string, unknown> | null = null;
+  const key = settings.provider === 'referalli' && settings.endpoint_url && inbound?.endpoint_id ? referalliKeyFrom(ctx, args.values) : undefined;
+  if (key && settings.endpoint_url && inbound?.endpoint_id) {
+    webhook = await referalliTry(ctx, {
+      baseUrl: settings.endpoint_url,
+      key,
+      path: `/v1/webhook-endpoints/${encodeURIComponent(inbound.endpoint_id)}`,
+      what: 'read the referral event webhook',
+    });
+  }
+  const scope = webhookScope(webhook);
   if (wantsJson(args.values)) {
-    printJson(ctx.io, { settings, findings });
+    const c = settings.connection ?? null;
+    printJson(ctx.io, {
+      // Flat, stable fields for scripts; `settings` is the raw GET /v1/instance/referrals answer.
+      status: {
+        enabled: settings.enabled,
+        provider: settings.provider,
+        connection_id: settings.connection_id,
+        program_id: settings.program_id,
+        signing_secret_set: settings.signing_secret_set,
+        webhook: {
+          endpoint_id: inbound?.endpoint_id ?? null,
+          url: inbound?.url ?? null,
+          secret_set: inbound?.secret_set ?? false,
+          // program: limited to program_ids; all_programs: every program in the organization; unknown: no merchant key given.
+          scope: inbound?.endpoint_id ? scope.scope : null,
+          program_ids: scope.program_ids,
+        },
+        link_template_set: Boolean(settings.link_template),
+        tracking_token_set: Boolean(settings.tracking_token),
+        last_sync: inbound?.last_event ?? null,
+        last_test: c?.last_test ?? null,
+        last_success_at: c?.last_success_at ?? null,
+        missing: settings.missing ?? [],
+      },
+      settings,
+      findings,
+    });
     return findings.some((f) => f.severity === 'error') ? 1 : 0;
   }
   const c = settings.connection ?? null;
@@ -693,6 +891,8 @@ async function status(ctx: RunContext, args: ParsedArgs): Promise<number> {
     `Connection ID:        ${settings.connection_id ?? '(not set)'}`,
     `Program ID:           ${settings.program_id ?? '(not set)'}`,
     `Signing secret:       ${settings.signing_secret_set ? 'set' : 'not set'}`,
+    `Link template:        ${settings.link_template ?? '(not set)'}`,
+    `Tracking token:       ${settings.tracking_token ?? '(not set)'}`,
   ];
   if (settings.forward_lifecycle !== undefined) lines.push(`Forward lifecycle:    ${settings.forward_lifecycle ? 'on' : 'off'}`);
   if (settings.missing?.length) lines.push(`Missing:              ${settings.missing.join(', ')}`);
@@ -700,11 +900,13 @@ async function status(ctx: RunContext, args: ParsedArgs): Promise<number> {
     lines.push(`Last test:            ${c.last_test.ok ? 'ok' : `failed${c.last_test.error ? ` (${c.last_test.error})` : ''}`} at ${new Date(c.last_test.at).toISOString()}`);
   }
   if (c) lines.push(`Failed (7 days):      ${c.failed_calls_7d ?? 0}    Retrying: ${c.retrying_calls ?? 0}`);
-  const inbound = settings.inbound;
   if (inbound?.url) {
     // Referalli needs its own webhook secret; the Atlas protocol falls back to the signing secret.
     const syncing = inbound.secret_set || (settings.provider === 'webhook' && settings.signing_secret_set);
     lines.push(`Two-way sync:         ${syncing ? 'on' : 'off (no inbound secret)'}${inbound.endpoint_id ? ` (webhook ${inbound.endpoint_id})` : ''}`);
+    if (scope.scope !== 'unknown') {
+      lines.push(`Webhook scope:        ${scope.program_ids ? `program ${scope.program_ids.join(', ')}` : 'every program (re-run connect to limit it)'}`);
+    }
     lines.push(`Inbound URL:          ${inbound.url}`);
     if (inbound.last_event) {
       lines.push(`Last event:           ${inbound.last_event.type} → ${inbound.last_event.outcome} at ${new Date(inbound.last_event.at).toISOString()}`);

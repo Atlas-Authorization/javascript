@@ -150,6 +150,33 @@ export interface PreflightFinding {
   /** Only with `include_suppressed: true`: the finding does not apply to how the instance integrates. */
   suppressed?: true;
   suppressed_reason?: string;
+  /** Set when the code is acknowledged as known and accepted (never on an error). Do not count it. */
+  acknowledged?: PreflightAckSummary;
+}
+
+export interface PreflightAckSummary {
+  reason: string;
+  /** The API key or dashboard user that acknowledged it. */
+  by: string | null;
+  /** Epoch ms. */
+  at: number;
+  /** Epoch ms; null = until removed. */
+  expires_at: number | null;
+}
+
+/** A stored preflight acknowledgement. */
+export interface PreflightAck extends PreflightAckSummary {
+  object: 'preflight_ack';
+  code: string;
+  /** False once `expires_at` has passed: the finding counts again. */
+  active: boolean;
+}
+
+export interface AcknowledgePreflightBody {
+  /** Why the finding is accepted (required, at most 500 characters). */
+  reason: string;
+  /** When it lapses: epoch ms or ISO 8601, in the future. Omit or null for no expiry. */
+  expires_at?: number | string | null;
 }
 
 /** A finding that does not apply to how the instance integrates, and why. */
@@ -760,6 +787,22 @@ export function instanceResource(request: RequestFn) {
     /** Check your setup in one call: configuration the server can see is broken or risky. */
     preflight(params: PreflightParams = {}): Promise<PreflightReport> {
       return request({ method: 'GET', path: '/v1/instance/preflight', query: { ...params } });
+    },
+    /**
+     * Acknowledge known, accepted warning or info findings by code. The finding
+     * is still reported, with `acknowledged`, and stops counting. A code that
+     * can be an error is refused (422).
+     */
+    preflightAcks: {
+      list(): Promise<{ object: 'list'; data: PreflightAck[]; has_more: boolean }> {
+        return request({ method: 'GET', path: '/v1/instance/preflight/acks' });
+      },
+      set(code: string, body: AcknowledgePreflightBody): Promise<PreflightAck> {
+        return request({ method: 'PUT', path: `/v1/instance/preflight/acks/${encodeURIComponent(code)}`, body });
+      },
+      delete(code: string): Promise<{ object: 'preflight_ack'; code: string; deleted: true }> {
+        return request({ method: 'DELETE', path: `/v1/instance/preflight/acks/${encodeURIComponent(code)}` });
+      },
     },
     /**
      * The unknown body fields your writes sent over the last `days` (1-90,

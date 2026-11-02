@@ -146,6 +146,102 @@ describe('createRelyingParty', () => {
   });
 });
 
+describe('forwardParams', () => {
+  it('forwards only the listed query parameters, merges overrides.extraParams, and refuses owned names at setup', async () => {
+    const fx = await createTestIssuer();
+    const rp = makeRp(fx, { forwardParams: ['ref', 'utm_source'] });
+    const long = 'x'.repeat(513);
+    const started = await rp.start(new Request(`${APP}/auth/sign-in?ref=friend42&utm_source=${long}&utm_medium=mail&state=evil`), {
+      extraParams: { campaign: 'spring' },
+    });
+    const p = new URL(started.headers.get('location')!).searchParams;
+    expect(p.get('ref')).toBe('friend42');
+    expect(p.get('campaign')).toBe('spring');
+    expect(p.has('utm_source')).toBe(false); // over 512 characters
+    expect(p.has('utm_medium')).toBe(false); // not listed
+    expect(p.get('state')).not.toBe('evil');
+    // The sign-in still completes with the forwarded parameter on the authorize URL.
+    const { user } = await rp.callback(await roundTrip(fx, started));
+    expect(user.sub).toBeTruthy();
+
+    for (const bad of ['state', 'redirect_uri', 'scope', 'return_to', 'bad name', '']) {
+      expect(() => makeRp(fx, { forwardParams: [bad] })).toThrow(/forwardParams/);
+    }
+  });
+});
+
+describe('handle', () => {
+  it('routes sign-in, callback and sign-out, and returns null for anything else', async () => {
+    const fx = await createTestIssuer();
+    const signedIn: Array<{ sub: string; sid: string | null; idToken: string; path: string }> = [];
+    const rp = makeRp(fx, {
+      onSignedIn: (user, tokens, request, result) => {
+        signedIn.push({ sub: user.sub, sid: user.sid, idToken: tokens.id_token, path: new URL(request.url).pathname });
+        result.response.headers.append('set-cookie', 'app_session=abc; Path=/; HttpOnly');
+      },
+      onSignOut: () => ({ idToken: 'id.token.hint', setCookies: ['app_session=; Path=/; Max-Age=0'] }),
+    });
+
+    expect(await rp.handle(new Request(`${APP}/dashboard`))).toBeNull();
+    expect(await rp.handle(new Request(`${APP}/auth/sign-in`, { method: 'POST' }))).toBeNull();
+
+    const started = (await rp.handle(new Request(`${APP}/auth/sign-in?return_to=%2Fbilling`)))!;
+    expect(started.status).toBe(302);
+    const done = (await rp.handle(await roundTrip(fx, started, { sub: 'user_ada', claims: { sid: 'sess_1' } })))!;
+    expect(done.status).toBe(302);
+    expect(done.headers.get('location')).toBe('/billing');
+    const cookies = done.headers.getSetCookie();
+    expect(cookies.some((c) => /^atlas_oidc=;.*Max-Age=0/.test(c))).toBe(true);
+    expect(cookies).toContain('app_session=abc; Path=/; HttpOnly');
+    expect(signedIn).toEqual([{ sub: 'user_ada', sid: 'sess_1', idToken: expect.any(String), path: '/auth/callback' }]);
+
+    for (const method of ['POST', 'GET']) {
+      const out = (await rp.handle(new Request(`${APP}/auth/sign-out`, { method })))!;
+      expect(out.status).toBe(302);
+      expect(new URL(out.headers.get('location')!).searchParams.get('id_token_hint')).toBe('id.token.hint');
+      expect(out.headers.getSetCookie()).toContain('app_session=; Path=/; Max-Age=0');
+    }
+  });
+
+  it('a Response from onSignedIn is used, with the sign-in cookie still cleared', async () => {
+    const fx = await createTestIssuer();
+    const rp = makeRp(fx, {
+      routes: { signIn: '/login', callback: '/auth/callback', signOut: '/logout' },
+      onSignedIn: () => Response.redirect(`${APP}/welcome`, 303),
+    });
+    expect(await rp.handle(new Request(`${APP}/auth/sign-in`))).toBeNull();
+    const started = (await rp.handle(new Request(`${APP}/login`)))!;
+    const done = (await rp.handle(await roundTrip(fx, started)))!;
+    expect(done.status).toBe(303);
+    expect(done.headers.get('location')).toBe(`${APP}/welcome`);
+    expect(done.headers.getSetCookie().some((c) => /^atlas_oidc=;.*Max-Age=0/.test(c))).toBe(true);
+    expect((await rp.handle(new Request(`${APP}/logout`, { method: 'POST' })))!.status).toBe(302);
+  });
+
+  it('a failed callback answers 400 (or onSignInError) and clears the sign-in cookie; handle needs onSignedIn', async () => {
+    const fx = await createTestIssuer();
+    const plain = makeRp(fx, { onSignedIn: () => undefined });
+    const failed = (await plain.handle(new Request(`${APP}/auth/callback?code=x&state=y`)))!;
+    expect(failed.status).toBe(400);
+    expect(failed.headers.get('set-cookie')).toMatch(/^atlas_oidc=;.*Max-Age=0/);
+
+    const seen: string[] = [];
+    const custom = makeRp(fx, {
+      onSignedIn: () => undefined,
+      onSignInError: (error) => {
+        seen.push(error.code);
+        return Response.redirect(`${APP}/sign-in-failed`, 302);
+      },
+    });
+    const out = (await custom.handle(new Request(`${APP}/auth/callback?code=x&state=y`)))!;
+    expect(out.headers.get('location')).toBe(`${APP}/sign-in-failed`);
+    expect(out.headers.get('set-cookie')).toMatch(/Max-Age=0/);
+    expect(seen).toEqual(['state_mismatch']);
+
+    await expect(makeRp(fx).handle(new Request(`${APP}/auth/sign-in`))).rejects.toThrow(/onSignedIn/);
+  });
+});
+
 describe('requireRecentAuth', () => {
   it('passes a recent sign-in and redirects an old one, bound to the same user', async () => {
     const fx = await createTestIssuer();
@@ -254,6 +350,37 @@ describe('signOut and revokeSession', () => {
     const fx = await createTestIssuer();
     const api = withApi(fx, () => json(503, { errors: [{ code: 'UNAVAILABLE', message: 'try later' }] }));
     const rp = makeRp(fx, { fetchImpl: api.fetchImpl, secretKey: 'sk_test_1', apiUrl: API });
+    await expect(rp.signOut({ sid: 'sess_1' })).rejects.toBeInstanceOf(AtlasApiError);
+  });
+
+  it('serverSignOut: one client logout call, then straight to the post-logout URI with state', async () => {
+    const fx = await createTestIssuer();
+    const bodies: string[] = [];
+    const api = withApi(fx, () => json(200, { object: 'oauth_client_logout', session: 'revoked' }));
+    const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (typeof init?.body === 'string') bodies.push(init.body);
+      return api.fetchImpl(input, init);
+    }) as typeof fetch;
+    const rp = makeRp(fx, { fetchImpl, secretKey: 'sk_test_1', apiUrl: API, serverSignOut: true });
+    const res = await rp.signOut({ idToken: 'id.token.hint', sid: 'sess_1', state: 's1' });
+    expect(api.calls).toHaveLength(1);
+    expect(api.calls[0]).toMatchObject({
+      method: 'POST',
+      url: `${API}/v1/oauth_clients/${encodeURIComponent(fx.clientId)}/logout`,
+      auth: 'Bearer sk_test_1',
+    });
+    expect(JSON.parse(bodies[0]!)).toEqual({ sid: 'sess_1' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`${APP}/?state=s1`);
+  });
+
+  it('serverSignOut: a session already gone (404) still signs out; other failures throw', async () => {
+    const fx = await createTestIssuer();
+    const gone = withApi(fx, () => json(404, { errors: [] }));
+    const res = await makeRp(fx, { fetchImpl: gone.fetchImpl, secretKey: 'sk_test_1', apiUrl: API, serverSignOut: true, postLogoutRedirectUri: undefined }).signOut({ sid: 'sess_1' });
+    expect(res.headers.get('location')).toBe('/');
+    const forbidden = withApi(fx, () => json(403, { errors: [{ code: 'FORBIDDEN', message: 'no' }] }));
+    const rp = makeRp(fx, { fetchImpl: forbidden.fetchImpl, secretKey: 'sk_test_1', apiUrl: API, serverSignOut: true });
     await expect(rp.signOut({ sid: 'sess_1' })).rejects.toBeInstanceOf(AtlasApiError);
   });
 });

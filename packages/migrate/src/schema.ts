@@ -664,6 +664,7 @@ export const PASSWORD_HASH_ALGORITHMS = [
   'sha1_django',
   'scrypt_lucia',
   'bcrypt_pepper',
+  'scrypt_node',
   'sha224',
   'sha384',
   'sha512_224',

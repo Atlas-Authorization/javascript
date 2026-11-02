@@ -31,7 +31,7 @@ interface State {
   domains: Array<Record<string, unknown>>;
   clients: Array<{ id: string; client_id: string; name: string; redirect_uris: string[] }>;
   hooks: Array<{ id: string; url: string }>;
-  findings: Array<{ severity: string; code: string; message: string; fix: string }>;
+  findings: Array<{ severity: string; code: string; message: string; fix: string; acknowledged?: { reason: string } }>;
   writes: Array<{ method: string; path: string; body: unknown; key: string }>;
   rotations: number;
 }
@@ -439,6 +439,15 @@ describe('atlas preflight', () => {
     const json = captureIO();
     expect(await run(['preflight', '--product', 'acme', '--json'], ctxWith(json))).toBe(1);
     expect(JSON.parse(json.stdout()).findings).toHaveLength(3);
+  });
+
+  it('an acknowledged warning is shown but does not fail --fail-on warning', async () => {
+    await run(['init', '--product', 'acme', '--yes'], ctxWith(captureIO()));
+    state.findings = [{ ...findings[0]!, acknowledged: { reason: 'expected until we add a domain' } }, findings[1]!];
+    const io = captureIO();
+    expect(await run(['preflight', '--product', 'acme', '--fail-on', 'warning'], ctxWith(io))).toBe(0);
+    expect(io.stdout()).toContain('email_development_sender: acknowledged (expected until we add a domain)');
+    expect(io.stdout()).toContain('0 warning(s), 1 info, 1 acknowledged.');
   });
 
   it('uses ATLAS_SECRET_KEY when no project is named', async () => {

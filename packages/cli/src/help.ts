@@ -55,6 +55,8 @@ Commands:
   config export|import|plan|promote
                              Config-as-code: round-trip the instance's config; plan = drift diff;
                              promote = copy one environment's config to another
+  plan [<file|dir>]          Drift diff of a config file or directory; --check exits 2 on drift
+  apply [<file|dir>]         Plan, confirm (--yes to skip), then apply; --check = plan only, exit 2 on drift
   actions list|deploy|test|logs|gallery|show|install|installs|update|publish
   pages list|push|preview|promote|pull|discard
                              Code-defined hosted-page templates: draft, signed preview link, promote
@@ -304,8 +306,8 @@ partial or major outage; 0 otherwise.`,
 Usage:
   atlas referrals connect --provider referalli --program <prg_…> --base-url <url>
         [--referalli-key-file <path|-> | --referalli-key <rk_…>]
-        [--auto-enroll] [--destination <url>] [--tracking-token <token>] [--enable]
-        [--no-sync] [--allow-mode-mismatch]
+        [--auto-enroll] [--destination <url>] [--tracking-token <token>] [--link-template <url>]
+        [--enable] [--no-sync] [--allow-mode-mismatch]
   atlas referrals connect --oauth [--preset <id>] [--enable]   (default preset: referalli)
   atlas referrals connect --provider webhook --endpoint <https-url>
         [--secret-file <path|->] [--program <id>] [--auto-enroll] [--enable]
@@ -313,7 +315,7 @@ Usage:
         [--metadata-path public_metadata.referral_code]
         [--own-map <file.csv>] [--own-metadata-path public_metadata.my_code] [--wait]
   atlas referrals resync <user_id> [--dry-run]      re-report one user and apply the answer (code, link)
-  atlas referrals status
+  atlas referrals status [--json] [--referalli-key-file <path|->]
   atlas referrals conformance [--protocol webhook|connection] [--base-url <url>] [--connection-id <id>] --secret-file <path|->
         [--only <case ids or areas>] [--simulate]
 
@@ -333,7 +335,13 @@ your merchant key (bring your own key: used for this one call, never stored or
 printed), saves the connection id and secret on the instance, and runs a ping.
 It requires v2 signatures on the connection from the start and registers a
 Referalli webhook that sends referral changes (voided, approved, reassigned…)
-back to Atlas; --no-sync skips the webhook. A test key (rk_test_) belongs with a
+back to Atlas, limited to --program (programIds), so other programs in a shared
+organization never reach the instance; --no-sync skips the webhook. It is safe to
+run again: the instance's existing connection and webhook are reused and updated
+in place (an unscoped webhook is re-scoped), never duplicated. The tracking token
+and link template are read from Referalli (GET /v1/org, the link domain); a link
+template you set before is kept. Whatever it cannot read is printed as the exact
+PATCH /v1/instance/referrals body left to send. A test key (rk_test_) belongs with a
 development instance and a live key with production: a mismatch is refused
 unless --allow-mode-mismatch. --auto-enroll and --destination are passed to
 Referalli. --enable turns referrals on when the ping passes. Prefer --referalli-key-file (or
@@ -353,7 +361,11 @@ Atlas stores it and sends it to the platform before the sign-up, so the
 platform does not hand out a new one.
 
 status prints the connection, its health and the referral preflight findings;
-it exits 1 when one is an error.
+it exits 1 when one is an error. --json prints a machine-readable status object
+(connection id, program, webhook endpoint id and scope, link template and tracking
+token set, last sync) next to the raw settings. The webhook's program scope is read
+from Referalli when a merchant key is given (--referalli-key-file or
+REFERALLI_API_KEY); without one it is "unknown".
 
 All subcommands take --instance <id> or --product <name> like preflight.`,
 
@@ -694,7 +706,7 @@ Usage:
 Usage:
   atlas config export [--dir <path>] [--format json|yaml]
   atlas config import [--dir <path>] [--format json|yaml] [--dry-run] [--prune]
-  atlas config plan   [--dir <path>] [--format json|yaml] [--prune] [--exit-code] [--json]
+  atlas config plan   [--dir <path>] [--format json|yaml] [--prune] [--check|--exit-code] [--json]
   atlas config promote --from <profile> --to <profile> [--dry-run] [--prune] [--yes] [--format json|yaml]
 
 export  Read the instance's current config (instance/auth config, OAuth clients
@@ -711,8 +723,8 @@ import  Diff the directory against live config and apply creates/updates
           --format    json (default) or yaml
 
 plan    A Terraform-style, read-only diff of the directory against the live
-        instance: field-by-field before -> after for updates. --exit-code exits 2
-        when there is drift (for CI); --json for tooling.
+        instance: field-by-field before -> after for updates. --check (alias
+        --exit-code) exits 2 when there is drift (for CI); --json for tooling.
 
 promote Copy one environment's configuration to another (development ->
         staging -> production). Each environment is a profile holding that
@@ -720,8 +732,11 @@ promote Copy one environment's configuration to another (development ->
         plan/apply engine as import; --dry-run prints the plan only, and
         applying to a live key needs --yes. Secrets never travel.
 
-Secrets never live on disk. Inject a credential at import with a \${ENV_VAR}
-placeholder in a file (e.g. a provider "client_secret": "\${GOOGLE_SECRET}").`,
+Secrets never live in config files. Inject a credential at import with a
+\${ENV_VAR} placeholder in a file (e.g. a provider "client_secret": "\${GOOGLE_SECRET}"),
+resolved from the environment or from --secrets-file <dotenv> (must be mode 0600).
+
+See also 'atlas apply' and 'atlas plan' (one config file or a directory).`,
   pages: `atlas pages — code-defined hosted-page templates
 
 Usage:
@@ -783,6 +798,39 @@ data needs --yes. --json prints raw JSON. Secrets the API returns once are shown
 right away.`;
 }
 Object.assign(COMMAND_HELP, {
+  apply: `atlas apply — make the instance match a config file (plan, confirm, apply)
+
+Usage:
+  atlas apply [<file|dir>] [--yes] [--prune] [--secrets-file <dotenv>] [--out <dir>] [--format json|yaml]
+  atlas apply [<file|dir>] --check
+
+<file>  One JSON or YAML document keyed by resource type, for example:
+          instance:            { auth_config: {...}, allowed_origins: [...] }
+          redirect_urls:       [ { url: ... } ]
+          oauth_clients:       [ { name: ..., redirect_uris: [...] } ]
+          webhook_endpoints:   [ { url: ..., enabled_events: [...] } ]
+        or a directory from 'atlas config export' (default ./atlas-config).
+
+Shows the plan, asks before applying (--yes skips the question; needed without a
+terminal), then applies creates and updates in a fixed order: instance,
+org_settings_schema, redirect_urls, oauth_clients, oauth_providers,
+custom_oauth_providers, resource_servers, jwt_templates, permissions, roles,
+webhook_endpoints, sso_connections, billing_plans, notification_templates,
+email_templates, organization_policies. Re-running is a no-op.
+  --check         plan only; exit 2 when anything would change (CI)
+  --prune         also delete live resources missing from the config
+  --secrets-file  dotenv file for \${VAR} placeholders; refused unless mode 0600
+  --out <dir>     where a new client or webhook secret is saved (mode 0600;
+                  default ~/.config/atlas). It is shown only once.
+Applying stops if any \${VAR} is unresolved. The email provider is not part of
+config files: set it up first, then apply sign-in methods that send email.`,
+  plan: `atlas plan — read-only drift diff of a config file or directory
+
+Usage:
+  atlas plan [<file|dir>] [--check|--exit-code] [--json] [--prune] [--secrets-file <dotenv>]
+
+The same diff as 'atlas config plan', also for a single config file (see 'atlas
+apply --help'). --check exits 2 when there is drift; nothing is ever written.`,
   workflows: resHelp('workflows', 'workflow runs, templates and approvals', WORKFLOWS),
   chat: resHelp('chat', 'chat approval integrations (test a bot, list user links)', CHAT),
   'saml-idp': resHelp('saml-idp', 'SAML identity provider service providers (import-metadata takes --data with url, entity_id, mdq_base_url)', SAML_IDP),
