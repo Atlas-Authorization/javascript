@@ -8467,8 +8467,8 @@ packages:
     resolution: {integrity: sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==}
     engines: {node: '>= 0.6'}
 
-  event-emitter@0.3.6:
-    resolution: {integrity: sha512-NG8QFVRO09kuAWIj88efr0V3qFEadWKvsicIDZ2aou34qXHuVIAqzdEzMgFGN84sdL31UTxxiIMiRvgl9l4F2g==}
+  event-emitter@0.3.7:
+    resolution: {integrity: sha512-R9h/VgWniW4ZRqx3Pd2/n3aGGbPmWilvHwzgrc6YQcFd2HzwPsIFLbrtfoU0hWorKUowd5Iqr5x3ZNv5H6bP+w==}
     engines: {node: '>=0.12'}
 
   event-source-polyfill@1.0.31:
@@ -22898,7 +22898,7 @@ snapshots:
     dependencies:
       d: 1.0.2
       es5-ext: 0.10.64
-      event-emitter: 0.3.6
+      event-emitter: 0.3.7
       type: 2.7.3
 
   espree@10.4.0:
@@ -22969,7 +22969,7 @@ snapshots:
 
   etag@1.8.1: {}
 
-  event-emitter@0.3.6:
+  event-emitter@0.3.7:
     dependencies:
       d: 1.0.2
       es5-ext: 0.10.64
@@ -25798,7 +25798,7 @@ snapshots:
       d: 1.0.2
       es5-ext: 0.10.64
       es6-weak-map: 2.0.3
-      event-emitter: 0.3.6
+      event-emitter: 0.3.7
       is-promise: 2.2.2
       lru-queue: 0.1.0
       next-tick: 1.1.0
