@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.18.1 — 2026-11-02
+
+Depends on `@atlasauth/backend` 0.31.1 (0.18.0 pinned 0.31.0, which was never published). No code changes.
+
 ## 0.18.0 — 2026-11-02
 
 ### Fixed

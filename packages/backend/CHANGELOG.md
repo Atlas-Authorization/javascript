@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.31.1 — 2026-11-02
+
+Republish of 0.31.0 (that version number could not be published). No code changes.
+
 ## 0.31.0 — 2026-11-02
 
 ### Breaking

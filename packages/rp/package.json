@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/rp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The Atlas server-side relying party for the hosted redirect as (Request) => Response handlers: sign-in, callback, sign-out, step-up, session keep-alive, back-channel logout and webhook checks. Node 18+, Deno, Bun and Workers. One dependency: jose.",
   "license": "MIT",
   "type": "module",

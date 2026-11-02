@@ -1,5 +1,9 @@
 # @atlasauth/rp changelog
 
+## 0.1.1 — 2026-11-02
+
+Republish of 0.1.0 (that version number could not be published). No code changes.
+
 ## 0.1.0 — 2026-11-02
 
 First published release: the `@atlasauth/backend/rp` entry point as its own package, with `jose` as its only dependency.
