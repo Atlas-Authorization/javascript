@@ -289,7 +289,8 @@ export interface OrganizationEntitlements {
 
 export interface CreateOrganizationBody {
   name: string;
-  slug: string;
+  /** Omit to derive a unique slug from the name (suffixed -2, -3… on collision); it is returned in the response. */
+  slug?: string;
   /** Seated with the creator role; omit (or null) for a backend-created organization with no members yet. */
   created_by?: string | null;
   external_id?: string;

@@ -1,5 +1,15 @@
 # @atlasauth/cli changelog
 
+## 0.20.0 — 2026-11-02
+
+### Added
+
+- New file sections `cookie_consent` (the `PUT /v1/instance/cookie_consent` body; the plan compares only the keys the file sets, e.g. `~ cookie_consent enabled: false -> true`) and `sso_onboarding_profiles` (matched by `name`; created with POST, updated with PATCH; `--prune` deletes live profiles the file lacks, otherwise they are listed as kept). Planned, applied and exported. Apply order: `sso_onboarding_profiles` right after `sso_connections`, `cookie_consent` last.
+
+### Fixed
+
+- `atlas plan` / `atlas apply` messages name the file you passed (`Live but not in deploy/atlas.yaml`), not the temporary directory a single file is split into.
+
 ## 0.19.0 — 2026-11-02
 
 ### Added

@@ -280,8 +280,8 @@ function registry(): ResourceSpec[] {
           const refused = err instanceof AtlasApiError && err.status === 409 ? err.errors.find((e) => e.code === 'HOOK_TEST_FAILED') : undefined;
           if (refused) {
             throw new CliError(
-              `hooks.before_user_create: enabling was refused because the hook test call failed (HOOK_TEST_FAILED): ${refused.message} ` +
-                'The hook was left as it was. Deploy the route, or pass --force-hook to enable it anyway.',
+              `hooks.before_user_create: the change was refused because the hook test call failed (HOOK_TEST_FAILED): ${refused.message} ` +
+                'The hook was left as it was. Deploy the route, or pass --force-hook to apply it anyway.',
             );
           }
           throw err;
@@ -503,6 +503,36 @@ function registry(): ResourceSpec[] {
       },
     },
 
+    // 10b. SSO onboarding profiles (hosted setup links) — key = name. After the SSO
+    //      connections; a profile may name an organization that already exists.
+    {
+      kind: 'collection',
+      type: 'sso_onboarding_profiles',
+      keyOf: (c) => String(obj(c).name ?? ''),
+      async fetchLive(http) {
+        let rows: Record<string, unknown>[];
+        try {
+          rows = await listData<Record<string, unknown>>(http, '/v1/sso_onboarding_profiles');
+        } catch (err) {
+          if (isNotFound(err)) return [];
+          throw err;
+        }
+        return rows.map((r) => {
+          const config = pick(r, SSO_PROFILE_KEYS);
+          return { key: String(r.name ?? ''), id: String(r.id ?? ''), config };
+        });
+      },
+      async create(http, config) {
+        await http.post('/v1/sso_onboarding_profiles', compact(config));
+      },
+      async update(http, live, config) {
+        await http.patch(`/v1/sso_onboarding_profiles/${enc(live.id)}`, compact(config, true));
+      },
+      async remove(http, live) {
+        await http.delete(`/v1/sso_onboarding_profiles/${enc(live.id)}`);
+      },
+    },
+
     // 11. Billing plans — key = slug.
     {
       kind: 'collection',
@@ -638,6 +668,32 @@ function registry(): ResourceSpec[] {
         await http.patch('/v1/branding', compact(config, true));
       },
     },
+
+    // 13. Cookie-consent banner — last: it only needs the instance. PUT replaces the
+    //     whole setting and needs script_url, so apply merges the file over the live one.
+    {
+      kind: 'singleton',
+      type: 'cookie_consent',
+      async fetchLive(http) {
+        let cc: Record<string, Json>;
+        try {
+          cc = await http.get<Record<string, Json>>('/v1/instance/cookie_consent');
+        } catch (err) {
+          if (isNotFound(err)) return null;
+          throw err;
+        }
+        const out = pick(cc ?? {}, COOKIE_CONSENT_KEYS) as Record<string, Json>;
+        return Object.keys(out).length ? out : null;
+      },
+      async apply(http, config) {
+        const live = await http.get<Record<string, Json>>('/v1/instance/cookie_consent');
+        const body: Record<string, Json> = { ...(pick(live ?? {}, COOKIE_CONSENT_KEYS) as Record<string, Json>), ...compact(config, true) };
+        if (body.script_url === undefined || body.script_url === null) {
+          throw new CliError('cookie_consent needs a script_url (the consent manager script) when none is set on the instance.');
+        }
+        await http.put('/v1/instance/cookie_consent', body);
+      },
+    },
   ];
   return specs;
 }
@@ -725,6 +781,8 @@ const SSO_KEYS = [
   'claim_role_mappings',
   'default_role_id',
 ] as const;
+const SSO_PROFILE_KEYS = ['name', 'allowed_connection_types', 'organization_id', 'company_name', 'allow_scim', 'intents', 'return_url'] as const;
+const COOKIE_CONSENT_KEYS = ['enabled', 'script_url', 'script_id', 'site_id', 'blocking_mode', 'extra_origins', 'settings_link', 'culture', 'host_aliases'] as const;
 const BILLING_KEYS = [
   'name',
   'slug',
@@ -1181,6 +1239,7 @@ const show = (v: Json | undefined) => (v === undefined ? '(unset)' : typeof v ==
 async function planConfig(ctx: RunContext, values: Values, source: ConfigSource): Promise<number> {
   const http = requireHttp(ctx, values);
   const { dir, format, env } = source;
+  const where = source.label ?? dir;
   const prune = values.prune === true;
   const plan = await planConfigImport(http, { dir, format, env, prune });
   const deletes: Change[] = prune ? [] : plan.skippedDeletes;
@@ -1220,10 +1279,10 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
     }
     if (deletes.length) {
       ctx.io.out('');
-      ctx.io.out(`Live but not in ${dir} (kept; pass --prune to plan their deletion):`);
+      ctx.io.out(`Live but not in ${where} (kept; pass --prune to plan their deletion):`);
       for (const d of deletes) ctx.io.out(`    ${d.type}${d.key ? ` ${d.key}` : ''}`);
     }
-    if (pending === 0) ctx.io.out('No drift: the instance matches the config directory.');
+    if (pending === 0) ctx.io.out(`No drift: the instance matches ${where}.`);
   }
   return wantsCheck(values) && pending > 0 ? 2 : 0;
 }
@@ -1236,6 +1295,8 @@ interface ConfigSource {
   dir: string;
   format: Format;
   env: NodeJS.ProcessEnv;
+  /** What the user passed (a file or directory as typed); messages name this, never a working directory. */
+  label?: string;
 }
 
 /**
@@ -1290,7 +1351,7 @@ function resolveSource(ctx: RunContext, args: ParsedArgs): ConfigSource & { clea
   } catch {
     throw new CliError(`Config not found: ${path}. Pass a config file (atlas.yaml / atlas.json) or a directory from 'atlas config export'.`);
   }
-  if (!isFile) return { dir: path, format: resolveFormat(args.values), env, cleanup: () => undefined };
+  if (!isFile) return { dir: path, label: path, format: resolveFormat(args.values), env, cleanup: () => undefined };
 
   const ext = extname(path).toLowerCase();
   const format: Format = ext === '.yaml' || ext === '.yml' ? 'yaml' : ext === '.json' ? 'json' : resolveFormat(args.values);
@@ -1305,7 +1366,7 @@ function resolveSource(ctx: RunContext, args: ParsedArgs): ConfigSource & { clea
   }
   const dir = mkdtempSync(join(tmpdir(), 'atlas-apply-'));
   for (const [type, value] of Object.entries(doc)) writeFileSync(join(dir, `${type}.json`), serialize(value, 'json'));
-  return { dir, format: 'json', env, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return { dir, label: path, format: 'json', env, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 /**

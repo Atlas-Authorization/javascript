@@ -1,5 +1,15 @@
 # @atlasauth/backend changelog
 
+## 0.33.0 — 2026-11-02
+
+### Added
+
+- `BeforeUserCreateEvent.data.organization` (`BeforeUserCreateOrganization`: `id`, `external_id`, `role`, `role_mapped`, `via: "sso" | "domain"`, or `null`): the organization a sign-up comes through.
+
+### Changed
+
+- `CreateOrganizationBody.slug` is optional: left out, Atlas derives a unique slug from `name` and returns it.
+
 ## 0.32.0 — 2026-11-02
 
 ### Added

@@ -64,6 +64,19 @@ export interface BeforeUserCreateInvitation {
   email_verified: boolean;
 }
 
+/** `data.organization` of a `user.before_create` call: the organization the sign-up comes through. */
+export interface BeforeUserCreateOrganization {
+  id: string;
+  /** The organization's `external_id` (your own id for it), or null when it has none. */
+  external_id: string | null;
+  /** The role the user will get; null when the connection seats readers (no role). */
+  role: string | null;
+  /** Whether `role` came from the connection's claim-to-role mappings. */
+  role_mapped: boolean;
+  /** `sso`: through the organization's SSO connection; `domain`: the address's domain is captured with auto-join. */
+  via: 'sso' | 'domain';
+}
+
 /** The body Atlas posts to a `before_user_create` hook (verify it with `verifyWebhook` first). */
 export interface BeforeUserCreateEvent {
   object: 'event';
@@ -90,6 +103,8 @@ export interface BeforeUserCreateEvent {
     referral: Record<string, unknown> | null;
     request: BeforeUserCreateRequestContext;
     invitation: BeforeUserCreateInvitation | null;
+    /** The organization this sign-up comes through (its SSO connection or captured domain); null for a plain sign-up. */
+    organization: BeforeUserCreateOrganization | null;
   };
 }
 

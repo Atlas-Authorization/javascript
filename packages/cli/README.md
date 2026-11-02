@@ -121,7 +121,7 @@ atlas config import --dir ./atlas-config --prune   # also delete removed resourc
 
 Managed resource types (the same set the Terraform provider manages):
 `instance` (auth config + allowed origins), `email_provider`, `hooks` (`before_user_create`), `branding`, `oauth_clients`, `oauth_providers`,
-`sso_connections`, `resource_servers`, `jwt_templates`, `roles`,
+`sso_connections`, `sso_onboarding_profiles`, `cookie_consent`, `resource_servers`, `jwt_templates`, `roles`,
 `webhook_endpoints`, `billing_plans`, `redirect_urls`, `org_settings_schema`,
 `notification_templates`, `email_templates`, `organization_policies`.
 
@@ -142,8 +142,8 @@ the resource types above (or a directory from `config export`), shows the plan,
 asks before applying (`--yes` skips the question; needed without a terminal),
 and applies. Re-running it is a no-op. `atlas plan atlas.yaml` shows the
 field-level diff without writing; without `--prune` it compares only the keys
-the file sets. `--force-hook` enables a `before_user_create` hook whose test
-call fails (otherwise the server refuses with 409 `HOOK_TEST_FAILED`).
+the file sets. `--force-hook` applies a `before_user_create` change (enabling it, or
+re-pointing / re-keying an enabled fail-closed hook) whose test call fails (otherwise the server refuses with 409 `HOOK_TEST_FAILED`).
 
 ```yaml
 # atlas.yaml
@@ -176,8 +176,9 @@ atlas apply atlas.yaml --yes --secrets-file .atlas.secrets   # non-interactive
 - **Order.** The CLI applies resource types in a fixed order: `instance`,
   `org_settings_schema`, `redirect_urls`, `oauth_clients`, `oauth_providers`,
   `custom_oauth_providers`, `resource_servers`, `jwt_templates`, `permissions`,
-  `roles`, `webhook_endpoints`, `sso_connections`, `billing_plans`,
-  `notification_templates`, `email_templates`, `organization_policies`. The
+  `roles`, `webhook_endpoints`, `sso_connections`, `sso_onboarding_profiles`,
+  `billing_plans`, `notification_templates`, `email_templates`,
+  `organization_policies`, `cookie_consent`. The
   ordering is done by the CLI, not by the server. The email provider and the
   `before_user_create` hook are not part of config files: set up the email
   provider (your own Resend or Brevo account) before you apply sign-in methods

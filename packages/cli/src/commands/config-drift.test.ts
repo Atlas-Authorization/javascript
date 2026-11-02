@@ -26,6 +26,8 @@ class FakeApi implements ConfigHttp {
   hook: Record<string, unknown> = { url: null, enabled: false, timeout_ms: 3000, fail_closed: false, signing_secret_set: false };
   branding: Record<string, unknown> = {};
   hookTestFails = false;
+  cookie: Record<string, unknown> = { object: 'cookie_consent', enabled: false };
+  profiles: Array<Record<string, unknown>> = [];
 
   async get<T>(path: string): Promise<T> {
     if (path === '/v1/instance') {
@@ -42,6 +44,8 @@ class FakeApi implements ConfigHttp {
     }
     if (path === '/v1/instance/hooks/before_user_create') return { object: 'before_user_create_hook', last_call: null, ...this.hook } as T;
     if (path === '/v1/branding') return { object: 'branding', ...this.branding, resolved: { applicationName: 'x', theme: 'auto' } } as T;
+    if (path === '/v1/instance/cookie_consent') return this.cookie as T;
+    if (path === '/v1/sso_onboarding_profiles') return { data: this.profiles } as T;
     if (path.startsWith('/v1/')) return { data: [] } as T;
     throw new AtlasApiError(404, [{ code: 'NOT_FOUND', message: path }]);
   }
@@ -57,6 +61,9 @@ class FakeApi implements ConfigHttp {
         created_at: 1, ...b,
       });
     }
+    if (path === '/v1/sso_onboarding_profiles') {
+      this.profiles.push({ object: 'sso_onboarding_profile', id: `sop_${this.profiles.length}`, organization_id: null, company_name: null, allow_scim: false, intents: ['sso'], return_url: null, created_at: 1, ...b });
+    }
     if (path === '/v1/webhook_endpoints') {
       this.webhooks.push({ id: `we_${this.webhooks.length}`, active: true, secret: undefined, ...b });
     }
@@ -64,6 +71,7 @@ class FakeApi implements ConfigHttp {
   }
   async put<T>(path: string, body: unknown): Promise<T> {
     this.writes.push({ method: 'PUT', path, body });
+    if (path === '/v1/instance/cookie_consent') this.cookie = { object: 'cookie_consent', script_id: null, site_id: null, blocking_mode: null, extra_origins: [], settings_link: null, culture: 'page', ...(body as object) };
     if (path === '/v1/messaging_providers/email') {
       const { config = {}, ...rest } = body as { config?: Record<string, string> };
       const secrets = Object.keys(config).filter((k) => /key|secret/.test(k));
@@ -96,6 +104,8 @@ class FakeApi implements ConfigHttp {
       }
       const { signing_secret, ...rest } = b;
       this.hook = { ...this.hook, ...rest, ...(signing_secret ? { signing_secret_set: true } : {}) };
+    } else if (path.startsWith('/v1/sso_onboarding_profiles/')) {
+      Object.assign(this.profiles.find((r) => path.endsWith(String(r.id)))!, b);
     } else if (path === '/v1/branding') {
       this.branding = { ...this.branding, ...b };
     }
@@ -344,5 +354,80 @@ describe('explicit null clears a nullable field; an absent key is unmanaged', ()
     const patch = api.writes.filter((w) => w.method === 'PATCH' && w.path === '/v1/branding').pop()!;
     expect((patch.body as Record<string, unknown>).logoUrl).toBeNull();
     expect(await run(['plan', clear, '--check'], ctx(captureIO(), api))).toBe(0);
+  });
+});
+
+describe('cookie_consent and sso_onboarding_profiles', () => {
+  const doc = {
+    cookie_consent: { enabled: true },
+    sso_onboarding_profiles: [{ name: 'acme-setup', allowed_connection_types: ['saml', 'oidc'], return_url: 'https://app.example.com/settings/sso' }],
+  };
+
+  it('plan --check shows ~ cookie_consent enabled: false -> true and a profile create', async () => {
+    const api = new FakeApi();
+    api.cookie = { object: 'cookie_consent', enabled: false };
+    const io = captureIO();
+    expect(await run(['plan', file(doc), '--check'], ctx(io, api))).toBe(2);
+    expect(io.stdout()).toMatch(/~ cookie_consent \(update\)/);
+    expect(io.stdout()).toMatch(/enabled: false -> true/);
+    expect(io.stdout()).toMatch(/\+ sso_onboarding_profiles acme-setup/);
+  });
+
+  it('apply merges the file over the live banner (PUT needs script_url), creates then PATCHes profiles, and re-plans clean', async () => {
+    const api = new FakeApi();
+    api.cookie = { object: 'cookie_consent', enabled: false, script_url: 'https://cmp.example.com/c.js' };
+    expect(await run(['apply', file(doc), '--yes'], ctx(captureIO(), api))).toBe(0);
+    const put = api.writes.find((w) => w.path === '/v1/instance/cookie_consent')!;
+    expect(put.body).toMatchObject({ enabled: true, script_url: 'https://cmp.example.com/c.js' });
+    expect(api.writes.some((w) => w.method === 'POST' && w.path === '/v1/sso_onboarding_profiles')).toBe(true);
+    expect(await run(['plan', file(doc), '--check'], ctx(captureIO(), api))).toBe(0);
+
+    const changed = file({ sso_onboarding_profiles: [{ name: 'acme-setup', allow_scim: true }] }, 'c.json');
+    expect(await run(['apply', changed, '--yes'], ctx(captureIO(), api))).toBe(0);
+    expect(api.writes.at(-1)).toMatchObject({ method: 'PATCH', path: '/v1/sso_onboarding_profiles/sop_0', body: { name: 'acme-setup', allow_scim: true } });
+  });
+
+  it('enabling a banner with no script_url anywhere is refused with a clear message', async () => {
+    const api = new FakeApi();
+    const io = captureIO();
+    expect(await run(['apply', file(doc), '--yes'], ctx(io, api))).not.toBe(0);
+    expect(io.stderr()).toMatch(/script_url/);
+  });
+
+  it('profiles not in the file are "kept" without --prune and deleted with it', async () => {
+    const api = new FakeApi();
+    api.profiles = [{ object: 'sso_onboarding_profile', id: 'sop_9', name: 'old', allowed_connection_types: ['saml'], intents: ['sso'] }];
+    const path = file({ sso_onboarding_profiles: [] });
+    const io = captureIO();
+    expect(await run(['plan', path], ctx(io, api))).toBe(0);
+    expect(io.stdout()).toContain(`Live but not in ${path} (kept`);
+    expect(await run(['apply', path, '--yes', '--prune'], ctx(captureIO(), api))).toBe(0);
+    expect(api.writes.at(-1)).toMatchObject({ method: 'DELETE', path: '/v1/sso_onboarding_profiles/sop_9' });
+  });
+
+  it('export -> apply -> plan --check round-trips both sections', async () => {
+    const src = new FakeApi();
+    src.cookie = { object: 'cookie_consent', enabled: true, script_url: 'https://cmp.example.com/c.js', script_id: null, site_id: 's1', extra_origins: [], culture: 'page' };
+    src.profiles = [{ object: 'sso_onboarding_profile', id: 'sop_1', name: 'acme-setup', allowed_connection_types: ['saml'], organization_id: null, allow_scim: false, intents: ['sso'] }];
+    const out = join(dir, 'export');
+    expect(await run(['config', 'export', '--dir', out], ctx(captureIO(), src))).toBe(0);
+    const dst = new FakeApi();
+    expect(await run(['config', 'import', '--dir', out], ctx(captureIO(), dst))).toBe(0);
+    expect(await run(['config', 'plan', '--dir', out, '--check'], ctx(captureIO(), dst))).toBe(0);
+  });
+});
+
+describe('plan messages name the file the user passed', () => {
+  it('"Live but not in" and "No drift" use the path as typed, never the temp directory', async () => {
+    const api = new FakeApi();
+    api.profiles = [{ object: 'sso_onboarding_profile', id: 'sop_9', name: 'old', allowed_connection_types: ['saml'], intents: ['sso'] }];
+    const path = file({ sso_onboarding_profiles: [] });
+    const io = captureIO();
+    await run(['plan', path], ctx(io, api));
+    expect(io.stdout()).not.toMatch(/atlas-apply-/);
+    const clean = captureIO();
+    expect(await run(['plan', file({ sso_onboarding_profiles: [] }, 'd.json')], ctx(clean, new FakeApi()))).toBe(0);
+    expect(clean.stdout()).toContain('matches ');
+    expect(clean.stdout()).not.toMatch(/atlas-apply-/);
   });
 });
