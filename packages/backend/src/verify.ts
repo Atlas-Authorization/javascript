@@ -90,6 +90,20 @@ export interface SessionClaims {
   azp?: string;
   sv?: number;
   mfa?: boolean;
+  /**
+   * The session's second factor is satisfied — by an MFA challenge, a step-up,
+   * or an enterprise SSO sign-in the instance trusts for MFA. Read it through
+   * {@link mfaSatisfied}, which falls back to the older claims when absent.
+   */
+  mfa_satisfied?: boolean;
+  /** The session's last activity when this token was minted, epoch seconds (for idle checks). */
+  last_active_at?: number;
+  /** When the user last authenticated (first factor or step-up), epoch seconds. */
+  auth_time?: number;
+  /** Authentication context class: `urn:atlas:acr:basic`, `urn:atlas:acr:mfa` or `urn:atlas:acr:step_up`. */
+  acr?: string;
+  /** RFC 8176 authentication methods (`pwd`, `otp`, `mfa`, …). */
+  amr?: string[];
   org_id?: string;
   org_slug?: string;
   org_role?: string;
@@ -135,6 +149,11 @@ export interface SessionClaims {
    * lookup — treat it as identity, not as an always-current address.
    */
   email?: string;
+  /**
+   * Whether `email` was proven (a verification code, link or a trusted
+   * provider). An address held without proof carries `false`. Present with `email`.
+   */
+  email_verified?: boolean;
   /**
    * §migration R3 — the subject's `external_id`, when set (e.g. a SCIM
    * `externalId` or an id carried over from a migration). Present only alongside

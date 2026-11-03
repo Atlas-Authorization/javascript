@@ -34,6 +34,25 @@ const LEGACY = {
   apiKeyEnv: 'REFERALLY_API_KEY',
 } as const;
 
+const envNoticeShown = new WeakSet<RunContext>();
+
+/**
+ * One notice naming each old REFERALLY_* environment variable to rename (only
+ * those in use without their new name set), printed at most once per run.
+ */
+function legacyEnvNotice(ctx: RunContext): void {
+  if (envNoticeShown.has(ctx)) return;
+  const renames = (
+    [
+      [LEGACY.baseUrlEnv, 'REFERALLI_BASE_URL'],
+      [LEGACY.apiKeyEnv, 'REFERALLI_API_KEY'],
+    ] as const
+  ).filter(([old, current]) => ctx.env[old]?.trim() && !ctx.env[current]?.trim());
+  if (!renames.length) return;
+  envNoticeShown.add(ctx);
+  ctx.io.err(`atlas: rename ${renames.map(([old, current]) => `${old} to ${current}`).join(' and ')} in your environment. The old name still works for now.`);
+}
+
 /** Print a one-line notice that an old name was used (stderr, so --json output stays clean). */
 function legacyNotice(ctx: RunContext, old: string, current: string): void {
   ctx.io.err(`atlas: '${old}' is the old name of '${current}'. It still works; use '${current}'.`);
@@ -311,7 +330,7 @@ function referalliKeyFrom(ctx: RunContext, v: ParsedArgs['values']): string | un
   if (oldKeyFile) legacyNotice(ctx, `--${LEGACY.keyFileFlag}`, '--referalli-key-file');
   if (oldKey) legacyNotice(ctx, `--${LEGACY.keyFlag}`, '--referalli-key');
   const legacyKey = ctx.env[LEGACY.apiKeyEnv]?.trim();
-  if (!ctx.env.REFERALLI_API_KEY?.trim() && legacyKey) legacyNotice(ctx, LEGACY.apiKeyEnv, 'REFERALLI_API_KEY');
+  legacyEnvNotice(ctx);
   const keyFile = str(v, 'referalli-key-file') ?? oldKeyFile;
   return (
     str(v, 'referalli-key') ??
@@ -451,6 +470,33 @@ async function connectWithOAuth(
   return test.ok ? 0 : 1;
 }
 
+/**
+ * `connect --dry-run`: list the platform calls it would make, and validate the
+ * Atlas settings write with `?dry_run=true` (nothing is saved, no secret kept).
+ */
+async function printDryRun(
+  ctx: RunContext,
+  json: boolean,
+  planned: string[],
+  atlas: { http: ReturnType<typeof httpFor>; patch: Record<string, unknown> } | null,
+): Promise<number> {
+  const result = atlas
+    ? await atlas.http.patch<{ validated?: boolean; changes?: unknown[] }>('/v1/instance/referrals?dry_run=true', atlas.patch)
+    : null;
+  const redacted = atlas ? { ...atlas.patch, ...('signing_secret' in atlas.patch ? { signing_secret: '<redacted>' } : {}) } : null;
+  if (json) {
+    printJson(ctx.io, { dry_run: true, planned_requests: planned, atlas_request: redacted && { method: 'PATCH', path: '/v1/instance/referrals', body: redacted }, atlas_result: result });
+  } else {
+    for (const p of planned) ctx.io.out(`Would call: ${p}`);
+    if (redacted) {
+      ctx.io.out(`Would save: PATCH /v1/instance/referrals ${JSON.stringify(redacted)}`);
+      ctx.io.out(result?.validated === false ? 'Atlas could not fully validate it in a dry run.' : 'Atlas validated the settings.');
+    }
+    ctx.io.out('Dry run: nothing was written and no connection test was run.');
+  }
+  return 0;
+}
+
 async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const v = args.values;
   const json = wantsJson(v);
@@ -464,11 +510,14 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
   }
   const cred = instanceCredential(ctx, args);
   const http = httpFor(ctx, cred);
+  // --dry-run: reads only. Atlas validates the settings write with ?dry_run=true; calls to the platform are listed, not made.
+  const dryRun = v['dry-run'] === true;
   // One-click: the platform asks the merchant for the organization and program and hands Atlas the secret.
   // Any platform the deployment offers works (--preset <id>); Referalli is the default preset.
   if (v.oauth === true) {
     const presetId = str(v, 'preset') ?? (provider === 'webhook' ? null : 'referalli');
     if (!presetId) throw new CliError('referrals connect --provider webhook --oauth needs --preset <id> (see one_click_presets in `atlas referrals status --json`).');
+    if (dryRun) return printDryRun(ctx, json, [`POST /v1/instance/referrals/${presetId}/install (then you approve on the platform)`], null);
     return connectWithOAuth(ctx, args, { http, json, out: json ? { out: () => undefined } : ctx.io, presetId });
   }
   const product = str(v, 'product') ?? 'atlasauth';
@@ -481,7 +530,7 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
     const program = str(v, 'program');
     if (!program) throw new CliError('referrals connect --provider referalli needs --program <prg_…>.');
     const legacyBase = ctx.env[LEGACY.baseUrlEnv]?.trim();
-    if (!ctx.env.REFERALLI_BASE_URL?.trim() && legacyBase) legacyNotice(ctx, LEGACY.baseUrlEnv, 'REFERALLI_BASE_URL');
+    legacyEnvNotice(ctx);
     const baseRaw = str(v, 'base-url') ?? ctx.env.REFERALLI_BASE_URL?.trim() ?? legacyBase;
     if (!baseRaw) throw new CliError('Pass --base-url <your Referalli base URL> (or set REFERALLI_BASE_URL).');
     const baseUrl = httpsUrl(baseRaw, '--base-url');
@@ -523,6 +572,33 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
         `Referalli already has connection ${String(existing.id)} for instance ${instance.id}, in program ${existing.programId}. ` +
           `It allows one per instance: run again with --program ${existing.programId}, or delete that connection on Referalli first.`,
       );
+    }
+    if (dryRun) {
+      const held = existing && current.connection_id === existing.id && current.signing_secret_set;
+      const planned = existing
+        ? [
+            ...(held ? [] : [`POST ${baseUrl}/v1/auth/connections/${String(existing.id)}/rotate-secret`]),
+            `PATCH ${baseUrl}/v1/auth/connections/${String(existing.id)} ${JSON.stringify({ signatureVersion: 'v2', ...enrollment })}`,
+          ]
+        : [
+            `POST ${baseUrl}/v1/auth/connections ${JSON.stringify({ provider: 'atlas', instanceId: instance.id, programId: program, ...enrollment })}`,
+            `PATCH ${baseUrl}/v1/auth/connections/<new id> {"signatureVersion":"v2"}`,
+          ];
+      if (v['no-sync'] !== true) planned.push(`Register the two-way sync webhook on Referalli for program ${program}`);
+      const tracking = str(v, 'tracking-token') ?? (typeof mode.org?.trackingToken === 'string' ? mode.org.trackingToken : null);
+      const linkTemplate = str(v, 'link-template');
+      return printDryRun(ctx, json, planned, {
+        http,
+        patch: {
+          provider: 'referalli',
+          endpoint_url: baseUrl,
+          ...(existing ? { connection_id: existing.id } : {}),
+          program_id: program,
+          ...(v['auto-enroll'] === true ? { auto_enroll_users: true } : {}),
+          ...(tracking ? { tracking_token: tracking } : {}),
+          ...(linkTemplate ? { link_template: linkTemplate } : {}),
+        },
+      });
     }
     let connectionId: string;
     // Null when Atlas already holds the reused connection's secret.
@@ -707,6 +783,8 @@ async function connect(ctx: RunContext, args: ParsedArgs): Promise<number> {
       ...(str(v, 'program') ? { program_id: str(v, 'program') } : {}),
       ...(v['auto-enroll'] === true ? { auto_enroll_users: true } : {}),
     };
+    // A generated secret is only validated here, never saved or printed.
+    if (dryRun) return printDryRun(ctx, json, [], { http, patch });
     await http.patch('/v1/instance/referrals', patch);
     let secretPath: string | undefined;
     if (generated) {

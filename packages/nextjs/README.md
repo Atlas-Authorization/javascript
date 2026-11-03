@@ -104,6 +104,43 @@ const initialState = await getAtlasInitialState();
 
 `getAtlasInitialState()` fetches the instance's public sign-in data (`/v1/appearance` and `/v1/client/environment`) on the server, cached for 60 seconds (`revalidate`). With it, `<SignIn />` renders styled and with its social buttons in the server HTML. It reads `ATLAS_PUBLISHABLE_KEY` and `ATLAS_FRONTEND_API` (or their `NEXT_PUBLIC_` forms) and never throws: anything it can't fetch within `timeoutMs` (1500 ms) is left for the browser.
 
+## CSRF protection
+
+```ts
+const atlas = atlasProxy({ ...config, csrf: true });
+export async function proxy(req: NextRequest) {
+  return (await atlas(req)) ?? withAtlasHeaders(req, NextResponse.next());
+}
+```
+
+For a signed-in browser the proxy keeps a token bound to the session in the `__atlas_csrf` cookie, and refuses a `POST`, `PUT`, `PATCH` or `DELETE` without it with `403` (`CSRF_TOKEN_INVALID`). Send the token in the `x-atlas-csrf` header (read it from the cookie) or as an `atlas_csrf` form field. In a server component, `readAtlasHeaders(await headers()).csrfToken` gives it for rendering a form.
+
+- Requests with `Authorization: Bearer`, signed-out requests and your path mount (`mountBasePath`, default `ATLAS_BASE_PATH` or `/atlas`) are exempt.
+- The secret is `ATLAS_CSRF_SECRET`, or derived from `ATLAS_SECRET_KEY`. Use the same one with `verifyCsrf` from `@atlasauth/backend` in your own handlers.
+- `withAtlasHeaders` sets the cookie, so call it on the response your proxy returns.
+
+## Frontend API on your own domain (path mount)
+
+Serve Atlas under a path of your app, with no DNS record and no reverse proxy of your own. Claim the host with `method: "path"` and a `base_path` such as `/atlas`, then add two route handlers:
+
+```ts
+// app/atlas/[[...path]]/route.ts
+import { createMountHandler } from '@atlasauth/nextjs/server';
+export const { GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD } = createMountHandler({ basePath: '/atlas' });
+```
+
+```ts
+// app/.well-known/atlas-verify/[token]/route.ts
+import { createVerifyHandler } from '@atlasauth/nextjs/server';
+export const { GET } = createVerifyHandler();
+```
+
+Set `ATLAS_UPSTREAM` (your instance's Frontend API host, from the domain's `instructions.upstream`), `ATLAS_PROXY_SECRET` (from `POST /v1/instance/proxy_secret`) and `ATLAS_VERIFY_TOKEN` (the domain's `verification.token`).
+
+Use a base path without a leading underscore, such as `/atlas`. The App Router treats folders starting with `_` as private and never routes them, so the default `/__atlas` doesn't work in Next.js.
+
+The handler forwards the method, path, query and body, sets `X-Atlas-Forwarded-Host`, `X-Atlas-Proxy-Secret`, `X-Atlas-Client-IP`, `X-Forwarded-For` and `X-Forwarded-Proto` itself (never from the browser), and returns every `Set-Cookie` and redirect unchanged. Both handlers are also exported from `@atlasauth/nextjs`.
+
 ## Routing rules
 
 - Routes are protected unless they match `publicRoutes`. `protectedRoutes` wins over `publicRoutes`.

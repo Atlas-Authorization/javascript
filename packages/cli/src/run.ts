@@ -7,6 +7,7 @@ import { login, logout, whoami } from './commands/auth';
 import { keys, token } from './commands/operator';
 import { applyCommand, config, planCommand } from './commands/config';
 import { init } from './commands/init';
+import { golive } from './commands/golive';
 import { importUsers } from './commands/import';
 import { info } from './commands/info';
 import { csp } from './commands/csp';
@@ -63,6 +64,7 @@ const COMMANDS: Record<string, Handler> = {
   init,
   preflight,
   doctor,
+  golive,
   env: envCommand,
   client,
   referrals,

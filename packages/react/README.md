@@ -27,3 +27,20 @@ button hand off to your backend login route instead of running PKCE in the brows
 ```
 
 `loginUri` must be a same-origin path or an `https://` URL.
+
+## `<SignIn>` / `<SignUp>` options
+
+```tsx
+<SignIn
+  layout={{ alternativeMethods: 'inside' }}
+  initialValues={{ email: 'ada@example.com' }}
+/>
+```
+
+- `layout.alternativeMethods` places the passkey button and the social / "Continue with Atlas"
+  buttons of `<SignIn>`: `'inside'` the card under the form, `'below'` the card (the default,
+  unchanged from earlier versions) or `'above'` it. `<SignUp>` already keeps its alternatives
+  inside the card. The passkey button is a secondary button (`formButtonSecondary` in
+  `appearance.elements`, `.atlas-button-secondary`).
+- `initialValues.email` prefills the email field (the identifier on `<SignIn>`). Without it, a
+  `login_hint` or `email` query parameter on the page URL prefills it; `initialValues` wins.

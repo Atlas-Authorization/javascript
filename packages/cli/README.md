@@ -48,6 +48,9 @@ atlas plan     [<file|dir>] [--check] [--json] [--secrets-file <dotenv>]
 atlas apply    [<file|dir>] [--yes] [--check] [--prune] [--secrets-file <dotenv>] [--out <dir>]
 atlas init     --product <name> [--domain <d>] [--instance-env development|production] ...
 atlas preflight [--instance <id> | --product <name>] [--fail-on error|warning]
+atlas doctor   [--origin <url>] [--only <sources>] [--no-probe]
+atlas golive   --origin <url> [--dry-run]
+atlas referrals connect ... [--dry-run]
 atlas env      --product <name> --format dotenv|coolify|vercel
 atlas client   rotate <client-id> [--now | --overlap <seconds>]
 atlas import   --from <vendor> <export-file> [--dry-run]
@@ -104,6 +107,36 @@ atlas preflight --product acme --fail-on warning   # CI gate: exit 1 on findings
 atlas env --product acme --format dotenv           # public values + *_FILE paths
 atlas client rotate oc_123 --product acme --overlap 3600
 ```
+
+## Go live (`atlas golive`)
+
+```sh
+atlas golive --origin https://app.acme.com --dry-run   # validate every write, change nothing
+atlas golive --origin https://app.acme.com
+```
+
+Runs these steps in order and stops at the first failure, with its fix:
+
+1. **domains**: verifies the custom domain for the origin's host if it is not verified yet.
+2. **issuer**: the discovery document at that domain (or the path mount on your app) must serve the instance's issuer.
+3. **sign_in_with_atlas**: turned on when the instance declares it.
+4. **webhooks**: each inactive endpoint gets a test delivery, and is activated only if it succeeds.
+5. **hooks**: a configured but disabled `before_user_create` hook gets a test call, and is enabled only if it succeeds.
+6. **preflight** (no error findings) and **login_readiness** for the origin, with a live JWKS round-trip.
+7. **integrations**: the referral connection, privacy integration and identity integrations the instance declares; a declared but untested referral connection is tested.
+
+Each step prints `✓ step — detail` or `✗ step — problem` followed by `fix: …`. Exit 0 when
+all pass, 1 on the first failure. `--dry-run` sends every write with `?dry_run=true`, so
+nothing changes. `--json` prints `{ ok, dry_run, origin, steps: [{ id, ok, detail, fix? }] }`.
+
+`atlas doctor --origin <url>` adds the read-only checks to the integration-health report:
+preflight errors, login readiness, the path-mount verification state on that host, and
+whether the consent declaration lists every cookie the SDKs read (`__session`,
+`__atlas_uat`, `__atlas_rt`, `__client`).
+
+`atlas referrals connect --dry-run` lists the calls it would make to the referral platform
+and validates the Atlas settings write with `?dry_run=true`. No secret is saved or printed
+and no connection test runs.
 
 ## Config-as-code (`atlas config`)
 

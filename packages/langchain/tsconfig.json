@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // Isomorphic: runs in an edge worker, a browser bundle, and a Node server.
+    // DOM is included only for the global `fetch`/`Response` typings — no actual
+    // DOM dependency, and `types: []` keeps @types/node out.
+    "lib": ["ES2022", "DOM"],
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}

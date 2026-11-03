@@ -23,3 +23,24 @@ export function usedMultiFactor(claims: { acr?: unknown; amr?: unknown }): boole
   if (claims.acr === 'urn:atlas:acr:mfa') return true;
   return Array.isArray(claims.amr) && claims.amr.includes('mfa');
 }
+
+/**
+ * Whether the session satisfies a "requires MFA" rule. The rule, in order:
+ *
+ * 1. `mfa_satisfied` — the server's own verdict, final whenever the token carries it
+ *    (true or false). Tokens minted before the claim existed fall back to:
+ * 2. `mfa === true` (a second factor was verified at sign-in),
+ * 3. or {@link usedMultiFactor} (`acr` is `urn:atlas:acr:mfa`, or `amr` includes `mfa`),
+ * 4. or `sso_connection_id` is a string (an enterprise SSO sign-in: the identity
+ *    provider owns the second factor).
+ */
+export function mfaSatisfied(claims: {
+  mfa_satisfied?: unknown;
+  mfa?: unknown;
+  acr?: unknown;
+  amr?: unknown;
+  sso_connection_id?: unknown;
+}): boolean {
+  if (typeof claims.mfa_satisfied === 'boolean') return claims.mfa_satisfied;
+  return claims.mfa === true || usedMultiFactor(claims) || typeof claims.sso_connection_id === 'string';
+}

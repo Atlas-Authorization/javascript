@@ -384,6 +384,18 @@ export function organizationsResource(request: RequestFn) {
     update(id: string, body: UpdateOrganizationBody): Promise<Organization> {
       return request({ method: 'PATCH', path: `/v1/organizations/${enc(id)}`, body });
     },
+    /**
+     * Create the organization with this `external_id`, or update it if it exists
+     * (`PUT /v1/organizations/by_external_id/{external_id}`). Race-safe: parallel
+     * calls for one id create one organization. `name` is required when it creates.
+     */
+    upsertByExternalId(
+      externalId: string,
+      body: Omit<CreateOrganizationBody, 'external_id'>,
+      idempotencyKey?: string,
+    ): Promise<Organization> {
+      return request({ method: 'PUT', path: `/v1/organizations/by_external_id/${enc(externalId)}`, body, idempotencyKey });
+    },
     delete(id: string): Promise<DeletedObject> {
       return request({ method: 'DELETE', path: `/v1/organizations/${enc(id)}` });
     },

@@ -92,6 +92,11 @@ export type {
 // §12.2 inbound webhook verification for consumers.
 export * from './webhooks';
 export * from './webhook-dedupe';
+export * from './webhook-events';
+
+// Session helpers: mirror the Atlas user into your own table; CSRF tokens bound to the session.
+export * from './sync-local-user';
+export * from './csrf';
 
 // The Atlas referral protocol, for a referral platform receiving Atlas's signed calls.
 export * from './referrals';

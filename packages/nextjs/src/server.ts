@@ -292,3 +292,7 @@ export async function getAtlasInitialState(
 
 export type { AtlasClient, AtlasClientConfig } from '@atlasauth/backend';
 export type { AuthState, CurrentUser, EdgeRequest } from './middleware';
+
+// The Frontend API path mount and its domain-verification file, for route handlers.
+export { createMountHandler, createVerifyHandler } from './mount';
+export type { AtlasMountHandlers, AtlasMountOptions } from './mount';

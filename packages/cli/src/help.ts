@@ -63,6 +63,7 @@ Commands:
   init                       Create or complete an app's setup (idempotent); secrets to 0600 files
   preflight                  Check an instance's setup; non-zero exit on errors (for CI)
   doctor                     Integration health: webhooks, logout, referrals, email, consent (exit 1 on a failure)
+  golive --origin <url>      Take an instance live for an app origin, step by step; stops at the first failure
   env                        Print deploy variables: public values + secret file paths
   client rotate              Rotate an OAuth client secret straight into its file
   referrals connect|backfill|resync|status
@@ -307,7 +308,7 @@ Usage:
   atlas referrals connect --provider referalli --program <prg_…> --base-url <url>
         [--referalli-key-file <path|-> | --referalli-key <rk_…>]
         [--auto-enroll] [--destination <url>] [--tracking-token <token>] [--link-template <url>]
-        [--enable] [--no-sync] [--no-identity-backfill] [--allow-mode-mismatch]
+        [--enable] [--no-sync] [--no-identity-backfill] [--allow-mode-mismatch] [--dry-run]
   atlas referrals connect --oauth [--preset <id>] [--enable]   (default preset: referalli)
   atlas referrals connect --provider webhook --endpoint <https-url>
         [--secret-file <path|->] [--program <id>] [--auto-enroll] [--enable]
@@ -318,6 +319,10 @@ Usage:
   atlas referrals status [--json] [--referalli-key-file <path|->]
   atlas referrals conformance [--protocol webhook|connection] [--base-url <url>] [--connection-id <id>] --secret-file <path|->
         [--only <case ids or areas>] [--simulate]
+
+connect --dry-run (any provider) makes no change anywhere: it lists the calls it would make to the
+platform and validates the Atlas settings write with ?dry_run=true. No secret is saved or printed and
+no connection test is run.
 
 connect --provider referalli --oauth is one-click: it prints a Referalli link, you choose the
 organization and program there, and Referalli hands Atlas the connection secret directly (nothing to
@@ -670,12 +675,35 @@ error, or with --fail-on warning also on a warning.`,
   doctor: `atlas doctor — integration health (a CI / deploy gate)
 
 Usage: atlas doctor [--instance <id> | --product <name> [--instance-env <env>]]
-                    [--only <source,...>] [--no-probe] [--json]
+                    [--only <source,...>] [--no-probe] [--origin <url>] [--json]
 
 Prints every check: setup findings, webhook receivers (with the failing hop:
 dns, tls, http, challenge or auth), back-channel logout, the referral
 platform, email, the consent manager and SDK versions. Exits 1 when a check
-fails. --no-probe uses recorded deliveries only (no live calls).`,
+fails. --no-probe uses recorded deliveries only (no live calls).
+
+--origin <url> adds the go-live checks for that app origin to the same report:
+setup errors (preflight), login readiness (live), the path-mount verification
+state on that host, and whether the consent declaration lists every cookie the
+SDKs read (__session, __atlas_uat, __atlas_rt, __client).`,
+
+  golive: `atlas golive — take an instance live for one app origin
+
+Usage: atlas golive --origin <https://app.example.com> [--dry-run] [--json]
+                    [--instance <id> | --product <name> [--instance-env <env>]]
+
+Runs, in order, and stops at the first failure with its fix:
+  domains             verify the custom domain for the origin's host if it is not yet
+  issuer              the origin's discovery document serves the instance's issuer
+  sign_in_with_atlas  turned on when the instance declares it
+  webhooks            each inactive endpoint: test delivery, then activate if it succeeded
+  hooks               a configured but disabled hook: test call, then enable if it succeeded
+  preflight           no error findings
+  login_readiness     ready for the origin (live JWKS round-trip)
+  integrations        referrals, privacy and identity integrations the instance declares
+
+--dry-run sends every write with ?dry_run=true: the server validates it and
+nothing changes. Exits 0 when every step passes, 1 on the first failure.`,
 
   env: `atlas env — print deploy variables without secrets
 

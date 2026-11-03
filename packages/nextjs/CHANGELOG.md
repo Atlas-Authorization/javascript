@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.9.0 — 2026-11-03
+
+### Added
+
+- `createMountHandler({ upstream?, proxySecret?, basePath?, fetchImpl? })`: App Router handlers (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, `HEAD`) that serve the Atlas Frontend API under a path of your app (a path mount). Reads `ATLAS_UPSTREAM` and `ATLAS_PROXY_SECRET` by default. Also exported from `@atlasauth/nextjs/server`.
+- `createVerifyHandler({ verifyToken? })`: the `/.well-known/atlas-verify/[token]` file for claiming the mount (`ATLAS_VERIFY_TOKEN`).
+- `atlasProxy({ csrf: true | { secret?, mountBasePath? } })`: session-bound CSRF tokens for signed-in browsers; unsafe methods without a valid token get 403 `CSRF_TOKEN_INVALID`. `proxyCsrfToken(request)`, the `x-atlas-csrf-token` forwarded header and `ForwardedAuth.csrfToken`.
+
 ## 0.8.1 — 2026-10-28
 
 ### Fixed

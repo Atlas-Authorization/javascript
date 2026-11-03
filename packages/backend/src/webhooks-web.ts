@@ -6,6 +6,7 @@ import {
   type WebhookVerifyOptions,
   type WebhookVerifyResult,
 } from './webhook-common';
+import type { AtlasWebhookEvent } from './webhook-events';
 
 // ── Web-standards variant ──────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ export interface VerifyAtlasWebhookInput extends WebhookVerifyOptions {
  * });
  * ```
  */
-export async function verifyAtlasWebhook<T = unknown>(input: VerifyAtlasWebhookInput): Promise<WebhookVerifyResult<T>> {
+export async function verifyAtlasWebhook<T = AtlasWebhookEvent>(input: VerifyAtlasWebhookInput): Promise<WebhookVerifyResult<T>> {
   const raw = typeof input.body === 'string' ? input.body : new TextDecoder().decode(input.body);
   const id = readHeader(input.headers, ATLAS_WEBHOOK_HEADERS.id);
   const timestampRaw = readHeader(input.headers, ATLAS_WEBHOOK_HEADERS.timestamp);
@@ -75,7 +76,7 @@ export async function verifyAtlasWebhook<T = unknown>(input: VerifyAtlasWebhookI
  * Deno, Bun, Next.js route handlers). Reads the body once, as text; do not
  * read it before calling this.
  */
-export async function verifyAtlasWebhookRequest<T = unknown>(
+export async function verifyAtlasWebhookRequest<T = AtlasWebhookEvent>(
   request: Request,
   options: Omit<VerifyAtlasWebhookInput, 'body' | 'headers'>,
 ): Promise<WebhookVerifyResult<T>> {

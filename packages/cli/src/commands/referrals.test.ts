@@ -805,7 +805,7 @@ describe('the old Referally names', () => {
     expect(code).toBe(0);
     expect(io.stderr()).toContain("'--provider referally' is the old name of '--provider referalli'");
     expect(io.stderr()).toContain("'--referally-key' is the old name of '--referalli-key'");
-    expect(io.stderr()).toContain("'REFERALLY_BASE_URL' is the old name of 'REFERALLI_BASE_URL'");
+    expect(io.stderr()).toContain('rename REFERALLY_BASE_URL to REFERALLI_BASE_URL in your environment');
     expect(calls.find((c) => c.method === 'PATCH' && c.path === '/v1/instance/referrals')?.body).toMatchObject({ provider: 'referalli' });
     expect(io.stdout() + io.stderr()).not.toContain(MERCHANT_KEY);
   });
@@ -821,8 +821,52 @@ describe('the old Referally names', () => {
       }),
     );
     expect(code).toBe(0);
-    expect(io.stderr()).toContain("'REFERALLY_API_KEY' is the old name of 'REFERALLI_API_KEY'");
+    expect(io.stderr()).toContain('rename REFERALLY_API_KEY to REFERALLI_API_KEY in your environment');
     expect(sent(remote, 'GET', '/v1/org')?.init.headers).toMatchObject({ authorization: `Bearer ${MERCHANT_KEY}` });
+  });
+});
+
+describe('atlas referrals connect --dry-run', () => {
+  it('names both old env variables in one notice, once', async () => {
+    const io = captureIO();
+    await run(
+      ['referrals', 'connect', '--program', 'prg_1', '--dry-run'],
+      makeCtx(io, [], ATLAS, {
+        fetch: referalliApi([]),
+        env: { XDG_CONFIG_HOME: home, REFERALLY_API_KEY: MERCHANT_KEY, REFERALLY_BASE_URL: 'https://referrals.example.com' },
+      }),
+    );
+    const notices = io.stderr().split('\n').filter((l) => l.includes('REFERALLY_'));
+    expect(notices).toEqual(['atlas: rename REFERALLY_BASE_URL to REFERALLI_BASE_URL and REFERALLY_API_KEY to REFERALLI_API_KEY in your environment. The old name still works for now.']);
+  });
+
+  it('referalli: reads only on the platform, validates the Atlas write with ?dry_run=true, runs no test', async () => {
+    const io = captureIO();
+    const calls: Call[] = [];
+    const remote: Remote = [];
+    const code = await run(
+      ['referrals', 'connect', '--program', 'prg_1', '--base-url', 'https://referrals.example.com', '--referalli-key', MERCHANT_KEY, '--dry-run'],
+      makeCtx(io, calls, { ...ATLAS, 'PATCH /v1/instance/referrals?dry_run=true': { object: 'dry_run', validated: true } }, { fetch: referalliApi(remote) }),
+    );
+    expect(code).toBe(0);
+    expect(remote.every((r) => (r.init.method ?? 'GET') === 'GET')).toBe(true);
+    expect(calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.path}`)).toEqual(['PATCH /v1/instance/referrals?dry_run=true']);
+    expect(io.stdout()).toContain('Would call: POST https://referrals.example.com/v1/auth/connections');
+    expect(io.stdout()).toContain('Dry run: nothing was written');
+    expect(io.stdout() + io.stderr()).not.toContain(MERCHANT_KEY);
+  });
+
+  it('webhook: validates with ?dry_run=true and never shows or saves the generated secret', async () => {
+    const io = captureIO();
+    const calls: Call[] = [];
+    const code = await run(
+      ['referrals', 'connect', '--provider', 'webhook', '--endpoint', 'https://referrals.example.com/hook', '--dry-run'],
+      makeCtx(io, calls, {}),
+    );
+    expect(code).toBe(0);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['PATCH /v1/instance/referrals?dry_run=true']);
+    expect(io.stdout()).toContain('"signing_secret":"<redacted>"');
+    expect(io.stdout()).not.toMatch(/rfs_/);
   });
 });
 

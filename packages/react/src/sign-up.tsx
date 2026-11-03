@@ -19,7 +19,7 @@ import {
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { FapiClient, type FlowState } from './fapi';
-import { AttemptFlow, useFlow, type FlowProps } from './flow';
+import { AttemptFlow, useFlow, usePrefilledValues, type FlowProps } from './flow';
 import { CaptchaSlot, localizeCaptchaErrors, useCaptcha, type CaptchaController } from './captcha';
 import { forceCaptchaFlow, useReferralChallenge } from './referral';
 import { PolicyClickwrap, PolicyConsent, PolicyScrollQueue, usePolicies, usePolicyText, type UsePoliciesResult } from './policies';
@@ -185,6 +185,7 @@ export function SignUp(props: FlowProps = {}) {
       policies={policies}
       onSubmit={create}
       passkey={usingPasskey ? { email: passkeyOffer!.email } : null}
+      initialEmail={props.initialValues?.email}
       onSwitchMode={
         canPasskey
           ? () => {
@@ -301,6 +302,7 @@ function SignUpForm({
   onSubmit,
   passkey = null,
   onSwitchMode,
+  initialEmail,
 }: {
   settings: InstanceSettings | null;
   busy: boolean;
@@ -313,6 +315,8 @@ function SignUpForm({
   passkey?: { email: 'off' | 'optional' | 'required' } | null;
   /** Toggle between the password and passkey forms (only when both are offered). */
   onSwitchMode?(): void;
+  /** See {@link FlowProps.initialValues}. */
+  initialEmail?: string;
 }) {
   const t = useText();
   const errorText = useErrorText();
@@ -323,7 +327,10 @@ function SignUpForm({
   const errorClass = useClass('formFieldError', 'atlas-error');
   const cls = useClasses();
 
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = usePrefilledValues('email', initialEmail);
+  // A passkey sign-up that collects no email never sends one (a prefilled or earlier-typed value).
+  const { email: _hidden, ...withoutEmail } = values;
+  const submitted = passkey?.email === 'off' ? withoutEmail : values;
   const [agreed, setAgreed] = useState(false);
   const set = (name: string, value: string) => setValues((v) => ({ ...v, [name]: value }));
 
@@ -484,7 +491,7 @@ function SignUpForm({
             setReading(true);
             return;
           }
-          onSubmit(values, legal?.required ? agreed : true);
+          onSubmit(submitted, legal?.required ? agreed : true);
         }}
       >
         {(settings?.signUpFields ?? []).map((f) => {
@@ -561,7 +568,7 @@ function SignUpForm({
             running={reading}
             onDone={() => {
               setReading(false);
-              onSubmit(values, true);
+              onSubmit(submitted, true);
             }}
             onDecline={(policy) => {
               setReading(false);

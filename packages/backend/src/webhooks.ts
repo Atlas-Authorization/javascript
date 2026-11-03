@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from './edge-crypto';
+import type { AtlasWebhookEvent } from './webhook-events';
 import {
   ATLAS_WEBHOOK_HEADERS,
   REPLAY_TOLERANCE_MS,
@@ -57,7 +58,7 @@ export interface VerifyWebhookInput extends WebhookVerifyOptions {
  * });
  * ```
  */
-export function verifyWebhook<T = unknown>(input: VerifyWebhookInput): WebhookVerifyResult<T> {
+export function verifyWebhook<T = AtlasWebhookEvent>(input: VerifyWebhookInput): WebhookVerifyResult<T> {
   const raw = typeof input.body === 'string' ? input.body : input.body.toString('utf8');
   const id = readHeader(input.headers, ATLAS_WEBHOOK_HEADERS.id);
   const timestampRaw = readHeader(input.headers, ATLAS_WEBHOOK_HEADERS.timestamp);

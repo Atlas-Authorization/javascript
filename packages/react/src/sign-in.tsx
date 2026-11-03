@@ -50,10 +50,32 @@ export function SignIn(props: FlowProps = {}) {
     onExtensionResults: props.onPasskeyExtensionResults,
   });
 
+  const placement = props.layout?.alternativeMethods ?? 'below';
+  const alternatives = (
+    <>
+      {passkey.offered ? <PasskeySignInButton busy={state.busy} onClick={passkey.signIn} /> : null}
+      {/* Social buttons belong on the first step, not mid-flow (e.g. during a
+          second factor). `!state.attempt` is exactly the initial identifier step. */}
+      {!state.attempt ? (
+        <SocialSignInButtons
+          client={client}
+          onComplete={finish}
+          oneTap={props.googleOneTap}
+          oauthMode={props.oauthMode}
+          onProviderUnavailable={props.onProviderUnavailable}
+          googleButton={props.googleButton}
+        />
+      ) : null}
+    </>
+  );
+
   return (
     <>
       {!state.attempt ? <LastUsedHint client={client} /> : null}
+      {placement === 'above' ? alternatives : null}
       <AttemptFlow
+        prefill={props.initialValues ?? {}}
+        alternatives={placement === 'inside' ? alternatives : null}
         attempt={state.attempt}
         busy={state.busy}
         errors={state.errors}
@@ -79,20 +101,8 @@ export function SignIn(props: FlowProps = {}) {
           })
         }
       />
-      {/* Social buttons belong on the first step, not mid-flow (e.g. during a
-          second factor). `!state.attempt` is exactly the initial identifier step. */}
       {state.attempt?.status !== 'complete' ? <SignUpPrompt signUpUrl={props.signUpUrl} afterUrl={props.afterUrl} /> : null}
-      {passkey.offered ? <PasskeySignInButton busy={state.busy} onClick={passkey.signIn} /> : null}
-      {!state.attempt ? (
-        <SocialSignInButtons
-          client={client}
-          onComplete={finish}
-          oneTap={props.googleOneTap}
-          oauthMode={props.oauthMode}
-          onProviderUnavailable={props.onProviderUnavailable}
-          googleButton={props.googleButton}
-        />
-      ) : null}
+      {placement === 'below' ? alternatives : null}
     </>
   );
 }
@@ -184,10 +194,14 @@ function usePasskeySignIn(input: {
   return { offered, signIn, stopAutofill };
 }
 
-/** The "Sign in with a passkey" button on the first step of `<SignIn>`. */
+/**
+ * The "Sign in with a passkey" button on the first step of `<SignIn>`: a
+ * secondary button (`formButtonSecondary` / `.atlas-button-secondary`, on the
+ * social-button base so its size matches the provider buttons).
+ */
 function PasskeySignInButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
   const t = useText();
-  const className = useClass('socialButton', 'atlas-social-button atlas-passkey-button');
+  const className = `${useClass('socialButton', 'atlas-social-button')} ${useClass('formButtonSecondary', 'atlas-button-secondary')} atlas-passkey-button`;
   return (
     <button type="button" className={className} data-atlas-passkey-sign-in="" disabled={busy} onClick={onClick}>
       {t('signIn.passkeyButton')}

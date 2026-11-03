@@ -170,6 +170,34 @@ export interface FlowProps {
    * `'separate'` one checkbox per policy.
    */
   policyConsent?: 'combined' | 'separate';
+  /**
+   * Where `<SignIn>` draws its alternative methods (the passkey button and the
+   * social / "Continue with Atlas" buttons): `'inside'` the card, under the form;
+   * `'below'` the card (the default, as before); or `'above'` it. `<SignUp>`
+   * keeps its alternatives inside the card already.
+   */
+  layout?: { alternativeMethods?: 'inside' | 'below' | 'above' };
+  /**
+   * Prefill the form: `email` goes in the email (identifier) field. Without it,
+   * a `login_hint` or `email` query parameter on the page URL is used.
+   */
+  initialValues?: { email?: string };
+}
+
+/**
+ * The form's values, with the email field prefilled from `email`, else (after
+ * mount, so a server render matches) the page's `login_hint` / `email` query.
+ * `key` null turns the prefill off.
+ */
+export function usePrefilledValues(key: string | null, email?: string) {
+  const [values, setValues] = useState<Record<string, string>>(() => (key && email ? { [key]: email } : {}));
+  useEffect(() => {
+    if (!key || email || typeof window === 'undefined') return;
+    const query = new URLSearchParams(window.location.search);
+    const hint = query.get('login_hint') || query.get('email');
+    if (hint) setValues((v) => (v[key] ? v : { ...v, [key]: hint }));
+  }, [key, email]);
+  return [values, setValues] as const;
 }
 
 /**
@@ -193,6 +221,8 @@ export function AttemptFlow({
   recoveryCodes = null,
   onRecoveryCodesSaved,
   onPolicyDecline,
+  prefill,
+  alternatives,
 }: {
   attempt: AttemptView | null;
   onSubmit(values: Record<string, string>): void;
@@ -229,6 +259,10 @@ export function AttemptFlow({
   onRecoveryCodesSaved?(): void;
   /** The user declined a policy the sign-in was waiting on: cancel the attempt (`needs_policy_acceptance`). */
   onPolicyDecline?(policy: { key: string; title: string }): void;
+  /** Prefill the identifier (see {@link FlowProps.initialValues}); absent = no prefill. */
+  prefill?: FlowProps['initialValues'];
+  /** Drawn inside the card, under the form (`layout.alternativeMethods: 'inside'`). */
+  alternatives?: ReactNode;
 }) {
   const t = useText();
   const errorText = useErrorText();
@@ -240,7 +274,7 @@ export function AttemptFlow({
   const errorClass = useClass('formFieldError', 'atlas-error');
   const cls = useClasses();
 
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = usePrefilledValues(prefill ? 'identifier' : null, prefill?.email);
   const step = attempt ? nextStep(attempt) : { kind: 'collect_identifier' as const };
   // The MFA steps: what the app offers, and the enrolment step's own state.
   const mfaChoices = useMfaChoices();
@@ -666,6 +700,7 @@ export function AttemptFlow({
           </div>
         ) : null}
       </form>
+      {alternatives}
     </div>
   );
 }

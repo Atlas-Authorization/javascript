@@ -1,5 +1,17 @@
 # @atlasauth/react changelog
 
+## 0.26.0 — 2026-11-03
+
+### Added
+
+- `<SignIn layout={{ alternativeMethods: 'inside' | 'below' | 'above' }}>`: draw the passkey and social / "Continue with Atlas" buttons inside the card (under the form), below it (default, as before) or above it.
+- `initialValues={{ email }}` on `<SignIn>` and `<SignUp>` prefills the email (identifier) field; without it, a `login_hint` or `email` query parameter is used.
+
+### Changed
+
+- The "Sign in with a passkey" button also carries the secondary-button style (`formButtonSecondary`, `.atlas-button-secondary`); `appearance.elements.socialButton` still applies to it.
+- A passkey sign-up that collects no email no longer sends an email typed or prefilled earlier.
+
 ## 0.25.0 — 2026-11-02
 
 ### Added

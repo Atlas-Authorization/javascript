@@ -107,6 +107,14 @@ export function ssoOnboardingResource(request: RequestFn) {
         idempotencyKey,
       });
     },
+    /**
+     * Create the profile with this name, or update it if it exists
+     * (`PUT /v1/sso_onboarding_profiles/by_name/{name}`). Parallel calls for one
+     * name create one profile.
+     */
+    upsertByName(name: string, body: Omit<CreateSsoOnboardingProfileBody, 'name'>): Promise<SsoOnboardingProfile> {
+      return request({ method: 'PUT', path: `/v1/sso_onboarding_profiles/by_name/${enc(name)}`, body });
+    },
     delete(id: string): Promise<{ object: 'sso_onboarding_profile'; id: string; deleted: true }> {
       return request({ method: 'DELETE', path: `/v1/sso_onboarding_profiles/${enc(id)}` });
     },

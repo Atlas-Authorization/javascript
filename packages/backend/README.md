@@ -453,6 +453,71 @@ To check the route end to end, `oauthClients.testBackchannelLogout(id)` sends a 
 
 The `atlas-signature` header can carry more than one signature, separated by spaces (`v1,<sig> v1,<sig>`). While an endpoint secret rotates, Atlas may sign each delivery with the old and the new secret. `verifyWebhook` accepts the delivery when any one signature matches your secret.
 
+### Typed events
+
+`verifyWebhook` returns an `AtlasWebhookEvent`, a union over `type`, so a `switch` narrows `data`:
+
+```ts
+const { verified, event } = verifyWebhook({ body: rawBody, headers, secret });
+if (!verified || !event) return res.sendStatus(400);
+switch (event.type) {
+  case 'user.created':
+    await createUser(event.data.id, event.data.primary_email_address);
+    break;
+  case 'organization_membership.updated':
+    console.log(event.data.role, event.data.role_source); // RoleSource | null
+    break;
+  default:
+    // an event type newer than this package version
+}
+```
+
+`ATLAS_WEBHOOK_EVENT_TYPES` lists every type. `RoleSource` is `"manual"`, `"scim"`, `"directory_sync"`, `"sso:<connection id>"` or `"ldap:<connection id>"`.
+
+## Mirror the user into your database
+
+`syncLocalUser` finds or creates the row for the signed-in Atlas user. Call it after verifying the session:
+
+```ts
+const { user, created, linked } = await syncLocalUser(auth.claims, {
+  findBySub: (sub) => db.user.findUnique({ where: { atlasSub: sub } }),
+  findByEmail: (email) => db.user.findUnique({ where: { email } }),
+  subOf: (row) => row.atlasSub,
+  isLocalEmailVerified: (row) => row.emailVerified,
+  link: (row, sub) => db.user.update({ where: { id: row.id }, data: { atlasSub: sub } }),
+  create: ({ sub, email, email_verified, external_id }) =>
+    db.user.create({ data: { atlasSub: sub, email, emailVerified: email_verified, externalId: external_id } }),
+});
+```
+
+- A row is found by `sub` first.
+- An existing row is linked by email only when the token says `email_verified: true` AND `isLocalEmailVerified(row)` is true. Linking an address nobody proved would let whoever registered it first take the account.
+- A row already bound to a different Atlas user is never relinked: `AtlasLinkConflictError` is thrown.
+- Put a unique index on the Atlas sub. When two first requests race, the loser's `create` fails on it and `syncLocalUser` returns the winner's row. `isDuplicateError` decides what counts as that failure (default: Postgres `23505`, or a message containing "duplicate" or "unique").
+
+The token carries `email`, `email_verified` and `external_id` when the instance includes the email claim in session tokens.
+
+## Require MFA
+
+```ts
+if (!mfaSatisfied(auth.claims)) return res.status(403).json({ error: 'mfa_required' });
+```
+
+`mfaSatisfied` is true when the token says `mfa_satisfied: true`, or else when `mfa` is true, `acr` is `urn:atlas:acr:mfa` or `amr` includes `mfa`, or the session came through enterprise SSO (`sso_connection_id`). `usedMultiFactor` and `authenticatedWithin` take `SessionClaims` too.
+
+## CSRF tokens
+
+For cookie-authenticated forms and `fetch` calls:
+
+```ts
+const secret = process.env.ATLAS_CSRF_SECRET ?? deriveCsrfSecret(process.env.ATLAS_SECRET_KEY!);
+const token = csrfToken({ sid: auth.claims.sid, secret }); // set as the __atlas_csrf cookie, render into the page
+// on a POST:
+if (!(await verifyCsrf(request, { sid: auth.claims.sid, secret }))) return new Response(null, { status: 403 });
+```
+
+A token is bound to the session (`sid`). `verifyCsrf` takes it from the `x-atlas-csrf` header or an `atlas_csrf` form field, and it must equal the `__atlas_csrf` cookie. A form body is read from a clone, so your handler can still read it. With Next.js, `atlasProxy({ csrf: true })` in `@atlasauth/nextjs` does all of this for you.
+
 ## Referral attribution
 
 With referral attribution on, Atlas reports every interactive sign-up to your referral platform before `user.created` is sent. The answer lands on the user: `referral` (who referred them, or null), `referral_code` and `referral_link` (the user's own code and link, when they are a referrer).

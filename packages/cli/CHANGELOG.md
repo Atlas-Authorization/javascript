@@ -1,5 +1,17 @@
 # @atlasauth/cli changelog
 
+## 0.23.0 — 2026-11-03
+
+### Added
+
+- `atlas golive --origin <url> [--dry-run] [--json]`: domains, issuer, Sign in with Atlas, webhooks (test, then activate), hooks (test, then enable), preflight, login readiness and declared integrations, in order, stopping at the first failure with its fix. `--dry-run` sends every write with `?dry_run=true`.
+- `atlas doctor --origin <url>`: adds preflight errors, login readiness, the path-mount verification state and the SDK cookie declaration check (`__session`, `__atlas_uat`, `__atlas_rt`, `__client`) to the same report.
+- `atlas referrals connect --dry-run`: lists the platform calls it would make and validates the Atlas settings write with `?dry_run=true`; nothing is saved, no secret is kept, no test runs.
+
+### Changed
+
+- The old `REFERALLY_BASE_URL` / `REFERALLY_API_KEY` environment names now produce one notice per run naming each variable to rename.
+
 ## 0.22.0 — 2026-11-02
 
 ### Added

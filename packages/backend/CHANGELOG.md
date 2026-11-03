@@ -2,8 +2,19 @@
 
 ## Unreleased
 
+## 0.35.0 — 2026-11-03
+
+- `organizations.upsertByExternalId(externalId, body)` and `ssoOnboarding.upsertByName(name, body)`: create-or-update in one race-safe call.
+- `SessionClaims.last_active_at` (the session's last activity, epoch seconds).
+
 ### Added
 
+- `AtlasWebhookEvent`: a discriminated union over `type` of every webhook event (181), each with its typed `data`, generated from the server's event schemas. `verifyWebhook`, `verifyAtlasWebhook` and `verifyAtlasWebhookRequest` now return it by default (pass a type argument to override). Also `AtlasWebhookEventType`, `ATLAS_WEBHOOK_EVENT_TYPES` and one `WebhookData*` type per payload.
+- `RoleSource`: `"manual" | "scim" | "directory_sync" | "sso:<connection id>" | "ldap:<connection id>"`.
+- `SessionClaims` gains `acr`, `amr`, `auth_time`, `mfa_satisfied` and `email_verified`.
+- `mfaSatisfied(claims)`: `mfa_satisfied === true`, else `mfa === true`, an MFA `acr`/`amr`, or an enterprise SSO sign-in (`sso_connection_id`).
+- `syncLocalUser(claims, { findBySub, findByEmail, subOf, isLocalEmailVerified, link, create, isDuplicateError? })` → `{ user, created, linked }`: mirror the Atlas user into your own table, link by email only when both sides proved it, never relink a row bound to another user (`AtlasLinkConflictError`), race-safe on a unique `sub`.
+- CSRF: `csrfToken({ sid, secret })`, `verifyCsrf(request, { sid, secret })`, `checkCsrfToken`, `deriveCsrfSecret(secretKey)`, and the `CSRF_HEADER` (`x-atlas-csrf`), `CSRF_FORM_FIELD` (`atlas_csrf`) and `CSRF_COOKIE` (`__atlas_csrf`) names.
 - `@atlasauth/backend/rp`: app-credential `touchIfDue` / `endAppSession` for apps with no instance secret key (Sign in with Atlas), and back-channel logout through a sid store (`sidStore`, `memorySidStore`, `sqlSidStore`, `bindSession`, `onBackchannelLogout`, `backchannelLogout`, `routes.backchannelLogout`).
 
 ## 0.34.0 — 2026-11-02

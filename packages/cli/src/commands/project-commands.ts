@@ -14,6 +14,7 @@ import {
 } from '../project';
 import { deliverSecret, productDir, writeSecretFile } from '../secrets';
 import { envApiUrl, requireArg, resolveAuth, wantsJson } from './shared';
+import { declaredCookiesCheck, loginReadinessCheck, parseOrigin, pathMountCheck, preflightCheck } from './golive';
 
 /**
  * The project commands that sit beside `atlas init`: `preflight` (a CI gate),
@@ -170,9 +171,26 @@ export async function doctor(ctx: RunContext, args: ParsedArgs): Promise<number>
   if (only) q.set('only', only);
   if (args.values['no-probe'] === true) q.set('probe', 'false');
   const qs = q.toString();
-  const report = await httpFor(ctx, cred).get<{ ok: boolean; checks: HealthCheckRow[]; summary: { failing: number; passing: number; unknown: number } }>(
+  const api = httpFor(ctx, cred);
+  const report = await api.get<{ ok: boolean; checks: HealthCheckRow[]; summary: { failing: number; passing: number; unknown: number } }>(
     `/v1/integration-health${qs ? `?${qs}` : ''}`,
   );
+  // --origin: the go-live checks for that origin join the same report.
+  const originRaw = str(args.values, 'origin');
+  if (originRaw) {
+    const origin = parseOrigin(originRaw, 'doctor');
+    const extra = await Promise.all([
+      preflightCheck(api),
+      loginReadinessCheck(api, origin.origin),
+      pathMountCheck(api, origin.host),
+      declaredCookiesCheck(api),
+    ]);
+    for (const c of extra) {
+      report.checks.push({ id: c.id, ok: c.ok, detail: c.detail, fix: c.fix ?? null, source: 'origin' });
+      report.summary[c.ok ? 'passing' : 'failing'] += 1;
+    }
+    if (extra.some((c) => !c.ok)) report.ok = false;
+  }
   if (wantsJson(args.values)) {
     printJson(ctx.io, report);
   } else {

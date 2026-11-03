@@ -178,6 +178,7 @@ describe('withAtlasHeaders', () => {
       sessionId: 'sess_1',
       orgId: 'org_1',
       orgRole: 'admin',
+      csrfToken: null,
     });
   });
 

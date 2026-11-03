@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AtlasProvider } from './AtlasProvider';
 import { SignIn } from './sign-in';
+import { SignUp } from './sign-up';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -34,7 +35,7 @@ function stubWebAuthn(opts: { conditional: boolean; get: (o: { mediation?: strin
   return (navigator as unknown as { credentials: { get: ReturnType<typeof vi.fn> } }).credentials.get;
 }
 
-async function mount(opts: { passkey: boolean; props?: Record<string, unknown> }) {
+async function mount(opts: { passkey: boolean; props?: Record<string, unknown>; component?: typeof SignIn }) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const call = { method: init?.method ?? 'GET', path: url.pathname, body: typeof init?.body === 'string' ? JSON.parse(init.body) : null };
@@ -61,7 +62,7 @@ async function mount(opts: { passkey: boolean; props?: Record<string, unknown> }
         frontendApi: FAPI,
         fetchImpl,
         appearance: { instanceDesign: false },
-        children: createElement(SignIn, opts.props ?? {}),
+        children: createElement(opts.component ?? SignIn, opts.props ?? {}),
       }),
     );
   });
@@ -133,5 +134,61 @@ describe('<SignIn> passkey sign-in', () => {
     await act(async () => button(el)!.click());
     await vi.waitFor(() => expect(onPasskeyExtensionResults).toHaveBeenCalledTimes(1));
     expect(JSON.stringify(posts('/v1/client/sign_ins/passkey/finish')[0]!.body)).not.toContain('prf');
+  });
+});
+
+describe('<SignIn> layout.alternativeMethods', () => {
+  const inCard = (el: HTMLElement) => el.querySelector('.atlas-card [data-atlas-passkey-sign-in]');
+
+  it('defaults to below the card, styled as a secondary button', async () => {
+    stubWebAuthn({ conditional: false, get: async () => ASSERTION });
+    const el = await mount({ passkey: true });
+    await vi.waitFor(() => expect(button(el)).not.toBeNull());
+    expect(inCard(el)).toBeNull();
+    expect(button(el)!.className).toContain('atlas-button-secondary');
+  });
+
+  it("'inside' draws the passkey button within the card, after the form", async () => {
+    stubWebAuthn({ conditional: false, get: async () => ASSERTION });
+    const el = await mount({ passkey: true, props: { layout: { alternativeMethods: 'inside' } } });
+    await vi.waitFor(() => expect(button(el)).not.toBeNull());
+    expect(inCard(el)).not.toBeNull();
+    expect(button(el)!.parentElement!.classList.contains('atlas-card')).toBe(true);
+  });
+
+  it("'above' draws it before the card", async () => {
+    stubWebAuthn({ conditional: false, get: async () => ASSERTION });
+    const el = await mount({ passkey: true, props: { layout: { alternativeMethods: 'above' } } });
+    await vi.waitFor(() => expect(button(el)).not.toBeNull());
+    const card = el.querySelector('.atlas-card')!;
+    expect(button(el)!.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('initialValues and the login_hint query', () => {
+  afterEach(() => window.history.replaceState({}, '', '/'));
+  const input = (el: HTMLElement, name: string) => el.querySelector(`input[name="${name}"]`) as HTMLInputElement | null;
+
+  it('<SignIn initialValues> prefills the identifier, and wins over the URL', async () => {
+    window.history.replaceState({}, '', '/?login_hint=url%40example.com');
+    const el = await mount({ passkey: false, props: { initialValues: { email: 'prop@example.com' } } });
+    await vi.waitFor(() => expect(input(el, 'identifier')?.value).toBe('prop@example.com'));
+  });
+
+  it('<SignIn> reads login_hint, then email, from the URL', async () => {
+    window.history.replaceState({}, '', '/?email=q%40example.com');
+    const el = await mount({ passkey: false });
+    await vi.waitFor(() => expect(input(el, 'identifier')?.value).toBe('q@example.com'));
+  });
+
+  it('<SignUp initialValues> prefills the email field', async () => {
+    const el = await mount({ passkey: false, component: SignUp, props: { initialValues: { email: 'new@example.com' } } });
+    await vi.waitFor(() => expect(input(el, 'email')?.value).toBe('new@example.com'));
+  });
+
+  it('<SignUp> reads login_hint from the URL', async () => {
+    window.history.replaceState({}, '', '/?login_hint=hint%40example.com');
+    const el = await mount({ passkey: false, component: SignUp });
+    await vi.waitFor(() => expect(input(el, 'email')?.value).toBe('hint@example.com'));
   });
 });

@@ -1,4 +1,12 @@
 import {
+  CSRF_COOKIE,
+  checkCsrfToken,
+  csrfToken,
+  deriveCsrfSecret,
+  readCookieValue,
+  verifyCsrf,
+} from '@atlasauth/backend';
+import {
   SIGNED_OUT,
   UNAUTHENTICATED_BODY,
   createAtlasDecider,
@@ -41,6 +49,8 @@ export const ATLAS_AUTH_HEADERS = {
   sessionId: 'x-atlas-session-id',
   orgId: 'x-atlas-org-id',
   orgRole: 'x-atlas-org-role',
+  /** With `csrf`: the CSRF token valid for this session, to render into forms (`atlas_csrf`). */
+  csrfToken: 'x-atlas-csrf-token',
 } as const;
 
 const ATLAS_HEADER_PREFIX = 'x-atlas-';
@@ -64,9 +74,81 @@ export interface HeaderCarryingResponse {
 
 export type AtlasProxy = (request: ProxyRequest) => Promise<Response | null>;
 
+/** Options for {@link AtlasProxyOptions.csrf}. */
+export interface AtlasProxyCsrfOptions {
+  /**
+   * The HMAC secret (16+ characters). Default `ATLAS_CSRF_SECRET`, else derived
+   * from `ATLAS_SECRET_KEY` (HKDF), so `verifyCsrf` in your own handlers can use
+   * the same one.
+   */
+  secret?: string;
+  /** Your Frontend API path mount, which Atlas protects itself. Default `ATLAS_BASE_PATH` or `/atlas`. */
+  mountBasePath?: string;
+}
+
+export interface AtlasProxyOptions extends AtlasMiddlewareOptions {
+  /**
+   * CSRF protection for signed-in browsers. The proxy keeps a session-bound
+   * token in the `__atlas_csrf` cookie (readable by your JS) and refuses a
+   * POST / PUT / PATCH / DELETE with 403 unless it carries the same token in
+   * the `x-atlas-csrf` header or an `atlas_csrf` form field. Requests with
+   * `Authorization: Bearer`, signed-out requests and the mount base path are
+   * exempt. The cookie is set by {@link withAtlasHeaders}; server components
+   * read the token from the `x-atlas-csrf-token` request header.
+   */
+  csrf?: boolean | AtlasProxyCsrfOptions;
+}
+
 /** Auth state per request, recorded by the proxy for `withAtlasHeaders` /
  *  `proxyAuth`. Weak, so a finished request's state is collected with it. */
 const resolved = new WeakMap<object, AuthState>();
+/** The CSRF token per request, and whether the cookie must be (re)set. */
+const csrfState = new WeakMap<object, { token: string; setCookie: boolean; secure: boolean }>();
+
+const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function readEnv(): Record<string, string | undefined> {
+  return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+}
+
+function csrfCookie(token: string, secure: boolean): string {
+  return `${CSRF_COOKIE}=${encodeURIComponent(token)}; Path=/; SameSite=Lax${secure ? '; Secure' : ''}`;
+}
+
+function underBase(pathname: string, base: string): boolean {
+  return pathname === base || pathname.startsWith(`${base}/`);
+}
+
+/** The CSRF gate: a 403 to return, or null after recording the request's token. */
+function createCsrfGate(option: true | AtlasProxyCsrfOptions) {
+  const config = option === true ? {} : option;
+  let secret: string | undefined;
+  return async function gate(request: ProxyRequest, auth: AuthState): Promise<Response | null> {
+    if (!auth.sessionId) return null;
+    if (request.headers.get('authorization')?.startsWith('Bearer ')) return null;
+    const env = readEnv();
+    const base = `/${(config.mountBasePath ?? env.ATLAS_BASE_PATH ?? '/atlas').replace(/^\/+|\/+$/g, '')}`;
+    if (underBase(request.nextUrl.pathname, base)) return null;
+    if (!secret) {
+      secret = config.secret ?? env.ATLAS_CSRF_SECRET ?? (env.ATLAS_SECRET_KEY ? deriveCsrfSecret(env.ATLAS_SECRET_KEY) : undefined);
+      if (!secret) throw new Error('@atlasauth/nextjs atlasProxy({ csrf }): set ATLAS_CSRF_SECRET or ATLAS_SECRET_KEY.');
+    }
+    const opts = { sid: auth.sessionId, secret };
+    const secure = !(request.url ?? '').startsWith('http:');
+    const existing = readCookieValue(request.headers.get('cookie'), CSRF_COOKIE);
+    const state =
+      existing && checkCsrfToken(existing, opts)
+        ? { token: existing, setCookie: false, secure }
+        : { token: csrfToken(opts), setCookie: true, secure };
+    csrfState.set(request, state);
+
+    if (!UNSAFE_METHODS.has((request.method ?? 'GET').toUpperCase())) return null;
+    if (await verifyCsrf(request, opts)) return null;
+    const headers = new Headers({ 'content-type': 'application/json' });
+    if (state.setCookie) headers.append('set-cookie', csrfCookie(state.token, secure));
+    return new Response(JSON.stringify({ errors: [{ code: 'CSRF_TOKEN_INVALID' }] }), { status: 403, headers });
+  };
+}
 
 function serializeCookie({ name, value, options }: AtlasCookie): string {
   // Same encoding Next's `response.cookies.set` applies, so readers agree.
@@ -87,8 +169,9 @@ function serializeCookie({ name, value, options }: AtlasCookie): string {
  * `atlasMiddleware` (they share one engine) — only the calling convention
  * differs: it takes just the request and resolves to `Response | null`.
  */
-export function atlasProxy(options: AtlasMiddlewareOptions): AtlasProxy {
+export function atlasProxy(options: AtlasProxyOptions): AtlasProxy {
   const decide = createAtlasDecider(options);
+  const csrfGate = options.csrf ? createCsrfGate(options.csrf) : null;
 
   return async function proxy(request) {
     const decision = await decide(request);
@@ -96,7 +179,7 @@ export function atlasProxy(options: AtlasMiddlewareOptions): AtlasProxy {
 
     switch (decision.kind) {
       case 'continue':
-        return null;
+        return csrfGate ? csrfGate(request, decision.auth) : null;
 
       case 'unauthorized':
         return new Response(JSON.stringify(UNAUTHENTICATED_BODY), {
@@ -124,7 +207,12 @@ export function proxyAuth(request: object): AuthState {
   return resolved.get(request) ?? SIGNED_OUT;
 }
 
-function authHeaderValues(auth: AuthState): Array<[string, string]> {
+/** The CSRF token `atlasProxy({ csrf })` holds for this request (null without `csrf` or when signed out). */
+export function proxyCsrfToken(request: object): string | null {
+  return csrfState.get(request)?.token ?? null;
+}
+
+function authHeaderValues(auth: AuthState, csrf?: string): Array<[string, string]> {
   const values: Array<[string, string]> = [
     [ATLAS_AUTH_HEADERS.status, auth.userId ? 'signed-in' : 'signed-out'],
   ];
@@ -132,6 +220,7 @@ function authHeaderValues(auth: AuthState): Array<[string, string]> {
   if (auth.sessionId) values.push([ATLAS_AUTH_HEADERS.sessionId, auth.sessionId]);
   if (auth.orgId) values.push([ATLAS_AUTH_HEADERS.orgId, auth.orgId]);
   if (auth.orgRole) values.push([ATLAS_AUTH_HEADERS.orgRole, auth.orgRole]);
+  if (csrf) values.push([ATLAS_AUTH_HEADERS.csrfToken, csrf]);
   return values;
 }
 
@@ -158,6 +247,14 @@ export function withAtlasHeaders<R extends HeaderCarryingResponse>(
   response: R,
   auth: AuthState = proxyAuth(request),
 ): R {
+  const csrf = csrfState.get(request);
+  if (csrf?.setCookie) {
+    try {
+      response.headers.append('set-cookie', csrfCookie(csrf.token, csrf.secure));
+    } catch {
+      // Immutable headers (a bare `Response.redirect`): the next response sets it.
+    }
+  }
   const continues =
     response.headers.has('x-middleware-next') || response.headers.has('x-middleware-rewrite');
   if (!continues) return response;
@@ -188,7 +285,7 @@ export function withAtlasHeaders<R extends HeaderCarryingResponse>(
     });
   }
 
-  for (const [name, value] of authHeaderValues(auth)) {
+  for (const [name, value] of authHeaderValues(auth, csrf?.token)) {
     names.add(name);
     response.headers.set(`${OVERRIDE_PREFIX}${name}`, value);
   }
@@ -203,6 +300,8 @@ export interface ForwardedAuth {
   sessionId: string | null;
   orgId: string | null;
   orgRole: string | null;
+  /** With `atlasProxy({ csrf })`: the token to render as the `atlas_csrf` form field. */
+  csrfToken: string | null;
 }
 
 /**
@@ -220,5 +319,6 @@ export function readAtlasHeaders(headers: { get(name: string): string | null }):
     sessionId: signedIn ? headers.get(ATLAS_AUTH_HEADERS.sessionId) : null,
     orgId: signedIn ? headers.get(ATLAS_AUTH_HEADERS.orgId) : null,
     orgRole: signedIn ? headers.get(ATLAS_AUTH_HEADERS.orgRole) : null,
+    csrfToken: signedIn ? headers.get(ATLAS_AUTH_HEADERS.csrfToken) : null,
   };
 }

@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    /* atob / TextDecoder / globalThis — this helper runs in the browser too. */
+    "lib": ["ES2022", "DOM"],
+    "types": [],
+    "declaration": true
+  },
+  "include": ["src/**/*"],
+  "exclude": []
+}
