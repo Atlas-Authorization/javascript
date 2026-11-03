@@ -3381,8 +3381,8 @@ packages:
     resolution: {integrity: sha512-zP0tnfqrFFRL8INtOaQ6XwEYfdIpIH9vrEo7y0bHQGQa50z4/QWXE5CI4nRUHxqFW4MVWOwXFg1hom1aAZHNkQ==}
     engines: {node: '>=22.13.0'}
 
-  '@expo/config-plugins@58.0.11':
-    resolution: {integrity: sha512-lenBm4ajWMPW+Hol3xiHHoSZEO/mA3T7X/NU3XNqm96XepwjXh2CMpIvROGLoh0amfVEIXIW3Qj3gnDS3cK/nw==}
+  '@expo/config-plugins@58.0.12':
+    resolution: {integrity: sha512-nqnoPBARpKdKLY8+c+N2mizJgiWjlQGWeDhEOqMOZnQcpMmU79H1Svc9QOzcE1yX7obzw0Hf2YVlfW67g58Ucg==}
 
   '@expo/config-types@58.0.3':
     resolution: {integrity: sha512-wyfrwkTT/hQHzwyqkXkngKxoOa8L6ovsTP4h/UukS1mTmssee5et6HOPoN5RtawdJPnm5JO28f//C/wXlpka8Q==}
@@ -3414,8 +3414,8 @@ packages:
       react: '*'
       react-native: '*'
 
-  '@expo/env@2.5.3':
-    resolution: {integrity: sha512-dBGu8BAfvUcXvG4HvYth+EhcHEsdC+/fT6HTH/zFvvwfp50LG6uzpzT8TXObwEq/t2B/rvAMV5OolxQ46LWXHg==}
+  '@expo/env@2.5.4':
+    resolution: {integrity: sha512-CjzuExX8GegcNLpOw8BDO19RpzJBD1xCCMSfRL1eMfIGiwIJ9EBu0cE3jn3elk7rKvU5QqH15x72YLWTyxGL2g==}
     engines: {node: '>=20.12.0'}
 
   '@expo/fingerprint@0.21.8':
@@ -3437,8 +3437,8 @@ packages:
   '@expo/log-box-utils@58.0.2':
     resolution: {integrity: sha512-My8Lwe9FU/yDwwzqwi5LN2rzzDcJqIAZKrD9f0XHZEKz/FQnWJYdt1rsV7+RwqMGeGq2XsxTCVT1ggTCOvumxw==}
 
-  '@expo/log-box@58.0.14':
-    resolution: {integrity: sha512-0aXQIWgTBvtzlzzqS7+oDx+DeGyX961Xxr53HzWWiyxNM9PkK7QXVV2gVeuvAYL0RIKUL1hNC0ZCz7sSkYyfww==}
+  '@expo/log-box@58.0.15':
+    resolution: {integrity: sha512-IBpaJcTdJlSqmiEtyI9XDiNPSRUZNpeWdRbzE4ic6I4k17mpy0LxWJ4Mz2hB7B48b9BrleUKFeZ+6VseglmvGQ==}
     peerDependencies:
       '@expo/dom-webview': ^58.0.2
       expo: '*'
@@ -8586,8 +8586,8 @@ packages:
     peerDependencies:
       expo: '*'
 
-  expo-modules-autolinking@58.0.16:
-    resolution: {integrity: sha512-YglXoBBc3QwqqFfFQD1XVfpxXdF9RkuZOVxWTn5uHPiyvXSMFiVO16GnV+VSd+njKld1EJt7vQucCsDiLp4xVA==}
+  expo-modules-autolinking@58.0.17:
+    resolution: {integrity: sha512-mZRVuUCOsYK4+n9U8972bQBqXn21ncMd9BBx0/iepKH49tdMB8ADj3O9bb+huA80XckyorFLVfi6nJcImYtUyg==}
     hasBin: true
 
   expo-modules-cli@0.4.0:
@@ -8605,8 +8605,8 @@ packages:
       react-native-worklets:
         optional: true
 
-  expo-modules-jsi@58.0.21:
-    resolution: {integrity: sha512-6FG3jKt89s+qolbalas+OE5gQjDYu/sfV7HVAFEw3JVtkS1+MVfCvQLxp3RAm85bVNO0vgfnbn5z6A8WSDWalA==}
+  expo-modules-jsi@58.0.22:
+    resolution: {integrity: sha512-sWyOUEsRHZdobItrerWxVR32uiABSijoVJGoIW1dubfZuNNaRG+Hgis4u+92Gle1gEdH2Z4qKqm0JxSZCzk9AA==}
     peerDependencies:
       react-native: '*'
 
@@ -16631,13 +16631,13 @@ snapshots:
       2g: 1.0.1(typescript@5.9.3)
       '@expo/code-signing-certificates': 0.0.7
       '@expo/config': 58.0.10(typescript@5.9.3)
-      '@expo/config-plugins': 58.0.11(typescript@5.9.3)
+      '@expo/config-plugins': 58.0.12(typescript@5.9.3)
       '@expo/devcert': 1.2.2
-      '@expo/env': 2.5.3
+      '@expo/env': 2.5.4
       '@expo/image-utils': 0.12.6(typescript@5.9.3)
       '@expo/inline-modules': 0.2.8(typescript@5.9.3)
       '@expo/json-file': 11.2.1
-      '@expo/log-box': 58.0.14(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)
+      '@expo/log-box': 58.0.15(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)
       '@expo/log-box-utils': 58.0.2
       '@expo/metro': 58.0.0
       '@expo/metro-config': 58.0.20(expo@58.0.22)(typescript@5.9.3)
@@ -16711,13 +16711,13 @@ snapshots:
       2g: 1.0.1(typescript@5.9.3)
       '@expo/code-signing-certificates': 0.0.7
       '@expo/config': 58.0.10(typescript@5.9.3)
-      '@expo/config-plugins': 58.0.11(typescript@5.9.3)
+      '@expo/config-plugins': 58.0.12(typescript@5.9.3)
       '@expo/devcert': 1.2.2
-      '@expo/env': 2.5.3
+      '@expo/env': 2.5.4
       '@expo/image-utils': 0.12.6(typescript@5.9.3)
       '@expo/inline-modules': 0.2.8(typescript@5.9.3)
       '@expo/json-file': 11.2.1
-      '@expo/log-box': 58.0.14(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)
+      '@expo/log-box': 58.0.15(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)
       '@expo/log-box-utils': 58.0.2
       '@expo/metro': 58.0.0
       '@expo/metro-config': 58.0.20(expo@58.0.22)(typescript@5.9.3)
@@ -16790,7 +16790,7 @@ snapshots:
     dependencies:
       node-forge: 1.4.2
 
-  '@expo/config-plugins@58.0.11(typescript@5.9.3)':
+  '@expo/config-plugins@58.0.12(typescript@5.9.3)':
     dependencies:
       '@expo/config-types': 58.0.3
       '@expo/json-file': 11.2.1
@@ -16800,9 +16800,9 @@ snapshots:
       chalk: 4.1.2
       debug: 4.4.3(supports-color@8.1.1)
       getenv: 2.0.0
-      glob: 13.0.6
       semver: 7.8.6
       slugify: 1.6.9
+      tinyglobby: 0.2.17
       xcode: 4.0.0
       xml2js: 0.6.0
     transitivePeerDependencies:
@@ -16813,7 +16813,7 @@ snapshots:
 
   '@expo/config@58.0.10(typescript@5.9.3)':
     dependencies:
-      '@expo/config-plugins': 58.0.11(typescript@5.9.3)
+      '@expo/config-plugins': 58.0.12(typescript@5.9.3)
       '@expo/config-types': 58.0.3
       '@expo/json-file': 11.2.1
       '@expo/platforms': 58.0.1
@@ -16862,7 +16862,7 @@ snapshots:
       react: 18.3.1
       react-native: 0.88.1(@babel/core@7.29.7)(react@18.3.1)
 
-  '@expo/env@2.5.3':
+  '@expo/env@2.5.4':
     dependencies:
       chalk: 4.1.2
       debug: 4.4.3(supports-color@8.1.1)
@@ -16872,7 +16872,7 @@ snapshots:
 
   '@expo/fingerprint@0.21.8':
     dependencies:
-      '@expo/env': 2.5.3
+      '@expo/env': 2.5.4
       '@expo/spawn-async': 1.8.0
       arg: 5.0.2
       chalk: 4.1.2
@@ -16901,7 +16901,7 @@ snapshots:
 
   '@expo/inline-modules@0.2.8(typescript@5.9.3)':
     dependencies:
-      '@expo/config-plugins': 58.0.11(typescript@5.9.3)
+      '@expo/config-plugins': 58.0.12(typescript@5.9.3)
     transitivePeerDependencies:
       - supports-color
       - typescript
@@ -16921,7 +16921,7 @@ snapshots:
 
   '@expo/log-box-utils@58.0.2': {}
 
-  '@expo/log-box@58.0.14(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)':
+  '@expo/log-box@58.0.15(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)':
     dependencies:
       '@expo/dom-webview': 58.0.2(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)
       '@expo/log-box-utils': 58.0.2
@@ -16932,7 +16932,7 @@ snapshots:
     optionalDependencies:
       expo: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
 
-  '@expo/log-box@58.0.14(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)':
+  '@expo/log-box@58.0.15(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)':
     dependencies:
       '@expo/dom-webview': 58.0.2(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)
       '@expo/log-box-utils': 58.0.2
@@ -16950,7 +16950,7 @@ snapshots:
       '@babel/core': 7.29.7
       '@babel/generator': 7.29.12
       '@expo/config': 58.0.10(typescript@5.9.3)
-      '@expo/env': 2.5.3
+      '@expo/env': 2.5.4
       '@expo/json-file': 11.2.1
       '@expo/metro': 58.0.0
       '@expo/platforms': 58.0.1
@@ -17050,13 +17050,13 @@ snapshots:
   '@expo/prebuild-config@58.0.18(typescript@5.9.3)':
     dependencies:
       '@expo/config': 58.0.10(typescript@5.9.3)
-      '@expo/config-plugins': 58.0.11(typescript@5.9.3)
+      '@expo/config-plugins': 58.0.12(typescript@5.9.3)
       '@expo/config-types': 58.0.3
       '@expo/image-utils': 0.12.6(typescript@5.9.3)
       '@expo/json-file': 11.2.1
       '@react-native/normalize-colors': 0.88.1
       debug: 4.4.3(supports-color@8.1.1)
-      expo-modules-autolinking: 58.0.16(typescript@5.9.3)
+      expo-modules-autolinking: 58.0.17(typescript@5.9.3)
       resolve-from: 5.0.0
       semver: 7.8.6
     transitivePeerDependencies:
@@ -23086,7 +23086,7 @@ snapshots:
 
   expo-constants@58.0.14(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(typescript@5.9.3):
     dependencies:
-      '@expo/env': 2.5.3
+      '@expo/env': 2.5.4
       '@expo/require-utils': 58.0.5(typescript@5.9.3)
       expo: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
       react-native: 0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1)
@@ -23096,7 +23096,7 @@ snapshots:
 
   expo-constants@58.0.14(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(typescript@5.9.3):
     dependencies:
-      '@expo/env': 2.5.3
+      '@expo/env': 2.5.4
       '@expo/require-utils': 58.0.5(typescript@5.9.3)
       expo: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
       react-native: 0.88.1(@babel/core@7.29.7)(react@18.3.1)
@@ -23151,7 +23151,7 @@ snapshots:
       expo: 58.0.22(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
       invariant: 2.2.4
 
-  expo-modules-autolinking@58.0.16(typescript@5.9.3):
+  expo-modules-autolinking@58.0.17(typescript@5.9.3):
     dependencies:
       '@expo/platforms': 58.0.1
       '@expo/require-utils': 58.0.5(typescript@5.9.3)
@@ -23169,7 +23169,7 @@ snapshots:
 
   expo-modules-core@58.0.29(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1):
     dependencies:
-      expo-modules-jsi: 58.0.21(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))
+      expo-modules-jsi: 58.0.22(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))
       expo-modules-macros: 0.27.1
       invariant: 2.2.4
       react: 18.3.1
@@ -23177,17 +23177,17 @@ snapshots:
 
   expo-modules-core@58.0.29(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1):
     dependencies:
-      expo-modules-jsi: 58.0.21(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))
+      expo-modules-jsi: 58.0.22(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))
       expo-modules-macros: 0.27.1
       invariant: 2.2.4
       react: 18.3.1
       react-native: 0.88.1(@babel/core@7.29.7)(react@18.3.1)
 
-  expo-modules-jsi@58.0.21(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1)):
+  expo-modules-jsi@58.0.22(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1)):
     dependencies:
       react-native: 0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1)
 
-  expo-modules-jsi@58.0.21(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1)):
+  expo-modules-jsi@58.0.22(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1)):
     dependencies:
       react-native: 0.88.1(@babel/core@7.29.7)(react@18.3.1)
 
@@ -23214,11 +23214,11 @@ snapshots:
       '@babel/runtime': 7.29.10
       '@expo/cli': 58.1.18(@expo/dom-webview@58.0.2)(expo-constants@58.0.14(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(typescript@5.9.3))(expo-font@58.0.11(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1))(expo@58.0.22)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
       '@expo/config': 58.0.10(typescript@5.9.3)
-      '@expo/config-plugins': 58.0.11(typescript@5.9.3)
+      '@expo/config-plugins': 58.0.12(typescript@5.9.3)
       '@expo/devtools': 58.0.2(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)
       '@expo/fingerprint': 0.21.8
       '@expo/local-build-cache-provider': 58.0.10(typescript@5.9.3)
-      '@expo/log-box': 58.0.14(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)
+      '@expo/log-box': 58.0.15(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)
       '@expo/log-box-utils': 58.0.2
       '@expo/metro': 58.0.0
       '@expo/metro-config': 58.0.20(expo@58.0.22)(typescript@5.9.3)
@@ -23229,7 +23229,7 @@ snapshots:
       expo-file-system: 58.0.13(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))
       expo-font: 58.0.11(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)
       expo-keep-awake: 58.0.3(expo@58.0.22)(react@18.3.1)
-      expo-modules-autolinking: 58.0.16(typescript@5.9.3)
+      expo-modules-autolinking: 58.0.17(typescript@5.9.3)
       expo-modules-cli: 0.4.0
       expo-modules-core: 58.0.29(react-native@0.88.1(@babel/core@7.29.7)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)
       pretty-format: 29.7.0
@@ -23257,11 +23257,11 @@ snapshots:
       '@babel/runtime': 7.29.10
       '@expo/cli': 58.1.18(@expo/dom-webview@58.0.2)(expo-constants@58.0.14(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(typescript@5.9.3))(expo-font@58.0.11(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1))(expo@58.0.22)(react-dom@18.3.1(react@18.3.1))(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
       '@expo/config': 58.0.10(typescript@5.9.3)
-      '@expo/config-plugins': 58.0.11(typescript@5.9.3)
+      '@expo/config-plugins': 58.0.12(typescript@5.9.3)
       '@expo/devtools': 58.0.2(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)
       '@expo/fingerprint': 0.21.8
       '@expo/local-build-cache-provider': 58.0.10(typescript@5.9.3)
-      '@expo/log-box': 58.0.14(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)
+      '@expo/log-box': 58.0.15(@expo/dom-webview@58.0.2)(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)
       '@expo/log-box-utils': 58.0.2
       '@expo/metro': 58.0.0
       '@expo/metro-config': 58.0.20(expo@58.0.22)(typescript@5.9.3)
@@ -23272,7 +23272,7 @@ snapshots:
       expo-file-system: 58.0.13(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))
       expo-font: 58.0.11(expo@58.0.22)(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)
       expo-keep-awake: 58.0.3(expo@58.0.22)(react@18.3.1)
-      expo-modules-autolinking: 58.0.16(typescript@5.9.3)
+      expo-modules-autolinking: 58.0.17(typescript@5.9.3)
       expo-modules-cli: 0.4.0
       expo-modules-core: 58.0.29(react-native@0.88.1(@babel/core@7.29.7)(react@18.3.1))(react@18.3.1)
       pretty-format: 29.7.0
