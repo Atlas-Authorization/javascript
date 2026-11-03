@@ -20,6 +20,7 @@ class MockApi implements ConfigHttp {
 
   async get<T>(path: string): Promise<T> {
     if (path === '/v1/instance') return this.state.instance as T;
+    if (path === '/v1/instance/sign_in_with_atlas' && this.state.sign_in_with_atlas) return this.state.sign_in_with_atlas as T;
     if (path === '/v1/organization_settings_schema') {
       if (this.state.schema) return { schema: this.state.schema } as T;
       throw new AtlasApiError(404, [{ code: 'NOT_FOUND', message: 'none' }]);
@@ -374,6 +375,27 @@ describe('config import: partial documents and the newer resource types', () => 
     expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), api))).toBe(0);
     expect(api.writes).toContainEqual({ method: 'PUT', path: '/v1/oauth_providers/microsoft', body: { values: { tenant: 'organizations', client_id: 'mid', client_secret: 'ms' } } });
     expect(api.writes).toContainEqual({ method: 'PUT', path: '/v1/oauth_providers/siwe', body: { settings: { domain: 'app.example' } } });
+  });
+});
+
+describe('config: sign_in_with_atlas', () => {
+  it('turns the button on from the file (passing a connection to link) and exports only enabled', async () => {
+    writeFileSync(join(dir, 'sign_in_with_atlas.json'), JSON.stringify({ enabled: true, connection_id: 'ssoc_1' }));
+    const api = new MockApi(seedState());
+    expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), api))).toBe(0);
+    expect(api.writes).toContainEqual({ method: 'PATCH', path: '/v1/instance/sign_in_with_atlas', body: { enabled: true, connection_id: 'ssoc_1' } });
+
+    const out = join(dir, 'export');
+    const live = new MockApi({ ...seedState(), sign_in_with_atlas: { enabled: true, connection_id: 'ssoc_1', managed_via: 'preset' } });
+    expect(await run(['config', 'export', '--dir', out], ctx(captureIO(), live))).toBe(0);
+    expect(JSON.parse(readFileSync(join(out, 'sign_in_with_atlas.json'), 'utf8'))).toEqual({ enabled: true });
+  });
+
+  it('is unchanged when the live button matches (the connection id is not compared)', async () => {
+    writeFileSync(join(dir, 'sign_in_with_atlas.json'), JSON.stringify({ enabled: true, connection_id: 'ssoc_other' }));
+    const api = new MockApi({ ...seedState(), sign_in_with_atlas: { enabled: true, connection_id: 'ssoc_1' } });
+    expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), api))).toBe(0);
+    expect(api.writes.find((w) => w.path === '/v1/instance/sign_in_with_atlas')).toBeUndefined();
   });
 });
 

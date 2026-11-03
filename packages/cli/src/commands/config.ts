@@ -697,6 +697,34 @@ function registry(): ResourceSpec[] {
         await http.put('/v1/instance/cookie_consent', body);
       },
     },
+
+    // 14. "Sign in with Atlas" button on the hosted pages. The file says whether it
+    //     is on; `connection_id` (optional) links an SSO connection the instance
+    //     already has instead of the preset one. Only `enabled` is exported or
+    //     compared: the connection id is this instance's own.
+    {
+      kind: 'singleton',
+      type: 'sign_in_with_atlas',
+      async fetchLive(http) {
+        let live: { enabled?: Json };
+        try {
+          live = await http.get<{ enabled?: Json }>('/v1/instance/sign_in_with_atlas');
+        } catch (err) {
+          if (isNotFound(err)) return null;
+          throw err;
+        }
+        return { enabled: live?.enabled === true };
+      },
+      normalize: (c) => ({ enabled: obj(c).enabled === true }),
+      async apply(http, config) {
+        const c = obj(config);
+        if (typeof c.enabled !== 'boolean') throw new CliError('sign_in_with_atlas needs enabled: true or false.');
+        await http.patch('/v1/instance/sign_in_with_atlas', {
+          enabled: c.enabled,
+          ...(c.connection_id !== undefined ? { connection_id: c.connection_id } : {}),
+        });
+      },
+    },
   ];
   return specs;
 }

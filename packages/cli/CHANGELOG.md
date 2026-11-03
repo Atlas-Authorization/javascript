@@ -1,5 +1,11 @@
 # @atlasauth/cli changelog
 
+## 0.22.0 — 2026-11-02
+
+### Added
+
+- `sign_in_with_atlas` section: `{ enabled: true }` turns on the hosted pages' "Sign in with Atlas" button (`PATCH /v1/instance/sign_in_with_atlas`); optional `connection_id` links an SSO connection the instance already has. Plan compares and export writes only `enabled`.
+
 ## 0.21.0 — 2026-11-02
 
 ### Changed
