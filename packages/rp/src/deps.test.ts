@@ -9,9 +9,7 @@ import { describe, expect, it } from 'vitest';
  */
 
 const pkgDir = process.cwd(); // vitest runs from the package root
-const entry = resolve(pkgDir, '../backend/src/rp.ts');
-
-function walk() {
+function walk(entry: string) {
   const files = new Set<string>();
   const bare = new Map<string, string>(); // specifier -> first file importing it
   const visit = (file: string) => {
@@ -34,11 +32,11 @@ function walk() {
   return { files, bare };
 }
 
-describe('@atlasauth/rp import graph', () => {
-  const { files, bare } = walk();
+describe.each(['rp.ts', 'rp-testing.ts'])('@atlasauth/rp import graph from %s', (name) => {
+  const { files, bare } = walk(resolve(pkgDir, '../backend/src', name));
 
   it('loads no package but jose (no @noble/*, @atlasauth/*, node:*)', () => {
-    expect(files.size).toBeGreaterThan(5);
+    expect(files.size).toBeGreaterThan(name === 'rp.ts' ? 5 : 1);
     expect(Object.fromEntries(bare)).toEqual({ jose: expect.any(String) });
   });
 
@@ -60,7 +58,7 @@ describe('@atlasauth/rp import graph', () => {
 
   it('the build bundles the shared source with jose external', () => {
     const build = readFileSync(join(pkgDir, 'build.mjs'), 'utf8');
-    expect(build).toContain("'../backend/src/rp.ts'");
+    expect(build).toContain(`'../backend/src/${name}'`);
     expect(build).toMatch(/external:\s*\['jose'\]/);
   });
 });

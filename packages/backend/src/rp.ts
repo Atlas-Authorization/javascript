@@ -29,7 +29,10 @@
  * the Atlas session calls a relying party that keeps its own session needs:
  * keep-alive (`POST /v1/sessions/{id}/touch`) and server-side sign-out
  * (`POST /v1/sessions/{id}/revoke`, or with `serverSignOut` the one-call
- * `POST /v1/oauth_clients/{id}/logout`).
+ * `POST /v1/oauth_clients/{id}/logout`). An app with no instance secret key
+ * (Sign in with Atlas: issuer `https://atlasauth.net`) keeps its own sign-in
+ * alive and ends it with its client credentials instead
+ * (`POST {issuer}/oauth2/session/touch` and `/oauth2/session/end`).
  */
 import {
   AtlasOidcError,
@@ -44,6 +47,12 @@ import {
 } from './oidc';
 import { AtlasApiError, type AtlasErrorItem } from './client/error';
 import { DEFAULT_API_URL } from './client/request';
+import { fetchBackchannelLogout } from './backchannel-handlers';
+import type { LogoutTokenClaims } from './logout-token';
+import type { SidStore } from './rp-sid-store';
+
+export { memorySidStore, sqlSidStore } from './rp-sid-store';
+export type { SidStore, SqlSidStoreOptions } from './rp-sid-store';
 
 export { AtlasOidcError, isSafeReturnTo, oidcCallback, oidcLogoutUrl, oidcStart, oidcVerifyIdToken, resetOidcCaches } from './oidc';
 export type { OidcIdentity, OidcStartOptions, OidcCallbackOptions, AtlasOidcErrorCode } from './oidc';
@@ -76,7 +85,10 @@ export interface RelyingPartyConfig {
   issuer: string;
   /** The OAuth client id. */
   clientId: string;
-  /** The client secret (a confidential client). */
+  /**
+   * The client secret (a confidential client). Without a `secretKey`, it also
+   * authenticates `touchIfDue` and `endAppSession` (the app's own sign-in).
+   */
   clientSecret?: string;
   /** Token-endpoint authentication. Default `client_secret_basic` with a secret. */
   clientAuth?: OidcClientAuth;
@@ -90,7 +102,11 @@ export interface RelyingPartyConfig {
   afterSignInPath?: string;
   /** Where Atlas sends the browser after sign-out. Must be registered on the client exactly. */
   postLogoutRedirectUri?: string;
-  /** The instance secret key (`sk_...`, scope `sessions:write`). Needed for `touchIfDue` and server-side revoke. */
+  /**
+   * The instance secret key (`sk_...`, scope `sessions:write`). Used by
+   * `touchIfDue` and needed for server-side revoke. A Sign in with Atlas app has
+   * none: leave it unset and `touchIfDue` uses the client credentials.
+   */
   secretKey?: string;
   /** The Backend API origin. Default `https://api.atlasauth.net`. */
   apiUrl?: string;
@@ -121,7 +137,19 @@ export interface RelyingPartyConfig {
    * The paths {@link RelyingParty.handle} answers. Defaults: `signIn`
    * `/auth/sign-in`, `callback` the path of `redirectUri`, `signOut` `/auth/sign-out`.
    */
-  routes?: { signIn?: string; callback?: string; signOut?: string };
+  routes?: { signIn?: string; callback?: string; signOut?: string; backchannelLogout?: string };
+  /**
+   * Where you record which of your app sessions each Atlas `sid` backs (see
+   * {@link RelyingParty.bindSession}), so a back-channel logout can end them.
+   */
+  sidStore?: SidStore;
+  /**
+   * Called by {@link RelyingParty.backchannelLogout} with the app sessions to
+   * end: those bound to the token's `sid` in `sidStore` (taken out of it), or
+   * `[]` when there is no store, no binding or no `sid` (then end by
+   * `claims.sub`). Throwing answers 503 and keeps the bindings, so Atlas retries.
+   */
+  onBackchannelLogout?: (appSessionIds: string[], claims: LogoutTokenClaims) => Promise<void> | void;
   /**
    * Called by {@link RelyingParty.handle} after a verified sign-in: create your
    * own session here. Return a `Response` to answer with it, or nothing to
@@ -249,6 +277,10 @@ export interface RelyingParty {
    * Keep the Atlas session alive while the user is active in your app, at
    * most once per `touchIntervalMs` per session. Call it on each authenticated
    * request with the `sid` and the time you last touched (0 or null at first).
+   * With a `secretKey` it touches the Atlas session (`/v1/sessions/{id}/touch`);
+   * without one but with a `clientSecret` it touches this app's own sign-in
+   * (`POST {issuer}/oauth2/session/touch`), where a sid with no live sign-in of
+   * this app is `{ status: 'ended', reason: 'not_found' }`. Neither: a TypeError.
    */
   touchIfDue(sid: string, lastTouchedAt: number | null | undefined): Promise<TouchResult>;
   /**
@@ -258,6 +290,30 @@ export interface RelyingParty {
    * session (check you use the same instance's secret key). Other failures throw.
    */
   revokeSession(sid: string): Promise<'revoked' | 'not_found'>;
+  /**
+   * End THIS app's sign-in under `sid` with the app's client credentials
+   * (`POST {issuer}/oauth2/session/end`): its refresh grants are revoked and
+   * Atlas sends the app a back-channel logout, so every server of yours hears
+   * it. The Atlas session and other apps are untouched. `not_found`: no live
+   * sign-in of this app has that sid. Needs `clientSecret`; other failures throw.
+   */
+  endAppSession(sid: string): Promise<'ended' | 'not_found'>;
+  /**
+   * Record that your app session `appSessionId` is backed by the Atlas `sid`
+   * (the user's `sid` from the callback), until `expiresAt` (epoch ms or Date).
+   * Call it when you create your app session, after MFA if you gate on it. A
+   * step-up callback carries the same `sid`: bind again only if you rotate
+   * your session id then. Needs `sidStore`.
+   */
+  bindSession(sid: string, appSessionId: string, expiresAt: number | Date): Promise<void>;
+  /**
+   * The back-channel logout receiver: verifies the `logout_token` (issuer and
+   * client id from the config), takes the app sessions bound to its `sid` from
+   * `sidStore` and passes them to `onBackchannelLogout`. Answers 200 when
+   * handled (or a replay), 400 for a bad token, 503 (with `Retry-After`) when
+   * the keys could not be loaded or `onBackchannelLogout` threw.
+   */
+  backchannelLogout(request: Request): Promise<Response>;
   /**
    * Sign-out: with a `sid` and a `secretKey`, revokes the Atlas session
    * server-side first, then 302s the browser to `/oauth2/logout`. With
@@ -269,7 +325,8 @@ export interface RelyingParty {
   /**
    * All three routes in one handler: `GET` on the sign-in path runs `start`,
    * `GET` on the callback path runs `callback` then `onSignedIn`, and `POST`
-   * or `GET` on the sign-out path runs `onSignOut` then `signOut`. Any other
+   * or `GET` on the sign-out path runs `onSignOut` then `signOut`, and with
+   * `routes.backchannelLogout` set, `POST` there runs `backchannelLogout`. Any other
    * request gets `null`, so your app answers it. Needs `onSignedIn`.
    *
    *   export default { fetch: async (req) => (await rp.handle(req)) ?? app(req) };
@@ -410,10 +467,49 @@ export function createRelyingParty(config: RelyingPartyConfig): RelyingParty {
     return doFetch(url, { method: 'POST', headers: { authorization: `Bearer ${config.secretKey}`, accept: 'application/json' } });
   }
 
+  /** The app's own sign-in, authenticated like the token endpoint (`/oauth2/session/touch` or `/end`). */
+  function appSessionCall(sid: string, action: 'touch' | 'end', caller: string): Promise<Response> {
+    const method: OidcClientAuth = config.clientAuth ?? (config.clientSecret ? 'client_secret_basic' : 'none');
+    if (method === 'none' || !config.clientSecret) {
+      throw new TypeError(
+        `${caller}: configure \`clientSecret\` (the app's client credentials)${action === 'touch' ? ' or `secretKey`' : ''}; a public client cannot call it.`,
+      );
+    }
+    if (typeof sid !== 'string' || !sid) throw new TypeError('A session id (`sid`) is required.');
+    const body = new URLSearchParams({ sid });
+    const headers: Record<string, string> = { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' };
+    if (method === 'client_secret_basic') {
+      // RFC 6749 §2.3.1: both halves are form-encoded before Basic encoding.
+      headers.authorization = `Basic ${btoa(`${encodeURIComponent(config.clientId)}:${encodeURIComponent(config.clientSecret)}`)}`;
+    } else {
+      body.set('client_id', config.clientId);
+      body.set('client_secret', config.clientSecret);
+    }
+    return doFetch(`${config.issuer.replace(/\/+$/, '')}/oauth2/session/${action}`, { method: 'POST', headers, body });
+  }
+
+  /** The OAuth error body of `/oauth2/session/*` as an {@link AtlasApiError}. */
+  function oauthFailure(res: Response, body: Record<string, unknown> | null): AtlasApiError {
+    const code = typeof body?.error === 'string' ? body.error : 'request_failed';
+    const message = typeof body?.error_description === 'string' ? body.error_description : `The issuer answered ${res.status}.`;
+    return new AtlasApiError(res.status, [{ code, message }]);
+  }
+
   async function touchIfDue(sid: string, lastTouchedAt: number | null | undefined): Promise<TouchResult> {
     const now = clock();
     if (typeof lastTouchedAt === 'number' && now - lastTouchedAt < interval && now >= lastTouchedAt) {
       return { status: 'skipped', lastTouchedAt };
+    }
+    if (!config.secretKey) {
+      const res = await appSessionCall(sid, 'touch', 'touchIfDue');
+      const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (res.ok) {
+        const idle = body?.idle_expires_at;
+        const idleExpiresAt = typeof idle === 'number' ? new Date(idle).toISOString() : typeof idle === 'string' ? idle : null;
+        return { status: 'touched', lastTouchedAt: now, idleExpiresAt };
+      }
+      if (res.status === 404 && body?.error === 'session_not_found') return { status: 'ended', reason: 'not_found' };
+      throw oauthFailure(res, body);
     }
     const res = await sessionCall(sid, 'touch');
     const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
@@ -436,6 +532,47 @@ export function createRelyingParty(config: RelyingPartyConfig): RelyingParty {
     if (res.ok) return 'revoked';
     if (res.status === 404) return 'not_found';
     throw new AtlasApiError(res.status, errorsOf(await res.json().catch(() => null)));
+  }
+
+  async function endAppSession(sid: string): Promise<'ended' | 'not_found'> {
+    const res = await appSessionCall(sid, 'end', 'endAppSession');
+    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (res.ok) return 'ended';
+    if (res.status === 404 && body?.error === 'session_not_found') return 'not_found';
+    throw oauthFailure(res, body);
+  }
+
+  async function bindSession(sid: string, appSessionId: string, expiresAt: number | Date): Promise<void> {
+    if (!config.sidStore) throw new TypeError('bindSession: `sidStore` is not configured.');
+    if (typeof sid !== 'string' || !sid || typeof appSessionId !== 'string' || !appSessionId) {
+      throw new TypeError('bindSession: `sid` and `appSessionId` are required.');
+    }
+    await config.sidStore.bind(sid, appSessionId, expiresAt);
+  }
+
+  // Built on first use so its key cache lives as long as the relying party.
+  let backchannel: ((request: Request) => Promise<Response>) | undefined;
+  async function backchannelLogout(request: Request): Promise<Response> {
+    const onLogout = config.onBackchannelLogout;
+    if (!onLogout) throw new TypeError('backchannelLogout: `onBackchannelLogout` is not configured.');
+    backchannel ??= fetchBackchannelLogout({
+      issuer: config.issuer,
+      clientId: config.clientId,
+      fetchImpl: config.fetchImpl,
+      now: config.now,
+      async onLogout(claims) {
+        const store = config.sidStore;
+        const ids = claims.sid && store ? await store.take(claims.sid) : [];
+        try {
+          await onLogout(ids, claims);
+        } catch (error) {
+          // Put the bindings back so Atlas's retry finds them; the app sessions are ending anyway.
+          for (const id of ids) await store!.bind(claims.sid!, id, clock() + 86_400_000);
+          throw error;
+        }
+      },
+    });
+    return backchannel(request);
   }
 
   async function signOut(options: SignOutOptions = {}): Promise<Response> {
@@ -467,6 +604,7 @@ export function createRelyingParty(config: RelyingPartyConfig): RelyingParty {
     const { pathname } = new URL(request.url);
     const method = request.method.toUpperCase();
     const routes = config.routes ?? {};
+    if (method === 'POST' && routes.backchannelLogout && pathname === routes.backchannelLogout) return backchannelLogout(request);
     if (method === 'GET' && pathname === (routes.signIn ?? '/auth/sign-in')) return start(request);
     if (method === 'GET' && pathname === (routes.callback ?? new URL(config.redirectUri).pathname)) {
       let result: CallbackResult;
@@ -488,7 +626,7 @@ export function createRelyingParty(config: RelyingPartyConfig): RelyingParty {
     return null;
   }
 
-  return { start, callback, requireRecentAuth, touchIfDue, revokeSession, signOut, handle };
+  return { start, callback, requireRecentAuth, touchIfDue, revokeSession, endAppSession, bindSession, backchannelLogout, signOut, handle };
 }
 
 /** A copy of `response` with mutable headers and one more `Set-Cookie`. */

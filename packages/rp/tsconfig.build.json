@@ -11,6 +11,6 @@
     "incremental": true,
     "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
   },
-  "files": ["../backend/src/rp.ts"],
+  "files": ["../backend/src/rp.ts", "../backend/src/rp-testing.ts"],
   "include": []
 }

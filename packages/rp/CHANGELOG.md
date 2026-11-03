@@ -1,5 +1,13 @@
 # @atlasauth/rp changelog
 
+## 0.2.0 — 2026-11-03
+
+### Added
+
+- Sign in with Atlas apps (no instance secret key): `touchIfDue` keeps the app's own sign-in alive with the client credentials (`POST {issuer}/oauth2/session/touch`), and `endAppSession(sid)` ends it (`POST {issuer}/oauth2/session/end`, which sends the app a back-channel logout). Both authenticate like the token endpoint and throw a `TypeError` for a public client. With a `secretKey`, nothing changes.
+- `sidStore` (`SidStore`, `memorySidStore()`, `sqlSidStore({ query })`), `rp.bindSession(sid, appSessionId, expiresAt)`, `onBackchannelLogout(appSessionIds, claims)` and `rp.backchannelLogout(request)`; `routes.backchannelLogout` lets `handle()` answer it.
+- `@atlasauth/rp/testing`: `mockIssuer({ issuer, clientId, alg })`, an offline issuer (discovery, JWKS, token endpoint, session touch/end, ID and logout tokens) for testing your app.
+
 ## 0.1.1 — 2026-11-02
 
 Republish of 0.1.0 (that version number could not be published). No code changes.

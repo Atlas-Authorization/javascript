@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## Unreleased
+
+### Added
+
+- `@atlasauth/backend/rp`: app-credential `touchIfDue` / `endAppSession` for apps with no instance secret key (Sign in with Atlas), and back-channel logout through a sid store (`sidStore`, `memorySidStore`, `sqlSidStore`, `bindSession`, `onBackchannelLogout`, `backchannelLogout`, `routes.backchannelLogout`).
+
 ## 0.34.0 — 2026-11-02
 
 ### Added
