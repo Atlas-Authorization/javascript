@@ -40,6 +40,8 @@ export type WebhookEvent =
   | 'secret_key.expiring'
   | 'api_key.expiring'
   | 'secret_key.revoked'
+  | 'signing_key.staged'
+  | 'signing_key.activated'
   | 'organization.it_alert'
   | 'connection.refresh_failed'
   | 'connection.revoked'
