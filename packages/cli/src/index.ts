@@ -28,6 +28,7 @@ export { apiKeys } from './commands/api-keys';
 export { webhooks } from './commands/webhooks';
 export { sessions } from './commands/sessions';
 export { config } from './commands/config';
+export { defineConfig, type AtlasConfig } from './define-config';
 export { actions } from './commands/actions';
 export { pages } from './commands/pages';
 export { init } from './commands/init';

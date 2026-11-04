@@ -1,5 +1,12 @@
 # @atlasauth/cli changelog
 
+## 0.24.0 — 2026-11-03
+
+### Added
+
+- `atlas.config.ts` (also `.mts`, `.mjs`, `.js`): `atlas plan` / `atlas apply` load its default export (an object, or a sync or async function returning one) the same way they read `atlas.yaml`. `defineConfig` is exported for typing. `.ts` needs Node 22.18+ / 23.6+ (built-in type stripping).
+- With no path, `atlas plan` and `atlas apply` pick up `atlas.config.ts`, `atlas.config.mts`, `atlas.config.mjs`, `atlas.config.js`, `atlas.yaml`, `atlas.yml` or `atlas.json` from the current directory before falling back to `./atlas-config`.
+
 ## 0.23.0 — 2026-11-03
 
 ### Added

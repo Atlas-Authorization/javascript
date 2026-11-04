@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { extname, join } from 'node:path';
+import { extname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { str, type ParsedArgs, type Values } from '../args';
 import { createConfigHttp, isNotFound, type ConfigHttp } from '../config-http';
 import type { RunContext } from '../context';
@@ -1384,20 +1385,60 @@ export function configTypes(): string[] {
  * types (`instance`, `webhook_endpoints`, …), split into a temp directory.
  * `cleanup` removes that temp directory.
  */
-function resolveSource(ctx: RunContext, args: ParsedArgs): ConfigSource & { cleanup: () => void } {
-  const path = args.positionals[1] ?? resolveDir(args.values);
+/** Config files `atlas plan` / `atlas apply` pick up from the current directory when given no path. */
+export const DEFAULT_CONFIG_FILES = ['atlas.config.ts', 'atlas.config.mts', 'atlas.config.mjs', 'atlas.config.js', 'atlas.yaml', 'atlas.yml', 'atlas.json'];
+const CODE_EXTS = new Set(['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs']);
+
+// The CLI compiles to CommonJS, where tsc turns import() into require(), which cannot load ESM or .ts,
+// so the real import() is reached through Function. A vm context with no import hook (a test runner)
+// cannot run that one, and gets the plain import() the runner itself transforms.
+const nativeImport = async (url: string): Promise<unknown> => {
+  try {
+    return await (new Function('url', 'return import(url)') as (url: string) => Promise<unknown>)(url);
+  } catch (err) {
+    if ((err as { code?: string }).code !== 'ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING') throw err;
+    return import(url);
+  }
+};
+
+/**
+ * Load an `atlas.config.ts` (or .js/.mjs): its default export is the config
+ * object, or a function (sync or async) returning it. A .ts file runs on
+ * Node's own type stripping (Node 22.18+ / 23.6+), so it adds no dependency.
+ */
+export async function loadCodeConfig(path: string): Promise<unknown> {
+  let mod: { default?: unknown };
+  try {
+    mod = (await nativeImport(pathToFileURL(resolve(path)).href)) as { default?: unknown };
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (/\.ts|Unknown file extension|ERR_UNKNOWN_FILE_EXTENSION/.test(msg) && /\.[cm]?ts$/.test(path)) {
+      throw new CliError(`${path}: this Node (${process.version}) cannot load TypeScript directly. Use Node 22.18+ (or 23.6+), or rename it to atlas.config.mjs.`);
+    }
+    throw new CliError(`${path}: ${msg}`);
+  }
+  const exported = mod.default;
+  if (exported === undefined) throw new CliError(`${path} has no default export. Write: export default defineConfig({ ... }).`);
+  return typeof exported === 'function' ? await (exported as () => unknown)() : exported;
+}
+
+async function resolveSource(ctx: RunContext, args: ParsedArgs): Promise<ConfigSource & { cleanup: () => void }> {
+  const path =
+    args.positionals[1] ??
+    (str(args.values, 'dir') ? resolveDir(args.values) : (DEFAULT_CONFIG_FILES.find((f) => existsSync(f)) ?? resolveDir(args.values)));
   const env = readSecretsEnv(ctx, args.values);
   let isFile = false;
   try {
     isFile = statSync(path).isFile();
   } catch {
-    throw new CliError(`Config not found: ${path}. Pass a config file (atlas.yaml / atlas.json) or a directory from 'atlas config export'.`);
+    throw new CliError(`Config not found: ${path}. Pass a config file (atlas.config.ts / atlas.yaml / atlas.json) or a directory from 'atlas config export'.`);
   }
   if (!isFile) return { dir: path, label: path, format: resolveFormat(args.values), env, cleanup: () => undefined };
 
   const ext = extname(path).toLowerCase();
   const format: Format = ext === '.yaml' || ext === '.yml' ? 'yaml' : ext === '.json' ? 'json' : resolveFormat(args.values);
-  const doc = deserialize(ctx.readFile(path), format);
+  // A round-trip through JSON keeps only plain data (no functions, Dates become strings), like a .json file.
+  const doc = CODE_EXTS.has(ext) ? (JSON.parse(JSON.stringify((await loadCodeConfig(path)) ?? null)) as unknown) : deserialize(ctx.readFile(path), format);
   if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
     throw new CliError(`${path} must be an object keyed by resource type (${configTypes().join(', ')}).`);
   }
@@ -1416,7 +1457,7 @@ function resolveSource(ctx: RunContext, args: ParsedArgs): ConfigSource & { clea
  * a single config file as well. `--check` exits 2 on drift for CI.
  */
 export async function planCommand(ctx: RunContext, args: ParsedArgs): Promise<number> {
-  const source = resolveSource(ctx, args);
+  const source = await resolveSource(ctx, args);
   try {
     return await planConfig(ctx, args.values, source);
   } finally {
@@ -1434,7 +1475,7 @@ export async function planCommand(ctx: RunContext, args: ParsedArgs): Promise<nu
 export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const values = args.values;
   if (values.check === true || values['exit-code'] === true) return planCommand(ctx, args);
-  const source = resolveSource(ctx, args);
+  const source = await resolveSource(ctx, args);
   try {
     const kept = keepingSecrets(requireHttp(ctx, values), str(values, 'out') || productDir(ctx.env, 'atlas'));
     const prune = values.prune === true;
