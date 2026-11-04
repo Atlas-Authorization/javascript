@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.36.0 — 2026-11-04
+
+- Identity integrations: `claims` (`org`, `org_role`, `public_metadata`) on the integration body, and `claims` / `extra_claim_names` on its answer.
+
 ## 0.35.0 — 2026-11-03
 
 - `organizations.upsertByExternalId(externalId, body)` and `ssoOnboarding.upsertByName(name, body)`: create-or-update in one race-safe call.

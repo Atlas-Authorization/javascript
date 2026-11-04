@@ -592,6 +592,10 @@ export interface Integration {
   audience_format?: string | null;
   principal_claim?: 'audience_hint' | null;
   ext_claim?: 'external_id' | null;
+  /** The opt-in organization and metadata claims. */
+  claims?: { org: boolean; org_role: boolean; public_metadata: string[] };
+  /** The claim names `claims` adds to a token, e.g. org_id, org_slug, org_role, plan. */
+  extra_claim_names?: string[];
   ttl_seconds?: number;
   issuer?: string;
   jwks_url?: string;
@@ -645,6 +649,11 @@ export interface SetIntegrationBody {
   audience_format?: string | null;
   principal_claim?: 'audience_hint' | null;
   ext_claim?: 'external_id' | null;
+  /**
+   * Opt-in claims: `org` adds org_id and org_slug of the active organization, `org_role` the user's role there,
+   * `public_metadata` up to 10 keys (the active organization's value, else the user's). null = none.
+   */
+  claims?: { org?: boolean; org_role?: boolean; public_metadata?: string[] } | null;
   /** 10-120. Default 120. */
   ttl_seconds?: number;
   /** Omitted = the preset default; null = none. */
