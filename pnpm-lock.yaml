@@ -13353,8 +13353,8 @@ packages:
     os: [darwin, linux, win32, freebsd, openbsd, netbsd, sunos, android]
     hasBin: true
 
-  table@6.9.1:
-    resolution: {integrity: sha512-aFh6MRLCU6WKdrJS+v++PeuglXT6VQ9qPDFgMBBJk5PJBaFHM10kb6Gqv8ecKD6iMXi4cheXh3KMWtWO0IJWIg==}
+  table@6.9.2:
+    resolution: {integrity: sha512-rMsLztiCnxQvTs0qA4Z2YQKo6YpMsy7sBN1VyE4MZkA6jOnS6lmFWdMkwHtB2PYZ8fajMmrpW+eurR9keKNrQQ==}
     engines: {node: '>=10.0.0'}
 
   tagged-tag@1.0.0:
@@ -22844,7 +22844,7 @@ snapshots:
       semver: 7.8.6
       strip-ansi: 6.0.1
       strip-json-comments: 3.1.1
-      table: 6.9.1
+      table: 6.9.2
       text-table: 0.2.0
       v8-compile-cache: 2.4.0
     transitivePeerDependencies:
@@ -29661,7 +29661,7 @@ snapshots:
 
   systeminformation@5.33.19: {}
 
-  table@6.9.1:
+  table@6.9.2:
     dependencies:
       ajv: 8.20.0
       lodash.truncate: 4.4.2
