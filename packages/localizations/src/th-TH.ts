@@ -268,6 +268,7 @@ export const thTH: LocalizationResource = {
   'error.email_delivery_unavailable': 'ขณะนี้แอปนี้ไม่สามารถส่งอีเมลได้ โปรดลองวิธีเข้าสู่ระบบอื่นหรือติดต่อเจ้าของแอป',
   'error.strategy_disabled': 'วิธีเข้าสู่ระบบนี้ไม่พร้อมใช้งานสำหรับแอปนี้',
   'error.sign_up_restricted': 'การลงทะเบียนในแอปนี้ทำได้เฉพาะผู้ที่ได้รับเชิญเท่านั้น',
+  'error.sign_up_denied': 'ไม่สามารถลงทะเบียนด้วยบัญชีนี้ได้',
   'error.waitlisted': 'คุณอยู่ในรายชื่อรอ เราจะส่งอีเมลถึงคุณเมื่อมีที่ว่าง',
   'error.identifier_not_allowed': 'ไม่อนุญาตให้ใช้อีเมลหรือหมายเลขโทรศัพท์นี้ในแอปนี้',
   'error.disposable_email_blocked': 'ไม่อนุญาตให้ลงทะเบียนด้วยอีเมลชั่วคราวหรืออีเมลแบบใช้แล้วทิ้ง',
@@ -276,6 +277,7 @@ export const thTH: LocalizationResource = {
   'error.sign_ups_disabled': 'ปิดใช้งานการลงทะเบียนชั่วคราว',
   'error.high_risk_blocked': 'การเข้าสู่ระบบนี้ถูกบล็อกเนื่องจากดูผิดปกติ',
   'error.sms_region_blocked': 'ไม่สามารถส่งข้อความ SMS ไปยังหมายเลขโทรศัพท์นี้ได้',
+  'error.github_team_required': 'บัญชี GitHub ของคุณไม่ได้เป็นสมาชิกขององค์กรหรือทีม GitHub ที่ได้รับอนุญาตให้ลงชื่อเข้าใช้ที่นี่',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'ฉันยอมรับ{policies}',

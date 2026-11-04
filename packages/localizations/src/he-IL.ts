@@ -269,6 +269,7 @@ export const heIL: LocalizationResource = {
   'error.email_delivery_unavailable': 'אפליקציה זו אינה יכולה לשלוח אימייל כרגע. נסה שיטת כניסה אחרת או פנה לבעלי האפליקציה.',
   'error.strategy_disabled': 'שיטת כניסה זו אינה זמינה באפליקציה זו.',
   'error.sign_up_restricted': 'ההרשמה לאפליקציה זו היא בהזמנה בלבד.',
+  'error.sign_up_denied': 'ההרשמה אינה זמינה עבור חשבון זה.',
   'error.waitlisted': 'אתה ברשימת ההמתנה. נשלח לך אימייל כשיתפנה מקום.',
   'error.identifier_not_allowed': 'כתובת האימייל או מספר הטלפון הזה אינם מותרים באפליקציה זו.',
   'error.disposable_email_blocked': 'אין אפשרות להירשם עם כתובת אימייל זמנית או חד-פעמית.',
@@ -277,6 +278,7 @@ export const heIL: LocalizationResource = {
   'error.sign_ups_disabled': 'ההרשמה מושבתת זמנית.',
   'error.high_risk_blocked': 'הכניסה נחסמה משום שנראתה חריגה.',
   'error.sms_region_blocked': 'הודעות טקסט אינן זמינות למספר טלפון זה.',
+  'error.github_team_required': 'חשבון ה-GitHub שלך אינו חבר בארגון או בצוות GitHub שמורשים להתחבר כאן.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'אני מסכים/ה ל{policies}',

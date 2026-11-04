@@ -268,6 +268,7 @@ export const arSA: LocalizationResource = {
   'error.email_delivery_unavailable': 'لا يستطيع هذا التطبيق إرسال البريد الإلكتروني حاليًا. جرّب طريقة تسجيل دخول أخرى أو تواصل مع مالك التطبيق.',
   'error.strategy_disabled': 'طريقة تسجيل الدخول هذه غير متاحة لهذا التطبيق.',
   'error.sign_up_restricted': 'إنشاء الحسابات في هذا التطبيق بدعوة فقط.',
+  'error.sign_up_denied': 'التسجيل غير متاح لهذا الحساب.',
   'error.waitlisted': 'أنت في قائمة الانتظار. سنراسلك عبر البريد الإلكتروني عندما يتوفر مكان.',
   'error.identifier_not_allowed': 'هذا البريد الإلكتروني أو رقم الهاتف غير مسموح به في هذا التطبيق.',
   'error.disposable_email_blocked': 'لا يُسمح بإنشاء حساب باستخدام عنوان بريد إلكتروني مؤقت أو يُستخدم لمرة واحدة.',
@@ -276,6 +277,7 @@ export const arSA: LocalizationResource = {
   'error.sign_ups_disabled': 'إنشاء الحسابات معطّل مؤقتًا.',
   'error.high_risk_blocked': 'تم حظر تسجيل الدخول هذا لأنه بدا غير معتاد.',
   'error.sms_region_blocked': 'الرسائل النصية غير متاحة لرقم الهاتف هذا.',
+  'error.github_team_required': 'حسابك على GitHub ليس عضوًا في مؤسسة أو فريق على GitHub مسموح له بتسجيل الدخول هنا.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'أوافق على {policies}',

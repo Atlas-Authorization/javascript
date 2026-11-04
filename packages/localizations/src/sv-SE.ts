@@ -267,6 +267,7 @@ export const svSE: LocalizationResource = {
   'error.email_delivery_unavailable': 'Den här appen kan inte skicka e-post just nu. Prova en annan inloggningsmetod eller kontakta appens ägare.',
   'error.strategy_disabled': 'Den här inloggningsmetoden är inte tillgänglig för den här appen.',
   'error.sign_up_restricted': 'Registrering i den här appen sker endast via inbjudan.',
+  'error.sign_up_denied': 'Registrering är inte tillgänglig för det här kontot.',
   'error.waitlisted': 'Du står på väntelistan. Vi skickar ett e-postmeddelande när en plats blir ledig.',
   'error.identifier_not_allowed': 'Den här e-postadressen eller det här telefonnumret är inte tillåtet i den här appen.',
   'error.disposable_email_blocked': 'Registrering med en tillfällig e-postadress eller engångsadress är inte tillåten.',
@@ -275,6 +276,7 @@ export const svSE: LocalizationResource = {
   'error.sign_ups_disabled': 'Registrering är tillfälligt avstängd.',
   'error.high_risk_blocked': 'Den här inloggningen blockerades eftersom den verkade ovanlig.',
   'error.sms_region_blocked': 'Textmeddelanden är inte tillgängliga för det här telefonnumret.',
+  'error.github_team_required': 'Ditt GitHub-konto är inte medlem i en GitHub-organisation eller ett team som får logga in här.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'Jag godkänner {policies}',

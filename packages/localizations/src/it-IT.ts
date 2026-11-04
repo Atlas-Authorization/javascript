@@ -269,6 +269,7 @@ export const itIT: LocalizationResource = {
   'error.email_delivery_unavailable': 'Al momento questa app non può inviare e-mail. Prova un altro metodo di accesso o contatta il proprietario dell’app.',
   'error.strategy_disabled': 'Questo metodo di accesso non è disponibile per questa app.',
   'error.sign_up_restricted': 'La registrazione a questa app è possibile solo su invito.',
+  'error.sign_up_denied': 'La registrazione non è disponibile per questo account.',
   'error.waitlisted': 'Sei in lista d’attesa. Ti scriveremo via e-mail quando si libererà un posto.',
   'error.identifier_not_allowed': 'Questo indirizzo e-mail o numero di telefono non è consentito in questa app.',
   'error.disposable_email_blocked': 'Non è consentita la registrazione con un indirizzo e-mail temporaneo o usa e getta.',
@@ -277,6 +278,7 @@ export const itIT: LocalizationResource = {
   'error.sign_ups_disabled': 'Le registrazioni sono temporaneamente disattivate.',
   'error.high_risk_blocked': 'Questo accesso è stato bloccato perché sembrava insolito.',
   'error.sms_region_blocked': 'I messaggi di testo non sono disponibili per questo numero di telefono.',
+  'error.github_team_required': 'Il tuo account GitHub non fa parte di un’organizzazione o di un team GitHub autorizzato ad accedere qui.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'Accetto: {policies}',

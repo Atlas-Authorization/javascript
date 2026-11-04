@@ -269,6 +269,7 @@ export const hiIN: LocalizationResource = {
   'error.email_delivery_unavailable': 'यह ऐप अभी ईमेल नहीं भेज सकता। कोई दूसरी साइन इन विधि आज़माएं या ऐप के स्वामी से संपर्क करें।',
   'error.strategy_disabled': 'यह साइन इन विधि इस ऐप के लिए उपलब्ध नहीं है।',
   'error.sign_up_restricted': 'इस ऐप पर साइन अप केवल आमंत्रण द्वारा किया जा सकता है।',
+  'error.sign_up_denied': 'इस खाते के लिए साइन अप उपलब्ध नहीं है।',
   'error.waitlisted': 'आप प्रतीक्षा सूची में हैं। जगह खाली होने पर हम आपको ईमेल करेंगे।',
   'error.identifier_not_allowed': 'इस ऐप पर यह ईमेल या फ़ोन नंबर स्वीकार्य नहीं है।',
   'error.disposable_email_blocked': 'अस्थायी या डिस्पोज़ेबल ईमेल पते से साइन अप करने की अनुमति नहीं है।',
@@ -277,6 +278,7 @@ export const hiIN: LocalizationResource = {
   'error.sign_ups_disabled': 'साइन अप अस्थायी रूप से बंद हैं।',
   'error.high_risk_blocked': 'यह साइन इन असामान्य लगने के कारण रोक दिया गया।',
   'error.sms_region_blocked': 'इस फ़ोन नंबर के लिए टेक्स्ट संदेश उपलब्ध नहीं हैं।',
+  'error.github_team_required': 'आपका GitHub खाता किसी ऐसे GitHub संगठन या टीम का सदस्य नहीं है जिसे यहाँ साइन इन करने की अनुमति है।',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'मैं {policies} से सहमत हूँ',

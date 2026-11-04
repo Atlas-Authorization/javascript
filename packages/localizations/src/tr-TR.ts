@@ -268,6 +268,7 @@ export const trTR: LocalizationResource = {
   'error.email_delivery_unavailable': 'Bu uygulama şu anda e-posta gönderemiyor. Başka bir oturum açma yöntemi deneyin veya uygulama sahibiyle iletişime geçin.',
   'error.strategy_disabled': 'Bu oturum açma yöntemi bu uygulama için kullanılamıyor.',
   'error.sign_up_restricted': 'Bu uygulamaya kayıt yalnızca davetle yapılabilir.',
+  'error.sign_up_denied': 'Bu hesap için kayıt kullanılamıyor.',
   'error.waitlisted': 'Bekleme listesindesiniz. Yer açıldığında size e-posta göndereceğiz.',
   'error.identifier_not_allowed': 'Bu e-posta adresine veya telefon numarasına bu uygulamada izin verilmiyor.',
   'error.disposable_email_blocked': 'Geçici veya tek kullanımlık bir e-posta adresiyle kayda izin verilmiyor.',
@@ -276,6 +277,7 @@ export const trTR: LocalizationResource = {
   'error.sign_ups_disabled': 'Kayıt geçici olarak devre dışı.',
   'error.high_risk_blocked': 'Bu oturum açma, olağandışı göründüğü için engellendi.',
   'error.sms_region_blocked': 'Bu telefon numarası için kısa mesaj kullanılamıyor.',
+  'error.github_team_required': 'GitHub hesabınız, burada oturum açmasına izin verilen bir GitHub kuruluşunun veya ekibinin üyesi değil.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'Şunları kabul ediyorum: {policies}',

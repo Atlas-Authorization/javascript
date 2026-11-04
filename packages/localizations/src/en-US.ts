@@ -271,6 +271,7 @@ export const enUS: LocalizationResource = {
   'error.email_delivery_unavailable': "This app can't send email right now. Try another sign-in method or contact the app owner.",
   'error.strategy_disabled': 'This sign-in method is not available for this app.',
   'error.sign_up_restricted': 'Sign-up on this app is by invitation only.',
+  'error.sign_up_denied': 'Sign-up is not available for this account.',
   'error.waitlisted': "You're on the waitlist. We'll email you when a place opens up.",
   'error.identifier_not_allowed': 'This email or phone number is not allowed on this app.',
   'error.disposable_email_blocked': 'Sign-up with a disposable or temporary email address is not allowed.',
@@ -279,6 +280,7 @@ export const enUS: LocalizationResource = {
   'error.sign_ups_disabled': 'Sign-ups are temporarily disabled.',
   'error.high_risk_blocked': 'This sign-in was blocked because it looked unusual.',
   'error.sms_region_blocked': 'Text messages are not available for this phone number.',
+  'error.github_team_required': 'Your GitHub account is not a member of a GitHub organization or team allowed to sign in here.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'I agree to the {policies}',

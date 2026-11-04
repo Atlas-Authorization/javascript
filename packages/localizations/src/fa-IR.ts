@@ -268,6 +268,7 @@ export const faIR: LocalizationResource = {
   'error.email_delivery_unavailable': 'این برنامه اکنون نمی‌تواند ایمیل ارسال کند. روش ورود دیگری را امتحان کنید یا با مالک برنامه تماس بگیرید.',
   'error.strategy_disabled': 'این روش ورود برای این برنامه در دسترس نیست.',
   'error.sign_up_restricted': 'ثبت‌نام در این برنامه فقط با دعوت‌نامه امکان‌پذیر است.',
+  'error.sign_up_denied': 'ثبت‌نام برای این حساب امکان‌پذیر نیست.',
   'error.waitlisted': 'شما در فهرست انتظار هستید. وقتی جایی خالی شود به شما ایمیل می‌زنیم.',
   'error.identifier_not_allowed': 'این ایمیل یا شماره تلفن در این برنامه مجاز نیست.',
   'error.disposable_email_blocked': 'ثبت‌نام با ایمیل یک‌بارمصرف یا موقت مجاز نیست.',
@@ -276,6 +277,7 @@ export const faIR: LocalizationResource = {
   'error.sign_ups_disabled': 'ثبت‌نام به‌طور موقت غیرفعال است.',
   'error.high_risk_blocked': 'این ورود مسدود شد، زیرا غیرعادی به نظر می‌رسید.',
   'error.sms_region_blocked': 'پیامک برای این شماره تلفن در دسترس نیست.',
+  'error.github_team_required': 'حساب GitHub شما عضو هیچ سازمان یا تیم GitHub مجاز برای ورود در اینجا نیست.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'من {policies} را می‌پذیرم',

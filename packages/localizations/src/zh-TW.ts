@@ -268,6 +268,7 @@ export const zhTW: LocalizationResource = {
   'error.email_delivery_unavailable': '此應用程式目前無法寄送電子郵件。請嘗試其他登入方式，或聯絡應用程式擁有者。',
   'error.strategy_disabled': '此應用程式不提供這種登入方式。',
   'error.sign_up_restricted': '此應用程式僅開放受邀者註冊。',
+  'error.sign_up_denied': '此帳戶無法註冊。',
   'error.waitlisted': '您已在候補名單中，有名額時我們會以電子郵件通知您。',
   'error.identifier_not_allowed': '此應用程式不允許使用這個電子郵件或電話號碼。',
   'error.disposable_email_blocked': '不允許使用拋棄式或臨時電子郵件地址註冊。',
@@ -276,6 +277,7 @@ export const zhTW: LocalizationResource = {
   'error.sign_ups_disabled': '註冊功能暫時停用。',
   'error.high_risk_blocked': '由於此次登入看起來異常，已被封鎖。',
   'error.sms_region_blocked': '此電話號碼無法使用簡訊。',
+  'error.github_team_required': '你的 GitHub 帳號不屬於允許在此登入的 GitHub 組織或團隊。',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': '我同意{policies}',

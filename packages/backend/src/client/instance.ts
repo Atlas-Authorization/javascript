@@ -538,7 +538,8 @@ export interface ForumulateIntegration {
   object: 'forumulate_integration';
   enabled: boolean;
   org_id?: string;
-  spaces?: Array<{ id: string; redeem_url: string }>;
+  /** `redeem_url`: the space's reader host first when known; `redeem_urls`: every known address, primary first. */
+  spaces?: Array<{ id: string; redeem_url: string; redeem_urls?: string[] }>;
   audience?: string;
   issuer?: string;
   jwks_url?: string;
@@ -686,6 +687,10 @@ export interface SetIntegrationBody {
   /** forumulate: the org and spaces. */
   org_id?: string;
   spaces?: Array<string | { id: string; redeem_url?: string | null }>;
+  /** forumulate: remove the org's other sign-in methods (needs forumulate_api_key). */
+  replace_existing?: boolean;
+  /** forumulate: an org admin's API key, used for this call only and never stored (also reads each space's reader addresses). */
+  forumulate_api_key?: string;
 }
 
 export interface IntegrationDelivery {

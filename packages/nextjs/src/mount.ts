@@ -35,6 +35,19 @@ export interface AtlasMountOptions {
   verifyToken?: string;
   /** The mount's `base_path`, as registered with Atlas. Default `/atlas`. */
   basePath?: string;
+  /**
+   * Derive the client IP forwarded to Atlas as `X-Atlas-Client-IP` yourself
+   * (for example from your platform's verified request IP). Takes precedence
+   * over `trustedProxyHops`. A value that is not an IP address is dropped.
+   */
+  clientIp?: (request: Request) => string | undefined;
+  /**
+   * How many proxies in front of this app append to `X-Forwarded-For`. The
+   * client IP is the entry that many places from the right (default 1: the
+   * rightmost, appended by the nearest proxy). Entries further left are
+   * browser-controlled and never used. `0` forwards no client IP.
+   */
+  trustedProxyHops?: number;
   fetchImpl?: typeof fetch;
 }
 
@@ -63,10 +76,36 @@ function setCookies(headers: Headers): string[] {
   return single ? [single] : [];
 }
 
-function clientIp(headers: Headers): string | undefined {
-  const xff = headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-  return xff || headers.get('x-real-ip')?.trim() || undefined;
+/** An IPv4/IPv6 address with any port or brackets stripped, or undefined when `raw` is not one. */
+function normaliseIp(raw: string | undefined): string | undefined {
+  let v = raw?.trim() ?? '';
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(v);
+  if (bracketed) v = bracketed[1]!;
+  else if (/^[\d.]+:\d+$/.test(v)) v = v.slice(0, v.lastIndexOf(':'));
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(v)) return v.split('.').every((o) => Number(o) <= 255) ? v : undefined;
+  if (!v.includes(':') || !/^[0-9a-fA-F:.]+$/.test(v)) return undefined;
+  try {
+    new URL(`http://[${v}]/`); // the WHATWG URL parser validates IPv6 on every runtime
+    return v;
+  } catch {
+    return undefined;
+  }
 }
+
+/**
+ * The client IP: `options.clientIp(request)` when given, else the
+ * `X-Forwarded-For` entry `trustedProxyHops` from the right. The browser can
+ * set any `X-Forwarded-For` / `X-Real-IP`, so leftmost entries are never trusted.
+ */
+function clientIp(request: Request, options: AtlasMountOptions): string | undefined {
+  if (options.clientIp) return normaliseIp(options.clientIp(request));
+  const hops = options.trustedProxyHops ?? 1;
+  if (hops <= 0) return undefined;
+  const entries = request.headers.get('x-forwarded-for')?.split(',') ?? [];
+  return entries.length < hops ? undefined : normaliseIp(entries[entries.length - hops]);
+}
+
+let loggedMisconfig = false;
 
 /** `/atlas`, normalised: one leading slash, no trailing slash. */
 function normaliseBase(raw: string): string {
@@ -78,18 +117,35 @@ function normaliseBase(raw: string): string {
 /**
  * App Router handlers that forward the mount to Atlas: method, path (base
  * included: Atlas reads the prefix from it), query and streamed body unchanged;
- * hop-by-hop headers dropped; `X-Atlas-Forwarded-Host`, `X-Atlas-Proxy-Secret`,
- * `X-Atlas-Client-IP`, `X-Forwarded-For` and `X-Forwarded-Proto` set from the
- * request (never passed on from the browser). The response keeps its status,
- * headers and EVERY `Set-Cookie`; redirects are returned, not followed.
+ * hop-by-hop headers dropped. Every incoming `X-Atlas-*`, `X-Forwarded-*`,
+ * `Forwarded` and `X-Real-IP` header is dropped, then set as: `X-Atlas-Forwarded-Host`
+ * from `Host`; `X-Atlas-Proxy-Secret` from config; `X-Atlas-Client-IP` and
+ * `X-Forwarded-For` from `options.clientIp`, else the incoming `X-Forwarded-For`
+ * entry `trustedProxyHops` (default 1) from the right, omitted when absent or not
+ * an IP; `X-Forwarded-Proto` from the last incoming `X-Forwarded-Proto` entry (http or https only),
+ * else the request URL's scheme. The response keeps its status, headers and EVERY
+ * `Set-Cookie`; redirects are returned, not followed. Without an upstream or
+ * proxy secret it answers 503 (logged once).
  */
 export function createMountHandler(options: AtlasMountOptions = {}): AtlasMountHandlers {
   const handle: Handler = async (request) => {
     const env = readEnv();
     const upstream = options.upstream ?? env.ATLAS_UPSTREAM;
     const proxySecret = options.proxySecret ?? env.ATLAS_PROXY_SECRET;
-    if (!upstream) throw new Error('@atlasauth/nextjs createMountHandler: set ATLAS_UPSTREAM (your Frontend API host).');
-    if (!proxySecret) throw new Error('@atlasauth/nextjs createMountHandler: set ATLAS_PROXY_SECRET (POST /v1/instance/proxy_secret).');
+    if (!upstream || !proxySecret) {
+      if (!loggedMisconfig) {
+        loggedMisconfig = true;
+        console.error(
+          !upstream
+            ? '@atlasauth/nextjs createMountHandler: set ATLAS_UPSTREAM (your Frontend API host).'
+            : '@atlasauth/nextjs createMountHandler: set ATLAS_PROXY_SECRET (POST /v1/instance/proxy_secret).',
+        );
+      }
+      return new Response('Atlas is not configured', {
+        status: 503,
+        headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+      });
+    }
     const base = normaliseBase(options.basePath ?? '/atlas');
 
     const url = new URL(request.url);
@@ -105,12 +161,14 @@ export function createMountHandler(options: AtlasMountOptions = {}): AtlasMountH
     });
     headers.set('x-atlas-forwarded-host', request.headers.get('host') ?? url.host);
     headers.set('x-atlas-proxy-secret', proxySecret);
-    const ip = clientIp(request.headers);
+    const ip = clientIp(request, options);
     if (ip) {
       headers.set('x-atlas-client-ip', ip);
       headers.set('x-forwarded-for', ip);
     }
-    headers.set('x-forwarded-proto', request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim() || url.protocol.replace(':', ''));
+    // Rightmost entry (the nearest proxy's), http or https only: a browser-sent value cannot downgrade the scheme.
+    const proto = request.headers.get('x-forwarded-proto')?.split(',').pop()?.trim().toLowerCase();
+    headers.set('x-forwarded-proto', proto === 'http' || proto === 'https' ? proto : url.protocol.replace(':', ''));
 
     const method = request.method.toUpperCase();
     const hasBody = method !== 'GET' && method !== 'HEAD' && request.body !== null;

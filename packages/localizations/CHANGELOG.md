@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.12.1 — 2026-11-04
+
+- `error.sign_up_denied` and `error.github_team_required` in every bundle.
+
 ## 0.12.0 — 2026-10-30
 
 - `signIn.passkeyButton` and `signIn.passkeyCancelled` in every bundle.

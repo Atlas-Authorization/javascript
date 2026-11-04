@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.10.0 — 2026-11-04
+
+### Security
+
+- `createMountHandler` no longer trusts a browser-supplied client IP. It used the leftmost `X-Forwarded-For` entry (or `X-Real-IP`) as `X-Atlas-Client-IP`, which Atlas uses for rate limits, lockouts, risk checks and audit logs, so a visitor could pick their own IP. It now takes the `X-Forwarded-For` entry `trustedProxyHops` places from the right (default `1`: the one your nearest proxy appended), never reads `X-Real-IP`, and drops values that are not IP addresses.
+
+### Added
+
+- `createMountHandler({ clientIp?, trustedProxyHops? })`: `clientIp(request)` supplies the client IP yourself (takes precedence); `trustedProxyHops` sets how many proxies append to `X-Forwarded-For` (`0` forwards no client IP).
+
+### Changed
+
+- `createMountHandler` without `ATLAS_UPSTREAM` or `ATLAS_PROXY_SECRET` answers 503 (`text/plain`) and logs the missing variable once, instead of throwing (a bare 500).
+
 ## 0.9.0 — 2026-11-03
 
 ### Added

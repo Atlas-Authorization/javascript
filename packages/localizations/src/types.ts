@@ -328,6 +328,7 @@ export interface LocalizationResource {
   'error.email_delivery_unavailable': string;
   'error.strategy_disabled': string;
   'error.sign_up_restricted': string;
+  'error.sign_up_denied': string;
   'error.waitlisted': string;
   'error.identifier_not_allowed': string;
   'error.disposable_email_blocked': string;
@@ -336,6 +337,7 @@ export interface LocalizationResource {
   'error.sign_ups_disabled': string;
   'error.high_risk_blocked': string;
   'error.sms_region_blocked': string;
+  'error.github_team_required': string;
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': string;

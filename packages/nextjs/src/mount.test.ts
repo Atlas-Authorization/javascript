@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createMountHandler, createVerifyHandler } from './mount';
 
 function capture(response: () => Response) {
@@ -28,7 +28,7 @@ describe('createMountHandler', () => {
         'proxy-authorization': 'x',
         'x-atlas-proxy-secret': 'forged',
         'x-atlas-forwarded-host': 'evil.test',
-        'x-forwarded-for': '203.0.113.7, 10.0.0.1',
+        'x-forwarded-for': '10.0.0.1, 203.0.113.7',
         'x-forwarded-proto': 'https',
       },
     });
@@ -51,6 +51,18 @@ describe('createMountHandler', () => {
     for (const name of ['host', 'connection', 'proxy-authorization']) expect(h.get(name)).toBeNull();
   });
 
+  it('takes X-Forwarded-Proto from the nearest proxy, http or https only', async () => {
+    const proto = async (value: string) => {
+      const { calls, fetchImpl } = capture(() => new Response('ok'));
+      const { GET } = createMountHandler({ ...opts, fetchImpl });
+      await GET(new Request('https://app.example.com/atlas/v1/client', { headers: { 'x-forwarded-proto': value } }));
+      return (calls[0]!.init.headers as Headers).get('x-forwarded-proto');
+    };
+    expect(await proto('http, https')).toBe('https');
+    expect(await proto('https, http')).toBe('http');
+    expect(await proto('javascript')).toBe('https');
+  });
+
   it('keeps every Set-Cookie, drops content-encoding/length, does not follow redirects', async () => {
     const { fetchImpl } = capture(() => {
       const headers = new Headers({ location: '/atlas/hosted/sign-in', 'content-encoding': 'gzip', 'content-length': '3', 'x-request-id': 'r1' });
@@ -68,12 +80,63 @@ describe('createMountHandler', () => {
     expect(res.headers.get('x-request-id')).toBe('r1');
   });
 
-  it('404s outside the base path and fails loudly without config', async () => {
+  it('404s outside the base path', async () => {
     const { calls, fetchImpl } = capture(() => new Response('ok'));
     const { GET } = createMountHandler({ ...opts, fetchImpl });
     expect((await GET(new Request('https://app.example.com/atlasx/v1'))).status).toBe(404);
     expect(calls).toHaveLength(0);
-    await expect(createMountHandler({ basePath: '/atlas', fetchImpl }).GET(new Request('https://app.example.com/atlas/v1'))).rejects.toThrow(/ATLAS_UPSTREAM/);
+  });
+
+  it('answers 503 without config and logs it once', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { calls, fetchImpl } = capture(() => new Response('ok'));
+      const { GET } = createMountHandler({ basePath: '/atlas', fetchImpl });
+      const res = await GET(new Request('https://app.example.com/atlas/v1'));
+      expect(res.status).toBe(503);
+      expect(res.headers.get('content-type')).toMatch(/^text\/plain/);
+      expect((await createMountHandler({ upstream: opts.upstream, fetchImpl }).GET(new Request('https://app.example.com/atlas/v1'))).status).toBe(503);
+      expect(calls).toHaveLength(0);
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(String(error.mock.calls[0]![0])).toMatch(/ATLAS_UPSTREAM/);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  describe('client IP', () => {
+    async function forwardedIp(xff: string | undefined, extra: Parameters<typeof createMountHandler>[0] = {}, headers: Record<string, string> = {}) {
+      const { calls, fetchImpl } = capture(() => new Response('ok'));
+      const { GET } = createMountHandler({ ...opts, ...extra, fetchImpl });
+      await GET(new Request('https://app.example.com/atlas/v1/client', { headers: { ...(xff === undefined ? {} : { 'x-forwarded-for': xff }), ...headers } }));
+      const h = calls[0]!.init.headers as Headers;
+      expect(h.get('x-forwarded-for')).toBe(h.get('x-atlas-client-ip'));
+      return h.get('x-atlas-client-ip');
+    }
+
+    it('never forwards a spoofed leftmost X-Forwarded-For or X-Real-IP; uses the rightmost entry', async () => {
+      expect(await forwardedIp('6.6.6.6, 198.51.100.4', {}, { 'x-real-ip': '6.6.6.6' })).toBe('198.51.100.4');
+      expect(await forwardedIp('198.51.100.4')).toBe('198.51.100.4');
+      expect(await forwardedIp(undefined, {}, { 'x-real-ip': '6.6.6.6' })).toBeNull();
+    });
+
+    it('honours trustedProxyHops', async () => {
+      expect(await forwardedIp('6.6.6.6, 198.51.100.4, 10.0.0.2', { trustedProxyHops: 2 })).toBe('198.51.100.4');
+      expect(await forwardedIp('198.51.100.4', { trustedProxyHops: 2 })).toBeNull();
+      expect(await forwardedIp('6.6.6.6, 198.51.100.4', { trustedProxyHops: 0 })).toBeNull();
+    });
+
+    it('prefers a custom clientIp', async () => {
+      expect(await forwardedIp('6.6.6.6', { clientIp: () => '2001:db8::1' })).toBe('2001:db8::1');
+      expect(await forwardedIp('6.6.6.6', { clientIp: () => undefined })).toBeNull();
+    });
+
+    it('strips ports and brackets and drops anything that is not an IP', async () => {
+      expect(await forwardedIp('6.6.6.6, 198.51.100.4:5123')).toBe('198.51.100.4');
+      expect(await forwardedIp('6.6.6.6, [2001:db8::2]:443')).toBe('2001:db8::2');
+      for (const junk of ['not-an-ip', '999.1.1.1', '1.2.3', '<script>', '6.6.6.6, ', 'gggg::1']) expect(await forwardedIp(junk)).toBeNull();
+      expect(await forwardedIp('6.6.6.6', { clientIp: () => 'garbage' })).toBeNull();
+    });
   });
 
   it('HEAD and 204 carry no body', async () => {

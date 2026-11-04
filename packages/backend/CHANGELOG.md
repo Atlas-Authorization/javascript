@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.37.0 — 2026-11-04
+
+- Forumulate integration: `replace_existing` and `forumulate_api_key` on the body; `spaces[].redeem_urls` on the answer.
+
 ## 0.36.0 — 2026-11-04
 
 - Identity integrations: `claims` (`org`, `org_role`, `public_metadata`) on the integration body, and `claims` / `extra_claim_names` on its answer.

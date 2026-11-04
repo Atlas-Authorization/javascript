@@ -139,7 +139,7 @@ Set `ATLAS_UPSTREAM` (your instance's Frontend API host, from the domain's `inst
 
 Use a base path without a leading underscore, such as `/atlas`. The App Router treats folders starting with `_` as private and never routes them, so the default `/__atlas` doesn't work in Next.js.
 
-The handler forwards the method, path, query and body, sets `X-Atlas-Forwarded-Host`, `X-Atlas-Proxy-Secret`, `X-Atlas-Client-IP`, `X-Forwarded-For` and `X-Forwarded-Proto` itself (never from the browser), and returns every `Set-Cookie` and redirect unchanged. Both handlers are also exported from `@atlasauth/nextjs`.
+The handler forwards the method, path, query and body, drops any incoming `X-Atlas-*`, `X-Forwarded-*`, `Forwarded` and `X-Real-IP` headers, sets `X-Atlas-Forwarded-Host` and `X-Atlas-Proxy-Secret` itself, and returns every `Set-Cookie` and redirect unchanged. The client IP (`X-Atlas-Client-IP` and `X-Forwarded-For`) is the incoming `X-Forwarded-For` entry `trustedProxyHops` places from the right (default `1`: the entry your nearest proxy appended; entries further left are browser-controlled and ignored; `0` forwards none), or whatever `clientIp(request)` returns when you pass it; values that are not IP addresses are dropped. Without `ATLAS_UPSTREAM` or `ATLAS_PROXY_SECRET` the mount answers 503 and logs the missing variable once. Both handlers are also exported from `@atlasauth/nextjs`.
 
 ## Routing rules
 

@@ -119,6 +119,7 @@ describe('server error reasons', () => {
   'email_delivery_unavailable',
   'strategy_disabled',
   'sign_up_restricted',
+  'sign_up_denied',
   'waitlisted',
   'identifier_not_allowed',
   'disposable_email_blocked',
@@ -127,6 +128,7 @@ describe('server error reasons', () => {
   'sign_ups_disabled',
   'high_risk_blocked',
   'sms_region_blocked',
+  'github_team_required',
   ];
 
   it.each(Object.entries(LOCALES))('%s translates every reason', (tag, bundle) => {

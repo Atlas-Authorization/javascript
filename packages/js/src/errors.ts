@@ -45,6 +45,7 @@ export const ERROR_REASONS = Object.freeze([
   'email_delivery_unavailable',
   'strategy_disabled',
   'sign_up_restricted',
+  'sign_up_denied',
   'waitlisted',
   'identifier_not_allowed',
   'disposable_email_blocked',
@@ -53,6 +54,7 @@ export const ERROR_REASONS = Object.freeze([
   'sign_ups_disabled',
   'high_risk_blocked',
   'sms_region_blocked',
+  'github_team_required',
 ] as const);
 
 /** A reason with a string in every shipped catalog. */

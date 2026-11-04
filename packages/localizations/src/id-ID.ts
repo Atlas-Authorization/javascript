@@ -268,6 +268,7 @@ export const idID: LocalizationResource = {
   'error.email_delivery_unavailable': 'Aplikasi ini saat ini tidak dapat mengirim email. Coba metode masuk lain atau hubungi pemilik aplikasi.',
   'error.strategy_disabled': 'Metode masuk ini tidak tersedia untuk aplikasi ini.',
   'error.sign_up_restricted': 'Pendaftaran di aplikasi ini hanya melalui undangan.',
+  'error.sign_up_denied': 'Pendaftaran tidak tersedia untuk akun ini.',
   'error.waitlisted': 'Anda berada dalam daftar tunggu. Kami akan mengirim email kepada Anda saat tersedia tempat.',
   'error.identifier_not_allowed': 'Email atau nomor telepon ini tidak diizinkan di aplikasi ini.',
   'error.disposable_email_blocked': 'Pendaftaran dengan alamat email sekali pakai atau sementara tidak diizinkan.',
@@ -276,6 +277,7 @@ export const idID: LocalizationResource = {
   'error.sign_ups_disabled': 'Pendaftaran dinonaktifkan sementara.',
   'error.high_risk_blocked': 'Proses masuk ini diblokir karena terlihat tidak biasa.',
   'error.sms_region_blocked': 'Pesan teks tidak tersedia untuk nomor telepon ini.',
+  'error.github_team_required': 'Akun GitHub Anda bukan anggota organisasi atau tim GitHub yang diizinkan masuk di sini.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'Saya menyetujui {policies}',

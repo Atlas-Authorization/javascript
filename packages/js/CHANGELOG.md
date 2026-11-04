@@ -1,5 +1,11 @@
 # @atlasauth/js changelog
 
+## 0.29.1 — 2026-11-04
+
+### Fixed
+
+- `ERROR_REASONS` lists `sign_up_denied` (the app's sign-up hook refused the sign-up) and `github_team_required` (the GitHub account is not in an allowed organization or team), matching the Frontend API.
+
 ## 0.29.0 — 2026-11-02
 
 ### Added
