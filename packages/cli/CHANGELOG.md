@@ -1,5 +1,17 @@
 # @atlasauth/cli changelog
 
+## 0.25.1 — 2026-11-03
+
+### Fixed
+
+- 0.25.0 was published without its build output and does not run; 0.25.1 is the same change, built.
+
+## 0.25.0 — 2026-11-03
+
+### Added
+
+- `signing_key_policy` config section: `prepublish_days` (1..90, or `null` / `0` for off) is planned, applied and exported like any other setting.
+
 ## 0.24.0 — 2026-11-03
 
 ### Added

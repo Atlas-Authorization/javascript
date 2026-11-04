@@ -21,6 +21,7 @@ class MockApi implements ConfigHttp {
   async get<T>(path: string): Promise<T> {
     if (path === '/v1/instance') return this.state.instance as T;
     if (path === '/v1/instance/sign_in_with_atlas' && this.state.sign_in_with_atlas) return this.state.sign_in_with_atlas as T;
+    if (path === '/v1/instance/signing_key_policy' && this.state.signing_key_policy) return this.state.signing_key_policy as T;
     if (path === '/v1/organization_settings_schema') {
       if (this.state.schema) return { schema: this.state.schema } as T;
       throw new AtlasApiError(404, [{ code: 'NOT_FOUND', message: 'none' }]);
@@ -664,5 +665,31 @@ describe('atlas apply / atlas plan (one config file)', () => {
     expect(await run(['apply', path, '--yes'], ctx(io, api))).toBe(1);
     expect(io.stderr()).toContain('${MISSING_TOKEN}');
     expect(api.writes).toEqual([]);
+  });
+});
+
+describe('config: signing_key_policy', () => {
+  it('sets prepublish_days from the file and exports it', async () => {
+    writeFileSync(join(dir, 'signing_key_policy.json'), JSON.stringify({ prepublish_days: 14 }));
+    const api = new MockApi(seedState());
+    expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), api))).toBe(0);
+    expect(api.writes).toContainEqual({ method: 'PATCH', path: '/v1/instance/signing_key_policy', body: { prepublish_days: 14 } });
+
+    const out = join(dir, 'export');
+    const live = new MockApi({ ...seedState(), signing_key_policy: { object: 'signing_key_policy', prepublish_days: 14 } });
+    expect(await run(['config', 'export', '--dir', out], ctx(captureIO(), live))).toBe(0);
+    expect(JSON.parse(readFileSync(join(out, 'signing_key_policy.json'), 'utf8'))).toEqual({ prepublish_days: 14 });
+  });
+
+  it('is unchanged when live matches, and null against an off policy writes nothing', async () => {
+    writeFileSync(join(dir, 'signing_key_policy.json'), JSON.stringify({ prepublish_days: 14 }));
+    const api = new MockApi({ ...seedState(), signing_key_policy: { prepublish_days: 14 } });
+    expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), api))).toBe(0);
+    expect(api.writes.find((w) => w.path === '/v1/instance/signing_key_policy')).toBeUndefined();
+
+    writeFileSync(join(dir, 'signing_key_policy.json'), JSON.stringify({ prepublish_days: null }));
+    const off = new MockApi({ ...seedState(), signing_key_policy: { prepublish_days: null } });
+    expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), off))).toBe(0);
+    expect(off.writes.find((w) => w.path === '/v1/instance/signing_key_policy')).toBeUndefined();
   });
 });

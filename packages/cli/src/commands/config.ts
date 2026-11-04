@@ -726,6 +726,31 @@ function registry(): ResourceSpec[] {
         });
       },
     },
+
+    // 15. Staged signing-key rotation: `prepublish_days` (1..90) publishes each new key
+    //     that many days before it signs; null or 0 turns it off. Only the policy, never keys.
+    {
+      kind: 'singleton',
+      type: 'signing_key_policy',
+      async fetchLive(http) {
+        let live: { prepublish_days?: Json };
+        try {
+          live = await http.get<{ prepublish_days?: Json }>('/v1/instance/signing_key_policy');
+        } catch (err) {
+          if (isNotFound(err)) return null;
+          throw err;
+        }
+        return live?.prepublish_days ? { prepublish_days: live.prepublish_days } : null;
+      },
+      normalize: (c) => ({ prepublish_days: obj(c).prepublish_days || null }),
+      async apply(http, config) {
+        const d = obj(config).prepublish_days ?? null;
+        if (d !== null && (typeof d !== 'number' || !Number.isInteger(d) || d < 0 || d > 90)) {
+          throw new CliError('signing_key_policy.prepublish_days must be a whole number of days from 1 to 90, or null / 0 to turn it off.');
+        }
+        await http.patch('/v1/instance/signing_key_policy', { prepublish_days: d || null });
+      },
+    },
   ];
   return specs;
 }
