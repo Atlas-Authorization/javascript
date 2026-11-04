@@ -7,6 +7,7 @@
 ### Security
 
 - `createMountHandler` no longer trusts a browser-supplied client IP. It used the leftmost `X-Forwarded-For` entry (or `X-Real-IP`) as `X-Atlas-Client-IP`, which Atlas uses for rate limits, lockouts, risk checks and audit logs, so a visitor could pick their own IP. It now takes the `X-Forwarded-For` entry `trustedProxyHops` places from the right (default `1`: the one your nearest proxy appended), never reads `X-Real-IP`, and drops values that are not IP addresses.
+- `createMountHandler` takes `X-Forwarded-Proto` from the nearest proxy's (last) entry, `http` or `https` only, so a browser-sent value cannot downgrade the scheme.
 
 ### Added
 
