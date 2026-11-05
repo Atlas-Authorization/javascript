@@ -38,6 +38,7 @@ export const trTR: LocalizationResource = {
   'signIn.passkeyCancelled': 'Geçiş anahtarıyla oturum açma tamamlanmadı. Tekrar deneyin veya başka bir yöntem kullanın.',
   'signIn.passwordHoldReleased': 'E-posta adresiniz doğrulandı. Oturum açmak için parolanızı girin.',
   'signUp.existingAccount': 'Zaten bir hesabınız vardı. Mevcut parolanız geçerliliğini koruyor.',
+  'signUp.emailConfirmed': 'E-postanız onaylandı. Devam etmek için oturum açın.',
 
   'signUp.title': 'Hesabınızı oluşturun',
   'signUp.submit': 'Devam',

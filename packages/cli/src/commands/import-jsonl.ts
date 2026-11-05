@@ -22,6 +22,8 @@ export interface JobResult {
   succeeded: number;
   failed: number;
   results?: Array<{ outcome: 'created' | 'updated' | 'matched' | 'failed'; warnings?: Array<{ code: string; message: string }> }> | null;
+  /** The same warnings per code, also on a job too big to return `results`. */
+  warnings?: Array<{ code: string; count: number; external_ids: string[] }>;
 }
 
 /** One row's failure from `GET /v1/jobs/:id/errors`. `email` is there too and is never printed. */
@@ -116,12 +118,22 @@ const HASH_PARAM_KEYS = [
 /** What a row-level warning means, worded to follow "N row(s)". */
 const ROW_WARNINGS: Record<string, string> = {
   password_policy_not_applied: 'already have a verified email address, so the password was not put on hold and stays usable.',
+  account_claim_not_applied:
+    'have something that signs in on them or a verified address, so they were not protected and a proof of the address still makes a second account.',
   unverified_without_hold:
     'have an unverified address and a credential, with no hold on it, so proving the address does not reach them. If the person signs up or signs in with an email code, they get a second account and this row keeps the external_id. Use --password-policy until_email_verified for a row with a password, or email_verified if you confirmed the address.',
 };
 
 /** The warnings on one job's rows, as `code: warned row ids`. A row never appears by its email. */
 export function collectRowWarnings(job: JobResult, batch: Array<{ external_id?: unknown }>, into: Map<string, Set<string>>): void {
+  if (!job.results) {
+    for (const w of job.warnings ?? []) {
+      const ids = into.get(w.code) ?? new Set<string>();
+      for (const id of w.external_ids) ids.add(id);
+      into.set(w.code, ids);
+    }
+    return;
+  }
   job.results?.forEach((r, i) => {
     for (const w of r.warnings ?? []) into.set(w.code, (into.get(w.code) ?? new Set<string>()).add(String(batch[i]?.external_id ?? `#${i}`)));
   });
@@ -277,7 +289,7 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
     }
     const address = user.email_addresses?.find((e) => e.email_address.toLowerCase() === row.email.trim().toLowerCase());
     if (onConflict === 'skip') {
-      if (wantsHold && address && address.verified !== true && user.password_enabled === true) skippedUnheld.push(row.external_id);
+      if (wantsHold && address && address.verified !== true) skippedUnheld.push(row.external_id);
       skipped += 1;
       return;
     }
@@ -289,8 +301,8 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
     }
     const namesDiffer = (row.first_name !== undefined && row.first_name !== user.first_name) || (row.last_name !== undefined && row.last_name !== user.last_name);
     const verifyNow = row.email_verified === true && address.verified !== true;
-    if (wantsHold && address.verified !== true && !verifyNow && user.password_enabled === true) {
-      // The API finds this row by external_id and applies the hold to its stored password.
+    if (wantsHold && address.verified !== true && !verifyNow) {
+      // The API finds this row by external_id and holds its password, or marks a row with no credential.
       upserts.push(toImportRow(row));
       return;
     }
@@ -340,7 +352,7 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
   const notes = [
     ...(emailChanged.length ? [`${emailChanged.length} row(s) have a different email from the existing user and were left alone; change the address on the user first. external_id: ${emailChanged.join(', ')}`] : []),
     ...(passwordNotApplied.length ? [`${passwordNotApplied.length} row(s) hold a password or identity that cannot be added while the address is unverified. external_id: ${passwordNotApplied.join(', ')}`] : []),
-    ...(skippedUnheld.length ? [`${skippedUnheld.length} existing unverified row(s) with a password were skipped, so this run did not change their hold. If they were imported without one, run again with --on-conflict update. external_id: ${skippedUnheld.join(', ')}`] : []),
+    ...(skippedUnheld.length ? [`${skippedUnheld.length} existing unverified row(s) were skipped, so this run did not protect them. If they were imported without a hold, run again with --on-conflict update. external_id: ${skippedUnheld.join(', ')}`] : []),
   ];
 
   if (dry) {
@@ -351,6 +363,7 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
     report.created = 0;
     report.updated = 0;
     const unsupported = new Map<string, string[]>();
+    const unmatched: string[] = [];
     const send = async (batch: Record<string, unknown>[], upsert: boolean) => {
       const job = await sendImportBatch(ctx, http, { users: batch, upsert, ...(policy ? { password_policy: policy } : {}) });
       report.jobs.push(job.id);
@@ -359,6 +372,7 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
         // Only the reasons depend on this read: the import has happened and the counts below still report it.
         const errors = await http.get<{ data?: JobRowError[] }>(`/v1/jobs/${job.id}/errors`).catch(() => ({ data: [] as JobRowError[] }));
         for (const e of errors.data ?? []) {
+          if (e.code === 'unverified_claim_not_matched') unmatched.push(String(batch[e.index]?.external_id));
           if (e.code !== 'unsupported_password_hash') continue;
           const ids = unsupported.get(e.message) ?? [];
           unsupported.set(e.message, [...ids, String(batch[e.index]?.external_id)]);
@@ -389,6 +403,13 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
       report.updated += 1;
     }
     for (const [message, ids] of unsupported) warn('unsupported_password_hash', ids, `were not imported. ${message}`);
+    if (unmatched.length) {
+      warn(
+        'unverified_claim_not_matched',
+        unmatched,
+        'were not imported: another unverified user already holds the address, and a row only matches one by its external_id, so nothing was created. If that user is yours, run atlas users protect <user-id>; GET /v1/jobs/<job-id>/errors names it.',
+      );
+    }
   }
   for (const [code, ids] of rowWarned) warn(code, [...ids], rowWarningText(code));
 

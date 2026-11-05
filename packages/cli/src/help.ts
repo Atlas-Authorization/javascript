@@ -17,7 +17,7 @@ Commands:
                              Scoped secret keys; new secrets go sealed into 0600 files
   logout                     Remove a stored profile credential
   whoami                     Show the active profile and instance
-  users list|get|create|merge|delete
+  users list|get|create|merge|protect|delete
   orgs list|get|members
   api-keys list|create|revoke
   webhooks list|create|upsert|update|test|deliveries|redeliver|replay|rotate|reveal
@@ -457,7 +457,13 @@ Usage:
   atlas users get <user-id> [--json]
   atlas users create --email <address> [--first-name <n>] [--last-name <n>] [--password <p>] [--json]
   atlas users clear-password <user-id> [--json]
-  atlas users delete <user-id> [--json]`,
+  atlas users protect <user-id> [--json]
+  atlas users delete <user-id> [--json]
+
+protect makes a proof of an unverified user's address reach that user, instead of
+making a second account. A password goes on hold; a row with no credential is marked
+as yours. It refuses a user with a verified address, or one with anything else that
+signs in, and names what it found.`,
 
   'setup-guide': `atlas setup-guide — the setup calls in order, with the read-back for each
 
@@ -689,18 +695,18 @@ Email always goes through YOUR provider account (Atlas lends none):
 The key is read from --email-key-file (a file holding the key or KEY=value; '-'
 reads stdin). It is never taken from argv and never printed.
 
-Every secret goes to ~/.config/<product>/<env>*.env (dir 0700, files 0600) and
+Every secret goes to ~/.config/<product>/<env>/ (dir 0700, files 0600) and
 is never printed. An existing file is never overwritten without --force.
 --rotate-secret mints a new secret key when the app exists but its file is gone.
 Public values and file paths are kept in ~/.config/<product>/atlas.json.
 Turns on strict request bodies unless the instance has them or opted out.
 
---with-dev also creates the development sibling. A new setup then keeps each
-environment in its own folder (~/.config/<product>/production/atlas.env and
+Each environment gets its own folder (~/.config/<product>/production/atlas.env and
 development/atlas.env), so a script reading a folder's *.env files never mixes
-keys. An existing <env>.env stays where it is.
-Without --with-dev the same applies once the folder holds the other environment's
-key: the new environment gets its own folder, and init prints a line saying so.
+keys, and init prints a line saying where the files went. --with-dev also creates
+the development sibling. An existing <env>.env stays where it is and keeps its
+layout; atlas doctor --scan-dir reports it beside another environment's folder until
+you move it to <env>/atlas.env and run atlas init again.
 --no-env-files writes no secret file: each secret is handed over once in the
 --json output on stdout. Without --json it is refused and names the paths it
 would have written.

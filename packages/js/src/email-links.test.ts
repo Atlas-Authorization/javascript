@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { acknowledgeExistingAccount, advance, existingAccountResetUrl, FapiClient, pendingExistingAccountNotice, pollAttempt, startSignUp, shouldKeepPolling } from './fapi';
+import { acknowledgeExistingAccount, advance, existingAccountResetUrl, FapiClient, pendingExistingAccountNotice, pollAttempt, signInAfterProofUrl, signUpProvedByLink, startSignUp, shouldKeepPolling } from './fapi';
+import type { AttemptView } from './attempt';
 import { pollPasswordReset, startPasswordReset } from './password-reset';
 
 function scripted(route: (path: string) => { status?: number; body: unknown }) {
@@ -103,6 +104,23 @@ describe('a sign-up that proved an existing account', () => {
         : { body: { id: 'sua_2', object: 'sign_up_attempt', status: 'complete', ticket: 't' } },
     );
     expect(pendingExistingAccountNotice(await advance(client, state, { code: '123456' }))).toBe(false);
+  });
+
+  it('a sign-up a link proved: an emailed-link attempt with no passkey to create', () => {
+    const attempt = { id: 'sua_1', object: 'sign_up_attempt', status: 'needs_first_factor' } as AttemptView;
+    expect(signUpProvedByLink(attempt)).toBe(true);
+    expect(signUpProvedByLink({ ...attempt, supported_first_factors: ['passkey'] })).toBe(false);
+    expect(signUpProvedByLink({ ...attempt, object: 'sign_in_attempt' })).toBe(false);
+    expect(signUpProvedByLink({ ...attempt, status: 'needs_email_verification' })).toBe(false);
+    expect(signUpProvedByLink(null)).toBe(false);
+  });
+
+  it('the sign-in target: the app page, hidden, or the hosted sign-in page without a reset', () => {
+    expect(signInAfterProofUrl({ url: 'https://app.example/login' })).toBe('https://app.example/login');
+    expect(signInAfterProofUrl({ url: null, frontendApi: 'https://f.example' })).toBeNull();
+    const hosted = new URL(signInAfterProofUrl({ frontendApi: 'https://f.example', redirectUrl: 'https://app.example/' })!);
+    expect(hosted.pathname).toBe('/hosted/sign-in');
+    expect(hosted.searchParams.has('forgot_password')).toBe(false);
   });
 
   it('the reset target: the app page, hidden, or the hosted sign-in page', () => {

@@ -227,6 +227,26 @@ describe('atlas plan drift (apply then plan --check)', () => {
   });
 });
 
+describe('config export of branding', () => {
+  it('shows no empty socialButtons map, also for a row saved before clearing dropped them', async () => {
+    const api = new FakeApi();
+    api.branding = { applicationName: 'Acme', socialButtons: { size: 'lg', modes: {}, displayNames: {}, icons: {} } };
+    const out = join(dir, 'export-empty');
+    expect(await run(['config', 'export', '--dir', out], ctx(captureIO(), api))).toBe(0);
+    const exported = JSON.parse(readFileSync(join(out, 'branding.json'), 'utf8'));
+    expect(JSON.stringify(exported)).toContain('"size":"lg"');
+    expect(JSON.stringify(exported)).not.toMatch(/modes|displayNames|icons/);
+  });
+
+  it('drops the bag when nothing else is in it', async () => {
+    const api = new FakeApi();
+    api.branding = { applicationName: 'Acme', socialButtons: { modes: {} } };
+    const out = join(dir, 'export-bare');
+    expect(await run(['config', 'export', '--dir', out], ctx(captureIO(), api))).toBe(0);
+    expect(readFileSync(join(out, 'branding.json'), 'utf8')).not.toContain('socialButtons');
+  });
+});
+
 describe('email_provider, hooks.before_user_create, branding', () => {
   const sections = {
     email_provider: { transport: 'brevo', from_address: 'login@example.com', config: { api_key: '${BREVO_API_KEY}' } },

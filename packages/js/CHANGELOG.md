@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.33.0 — 2026-11-05
+
+- Existing-account sign-up helpers: `signInAfterProofUrl`, `signUpProvedByLink`, and session exchange as recovery codes appear.
+
 ## 0.32.0 — 2026-11-05
 
 ### Fixed

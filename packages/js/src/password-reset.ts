@@ -11,8 +11,8 @@
  * `needs_new_password` → `complete` (carrying a session ticket, so a completed
  * reset signs the user in through the normal cookie exchange).
  */
-import type { FieldError } from './attempt';
-import type { FapiClient } from './fapi';
+import type { AttemptView, FieldError, PendingRequiredAction } from './attempt';
+import { initialFlow, type FapiClient, type FlowState } from './fapi';
 import { getResetSecurityQuestions } from './mfa-factors';
 
 export interface ResetAttempt {
@@ -24,6 +24,11 @@ export interface ResetAttempt {
    * another device), then carry on from the new status.
    */
   poll_secret?: string;
+  /** Held for policies or a required action once the new password is set: see {@link flowFromHeldReset}. */
+  pending_policies?: AttemptView['pending_policies'];
+  policy_acceptance_token?: string;
+  pending_required_actions?: PendingRequiredAction[];
+  required_action_token?: string;
 }
 
 export interface ResetFlowState {
@@ -100,13 +105,33 @@ export async function advancePasswordReset(
     // exactly like the sign-in advance.
     return { ...state, busy: false, errors: res.errors };
   }
+  const { id, status, pending_policies, policy_acceptance_token, pending_required_actions, required_action_token } = res.data;
   return {
-    attempt: { id: res.data.id, status: res.data.status },
+    attempt: {
+      id,
+      status,
+      ...(pending_policies ? { pending_policies } : {}),
+      ...(policy_acceptance_token ? { policy_acceptance_token } : {}),
+      ...(pending_required_actions ? { pending_required_actions } : {}),
+      ...(required_action_token ? { required_action_token } : {}),
+    },
     errors: [],
     busy: false,
     ticket: res.data.ticket ?? null,
     ...(opts.askQuestions ? await questionsFor(client, res.data.id, res.data.status) : {}),
   };
+}
+
+/**
+ * The password is set but the attempt is held (policies, a required action): the
+ * sign-in flow takes it from here, on the same attempt with its one-time token.
+ * Null when the reset is not held.
+ */
+export function flowFromHeldReset(reset: ResetFlowState): FlowState | null {
+  const attempt = reset.attempt;
+  if (attempt?.status !== 'needs_policy_acceptance' && attempt?.status !== 'needs_required_action') return null;
+  const token = attempt.policy_acceptance_token ?? attempt.required_action_token;
+  return { ...initialFlow, attempt: attempt as AttemptView, ...(token ? { policyToken: token } : {}) };
 }
 
 /** The security questions a reset owes once it reaches the new-password step. */

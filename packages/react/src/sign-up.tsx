@@ -11,6 +11,9 @@ import {
   existingAccountResetUrl,
   flowNeedsCaptcha,
   pendingExistingAccountNotice,
+  pendingRecoveryCodes,
+  signInAfterProofUrl,
+  signUpProvedByLink,
   isPolicyAcceptanceRequired,
   passkeysSupported,
   registerSignUpPasskey,
@@ -69,7 +72,7 @@ export function SignUp(props: FlowProps = {}) {
     },
     [props.planSelection, props.afterUrl],
   );
-  const { state, setState, submit, client, finish, continueAfterExistingAccount } = useFlow({
+  const { state, setState, submit, client, finish, saveRecoveryCodes, continueAfterExistingAccount } = useFlow({
     afterUrl: props.afterUrl,
     afterSignIn,
     signInCaptcha: false,
@@ -171,6 +174,10 @@ export function SignUp(props: FlowProps = {}) {
     );
   }
 
+  if (signUpProvedByLink(state.attempt)) {
+    return <EmailConfirmedNotice hideTitle={props.hideTitle} signInHref={signInAfterProofUrl({ url: props.signInUrl, frontendApi, redirectUrl: props.afterUrl })} />;
+  }
+
   if (state.attempt) {
     return (
       <AttemptFlow
@@ -181,6 +188,8 @@ export function SignUp(props: FlowProps = {}) {
         titleKey="signUp.title"
         hideTitle={props.hideTitle}
         onSubmit={submit}
+        recoveryCodes={pendingRecoveryCodes(state)}
+        onRecoveryCodesSaved={saveRecoveryCodes}
       />
     );
   }
@@ -286,6 +295,22 @@ function ExistingAccountNotice({
       <button className={buttonClass} type="button" disabled={busy} onClick={() => onContinue()}>
         {t('signUp.submit')}
       </button>
+    </div>
+  );
+}
+
+/** A link confirmed the address and made no session here. Says the same for any address. */
+function EmailConfirmedNotice({ hideTitle, signInHref }: { hideTitle?: boolean; signInHref: string | null }) {
+  const t = useText();
+  const cardClass = useClass('card', 'atlas-card');
+  const titleClass = useClass('headerTitle', 'atlas-title');
+  const buttonClass = useClass('formButtonPrimary', 'atlas-button');
+  const cls = useClasses();
+  return (
+    <div className={cardClass} data-atlas-email-confirmed="">
+      {hideTitle ? null : <h1 className={titleClass}>{t('signUp.title')}</h1>}
+      <p className={cls('text', 'atlas-text')} role="status">{t('signUp.emailConfirmed')}</p>
+      {signInHref ? <a className={buttonClass} href={signInHref}>{t('signIn.title')}</a> : null}
     </div>
   );
 }

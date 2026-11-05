@@ -35,6 +35,7 @@ export const EN_US: Catalog = {
   'signIn.passwordOption': 'Use your password instead',
   'signIn.passwordHoldReleased': 'Your email is verified. Enter your password to sign in.',
   'signUp.existingAccount': 'You already had an account. Your existing password still applies.',
+  'signUp.emailConfirmed': 'Your email is confirmed. Sign in to continue.',
   'signIn.codeSentTo': 'We sent a code to {email}. Enter it below.',
   'signIn.resendCode': 'Resend code',
   'signIn.sending': 'Sending…',

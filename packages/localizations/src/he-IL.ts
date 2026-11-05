@@ -38,6 +38,7 @@ export const heIL: LocalizationResource = {
   'signIn.passkeyCancelled': 'הכניסה באמצעות מפתח הגישה לא הושלמה. נסו שוב או השתמשו בשיטה אחרת.',
   'signIn.passwordHoldReleased': 'כתובת האימייל שלך אומתה. יש להזין את הסיסמה כדי להיכנס.',
   'signUp.existingAccount': 'כבר היה לך חשבון. הסיסמה הקיימת שלך עדיין בתוקף.',
+  'signUp.emailConfirmed': 'כתובת האימייל שלך אושרה. יש להתחבר כדי להמשיך.',
 
   'signUp.title': 'יצירת החשבון שלך',
   'signUp.submit': 'המשך',

@@ -39,6 +39,7 @@ export const viVN: LocalizationResource = {
   'signIn.passkeyCancelled': 'Chưa hoàn tất đăng nhập bằng khóa truy cập. Hãy thử lại hoặc dùng cách khác.',
   'signIn.passwordHoldReleased': 'Email của bạn đã được xác minh. Nhập mật khẩu để đăng nhập.',
   'signUp.existingAccount': 'Bạn đã có tài khoản. Mật khẩu hiện tại của bạn vẫn có hiệu lực.',
+  'signUp.emailConfirmed': 'Email của bạn đã được xác nhận. Đăng nhập để tiếp tục.',
 
   'signUp.title': 'Tạo tài khoản',
   'signUp.submit': 'Tiếp tục',

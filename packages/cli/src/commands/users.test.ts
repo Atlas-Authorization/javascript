@@ -116,3 +116,28 @@ describe('users subcommands', () => {
     expect(io.stderr()).toContain('--email');
   });
 });
+
+describe('users protect', () => {
+  const answering = (protection: string, seen: unknown[]) => ({
+    ...ctx(captureIO(), vi.fn()),
+    makeHttp: () => ({ post: async (path: string, body: unknown) => (seen.push({ path, body }), { object: 'account_claim', protection }) }) as unknown as ConfigHttp,
+  });
+
+  it('posts the policy to the route and says what it did', async () => {
+    const io = captureIO();
+    const seen: unknown[] = [];
+    expect(await run(['users', 'protect', 'user_42'], { ...answering('claim_marker', seen), io })).toBe(0);
+    expect(seen).toEqual([{ path: '/v1/users/user_42/account_claim', body: { password_policy: 'until_email_verified' } }]);
+    expect(io.stdout()).toContain('user_42');
+  });
+
+  it('--json prints the answer, a password says it is on hold, and it needs an id', async () => {
+    const io = captureIO();
+    expect(await run(['users', 'protect', 'user_42', '--json'], { ...answering('password_hold', []), io })).toBe(0);
+    expect(JSON.parse(io.stdout())).toMatchObject({ protection: 'password_hold' });
+    const text = captureIO();
+    expect(await run(['users', 'protect', 'user_42'], { ...answering('password_hold', []), io: text })).toBe(0);
+    expect(text.stdout()).toContain('on hold');
+    expect(await run(['users', 'protect'], { ...answering('password_hold', []), io: captureIO() })).toBe(1);
+  });
+});

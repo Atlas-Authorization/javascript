@@ -693,6 +693,27 @@ export interface SetIntegrationBody {
   forumulate_api_key?: string;
 }
 
+export interface RedeliverIntegrationEventsBody {
+  /** Epoch milliseconds, an ISO 8601 time, or `failing_since` for the start of the receiver's failure streak. */
+  since: number | string;
+  /** Only `failed`: delivered events are never re-sent. */
+  status?: 'failed';
+}
+
+export interface IntegrationRedelivery {
+  object: 'integration_redelivery';
+  integration: string;
+  endpoint_id: string;
+  url: string;
+  /** The window start used: `since`, or when this receiver was created if later. */
+  since: number;
+  events_considered: number;
+  queued: number;
+  has_more: boolean;
+  next_since: number | null;
+  retention: { events_days: number; delivery_log_days: number; replay_window_days: number };
+}
+
 export interface IntegrationDelivery {
   object: 'integration_delivery';
   kind: 'event' | 'backchannel_logout';
@@ -896,6 +917,15 @@ export function instanceResource(request: RequestFn) {
         query: { limit?: number; trace?: string; kind?: 'event' | 'backchannel_logout' } = {},
       ): Promise<{ object: 'list'; data: IntegrationDelivery[]; has_more: boolean }> {
         return request({ method: 'GET', path: `/v1/instance/integrations/${encodeURIComponent(id)}/deliveries`, query });
+      },
+      /**
+       * Re-send every event since `since` with no successful delivery and no retry
+       * scheduled, signed and addressed as of now, and switch a disabled receiver
+       * back on. At most 1,000 events a call: continue from `next_since` while
+       * `has_more`. Running it again queues nothing new.
+       */
+      redeliver(id: string, body: RedeliverIntegrationEventsBody, idempotencyKey?: string): Promise<IntegrationRedelivery> {
+        return request({ method: 'POST', path: `/v1/instance/integrations/${encodeURIComponent(id)}/deliveries/redeliver`, body, idempotencyKey });
       },
       /** Reveal the event receiver's signing secret (audited). */
       revealEventsSecret(id: string): Promise<{ object: 'integration_events_secret'; integration: string; endpoint_id: string; url: string; secret: string }> {

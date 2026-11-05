@@ -38,6 +38,7 @@ export const koKR: LocalizationResource = {
   'signIn.passkeyCancelled': '패스키 로그인이 완료되지 않았습니다. 다시 시도하거나 다른 방법으로 로그인하세요.',
   'signIn.passwordHoldReleased': '이메일이 인증되었습니다. 로그인하려면 비밀번호를 입력하세요.',
   'signUp.existingAccount': '이미 계정이 있습니다. 기존 비밀번호를 계속 사용할 수 있습니다.',
+  'signUp.emailConfirmed': '이메일이 확인되었습니다. 계속하려면 로그인하세요.',
 
   'signUp.title': '계정 만들기',
   'signUp.submit': '계속',

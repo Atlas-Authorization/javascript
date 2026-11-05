@@ -39,6 +39,7 @@ export const plPL: LocalizationResource = {
   'signIn.passkeyCancelled': 'Logowanie kluczem dostępu nie zostało ukończone. Spróbuj ponownie lub użyj innej metody.',
   'signIn.passwordHoldReleased': 'Adres e-mail został zweryfikowany. Wpisz hasło, aby się zalogować.',
   'signUp.existingAccount': 'Masz już konto. Twoje dotychczasowe hasło nadal obowiązuje.',
+  'signUp.emailConfirmed': 'Twój adres e-mail został potwierdzony. Zaloguj się, aby kontynuować.',
 
   'signUp.title': 'Utwórz konto',
   'signUp.submit': 'Dalej',

@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { awaitingPasskey, existingAccountResetUrl, passkeysSupported, pendingExistingAccountNotice } from '@atlasauth/js';
+  import { awaitingPasskey, existingAccountResetUrl, passkeysSupported, pendingExistingAccountNotice, pendingRecoveryCodes, signInAfterProofUrl, signUpProvedByLink } from '@atlasauth/js';
   import { signUp } from '../accessors';
   import { classFor, type ElementKey } from '../appearance';
   import { useAtlas } from '../context';
   import { translate } from '../i18n';
   import AttemptFlow from './AttemptFlow.svelte';
   import PasskeySignUpStep from './PasskeySignUpStep.svelte';
+  import RecoveryCodes from './RecoveryCodes.svelte';
   import SignUpForm from './SignUpForm.svelte';
 
   /**
@@ -19,6 +20,8 @@
   export let afterUrl: string | undefined = undefined;
   /** Where the existing-account notice's "Forgot password?" goes. Default: the hosted sign-in page; `null` hides it. */
   export let resetPasswordUrl: string | null | undefined = undefined;
+  /** Where "Sign in" goes once an emailed link confirmed the address and made no session here. Default: the hosted sign-in page; `null` hides it. */
+  export let signInUrl: string | null | undefined = undefined;
 
   const atlas = useAtlas();
   const cls = (key: ElementKey, base: string) => classFor(key, atlas.appearance, base);
@@ -26,6 +29,7 @@
   const flow = signUp({ holdExistingAccountNotice: true });
   const flowState = flow.state;
   const settings = flow.settings;
+  const enrollmentState = flow.enrollmentState;
   onDestroy(() => flow.destroy());
   onMount(() => {
     void flow.loadPolicies();
@@ -40,12 +44,15 @@
   $: offer = $settings?.account.passkeySignUp ?? null;
   $: canPasskey = !!offer && passkeysSupported();
   $: usingPasskey = mode === 'passkey' && canPasskey;
+  $: recoveryCodes = pendingRecoveryCodes($flowState);
   function switchMode() {
     mode = usingPasskey ? 'password' : 'passkey';
   }
 </script>
 
-{#if pendingExistingAccountNotice($flowState)}
+{#if recoveryCodes}
+  <RecoveryCodes codes={recoveryCodes} busy={$flowState.busy} onSaved={flow.saveRecoveryCodes} />
+{:else if pendingExistingAccountNotice($flowState)}
   {@const resetHref = existingAccountResetUrl({ url: resetPasswordUrl, frontendApi: atlas.frontendApi, redirectUrl: afterUrl })}
   <div class={cls('card', 'atlas-card')} data-atlas-existing-account="">
     <h1 class={cls('headerTitle', 'atlas-title')}>{t('signUp.title')}</h1>
@@ -59,6 +66,16 @@
   </div>
 {:else if $flowState.attempt && awaitingPasskey($flowState.attempt)}
   <PasskeySignUpStep busy={$flowState.busy} errors={$flowState.errors} onCreate={flow.createPasskey} />
+{:else if signUpProvedByLink($flowState.attempt)}
+  <!-- A link confirmed the address and made no session here. Says the same for any address. -->
+  {@const signInHref = signInAfterProofUrl({ url: signInUrl, frontendApi: atlas.frontendApi, redirectUrl: afterUrl })}
+  <div class={cls('card', 'atlas-card')} data-atlas-email-confirmed="">
+    <h1 class={cls('headerTitle', 'atlas-title')}>{t('signUp.title')}</h1>
+    <p class="atlas-text" role="status">{t('signUp.emailConfirmed')}</p>
+    {#if signInHref}
+      <a class={cls('formButtonPrimary', 'atlas-button')} href={signInHref}>{t('signIn.title')}</a>
+    {/if}
+  </div>
 {:else if $flowState.attempt}
   <AttemptFlow
     attempt={$flowState.attempt}
@@ -69,6 +86,11 @@
     onSubmit={flow.submit}
     emailVerification={$settings?.account.emailVerification ?? 'code'}
     onResend={flow.resendSignUp}
+    onEmailSecondFactor={$settings?.account.emailSecondFactor ? flow.sendEmailSecondFactor : null}
+    onSmsSecondFactor={$settings && flow.mfaChoices().sms ? flow.sendSmsSecondFactor : null}
+    enrollment={flow.enrollment}
+    enrollmentState={$enrollmentState}
+    onPolicyDecline={flow.declinePolicy}
   />
 {:else}
   <SignUpForm

@@ -1,6 +1,6 @@
 import { type RequestFn } from './request';
 
-export type LeastPrivilegeSubjectType = 'api_key' | 'oauth_client' | 'mcp_gateway' | 'agent';
+export type LeastPrivilegeSubjectType = 'api_key' | 'oauth_client' | 'mcp_gateway' | 'agent' | 'machine';
 
 export interface LeastPrivilegePermission {
   /** A scope, `tool:<name>`, `<kind>:<resource>` for an agent grant, or `default_policy:allow`. */

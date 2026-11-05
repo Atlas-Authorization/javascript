@@ -103,6 +103,11 @@ export interface FlowProps {
    */
   resetPasswordUrl?: string | null;
   /**
+   * `<SignUp>`: where "Sign in" goes once an emailed link confirmed the address and
+   * made no session here. Default: the instance's hosted sign-in page. `null` hides it.
+   */
+  signInUrl?: string | null;
+  /**
    * Also show Google One-Tap above the "Sign in with Google" button. OFF by
    * default: the button alone (a user-initiated popup) converts better and never
    * surprises the user with an auto-prompt. One-Tap is a separate GSI call, so
@@ -377,14 +382,6 @@ export function AttemptFlow({
         // `webauthn`: saved passkeys appear in this field's autofill while <SignIn> holds a conditional request.
         return [field('identifier', 'signIn.identifierLabel', 'email', { autoComplete: 'username webauthn' })];
       case 'collect_first_factor':
-        // A link proved an address on an existing account: no session, and the password signs in.
-        if (attempt?.object === 'sign_up_attempt' && !(attempt.supported_first_factors ?? []).includes('passkey')) {
-          return [
-            <p key="released" className={cls('text', 'atlas-text')} data-atlas-password-released="">
-              {t('signIn.passwordHoldReleased')}
-            </p>,
-          ];
-        }
         if (noFirstFactor) {
           return [
             <p key="email-unavailable" className={errorClass} role="alert" data-atlas-email-unavailable="">
@@ -859,7 +856,14 @@ export function useFlow({
     async (next: FlowState) => {
       // An enrolment's recovery codes are shown first; `saveRecoveryCodes` finishes.
       if (pendingRecoveryCodes(next)) {
-        setState({ ...next, busy: false });
+        // The ticket dies in 60 seconds and saving the codes can take longer: redeem it now,
+        // and `saveRecoveryCodes` finishes. A refused exchange keeps the ticket, so the save reports it.
+        setState({ ...next, busy: true });
+        const res = next.ticket
+          ? await client.post('/v1/client/tickets/exchange', { attempt_id: (next.attempt as { id?: string }).id, ticket: next.ticket })
+          : null;
+        if (res?.ok) heldJourneyUrl.current = journeyRedirectUrl(res.data);
+        setState({ ...next, busy: false, ticket: res?.ok ? null : next.ticket });
         return;
       }
       if (next.attempt?.status !== 'complete') {

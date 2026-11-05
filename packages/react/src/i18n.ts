@@ -45,6 +45,7 @@ export const EN_US: Catalog = {
   'signIn.passkeyCancelled': "Passkey sign-in didn't finish. Try again, or use another way to sign in.",
   'signIn.passwordHoldReleased': 'Your email is verified. Enter your password to sign in.',
   'signUp.existingAccount': 'You already had an account. Your existing password still applies.',
+  'signUp.emailConfirmed': 'Your email is confirmed. Sign in to continue.',
 
   'signUp.title': 'Create your account',
   'signUp.submit': 'Continue',

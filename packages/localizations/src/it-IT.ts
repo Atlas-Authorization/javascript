@@ -38,6 +38,7 @@ export const itIT: LocalizationResource = {
   'signIn.passkeyCancelled': 'L\'accesso con la passkey non è stato completato. Riprova o usa un altro metodo.',
   'signIn.passwordHoldReleased': 'Il tuo indirizzo e-mail è stato verificato. Inserisci la password per accedere.',
   'signUp.existingAccount': 'Avevi già un account. La tua password attuale resta valida.',
+  'signUp.emailConfirmed': 'La tua e-mail è confermata. Accedi per continuare.',
 
   'signUp.title': 'Crea il tuo account',
   'signUp.submit': 'Continua',

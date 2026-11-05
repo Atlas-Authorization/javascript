@@ -6,14 +6,17 @@ import {
   passkeysSupported,
   planFirstFactor,
   resetStep,
+  signUpProvedByLink,
   type FieldError,
+  type PendingRequiredAction,
+  type ProfileCompletionField,
 } from '@atlasauth/js';
 import type { AtlasWidget } from '../widget';
 import { COPY } from './constants';
 import { cls, doc, el, submitButton } from './dom';
 import { render } from './render';
 import { mountSignUpPolicies, policyT } from './policies';
-import { continueAfterExistingAccount, resendSignUp, sendEmailFactor, startReset, submit, submitReset, submitSignUp } from './flow';
+import { continueAfterExistingAccount, resendSignUp, sendEmailFactor, signInAfterProof, startReset, submit, submitReset, submitSignUp } from './flow';
 import { renderEnrollment, renderSecondFactorAlternatives, say, submitEnrollment } from './mfa';
 
 /**
@@ -158,6 +161,138 @@ export function renderReset(w: AtlasWidget): HTMLElement {
   });
 
   return wrap;
+}
+
+function owedAction(w: AtlasWidget): PendingRequiredAction | undefined {
+  return w.state.attempt?.pending_required_actions?.[0];
+}
+
+/**
+ * The step a held attempt owes (a new password, profile fields, a verified
+ * address, the app's own step). Resolves whether the form has anything to submit.
+ */
+function renderRequiredAction(
+  w: AtlasWidget,
+  form: HTMLElement,
+  inputs: Map<string, HTMLInputElement>,
+  ctx: {
+    addField(name: string, label: string, type: string, autocomplete: string): void;
+    addCodeField(name: string, label: string, autofocus: boolean): void;
+    trailing: HTMLElement[];
+  },
+): boolean {
+  const owed = owedAction(w);
+  const note = (text: string) => form.appendChild(el(w, 'p', 'atlas-embed-note', text));
+  const action = (label: string, onClick: () => void, primary = false) => {
+    const b = el(w, 'button', primary ? cls(w, 'buttonPrimary', 'atlas-embed-button') : 'atlas-embed-step-back', label) as HTMLButtonElement;
+    b.type = 'button';
+    b.disabled = w.busy;
+    b.addEventListener('click', onClick);
+    return b;
+  };
+  switch (owed?.action) {
+    case 'update_password':
+      ctx.addField('password', 'New password', 'password', 'new-password');
+      return true;
+    case 'update_profile':
+      ctx.addField('first_name', say(w, 'requiredAction.firstNameLabel'), 'text', 'given-name');
+      ctx.addField('last_name', say(w, 'requiredAction.lastNameLabel'), 'text', 'family-name');
+      return true;
+    case 'complete_profile':
+    case 'journey_form': {
+      if (owed.title) note(owed.title);
+      if (owed.intro) note(owed.intro);
+      const asked = owed.fields ?? [];
+      for (const f of asked) addAskedField(w, form, inputs, ctx.addField, f);
+      if (owed.action === 'complete_profile' && asked.every((f) => !f.required)) {
+        ctx.trailing.push(action(say(w, 'requiredAction.skip'), () => void submit(w, { action: 'complete_profile', skip: 'true' })));
+      }
+      return true;
+    }
+    case 'verify_email':
+      note(say(w, 'requiredAction.verifyIntro'));
+      ctx.trailing.push(action(say(w, 'requiredAction.sendCode'), () => void submit(w, { action: 'verify_email', step: 'send' })));
+      ctx.addCodeField('code', 'Verification code', true);
+      return true;
+    case 'identity_verification': {
+      const idv = w.state.attempt?.identity_verification ?? null;
+      note(say(w, 'requiredAction.idvIntro'));
+      // shortcut: the user presses "I've finished" where the hosted page also polls; add a timer if that proves too slow.
+      if (idv?.url) {
+        const open = el(w, 'a', cls(w, 'buttonPrimary', 'atlas-embed-button'), say(w, 'requiredAction.idvOpen')) as HTMLAnchorElement;
+        open.href = idv.url;
+        open.target = '_blank';
+        open.rel = 'noopener noreferrer';
+        form.appendChild(open);
+        form.appendChild(action(say(w, 'requiredAction.idvCheck'), () => void submit(w, { action: 'identity_verification' })));
+      } else {
+        const here = doc(w).defaultView?.location;
+        const returnTo = here?.protocol === 'https:' ? here.href : undefined;
+        form.appendChild(
+          action(say(w, 'requiredAction.idvStart'), () => void submit(w, { action: 'identity_verification', step: 'start', ...(returnTo ? { redirect_url: returnTo } : {}) }), true),
+        );
+      }
+      const status = idv?.status === 'declined' ? 'requiredAction.idvDeclined' : idv?.status === 'needs_review' ? 'requiredAction.idvReview' : idv?.url ? 'requiredAction.idvWaiting' : null;
+      if (status) note(say(w, status)).setAttribute('role', 'status');
+      return false;
+    }
+    default:
+      // An application-defined step: the app closes it, then the user signs in again.
+      note(say(w, 'requiredAction.customIntro'));
+      if (owed?.url) {
+        const go = el(w, 'a', cls(w, 'buttonPrimary', 'atlas-embed-button'), say(w, 'signUp.submit')) as HTMLAnchorElement;
+        go.href = owed.url;
+        go.rel = 'noopener';
+        form.appendChild(go);
+      }
+      return false;
+  }
+}
+
+/** One field the server asked for, under the `field:<key>` name `advance` sends as `fields`. */
+function addAskedField(
+  w: AtlasWidget,
+  form: HTMLElement,
+  inputs: Map<string, HTMLInputElement>,
+  addField: (name: string, label: string, type: string, autocomplete: string) => void,
+  f: ProfileCompletionField,
+): void {
+  const name = `field:${f.key}`;
+  const label = `${f.label}${f.required ? ' *' : ''}`;
+  if (f.type === 'select' || f.type === 'textarea' || f.type === 'checkbox') {
+    const wrap = el(w, 'label', cls(w, 'field', 'atlas-embed-field'));
+    wrap.appendChild(el(w, 'span', cls(w, 'label', 'atlas-embed-label'), label));
+    let control: HTMLSelectElement | HTMLTextAreaElement | HTMLInputElement;
+    if (f.type === 'select') {
+      control = doc(w).createElement('select');
+      control.appendChild(doc(w).createElement('option'));
+      for (const o of f.options ?? []) {
+        const option = doc(w).createElement('option');
+        option.value = o;
+        option.textContent = o;
+        control.appendChild(option);
+      }
+    } else if (f.type === 'textarea') {
+      control = doc(w).createElement('textarea');
+    } else {
+      const box = doc(w).createElement('input');
+      box.type = 'checkbox';
+      box.value = 'false';
+      box.addEventListener('change', () => {
+        box.value = box.checked ? 'true' : 'false';
+      });
+      control = box;
+    }
+    if (f.type !== 'checkbox') control.className = cls(w, 'input', 'atlas-embed-input');
+    control.name = name;
+    wrap.appendChild(control);
+    form.appendChild(wrap);
+    // The form reads only `.value`, which these share with an input.
+    inputs.set(name, control as HTMLInputElement);
+    return;
+  }
+  addField(name, label, ['tel', 'email', 'url', 'number', 'date'].includes(f.type) ? f.type : 'text', 'off');
+  if (f.placeholder) inputs.get(name)?.setAttribute('placeholder', f.placeholder);
 }
 
 /** A labelled text input, appended to `form` and registered in `inputs`. */
@@ -366,6 +501,20 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
       }
       break;
     case 'collect_first_factor': {
+      if (signUpProvedByLink(w.state.attempt)) {
+        // The emailed link made no session here. Says the same for any address.
+        showSubmit = false;
+        const confirmed = el(w, 'p', 'atlas-embed-note', say(w, 'signUp.emailConfirmed'));
+        confirmed.setAttribute('role', 'status');
+        confirmed.setAttribute('data-atlas-email-confirmed', '');
+        form.appendChild(confirmed);
+        const toSignIn = el(w, 'button', cls(w, 'buttonPrimary', 'atlas-embed-button'), say(w, 'signIn.title')) as HTMLButtonElement;
+        toSignIn.type = 'button';
+        toSignIn.setAttribute('data-atlas', 'email-confirmed-sign-in');
+        toSignIn.addEventListener('click', () => signInAfterProof(w));
+        form.appendChild(toSignIn);
+        break;
+      }
       // §5.3 a password field only when the server offers `password`; an emailed
       // code (or link) is sent by `submit()` when it isn't.
       const strategies = w.state.attempt ? (nextStep(w.state.attempt) as { strategies?: string[] }).strategies ?? [] : [];
@@ -467,6 +616,10 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
     case 'collect_new_password':
       addField('password', 'New password', 'password', 'new-password');
       break;
+    case 'complete_required_action':
+      submitLabel = say(w, 'signUp.submit');
+      showSubmit = renderRequiredAction(w, form, inputs, { addField, addCodeField, trailing });
+      break;
     case 'enroll_second_factor': {
       // The authenticator app (QR code, setup key, its code) or a texted code.
       const label = renderEnrollment(w, form, { addField, addCodeField, trailing }, submitLabel);
@@ -524,6 +677,13 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
     }
     if (stepKind === 'enroll_second_factor') {
       void submitEnrollment(w, values);
+      return;
+    }
+    // Required actions: name the action; an emailed code is verified, not re-sent; blank optional fields stay out.
+    if (stepKind === 'complete_required_action') {
+      const owed = owedAction(w)?.action ?? '';
+      for (const name of Object.keys(values)) if (name.startsWith('field:') && !values[name]) delete values[name];
+      void submit(w, { ...values, action: owed, ...(owed === 'verify_email' ? { step: 'verify' } : {}) });
       return;
     }
     void submit(w, values);

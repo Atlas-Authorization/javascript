@@ -78,6 +78,25 @@ export async function users(ctx: RunContext, args: ParsedArgs): Promise<number> 
       return 0;
     }
 
+    case 'protect': {
+      // A proof of the address then reaches this user instead of making a second account.
+      const id = requireArg(args.positionals, 2, 'user-id');
+      const auth = resolveAuth(ctx, args.values);
+      const res = await httpFor(ctx, { secretKey: auth.secretKey, apiUrl: envApiUrl(ctx.env) ?? auth.apiUrl }).post<{ protection: string }>(
+        `/v1/users/${encodeURIComponent(id)}/account_claim`,
+        { password_policy: 'until_email_verified' },
+      );
+      if (json) printJson(ctx.io, res);
+      else {
+        ctx.io.out(
+          res.protection === 'password_hold'
+            ? `Put the password of user ${id} on hold. Proving the address reaches this user, and the password then works.`
+            : `Marked user ${id} as yours. Proving the address now reaches this user, because nothing on it signs in yet.`,
+        );
+      }
+      return 0;
+    }
+
     case 'delete': {
       const id = requireArg(args.positionals, 2, 'user-id');
       const { client } = requireClient(ctx, args.values);
@@ -90,7 +109,7 @@ export async function users(ctx: RunContext, args: ParsedArgs): Promise<number> 
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'users ${sub}'. Try: list, get, create, merge, clear-password, delete.`
+          ? `Unknown subcommand 'users ${sub}'. Try: list, get, create, merge, clear-password, protect, delete.`
           : "users needs a subcommand: list, get, create, delete.",
       );
   }

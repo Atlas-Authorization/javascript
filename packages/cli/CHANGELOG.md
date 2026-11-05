@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.29.0 — 2026-11-05
+
+- `atlas users protect <id>`; `atlas init` writes each environment to its own folder; import names rows it refused.
+
 ## 0.28.0 — 2026-11-05
 
 ### Changed

@@ -39,6 +39,7 @@ export const ptBR: LocalizationResource = {
   'signIn.passkeyCancelled': 'O login com a chave de acesso não foi concluído. Tente novamente ou use outro método.',
   'signIn.passwordHoldReleased': 'Seu e-mail foi verificado. Digite sua senha para entrar.',
   'signUp.existingAccount': 'Você já tinha uma conta. Sua senha atual continua válida.',
+  'signUp.emailConfirmed': 'Seu e-mail foi confirmado. Entre para continuar.',
 
   'signUp.title': 'Crie sua conta',
   'signUp.submit': 'Continuar',

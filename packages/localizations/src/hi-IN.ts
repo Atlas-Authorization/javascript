@@ -38,6 +38,7 @@ export const hiIN: LocalizationResource = {
   'signIn.passkeyCancelled': 'पासकी से साइन इन पूरा नहीं हुआ। फिर से कोशिश करें या किसी दूसरे तरीके से साइन इन करें।',
   'signIn.passwordHoldReleased': 'आपका ईमेल सत्यापित हो गया है। साइन इन करने के लिए अपना पासवर्ड दर्ज करें।',
   'signUp.existingAccount': 'आपका खाता पहले से मौजूद था। आपका मौजूदा पासवर्ड अब भी मान्य है।',
+  'signUp.emailConfirmed': 'आपका ईमेल पुष्ट हो गया है। जारी रखने के लिए साइन इन करें।',
 
   'signUp.title': 'अपना खाता बनाएं',
   'signUp.submit': 'जारी रखें',

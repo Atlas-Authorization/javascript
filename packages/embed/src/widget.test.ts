@@ -2125,7 +2125,7 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
     expect(root.querySelector('[data-atlas="email-second-factor-sent"]')!.textContent).toContain('a•••@example.com');
   });
 
-  it('shows the recovery codes once (copy, download as .txt) and exchanges the ticket only after "I\'ve saved my codes"', async () => {
+  it('shows the recovery codes once (copy, download as .txt), redeems the ticket while they show (it dies in 60 seconds), and finishes on "I\'ve saved my codes"', async () => {
     const writeText = vi.fn(async () => undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:codes');
@@ -2157,7 +2157,7 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
     expect(root.querySelector('[data-atlas="recovery-codes"]')).not.toBeNull();
     expect([...root.querySelectorAll('[data-atlas="recovery-codes-list"] li')].map((li) => li.textContent)).toEqual(['aaaa-1111', 'bbbb-2222']);
     expect(root.querySelector('form')).toBeNull();
-    expect(made.calls.some((c) => c.path === '/v1/client/tickets/exchange')).toBe(false);
+    expect(made.calls.filter((c) => c.path === '/v1/client/tickets/exchange')).toHaveLength(1);
     expect(events).toEqual([]);
     expect(JSON.stringify(widget.state.attempt)).not.toContain('aaaa-1111');
 
@@ -2171,6 +2171,7 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
 
     (root.querySelector('[data-atlas="recovery-codes-saved"]') as HTMLButtonElement).click();
     await flush();
+    expect(made.calls.filter((c) => c.path === '/v1/client/tickets/exchange')).toHaveLength(1);
     expect(made.calls.find((c) => c.path === '/v1/client/tickets/exchange')?.body).toMatchObject({ attempt_id: 'sia_m', ticket: 'tkt_m' });
     expect(events).toHaveLength(1);
     expect(widget.state.recoveryCodes ?? null).toBeNull();
@@ -2279,6 +2280,29 @@ describe('sign-up on an address that already has an account', () => {
     expect(notice(root)).toBeNull();
   });
 
+  it('a link made no session: a neutral line, then the sign-in box with the address filled in', async () => {
+    const made = makeFetch({
+      'GET /v1/appearance': () => ({ body: envelope([]) }),
+      'POST /v1/client/sign_ups': () => ({ status: 201, body: { object: 'sign_up_attempt', id: 'sua_e', status: 'needs_first_factor', identifier: 'ada@example.com' } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, mode: 'sign-up', fetchImpl: made.impl }).mount();
+    await flush();
+    (root.querySelector('[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    (root.querySelector('[name="password"]') as HTMLInputElement).value = 'typed-at-sign-up';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+
+    expect(root.querySelector('[data-atlas-email-confirmed]')?.textContent).toBe('Your email is confirmed. Sign in to continue.');
+    expect(root.querySelector('button[type="submit"]')).toBeNull();
+    expect(root.textContent).not.toContain('already');
+    (root.querySelector('[data-atlas="email-confirmed-sign-in"]') as HTMLButtonElement).click();
+    await flush();
+    expect((root.querySelector('[name="identifier"]') as HTMLInputElement).value).toBe('ada@example.com');
+    expect(root.querySelector('[data-atlas-email-confirmed]')).toBeNull();
+  });
+
   it('does not show it without existing_account', async () => {
     const { root, events } = await toCodeAccepted(signUpHandlers({ status: 'complete', ticket: 'tk_e' }));
     expect(notice(root)).toBeNull();
@@ -2330,5 +2354,74 @@ describe('sign-up on an address that already has an account', () => {
     expect(events).toEqual([]);
     await clickContinue(root);
     expect(events).toHaveLength(1);
+  });
+});
+
+describe('a reset held after the new password', () => {
+  const held = async (setPassword: Record<string, unknown>, handlers: Parameters<typeof makeFetch>[0]) => {
+    const made = makeFetch({
+      'GET /v1/appearance': () => ({ body: envelope([]) }),
+      'POST /v1/client/password_resets': () => ({ status: 201, body: { id: 'pr_h', status: 'needs_new_password' } }),
+      'GET /v1/client/password_resets/pr_h/security_questions': () => ({ body: { required: false, questions: [] } }),
+      'POST /v1/client/password_resets/pr_h/set_new_password': () => ({ body: { id: 'pr_h', ...setPassword } }),
+      'POST /v1/client/tickets/exchange': () => ({ body: { object: 'session' } }),
+      ...handlers,
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const events: unknown[] = [];
+    root.addEventListener('atlas:complete', (e) => events.push((e as CustomEvent).detail));
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: made.impl }).mount();
+    await flush();
+    (Array.from(root.querySelectorAll('.atlas-embed-step-back')).find((b) => (b.textContent ?? '').includes('Forgot')) as HTMLButtonElement).click();
+    (root.querySelector('input[name="email"]') as HTMLInputElement).value = 'ada@example.com';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    (root.querySelector('input[name="password"]') as HTMLInputElement).value = 'a-brand-new-passphrase';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    return { root, events, calls: made.calls };
+  };
+  const heldForProfile = { status: 'needs_required_action', required_action_token: 'rat', pending_required_actions: [{ action: 'update_profile' }] };
+
+  it('goes on into the required action and signs in, instead of "You\'re all set."', async () => {
+    const { root, events, calls } = await held(heldForProfile, {
+      'POST /v1/client/sign_ins/pr_h/required_actions': () => ({ body: { id: 'pr_h', status: 'complete', ticket: 'tk_h' } }),
+    });
+    expect(root.textContent).not.toContain("You're all set");
+    (root.querySelector('input[name="first_name"]') as HTMLInputElement).value = 'Ada';
+    (root.querySelector('input[name="last_name"]') as HTMLInputElement).value = 'Lovelace';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(calls.find((c) => c.path === '/v1/client/sign_ins/pr_h/required_actions')?.body).toMatchObject({
+      action: 'update_profile',
+      first_name: 'Ada',
+      required_action_token: 'rat',
+    });
+    expect(calls.find((c) => c.path === '/v1/client/tickets/exchange')?.body).toMatchObject({ attempt_id: 'pr_h', ticket: 'tk_h' });
+    expect(events).toHaveLength(1);
+  });
+
+  it('with a forced fresh login it ends on the sign-in box, with no session and no completion', async () => {
+    const { root, events, calls } = await held(heldForProfile, {
+      'POST /v1/client/sign_ins/pr_h/required_actions': () => ({ body: { id: 'pr_h', status: 'complete' } }),
+    });
+    (root.querySelector('input[name="first_name"]') as HTMLInputElement).value = 'Ada';
+    (root.querySelector('input[name="last_name"]') as HTMLInputElement).value = 'Lovelace';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(root.textContent).toContain('Password updated. Sign in with your new password.');
+    expect(root.querySelector('input[name="identifier"]')).toBeTruthy();
+    expect(calls.some((c) => c.path === '/v1/client/tickets/exchange')).toBe(false);
+    expect(events).toEqual([]);
+  });
+
+  it('goes on into the policies', async () => {
+    const { root } = await held(
+      { status: 'needs_policy_acceptance', policy_acceptance_token: 'ptk', pending_policies: [{ policy: 'tos', policy_id: 'pol_1', title: 'Terms', display: 'checkbox', version_id: 'v1', content_sha256: 'x' }] },
+      {},
+    );
+    expect(root.textContent).not.toContain("You're all set");
+    expect(root.textContent).toContain('Terms');
   });
 });

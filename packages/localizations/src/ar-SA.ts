@@ -38,6 +38,7 @@ export const arSA: LocalizationResource = {
   'signIn.passkeyCancelled': 'لم يكتمل تسجيل الدخول بمفتاح المرور. حاول مرة أخرى أو استخدم طريقة أخرى.',
   'signIn.passwordHoldReleased': 'تم التحقق من بريدك الإلكتروني. أدخل كلمة المرور لتسجيل الدخول.',
   'signUp.existingAccount': 'لديك حساب بالفعل. لا تزال كلمة المرور الحالية سارية.',
+  'signUp.emailConfirmed': 'تم تأكيد بريدك الإلكتروني. سجّل الدخول للمتابعة.',
 
   'signUp.title': 'أنشئ حسابك',
   'signUp.submit': 'متابعة',

@@ -230,7 +230,7 @@ describe('MFA enrolment mid-sign-in', () => {
 });
 
 describe('recovery codes after enrolment', () => {
-  it('holds the ticket while the codes are shown (copy, download as .txt), and finishes on "I\'ve saved my codes"', async () => {
+  it('redeems the ticket while the codes are shown (copy, download as .txt), and finishes on "I\'ve saved my codes"', async () => {
     const writeText = vi.fn(async () => undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:codes');
@@ -243,7 +243,9 @@ describe('recovery codes after enrolment', () => {
     expect(flow.state().attempt?.status).toBe('complete');
     expect(flow.recoveryCodes()).toEqual(['aaaa-1111', 'bbbb-2222']);
     expect(flow.state().attempt).not.toHaveProperty('backup_codes');
-    expect(posts('/v1/client/tickets/exchange')).toHaveLength(0);
+    // Redeemed while they show: the ticket dies in 60 seconds. The app hears on the save.
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+    expect(flow.state().sessionKept).toBeUndefined();
 
     const ref = render(RecoveryCodesComponent, { codes: flow.recoveryCodes(), busy: false });
     let saved = 0;

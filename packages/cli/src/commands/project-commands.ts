@@ -451,13 +451,16 @@ export async function client(ctx: RunContext, args: ParsedArgs): Promise<number>
   const product = str(v, 'product') ?? cred.manifest?.product;
   const env = cred.instance?.environment;
   const known = cred.instance?.oauth_client?.id === res.id ? cred.instance.oauth_client.secret_file : null;
-  const fileName = known ? basename(known) : product && env && cred.instance?.oauth_client?.id === res.id ? `${env}-oauth-client.env` : `oauth-client-${res.id}.env`;
+  // Beside the key, in the layout that key's file is in.
+  const keyFile = cred.instance?.secret_file;
+  const nested = keyFile !== undefined && basename(keyFile) === 'atlas.env' && cred.instance?.oauth_client?.id === res.id;
+  const fileName = known ? basename(known) : nested ? 'oauth-client.env' : product && env && cred.instance?.oauth_client?.id === res.id ? `${env}-oauth-client.env` : `oauth-client-${res.id}.env`;
   const entries = { ATLAS_CLIENT_ID: res.client_id, ATLAS_CLIENT_SECRET: res.client_secret };
   if (v['print-secret'] === true) {
     deliverSecret({ io: ctx.io, env: ctx.env, product: product ?? 'atlasauth', fileName, entries, label: 'The new client secret', printSecret: true });
   } else {
     // A rotation replaces the file by design: the old secret is the one being retired.
-    const { path } = writeSecretFile(known ? dirname(known) : productDir(ctx.env, product ?? 'atlasauth'), fileName, entries, {
+    const { path } = writeSecretFile(known ? dirname(known) : nested ? dirname(keyFile!) : productDir(ctx.env, product ?? 'atlasauth'), fileName, entries, {
       force: true,
       comment: `OAuth client ${res.id}. Server-side only.`,
     });

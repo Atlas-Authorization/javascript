@@ -38,6 +38,7 @@ export const idID: LocalizationResource = {
   'signIn.passkeyCancelled': 'Masuk dengan kunci sandi tidak selesai. Coba lagi atau gunakan cara lain.',
   'signIn.passwordHoldReleased': 'Email Anda telah diverifikasi. Masukkan kata sandi Anda untuk masuk.',
   'signUp.existingAccount': 'Anda sudah memiliki akun. Kata sandi Anda yang ada tetap berlaku.',
+  'signUp.emailConfirmed': 'Email Anda telah dikonfirmasi. Masuk untuk melanjutkan.',
 
   'signUp.title': 'Buat akun Anda',
   'signUp.submit': 'Lanjutkan',

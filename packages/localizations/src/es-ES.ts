@@ -39,6 +39,7 @@ export const esES: LocalizationResource = {
   'signIn.passkeyCancelled': 'No se completó el inicio de sesión con la llave de acceso. Inténtalo de nuevo o usa otro método.',
   'signIn.passwordHoldReleased': 'Tu correo está verificado. Introduce tu contraseña para iniciar sesión.',
   'signUp.existingAccount': 'Ya tenías una cuenta. Tu contraseña actual sigue siendo válida.',
+  'signUp.emailConfirmed': 'Tu correo electrónico está confirmado. Inicia sesión para continuar.',
 
   'signUp.title': 'Crea tu cuenta',
   'signUp.submit': 'Continuar',

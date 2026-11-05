@@ -38,6 +38,7 @@ export const nlNL: Localization = {
   'signIn.passkeyCancelled': 'Inloggen met de passkey is niet voltooid. Probeer het opnieuw of log op een andere manier in.',
   'signIn.passwordHoldReleased': 'Je e-mailadres is geverifieerd. Voer je wachtwoord in om in te loggen.',
   'signUp.existingAccount': 'Je had al een account. Je bestaande wachtwoord blijft geldig.',
+  'signUp.emailConfirmed': 'Je e-mailadres is bevestigd. Log in om verder te gaan.',
 
   'signUp.title': 'Maak je account aan',
   'signUp.submit': 'Doorgaan',

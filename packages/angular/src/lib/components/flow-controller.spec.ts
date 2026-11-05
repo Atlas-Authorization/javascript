@@ -376,6 +376,41 @@ describe('AtlasFlowController password hold', () => {
 });
 
 describe('AtlasFlowController existing account', () => {
+  it('must enrol: the codes show with the ticket already redeemed, then the notice, then done', async () => {
+    const flow = await controller({
+      holdExistingAccountNotice: true,
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+            ? json({ id: 'sua_1', status: 'needs_mfa_enrollment', existing_account: true })
+            : undefined,
+        (c) => (c.path === '/v1/client/sign_ins/sua_1/prepare_mfa_enrollment' ? json({ factor_id: 'mfa_t', secret: 'ABCD', uri: 'otpauth://totp/x' }) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ins/sua_1/attempt_mfa_enrollment'
+            ? json({ id: 'sua_1', status: 'complete', ticket: 'tkt_1', backup_codes: ['aaaa-1111'] })
+            : undefined,
+      ],
+    });
+    await flow.create({ email: 'held@example.com', password: 'blue tangerine anvil 71!' });
+    await flow.submit({ code: '424242' });
+    await vi.waitFor(() => expect(flow.enrollmentState().enrollment?.strategy).toBe('totp'));
+    await flow.submit((await flow.enrollment.submit({ code: '111111', secondCode: '222222' }))!);
+    expect(flow.recoveryCodes()).toEqual(['aaaa-1111']);
+    expect(flow.existingAccountNotice()).toBe(false);
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+    expect(reload).not.toHaveBeenCalled();
+
+    await flow.saveRecoveryCodes();
+    expect(flow.existingAccountNotice()).toBe(true);
+    expect(reload).not.toHaveBeenCalled();
+
+    await flow.continueAfterExistingAccount();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+    flow.destroy();
+  });
+
   it('exchanges the ticket, then holds the app on the notice until Continue', async () => {
     const flow = await controller({
       holdExistingAccountNotice: true,

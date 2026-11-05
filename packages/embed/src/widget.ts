@@ -110,7 +110,7 @@ export interface WidgetOptions {
 
 export class AtlasWidget {
   readonly client: FapiClient;
-  readonly mode: 'sign-in' | 'sign-up';
+  mode: 'sign-in' | 'sign-up';
   appearance: PublicAppearance | null = null;
   /** The design-system layer (dashboard design + inline preset/design), when any. */
   design: WidgetDesign | null = null;
@@ -170,6 +170,8 @@ export class AtlasWidget {
   conditionalAbort?: AbortController;
   /** §5.3 the email-link poll, while this tab waits for the link to be opened. */
   linkPoll: ReturnType<typeof setInterval> | null = null;
+  /** A reset that went on into the sign-in steps (policies, a required action): it may end with no session. */
+  heldResetAttempt: string | null = null;
   /**
    * The instance's account settings (`account` on /v1/appearance): whether
    * sign-up verification and password reset are emailed as a code, a link, or

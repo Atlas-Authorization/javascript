@@ -39,6 +39,7 @@ export const faIR: LocalizationResource = {
   'signIn.passkeyCancelled': 'ورود با گذرکلید کامل نشد. دوباره تلاش کنید یا از روش دیگری وارد شوید.',
   'signIn.passwordHoldReleased': 'ایمیل شما تأیید شد. برای ورود، گذرواژه خود را وارد کنید.',
   'signUp.existingAccount': 'شما از قبل حساب کاربری داشتید. گذرواژه فعلی شما همچنان معتبر است.',
+  'signUp.emailConfirmed': 'ایمیل شما تأیید شد. برای ادامه وارد شوید.',
 
   'signUp.title': 'ایجاد حساب کاربری',
   'signUp.submit': 'ادامه',

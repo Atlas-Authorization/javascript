@@ -1,4 +1,4 @@
-import { awaitingSignUpLink, initialFlow, nextStep, passkeysSupported, pendingExistingAccountNotice, pendingRecoveryCodes, resetStep, type FieldError } from '@atlasauth/js';
+import { awaitingSignUpLink, initialFlow, nextStep, passkeysSupported, pendingExistingAccountNotice, pendingRecoveryCodes, resetStep, signUpProvedByLink, type FieldError } from '@atlasauth/js';
 import type { AtlasWidget } from '../widget';
 import { COPY } from './constants';
 import { cls, doc, el } from './dom';
@@ -214,6 +214,7 @@ export function renderStepContext(w: AtlasWidget, stepKind: string): HTMLElement
       back = true;
       break;
     case 'collect_first_factor':
+      if (signUpProvedByLink(w.state.attempt)) return null;
       text = email ? `Enter the password for ${email}` : 'Enter your password';
       back = true;
       break;

@@ -23,6 +23,8 @@ import {
   existingAccountResetUrl,
   pendingExistingAccountNotice,
   pendingRecoveryCodes,
+  signInAfterProofUrl,
+  signUpProvedByLink,
   signUp as hostedSignUp,
   startSignInWithAtlas,
   type AttemptView,
@@ -309,9 +311,6 @@ const AttemptFlow = defineComponent({
       if (!hold || hold.released || props.emailDelivery?.available === false) return null;
       return props.emailVerification === 'link' ? 'email_link' : 'email_code';
     };
-    // A link proved an address on an existing account: no session, and the password signs in.
-    const provedSignUp = () =>
-      props.attempt?.object === 'sign_up_attempt' && !(props.attempt.supported_first_factors ?? []).includes('passkey');
     // A proven hold goes back to the password field.
     watch(
       () => props.passwordHold?.released,
@@ -453,9 +452,6 @@ const AttemptFlow = defineComponent({
           // `webauthn`: saved passkeys appear in this field's autofill while <SignIn> holds a conditional request.
           return [field('identifier', 'signIn.identifierLabel', 'email', 'username webauthn')];
         case 'collect_first_factor': {
-          if (provedSignUp()) {
-            return [h('p', { key: 'released', class: 'atlas-text', 'data-atlas-password-released': '' }, t('signIn.passwordHoldReleased'))];
-          }
           const identifier = props.passwordHold?.email ?? props.attempt?.identifier ?? '';
           const plan = firstFactorPlan();
           const usePassword =
@@ -764,7 +760,7 @@ const AttemptFlow = defineComponent({
             step.kind !== 'await_oauth' &&
             step.kind !== 'accept_policies' &&
             !awaitingSignUpLink(props.attempt, props.emailVerification) &&
-            !(step.kind === 'collect_first_factor' && (factor.value === 'email_link' || provedSignUp())) &&
+            !(step.kind === 'collect_first_factor' && factor.value === 'email_link') &&
             !(step.kind === 'collect_first_factor' && factor.value === 'password' && firstFactorPlan()?.password === false && (firstFactorPlan()?.email.length ?? 0) > 0) &&
             !(step.kind === 'enroll_second_factor' && props.enrollmentState && !enrollmentSubmitKey(props.enrollmentState))
               ? h(
@@ -1245,9 +1241,11 @@ export const SignUp = defineComponent({
     afterUrl: { type: String, default: undefined },
     /** Where the existing-account notice's "Forgot password?" goes. Default: the hosted sign-in page; `null` hides it. */
     resetPasswordUrl: { type: null as unknown as PropType<string | null | undefined>, default: undefined },
+    /** Where "Sign in" goes once an emailed link confirmed the address and made no session here. Default: the hosted sign-in page; `null` hides it. */
+    signInUrl: { type: null as unknown as PropType<string | null | undefined>, default: undefined },
   },
   setup(props) {
-    const { state, submit, create, createWithPasskey, createPasskey, resendSignUp, settings, signUpCaptcha, policies, loadPolicies, continueAfterExistingAccount } = useFlow({ holdExistingAccountNotice: true });
+    const { state, submit, create, createWithPasskey, createPasskey, resendSignUp, settings, signUpCaptcha, policies, loadPolicies, continueAfterExistingAccount, saveRecoveryCodes, sendEmailSecondFactor, sendSmsSecondFactor, mfaChoices, enrollment, enrollmentState, declinePolicy } = useFlow({ holdExistingAccountNotice: true });
     const atlas = useAtlas();
     const t = useText();
     const cls = useClass();
@@ -1275,6 +1273,15 @@ export const SignUp = defineComponent({
       if (state.value.attempt && awaitingPasskey(state.value.attempt)) {
         return h(PasskeySignUpStep, { busy: state.value.busy, errors: state.value.errors, onCreate: createPasskey });
       }
+      // A link confirmed the address and made no session here. Says the same for any address.
+      if (signUpProvedByLink(state.value.attempt)) {
+        const signInHref = signInAfterProofUrl({ url: props.signInUrl, frontendApi: atlas.frontendApi, redirectUrl: props.afterUrl });
+        return h('div', { class: cls('card', 'atlas-card'), 'data-atlas-email-confirmed': '' }, [
+          h('h1', { class: cls('headerTitle', 'atlas-title') }, t('signUp.title')),
+          h('p', { class: 'atlas-text', role: 'status' }, t('signUp.emailConfirmed')),
+          signInHref ? h('a', { class: cls('formButtonPrimary', 'atlas-button'), href: signInHref }, t('signIn.title')) : null,
+        ]);
+      }
       return state.value.attempt
         ? h(AttemptFlow, {
             attempt: state.value.attempt,
@@ -1285,6 +1292,14 @@ export const SignUp = defineComponent({
             onSubmit: submit,
             emailVerification: settings.value?.account.emailVerification ?? 'code',
             onResend: resendSignUp,
+            // A held account signs in from here: its second factor, enrolment and codes.
+            onEmailSecondFactor: settings.value?.account.emailSecondFactor ? sendEmailSecondFactor : undefined,
+            onSmsSecondFactor: mfaChoices().sms ? sendSmsSecondFactor : undefined,
+            enrollment,
+            enrollmentState: enrollmentState.value,
+            recoveryCodes: pendingRecoveryCodes(state.value),
+            onRecoveryCodesSaved: saveRecoveryCodes,
+            onPolicyDecline: declinePolicy,
           })
         : h(SignUpForm, {
             settings: settings.value,

@@ -609,7 +609,7 @@ describe('<SignIn> MFA enrolment and the texted second factor', () => {
     expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ factor_id: 'mfa_s', code: '654321' });
   });
 
-  it('recovery codes: shown once (copy, download as .txt), and the ticket is exchanged only after "I\'ve saved my codes"', async () => {
+  it('recovery codes: shown once (copy, download as .txt), the ticket is redeemed while they show (it dies in 60 seconds), and "I\'ve saved my codes" finishes', async () => {
     const writeText = vi.fn(async () => undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:codes');
@@ -632,7 +632,8 @@ describe('<SignIn> MFA enrolment and the texted second factor', () => {
     await vi.waitFor(() => expect(w.find('[data-atlas="recovery-codes"]').exists()).toBe(true));
     expect(w.findAll('[data-atlas="recovery-codes-list"] li').map((li) => li.text())).toEqual(['aaaa-1111', 'bbbb-2222']);
     expect(w.find('form').exists()).toBe(false);
-    expect(posts('/v1/client/tickets/exchange')).toHaveLength(0);
+    await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
+    await vi.waitFor(() => expect(w.find('[data-atlas="recovery-codes-saved"]').attributes('disabled')).toBeUndefined());
 
     await w.find('[data-atlas="recovery-codes-copy"]').trigger('click');
     expect(writeText).toHaveBeenCalledWith('aaaa-1111\nbbbb-2222');
@@ -733,6 +734,57 @@ describe('<SignUp> on an existing account', () => {
     await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     await flush();
     expect(w.find('[data-atlas-existing-account]').exists()).toBe(false);
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+  });
+});
+
+describe('<SignUp> on a held account: the other endings', () => {
+  it('a link made no session: a neutral line and a way to sign in, nothing to submit', async () => {
+    const w = await mountFlow(SignUp, {
+      routes: [(c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', object: 'sign_up_attempt', status: 'needs_first_factor' }, 201) : undefined)],
+    });
+    await setInput(w, 'email', 'held@example.com');
+    await setInput(w, 'password', 'blue tangerine anvil 71!');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('[data-atlas-email-confirmed]').exists()).toBe(true));
+    expect(w.find('[data-atlas-email-confirmed]').text()).toContain('Your email is confirmed. Sign in to continue.');
+    expect(w.find('[data-atlas-email-confirmed] a').attributes('href')).toContain('/hosted/sign-in');
+    expect(w.find('button[type="submit"]').exists()).toBe(false);
+  });
+
+  it('must enrol: the setup, then the recovery codes with the ticket already redeemed, then the notice', async () => {
+    const w = await mountFlow(SignUp, {
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+            ? json({ id: 'sua_1', status: 'needs_mfa_enrollment', existing_account: true })
+            : undefined,
+        (c) => (c.path === '/v1/client/sign_ins/sua_1/prepare_mfa_enrollment' ? json({ factor_id: 'mfa_t', secret: 'ABCD', uri: 'otpauth://totp/x' }) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ins/sua_1/attempt_mfa_enrollment'
+            ? json({ id: 'sua_1', status: 'complete', ticket: 'tkt_1', backup_codes: ['aaaa-1111'] })
+            : undefined,
+      ],
+    });
+    await setInput(w, 'email', 'held@example.com');
+    await setInput(w, 'password', 'blue tangerine anvil 71!');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('input[name="code"]').exists()).toBe(true));
+    await setInput(w, 'code', '424242');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('input[name="secondCode"]').exists()).toBe(true));
+    await setInput(w, 'code', '111111');
+    await setInput(w, 'secondCode', '222222');
+    await submit(w);
+
+    await vi.waitFor(() => expect(w.find('[data-atlas="recovery-codes-saved"]').exists()).toBe(true));
+    await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
+    await vi.waitFor(() => expect(w.find('[data-atlas="recovery-codes-saved"]').attributes('disabled')).toBeUndefined());
+    expect(w.find('[data-atlas-existing-account]').exists()).toBe(false);
+
+    await w.find('[data-atlas="recovery-codes-saved"]').trigger('click');
+    await vi.waitFor(() => expect(w.find('[data-atlas-existing-account]').exists()).toBe(true));
     expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
   });
 });

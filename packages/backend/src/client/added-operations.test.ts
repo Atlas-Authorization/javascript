@@ -22,6 +22,9 @@ const MOVE = { from: 'https://old.example.com', to: 'https://new.example.com', d
 
 // [method, path+query, expected JSON body (undefined = none), call]
 const BAPI: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
+  ['DELETE', '/v1/instance/hooks/before_user_create', undefined, (c) => c.userHooks.deleteBeforeUserCreate()],
+  ['DELETE', '/v1/users/user_1/password', { sign_out_of_other_sessions: false }, (c) => c.users.removePassword('user_1', { sign_out_of_other_sessions: false })],
+  ['POST', '/v1/instance/integrations/forumulate/deliveries/redeliver', { since: 1000 }, (c) => c.instance.integrations.redeliver('forumulate', { since: 1000 })],
   ['POST', '/v1/instance/move_origin', MOVE, (c) => c.instance.moveOrigin(MOVE)],
   ['GET', '/v1/instance/sign_in_with_atlas', undefined, (c) => c.instance.signInWithAtlas.get()],
   ['PATCH', '/v1/instance/sign_in_with_atlas', { enabled: true, connection_id: 'ssoc_1' }, (c) => c.instance.signInWithAtlas.update({ enabled: true, connection_id: 'ssoc_1' })],

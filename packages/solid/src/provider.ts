@@ -35,7 +35,7 @@ import {
 } from '@atlasauth/js';
 import { ATLAS_SOLID_SDK } from './version';
 import { AtlasContext } from './context';
-import { mountSignInWidget, mountSignUpWidget, mountUserButtonWidget } from './widgets';
+import { mountSignInWidget, mountSignUpWidget, mountUserButtonWidget, type SignUpProps } from './widgets';
 import { mountPolicyGateWidget } from './policies';
 import type {
   AtlasOrganizationMembership,
@@ -134,7 +134,7 @@ export interface AtlasClient {
    * `reload()` after completion, its `signOut()` — without re-threading context.
    */
   mountSignIn(el: HTMLElement): () => void;
-  mountSignUp(el: HTMLElement): () => void;
+  mountSignUp(el: HTMLElement, links?: SignUpProps): () => void;
   mountUserButton(el: HTMLElement): () => void;
   /** Mount the in-app policy re-acceptance banner (`<PolicyGate/>`). */
   mountPolicyGate(el: HTMLElement): () => void;
@@ -458,7 +458,7 @@ export function createAtlasClient(options: {
     setActiveOrganization,
     reload,
     mountSignIn: (el) => mountSignInWidget(client, el),
-    mountSignUp: (el) => mountSignUpWidget(client, el),
+    mountSignUp: (el, links) => mountSignUpWidget(client, el, links),
     mountUserButton: (el) => mountUserButtonWidget(client, el),
     mountPolicyGate: (el) => mountPolicyGateWidget(client, el),
   };

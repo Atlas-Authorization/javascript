@@ -118,11 +118,6 @@
     const listed = offered.filter((s): s is EmailStrategy => s === 'email_code' || s === 'email_link');
     emailOptions = !onPrepare ? [] : holdOption && !listed.includes(holdOption) ? [...listed, holdOption] : listed;
   }
-  // A link proved an address on an existing account: no session, and the password signs in.
-  $: provedSignUp =
-    step.kind === 'collect_first_factor' &&
-    attempt?.object === 'sign_up_attempt' &&
-    !(attempt.supported_first_factors ?? []).includes('passkey');
   // A password field only when the server offers `password` (planFirstFactor).
   $: plan = planFirstFactor(offered);
   $: showPassword = offered.includes('password') || emailOptions.length === 0;
@@ -201,7 +196,6 @@
         // `webauthn`: saved passkeys appear in this field's autofill while <SignIn> holds a conditional request.
         return [{ name: 'identifier', labelKey: 'signIn.identifierLabel', type: 'email', autocomplete: 'username webauthn' }];
       case 'collect_first_factor':
-        if (provedSignUp) return [];
         if (sent === 'email_code') {
           return [{ name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
         }
@@ -324,7 +318,7 @@
       {#if sending}
         <p class="atlas-text" aria-live="polite">{t('signIn.sending')}</p>
       {/if}
-      {#if provedSignUp || (step.kind === 'collect_first_factor' && released && sent === null)}
+      {#if step.kind === 'collect_first_factor' && released && sent === null}
         <p class="atlas-text" data-atlas-password-released="">{t('signIn.passwordHoldReleased')}</p>
       {/if}
       {#if linkOnly}

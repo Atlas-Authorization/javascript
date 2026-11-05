@@ -1,5 +1,9 @@
 # @atlasauth/angular changelog
 
+## 0.15.0 — 2026-11-05
+
+- `<SignUp>` second-factor, enrolment and recovery-code steps; new `signInUrl`.
+
 ## 0.14.0 — 2026-11-05
 
 ### Added

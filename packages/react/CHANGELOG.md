@@ -1,5 +1,9 @@
 # @atlasauth/react changelog
 
+## 0.29.0 — 2026-11-05
+
+- `<SignUp>` shows recovery codes before the existing-account notice; new `signInUrl`; removed the empty Continue button.
+
 ## 0.28.0 — 2026-11-05
 
 ### Fixed

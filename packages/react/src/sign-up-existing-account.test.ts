@@ -121,3 +121,97 @@ describe('<SignUp> on an existing account', () => {
     expect(el.querySelector('[data-atlas-existing-account]')).toBeNull();
   });
 });
+
+describe('<SignUp> on a held account: the other endings', () => {
+  async function mountSignUp(routes: Record<string, unknown>, props: Record<string, unknown> = {}) {
+    const paths: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname;
+      paths.push(path);
+      if (path === '/v1/client') return json({ session: null, user: null });
+      if (path === '/v1/appearance') {
+        return json({
+          object: 'appearance',
+          appearance: { legal: { termsUrl: null, privacyUrl: null, required: false }, signUpFields: [] },
+          captchaFlows: {},
+          email_delivery: { available: true, passwordSignUp: true },
+        });
+      }
+      return json(routes[path] ?? {}, path === '/v1/client/sign_ups' ? 201 : 200);
+    }) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => {
+      root.render(
+        createElement(AtlasProvider, {
+          publishableKey: 'pk_test_x',
+          frontendApi: FAPI,
+          fetchImpl,
+          appearance: { instanceDesign: false },
+          children: createElement(SignUp as unknown as (p: Record<string, unknown>) => null, props),
+        }),
+      );
+    });
+    unmount = () => act(() => root.unmount());
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'email', 'held@example.com');
+    setInput(el, 'password', 'blue tangerine anvil 71!');
+    await submit(el);
+    return { el, paths };
+  }
+  const proved = { id: 'sua_1', object: 'sign_up_attempt', status: 'needs_first_factor', identifier: 'held@example.com' };
+
+  it('a link made no session: a neutral line and a way to sign in, nothing to submit', async () => {
+    const { el } = await mountSignUp({ '/v1/client/sign_ups': proved });
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-email-confirmed]')).not.toBeNull());
+    const card = el.querySelector('[data-atlas-email-confirmed]')!;
+    expect(card.textContent).toContain('Your email is confirmed. Sign in to continue.');
+    expect(card.textContent).not.toContain('already');
+    expect(card.querySelector('a')!.getAttribute('href')).toContain('/hosted/sign-in');
+    expect(el.querySelector('button[type="submit"]')).toBeNull();
+    expect(el.querySelector('input')).toBeNull();
+  });
+
+  it('signInUrl overrides that link, and null hides it', async () => {
+    const custom = await mountSignUp({ '/v1/client/sign_ups': proved }, { signInUrl: 'https://app.example/login' });
+    await vi.waitFor(() => expect(custom.el.querySelector('[data-atlas-email-confirmed] a')?.getAttribute('href')).toBe('https://app.example/login'));
+    unmount?.();
+    const hidden = await mountSignUp({ '/v1/client/sign_ups': proved }, { signInUrl: null });
+    await vi.waitFor(() => expect(hidden.el.querySelector('[data-atlas-email-confirmed]')).not.toBeNull());
+    expect(hidden.el.querySelector('[data-atlas-email-confirmed] a')).toBeNull();
+  });
+
+  it('must enrol: the setup, then the recovery codes with the ticket already redeemed, then the notice, then done', async () => {
+    const { el, paths } = await mountSignUp({
+      '/v1/client/sign_ups': { id: 'sua_1', object: 'sign_up_attempt', status: 'needs_email_verification' },
+      '/v1/client/sign_ups/sua_1/attempt_verification': { id: 'sua_1', object: 'sign_up_attempt', status: 'needs_mfa_enrollment', existing_account: true },
+      '/v1/client/sign_ins/sua_1/prepare_mfa_enrollment': { factor_id: 'mfa_t', secret: 'ABCD', uri: 'otpauth://totp/x' },
+      '/v1/client/sign_ins/sua_1/attempt_mfa_enrollment': { id: 'sua_1', object: 'sign_in_attempt', status: 'complete', ticket: 'tkt_1', backup_codes: ['aaaa-1111'] },
+      '/v1/client/tickets/exchange': { ok: true },
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    setInput(el, 'code', '424242');
+    await submit(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="secondCode"]')).not.toBeNull());
+    setInput(el, 'code', '111111');
+    setInput(el, 'secondCode', '222222');
+    await submit(el);
+
+    await vi.waitFor(() => expect((el.querySelector('[data-atlas="recovery-codes-saved"]') as HTMLButtonElement | null)?.disabled).toBe(false));
+    expect(el.querySelector('[data-atlas="recovery-codes-list"]')!.textContent).toContain('aaaa-1111');
+    expect(el.querySelector('[data-atlas-existing-account]')).toBeNull();
+    expect(paths.filter((p) => p === '/v1/client/tickets/exchange')).toHaveLength(1);
+
+    await act(async () => {
+      (el.querySelector('[data-atlas="recovery-codes-saved"]') as HTMLButtonElement).click();
+    });
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-existing-account]')).not.toBeNull());
+    await act(async () => {
+      (el.querySelector('[data-atlas-existing-account] button') as HTMLButtonElement).click();
+    });
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-existing-account]')).toBeNull());
+    expect(paths.filter((p) => p === '/v1/client/tickets/exchange')).toHaveLength(1);
+  });
+});

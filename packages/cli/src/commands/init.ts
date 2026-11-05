@@ -75,18 +75,19 @@ interface InitOptions {
 }
 
 /**
- * Where one environment's secret files live. An existing flat `<env>.env` keeps its
- * layout. New with `--with-dev`, once the folder holds the other environment's key,
- * and from then on: one folder per environment, so a script that reads a folder's
- * `*.env` never mixes a development and a production key.
+ * Where one environment's secret files live: its own folder, so a script that reads
+ * a folder's `*.env` never mixes a development and a production key. An existing flat
+ * `<env>.env` keeps its layout: init never moves a file it didn't just write.
  */
-function secretLayout(dir: string, env: InstanceEnv, withDev: boolean): { dir: string; key: string; client: string; webhook: string } {
-  const other = env === 'production' ? 'development' : 'production';
-  const holdsOther = existsSync(join(dir, `${other}.env`)) || folderHoldsKey(dir, env === 'production' ? 'test' : 'live');
-  const nested = !existsSync(join(dir, `${env}.env`)) && (withDev || existsSync(join(dir, env, 'atlas.env')) || holdsOther);
-  return nested
-    ? { dir: join(dir, env), key: 'atlas.env', client: 'oauth-client.env', webhook: 'webhook.env' }
-    : { dir, key: `${env}.env`, client: `${env}-oauth-client.env`, webhook: `${env}-webhook.env` };
+function secretLayout(dir: string, env: InstanceEnv): { dir: string; key: string; client: string; webhook: string } {
+  return existsSync(join(dir, `${env}.env`))
+    ? { dir, key: `${env}.env`, client: `${env}-oauth-client.env`, webhook: `${env}-webhook.env` }
+    : { dir: join(dir, env), key: 'atlas.env', client: 'oauth-client.env', webhook: 'webhook.env' };
+}
+
+/** Whether this folder already holds the other environment's key directly, as an older init left it. */
+function holdsOtherFlat(dir: string, env: InstanceEnv): boolean {
+  return existsSync(join(dir, `${env === 'production' ? 'development' : 'production'}.env`)) || folderHoldsKey(dir, env === 'production' ? 'test' : 'live');
 }
 
 function camel(s: string): string {
@@ -252,7 +253,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const log = (line: string) => (json ? ctx.io.err(line) : ctx.io.out(line));
   const dir = productDir(ctx.env, opts.product);
   const env = opts.environment;
-  const layout = secretLayout(dir, env, opts.withDev);
+  const layout = secretLayout(dir, env);
   const secretFile = join(layout.dir, layout.key);
   const clientFile = join(layout.dir, layout.client);
   const webhookFile = join(layout.dir, layout.webhook);
@@ -285,8 +286,12 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   if (opts.webhookUrl) log(`  webhook:    ${opts.webhookUrl}`);
   if (opts.withDev) log('  sibling:    a development instance, each environment in its own folder');
   log(opts.noEnvFiles ? '  secrets:    once, in the JSON output on stdout (no files)' : `  secrets:    ${dir} (0600 files, never printed)`);
-  if (!opts.noEnvFiles && !opts.withDev && layout.dir !== dir && !existsSync(secretFile)) {
-    log(`  note:       ${dir} already holds another environment's key, so the ${env} files go in ${layout.dir}.`);
+  if (!opts.noEnvFiles && layout.dir !== dir && !existsSync(secretFile)) {
+    log(
+      holdsOtherFlat(dir, env)
+        ? `  note:       ${dir} already holds another environment's key, so the ${env} files go in ${layout.dir}. That key stays where it is, and atlas doctor --scan-dir reports the two until you move it into its own folder.`
+        : `  note:       the ${env} files go in ${layout.dir}, one folder per environment.`,
+    );
   }
   if (args.values.yes !== true) {
     const answer = (await ctx.prompt.text('Proceed? (y/N)')).trim().toLowerCase();
@@ -342,7 +347,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   // --with-dev: the sibling, created with the app, or on its own for an app that already exists.
   let devRecord: ProjectInstance | undefined;
   if (opts.withDev) {
-    const devLayout = secretLayout(dir, 'development', true);
+    const devLayout = secretLayout(dir, 'development');
     const devFile = join(devLayout.dir, devLayout.key);
     let dev = app.sibling_instance ?? apps.find((a) => a.name === opts.appName && a.environment === 'development');
     if (!dev) {

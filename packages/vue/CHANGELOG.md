@@ -1,5 +1,9 @@
 # @atlasauth/vue changelog
 
+## 0.17.0 — 2026-11-05
+
+- `<SignUp>` second-factor, enrolment and recovery-code steps; new `signInUrl`.
+
 ## 0.16.0 — 2026-11-05
 
 ### Added

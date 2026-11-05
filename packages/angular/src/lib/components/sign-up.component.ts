@@ -7,11 +7,12 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { awaitingPasskey, existingAccountResetUrl, localizedErrorMessage, passkeysSupported, type FieldError } from '@atlasauth/js';
+import { awaitingPasskey, existingAccountResetUrl, localizedErrorMessage, passkeysSupported, signInAfterProofUrl, signUpProvedByLink, type FieldError } from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
 import { classFor, type ElementKey } from '../appearance';
 import { translate } from '../i18n';
 import { AttemptFlowComponent } from './attempt-flow.component';
+import { RecoveryCodesComponent } from './recovery-codes.component';
 import { SignUpFormComponent } from './sign-up-form.component';
 import { AtlasFlowController } from './flow-controller';
 
@@ -31,9 +32,11 @@ import { AtlasFlowController } from './flow-controller';
   selector: 'atlas-sign-up',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AttemptFlowComponent, SignUpFormComponent],
+  imports: [AttemptFlowComponent, RecoveryCodesComponent, SignUpFormComponent],
   template: `
-    @if (flow.existingAccountNotice()) {
+    @if (flow.recoveryCodes(); as codes) {
+      <atlas-recovery-codes [codes]="codes" [busy]="flow.state().busy" (saved)="flow.saveRecoveryCodes()"></atlas-recovery-codes>
+    } @else if (flow.existingAccountNotice()) {
       <div [class]="cls('card', 'atlas-card')" data-atlas-existing-account="">
         <h1 [class]="cls('headerTitle', 'atlas-title')">{{ t('signUp.title') }}</h1>
         <p class="atlas-text">{{ t('signUp.existingAccount') }}</p>
@@ -65,6 +68,14 @@ import { AtlasFlowController } from './flow-controller';
           {{ t('signUp.passkeyCreate') }}
         </button>
       </div>
+    } @else if (emailConfirmed()) {
+      <div [class]="cls('card', 'atlas-card')" data-atlas-email-confirmed="">
+        <h1 [class]="cls('headerTitle', 'atlas-title')">{{ t('signUp.title') }}</h1>
+        <p class="atlas-text" role="status">{{ t('signUp.emailConfirmed') }}</p>
+        @if (signInHref(); as href) {
+          <a [class]="cls('formButtonPrimary', 'atlas-button')" [href]="href">{{ t('signIn.title') }}</a>
+        }
+      </div>
     } @else if (flow.state().attempt) {
       <atlas-attempt-flow
         [attempt]="flow.state().attempt"
@@ -75,6 +86,15 @@ import { AtlasFlowController } from './flow-controller';
         [emailVerification]="flow.settings()?.account?.emailVerification ?? 'code'"
         (submitFlow)="flow.submit($event)"
         (resend)="flow.resendSignUp()"
+        [offerEmailSecondFactor]="flow.settings()?.account?.emailSecondFactor === true"
+        [emailedSecondFactor]="flow.emailSecondFactor()"
+        [offerSmsSecondFactor]="flow.settings() !== null && flow.mfaChoices().sms"
+        [textedSecondFactor]="flow.smsSecondFactor()"
+        [enrollment]="flow.enrollment"
+        [enrollmentState]="flow.enrollmentState()"
+        (emailSecondFactor)="flow.sendEmailSecondFactor()"
+        (smsSecondFactor)="flow.sendSmsSecondFactor()"
+        (policyDeclined)="flow.declinePolicy($event)"
       ></atlas-attempt-flow>
     } @else {
       <atlas-sign-up-form
@@ -101,6 +121,9 @@ export class SignUpComponent implements OnInit, OnDestroy {
 
   /** Where the existing-account notice's "Forgot password?" goes. Default: the hosted sign-in page; `null` hides it. */
   @Input() resetPasswordUrl?: string | null;
+
+  /** Where "Sign in" goes once an emailed link confirmed the address and made no session here. Default: the hosted sign-in page; `null` hides it. */
+  @Input() signInUrl?: string | null;
 
   protected readonly flow = new AtlasFlowController(
     this.atlas.createFapiClient(),
@@ -129,6 +152,15 @@ export class SignUpComponent implements OnInit, OnDestroy {
 
   protected resetHref(): string | null {
     return existingAccountResetUrl({ url: this.resetPasswordUrl, frontendApi: this.atlas.frontendApi, redirectUrl: this.afterUrl });
+  }
+
+  /** A link confirmed the address and made no session here. Says the same for any address. */
+  protected emailConfirmed(): boolean {
+    return signUpProvedByLink(this.flow.state().attempt);
+  }
+
+  protected signInHref(): string | null {
+    return signInAfterProofUrl({ url: this.signInUrl, frontendApi: this.atlas.frontendApi, redirectUrl: this.afterUrl });
   }
 
   protected awaitingPasskey(): boolean {

@@ -419,3 +419,99 @@ describe('<SignUp> on an existing account', () => {
     expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
   });
 });
+
+describe('<SignUp> on a held account: the other endings', () => {
+  it('a link made no session: a neutral line and a way to sign in, nothing to submit', async () => {
+    const el = await mountFlow(SignUp, {
+      routes: [(c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', object: 'sign_up_attempt', status: 'needs_first_factor' }, 201) : undefined)],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'email', 'held@example.com');
+    setInput(el, 'password', 'blue tangerine anvil 71!');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-email-confirmed]')).not.toBeNull());
+    expect(el.querySelector('[data-atlas-email-confirmed]')!.textContent).toContain('Your email is confirmed. Sign in to continue.');
+    expect(el.querySelector('[data-atlas-email-confirmed] a')!.getAttribute('href')).toContain('/hosted/sign-in');
+    expect(el.querySelector('button[type="submit"]')).toBeNull();
+  });
+
+  it('resetPasswordUrl and signInUrl: a string overrides, null hides', async () => {
+    const proved = (c: Call) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', object: 'sign_up_attempt', status: 'needs_first_factor' }, 201) : undefined);
+    const custom = await mountFlow((() => h(SignUp, { signInUrl: 'https://app.example/login' })) as unknown as typeof SignUp, { routes: [proved] });
+    await vi.waitFor(() => expect(custom.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(custom, 'email', 'held@example.com');
+    setInput(custom, 'password', 'blue tangerine anvil 71!');
+    submit(custom);
+    await vi.waitFor(() => expect(custom.querySelector('[data-atlas-email-confirmed] a')?.getAttribute('href')).toBe('https://app.example/login'));
+    cleanup();
+
+    const held = (c: Call) =>
+      c.path === '/v1/client/sign_ups'
+        ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201)
+        : c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+          ? json({ id: 'sua_1', status: 'complete', ticket: 'tkt_1', existing_account: true })
+          : undefined;
+    const notice = (props: Record<string, unknown>) => mountFlow((() => h(SignUp, props)) as unknown as typeof SignUp, { routes: [held] });
+    const own = await notice({ resetPasswordUrl: 'https://app.example/forgot' });
+    await vi.waitFor(() => expect(own.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(own, 'email', 'held@example.com');
+    setInput(own, 'password', 'blue tangerine anvil 71!');
+    submit(own);
+    await vi.waitFor(() => expect(own.querySelector('input[name="code"]')).not.toBeNull());
+    setInput(own, 'code', '424242');
+    submit(own);
+    await vi.waitFor(() => expect(own.querySelector('[data-atlas-existing-account] a')?.getAttribute('href')).toBe('https://app.example/forgot'));
+    cleanup();
+
+    const hidden = await notice({ resetPasswordUrl: null });
+    await vi.waitFor(() => expect(hidden.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(hidden, 'email', 'held@example.com');
+    setInput(hidden, 'password', 'blue tangerine anvil 71!');
+    submit(hidden);
+    await vi.waitFor(() => expect(hidden.querySelector('input[name="code"]')).not.toBeNull());
+    setInput(hidden, 'code', '424242');
+    submit(hidden);
+    await vi.waitFor(() => expect(hidden.querySelector('[data-atlas-existing-account]')).not.toBeNull());
+    expect(hidden.querySelector('[data-atlas-existing-account] a')).toBeNull();
+  });
+
+  it('must enrol: the setup, then the recovery codes with the ticket already redeemed, then the notice', async () => {
+    const el = await mountFlow(SignUp, {
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+            ? json({ id: 'sua_1', status: 'needs_mfa_enrollment', existing_account: true })
+            : undefined,
+        (c) => (c.path === '/v1/client/sign_ins/sua_1/prepare_mfa_enrollment' ? json({ factor_id: 'mfa_t', secret: 'ABCD', uri: 'otpauth://totp/x' }) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ins/sua_1/attempt_mfa_enrollment'
+            ? json({ id: 'sua_1', status: 'complete', ticket: 'tkt_1', backup_codes: ['aaaa-1111'] })
+            : undefined,
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'email', 'held@example.com');
+    setInput(el, 'password', 'blue tangerine anvil 71!');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    setInput(el, 'code', '424242');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="secondCode"]')).not.toBeNull());
+    expect(el.querySelector('[data-atlas="mfa-setup-key"]')!.textContent).toContain('ABCD');
+    setInput(el, 'code', '111111');
+    setInput(el, 'secondCode', '222222');
+    submit(el);
+
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="recovery-codes"]')).not.toBeNull());
+    expect(el.querySelector('[data-atlas="recovery-codes-list"]')!.textContent).toContain('aaaa-1111');
+    expect(posts('/v1/client/sign_ins/sua_1/attempt_mfa_enrollment')[0]!.body).toEqual({ factor_id: 'mfa_t', codes: ['111111', '222222'] });
+    await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
+    await vi.waitFor(() => expect((el.querySelector('[data-atlas="recovery-codes-saved"]') as HTMLButtonElement).disabled).toBe(false));
+    expect(el.querySelector('[data-atlas-existing-account]')).toBeNull();
+
+    (el.querySelector('[data-atlas="recovery-codes-saved"]') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-existing-account]')).not.toBeNull());
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+  });
+});

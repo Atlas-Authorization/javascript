@@ -16,8 +16,9 @@
  * values {@link MfaEnrollmentController.submit} returns) completes the sign-in
  * and comes with the account's one-time recovery codes. `advance` moves them
  * off the attempt into `FlowState.recoveryCodes`; the components show them
- * ({@link pendingRecoveryCodes}: copy, download as .txt, "I've saved my codes")
- * and only then exchange the ticket ({@link acknowledgeRecoveryCodes}).
+ * ({@link pendingRecoveryCodes}: copy, download as .txt, "I've saved my codes"),
+ * redeeming the ticket while they show because it dies in 60 seconds, and finish
+ * on the save ({@link acknowledgeRecoveryCodes}).
  *
  * The component draws the state; {@link createMfaEnrollment} owns the requests,
  * so every framework behaves the same.
@@ -313,8 +314,8 @@ export function recoveryCodesFrom(value: unknown): string[] | null {
  * The recovery codes to show before the sign-in finishes: set while an
  * enrolment has completed the attempt and the user has not yet said they saved
  * them. A component that gets codes here draws them (once) instead of the
- * finished step, and holds the ticket exchange until
- * {@link acknowledgeRecoveryCodes}.
+ * finished step, redeems the ticket (it dies in 60 seconds), and tells the app
+ * only after {@link acknowledgeRecoveryCodes}.
  */
 export function pendingRecoveryCodes(state: Pick<FlowState, 'attempt' | 'recoveryCodes'>): string[] | null {
   if (state.attempt?.status !== 'complete') return null;

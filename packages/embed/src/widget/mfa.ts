@@ -52,7 +52,22 @@ const EN: Record<string, string> = {
   'signIn.sending': 'Sending…',
   'signIn.forgotPassword': 'Forgot password?',
   'signUp.existingAccount': 'You already had an account. Your existing password still applies.',
+  'signUp.emailConfirmed': 'Your email is confirmed. Sign in to continue.',
   'signUp.submit': 'Continue',
+  'signIn.title': 'Sign in',
+  'requiredAction.firstNameLabel': 'First name',
+  'requiredAction.lastNameLabel': 'Last name',
+  'requiredAction.sendCode': 'Email me a code',
+  'requiredAction.skip': 'Skip for now',
+  'requiredAction.customIntro': 'Your account needs one more step before you continue.',
+  'requiredAction.verifyIntro': 'We will email a code to confirm your address.',
+  'requiredAction.idvIntro': 'To continue, verify your identity with a photo ID and a selfie.',
+  'requiredAction.idvStart': 'Start verification',
+  'requiredAction.idvOpen': 'Open the verification page',
+  'requiredAction.idvWaiting': 'Waiting for your verification to finish…',
+  'requiredAction.idvCheck': "I've finished",
+  'requiredAction.idvDeclined': 'We could not verify your identity. You can try again.',
+  'requiredAction.idvReview': 'Your verification is being reviewed. This can take a little while.',
 };
 
 /** A string in the widget's language: its `localization` catalog, else English. */

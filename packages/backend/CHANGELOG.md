@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.39.0 — 2026-11-05
+
+- `userHooks.deleteBeforeUserCreate`, `instance.integrations.redeliver`, `users.removePassword`, account claim.
+
 ## 0.38.0 — 2026-11-05
 
 ### Added

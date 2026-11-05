@@ -39,6 +39,7 @@ export const zhCN: LocalizationResource = {
   'signIn.passkeyCancelled': '通行密钥登录未完成。请重试或使用其他方式登录。',
   'signIn.passwordHoldReleased': '您的邮箱已验证。请输入密码登录。',
   'signUp.existingAccount': '您已有账户。您现有的密码仍然有效。',
+  'signUp.emailConfirmed': '您的邮箱已确认。请登录以继续。',
 
   'signUp.title': '创建账户',
   'signUp.submit': '继续',

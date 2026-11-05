@@ -38,6 +38,7 @@ export const zhTW: LocalizationResource = {
   'signIn.passkeyCancelled': '通行金鑰登入未完成。請再試一次或改用其他方式登入。',
   'signIn.passwordHoldReleased': '你的電子郵件已驗證。請輸入密碼以登入。',
   'signUp.existingAccount': '您已有帳戶。您現有的密碼仍然有效。',
+  'signUp.emailConfirmed': '您的電子郵件已確認。請登入以繼續。',
 
   'signUp.title': '建立您的帳戶',
   'signUp.submit': '繼續',

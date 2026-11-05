@@ -1,6 +1,7 @@
 import {
   acknowledgeExistingAccount,
   acknowledgeRecoveryCodes,
+  flowFromHeldReset,
   advance,
   pendingExistingAccountNotice,
   pendingRecoveryCodes,
@@ -319,15 +320,46 @@ export async function submit(
   // An enrolment's recovery codes are shown first (render draws them);
   // "I've saved my codes" (`saveRecoveryCodes`) finishes the sign-in.
   if (pendingRecoveryCodes(w.state)) {
+    // The ticket dies in 60 seconds and saving the codes can take longer: redeem it now. A
+    // refused exchange keeps it, so the save tries again.
+    const id = w.state.attempt?.id ?? null;
+    w.busy = true;
+    render(w);
+    if (w.state.ticket && id && (await exchange(w, id, w.state.ticket))) w.state = { ...w.state, ticket: null };
+    w.busy = false;
     render(w);
     return;
   }
   if (attempt?.status === 'complete') {
     const attemptId = (attempt as { id?: string }).id ?? null;
+    // A held reset, on an instance that forces a fresh login: no session to collect.
+    if (attemptId && attemptId === w.heldResetAttempt && !w.state.ticket) {
+      passwordUpdatedSignIn(w);
+      return;
+    }
     if (w.state.ticket && attemptId) await exchange(w, attemptId, w.state.ticket);
     await complete(w, attemptId);
     return;
   }
+  render(w);
+}
+
+/** Force-login: no session was issued. Back to the sign-in box, with a confirmation. */
+function passwordUpdatedSignIn(w: AtlasWidget): void {
+  w.flash = 'Password updated. Sign in with your new password.';
+  w.state = initialFlow;
+  w.mode = 'sign-in';
+  render(w);
+}
+
+/**
+ * The emailed link confirmed the address and made no session here: on to the
+ * sign-in box, with the address filled in. Says the same for any address.
+ */
+export function signInAfterProof(w: AtlasWidget): void {
+  w.enteredIdentifier ??= w.state.attempt?.identifier ?? null;
+  w.state = initialFlow;
+  w.mode = 'sign-in';
   render(w);
 }
 
@@ -648,6 +680,15 @@ export async function submitReset(w: AtlasWidget, values: Record<string, string>
   w.busy = false;
 
   const done = w.resetFlow;
+  // The password is set but the attempt is held: the sign-in steps take it from here.
+  const held = done ? flowFromHeldReset(done) : null;
+  if (held) {
+    w.resetFlow = null;
+    w.heldResetAttempt = held.attempt?.id ?? null;
+    w.state = held;
+    render(w);
+    return;
+  }
   if (done?.attempt?.status === 'complete') {
     const attemptId = done.attempt.id;
     w.resetFlow = null;
@@ -659,12 +700,8 @@ export async function submitReset(w: AtlasWidget, values: Record<string, string>
       await exchange(w, attemptId, done.ticket);
       await complete(w, attemptId);
     } else {
-      // Force-login: no session was issued. Return to the sign-in box (email
-      // already prefilled) with a confirmation, so the user signs in with the
-      // new password.
-      w.flash = 'Password updated. Sign in with your new password.';
-      w.state = initialFlow;
-      render(w);
+      // The email is already prefilled, so the user signs in with the new password.
+      passwordUpdatedSignIn(w);
     }
     return;
   }

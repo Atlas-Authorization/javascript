@@ -136,6 +136,10 @@ export function userHooksResource(request: RequestFn) {
     updateBeforeUserCreate(body: UpdateBeforeUserCreateHookBody): Promise<BeforeUserCreateHook> {
       return request({ method: 'PATCH', path: PATH, body });
     },
+    /** `DELETE /v1/instance/hooks/before_user_create` — turn it off and clear `url` and the secret. Repeating it changes nothing. */
+    deleteBeforeUserCreate(): Promise<BeforeUserCreateHook> {
+      return request({ method: 'DELETE', path: PATH });
+    },
     /** `POST /v1/instance/hooks/before_user_create/test`. */
     testBeforeUserCreate(): Promise<BeforeUserCreateHookTest> {
       return request({ method: 'POST', path: `${PATH}/test` });

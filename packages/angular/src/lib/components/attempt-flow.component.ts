@@ -513,10 +513,6 @@ export class AttemptFlowComponent {
         // `webauthn`: saved passkeys appear in this field's autofill while <atlas-sign-in> holds a conditional request.
         return [{ kind: 'input', name: 'identifier', labelKey: 'signIn.identifierLabel', type: 'email', autocomplete: 'username webauthn' }];
       case 'collect_first_factor': {
-        // A link proved an address on an existing account: no session, and the password signs in.
-        if (this.attempt?.object === 'sign_up_attempt' && !(this.attempt.supported_first_factors ?? []).includes('passkey')) {
-          return [released()];
-        }
         if (this.preparedFactor === 'email_code') {
           return [{ kind: 'input', name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
         }

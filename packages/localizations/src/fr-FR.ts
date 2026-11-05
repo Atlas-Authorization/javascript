@@ -39,6 +39,7 @@ export const frFR: LocalizationResource = {
   'signIn.passkeyCancelled': 'La connexion avec la clé d\'accès n\'a pas abouti. Réessayez ou utilisez une autre méthode.',
   'signIn.passwordHoldReleased': 'Votre adresse e-mail est vérifiée. Saisissez votre mot de passe pour vous connecter.',
   'signUp.existingAccount': 'Vous aviez déjà un compte. Votre mot de passe actuel reste valable.',
+  'signUp.emailConfirmed': 'Votre adresse e-mail est confirmée. Connectez-vous pour continuer.',
 
   'signUp.title': 'Créer votre compte',
   'signUp.submit': 'Continuer',

@@ -1,5 +1,9 @@
 # @atlasauth/solid changelog
 
+## 0.13.0 — 2026-11-05
+
+- MFA enrolment and recovery codes; `<SignUp>` takes `resetPasswordUrl` and `signInUrl`.
+
 ## 0.12.0 — 2026-11-05
 
 ### Added

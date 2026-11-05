@@ -7,7 +7,7 @@ import type { ConfigHttp } from '../config-http';
 import type { ManagementClient, RunContext } from '../context';
 import { captureIO, type CaptureIO } from '../io';
 import { run } from '../run';
-import { parseTimestamp } from './import-jsonl';
+import { collectRowWarnings, parseTimestamp } from './import-jsonl';
 
 /** An instance that keeps users and answers the import route the way the real one does. */
 class Api implements ConfigHttp {
@@ -48,7 +48,7 @@ class Api implements ConfigHttp {
       const warnings = this.rowWarnings[row.external_id];
       if (warnings) return { outcome: 'created', warnings };
       const unverified = (b as Record<string, any>).password_policy && b.upsert
-        ? this.users.find((u) => u.external_id === row.external_id && u.password_enabled && u.email_addresses.some((e: any) => !e.verified && e.email_address === row.email_address))
+        ? this.users.find((u) => u.external_id === row.external_id && u.email_addresses.some((e: any) => !e.verified && e.email_address === row.email_address))
         : undefined;
       if (unverified) {
         unverified.held = true;
@@ -356,6 +356,35 @@ describe('atlas import: holds and what the report says about them', () => {
     api.rowWarnings = { a1: [{ code: 'password_policy_not_applied', message: 'x' }] };
     const changed = await report(api, [write([{ ...ANN, first_name: 'Ann' }]), ...HOLD]);
     expect(changed.body.warnings).toMatchObject([{ code: 'password_policy_not_applied', count: 1, external_ids: ['a1'] }]);
+  });
+
+  it('sends an existing unverified row with no credential to the import too', async () => {
+    const api = new Api();
+    const NO_PASSWORD = { external_id: 'n3', email: 'nan@example.com', email_verified: false };
+    await report(api, [write([NO_PASSWORD])]);
+    const { code, body } = await report(api, [write([NO_PASSWORD]), ...HOLD]);
+    expect(code).toBe(0);
+    expect(body).toMatchObject({ created: 0, updated: 1 });
+    expect(api.bodies[1]).toMatchObject({ upsert: true, password_policy: 'until_email_verified', users: [{ external_id: 'n3' }] });
+    expect(api.users).toHaveLength(1);
+    expect(api.patches).toEqual([]);
+  });
+
+  it('names a row the API refused for an address someone else holds unverified, and points at protect', async () => {
+    const api = new Api();
+    api.jobErrors.push({ index: 0, email: BOB.email, code: 'unverified_claim_not_matched', message: 'x' });
+    const realPost = api.post.bind(api);
+    api.post = (async (path: string, body: unknown) => ({ ...(await realPost(path, body)) as object, failed: 1, results: [{ outcome: 'failed' }] })) as typeof api.post;
+    const { body } = await report(api, [write([BOB]), ...HOLD]);
+    expect(body.warnings).toMatchObject([{ code: 'unverified_claim_not_matched', count: 1, external_ids: ['b2'] }]);
+    expect(body.warnings[0].message).toContain('atlas users protect');
+    expect(JSON.stringify(body)).not.toContain(BOB.email);
+  });
+
+  it('reads the warning summary from a job too big to return results', () => {
+    const into = new Map<string, Set<string>>();
+    collectRowWarnings({ id: 'j', status: 'completed', total: 200, succeeded: 200, failed: 0, results: null, warnings: [{ code: 'unverified_without_hold', count: 150, external_ids: ['a', 'b'] }] }, [], into);
+    expect([...into.get('unverified_without_hold')!]).toEqual(['a', 'b']);
   });
 
   it('notes that a skip left an existing unverified row as it was', async () => {

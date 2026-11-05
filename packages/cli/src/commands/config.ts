@@ -762,6 +762,13 @@ function registry(): ResourceSpec[] {
         }
         const { object: _o, resolved: _r, ...fields } = b ?? {};
         const out = compact(fields);
+        // A row saved before clearing an override dropped the empty map.
+        const sb = out.socialButtons;
+        if (sb && typeof sb === 'object' && !Array.isArray(sb)) {
+          const kept = Object.fromEntries(Object.entries(sb).filter(([, v]) => !(v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0)));
+          if (Object.keys(kept).length) out.socialButtons = kept;
+          else delete out.socialButtons;
+        }
         return Object.keys(out).length ? out : null;
       },
       async apply(http, config) {

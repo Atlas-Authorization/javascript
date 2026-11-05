@@ -37,6 +37,7 @@ export const jaJP: Localization = {
   'signIn.passkeyCancelled': 'パスキーでのサインインが完了しませんでした。もう一度お試しいただくか、別の方法でサインインしてください。',
   'signIn.passwordHoldReleased': 'メールアドレスを確認しました。パスワードを入力してサインインしてください。',
   'signUp.existingAccount': 'すでにアカウントをお持ちです。現在のパスワードは引き続き有効です。',
+  'signUp.emailConfirmed': 'メールアドレスが確認されました。続行するにはサインインしてください。',
 
   'signUp.title': 'アカウントを作成',
   'signUp.submit': '続行',

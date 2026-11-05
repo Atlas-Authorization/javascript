@@ -598,6 +598,13 @@ export function usersResource(request: RequestFn) {
     setPassword(id: string, body: SetUserPasswordBody): Promise<User> {
       return request({ method: 'POST', path: `/v1/users/${enc(id)}/password`, body });
     },
+    /**
+     * `DELETE /v1/users/:id/password` — remove a user's password. Signs them out of
+     * their sessions unless `sign_out_of_other_sessions` is false. Repeating it changes nothing.
+     */
+    removePassword(id: string, body: { sign_out_of_other_sessions?: boolean } = {}): Promise<User> {
+      return request({ method: 'DELETE', path: `/v1/users/${enc(id)}/password`, body });
+    },
     /** `DELETE /v1/users/:id/profile_image` — clear the profile image. */
     deleteProfileImage(id: string): Promise<User> {
       return request({ method: 'DELETE', path: `/v1/users/${enc(id)}/profile_image` });

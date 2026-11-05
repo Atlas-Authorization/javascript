@@ -1,5 +1,9 @@
 # @atlasauth/embed changelog
 
+## 0.18.0 — 2026-11-05
+
+- A held password reset continues into policies and required actions; new required-action step.
+
 ## 0.17.0 — 2026-11-05
 
 ### Added

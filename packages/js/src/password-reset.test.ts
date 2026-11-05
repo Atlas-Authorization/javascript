@@ -4,6 +4,7 @@ import {
   startPasswordReset,
   advancePasswordReset,
   resetStep,
+  flowFromHeldReset,
   initialResetFlow,
   type ResetFlowState,
 } from './password-reset';
@@ -27,6 +28,26 @@ function clientFor(
 }
 
 describe('password-reset flow', () => {
+  it('a reset held after the new password hands its attempt and token to the sign-in flow', async () => {
+    for (const [status, fields, token] of [
+      ['needs_policy_acceptance', { pending_policies: [{ policy: 'tos' }], policy_acceptance_token: 'ptok' }, 'ptok'],
+      ['needs_required_action', { pending_required_actions: [{ id: 'ra_1', action: 'update_profile' }], required_action_token: 'atok' }, 'atok'],
+    ] as const) {
+      const { client } = clientFor({
+        '/v1/client/password_resets/pr_1/set_new_password': { body: { id: 'pr_1', status, ...fields } },
+      });
+      const next = await advancePasswordReset(client, { ...initialResetFlow, attempt: { id: 'pr_1', status: 'needs_new_password' } }, { password: 'x' });
+      const flow = flowFromHeldReset(next)!;
+      expect(flow.attempt).toMatchObject({ id: 'pr_1', status, ...fields });
+      expect(flow.policyToken).toBe(token);
+    }
+  });
+
+  it('a reset that is not held has no sign-in flow to hand over to', () => {
+    expect(flowFromHeldReset({ ...initialResetFlow, attempt: { id: 'pr_1', status: 'complete' } })).toBeNull();
+    expect(flowFromHeldReset(initialResetFlow)).toBeNull();
+  });
+
   it('resetStep maps statuses to steps', () => {
     expect(resetStep(initialResetFlow)).toBe('request');
     const at = (status: string): ResetFlowState => ({ attempt: { id: 'pr', status }, errors: [], busy: false, ticket: null });

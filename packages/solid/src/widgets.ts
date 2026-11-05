@@ -35,9 +35,20 @@ import {
   flowFromPending,
   flowNeedsCaptcha,
   acknowledgeExistingAccount,
+  acknowledgeRecoveryCodes,
+  canDownloadRecoveryCodes,
+  copyRecoveryCodes,
+  createMfaEnrollment,
+  downloadRecoveryCodes,
+  enrollmentSubmitKey,
   existingAccountResetUrl,
+  groupSetupKey,
+  mfaChoicesFrom,
   nextStep,
   pendingExistingAccountNotice,
+  pendingRecoveryCodes,
+  signInAfterProofUrl,
+  signUpProvedByLink,
   offeredFirstFactors,
   passkeysSupported,
   pollAttempt,
@@ -127,7 +138,30 @@ export const SIGN_UP_TEXT: Record<string, string> = {
   'signIn.continueWithAtlas': 'Continue with Atlas',
   'signIn.passwordHoldReleased': 'Your email is verified. Enter your password to sign in.',
   'signUp.existingAccount': 'You already had an account. Your existing password still applies.',
+  'signUp.emailConfirmed': 'Your email is confirmed. Sign in to continue.',
   'signIn.forgotPassword': 'Forgot password?',
+  'signIn.title': 'Sign in',
+  'mfa.enrollChoose': 'Set up a second step for signing in.',
+  'mfa.enrollTotpOption': 'Use an authenticator app',
+  'mfa.enrollSmsOption': 'Use text messages',
+  'mfa.enrollScan': 'Scan this QR code with your authenticator app, or enter the setup key.',
+  'mfa.enrollQrAlt': 'QR code for your authenticator app',
+  'mfa.enrollSetupKey': 'Setup key',
+  'mfa.enrollPreparing': 'Setting up…',
+  'mfa.enrollFirstCodeLabel': 'Code from your authenticator app',
+  'mfa.enrollSecondCodeLabel': 'The next code it shows',
+  'mfa.phoneLabel': 'Mobile number',
+  'mfa.phoneHint': 'Include the country code, for example +14155550101.',
+  'mfa.sendCode': 'Text me a code',
+  'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
+  'mfa.codeLabel': 'Code',
+  'mfa.recoveryCodesTitle': 'Save your recovery codes',
+  'mfa.recoveryCodesHelp': "Each code works once. If you can't use your second step, sign in with one of these. Keep them somewhere safe: they won't be shown again.",
+  'mfa.recoveryCodesCopy': 'Copy codes',
+  'mfa.recoveryCodesCopied': 'Copied.',
+  'mfa.recoveryCodesDownload': 'Download as .txt',
+  'mfa.recoveryCodesSaved': "I've saved my codes",
+  'signIn.resendCode': 'Resend code',
 };
 
 const t = (key: string, vars: Record<string, string> = {}) =>
@@ -163,13 +197,6 @@ function renderFields(kind: string): JSX.Element {
       return [field('password', 'Password', 'password')];
     case 'collect_second_factor':
       return [field('code', 'Two-factor code')];
-    case 'enroll_second_factor':
-      // Two codes, not one: consecutive codes catch a phone with a fast clock
-      // here rather than on every sign-in afterwards.
-      return [
-        field('code', 'Authenticator code'),
-        field('secondCode', 'Next authenticator code'),
-      ];
     case 'collect_email_code':
       return [field('code', 'Email code')];
     case 'collect_new_password':
@@ -254,9 +281,35 @@ function renderFirstFactor(
   return out;
 }
 
-function renderSubmit(kind: string, busy: boolean, hidden = false, blocked = false): JSX.Element {
+function renderSubmit(kind: string, busy: boolean, hidden = false, blocked = false, label = 'Continue'): JSX.Element {
   if (hidden || kind === 'done' || kind === 'await_oauth' || kind === 'accept_policies') return null;
-  return h('button', { class: 'atlas-button', type: 'submit', disabled: busy || blocked }, 'Continue');
+  return h('button', { class: 'atlas-button', type: 'submit', disabled: busy || blocked }, label);
+}
+
+/** The one-time recovery codes an MFA enrolment came with: shown before the flow finishes. */
+function RecoveryCodesCard(codes: string[], busy: () => boolean, onSaved: () => void): JSX.Element {
+  const [copied, setCopied] = createSignal(false);
+  const secondary = (attr: string, label: string, onClick: () => void) =>
+    h('button', { class: 'atlas-link', type: 'button', 'data-atlas': attr, onClick }, label);
+  return h('div', { 'data-atlas': 'recovery-codes' }, [
+    h('h2', { class: 'atlas-title' }, t('mfa.recoveryCodesTitle')),
+    h('p', { class: 'atlas-text' }, t('mfa.recoveryCodesHelp')),
+    h('ul', { class: 'atlas-recovery-codes', 'data-atlas': 'recovery-codes-list' }, codes.map((code) => h('li', code))),
+    typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function'
+      ? secondary('recovery-codes-copy', t('mfa.recoveryCodesCopy'), () => void copyRecoveryCodes(codes).then((ok) => setCopied(ok)))
+      : null,
+    canDownloadRecoveryCodes() ? secondary('recovery-codes-download', t('mfa.recoveryCodesDownload'), () => downloadRecoveryCodes(codes)) : null,
+    () => (copied() ? h('p', { class: 'atlas-text', 'aria-live': 'polite', 'data-atlas': 'recovery-codes-copied' }, t('mfa.recoveryCodesCopied')) : null),
+    h('button', { class: 'atlas-button', type: 'button', 'data-atlas': 'recovery-codes-saved', disabled: busy, onClick: onSaved }, t('mfa.recoveryCodesSaved')),
+  ]);
+}
+
+/** Where `<SignUp>`'s two links go: a string overrides, null hides, unset is the hosted page. */
+export interface SignUpProps {
+  /** The existing-account notice's "Forgot password?". */
+  resetPasswordUrl?: string | null;
+  /** "Sign in", once an emailed link confirmed the address and made no session here. */
+  signInUrl?: string | null;
 }
 
 /** One configured sign-up field's control (uncontrolled — read from `FormData`). */
@@ -369,7 +422,7 @@ function formValues(form: HTMLFormElement): Record<string, string> {
  * it is the same driver (the emailed-code step, then the ticket exchange). Both
  * draw the instance's captcha when it is required.
  */
-function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'sign-up' }): JSX.Element {
+function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'sign-up'; links?: SignUpProps }): JSX.Element {
   const client = props.client;
   const fapi = new FapiClient({
     publishableKey: client.publishableKey,
@@ -441,7 +494,8 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
   // so exchange the ticket over a request THEN re-boot, so the rest of the
   // app sees a signed-in user — and no session token ever rode in a URL.
   const finish = async (next: FlowState) => {
-    setState(next);
+    const codes = pendingRecoveryCodes(next);
+    setState(codes ? { ...next, busy: true } : next);
     if (next.attempt?.status === 'complete') {
       let exchanged = true;
       if (next.ticket) {
@@ -450,7 +504,13 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
           ticket: next.ticket,
         });
         exchanged = res.ok;
-        if (!exchanged) setState((s) => ({ ...s, sessionKept: false }));
+        if (!exchanged && !codes) setState((s) => ({ ...s, sessionKept: false }));
+      }
+      // The ticket dies in 60 seconds and saving the codes can take longer, so it is redeemed
+      // as they're drawn. A refused exchange keeps it, so the save reports it.
+      if (codes) {
+        setState({ ...next, busy: false, ticket: exchanged ? null : next.ticket });
+        return;
       }
       // Hold before the app learns of the session, so nothing unmounts this notice.
       if (exchanged && pendingExistingAccountNotice(next)) {
@@ -577,11 +637,52 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
   createEffect(() => (passkeyOffered() ? passkey.armAutofill() : passkey.stopAutofill()));
   onCleanup(() => passkey.stopAutofill());
 
-  // A link proved an address on an existing account: no session, and the password signs in.
-  const provedSignUp = createMemo(() => {
-    const attempt = state().attempt;
-    return attempt?.object === 'sign_up_attempt' && attempt.status === 'needs_first_factor' && !(attempt.supported_first_factors ?? []).includes('passkey');
+  // A link confirmed the address and made no session here. Says the same for any address.
+  const provedSignUp = createMemo(() => signUpProvedByLink(state().attempt));
+
+  // The MFA enrolment step: the authenticator's QR code and setup key, or a texted code.
+  const enrollment = createMfaEnrollment(fapi, () => mfaChoicesFrom(settings()?.account));
+  const [enrollmentState, setEnrollmentState] = createSignal(enrollment.state);
+  onCleanup(enrollment.subscribe((next) => setEnrollmentState(next)));
+  createEffect(() => {
+    const id = kind() === 'enroll_second_factor' ? (state().attempt?.id ?? null) : null;
+    if (id) enrollment.start(id);
+    else enrollment.reset();
   });
+  // Through this key: the inputs are re-created when the setup changes, not on busy or an error.
+  const enrollmentKey = createMemo(() => {
+    const s = enrollmentState();
+    return `${s.method}|${s.enrollment?.factorId ?? ''}|${s.options.join()}|${s.totpCodes}`;
+  });
+  const renderEnrollment = (): JSX.Element => {
+    enrollmentKey();
+    const s = untrack(enrollmentState);
+    const method = (m: 'totp' | 'phone_code') =>
+      h('button', { class: 'atlas-link', type: 'button', 'data-atlas-mfa-method': m, onClick: () => void enrollment.choose(m) }, t(m === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption'));
+    const out: JSX.Element[] = [];
+    if (s.method === null) {
+      out.push(h('p', { class: 'atlas-text' }, t('mfa.enrollChoose')), ...s.options.map(method));
+    } else if (s.method === 'totp' && !s.enrollment) {
+      out.push(h('p', { class: 'atlas-text', 'aria-live': 'polite' }, t('mfa.enrollPreparing')));
+    } else if (s.method === 'totp' && s.enrollment) {
+      const e = s.enrollment;
+      out.push(h('p', { class: 'atlas-text' }, t('mfa.enrollScan')));
+      if (e.qrCode) out.push(h('img', { class: 'atlas-mfa-qr', 'data-atlas': 'mfa-qr', src: e.qrCode, alt: t('mfa.enrollQrAlt'), width: 180, height: 180 }));
+      if (e.secret) out.push(h('p', { class: 'atlas-text', 'data-atlas': 'mfa-setup-key' }, `${t('mfa.enrollSetupKey')}: `, h('code', groupSetupKey(e.secret))));
+      out.push(field('code', t('mfa.enrollFirstCodeLabel'), 'text', 'one-time-code'));
+      if (s.totpCodes >= 2) out.push(field('secondCode', t('mfa.enrollSecondCodeLabel'), 'text', 'one-time-code'));
+    } else if (!s.enrollment) {
+      out.push(field('phone', t('mfa.phoneLabel'), 'tel', 'tel'), h('p', { class: 'atlas-text' }, t('mfa.phoneHint')));
+    } else {
+      out.push(
+        h('p', { class: 'atlas-text', 'aria-live': 'polite', 'data-atlas': 'mfa-code-texted' }, t('mfa.codeTextedTo', { phone: s.enrollment.phone ?? '' })),
+        field('code', t('mfa.codeLabel'), 'text', 'one-time-code'),
+        h('button', { class: 'atlas-link', type: 'button', 'data-atlas-resend': '', onClick: () => void enrollment.resend() }, t('signIn.resendCode')),
+      );
+    }
+    if (s.method !== null && s.options.length > 1) out.push(method(s.options.find((m) => m !== s.method)!));
+    return out as unknown as JSX.Element;
+  };
 
   // §email delivery: the first factors this app can offer, keyed as a string so
   // the inputs are re-created only when the offer itself changes.
@@ -601,6 +702,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
   });
   const passwordHoldReleased = createMemo(() => state().passwordHold?.released === true);
   const existingAccountNotice = createMemo(() => pendingExistingAccountNotice(state()));
+  const recoveryCodes = createMemo(() => pendingRecoveryCodes(state()));
   const [emailSent, setEmailSent] = createSignal<EmailFactor | null>(null);
   createEffect(() => {
     kind();
@@ -669,6 +771,8 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         event.preventDefault();
         const values = formValues(event.currentTarget as HTMLFormElement);
         if (kind() === 'create_account') startCreate(values);
+        // Enrolment: text the code to the typed number, or confirm the factor.
+        else if (kind() === 'enroll_second_factor') void enrollment.submit(values).then((next) => next && submit(next));
         else {
           passkey.stopAutofill();
           submit(values);
@@ -691,8 +795,10 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
       () => renderErrors(state().errors, client.localization),
       () => {
         // Through the memo: reading state() here would redraw the inputs and lose what's typed.
+        const codes = recoveryCodes();
+        if (codes) return RecoveryCodesCard(codes, () => state().busy, () => void finish(acknowledgeRecoveryCodes(untrack(state))));
         if (existingAccountNotice()) {
-          const resetHref = existingAccountResetUrl({ frontendApi: client.frontendApi });
+          const resetHref = existingAccountResetUrl({ url: props.links?.resetPasswordUrl, frontendApi: client.frontendApi });
           return h('div', { 'data-atlas-existing-account': '' }, [
             h('p', { class: 'atlas-text' }, t('signUp.existingAccount')),
             resetHref ? h('p', { class: 'atlas-text' }, h('a', { class: 'atlas-link', href: resetHref }, t('signIn.forgotPassword'))) : null,
@@ -705,7 +811,14 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         }
         if (kind() === 'create_account') return signUpBlocked() ? emailUnavailable() : renderSignUpFields(settings(), hasPolicies());
         if (kind() === 'accept_policies') return policyStep();
-        if (provedSignUp()) return passwordReleased();
+        if (provedSignUp()) {
+          const signInHref = signInAfterProofUrl({ url: props.links?.signInUrl, frontendApi: client.frontendApi });
+          return h('div', { 'data-atlas-email-confirmed': '' }, [
+            h('p', { class: 'atlas-text', role: 'status' }, t('signUp.emailConfirmed')),
+            signInHref ? h('a', { class: 'atlas-button', href: signInHref }, t('signIn.title')) : null,
+          ]);
+        }
+        if (kind() === 'enroll_second_factor') return renderEnrollment();
         if (kind() === 'collect_first_factor') {
           const [listed, offered] = firstFactor().split(':') as [string, string];
           return renderFirstFactor(offered ? offered.split(',') : [], listed === 'listed', emailSent(), sendEmailFactor, passwordHoldReleased(), usePassword);
@@ -724,7 +837,17 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         captcha,
         () => (kind() === 'collect_identifier' || kind() === 'collect_captcha') && captchaDrawn(),
       ),
-      () => renderSubmit(kind(), state().busy, signUpBlocked() || awaitingEmail() || provedSignUp(), kind() === 'create_account' && policiesBlocked()),
+      () => (kind() === 'enroll_second_factor' ? renderErrors(enrollmentState().errors, client.localization) : null),
+      () => {
+        const enrolKey = kind() === 'enroll_second_factor' ? enrollmentSubmitKey(enrollmentState()) : undefined;
+        return renderSubmit(
+          kind(),
+          state().busy,
+          signUpBlocked() || awaitingEmail() || provedSignUp() || enrolKey === null,
+          kind() === 'create_account' && policiesBlocked(),
+          enrolKey === 'mfa.sendCode' ? t(enrolKey) : undefined,
+        );
+      },
       () =>
         passkeyOffered()
           ? h(
@@ -799,8 +922,8 @@ export function mountSignInWidget(client: AtlasClient, el: HTMLElement): () => v
   return render(() => Flow({ client, title: 'Sign in', mode: 'sign-in' }), el);
 }
 
-export function mountSignUpWidget(client: AtlasClient, el: HTMLElement): () => void {
-  return render(() => Flow({ client, title: 'Sign up', mode: 'sign-up' }), el);
+export function mountSignUpWidget(client: AtlasClient, el: HTMLElement, links?: SignUpProps): () => void {
+  return render(() => Flow({ client, title: 'Sign up', mode: 'sign-up', links }), el);
 }
 
 export function mountUserButtonWidget(client: AtlasClient, el: HTMLElement): () => void {
@@ -817,11 +940,11 @@ export function mountUserButtonWidget(client: AtlasClient, el: HTMLElement): () 
  * (not via a reactive `ref`) so it is guaranteed present the moment `onMount`
  * fires. SSR renders an empty host and hydrates on the client.
  */
-function mountable(
-  seam: (client: AtlasClient) => (el: HTMLElement) => () => void,
+function mountable<P extends object = object>(
+  seam: (client: AtlasClient) => (el: HTMLElement, props: P) => () => void,
   rootClass: string,
 ) {
-  return (): JSX.Element => {
+  return (props: P = {} as P): JSX.Element => {
     const client = useAtlas();
     if (isServer) return h('div', { class: rootClass });
 
@@ -830,7 +953,7 @@ function mountable(
     onMount(() => {
       // The seam drives a nested Solid root into `container`; its disposer is
       // the whole teardown, so unmounting the component unmounts the widget.
-      const dispose = seam(client)(container);
+      const dispose = seam(client)(container, props);
       onCleanup(dispose);
     });
     return container;
@@ -838,7 +961,7 @@ function mountable(
 }
 
 export const SignIn = mountable((client) => client.mountSignIn, 'atlas-signin-root');
-export const SignUp = mountable((client) => client.mountSignUp, 'atlas-signup-root');
+export const SignUp = mountable<SignUpProps>((client) => client.mountSignUp, 'atlas-signup-root');
 export const UserButton = mountable((client) => client.mountUserButton, 'atlas-user-button-root');
 /** In-app policy re-acceptance: a banner (and the dialog / checkboxes) for a signed-in user whose policy changed. */
 export const PolicyGate = mountable((client) => client.mountPolicyGate, 'atlas-policy-gate-root');

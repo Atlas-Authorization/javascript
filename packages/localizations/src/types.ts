@@ -78,6 +78,7 @@ export interface LocalizationResource {
   'signIn.passkeyCancelled': string;
   'signIn.passwordHoldReleased': string;
   'signUp.existingAccount': string;
+  'signUp.emailConfirmed': string;
 
   // --- Sign up ---------------------------------------------------------------
   'signUp.title': string;

@@ -87,8 +87,9 @@ dotenv file under `~/.config/<product>/` (directory `0700`;
 existing different file is never overwritten without `--force`.
 `--print-secret` prints it instead, with a warning.
 
-`atlas init --with-dev` keeps each environment in its own folder (`production/atlas.env`,
-`development/atlas.env`). `atlas init --no-env-files --json` writes no secret file and hands
+`atlas init` keeps each environment in its own folder (`production/atlas.env`,
+`development/atlas.env`), so `atlas doctor --scan-dir` stays clean whichever you set up first.
+An existing `<env>.env` stays where it is. `atlas init --with-dev` also creates the development sibling. `atlas init --no-env-files --json` writes no secret file and hands
 each secret over once in the JSON on stdout.
 
 `atlas plan`, `apply`, `preflight` and `golive` never print a secret, in text or `--json`, and

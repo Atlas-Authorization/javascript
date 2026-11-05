@@ -161,10 +161,11 @@ const confirmEnrolRoute: Route = (c) =>
     ? json({ ...attempt([]), status: 'complete', created_session_id: 'sess_1', ticket: 'tkt_1', backup_codes: ['a', 'b'] })
     : undefined;
 
-/** The recovery codes are on screen, the ticket not yet exchanged; "I've saved my codes" finishes. */
+/** The recovery codes are on screen, the ticket already redeemed (it dies in 60 seconds); "I've saved my codes" finishes. */
 async function saveRecoveryCodes(el: HTMLElement) {
   await vi.waitFor(() => expect(el.querySelector('[data-atlas="recovery-codes"]')).not.toBeNull());
-  expect(posts('/v1/client/tickets/exchange')).toHaveLength(0);
+  await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
+  await vi.waitFor(() => expect((el.querySelector('[data-atlas="recovery-codes-saved"]') as HTMLButtonElement).disabled).toBe(false));
   await click(el.querySelector('[data-atlas="recovery-codes-saved"]'));
 }
 
@@ -255,7 +256,9 @@ describe('<SignIn> recovery codes after enrolment', () => {
     const listed = [...el.querySelectorAll('[data-atlas="recovery-codes-list"] li')].map((li) => li.textContent);
     expect(listed).toEqual(['a', 'b']);
     expect(el.querySelector('form')).toBeNull();
-    expect(posts('/v1/client/tickets/exchange')).toHaveLength(0);
+    // Redeemed while they're on screen; the app hears nothing until they're saved.
+    await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
+    await vi.waitFor(() => expect((el.querySelector('[data-atlas="recovery-codes-saved"]') as HTMLButtonElement).disabled).toBe(false));
 
     await click(el.querySelector('[data-atlas="recovery-codes-copy"]'));
     expect(writeText).toHaveBeenCalledWith('a\nb');

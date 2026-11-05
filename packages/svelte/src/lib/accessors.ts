@@ -399,7 +399,13 @@ function createFlow(options: { holdExistingAccountNotice?: boolean } = {}): Flow
   async function finish(next: FlowState): Promise<void> {
     // An enrolment's recovery codes are shown first; `saveRecoveryCodes` finishes.
     if (pendingRecoveryCodes(next)) {
-      state.set({ ...next, busy: false });
+      // The ticket dies in 60 seconds and saving the codes can take longer: redeem it now,
+      // and `saveRecoveryCodes` finishes. A refused exchange keeps the ticket, so the save reports it.
+      state.set({ ...next, busy: true });
+      const res = next.ticket
+        ? await client.post('/v1/client/tickets/exchange', { attempt_id: (next.attempt as { id?: string }).id, ticket: next.ticket })
+        : null;
+      state.set({ ...next, busy: false, ticket: res?.ok ? null : next.ticket });
       return;
     }
     if (next.attempt?.status === 'complete') {

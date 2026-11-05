@@ -549,7 +549,7 @@ export interface FlowState {
    * (`attempt_mfa_enrollment`'s `backup_codes`). Kept here, in memory only and
    * never in `attempt` or any storage, until the user says they saved them
    * (`pendingRecoveryCodes` / `acknowledgeRecoveryCodes`): the prebuilt
-   * components show them before exchanging the ticket.
+   * components show them before telling the app the sign-in finished.
    */
   recoveryCodes?: string[] | null;
   /**
@@ -1063,23 +1063,47 @@ export function acknowledgeExistingAccount(state: FlowState): FlowState {
 }
 
 /**
- * The notice's "Forgot password?" target: `url` when the app has its own page,
- * null to hide the link, else the hosted sign-in page, open on its reset flow.
+ * A sign-up's emailed link proved the address and made no session, so this tab
+ * can only go and sign in. The tab's poll secret proves nothing about the mailbox:
+ * say the same thing whichever account the address belongs to.
  */
-export function existingAccountResetUrl(options: { url?: string | null | undefined; frontendApi?: string | undefined; redirectUrl?: string | undefined }): string | null {
+export function signUpProvedByLink(attempt: AttemptView | null | undefined): boolean {
+  return (
+    !!attempt &&
+    attempt.object === 'sign_up_attempt' &&
+    attempt.status === 'needs_first_factor' &&
+    !(attempt.supported_first_factors ?? []).includes('passkey')
+  );
+}
+
+/**
+ * Where `signUpProvedByLink`'s "Sign in" goes: `url` when the app has its own page,
+ * null to hide the link, else the hosted sign-in page (which follows `sign_in_url`).
+ */
+export function signInAfterProofUrl(options: { url?: string | null | undefined; frontendApi?: string | undefined; redirectUrl?: string | undefined }): string | null {
   if (options.url !== undefined) return options.url;
   try {
     const redirectUrl = options.redirectUrl ?? (typeof window !== 'undefined' ? window.location.href : undefined);
-    const target = hostedSignIn({
+    return hostedSignIn({
       ...(options.frontendApi ? { frontendApi: options.frontendApi } : {}),
       ...(redirectUrl ? { redirectUrl } : {}),
       navigate: false,
     });
-    // The hosted page opens straight on its reset flow.
-    return `${target}${target.includes('?') ? '&' : '?'}forgot_password=1`;
   } catch {
     return null;
   }
+}
+
+/**
+ * The notice's "Forgot password?" target: `url` when the app has its own page,
+ * null to hide the link, else the hosted sign-in page, open on its reset flow.
+ * The server serves that link itself even where `sign_in_url` replaces the page,
+ * since an app's own page can't act on `forgot_password=1`.
+ */
+export function existingAccountResetUrl(options: { url?: string | null | undefined; frontendApi?: string | undefined; redirectUrl?: string | undefined }): string | null {
+  if (options.url !== undefined) return options.url;
+  const target = signInAfterProofUrl({ frontendApi: options.frontendApi, redirectUrl: options.redirectUrl });
+  return target && `${target}${target.includes('?') ? '&' : '?'}forgot_password=1`;
 }
 
 /**

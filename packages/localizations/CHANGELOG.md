@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.16.0 — 2026-11-05
+
+- `signUp.emailConfirmed`.
+
 ## 0.15.0 — 2026-11-05
 
 ### Added

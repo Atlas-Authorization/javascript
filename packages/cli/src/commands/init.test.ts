@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AtlasApiError } from '@atlasauth/backend';
@@ -270,75 +270,98 @@ describe('atlas init: secret layouts and strict bodies', () => {
   });
 
   it('--with-dev on an app with a flat key file leaves that file where it is', async () => {
-    expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
     const dir = join(home, 'acme');
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(dir, 'production.env'), `ATLAS_SECRET_KEY=${SK}\n`, { mode: 0o600 });
+    state.apps.push({ id: 'ins_1', name: 'acme', environment: 'production', publishable_key: 'pk_test_1', frontend_api_host: null });
     expect(await run([...BASE, '--with-dev'], ctxWith(captureIO()))).toBe(0);
     expect(existsSync(join(dir, 'production.env'))).toBe(true);
     expect(existsSync(join(dir, 'production', 'atlas.env'))).toBe(false);
     expect(state.writes.filter((w) => w.path === '/v1/platform/apps').at(-1)?.body).toMatchObject({ environment: 'development' });
   });
 
-  describe('a second environment in the same folder', () => {
+  describe('each environment in its own folder', () => {
     const DEV = ['init', '--product', 'acme', '--instance-env', 'development', '--yes'];
+    const dir = () => join(home, 'acme');
+    /** What an older version left: a flat key for this environment, with its app. */
+    const flat = (env: string, key: string) => {
+      mkdirSync(dir(), { recursive: true, mode: 0o700 });
+      writeFileSync(join(dir(), `${env}.env`), `ATLAS_SECRET_KEY=${key}\n`, { mode: 0o600 });
+      state.apps.push({ id: `ins_${env}`, name: 'acme', environment: env, publishable_key: `pk_test_${env}`, frontend_api_host: null });
+    };
+    const scan = async () => run(['doctor', '--scan-dir', dir()], ctxWith(captureIO()));
 
-    it('goes in its own folder, and says so', async () => {
+    it.each([
+      ['production first', BASE, DEV],
+      ['development first', DEV, BASE],
+    ])('%s: both are in their own folder, says so, and doctor --scan-dir exits 0', async (_name, first, second) => {
+      const io = captureIO();
+      expect(await run(first, ctxWith(io))).toBe(0);
+      noSecrets(io);
+      expect(io.stdout()).toContain('one folder per environment');
+      expect(await run(second, ctxWith(captureIO()))).toBe(0);
+      for (const env of ['production', 'development']) {
+        expect(mode(join(dir(), env, 'atlas.env'))).toBe(0o600);
+        expect(existsSync(join(dir(), `${env}.env`))).toBe(false);
+        expect(JSON.parse(readFileSync(join(dir(), 'atlas.json'), 'utf8')).instances[env].secret_file).toBe(join(dir(), env, 'atlas.env'));
+      }
+      expect(await scan()).toBe(0);
+    });
+
+    it('atlas env reads each environment from its folder', async () => {
       expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+      expect(await run(DEV, ctxWith(captureIO()))).toBe(0);
+      for (const env of ['production', 'development']) {
+        const io = captureIO();
+        expect(await run(['env', '--product', 'acme', '--instance-env', env, '--format', 'dotenv'], ctxWith(io))).toBe(0);
+        expect(io.stdout()).toContain(`ATLAS_SECRET_KEY_FILE=${join(dir(), env, 'atlas.env')}`);
+      }
+    });
+
+    it('a re-run neither moves anything nor repeats the line', async () => {
+      expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+      const again = captureIO();
+      expect(await run(BASE, ctxWith(again))).toBe(0);
+      expect(again.stdout()).not.toContain('one folder per environment');
+      expect(existsSync(join(dir(), 'production.env'))).toBe(false);
+    });
+
+    it('an existing flat file is not moved or overwritten; the new environment says so, and doctor reports the two', async () => {
+      flat('production', SK);
+      const before = readFileSync(join(dir(), 'production.env'), 'utf8');
       const io = captureIO();
       expect(await run(DEV, ctxWith(io))).toBe(0);
       noSecrets(io);
-      const dir = join(home, 'acme');
-      expect(existsSync(join(dir, 'production.env'))).toBe(true);
-      expect(existsSync(join(dir, 'development.env'))).toBe(false);
-      expect(readFileSync(join(dir, 'development', 'atlas.env'), 'utf8')).toContain(`ATLAS_SECRET_KEY=${SK}`);
-      expect(mode(join(dir, 'development', 'atlas.env'))).toBe(0o600);
-      expect(io.stdout()).toContain(`already holds another environment's key, so the development files go in ${join(dir, 'development')}`);
-      expect(JSON.parse(readFileSync(join(dir, 'atlas.json'), 'utf8')).instances.development.secret_file).toBe(join(dir, 'development', 'atlas.env'));
-    });
-
-    it('works the other way round, and a re-run neither moves anything nor repeats the line', async () => {
-      expect(await run(DEV, ctxWith(captureIO()))).toBe(0);
-      expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
-      const dir = join(home, 'acme');
-      expect(existsSync(join(dir, 'production', 'atlas.env'))).toBe(true);
-      expect(existsSync(join(dir, 'development.env'))).toBe(true);
-      const again = captureIO();
-      expect(await run(BASE, ctxWith(again))).toBe(0);
-      expect(again.stdout()).not.toContain('already holds');
-      expect(existsSync(join(dir, 'production.env'))).toBe(false);
+      expect(readFileSync(join(dir(), 'production.env'), 'utf8')).toBe(before);
+      expect(existsSync(join(dir(), 'production', 'atlas.env'))).toBe(false);
+      expect(existsSync(join(dir(), 'development', 'atlas.env'))).toBe(true);
+      expect(io.stdout()).toContain(`already holds another environment's key, so the development files go in ${join(dir(), 'development')}`);
+      expect(io.stdout()).toContain('atlas doctor --scan-dir');
     });
 
     it('a flat file for the same environment keeps its layout, even beside the other one', async () => {
-      expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
-      const dir = join(home, 'acme');
-      writeFileSync(join(dir, 'development.env'), `ATLAS_SECRET_KEY=${DEV_SK}\n`, { mode: 0o600 });
+      flat('production', SK);
+      writeFileSync(join(dir(), 'development.env'), `ATLAS_SECRET_KEY=${DEV_SK}\n`, { mode: 0o600 });
       const io = captureIO();
       expect(await run(BASE, ctxWith(io))).toBe(0);
       expect(io.stdout()).not.toContain('already holds');
-      expect(existsSync(join(dir, 'production'))).toBe(false);
+      expect(existsSync(join(dir(), 'production'))).toBe(false);
     });
 
-    it('sees a key of the other kind in any env file, as doctor --scan-dir does', async () => {
-      const dir = join(home, 'acme');
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-      writeFileSync(join(dir, '.env'), 'ATLAS_SECRET_KEY=sk_live_left_behind\n', { mode: 0o600 });
-      expect(await run(DEV, ctxWith(captureIO()))).toBe(0);
-      expect(existsSync(join(dir, 'development', 'atlas.env'))).toBe(true);
-    });
-
-    it('a key of the same kind, or a commented-out one, is no reason to move', async () => {
-      const dir = join(home, 'acme');
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-      writeFileSync(join(dir, '.env'), `ATLAS_SECRET_KEY=${DEV_SK}\n# ATLAS_SECRET_KEY=sk_live_old\n`, { mode: 0o600 });
-      expect(await run(DEV, ctxWith(captureIO()))).toBe(0);
-      expect(existsSync(join(dir, 'development.env'))).toBe(true);
+    it('moving a flat key into its folder and re-running repairs the manifest', async () => {
+      flat('production', SK);
+      expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+      mkdirSync(join(dir(), 'production'), { mode: 0o700 });
+      renameSync(join(dir(), 'production.env'), join(dir(), 'production', 'atlas.env'));
+      expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+      expect(JSON.parse(readFileSync(join(dir(), 'atlas.json'), 'utf8')).instances.production.secret_file).toBe(join(dir(), 'production', 'atlas.env'));
     });
 
     it('--json stays valid: the line goes to stderr', async () => {
-      expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
       const io = captureIO();
       expect(await run([...DEV, '--json'], ctxWith(io))).toBe(0);
       expect(JSON.parse(io.stdout()).secret_file).toBe(join(home, 'acme', 'development', 'atlas.env'));
-      expect(io.stderr()).toContain('already holds');
+      expect(io.stderr()).toContain('one folder per environment');
     });
   });
 
@@ -352,7 +375,7 @@ describe('atlas init: secret layouts and strict bodies', () => {
     const io = captureIO();
     expect(await run([...BASE, '--no-env-files'], ctxWith(io))).toBe(1);
     expect(io.stderr()).toContain('needs --json');
-    expect(io.stderr()).toContain(join(home, 'acme', 'production.env'));
+    expect(io.stderr()).toContain(join(home, 'acme', 'production', 'atlas.env'));
     expect(state.writes).toEqual([]);
   });
 
@@ -361,7 +384,7 @@ describe('atlas init: secret layouts and strict bodies', () => {
     expect(await run([...BASE, '--no-env-files', '--json'], ctxWith(io))).toBe(0);
     expect(JSON.parse(io.stdout()).secrets.production.ATLAS_SECRET_KEY).toBe(SK);
     expect(io.stderr()).not.toContain(SK);
-    expect(existsSync(join(home, 'acme', 'production.env'))).toBe(false);
+    expect(existsSync(join(home, 'acme', 'production', 'atlas.env'))).toBe(false);
   });
 
   it('turns strict bodies on once, and leaves an opted-out instance alone', async () => {
@@ -437,11 +460,12 @@ describe('atlas init', () => {
 
     const dir = join(home, 'acme');
     expect(mode(dir)).toBe(0o700);
-    expect(mode(join(dir, 'production.env'))).toBe(0o600);
-    expect(readFileSync(join(dir, 'production.env'), 'utf8')).toContain(`ATLAS_SECRET_KEY=${SK}`);
-    expect(readFileSync(join(dir, 'production-oauth-client.env'), 'utf8')).toContain(`ATLAS_CLIENT_SECRET=${CLIENT_SECRET}`);
-    expect(mode(join(dir, 'production-oauth-client.env'))).toBe(0o600);
-    expect(readFileSync(join(dir, 'production-webhook.env'), 'utf8')).toContain(`ATLAS_WEBHOOK_SECRET=${WEBHOOK_SECRET}`);
+    expect(mode(join(dir, 'production'))).toBe(0o700);
+    expect(mode(join(dir, 'production', 'atlas.env'))).toBe(0o600);
+    expect(readFileSync(join(dir, 'production', 'atlas.env'), 'utf8')).toContain(`ATLAS_SECRET_KEY=${SK}`);
+    expect(readFileSync(join(dir, 'production', 'oauth-client.env'), 'utf8')).toContain(`ATLAS_CLIENT_SECRET=${CLIENT_SECRET}`);
+    expect(mode(join(dir, 'production', 'oauth-client.env'))).toBe(0o600);
+    expect(readFileSync(join(dir, 'production', 'webhook.env'), 'utf8')).toContain(`ATLAS_WEBHOOK_SECRET=${WEBHOOK_SECRET}`);
 
     // The app is created without a sibling, with the redirect origin allowed.
     expect(state.writes.find((w) => w.path === '/v1/platform/apps')?.body).toMatchObject({
@@ -541,7 +565,7 @@ describe('atlas init', () => {
     expect(await run(['init', '--product', 'acme', '--yes', '--rotate-secret'], ctxWith(io2))).toBe(0);
     expect(state.rotations).toBe(1);
     noSecrets(io2);
-    expect(readFileSync(join(home, 'acme', 'production.env'), 'utf8')).toContain(SK);
+    expect(readFileSync(join(home, 'acme', 'production', 'atlas.env'), 'utf8')).toContain(SK);
   });
 
   it('uses the development sender with the customer key (read from stdin), and turns on email code', async () => {
@@ -563,7 +587,7 @@ describe('atlas init', () => {
     expect(state.development).toBe(true);
     expect(state.instance.strategies.emailCode).toBe(true);
     expect(io.stdout()).toContain('onboarding@resend.dev');
-    expect(readFileSync(join(home, 'acme', 'development.env'), 'utf8')).toContain(SK);
+    expect(readFileSync(join(home, 'acme', 'development', 'atlas.env'), 'utf8')).toContain(SK);
 
     // A re-run without the key reuses the provider already in development mode.
     const again = captureIO();
@@ -671,22 +695,22 @@ describe('atlas env', () => {
     const out = io.stdout();
     expect(out).toContain('ATLAS_PUBLISHABLE_KEY=pk_test_1');
     expect(out).toContain('ATLAS_CLIENT_ID=client_abc');
-    expect(out).toContain(`ATLAS_SECRET_KEY_FILE=${join(home, 'acme', 'production.env')}`);
-    expect(out).toContain(`ATLAS_CLIENT_SECRET_FILE=${join(home, 'acme', 'production-oauth-client.env')}`);
-    expect(out).toContain(`ATLAS_WEBHOOK_SECRET_FILE=${join(home, 'acme', 'production-webhook.env')}`);
+    expect(out).toContain(`ATLAS_SECRET_KEY_FILE=${join(home, 'acme', 'production', 'atlas.env')}`);
+    expect(out).toContain(`ATLAS_CLIENT_SECRET_FILE=${join(home, 'acme', 'production', 'oauth-client.env')}`);
+    expect(out).toContain(`ATLAS_WEBHOOK_SECRET_FILE=${join(home, 'acme', 'production', 'webhook.env')}`);
   });
 
   it('coolify and vercel formats reference the files', async () => {
     const c = captureIO();
     expect(await run(['env', '--product', 'acme', '--format', 'coolify'], ctxWith(c))).toBe(0);
     noSecrets(c);
-    expect(c.stdout()).toContain(`ATLAS_SECRET_KEY=@${join(home, 'acme', 'production.env')}`);
+    expect(c.stdout()).toContain(`ATLAS_SECRET_KEY=@${join(home, 'acme', 'production', 'atlas.env')}`);
 
     const v = captureIO();
     expect(await run(['env', '--product', 'acme', '--format', 'vercel'], ctxWith(v))).toBe(0);
     noSecrets(v);
     expect(v.stdout()).toContain("vercel env add ATLAS_SECRET_KEY production");
-    expect(v.stdout()).toContain(join(home, 'acme', 'production.env'));
+    expect(v.stdout()).toContain(join(home, 'acme', 'production', 'atlas.env'));
   });
 
   it('k8s: a ConfigMap of public values and kubectl commands that read the secret files', async () => {
@@ -697,7 +721,7 @@ describe('atlas env', () => {
     expect(out).toContain('kind: ConfigMap');
     expect(out).toContain('name: acme-atlas');
     expect(out).toContain('ATLAS_PUBLISHABLE_KEY: "pk_test_1"');
-    expect(out).toContain(`kubectl create secret generic acme-atlas-atlas-secret-key --from-env-file='${join(home, 'acme', 'production.env')}'`);
+    expect(out).toContain(`kubectl create secret generic acme-atlas-atlas-secret-key --from-env-file='${join(home, 'acme', 'production', 'atlas.env')}'`);
     expect(out).toContain('secretKeyRef: { name: acme-atlas-atlas-secret-key, key: ATLAS_SECRET_KEY }');
   });
 
@@ -738,11 +762,22 @@ describe('atlas client rotate', () => {
     const io = captureIO();
     expect(await run(['client', 'rotate', 'oc_1', '--product', 'acme', '--overlap', '3600'], ctxWith(io))).toBe(0);
     expect(io.stdout()).not.toContain('oacs_rotated_secret_0002');
-    const file = join(home, 'acme', 'production-oauth-client.env');
+    const file = join(home, 'acme', 'production', 'oauth-client.env');
     expect(readFileSync(file, 'utf8')).toContain('ATLAS_CLIENT_SECRET=oacs_rotated_secret_0002');
     expect(mode(file)).toBe(0o600);
     expect(io.stdout()).toContain(new Date(1_800_000_000_000).toISOString());
     expect(state.writes.at(-1)).toMatchObject({ path: '/v1/oauth_clients/oc_1/rotate_secret', body: { overlap_seconds: 3600 } });
+  });
+
+  it('with no known client file, writes beside the key in its folder', async () => {
+    const manifestFile = join(home, 'acme', 'atlas.json');
+    const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
+    manifest.instances.production.oauth_client.secret_file = null;
+    writeFileSync(manifestFile, JSON.stringify(manifest));
+    rmSync(join(home, 'acme', 'production', 'oauth-client.env'));
+    expect(await run(['client', 'rotate', 'oc_1', '--product', 'acme'], ctxWith(captureIO()))).toBe(0);
+    expect(readFileSync(join(home, 'acme', 'production', 'oauth-client.env'), 'utf8')).toContain('ATLAS_CLIENT_SECRET=oacs_rotated_secret_0002');
+    expect(existsSync(join(home, 'acme', 'production-oauth-client.env'))).toBe(false);
   });
 
   it('--now sends overlap_seconds 0 and accepts the public client_id', async () => {
