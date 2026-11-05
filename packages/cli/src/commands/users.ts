@@ -68,6 +68,16 @@ export async function users(ctx: RunContext, args: ParsedArgs): Promise<number> 
       return 0;
     }
 
+    case 'clear-password': {
+      // Idempotent: the password is gone afterwards whether or not there was one.
+      const id = requireArg(args.positionals, 2, 'user-id');
+      const auth = resolveAuth(ctx, args.values);
+      await httpFor(ctx, { secretKey: auth.secretKey, apiUrl: auth.apiUrl }).delete(`/v1/users/${encodeURIComponent(id)}/password`);
+      if (json) printJson(ctx.io, { id, password_enabled: false });
+      else ctx.io.out(`Cleared the password of user ${id}. Their other sessions were signed out.`);
+      return 0;
+    }
+
     case 'delete': {
       const id = requireArg(args.positionals, 2, 'user-id');
       const { client } = requireClient(ctx, args.values);
@@ -80,7 +90,7 @@ export async function users(ctx: RunContext, args: ParsedArgs): Promise<number> 
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'users ${sub}'. Try: list, get, create, merge, delete.`
+          ? `Unknown subcommand 'users ${sub}'. Try: list, get, create, merge, clear-password, delete.`
           : "users needs a subcommand: list, get, create, delete.",
       );
   }

@@ -4,6 +4,7 @@ import type { ConfigHttp } from '../config-http';
 import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { printJson } from '../output';
+import { redactDeep, scrubText } from '../redact';
 import { httpFor } from '../project';
 import { instanceCredential } from './project-commands';
 import { wantsJson } from './shared';
@@ -117,6 +118,16 @@ export async function declaredCookiesCheck(api: ConfigHttp): Promise<CheckResult
   };
 }
 
+/** What verifying a domain would do to the issuer (`?dry_run=true`). */
+interface IssuerPreview {
+  issuer_before?: string | null;
+  issuer_after?: string | null;
+  /** Unix seconds. */
+  previous_issuers_kept_until?: number | null;
+}
+
+const keptUntil = (v: number | null | undefined): string | null => (typeof v === 'number' ? new Date(v * 1000).toISOString() : null);
+
 class StepFailed extends Error {
   constructor(
     readonly step: string,
@@ -142,7 +153,7 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
 
   const pass = (id: string, detail: string) => {
     results.push({ id, ok: true, detail });
-    if (!json) ctx.io.out(`✓ ${id} — ${detail}`);
+    if (!json) ctx.io.out(`✓ ${id} — ${scrubText(detail)}`);
   };
   const fail = (problem: string, fix: string): never => {
     throw new StepFailed(current, problem, fix);
@@ -160,6 +171,15 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
     } else if (domain.status === 'active') {
       pass('domains', `${domain.host}${domain.base_path ?? ''} verified`);
     } else {
+      // Verifying can move the issuer, which breaks every verifier pinned to the old one: say so first.
+      const preview = await api.post<IssuerPreview>(`/v1/domains/${domain.id}/verify?dry_run=true`, {});
+      if (preview?.issuer_before && preview.issuer_after && preview.issuer_before !== preview.issuer_after) {
+        const until = keptUntil(preview.previous_issuers_kept_until);
+        const pair = `issuer moves from ${preview.issuer_before} to ${preview.issuer_after}`;
+        const copy = `Add this to your token verifiers first: previousIssuers: ["${preview.issuer_before}"]${until ? ` (the old issuer is kept until ${until})` : ''}.`;
+        if (!dry && v.yes !== true) fail(`verifying ${domain.host}: ${pair}`, `${copy} Then run golive again with --yes.`);
+        pass('issuer_move', `${pair}. ${copy}`);
+      }
       const res = await api.post<Domain & { object?: string }>(q(`/v1/domains/${domain.id}/verify`), {});
       if (dry) pass('domains', would('', `verify ${domain.host}`));
       else if (!res.verified) fail(`${domain.host} is not verified yet (${res.status})`, res.action ?? res.failure_reason ?? 'Publish the DNS record or verification file, then run golive again.');
@@ -280,11 +300,11 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
           : null;
     if (!failed) throw err;
     results.push({ id: failed.step, ok: false, detail: failed.problem, fix: failed.fix });
-    if (json) printJson(ctx.io, { ok: false, dry_run: dry, origin: origin.origin, steps: results });
-    else ctx.io.out(`✗ ${failed.step} — ${failed.problem}\n  fix: ${failed.fix}`);
+    if (json) printJson(ctx.io, redactDeep({ ok: false, dry_run: dry, origin: origin.origin, steps: results }));
+    else ctx.io.out(scrubText(`✗ ${failed.step} — ${failed.problem}\n  fix: ${failed.fix}`));
     return 1;
   }
-  if (json) printJson(ctx.io, { ok: true, dry_run: dry, origin: origin.origin, steps: results });
+  if (json) printJson(ctx.io, redactDeep({ ok: true, dry_run: dry, origin: origin.origin, steps: results }));
   else if (dry) ctx.io.out('Dry run: nothing was written.');
   return 0;
 }

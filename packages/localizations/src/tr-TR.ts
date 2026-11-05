@@ -269,6 +269,7 @@ export const trTR: LocalizationResource = {
   'error.strategy_disabled': 'Bu oturum açma yöntemi bu uygulama için kullanılamıyor.',
   'error.sign_up_restricted': 'Bu uygulamaya kayıt yalnızca davetle yapılabilir.',
   'error.sign_up_denied': 'Bu hesap için kayıt kullanılamıyor.',
+  'error.password_not_yet_usable': 'Bu parolayla oturum açmadan önce e-posta adresinizi doğrulayın.',
   'error.waitlisted': 'Bekleme listesindesiniz. Yer açıldığında size e-posta göndereceğiz.',
   'error.identifier_not_allowed': 'Bu e-posta adresine veya telefon numarasına bu uygulamada izin verilmiyor.',
   'error.disposable_email_blocked': 'Geçici veya tek kullanımlık bir e-posta adresiyle kayda izin verilmiyor.',

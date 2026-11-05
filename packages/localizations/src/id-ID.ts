@@ -269,6 +269,7 @@ export const idID: LocalizationResource = {
   'error.strategy_disabled': 'Metode masuk ini tidak tersedia untuk aplikasi ini.',
   'error.sign_up_restricted': 'Pendaftaran di aplikasi ini hanya melalui undangan.',
   'error.sign_up_denied': 'Pendaftaran tidak tersedia untuk akun ini.',
+  'error.password_not_yet_usable': 'Verifikasi alamat email Anda sebelum masuk dengan kata sandi ini.',
   'error.waitlisted': 'Anda berada dalam daftar tunggu. Kami akan mengirim email kepada Anda saat tersedia tempat.',
   'error.identifier_not_allowed': 'Email atau nomor telepon ini tidak diizinkan di aplikasi ini.',
   'error.disposable_email_blocked': 'Pendaftaran dengan alamat email sekali pakai atau sementara tidak diizinkan.',

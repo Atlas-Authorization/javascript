@@ -329,6 +329,7 @@ export interface LocalizationResource {
   'error.strategy_disabled': string;
   'error.sign_up_restricted': string;
   'error.sign_up_denied': string;
+  'error.password_not_yet_usable': string;
   'error.waitlisted': string;
   'error.identifier_not_allowed': string;
   'error.disposable_email_blocked': string;

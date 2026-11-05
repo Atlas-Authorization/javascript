@@ -269,6 +269,7 @@ export const arSA: LocalizationResource = {
   'error.strategy_disabled': 'طريقة تسجيل الدخول هذه غير متاحة لهذا التطبيق.',
   'error.sign_up_restricted': 'إنشاء الحسابات في هذا التطبيق بدعوة فقط.',
   'error.sign_up_denied': 'التسجيل غير متاح لهذا الحساب.',
+  'error.password_not_yet_usable': 'وثّق عنوان بريدك الإلكتروني قبل تسجيل الدخول بكلمة المرور هذه.',
   'error.waitlisted': 'أنت في قائمة الانتظار. سنراسلك عبر البريد الإلكتروني عندما يتوفر مكان.',
   'error.identifier_not_allowed': 'هذا البريد الإلكتروني أو رقم الهاتف غير مسموح به في هذا التطبيق.',
   'error.disposable_email_blocked': 'لا يُسمح بإنشاء حساب باستخدام عنوان بريد إلكتروني مؤقت أو يُستخدم لمرة واحدة.',

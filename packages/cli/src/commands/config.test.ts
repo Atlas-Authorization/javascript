@@ -321,14 +321,14 @@ describe('config import', () => {
   it('interpolates a ${ENV} placeholder from the environment at import', async () => {
     writeFileSync(
       join(dir, 'oauth_clients.json'),
-      JSON.stringify([{ name: 'Web App', redirect_uris: ['https://x/y'], token_hint: '${A_TOKEN}' }], null, 2) + '\n',
+      JSON.stringify([{ name: 'Web App', redirect_uris: ['https://x/y'], client_secret: '${A_TOKEN}' }], null, 2) + '\n',
     );
     const io = captureIO();
     const api = new MockApi({ ...seedState(), oauth_clients: [] });
     await run(['config', 'import', '--dir', dir], ctx(io, api, { A_TOKEN: 'injected' }));
     const create = api.writes.find((w) => w.path === '/v1/oauth_clients');
     expect(create).toBeDefined();
-    expect((create!.body as { token_hint: string }).token_hint).toBe('injected');
+    expect((create!.body as { client_secret: string }).client_secret).toBe('injected');
   });
 
   it('errors cleanly when the directory is missing', async () => {
@@ -625,7 +625,7 @@ describe('atlas apply / atlas plan (one config file)', () => {
   });
 
   it('--secrets-file fills ${VAR} placeholders and must be mode 0600', async () => {
-    const path = file({ oauth_clients: [{ name: 'Web App', redirect_uris: ['https://x/y'], token_hint: '${A_TOKEN}' }] });
+    const path = file({ oauth_clients: [{ name: 'Web App', redirect_uris: ['https://x/y'], client_secret: '${A_TOKEN}' }] });
     const secrets = join(dir, 'secrets.env');
     writeFileSync(secrets, 'A_TOKEN=from-file\n');
     if (process.platform !== 'win32') {
@@ -637,7 +637,7 @@ describe('atlas apply / atlas plan (one config file)', () => {
     chmodSync(secrets, 0o600);
     const api = new MockApi({ ...seedState(), oauth_clients: [] });
     expect(await run(['apply', path, '--yes', '--secrets-file', secrets], ctx(captureIO(), api))).toBe(0);
-    expect((api.writes.find((w) => w.path === '/v1/oauth_clients')!.body as { token_hint: string }).token_hint).toBe('from-file');
+    expect((api.writes.find((w) => w.path === '/v1/oauth_clients')!.body as { client_secret: string }).client_secret).toBe('from-file');
   });
 
   it('keeps a one-time client secret from a create in a 0600 file under --out', async () => {
@@ -659,7 +659,7 @@ describe('atlas apply / atlas plan (one config file)', () => {
   });
 
   it('never applies while a ${VAR} placeholder is unresolved', async () => {
-    const path = file({ oauth_clients: [{ name: 'Web App', redirect_uris: ['https://x/y'], token_hint: '${MISSING_TOKEN}' }] });
+    const path = file({ oauth_clients: [{ name: 'Web App', redirect_uris: ['https://x/y'], client_secret: '${MISSING_TOKEN}' }] });
     const api = new MockApi({ ...seedState(), oauth_clients: [] });
     const io = captureIO();
     expect(await run(['apply', path, '--yes'], ctx(io, api))).toBe(1);

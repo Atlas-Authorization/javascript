@@ -103,6 +103,21 @@ const OPTIONS = {
   api: { type: 'string' },
   // fga test.
   store: { type: 'string' },
+  // plan / apply: print secret values (a terminal only, never under CI).
+  'show-secrets': { type: 'boolean' },
+  // import <file>.
+  'on-conflict': { type: 'string' },
+  'password-policy': { type: 'string' },
+  // preflight --fix.
+  fix: { type: 'boolean' },
+  // doctor --scan-dir / --scan-image.
+  'scan-dir': { type: 'string' },
+  'scan-image': { type: 'string' },
+  // init.
+  'no-env-files': { type: 'boolean' },
+  'with-dev': { type: 'boolean' },
+  next: { type: 'boolean' },
+  mount: { type: 'string' },
   // resource commands: a JSON request body (or --file).
   data: { type: 'string' },
   // csp.

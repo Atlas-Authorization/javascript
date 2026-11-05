@@ -222,6 +222,7 @@ export const plPL: LocalizationResource = {
   'error.strategy_disabled': 'Ten sposób logowania nie jest dostępny w tej aplikacji.',
   'error.sign_up_restricted': 'Rejestracja w tej aplikacji jest możliwa tylko na zaproszenie.',
   'error.sign_up_denied': 'Rejestracja nie jest dostępna dla tego konta.',
+  'error.password_not_yet_usable': 'Zweryfikuj swój adres e-mail przed zalogowaniem się tym hasłem.',
   'error.waitlisted': 'Jesteś na liście oczekujących. Powiadomimy Cię e-mailem, gdy zwolni się miejsce.',
   'error.identifier_not_allowed': 'Ten adres e-mail lub numer telefonu jest niedozwolony w tej aplikacji.',
   'error.disposable_email_blocked': 'Rejestracja za pomocą tymczasowego lub jednorazowego adresu e-mail jest niedozwolona.',

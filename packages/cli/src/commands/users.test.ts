@@ -1,5 +1,6 @@
 import type { User } from '@atlasauth/backend';
 import { describe, expect, it, vi } from 'vitest';
+import type { ConfigHttp } from '../config-http';
 import type { ManagementClient, RunContext } from '../context';
 import { captureIO, type CaptureIO } from '../io';
 import { MemoryConfigStore } from '../config';
@@ -87,6 +88,24 @@ describe('users subcommands', () => {
     const code = await run(['users', 'frobnicate'], ctx(io, vi.fn()));
     expect(code).toBe(1);
     expect(io.stderr()).toContain("Unknown subcommand 'users frobnicate'");
+  });
+
+  it('clear-password calls the DELETE route', async () => {
+    const io = captureIO();
+    const del = vi.fn(async () => undefined);
+    const http = { delete: del } as unknown as ConfigHttp;
+    expect(await run(['users', 'clear-password', 'user_1'], { ...ctx(io, vi.fn()), makeHttp: () => http })).toBe(0);
+    expect(del).toHaveBeenCalledWith('/v1/users/user_1/password');
+    expect(io.stdout()).toContain('Cleared the password of user user_1');
+    const json = captureIO();
+    expect(await run(['users', 'clear-password', 'user_1', '--json'], { ...ctx(json, vi.fn()), makeHttp: () => http })).toBe(0);
+    expect(JSON.parse(json.stdout())).toEqual({ id: 'user_1', password_enabled: false });
+  });
+
+  it('clear-password needs a user id', async () => {
+    const io = captureIO();
+    expect(await run(['users', 'clear-password'], ctx(io, vi.fn()))).toBe(1);
+    expect(io.stderr()).toContain('<user-id>');
   });
 
   it('create without --email fails cleanly before any client call', async () => {

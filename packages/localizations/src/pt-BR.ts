@@ -222,6 +222,7 @@ export const ptBR: LocalizationResource = {
   'error.strategy_disabled': 'Este método de login não está disponível para este app.',
   'error.sign_up_restricted': 'O cadastro neste app é feito somente por convite.',
   'error.sign_up_denied': 'O cadastro não está disponível para esta conta.',
+  'error.password_not_yet_usable': 'Verifique seu endereço de e-mail antes de entrar com esta senha.',
   'error.waitlisted': 'Você está na lista de espera. Enviaremos um e-mail quando houver uma vaga.',
   'error.identifier_not_allowed': 'Este e-mail ou número de telefone não é permitido neste app.',
   'error.disposable_email_blocked': 'Não é permitido se cadastrar com um endereço de e-mail descartável ou temporário.',

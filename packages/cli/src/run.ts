@@ -32,9 +32,11 @@ import {
   AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS,
   resourceCommand,
 } from './commands/resources';
-import type { RunContext } from './context';
+import { ttyOf, type RunContext } from './context';
 import { CliError } from './errors';
 import { COMMAND_HELP, TOP_HELP } from './help';
+import { resetRedaction, scrubText, scrubbingIO, setRevealSecrets } from './redact';
+import { setupGuide } from './commands/setup-guide';
 import { getVersion } from './version';
 
 /** A command handler: given the context and parsed args, do the work; return an exit code. */
@@ -62,6 +64,7 @@ const COMMANDS: Record<string, Handler> = {
   actions,
   pages,
   init,
+  'setup-guide': setupGuide,
   preflight,
   doctor,
   golive,
@@ -103,7 +106,9 @@ const COMMANDS: Record<string, Handler> = {
  * captured IO. All error reporting funnels through the one try/catch so a user
  * sees a clean message and a non-zero code — never a stack trace.
  */
-export async function run(argv: string[], ctx: RunContext): Promise<number> {
+export async function run(argv: string[], rawCtx: RunContext): Promise<number> {
+  resetRedaction();
+  const ctx: RunContext = { ...rawCtx, io: scrubbingIO(rawCtx.io) };
   let args: ParsedArgs;
   try {
     args = parse(argv);
@@ -115,6 +120,13 @@ export async function run(argv: string[], ctx: RunContext): Promise<number> {
   if (args.values.version) {
     ctx.io.out(getVersion());
     return 0;
+  }
+
+  if (args.values['show-secrets']) {
+    if (!ttyOf(ctx).stdout || ctx.env.CI) {
+      return report(ctx, new CliError('--show-secrets needs a terminal: it is refused when stdout is not a TTY or CI is set.'));
+    }
+    setRevealSecrets(true);
   }
 
   const command = args.positionals[0];
@@ -154,14 +166,14 @@ export async function run(argv: string[], ctx: RunContext): Promise<number> {
 function report(ctx: RunContext, err: unknown): number {
   if (err instanceof AtlasApiError) {
     const code = err.code ? ` [${err.code}]` : '';
-    ctx.io.err(`atlas: API error (HTTP ${err.status})${code}: ${err.message}`);
+    ctx.io.err(`atlas: API error (HTTP ${err.status})${code}: ${scrubText(err.message)}`);
     return 1;
   }
   if (err instanceof CliError) {
-    ctx.io.err(`atlas: ${err.message}`);
+    ctx.io.err(`atlas: ${scrubText(err.message)}`);
     return err.exitCode;
   }
   const message = err instanceof Error ? err.message : String(err);
-  ctx.io.err(`atlas: ${message}`);
+  ctx.io.err(`atlas: ${scrubText(message)}`);
   return 1;
 }

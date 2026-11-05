@@ -139,6 +139,113 @@ describe('createMountHandler', () => {
     });
   });
 
+  describe('what reaches upstream', () => {
+    const upstreamHeaders = async (headers: Record<string, string>, options: Parameters<typeof createMountHandler>[0] = {}) => {
+      const { calls, fetchImpl } = capture(() => new Response('ok'));
+      const { GET } = createMountHandler({ ...opts, ...options, fetchImpl });
+      await GET(new Request('https://app.example.com/atlas/v1/client', { headers }));
+      return calls[0]!.init.headers as Headers;
+    };
+
+    it('forwards only Atlas cookies by default', async () => {
+      const h = await upstreamHeaders({ cookie: 'app_session=x; __session=y' });
+      expect(h.get('cookie')).toBe('__session=y');
+    });
+
+    it('does not forward look-alike cookies from other vendors', async () => {
+      const h = await upstreamHeaders({ cookie: '__session_abc=1; __session__0=2; __client_uat=3; __Secure-__session=4; __client=5' });
+      expect(h.get('cookie')).toBe('__client=5');
+    });
+
+    it('keeps a multi-cookie header well-formed, values with = intact', async () => {
+      const h = await upstreamHeaders({ cookie: ' __session=a.b=c ;app_session=x;__atlas_rt=d;; __client=e;' });
+      expect(h.get('cookie')).toBe('__session=a.b=c; __atlas_rt=d; __client=e');
+    });
+
+    it('sends no Cookie header when no cookie is allowed', async () => {
+      expect((await upstreamHeaders({ cookie: 'app_session=x; other=y' })).has('cookie')).toBe(false);
+    });
+
+    it('forwardCookies replaces the default', async () => {
+      const h = await upstreamHeaders({ cookie: 'app_session=x; __session=y' }, { forwardCookies: (name) => name === 'app_session' });
+      expect(h.get('cookie')).toBe('app_session=x');
+    });
+
+    it('drops an internal header but keeps what the browser SDK and hosted pages need', async () => {
+      const kept: Record<string, string> = {
+        accept: 'application/json',
+        'accept-language': 'fr',
+        'access-control-request-method': 'POST',
+        authorization: 'Bearer t',
+        'content-type': 'application/json',
+        'if-none-match': '"etag"',
+        origin: 'https://app.example.com',
+        referer: 'https://app.example.com/a',
+        'sec-ch-ua-platform': '"macOS"',
+        'sec-fetch-dest': 'webidentity',
+        'user-agent': 'browser',
+        'atlas-attestation': 'att',
+        dpop: 'proof',
+        'x-atlas-sdk': '@atlasauth/js/1.0.0',
+        'x-publishable-key': 'pk_test_x',
+        'x-refresh-token': 'rt',
+      };
+      const h = await upstreamHeaders({ ...kept, 'x-origin-verify': 'internal', 'x-my-app': 'y' });
+      for (const [name, value] of Object.entries(kept)) expect(h.get(name)).toBe(value);
+      expect(h.get('x-origin-verify')).toBeNull();
+      expect(h.get('x-my-app')).toBeNull();
+    });
+
+    it('forwardHeaders replaces the default', async () => {
+      const h = await upstreamHeaders({ 'x-my-app': 'y', accept: 'text/html' }, { forwardHeaders: (name) => name === 'x-my-app' });
+      expect(h.get('x-my-app')).toBe('y');
+      expect(h.get('accept')).toBeNull();
+    });
+
+    it('forwardHeaders can turn off the Cookie header', async () => {
+      const h = await upstreamHeaders({ cookie: '__session=y' }, { forwardHeaders: (name) => name !== 'cookie' && name !== 'accept' });
+      expect(h.has('cookie')).toBe(false);
+    });
+
+    it('never passes a trusted or hop-by-hop header, even when the hook says yes', async () => {
+      const h = await upstreamHeaders(
+        {
+          'x-atlas-proxy-secret': 'forged',
+          'x-atlas-client-ip': '6.6.6.6',
+          'x-atlas-forwarded-host': 'evil.test',
+          'x-atlas-edge-secret': 'forged',
+          'x-atlas-mtls-secret': 'forged',
+          'x-forwarded-client-cert': 'forged',
+          'x-client-cert': 'forged',
+          'ssl-client-cert': 'forged',
+          'cf-connecting-ip': '6.6.6.6',
+          'true-client-ip': '6.6.6.6',
+          'x-real-ip': '6.6.6.6',
+          forwarded: 'for=6.6.6.6',
+          connection: 'keep-alive',
+          'proxy-authorization': 'x',
+        },
+        { forwardHeaders: () => true, proxySecret: 'aps_secret' },
+      );
+      expect(h.get('x-atlas-proxy-secret')).toBe('aps_secret');
+      expect(h.get('x-atlas-forwarded-host')).toBe('app.example.com');
+      expect(h.get('x-atlas-client-ip')).toBeNull();
+      for (const name of ['x-atlas-edge-secret', 'x-atlas-mtls-secret', 'x-forwarded-client-cert', 'x-client-cert', 'ssl-client-cert', 'cf-connecting-ip', 'true-client-ip', 'x-real-ip', 'forwarded', 'connection', 'proxy-authorization']) {
+        expect(h.get(name)).toBeNull();
+      }
+    });
+
+    it('a hook can drop X-Atlas-SDK', async () => {
+      const h = await upstreamHeaders({ 'x-atlas-sdk': '@atlasauth/js/1.0.0' }, { forwardHeaders: () => false });
+      expect(h.get('x-atlas-sdk')).toBeNull();
+    });
+
+    it('the client IP does not depend on the header hooks', async () => {
+      const h = await upstreamHeaders({ 'x-forwarded-for': '10.0.0.1, 203.0.113.7' }, { forwardHeaders: () => false });
+      expect(h.get('x-atlas-client-ip')).toBe('203.0.113.7');
+    });
+  });
+
   it('HEAD and 204 carry no body', async () => {
     const { fetchImpl } = capture(() => new Response(null, { status: 204 }));
     const { OPTIONS } = createMountHandler({ ...opts, fetchImpl });

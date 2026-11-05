@@ -72,6 +72,7 @@ describe('atlas golive', () => {
     const io = captureIO();
     expect(await run(['golive', '--origin', 'https://app.example.com'], make(io))).toBe(0);
     expect(writes(calls)).toEqual([
+      'POST /v1/domains/dom_1/verify?dry_run=true',
       'POST /v1/domains/dom_1/verify',
       'POST /v1/webhook_endpoints/we_1/test?wait=10s',
       'PATCH /v1/webhook_endpoints/we_1',
@@ -109,6 +110,46 @@ describe('atlas golive', () => {
     const io = captureIO();
     expect(await run(['golive', '--origin', 'https://app.example.com'], make(io))).toBe(1);
     expect(io.stdout()).toContain('✗ preflight — E1: broken\n  fix: E1: mend it');
+  });
+
+  describe('a verify that moves the issuer', () => {
+    const OLD = 'https://old.atlas.test';
+    const moved = () =>
+      mockApi({ 'POST /v1/domains/dom_1/verify?dry_run=true': { issuer_before: OLD, issuer_after: ISSUER, previous_issuers_kept_until: 1_900_000_000 } });
+
+    it('prints both issuers and the value to copy, and stops without --yes', async () => {
+      const { calls, make } = setup(moved());
+      const io = captureIO();
+      expect(await run(['golive', '--origin', 'https://app.example.com'], make(io))).toBe(1);
+      expect(writes(calls)).toEqual(['POST /v1/domains/dom_1/verify?dry_run=true']);
+      expect(io.stdout()).toContain(`issuer moves from ${OLD} to ${ISSUER}`);
+      expect(io.stdout()).toContain(`previousIssuers: ["${OLD}"]`);
+      expect(io.stdout()).toContain(`kept until ${new Date(1_900_000_000 * 1000).toISOString()}`);
+      expect(io.stdout()).toContain('--yes');
+    });
+
+    it('goes on with --yes', async () => {
+      const { calls, make } = setup(moved());
+      const io = captureIO();
+      expect(await run(['golive', '--origin', 'https://app.example.com', '--yes'], make(io))).toBe(0);
+      expect(writes(calls)).toContain('POST /v1/domains/dom_1/verify');
+      expect(io.stdout()).toContain(`✓ issuer_move — issuer moves from ${OLD}`);
+    });
+
+    it('--dry-run prints the pair and writes nothing, without --yes', async () => {
+      const { calls, make } = setup(moved());
+      const io = captureIO();
+      expect(await run(['golive', '--origin', 'https://app.example.com', '--dry-run'], make(io))).toBe(0);
+      expect(writes(calls).every((p) => p.endsWith('dry_run=true'))).toBe(true);
+      expect(io.stdout()).toContain(`issuer moves from ${OLD}`);
+    });
+
+    it('stays quiet when the issuer does not change', async () => {
+      const { make } = setup(mockApi({ 'POST /v1/domains/dom_1/verify?dry_run=true': { issuer_before: ISSUER, issuer_after: ISSUER, previous_issuers_kept_until: null } }));
+      const io = captureIO();
+      expect(await run(['golive', '--origin', 'https://app.example.com'], make(io))).toBe(0);
+      expect(io.stdout()).not.toContain('issuer moves');
+    });
   });
 
   it('--dry-run sends every write with ?dry_run=true', async () => {

@@ -8,6 +8,7 @@ import { httpFor } from '../project';
 import { VENDORS, mapExport, parseExport, summarize, type ImportRow, type Vendor } from '../import/vendors';
 import { resolveAuth, wantsJson } from './shared';
 import { importBetterAuthBundle } from './import-better-auth';
+import { importJsonl, parseOnConflict, parsePasswordPolicy, parseSince, parseTimestamp, sendImportBatch } from './import-jsonl';
 
 /**
  * `atlas import --from <vendor> <file>` — move users from another auth provider.
@@ -25,15 +26,12 @@ import { importBetterAuthBundle } from './import-better-auth';
  *   --hash-config F  JSON with the Firebase project hash parameters.
  *   --hashes F       a separate password-hash export merged by email (Auth0, WorkOS).
  *   --create-orgs    create organizations named by memberships that do not exist yet.
+ *   --since T        only users created at or after T.
+ *   --on-conflict    update (default) or skip a user who already exists.
+ *   --password-policy  active (default), or until_email_verified to hold an imported hash.
+ *
+ * With no `--from`, the file is Atlas's own JSONL shape: see import-jsonl.ts.
  */
-
-interface JobResult {
-  id: string;
-  status: string;
-  total: number;
-  succeeded: number;
-  failed: number;
-}
 
 interface ImportState {
   vendor: string;
@@ -43,13 +41,16 @@ interface ImportState {
   total: number;
   succeeded: number;
   failed: number;
+  /** Rows left alone because the user already exists (`--on-conflict skip`). */
+  skipped?: number;
   jobs: string[];
 }
 
 export async function importUsers(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const vendor = str(args.values, 'from') as Vendor | undefined;
+  if (!vendor && args.positionals[1]) return importJsonl(ctx, args, args.positionals[1]);
   if (!vendor || !(VENDORS as readonly string[]).includes(vendor)) {
-    throw new CliError(`import needs --from <${VENDORS.join('|')}>.`);
+    throw new CliError(`import needs a users file (atlas import users.jsonl) or --from <${VENDORS.join('|')}>.`);
   }
   // Better Auth: the sealed bundle from `npx atlas-better-auth-export` carries
   // every model (passwords, two-factor, passkeys, orgs, API keys, sessions…);
@@ -71,7 +72,13 @@ export async function importUsers(ctx: RunContext, args: ParsedArgs): Promise<nu
     throw new CliError(err instanceof Error ? err.message : String(err));
   }
 
-  const { rows, warnings } = mapExport(vendor, doc, hashes);
+  const onConflict = parseOnConflict(str(args.values, 'on-conflict'), 'update');
+  const passwordPolicy = parsePasswordPolicy(str(args.values, 'password-policy'));
+  const sinceRaw = str(args.values, 'since');
+  const since = parseSince(sinceRaw);
+  const mapped = mapExport(vendor, doc, hashes);
+  const warnings = mapped.warnings;
+  const rows = since === undefined ? mapped.rows : mapped.rows.filter((r) => (parseTimestamp(r.created_at) ?? since) >= since);
   const json = wantsJson(args.values);
   const summary = summarize(rows);
 
@@ -103,7 +110,7 @@ export async function importUsers(ctx: RunContext, args: ParsedArgs): Promise<nu
 
   const batchSize = Math.min(Math.max(Number(str(args.values, 'batch-size') ?? 100) || 100, 1), 100);
   const statePath = str(args.values, 'state-file') ?? `${file}.atlas-import.json`;
-  const sha = createHash('sha256').update(text).digest('hex');
+  const sha = createHash('sha256').update(text).update(sinceRaw ?? '').digest('hex');
   let state: ImportState = { vendor, input_sha256: sha, next_index: 0, total: rows.length, succeeded: 0, failed: 0, jobs: [] };
   if (existsSync(statePath)) {
     const saved = JSON.parse(readFileSync(statePath, 'utf8')) as ImportState;
@@ -124,18 +131,17 @@ export async function importUsers(ctx: RunContext, args: ParsedArgs): Promise<nu
 
   while (state.next_index < rows.length) {
     const batch = rows.slice(state.next_index, state.next_index + batchSize);
-    const body: Record<string, unknown> = { users: batch, upsert: true };
+    const body: Record<string, unknown> = { users: batch, upsert: onConflict === 'update' };
+    if (passwordPolicy) body.password_policy = passwordPolicy;
     if (args.values['create-orgs']) body.create_organizations = true;
     if (hashConfig) body.password_hash_config = { firebase: hashConfig };
-    let job = await http.post<JobResult>('/v1/user_imports', body);
-    // A batch over the inline limit is queued; poll it to completion.
-    while (job.status === 'pending' || job.status === 'processing') {
-      await (ctx.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(2000);
-      job = await http.get<JobResult>(`/v1/jobs/${job.id}`);
-    }
+    const job = await sendImportBatch(ctx, http, body);
+    // Under --on-conflict skip an existing user is reported as a row issue; it is not one here.
+    const matched = (job.results ?? []).filter((r) => r.outcome === 'matched').length;
     state.next_index += batch.length;
     state.succeeded += job.succeeded;
-    state.failed += job.failed;
+    state.failed += job.failed - matched;
+    if (matched) state.skipped = (state.skipped ?? 0) + matched;
     state.jobs.push(job.id);
     writeFileSync(statePath, JSON.stringify(state, null, 2));
     if (!json) ctx.io.err(`  ${state.next_index}/${rows.length} sent (job ${job.id}: ${job.succeeded} ok, ${job.failed} issues)`);
@@ -143,7 +149,7 @@ export async function importUsers(ctx: RunContext, args: ParsedArgs): Promise<nu
 
   if (json) printJson(ctx.io, { ...state, summary, warnings });
   else {
-    ctx.io.out(`Imported ${rows.length} user(s) from ${vendor}: ${state.succeeded} created or updated, ${state.failed} row issue(s).`);
+    ctx.io.out(`Imported ${rows.length} user(s) from ${vendor}: ${state.succeeded} created or updated, ${state.skipped ? `${state.skipped} skipped, ` : ''}${state.failed} row issue(s).`);
     if (state.failed) ctx.io.out(`Per-row issues: GET /v1/jobs/<job-id>/errors for jobs ${state.jobs.join(', ')}`);
   }
   return state.failed > 0 ? 2 : 0;

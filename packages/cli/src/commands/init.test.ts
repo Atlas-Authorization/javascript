@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AtlasApiError } from '@atlasauth/backend';
@@ -20,11 +20,12 @@ const SK = 'sk_test_instance_secret_value_0001';
 const CLIENT_SECRET = 'oacs_client_secret_value_0001';
 const WEBHOOK_SECRET = 'whsec_webhook_secret_value_0001';
 const PROVIDER_KEY = 're_customer_own_provider_key_01';
-const SECRETS = [SK, CLIENT_SECRET, WEBHOOK_SECRET, PROVIDER_KEY];
+const DEV_SK = 'sk_test_development_secret_value_0002';
+const SECRETS = [SK, DEV_SK, CLIENT_SECRET, WEBHOOK_SECRET, PROVIDER_KEY];
 
 interface State {
   apps: Array<Record<string, unknown>>;
-  instance: { strategies: Record<string, boolean>; issuer?: string };
+  instance: { strategies: Record<string, boolean>; issuer?: string; strict?: boolean };
   managed: null | { from_address: string; verified: boolean; records: unknown[] };
   development: boolean;
   emailProvider: null | { id: string; mode: string };
@@ -71,7 +72,9 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
             publishable_key: 'pk_test_1',
             frontend_api_host: 'acme-fapi.atlas.test',
             issuer: state.instance.issuer,
-            auth_config_resolved: { strategies: state.instance.strategies },
+            auth_config: state.instance.strict === undefined ? {} : { strictRequestBodies: state.instance.strict },
+            // As the server does: resolving turns "never set" into false.
+            auth_config_resolved: { strategies: state.instance.strategies, strictRequestBodies: state.instance.strict ?? false },
           } as T;
         case '/v1/messaging_providers/email/managed':
           if (!state.managed) throw notFound();
@@ -106,6 +109,11 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
       if (platform && path === '/v1/platform/apps') {
         const app = { id: 'ins_1', name: b.name, environment: b.environment, publishable_key: 'pk_test_1', frontend_api_host: 'acme-fapi.atlas.test', secret: SK };
         state.apps.push(app);
+        if (b.create_development_sibling === true) {
+          const sibling = { id: 'ins_dev', name: b.name, environment: 'development', publishable_key: 'pk_test_dev', frontend_api_host: 'acme-dev.atlas.test', secret: DEV_SK };
+          state.apps.push(sibling);
+          return { ...app, sibling_instance: sibling } as T;
+        }
         return app as T;
       }
       if (platform && path === '/v1/platform/apps/ins_1/rotate_secret') {
@@ -166,7 +174,9 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
     async patch<T>(path: string, body: unknown): Promise<T> {
       record('PATCH', path, body);
       if (path === '/v1/instance') {
-        const st = ((body as { auth_config: { strategies: Record<string, boolean> } }).auth_config.strategies);
+        const sent = (body as { auth_config: { strategies?: Record<string, boolean>; strictRequestBodies?: boolean } }).auth_config;
+        const st = sent.strategies;
+        if (sent.strictRequestBodies !== undefined) state.instance.strict = sent.strictRequestBodies;
         // The server accepts email methods without a sender and reports them as inactive.
         Object.assign(state.instance.strategies, st);
         const canSend = state.development || state.managed?.verified;
@@ -233,6 +243,127 @@ const INIT_BASE = [
   '--yes',
 ];
 const INIT = () => [...INIT_BASE, '--email-provider', 'resend', '--email-key-file', keyFile];
+
+describe('atlas init: secret layouts and strict bodies', () => {
+  const BASE = ['init', '--product', 'acme', '--yes'];
+
+  it('--with-dev creates the sibling and keeps each key in its own folder', async () => {
+    const io = captureIO();
+    expect(await run([...BASE, '--with-dev'], ctxWith(io))).toBe(0);
+    noSecrets(io);
+    expect(state.writes.find((w) => w.path === '/v1/platform/apps')?.body).toMatchObject({ create_development_sibling: true });
+    const dir = join(home, 'acme');
+    expect(readFileSync(join(dir, 'production', 'atlas.env'), 'utf8')).toContain(`ATLAS_SECRET_KEY=${SK}`);
+    expect(readFileSync(join(dir, 'production', 'atlas.env'), 'utf8')).toContain('Use it in production only');
+    expect(readFileSync(join(dir, 'development', 'atlas.env'), 'utf8')).toContain(`ATLAS_SECRET_KEY=${DEV_SK}`);
+    expect(mode(join(dir, 'development', 'atlas.env'))).toBe(0o600);
+    expect(existsSync(join(dir, 'production.env'))).toBe(false);
+    const manifest = JSON.parse(readFileSync(join(dir, 'atlas.json'), 'utf8'));
+    expect(manifest.instances.development.instance_id).toBe('ins_dev');
+    expect(manifest.instances.production.secret_file).toBe(join(dir, 'production', 'atlas.env'));
+
+    // Readers go through the manifest, so the new layout works for them.
+    const pre = captureIO();
+    expect(await run(['preflight', '--product', 'acme'], ctxWith(pre))).toBe(0);
+    // And a re-run finds the key where it put it.
+    expect(await run([...BASE, '--with-dev'], ctxWith(captureIO()))).toBe(0);
+  });
+
+  it('--with-dev on an app with a flat key file leaves that file where it is', async () => {
+    expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+    const dir = join(home, 'acme');
+    expect(await run([...BASE, '--with-dev'], ctxWith(captureIO()))).toBe(0);
+    expect(existsSync(join(dir, 'production.env'))).toBe(true);
+    expect(existsSync(join(dir, 'production', 'atlas.env'))).toBe(false);
+    expect(state.writes.filter((w) => w.path === '/v1/platform/apps').at(-1)?.body).toMatchObject({ environment: 'development' });
+  });
+
+  it('--with-dev is refused for a development app', async () => {
+    const io = captureIO();
+    expect(await run([...BASE, '--with-dev', '--instance-env', 'development'], ctxWith(io))).toBe(1);
+    expect(io.stderr()).toContain('--with-dev');
+  });
+
+  it('--no-env-files without --json refuses, names the paths and changes nothing', async () => {
+    const io = captureIO();
+    expect(await run([...BASE, '--no-env-files'], ctxWith(io))).toBe(1);
+    expect(io.stderr()).toContain('needs --json');
+    expect(io.stderr()).toContain(join(home, 'acme', 'production.env'));
+    expect(state.writes).toEqual([]);
+  });
+
+  it('--no-env-files --json hands the secret over once on stdout and writes no secret file', async () => {
+    const io = captureIO();
+    expect(await run([...BASE, '--no-env-files', '--json'], ctxWith(io))).toBe(0);
+    expect(JSON.parse(io.stdout()).secrets.production.ATLAS_SECRET_KEY).toBe(SK);
+    expect(io.stderr()).not.toContain(SK);
+    expect(existsSync(join(home, 'acme', 'production.env'))).toBe(false);
+  });
+
+  it('turns strict bodies on once, and leaves an opted-out instance alone', async () => {
+    const strictWrites = () => state.writes.filter((w) => (w.body as { auth_config?: { strictRequestBodies?: boolean } })?.auth_config?.strictRequestBodies === true);
+    expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+    expect(strictWrites()).toHaveLength(1);
+    expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+    expect(strictWrites()).toHaveLength(1);
+
+    state = fresh();
+    state.instance.strict = false;
+    rmSync(join(home, 'acme'), { recursive: true, force: true });
+    const io = captureIO();
+    expect(await run(BASE, ctxWith(io))).toBe(0);
+    expect(strictWrites()).toHaveLength(0);
+    expect(io.stdout()).toContain('opted out');
+  });
+});
+
+describe('atlas init --next', () => {
+  it('writes the yaml, both routes and a labelled .env.example, without a key', async () => {
+    const io = captureIO();
+    expect(await run(['init', '--next', '--mount', '/atlas', '--dir', home], { ...ctxWith(io), env: {} })).toBe(0);
+    const route = readFileSync(join(home, 'app', 'atlas', '[[...path]]', 'route.ts'), 'utf8');
+    expect(route).toContain("createMountHandler({ basePath: '/atlas' })");
+    expect(route).toContain("from '@atlasauth/nextjs/server'");
+    expect(readFileSync(join(home, 'app', '.well-known', 'atlas-verify', '[token]', 'route.ts'), 'utf8')).toContain('createVerifyHandler()');
+    const env = readFileSync(join(home, '.env.example'), 'utf8');
+    expect(env.indexOf('NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY')).toBeLessThan(env.indexOf('Runtime only'));
+    expect(env.indexOf('Runtime only')).toBeLessThan(env.indexOf('ATLAS_SECRET_KEY'));
+    expect(state.writes).toEqual([]);
+  });
+
+  it('the yaml it writes passes the unknown-key check', async () => {
+    await run(['init', '--next', '--dir', home], { ...ctxWith(captureIO()), env: {} });
+    const io = captureIO();
+    const code = await run(['plan', join(home, 'atlas.yaml')], {
+      ...ctxWith(io),
+      env: { ATLAS_SECRET_KEY: SK, APP_ORIGIN: 'https://app.example.com' },
+    });
+    expect(io.stderr()).not.toContain('Unknown key');
+    expect(code).toBe(0);
+  });
+
+  it('uses src/app when that is where the app is', async () => {
+    mkdirSync(join(home, 'src', 'app'), { recursive: true });
+    await run(['init', '--next', '--dir', home], { ...ctxWith(captureIO()), env: {} });
+    expect(existsSync(join(home, 'src', 'app', 'atlas', '[[...path]]', 'route.ts'))).toBe(true);
+  });
+
+  it('refuses an underscore mount the App Router cannot serve', async () => {
+    const io = captureIO();
+    expect(await run(['init', '--next', '--mount', '/__atlas', '--dir', home], { ...ctxWith(io), env: {} })).toBe(1);
+    expect(io.stderr()).toContain("none starting with '_'");
+  });
+
+  it('refuses to overwrite an existing file before writing anything, unless --force', async () => {
+    writeFileSync(join(home, 'atlas.yaml'), 'mine\n');
+    const io = captureIO();
+    expect(await run(['init', '--next', '--dir', home], { ...ctxWith(io), env: {} })).toBe(1);
+    expect(existsSync(join(home, '.env.example'))).toBe(false);
+    expect(readFileSync(join(home, 'atlas.yaml'), 'utf8')).toBe('mine\n');
+    expect(await run(['init', '--next', '--dir', home, '--force'], { ...ctxWith(captureIO()), env: {} })).toBe(0);
+    expect(readFileSync(join(home, 'atlas.yaml'), 'utf8')).not.toBe('mine\n');
+  });
+});
 
 describe('atlas init', () => {
   it('creates app, email, domain, client and webhook; writes every secret to a 0600 file and prints none', async () => {

@@ -61,6 +61,7 @@ Commands:
   pages list|push|preview|promote|pull|discard
                              Code-defined hosted-page templates: draft, signed preview link, promote
   init                       Create or complete an app's setup (idempotent); secrets to 0600 files
+  setup-guide                The setup calls in order, with the read-back for each (--json for agents)
   preflight                  Check an instance's setup; non-zero exit on errors (for CI)
   doctor                     Integration health: webhooks, logout, referrals, email, consent (exit 1 on a failure)
   golive --origin <url>      Take an instance live for an app origin, step by step; stops at the first failure
@@ -235,13 +236,23 @@ configured instance (key prefixes only, never a key) and whether the app's
 publishable key belongs to it; API reachability and latency; and the
 instance's preflight summary. Network steps time out after 5 s and are
 reported, not fatal. Anything shaped like a secret is redacted.`,
-  import: `atlas import — move users from another auth provider
+  import: `atlas import — move users from another auth provider, or from a JSONL file
 
 Usage:
+  atlas import <users.jsonl> [--dry-run] [--since <ts>] [--on-conflict skip|update]
+                             [--password-policy active|until_email_verified] [--json]
   atlas import --from <vendor> <export-file> [--dry-run]
   atlas import --from better-auth --bundle <file> [--dry-run] [--yes]
   atlas import --from better-auth --import <id> [--confirm-conflicts]
   atlas import --from better-auth             (prints the import key and export command)
+
+With no --from the file has one user per line: external_id and email (required),
+email_verified, password_digest + algorithm, oauth_identities [{provider,
+provider_user_id}], first_name, last_name, created_at, updated_at. Each row is
+matched by external_id, so running it again changes nothing. --since keeps rows
+updated (or else created) at or after <ts>. --on-conflict skip (the default here)
+leaves existing users alone; update applies rows that changed. It reports created,
+updated, skipped and unverified-with-password counts, and never an email address.
 
 Vendors and the file each one reads:
   auth0        the user export job (NDJSON/JSON); --hashes <file> merges the password export
@@ -260,6 +271,10 @@ Options:
   --hash-config <file>   Firebase hash parameters: {signer_key, salt_separator, rounds, mem_cost}
   --hashes <file>        Password hashes keyed by email, merged onto the users
   --create-orgs          Create organizations that memberships name but that do not exist yet
+  --since <ts>           Only users created at or after <ts>
+  --on-conflict <mode>   update (the default for --from) or skip a user who already exists
+  --password-policy <p>  active (default), or until_email_verified: an imported hash signs in
+                         only once the address is verified
   --json                 Machine-readable summary
 
 Better Auth bundle (npx atlas-better-auth-export --out <file> --public-key <key>):
@@ -436,7 +451,15 @@ Usage:
   atlas users list [--limit <n>] [--starting-after <cursor>] [--json]
   atlas users get <user-id> [--json]
   atlas users create --email <address> [--first-name <n>] [--last-name <n>] [--password <p>] [--json]
+  atlas users clear-password <user-id> [--json]
   atlas users delete <user-id> [--json]`,
+
+  'setup-guide': `atlas setup-guide — the setup calls in order, with the read-back for each
+
+Usage: atlas setup-guide [--json]
+
+Prints each step, the exact call or command, and what to read to prove it worked.
+Full guide: https://atlasauth.net/docs/agent-setup`,
 
   orgs: `atlas orgs — manage organizations
 
@@ -641,7 +664,9 @@ Usage:
              [--email-provider resend|brevo --email-key-file <path|->]
              [--client-redirect <url>]... [--webhook-url <url>]
              [--backchannel <url>]
+             [--with-dev] [--no-env-files --json]
              [--yes] [--force] [--rotate-secret] [--json]
+  atlas init --next [--mount /atlas] [--dir <app-root>] [--force]
 
 Needs a platform key (ATLAS_PLATFORM_KEY, or a psk_ profile from atlas login).
 Finds the app by name and environment, or creates it, then sets strategies, the
@@ -662,20 +687,40 @@ reads stdin). It is never taken from argv and never printed.
 Every secret goes to ~/.config/<product>/<env>*.env (dir 0700, files 0600) and
 is never printed. An existing file is never overwritten without --force.
 --rotate-secret mints a new secret key when the app exists but its file is gone.
-Public values and file paths are kept in ~/.config/<product>/atlas.json.`,
+Public values and file paths are kept in ~/.config/<product>/atlas.json.
+Turns on strict request bodies unless the instance has them or opted out.
+
+--with-dev also creates the development sibling. A new setup then keeps each
+environment in its own folder (~/.config/<product>/production/atlas.env and
+development/atlas.env), so a script reading a folder's *.env files never mixes
+keys. An existing <env>.env stays where it is.
+--no-env-files writes no secret file: each secret is handed over once in the
+--json output on stdout. Without --json it is refused and names the paths it
+would have written.
+
+--next [--mount <path>] writes, with no key and no network: atlas.yaml, the
+App Router mount and verify routes (src/app when that is where your app is), and
+a .env.example saying which variables are build args (the publishable key only)
+and which are runtime. With --product it sets up the instance as well.`,
 
   preflight: `atlas preflight — check an instance's setup (a CI / deploy gate)
 
 Usage: atlas preflight [--instance <id> | --product <name> [--instance-env <env>]]
-                       [--fail-on error|warning] [--json]
+                       [--fail-on error|warning] [--fix [--yes]] [--json]
 
-Prints every finding (severity, code, message, fix). Exits 1 when there is an
-error, or with --fail-on warning also on a warning.`,
+Prints every finding (severity, code, message, fix, and the exact call when there
+is one). Exits 1 when there is an error, or with --fail-on warning
+also on a warning.
+
+--fix lists the findings the server marks safe to fix, asks before each call
+(--yes skips the question; needed without a terminal), applies them, runs the
+checks again and prints the result.`,
 
   doctor: `atlas doctor — integration health (a CI / deploy gate)
 
 Usage: atlas doctor [--instance <id> | --product <name> [--instance-env <env>]]
                     [--only <source,...>] [--no-probe] [--origin <url>] [--json]
+       atlas doctor --scan-dir <path> [--scan-image <ref>] [--json]
 
 Prints every check: setup findings, webhook receivers (with the failing hop:
 dns, tls, http, challenge or auth), back-channel logout, the referral
@@ -685,11 +730,17 @@ fails. --no-probe uses recorded deliveries only (no live calls).
 --origin <url> adds the go-live checks for that app origin to the same report:
 setup errors (preflight), login readiness (live), the path-mount verification
 state on that host, and whether the consent declaration lists every cookie the
-SDKs read (__session, __atlas_uat, __atlas_rt, __client).`,
+SDKs read (__session, __atlas_uat, __atlas_rt, __client).
+
+--scan-dir <path> and --scan-image <ref> need no key. They flag secret keys and
+webhook or hook secrets in Dockerfile ARG / ENV lines, compose build.args, and an
+image's docker history and environment, plus folders whose *.env files hold both
+a development and a production key. Prints the file and line, never the value.
+Exits 1 on a finding. Only the publishable key belongs in a build arg.`,
 
   golive: `atlas golive — take an instance live for one app origin
 
-Usage: atlas golive --origin <https://app.example.com> [--dry-run] [--json]
+Usage: atlas golive --origin <https://app.example.com> [--dry-run] [--yes] [--json]
                     [--instance <id> | --product <name> [--instance-env <env>]]
 
 Runs, in order, and stops at the first failure with its fix:
@@ -701,6 +752,9 @@ Runs, in order, and stops at the first failure with its fix:
   preflight           no error findings
   login_readiness     ready for the origin (live JWKS round-trip)
   integrations        referrals, privacy and identity integrations the instance declares
+
+When verifying the domain would move the issuer, golive prints both issuers and
+the previousIssuers value to add to your verifiers, then stops unless --yes.
 
 --dry-run sends every write with ?dry_run=true: the server validates it and
 nothing changes. Exits 0 when every step passes, 1 on the first failure.`,
@@ -834,14 +888,14 @@ Object.assign(COMMAND_HELP, {
   apply: `atlas apply — make the instance match a config file (plan, confirm, apply)
 
 Usage:
-  atlas apply [<file|dir>] [--yes] [--prune] [--force-hook] [--secrets-file <dotenv>] [--out <dir>] [--format json|yaml]
+  atlas apply [<file|dir>] [--yes] [--prune] [--force-hook] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--out <dir>] [--format json|yaml]
   atlas apply [<file|dir>] --check
 
 <file>  One JSON or YAML document keyed by resource type, for example:
           instance:            { auth_config: {...}, allowed_origins: [...] }
           redirect_urls:       [ { url: ... } ]
           oauth_clients:       [ { name: ..., redirect_uris: [...] } ]
-          webhook_endpoints:   [ { url: ..., enabled_events: [...], active: false } ]
+          webhook_endpoints:   [ { url: ..., enabled_events: [...], secret: "\${WEBHOOK_SECRET}", active: false } ]
           email_provider:      { transport: brevo, from_address: ..., config: { api_key: "\${BREVO_KEY}" } }
           hooks:               { before_user_create: { url: ..., timeout_ms, fail_closed, enabled } }
           branding:            { applicationName: ..., logoUrl: ... }
@@ -857,15 +911,20 @@ Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --prune         also delete live resources missing from the config, and compare every live key
   --force-hook    enable the before_user_create hook even when its test call fails (409)
+  --rotate-secret send again each secret Atlas cannot compare (it never returns them)
+  --show-secrets  print secret values in the diff; refused without a terminal or when CI is set
   --secrets-file  dotenv file for \${VAR} placeholders; refused unless mode 0600
   --out <dir>     where a new client or webhook secret is saved (mode 0600;
                   default ~/.config/atlas). It is shown only once.
-Applying stops if any \${VAR} is unresolved. Provider and hook secrets come only from
-\${VAR} placeholders (--secrets-file) and are shown as "(secret set)", never echoed.`,
+Applying stops if any \${VAR} is unresolved. A key the resource does not have is an
+error, with the nearest real key. Secrets are never printed: a changed one shows as
+"client_secret: <redacted> (changed)". Where Atlas cannot tell whether a secret changed
+the plan says so instead of showing drift. A changed webhook secret is rotated with no
+overlap: the old one stops signing at once.`,
   plan: `atlas plan — read-only drift diff of a config file or directory
 
 Usage:
-  atlas plan [<file|dir>] [--check|--exit-code] [--json] [--prune] [--secrets-file <dotenv>]
+  atlas plan [<file|dir>] [--check|--exit-code] [--json] [--prune] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>]
 
 The same diff as 'atlas config plan', also for a single config file (see 'atlas
 apply --help'). --check exits 2 when there is drift; nothing is ever written.`,

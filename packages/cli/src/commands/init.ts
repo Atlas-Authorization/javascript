@@ -16,6 +16,7 @@ import {
 } from '../project';
 import { assertProductName, productDir, readEnvFile, writeSecretFile } from '../secrets';
 import { envApiUrl, wantsJson } from './shared';
+import { scaffoldNext } from './init-next';
 
 /**
  * `atlas init` — set up an Atlas app for a product in one idempotent command.
@@ -66,6 +67,22 @@ interface InitOptions {
   backchannelUrl?: string;
   force: boolean;
   rotateSecret: boolean;
+  /** Write no secret file: hand each secret over once in the `--json` output. */
+  noEnvFiles: boolean;
+  /** Create the development sibling too; each environment's keys in its own folder. */
+  withDev: boolean;
+}
+
+/**
+ * Where one environment's secret files live. An existing flat `<env>.env` keeps its
+ * layout. New with `--with-dev`, and from then on: one folder per environment, so
+ * a script that reads a folder's `*.env` never mixes a development and a production key.
+ */
+function secretLayout(dir: string, env: InstanceEnv, withDev: boolean): { dir: string; key: string; client: string; webhook: string } {
+  const nested = !existsSync(join(dir, `${env}.env`)) && (withDev || existsSync(join(dir, env, 'atlas.env')));
+  return nested
+    ? { dir: join(dir, env), key: 'atlas.env', client: 'oauth-client.env', webhook: 'webhook.env' }
+    : { dir, key: `${env}.env`, client: `${env}-oauth-client.env`, webhook: `${env}-webhook.env` };
 }
 
 function camel(s: string): string {
@@ -91,6 +108,9 @@ function parseOptions(args: ParsedArgs): InitOptions {
   }
   if (emailRaw === 'development' && environment !== 'development') {
     throw new CliError('--email development is only for --instance-env development. Use --email managed on production.');
+  }
+  if (v['with-dev'] === true && environment !== 'production') {
+    throw new CliError('--with-dev creates a development sibling for a production app; drop --instance-env development.');
   }
   const providerRaw = str(v, 'email-provider');
   if (providerRaw !== undefined && !EMAIL_PROVIDERS.includes(providerRaw as EmailProvider)) {
@@ -138,6 +158,8 @@ function parseOptions(args: ParsedArgs): InitOptions {
     backchannelUrl,
     force: v.force === true,
     rotateSecret: v['rotate-secret'] === true,
+    noEnvFiles: v['no-env-files'] === true,
+    withDev: v['with-dev'] === true,
   };
 }
 
@@ -170,6 +192,8 @@ interface AppRow {
   discovery_url?: string | null;
   jwks_uri?: string | null;
   secret?: string;
+  /** The development sibling, when the create asked for one. */
+  sibling_instance?: AppRow;
 }
 interface InstanceRow {
   id: string;
@@ -178,6 +202,7 @@ interface InstanceRow {
   issuer?: string | null;
   discovery_url?: string | null;
   jwks_uri?: string | null;
+  auth_config?: { strictRequestBodies?: boolean };
   auth_config_resolved?: { strategies?: Record<string, unknown> };
   /** Switched-on methods not offered to users until an email provider exists. */
   inactive_methods?: Array<{ method: string; reason: string }>;
@@ -213,14 +238,37 @@ function assertFreeForNewSecret(path: string, force: boolean): void {
 }
 
 export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
+  if (args.values.next === true) {
+    scaffoldNext(ctx, args);
+    // The files need no instance; with --product the instance is set up as well.
+    if (!str(args.values, 'product')) return 0;
+  }
   const opts = parseOptions(args);
   const json = wantsJson(args.values);
   const log = (line: string) => (json ? ctx.io.err(line) : ctx.io.out(line));
   const dir = productDir(ctx.env, opts.product);
   const env = opts.environment;
-  const secretFile = join(dir, `${env}.env`);
-  const clientFile = join(dir, `${env}-oauth-client.env`);
-  const webhookFile = join(dir, `${env}-webhook.env`);
+  const layout = secretLayout(dir, env, opts.withDev);
+  const secretFile = join(layout.dir, layout.key);
+  const clientFile = join(layout.dir, layout.client);
+  const webhookFile = join(layout.dir, layout.webhook);
+
+  // A secret has to reach the caller once. With no file the one safe channel is stdout, when asked for by name.
+  if (opts.noEnvFiles && !json) {
+    throw new CliError(
+      `--no-env-files hands each secret over once on stdout, so it needs --json. Without the flag they would be written to: ${secretFile}, ${clientFile}, ${webhookFile}. Nothing was changed.`,
+    );
+  }
+  const handed: Record<string, Record<string, string>> = {};
+  const saveSecret = (target: { dir: string }, forEnv: InstanceEnv, fileName: string, entries: Record<string, string>, options: { force?: boolean; comment: string }) => {
+    if (opts.noEnvFiles) handed[forEnv] = { ...handed[forEnv], ...entries };
+    else writeSecretFile(target.dir, fileName, entries, options);
+  };
+  const checkFree = (path: string, force: boolean) => {
+    if (!opts.noEnvFiles) assertFreeForNewSecret(path, force);
+  };
+  const savedAt = (path: string) => (opts.noEnvFiles ? 'the JSON output' : path);
+  const hasFile = (file: string, name: string) => !opts.noEnvFiles && Boolean(readEnvFile(file)?.[name]);
 
   // The plan, then a confirmation unless --yes.
   log(`atlas init: ${opts.appName} (${env})`);
@@ -231,7 +279,8 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   if (opts.authHost) log(`  domain:     ${opts.authHost}`);
   if (opts.redirects.length) log(`  client:     first-party OAuth client → ${opts.redirects.join(', ')}`);
   if (opts.webhookUrl) log(`  webhook:    ${opts.webhookUrl}`);
-  log(`  secrets:    ${dir} (0600 files, never printed)`);
+  if (opts.withDev) log('  sibling:    a development instance, each environment in its own folder');
+  log(opts.noEnvFiles ? '  secrets:    once, in the JSON output on stdout (no files)' : `  secrets:    ${dir} (0600 files, never printed)`);
   if (args.values.yes !== true) {
     const answer = (await ctx.prompt.text('Proceed? (y/N)')).trim().toLowerCase();
     if (answer !== 'y' && answer !== 'yes') throw new CliError('Aborted. Nothing was changed.');
@@ -245,25 +294,25 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   let app = apps.find((a) => a.name === opts.appName && a.environment === env);
   let created = false;
   if (!app) {
-    assertFreeForNewSecret(secretFile, opts.force);
+    checkFree(secretFile, opts.force);
     const origins = [...new Set(opts.redirects.map((r) => new URL(r).origin).filter((o) => o.startsWith('http')))];
     app = await plat.post<AppRow>('/v1/platform/apps', {
       name: opts.appName,
       environment: env,
-      create_development_sibling: false,
+      create_development_sibling: opts.withDev,
       ...(origins.length ? { allowed_origins: origins } : {}),
     });
     created = true;
-    writeSecretFile(dir, `${env}.env`, { ATLAS_SECRET_KEY: app.secret ?? '' }, {
+    saveSecret(layout, env, layout.key, { ATLAS_SECRET_KEY: app.secret ?? '' }, {
       force: opts.force,
-      comment: `Atlas secret key for ${opts.appName} (${env}, ${app.id}). Server-side only.`,
+      comment: `Atlas secret key for ${opts.appName} (${env}, ${app.id}). Server-side only. Use it in ${env} only.`,
     });
-    log(`Created app ${app.id}. Secret key written to ${secretFile}.`);
+    log(`Created app ${app.id}. Secret key written to ${savedAt(secretFile)}.`);
   } else {
     log(`Found app ${app.id}.`);
   }
 
-  let secretKey = readEnvFile(secretFile)?.ATLAS_SECRET_KEY;
+  let secretKey = handed[env]?.ATLAS_SECRET_KEY ?? readEnvFile(secretFile)?.ATLAS_SECRET_KEY ?? (opts.noEnvFiles ? ctx.env.ATLAS_SECRET_KEY?.trim() : undefined);
   if (!secretKey) {
     if (!opts.rotateSecret) {
       throw new CliError(
@@ -274,13 +323,44 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
       `/v1/platform/apps/${app.id}/rotate_secret`,
       {},
     );
-    writeSecretFile(dir, `${env}.env`, { ATLAS_SECRET_KEY: rotated.secret }, {
+    saveSecret(layout, env, layout.key, { ATLAS_SECRET_KEY: rotated.secret }, {
       force: true,
-      comment: `Atlas secret key for ${opts.appName} (${env}, ${app.id}). Server-side only.`,
+      comment: `Atlas secret key for ${opts.appName} (${env}, ${app.id}). Server-side only. Use it in ${env} only.`,
     });
     secretKey = rotated.secret;
     const until = rotated.previous_keys_expire_at ? new Date(rotated.previous_keys_expire_at).toISOString() : 'now';
-    log(`Minted a new secret key into ${secretFile}. Previous keys stop working: ${until}.`);
+    log(`Minted a new secret key into ${savedAt(secretFile)}. Previous keys stop working: ${until}.`);
+  }
+
+  // --with-dev: the sibling, created with the app, or on its own for an app that already exists.
+  let devRecord: ProjectInstance | undefined;
+  if (opts.withDev) {
+    const devLayout = secretLayout(dir, 'development', true);
+    const devFile = join(devLayout.dir, devLayout.key);
+    let dev = app.sibling_instance ?? apps.find((a) => a.name === opts.appName && a.environment === 'development');
+    if (!dev) {
+      checkFree(devFile, opts.force);
+      dev = await plat.post<AppRow>('/v1/platform/apps', { name: opts.appName, environment: 'development', create_development_sibling: false });
+    }
+    if (dev.secret) {
+      saveSecret(devLayout, 'development', devLayout.key, { ATLAS_SECRET_KEY: dev.secret }, {
+        force: opts.force,
+        comment: `Atlas secret key for ${opts.appName} (development, ${dev.id}). Server-side only. Use it in development only.`,
+      });
+      log(`Development instance ${dev.id}. Secret key written to ${savedAt(devFile)}.`);
+    } else if (!hasFile(devFile, 'ATLAS_SECRET_KEY')) {
+      log(`Found development instance ${dev.id}, but its secret key is not in ${devFile}. Mint one with: atlas init --product ${opts.product} --instance-env development --rotate-secret`);
+    }
+    devRecord = {
+      instance_id: dev.id,
+      environment: 'development',
+      publishable_key: dev.publishable_key,
+      frontend_api_host: dev.frontend_api_host,
+      issuer: dev.issuer ?? null,
+      discovery_url: dev.discovery_url ?? null,
+      jwks_uri: dev.jwks_uri ?? null,
+      secret_file: devFile,
+    };
   }
 
   const api = httpFor(ctx, { secretKey, apiUrl: platform.apiUrl });
@@ -378,6 +458,17 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
     }
   }
 
+  // Strict writes: a mistyped field is refused, not ignored. An explicit false is an opt-out and stays.
+  const live = await api.get<InstanceRow>('/v1/instance');
+  // The stored value, not the resolved one: resolving turns "never set" into false.
+  const strict = live.auth_config?.strictRequestBodies;
+  if (strict === false) {
+    log('This instance opted out of strict request bodies; left as it is.');
+  } else if (strict !== true) {
+    await api.patch('/v1/instance', { auth_config: { strictRequestBodies: true } });
+    log('Turned on strict request bodies: an unknown field is now refused with a 422 instead of being ignored.');
+  }
+
   // --- 4. custom domain ------------------------------------------------------
   if (opts.authHost) {
     const domains = (await api.get<ListBody<{ host: string; cname_target: string | null; status: string; live?: boolean }>>('/v1/domains')).data ?? [];
@@ -411,7 +502,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
         await api.patch(`/v1/oauth_clients/${existing.id}`, { backchannel_logout_uri: opts.backchannelUrl });
         log(`Set the back-channel logout URI of ${existing.client_id} to ${opts.backchannelUrl}.`);
       }
-      const hasSecret = Boolean(readEnvFile(clientFile)?.ATLAS_CLIENT_SECRET);
+      const hasSecret = hasFile(clientFile, 'ATLAS_CLIENT_SECRET');
       if (!hasSecret) log(`Its secret is not in ${clientFile}. Mint one with: atlas client rotate ${existing.id} --product ${opts.product} --instance-env ${env}`);
       record.oauth_client = {
         id: existing.id,
@@ -420,7 +511,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
         secret_file: hasSecret ? clientFile : null,
       };
     } else {
-      assertFreeForNewSecret(clientFile, opts.force);
+      checkFree(clientFile, opts.force);
       const c = await api.post<{ id: string; client_id: string; redirect_uris: string[]; client_secret?: string }>('/v1/oauth_clients', {
         name: clientName,
         redirect_uris: opts.redirects,
@@ -428,13 +519,13 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
         ...(opts.backchannelUrl ? { backchannel_logout_uri: opts.backchannelUrl } : {}),
       });
       if (c.client_secret) {
-        writeSecretFile(dir, `${env}-oauth-client.env`, { ATLAS_CLIENT_ID: c.client_id, ATLAS_CLIENT_SECRET: c.client_secret }, {
+        saveSecret(layout, env, layout.client, { ATLAS_CLIENT_ID: c.client_id, ATLAS_CLIENT_SECRET: c.client_secret }, {
           force: opts.force,
           comment: `OAuth client ${c.id} for ${opts.appName} (${env}). Server-side only.`,
         });
       }
-      record.oauth_client = { id: c.id, client_id: c.client_id, redirect_uris: c.redirect_uris, secret_file: c.client_secret ? clientFile : null };
-      log(`Created first-party OAuth client ${c.client_id}. Secret written to ${clientFile}.`);
+      record.oauth_client = { id: c.id, client_id: c.client_id, redirect_uris: c.redirect_uris, secret_file: c.client_secret && !opts.noEnvFiles ? clientFile : null };
+      log(`Created first-party OAuth client ${c.client_id}. Secret written to ${savedAt(clientFile)}.`);
     }
   }
 
@@ -449,20 +540,20 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
     const hooks = (await api.get<ListBody<{ id: string; url: string }>>('/v1/webhook_endpoints')).data ?? [];
     const existing = hooks.find((h) => h.url === opts.webhookUrl);
     if (existing) {
-      const hasSecret = Boolean(readEnvFile(webhookFile)?.ATLAS_WEBHOOK_SECRET);
+      const hasSecret = hasFile(webhookFile, 'ATLAS_WEBHOOK_SECRET');
       record.webhook = { id: existing.id, url: existing.url, secret_file: hasSecret ? webhookFile : null };
       log(`Found webhook endpoint ${existing.id}.`);
     } else {
-      assertFreeForNewSecret(webhookFile, opts.force);
+      checkFree(webhookFile, opts.force);
       const h = await api.post<{ id: string; url: string; secret?: string }>('/v1/webhook_endpoints', { url: opts.webhookUrl });
       if (h.secret) {
-        writeSecretFile(dir, `${env}-webhook.env`, { ATLAS_WEBHOOK_SECRET: h.secret }, {
+        saveSecret(layout, env, layout.webhook, { ATLAS_WEBHOOK_SECRET: h.secret }, {
           force: opts.force,
           comment: `Signing secret for webhook endpoint ${h.id} (${opts.webhookUrl}).`,
         });
       }
-      record.webhook = { id: h.id, url: h.url, secret_file: h.secret ? webhookFile : null };
-      log(`Created webhook endpoint ${h.id}. Signing secret written to ${webhookFile}.`);
+      record.webhook = { id: h.id, url: h.url, secret_file: h.secret && !opts.noEnvFiles ? webhookFile : null };
+      log(`Created webhook endpoint ${h.id}. Signing secret written to ${savedAt(webhookFile)}.`);
     }
   }
 
@@ -479,12 +570,12 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const manifest: ProjectManifest = {
     product: opts.product,
     api_url: platform.apiUrl,
-    instances: { ...(previous?.instances ?? {}), [env]: record },
+    instances: { ...(previous?.instances ?? {}), [env]: record, ...(devRecord ? { development: devRecord } : {}) },
   };
   const manifestFile = writeManifest(ctx.env, manifest);
 
   if (json) {
-    printJson(ctx.io, { created, manifest: manifestFile, ...record });
+    printJson(ctx.io, { created, manifest: manifestFile, ...record, ...(devRecord ? { development: devRecord } : {}), ...(opts.noEnvFiles ? { secrets: handed } : {}) });
     return 0;
   }
   ctx.io.out('');
@@ -498,6 +589,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   ctx.io.out(`  Secret key file:   ${secretFile}`);
   if (record.oauth_client?.secret_file) ctx.io.out(`  Client secret file: ${record.oauth_client.secret_file}`);
   if (record.webhook?.secret_file) ctx.io.out(`  Webhook secret file: ${record.webhook.secret_file}`);
+  if (devRecord) ctx.io.out(`  Development key file: ${devRecord.secret_file}`);
   ctx.io.out(`  Project manifest:  ${manifestFile}`);
   ctx.io.out(`Next: atlas preflight --product ${opts.product} --instance-env ${env}, and atlas env --product ${opts.product} --format dotenv`);
   return 0;

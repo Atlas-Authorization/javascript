@@ -98,6 +98,18 @@ describe('top-level dispatch', () => {
     expect(io.stderr().toLowerCase()).toContain('frob');
   });
 
+  it('setup-guide prints the ordered calls with read-backs, needing no key', async () => {
+    const io = captureIO();
+    expect(await run(['setup-guide'], ctxWith({ io }))).toBe(0);
+    expect(io.stdout()).toContain('atlas.yaml');
+    expect(io.stdout()).toContain('https://atlasauth.net/docs/agent-setup');
+    const json = captureIO();
+    expect(await run(['setup-guide', '--json'], ctxWith({ io: json }))).toBe(0);
+    const { steps } = JSON.parse(json.stdout()) as { steps: Array<{ read_back: string }> };
+    expect(steps.length).toBeGreaterThan(5);
+    expect(steps.every((s) => s.read_back.length > 0)).toBe(true);
+  });
+
   it('per-command --help prints that command usage', async () => {
     const io = captureIO();
     expect(await run(['users', '--help'], ctxWith({ io }))).toBe(0);

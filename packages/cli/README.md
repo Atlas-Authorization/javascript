@@ -46,14 +46,19 @@ atlas config   export [--dir <path>] [--format json|yaml]
 atlas config   import [--dir <path>] [--format json|yaml] [--dry-run] [--prune] [--force-hook]
 atlas plan     [<file|dir>] [--check] [--json] [--secrets-file <dotenv>]
 atlas apply    [<file|dir>] [--yes] [--check] [--prune] [--secrets-file <dotenv>] [--out <dir>]
-atlas init     --product <name> [--domain <d>] [--instance-env development|production] ...
-atlas preflight [--instance <id> | --product <name>] [--fail-on error|warning]
+atlas init     --product <name> [--domain <d>] [--instance-env development|production] [--with-dev] [--no-env-files --json] ...
+atlas init     --next [--mount /atlas] [--dir <app-root>]
+atlas setup-guide [--json]
+atlas preflight [--instance <id> | --product <name>] [--fail-on error|warning] [--fix [--yes]]
 atlas doctor   [--origin <url>] [--only <sources>] [--no-probe]
-atlas golive   --origin <url> [--dry-run]
+atlas doctor   --scan-dir <path> [--scan-image <ref>]
+atlas golive   --origin <url> [--dry-run] [--yes]
 atlas referrals connect ... [--dry-run]
 atlas env      --product <name> --format dotenv|coolify|vercel
 atlas client   rotate <client-id> [--now | --overlap <seconds>]
-atlas import   --from <vendor> <export-file> [--dry-run]
+atlas import   <users.jsonl> [--dry-run] [--since <ts>] [--on-conflict skip|update] [--password-policy active|until_email_verified]
+atlas import   --from <vendor> <export-file> [--dry-run] [--since <ts>] [--on-conflict skip|update] [--password-policy ...]
+atlas users    clear-password <user-id>
 atlas migrate  code --from <clerk|authjs|supabase|auth0|better-auth> [path] [--yes]
 atlas info     [path]
 atlas actions  list | deploy <file> | test <file> | gallery [query] | show <slug>
@@ -82,6 +87,16 @@ dotenv file under `~/.config/<product>/` (directory `0700`;
 existing different file is never overwritten without `--force`.
 `--print-secret` prints it instead, with a warning.
 
+`atlas init --with-dev` keeps each environment in its own folder (`production/atlas.env`,
+`development/atlas.env`). `atlas init --no-env-files --json` writes no secret file and hands
+each secret over once in the JSON on stdout.
+
+`atlas plan`, `apply`, `preflight` and `golive` never print a secret, in text or `--json`, and
+API errors are masked too. A changed secret shows as `client_secret: <redacted> (changed)`.
+Atlas never returns a stored secret, so when it cannot tell whether yours changed the plan says
+so instead of showing drift, and `--rotate-secret` sends it again. `--show-secrets` prints values
+in a terminal only: it is refused when stdout is not a TTY or `CI` is set.
+
 ## Set up an app (`atlas init`)
 
 ```sh
@@ -108,6 +123,12 @@ atlas env --product acme --format dotenv           # public values + *_FILE path
 atlas client rotate oc_123 --product acme --overlap 3600
 ```
 
+`atlas setup-guide` prints the order of the setup calls with the read-back for each, and
+`atlas init --next --mount /atlas` writes `atlas.yaml`, the Next.js mount and verify routes and a
+`.env.example` that says which variables are build args (the publishable key only). `atlas doctor
+--scan-dir .` and `--scan-image <ref>` flag secrets in build metadata, printing the file and line and
+never the value. `atlas preflight --fix` applies the fixes the server marks safe, asking first.
+
 ## Go live (`atlas golive`)
 
 ```sh
@@ -117,7 +138,7 @@ atlas golive --origin https://app.acme.com
 
 Runs these steps in order and stops at the first failure, with its fix:
 
-1. **domains**: verifies the custom domain for the origin's host if it is not verified yet.
+1. **domains**: verifies the custom domain for the origin's host if it is not verified yet. If that would move the issuer, it prints both issuers and the `previousIssuers` value to add to your verifiers, and stops unless `--yes`.
 2. **issuer**: the discovery document at that domain (or the path mount on your app) must serve the instance's issuer.
 3. **sign_in_with_atlas**: turned on when the instance declares it.
 4. **webhooks**: each inactive endpoint gets a test delivery, and is activated only if it succeeds.

@@ -268,6 +268,7 @@ export const svSE: LocalizationResource = {
   'error.strategy_disabled': 'Den här inloggningsmetoden är inte tillgänglig för den här appen.',
   'error.sign_up_restricted': 'Registrering i den här appen sker endast via inbjudan.',
   'error.sign_up_denied': 'Registrering är inte tillgänglig för det här kontot.',
+  'error.password_not_yet_usable': 'Verifiera din e-postadress innan du loggar in med det här lösenordet.',
   'error.waitlisted': 'Du står på väntelistan. Vi skickar ett e-postmeddelande när en plats blir ledig.',
   'error.identifier_not_allowed': 'Den här e-postadressen eller det här telefonnumret är inte tillåtet i den här appen.',
   'error.disposable_email_blocked': 'Registrering med en tillfällig e-postadress eller engångsadress är inte tillåten.',

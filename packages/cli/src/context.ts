@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { type AtlasClient, createAtlasClient } from '@atlasauth/backend';
 import { FileConfigStore, type ConfigStore, defaultConfigPath } from './config';
-import { createConfigHttp, type ConfigHttp } from './config-http';
+import { createConfigHttp, type ConfigHttp, type UnknownFieldsNotice } from './config-http';
 import { defaultIO, type IO } from './io';
 import { defaultPrompter, type Prompter } from './prompt';
 
@@ -35,7 +35,7 @@ export interface RunContext {
    * config-only `/v1` endpoints the typed client omits). Optional so existing
    * contexts stay valid; the config command falls back to the real one.
    */
-  makeHttp?: (opts: { secretKey: string; apiUrl: string; headers?: Record<string, string> }) => ConfigHttp;
+  makeHttp?: (opts: { secretKey: string; apiUrl: string; headers?: Record<string, string>; onUnknownFields?: (notice: UnknownFieldsNotice) => void }) => ConfigHttp;
   /**
    * Read a file's text, for commands that take a path (`atlas actions deploy`
    * / `test`). Injectable so a test drives them with an in-memory file instead
@@ -56,10 +56,23 @@ export interface RunContext {
    */
   exec?: (cmd: string, args: string[], opts: { cwd: string }) => Promise<number>;
   /**
+   * Run a program and capture its stdout (`atlas doctor --scan-image` reads
+   * `docker history`). No shell. Rejects with `code: 'ENOENT'` when the program is
+   * missing. Optional; defaults to node's execFile.
+   */
+  execFile?: (cmd: string, args: string[]) => Promise<string>;
+  /** Whether stdin / stdout are terminals. Optional; defaults to the real streams. */
+  tty?: { stdin: boolean; stdout: boolean };
+  /**
    * Stops a long-running command (`atlas listen`). Optional; defaults to an
    * abort on SIGINT/SIGTERM so Ctrl-C ends the stream cleanly.
    */
   signal?: AbortSignal;
+}
+
+/** Whether stdin / stdout are terminals here. */
+export function ttyOf(ctx: RunContext): { stdin: boolean; stdout: boolean } {
+  return ctx.tty ?? { stdin: process.stdin.isTTY === true, stdout: process.stdout.isTTY === true };
 }
 
 /**
@@ -74,7 +87,7 @@ export function defaultContext(overrides: Partial<RunContext> = {}): RunContext 
     config: new FileConfigStore(defaultConfigPath()),
     prompt: defaultPrompter(),
     makeClient: ({ secretKey, apiUrl }) => createAtlasClient({ secretKey, apiUrl }),
-    makeHttp: ({ secretKey, apiUrl, headers }) => createConfigHttp({ secretKey, apiUrl, headers }),
+    makeHttp: (opts) => createConfigHttp(opts),
     readFile: (path) => readFileSync(path, 'utf8'),
     ...overrides,
   };

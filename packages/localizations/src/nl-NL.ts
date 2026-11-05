@@ -221,6 +221,7 @@ export const nlNL: Localization = {
   'error.strategy_disabled': 'Deze inlogmethode is niet beschikbaar voor deze app.',
   'error.sign_up_restricted': 'Registreren voor deze app kan alleen op uitnodiging.',
   'error.sign_up_denied': 'Registreren is niet mogelijk voor dit account.',
+  'error.password_not_yet_usable': 'Verifieer je e-mailadres voordat je inlogt met dit wachtwoord.',
   'error.waitlisted': 'Je staat op de wachtlijst. We sturen je een e-mail zodra er een plek vrijkomt.',
   'error.identifier_not_allowed': 'Dit e-mailadres of telefoonnummer is niet toegestaan voor deze app.',
   'error.disposable_email_blocked': 'Registreren met een tijdelijk of wegwerp-e-mailadres is niet toegestaan.',

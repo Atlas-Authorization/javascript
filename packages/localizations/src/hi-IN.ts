@@ -270,6 +270,7 @@ export const hiIN: LocalizationResource = {
   'error.strategy_disabled': 'यह साइन इन विधि इस ऐप के लिए उपलब्ध नहीं है।',
   'error.sign_up_restricted': 'इस ऐप पर साइन अप केवल आमंत्रण द्वारा किया जा सकता है।',
   'error.sign_up_denied': 'इस खाते के लिए साइन अप उपलब्ध नहीं है।',
+  'error.password_not_yet_usable': 'इस पासवर्ड से साइन इन करने से पहले अपना ईमेल पता सत्यापित करें।',
   'error.waitlisted': 'आप प्रतीक्षा सूची में हैं। जगह खाली होने पर हम आपको ईमेल करेंगे।',
   'error.identifier_not_allowed': 'इस ऐप पर यह ईमेल या फ़ोन नंबर स्वीकार्य नहीं है।',
   'error.disposable_email_blocked': 'अस्थायी या डिस्पोज़ेबल ईमेल पते से साइन अप करने की अनुमति नहीं है।',

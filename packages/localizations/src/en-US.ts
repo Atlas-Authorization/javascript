@@ -272,6 +272,7 @@ export const enUS: LocalizationResource = {
   'error.strategy_disabled': 'This sign-in method is not available for this app.',
   'error.sign_up_restricted': 'Sign-up on this app is by invitation only.',
   'error.sign_up_denied': 'Sign-up is not available for this account.',
+  'error.password_not_yet_usable': 'Verify your email address before signing in with this password.',
   'error.waitlisted': "You're on the waitlist. We'll email you when a place opens up.",
   'error.identifier_not_allowed': 'This email or phone number is not allowed on this app.',
   'error.disposable_email_blocked': 'Sign-up with a disposable or temporary email address is not allowed.',

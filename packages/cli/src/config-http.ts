@@ -1,4 +1,5 @@
 import { AtlasApiError, type AtlasErrorItem } from '@atlasauth/backend';
+import { redactDeep } from './redact';
 
 /**
  * A tiny, management-API HTTP seam used only by `atlas config`. The typed
@@ -20,6 +21,14 @@ export interface ConfigHttp {
   delete(path: string, body?: unknown): Promise<void>;
 }
 
+/** The fields a write sent that the endpoint ignored, as the response headers name them. */
+export interface UnknownFieldsNotice {
+  method: string;
+  path: string;
+  fields: string;
+  suggestions: string | null;
+}
+
 /** The production {@link ConfigHttp}: Bearer-authed `fetch`, mirroring the backend client. */
 export function createConfigHttp(opts: {
   secretKey: string;
@@ -27,6 +36,8 @@ export function createConfigHttp(opts: {
   fetch?: typeof fetch;
   /** Extra request headers (e.g. `X-Secret-Recipient` for sealed secret delivery). */
   headers?: Record<string, string>;
+  /** Told about a write's `Atlas-Unknown-Fields` header (a lenient instance ignored those fields). */
+  onUnknownFields?: (notice: UnknownFieldsNotice) => void;
 }): ConfigHttp {
   const base = opts.apiUrl.replace(/\/+$/, '');
   const fetchImpl = opts.fetch ?? globalThis.fetch;
@@ -47,6 +58,10 @@ export function createConfigHttp(opts: {
     }
     const res = await fetchImpl(`${base}${path}`, { method, headers, body: payload });
     if (!res.ok) throw await toApiError(res);
+    const unknownFields = res.headers?.get('atlas-unknown-fields');
+    if (unknownFields && opts.onUnknownFields) {
+      opts.onUnknownFields({ method, path, fields: unknownFields, suggestions: res.headers.get('atlas-unknown-fields-suggestions') });
+    }
     if (res.status === 204) return undefined as T;
     const text = await res.text();
     return (text ? (JSON.parse(text) as T) : (undefined as T));
@@ -69,7 +84,8 @@ async function toApiError(res: Response): Promise<AtlasApiError> {
   if (text) {
     try {
       const parsed = JSON.parse(text) as { errors?: AtlasErrorItem[] };
-      if (Array.isArray(parsed.errors) && parsed.errors.length) errors = parsed.errors;
+      // A server message may echo what was sent: it never reaches the terminal as is.
+      if (Array.isArray(parsed.errors) && parsed.errors.length) errors = redactDeep(parsed.errors);
     } catch {
       /* non-JSON body */
     }

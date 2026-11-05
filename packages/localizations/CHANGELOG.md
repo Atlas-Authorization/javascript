@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.13.0 — 2026-11-05
+
+- `error.password_not_yet_usable` in every bundle.
+
 ## 0.12.1 — 2026-11-04
 
 - `error.sign_up_denied` and `error.github_team_required` in every bundle.

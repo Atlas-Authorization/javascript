@@ -1,5 +1,11 @@
 # @atlasauth/js changelog
 
+## 0.30.0 — 2026-11-05
+
+### Added
+
+- `ERROR_REASONS` lists `password_not_yet_usable` (the password is correct, but it was imported to wait until an email on the account is verified).
+
 ## 0.29.1 — 2026-11-04
 
 ### Fixed

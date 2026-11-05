@@ -269,6 +269,7 @@ export const zhTW: LocalizationResource = {
   'error.strategy_disabled': '此應用程式不提供這種登入方式。',
   'error.sign_up_restricted': '此應用程式僅開放受邀者註冊。',
   'error.sign_up_denied': '此帳戶無法註冊。',
+  'error.password_not_yet_usable': '請先驗證您的電子郵件地址，再使用此密碼登入。',
   'error.waitlisted': '您已在候補名單中，有名額時我們會以電子郵件通知您。',
   'error.identifier_not_allowed': '此應用程式不允許使用這個電子郵件或電話號碼。',
   'error.disposable_email_blocked': '不允許使用拋棄式或臨時電子郵件地址註冊。',

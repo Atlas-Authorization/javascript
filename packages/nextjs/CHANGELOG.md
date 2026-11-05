@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.11.0 — 2026-11-04
+
+### Changed (behaviour-changing)
+
+- `createMountHandler` sends Atlas only what Atlas uses. By default the only cookies forwarded are `__session`, `__client` and `__atlas_*`, and the only headers are browser basics plus the ones Atlas reads; your app's own cookies and internal headers stay on your side. To send something else, pass `forwardCookies(name)` or `forwardHeaders(name)`, which replace the defaults: `forwardCookies: () => true` and `forwardHeaders: () => true` restore the old behaviour. Hop-by-hop headers, `X-Forwarded-*`, and `X-Atlas-*` other than `X-Atlas-SDK` are dropped whatever a hook returns. Client IP handling is unchanged.
+
+### Fixed
+
+- `createMountHandler` forwards `X-Atlas-SDK`, so SDK version advisories now reach browsers behind a mount.
+
 ## 0.10.0 — 2026-11-04
 
 ### Security

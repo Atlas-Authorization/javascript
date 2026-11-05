@@ -1,8 +1,12 @@
+import { basename, dirname } from 'node:path';
 import { AtlasApiError } from '@atlasauth/backend';
 import { str, type ParsedArgs } from '../args';
 import type { RunContext } from '../context';
 import { CliError } from '../errors';
+import type { ConfigHttp } from '../config-http';
+import { ttyOf } from '../context';
 import { printJson, renderTable, type Column } from '../output';
+import { redactDeep } from '../redact';
 import {
   findInstance,
   httpFor,
@@ -15,6 +19,7 @@ import {
 import { deliverSecret, productDir, writeSecretFile } from '../secrets';
 import { envApiUrl, requireArg, resolveAuth, wantsJson } from './shared';
 import { declaredCookiesCheck, loginReadinessCheck, parseOrigin, pathMountCheck, preflightCheck } from './golive';
+import { scanForSecrets } from './doctor-scan';
 
 /**
  * The project commands that sit beside `atlas init`: `preflight` (a CI gate),
@@ -95,6 +100,54 @@ interface PreflightFinding {
   fix: string;
   /** Known and accepted (never on an error): shown, not counted. */
   acknowledged?: { reason: string };
+  /** The exact call that fixes it. */
+  fix_call?: { method: string; path: string; body?: unknown };
+  /** The CLI command that fixes it. */
+  /** Applying `fix_call` cannot break anything: `--fix` may offer it. */
+  safe_to_autofix?: boolean;
+}
+
+/** The only calls `--fix` makes: marked safe by the server, a write, on the Backend API. */
+function canAutofix(f: PreflightFinding): boolean {
+  const call = f.fix_call;
+  return (
+    f.safe_to_autofix === true &&
+    !f.acknowledged &&
+    !!call &&
+    typeof call.path === 'string' &&
+    ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(call.method).toUpperCase()) &&
+    call.path.startsWith('/v1/') &&
+    !call.path.includes('..')
+  );
+}
+
+/** `--fix`: offer each safe finding, apply what is confirmed. A refused call does not stop the rest. */
+async function applyFixes(ctx: RunContext, api: ConfigHttp, findings: PreflightFinding[], yes: boolean, log: (l: string) => void): Promise<void> {
+  const fixable = findings.filter(canAutofix);
+  if (!fixable.length) {
+    log('Nothing here can be fixed automatically.');
+    return;
+  }
+  log(`${fixable.length} finding(s) can be fixed:`);
+  for (const f of fixable) log(`  ${f.code}: ${f.fix_call!.method} ${f.fix_call!.path}`);
+  for (const f of fixable) {
+    const call = f.fix_call!;
+    if (!yes) {
+      const answer = (await ctx.prompt.text(`Fix ${f.code} with ${call.method} ${call.path}? [y/N]`, { default: 'n' })).trim().toLowerCase();
+      if (answer !== 'y' && answer !== 'yes') continue;
+    }
+    try {
+      const method = call.method.toUpperCase();
+      if (method === 'POST') await api.post(call.path, call.body ?? {});
+      else if (method === 'PUT') await api.put(call.path, call.body ?? {});
+      else if (method === 'PATCH') await api.patch(call.path, call.body ?? {});
+      else await api.delete(call.path, call.body);
+      log(`Fixed ${f.code}.`);
+    } catch (err) {
+      if (!(err instanceof AtlasApiError)) throw err;
+      log(`Could not fix ${f.code}: ${err.message}`);
+    }
+  }
 }
 
 const FINDING_COLUMNS: Column<PreflightFinding>[] = [
@@ -109,8 +162,20 @@ export async function preflight(ctx: RunContext, args: ParsedArgs): Promise<numb
   if (failOn !== 'error' && failOn !== 'warning') {
     throw new CliError(`--fail-on must be error or warning, got '${failOn}'.`);
   }
+  const fix = args.values.fix === true;
+  const tty = ttyOf(ctx);
+  if (fix && args.values.yes !== true && !(tty.stdin && tty.stdout)) {
+    throw new CliError('preflight --fix asks before each fix and there is no terminal here. Review the findings, then pass --yes.');
+  }
   const cred = instanceCredential(ctx, args);
-  const report = await httpFor(ctx, cred).get<{ ok: boolean; findings: PreflightFinding[] }>('/v1/instance/preflight');
+  const api = httpFor(ctx, cred);
+  let raw = await api.get<{ ok: boolean; findings: PreflightFinding[] }>('/v1/instance/preflight');
+  if (fix) {
+    await applyFixes(ctx, api, raw.findings ?? [], args.values.yes === true, (l) => (wantsJson(args.values) ? ctx.io.err(l) : ctx.io.out(l)));
+    raw = await api.get<{ ok: boolean; findings: PreflightFinding[] }>('/v1/instance/preflight');
+  }
+  // Fixes above use the raw calls; everything printed from here on is redacted.
+  const report = redactDeep(raw);
   const findings = report.findings ?? [];
   const counted = findings.filter((f) => !f.acknowledged);
   const errors = counted.filter((f) => f.severity === 'error').length;
@@ -127,6 +192,7 @@ export async function preflight(ctx: RunContext, args: ParsedArgs): Promise<numb
     ctx.io.out('');
     for (const f of counted.filter((x) => x.severity !== 'info')) {
       ctx.io.out(`${f.code}: ${f.fix}`);
+      if (f.fix_call) ctx.io.out(`  call: ${f.fix_call.method} ${f.fix_call.path}${f.fix_call.body === undefined ? '' : ` ${JSON.stringify(f.fix_call.body)}`}`);
     }
     for (const f of findings.filter((x) => x.acknowledged)) {
       ctx.io.out(`${f.code}: acknowledged (${f.acknowledged!.reason})`);
@@ -165,6 +231,9 @@ const HEALTH_COLUMNS: Column<HealthCheckRow>[] = [
 
 /** `atlas doctor` — the integration-health report; exit 1 when a check fails. */
 export async function doctor(ctx: RunContext, args: ParsedArgs): Promise<number> {
+  const scanDir = str(args.values, 'scan-dir');
+  const scanImage = str(args.values, 'scan-image');
+  if (scanDir !== undefined || scanImage !== undefined) return scanForSecrets(ctx, { dir: scanDir, image: scanImage, json: wantsJson(args.values) });
   const cred = instanceCredential(ctx, args);
   const q = new URLSearchParams();
   const only = str(args.values, 'only');
@@ -172,8 +241,8 @@ export async function doctor(ctx: RunContext, args: ParsedArgs): Promise<number>
   if (args.values['no-probe'] === true) q.set('probe', 'false');
   const qs = q.toString();
   const api = httpFor(ctx, cred);
-  const report = await api.get<{ ok: boolean; checks: HealthCheckRow[]; summary: { failing: number; passing: number; unknown: number } }>(
-    `/v1/integration-health${qs ? `?${qs}` : ''}`,
+  const report = redactDeep(
+    await api.get<{ ok: boolean; checks: HealthCheckRow[]; summary: { failing: number; passing: number; unknown: number } }>(`/v1/integration-health${qs ? `?${qs}` : ''}`),
   );
   // --origin: the go-live checks for that origin join the same report.
   const originRaw = str(args.values, 'origin');
@@ -381,13 +450,14 @@ export async function client(ctx: RunContext, args: ParsedArgs): Promise<number>
 
   const product = str(v, 'product') ?? cred.manifest?.product;
   const env = cred.instance?.environment;
-  const fileName = product && env && cred.instance?.oauth_client?.id === res.id ? `${env}-oauth-client.env` : `oauth-client-${res.id}.env`;
+  const known = cred.instance?.oauth_client?.id === res.id ? cred.instance.oauth_client.secret_file : null;
+  const fileName = known ? basename(known) : product && env && cred.instance?.oauth_client?.id === res.id ? `${env}-oauth-client.env` : `oauth-client-${res.id}.env`;
   const entries = { ATLAS_CLIENT_ID: res.client_id, ATLAS_CLIENT_SECRET: res.client_secret };
   if (v['print-secret'] === true) {
     deliverSecret({ io: ctx.io, env: ctx.env, product: product ?? 'atlasauth', fileName, entries, label: 'The new client secret', printSecret: true });
   } else {
     // A rotation replaces the file by design: the old secret is the one being retired.
-    const { path } = writeSecretFile(productDir(ctx.env, product ?? 'atlasauth'), fileName, entries, {
+    const { path } = writeSecretFile(known ? dirname(known) : productDir(ctx.env, product ?? 'atlasauth'), fileName, entries, {
       force: true,
       comment: `OAuth client ${res.id}. Server-side only.`,
     });

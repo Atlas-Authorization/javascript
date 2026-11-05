@@ -120,6 +120,7 @@ describe('server error reasons', () => {
   'strategy_disabled',
   'sign_up_restricted',
   'sign_up_denied',
+  'password_not_yet_usable',
   'waitlisted',
   'identifier_not_allowed',
   'disposable_email_blocked',

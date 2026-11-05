@@ -222,6 +222,7 @@ export const deDE: LocalizationResource = {
   'error.strategy_disabled': 'Diese Anmeldemethode ist für diese App nicht verfügbar.',
   'error.sign_up_restricted': 'Die Registrierung für diese App ist nur auf Einladung möglich.',
   'error.sign_up_denied': 'Die Registrierung ist für dieses Konto nicht möglich.',
+  'error.password_not_yet_usable': 'Bestätigen Sie Ihre E-Mail-Adresse, bevor Sie sich mit diesem Passwort anmelden.',
   'error.waitlisted': 'Sie stehen auf der Warteliste. Wir benachrichtigen Sie per E-Mail, sobald ein Platz frei wird.',
   'error.identifier_not_allowed': 'Diese E-Mail-Adresse oder Telefonnummer ist für diese App nicht zugelassen.',
   'error.disposable_email_blocked': 'Die Registrierung mit einer Wegwerf- oder temporären E-Mail-Adresse ist nicht erlaubt.',

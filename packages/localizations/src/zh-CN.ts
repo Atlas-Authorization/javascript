@@ -222,6 +222,7 @@ export const zhCN: LocalizationResource = {
   'error.strategy_disabled': '此应用不支持该登录方式。',
   'error.sign_up_restricted': '此应用仅限受邀注册。',
   'error.sign_up_denied': '此账户无法注册。',
+  'error.password_not_yet_usable': '请先验证您的电子邮件地址，然后再使用此密码登录。',
   'error.waitlisted': '您已加入候补名单。有名额时我们会通过电子邮件通知您。',
   'error.identifier_not_allowed': '此应用不允许使用该电子邮件或手机号码。',
   'error.disposable_email_blocked': '不允许使用一次性或临时电子邮件地址注册。',

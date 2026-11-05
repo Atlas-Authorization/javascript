@@ -222,6 +222,7 @@ export const viVN: LocalizationResource = {
   'error.strategy_disabled': 'Phương thức đăng nhập này không khả dụng cho ứng dụng này.',
   'error.sign_up_restricted': 'Việc đăng ký vào ứng dụng này chỉ dành cho người được mời.',
   'error.sign_up_denied': 'Không thể đăng ký với tài khoản này.',
+  'error.password_not_yet_usable': 'Hãy xác minh địa chỉ email của bạn trước khi đăng nhập bằng mật khẩu này.',
   'error.waitlisted': 'Bạn đang trong danh sách chờ. Chúng tôi sẽ gửi email cho bạn khi có chỗ trống.',
   'error.identifier_not_allowed': 'Địa chỉ email hoặc số điện thoại này không được phép sử dụng với ứng dụng này.',
   'error.disposable_email_blocked': 'Không cho phép đăng ký bằng địa chỉ email tạm thời hoặc dùng một lần.',

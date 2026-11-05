@@ -220,6 +220,7 @@ export const jaJP: Localization = {
   'error.strategy_disabled': 'このサインイン方法はこのアプリでは利用できません。',
   'error.sign_up_restricted': 'このアプリへの登録は招待制です。',
   'error.sign_up_denied': 'このアカウントでは登録できません。',
+  'error.password_not_yet_usable': 'このパスワードでサインインする前に、メールアドレスを確認してください。',
   'error.waitlisted': 'ウェイトリストに登録されています。空きが出しだいメールでお知らせします。',
   'error.identifier_not_allowed': 'このメールアドレスまたは電話番号は、このアプリでは使用できません。',
   'error.disposable_email_blocked': '使い捨てまたは一時的なメールアドレスでは登録できません。',

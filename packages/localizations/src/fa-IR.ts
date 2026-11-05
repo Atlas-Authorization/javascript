@@ -269,6 +269,7 @@ export const faIR: LocalizationResource = {
   'error.strategy_disabled': 'این روش ورود برای این برنامه در دسترس نیست.',
   'error.sign_up_restricted': 'ثبت‌نام در این برنامه فقط با دعوت‌نامه امکان‌پذیر است.',
   'error.sign_up_denied': 'ثبت‌نام برای این حساب امکان‌پذیر نیست.',
+  'error.password_not_yet_usable': 'پیش از ورود با این گذرواژه، نشانی ایمیل خود را تأیید کنید.',
   'error.waitlisted': 'شما در فهرست انتظار هستید. وقتی جایی خالی شود به شما ایمیل می‌زنیم.',
   'error.identifier_not_allowed': 'این ایمیل یا شماره تلفن در این برنامه مجاز نیست.',
   'error.disposable_email_blocked': 'ثبت‌نام با ایمیل یک‌بارمصرف یا موقت مجاز نیست.',

@@ -269,6 +269,7 @@ export const thTH: LocalizationResource = {
   'error.strategy_disabled': 'วิธีเข้าสู่ระบบนี้ไม่พร้อมใช้งานสำหรับแอปนี้',
   'error.sign_up_restricted': 'การลงทะเบียนในแอปนี้ทำได้เฉพาะผู้ที่ได้รับเชิญเท่านั้น',
   'error.sign_up_denied': 'ไม่สามารถลงทะเบียนด้วยบัญชีนี้ได้',
+  'error.password_not_yet_usable': 'โปรดยืนยันที่อยู่อีเมลของคุณก่อนเข้าสู่ระบบด้วยรหัสผ่านนี้',
   'error.waitlisted': 'คุณอยู่ในรายชื่อรอ เราจะส่งอีเมลถึงคุณเมื่อมีที่ว่าง',
   'error.identifier_not_allowed': 'ไม่อนุญาตให้ใช้อีเมลหรือหมายเลขโทรศัพท์นี้ในแอปนี้',
   'error.disposable_email_blocked': 'ไม่อนุญาตให้ลงทะเบียนด้วยอีเมลชั่วคราวหรืออีเมลแบบใช้แล้วทิ้ง',

@@ -222,6 +222,7 @@ export const esES: LocalizationResource = {
   'error.strategy_disabled': 'Este método de inicio de sesión no está disponible en esta aplicación.',
   'error.sign_up_restricted': 'El registro en esta aplicación es solo por invitación.',
   'error.sign_up_denied': 'El registro no está disponible para esta cuenta.',
+  'error.password_not_yet_usable': 'Verifica tu dirección de correo antes de iniciar sesión con esta contraseña.',
   'error.waitlisted': 'Estás en la lista de espera. Te enviaremos un correo cuando haya una plaza disponible.',
   'error.identifier_not_allowed': 'Este correo electrónico o número de teléfono no está permitido en esta aplicación.',
   'error.disposable_email_blocked': 'No se permite registrarse con una dirección de correo desechable o temporal.',

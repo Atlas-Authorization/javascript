@@ -221,6 +221,7 @@ export const koKR: LocalizationResource = {
   'error.strategy_disabled': '이 로그인 방법은 이 앱에서 사용할 수 없습니다.',
   'error.sign_up_restricted': '이 앱은 초대를 통해서만 가입할 수 있습니다.',
   'error.sign_up_denied': '이 계정으로는 가입할 수 없습니다.',
+  'error.password_not_yet_usable': '이 비밀번호로 로그인하기 전에 이메일 주소를 인증해 주세요.',
   'error.waitlisted': '대기자 명단에 등록되어 있습니다. 자리가 나면 이메일로 알려드리겠습니다.',
   'error.identifier_not_allowed': '이 이메일 주소 또는 전화번호는 이 앱에서 사용할 수 없습니다.',
   'error.disposable_email_blocked': '일회용 또는 임시 이메일 주소로는 가입할 수 없습니다.',

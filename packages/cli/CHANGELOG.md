@@ -1,5 +1,36 @@
 # @atlasauth/cli changelog
 
+## 0.26.0 — 2026-11-05
+
+### Security
+
+- `atlas plan`, `apply`, `preflight`, `golive` and their `--json` forms no longer print secrets, and API error messages are masked. **If you ran `atlas plan` on 0.25.1 or older with a provider `client_secret` in the file, the value was printed: rotate every provider secret that was ever planned, and treat terminal and CI logs from those runs as exposed.**
+- Masking happens where output is written: secret-named fields at any depth, Atlas-key-shaped values, and every value a `${VAR}` resolved to, under any key. A changed secret prints `client_secret: <redacted> (changed)`.
+- `--show-secrets` prints values in a terminal only: it is refused when stdout is not a TTY or `CI` is set.
+
+### Added
+
+- `webhook_endpoints` in a config file take `secret` (`${VAR}`). A changed secret on an existing endpoint is rotated, with no overlap: the old secret stops signing at once.
+- `atlas import users.jsonl`: Atlas's own JSONL shape, idempotent by `external_id`, with `--dry-run`, `--since`, `--on-conflict skip|update` and `--password-policy active|until_email_verified`. Reports counts and no email addresses. Vendor imports take the same flags.
+- `atlas users clear-password <id>`.
+- `atlas golive` prints the issuer before and after, and the `previousIssuers` value to copy, before a step that moves the issuer, and stops unless `--yes`.
+- `atlas preflight --fix [--yes]` applies the fixes the server marks safe, then runs the checks again. Normal output prints each finding's exact call when it has one.
+- `atlas doctor --scan-dir <path>` and `--scan-image <ref>` flag secrets in build metadata and folders holding both a development and a production key. They print the file and line, never the value, and exit 1 on a finding.
+- `atlas init --with-dev`, `--no-env-files` (with `--json`), and `--next --mount <path>`.
+- `atlas setup-guide`: the setup calls in order, with the read-back for each.
+- `--rotate-secret` on `plan` and `apply` sends again each secret Atlas cannot compare.
+
+### Changed
+
+- **`plan` and `apply` now refuse unknown keys in a config file**, resource by resource, naming the nearest real key.
+- A secret set both in the file and on the instance is no longer permanent drift. Atlas never returns it, so a changed value is not detected: the plan says so, and `--rotate-secret` sends it. Provider `values` work the same way.
+- `atlas apply` prints field-level changes, and `Atlas-Unknown-Fields` as a warning on a lenient instance.
+- `atlas init` turns on strict request bodies unless the instance has them or has explicitly opted out.
+
+### Fixed
+
+- A provider's `mode` is sent and compared, so a plan after apply is clean. A provider that leaves `mode` out shows no drift. `plan` warns on `mode: redirect` with no `client_secret`, and on a secret in native mode.
+
 ## 0.25.1 — 2026-11-03
 
 ### Fixed

@@ -48,6 +48,18 @@ export interface AtlasMountOptions {
    * browser-controlled and never used. `0` forwards no client IP.
    */
   trustedProxyHops?: number;
+  /**
+   * Which request cookies reach Atlas, replacing the default: `__session`,
+   * `__client` and `__atlas_*`. Your app's own cookies stay on your side.
+   */
+  forwardCookies?: (name: string) => boolean;
+  /**
+   * Which request headers reach Atlas (the name is lowercase), replacing the
+   * default list of browser basics and what Atlas reads. It can't let through
+   * hop-by-hop headers, `X-Forwarded-*`, or `X-Atlas-*` other than `X-Atlas-SDK`:
+   * Atlas trusts those from your proxy, so they are never taken from the browser.
+   */
+  forwardHeaders?: (name: string) => boolean;
   fetchImpl?: typeof fetch;
 }
 
@@ -64,8 +76,25 @@ export interface AtlasMountHandlers {
 }
 
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'te', 'trailer', 'host', 'content-length']);
-const dropRequestHeader = (name: string) =>
-  HOP_BY_HOP.has(name) || name.startsWith('proxy-') || name.startsWith('x-atlas-') || name.startsWith('x-forwarded-') || name === 'forwarded' || name === 'x-real-ip';
+/** Hop-by-hop headers and the ones Atlas believes from a proxy or edge: never taken from the browser, whatever `forwardHeaders` says. */
+const neverForwardHeader = (name: string) =>
+  HOP_BY_HOP.has(name) ||
+  name.startsWith('proxy-') ||
+  (name.startsWith('x-atlas-') && name !== 'x-atlas-sdk' && name !== 'x-atlas-app-version') ||
+  name.startsWith('x-forwarded-') ||
+  ['forwarded', 'x-real-ip', 'cf-connecting-ip', 'true-client-ip', 'ssl-client-cert', 'x-client-cert'].includes(name);
+const FORWARDED_HEADERS = new Set([
+  'accept', 'authorization', 'cache-control', 'content-encoding', 'content-type', 'cookie', 'last-event-id', 'origin', 'pragma', 'range', 'referer', 'user-agent',
+  'if-match', 'if-modified-since', 'if-none-match', 'if-range', 'if-unmodified-since',
+  // Sent by the Atlas SDKs.
+  'atlas-attestation', 'x-atlas-sdk', 'x-atlas-app-version', 'x-publishable-key', 'x-refresh-token',
+  // Read by the Frontend API and OpenID Provider routes under the mount.
+  'dpop', 'idempotency-key', 'mcp-session-id', 'oauth-client-attestation', 'oauth-client-attestation-pop', 'pca-action', 'workload-identity-token', 'workload-proof-token',
+]);
+const forwardHeaderByDefault = (name: string) =>
+  FORWARDED_HEADERS.has(name) || name.startsWith('accept-') || name.startsWith('access-control-request-') || name.startsWith('sec-fetch-') || name.startsWith('sec-ch-');
+/** What Atlas reads and sets. Exact `__session` / `__client`: other vendors' `__session_*` and `__client_uat` are not ours to receive. */
+const forwardCookieByDefault = (name: string) => name === '__session' || name === '__client' || name.startsWith('__atlas_');
 const DROP_RESPONSE = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'te', 'trailer', 'content-encoding', 'content-length', 'set-cookie']);
 const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
 
@@ -114,11 +143,23 @@ function normaliseBase(raw: string): string {
   return base;
 }
 
+/** The `Cookie` header with only the allowed cookies, or undefined when none is left. */
+function filterCookies(header: string, allow: (name: string) => boolean): string | undefined {
+  const kept = header
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => part && allow(part.split('=', 1)[0]!.trim()));
+  return kept.length ? kept.join('; ') : undefined;
+}
+
 /**
  * App Router handlers that forward the mount to Atlas: method, path (base
- * included: Atlas reads the prefix from it), query and streamed body unchanged;
- * hop-by-hop headers dropped. Every incoming `X-Atlas-*`, `X-Forwarded-*`,
- * `Forwarded` and `X-Real-IP` header is dropped, then set as: `X-Atlas-Forwarded-Host`
+ * included: Atlas reads the prefix from it), query and streamed body unchanged.
+ * Only allowlisted request headers and cookies go upstream: browser basics, what
+ * Atlas reads, and the cookies `__session`, `__client` and `__atlas_*`
+ * (`forwardHeaders` and `forwardCookies` replace those lists). Hop-by-hop headers
+ * and every incoming `X-Atlas-*` (except `X-Atlas-SDK`), `X-Forwarded-*`,
+ * `Forwarded` and `X-Real-IP` header are always dropped, then set as: `X-Atlas-Forwarded-Host`
  * from `Host`; `X-Atlas-Proxy-Secret` from config; `X-Atlas-Client-IP` and
  * `X-Forwarded-For` from `options.clientIp`, else the incoming `X-Forwarded-For`
  * entry `trustedProxyHops` (default 1) from the right, omitted when absent or not
@@ -156,8 +197,12 @@ export function createMountHandler(options: AtlasMountOptions = {}): AtlasMountH
     const target = `${origin}${url.pathname}${url.search}`;
 
     const headers = new Headers();
+    const forwardHeader = options.forwardHeaders ?? forwardHeaderByDefault;
     request.headers.forEach((value, key) => {
-      if (!dropRequestHeader(key.toLowerCase())) headers.set(key, value);
+      const name = key.toLowerCase();
+      if (neverForwardHeader(name) || !forwardHeader(name)) return;
+      const kept = name === 'cookie' ? filterCookies(value, options.forwardCookies ?? forwardCookieByDefault) : value;
+      if (kept !== undefined) headers.set(key, kept);
     });
     headers.set('x-atlas-forwarded-host', request.headers.get('host') ?? url.host);
     headers.set('x-atlas-proxy-secret', proxySecret);

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { str, type ParsedArgs, type Values } from '../args';
-import { createConfigHttp, isNotFound, type ConfigHttp } from '../config-http';
+import { createConfigHttp, isNotFound, type ConfigHttp, type UnknownFieldsNotice } from '../config-http';
 import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import {
@@ -17,6 +17,7 @@ import {
 import { AtlasApiError, DEFAULT_API_URL } from '@atlasauth/backend';
 import { envApiUrl, resolveAuth } from './shared';
 import { parseDotenv, productDir, writeSecretFile } from '../secrets';
+import { REDACTED, isPlaceholder, isSecretKey, redactDeep, rememberResolved, revealingSecrets } from '../redact';
 
 // ───────────────────────────── resource model ─────────────────────────────
 
@@ -49,6 +50,18 @@ interface CollectionSpec {
   update?(http: ConfigHttp, live: LiveEntry, config: Config): Promise<void>;
   /** Delete an existing resource (only ever called under `--prune`); omit when unsupported. */
   remove?(http: ConfigHttp, live: LiveEntry): Promise<void>;
+  /** Every key a file may set: what export writes plus what only goes in (a secret). */
+  fileKeys: readonly string[];
+  /** The live side shows a set secret as "(secret set)", so an absent one really is unset. */
+  reportsSecrets?: boolean;
+  /** Keys the server fills with a default: no drift when the file leaves them out, even under --prune. */
+  defaulted?: readonly string[];
+  /** Keys the API takes but never returns: a file value cannot be compared. */
+  writeOnly?: readonly string[];
+  /** Ask the API whether the file's secret differs from the stored one; null when it cannot say. */
+  secretChanged?(http: ConfigHttp, live: LiveEntry, config: Config): Promise<boolean | null>;
+  /** Advice about a desired entry, shown with the plan. */
+  warnings?(config: Config, live: Config | undefined): string[];
 }
 
 /** A singleton resource — exactly one document per instance (the instance config, a schema). */
@@ -64,6 +77,12 @@ interface SingletonSpec {
    * the comparison and the plan output use it; apply always sends the file as written.
    */
   normalize?(config: Config): Config;
+  /** Every top-level key a file may set; omit for a document the server validates itself. */
+  fileKeys?: readonly string[];
+  /** Allowed keys inside a top-level object key. */
+  nestedKeys?: Record<string, readonly string[]>;
+  /** The live side shows a set secret as "(secret set)", so an absent one really is unset. */
+  reportsSecrets?: boolean;
 }
 
 /** Flags that reach a singleton's apply. */
@@ -71,6 +90,9 @@ interface ApplyOpts {
   /** Enable a hook even when its test call fails (`?force=true`). */
   forceHook: boolean;
 }
+
+/** The refusal `rotate_secret` answers when the secret is the one already stored. */
+const isSameSecretRefusal = (err: unknown) => err instanceof AtlasApiError && err.status === 422 && /must differ/.test(err.message);
 
 type ResourceSpec = CollectionSpec | SingletonSpec;
 
@@ -147,13 +169,15 @@ function registry(): ResourceSpec[] {
       async apply(http, config) {
         await http.put('/v1/messaging_providers/email', compact(withoutMarkers(config)));
       },
-      normalize: (c) => redactSecrets(c, ['config']),
+      fileKeys: ['transport', 'from_address', 'mode', 'config'],
+      reportsSecrets: true,
     },
 
     // 1. Instance config (auth_config + allowed origins) — the §9.3 singleton.
     {
       kind: 'singleton',
       type: 'instance',
+      fileKeys: ['allowed_origins', 'auth_config'],
       async fetchLive(http) {
         const inst = await http.get<{ allowed_origins?: Json; allowed_origin_integrations?: Json; auth_config?: Json }>('/v1/instance');
         const hints = obj(inst.allowed_origin_integrations ?? null);
@@ -200,6 +224,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'singleton',
       type: 'org_settings_schema',
+      fileKeys: ['schema'],
       async fetchLive(http) {
         try {
           const s = await http.get<{ schema?: Json }>('/v1/organization_settings_schema');
@@ -219,6 +244,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'redirect_urls',
+      fileKeys: ['url'],
       keyOf: (c) => String(obj(c).url ?? ''),
       async fetchLive(http) {
         const rows = await listData<{ id: string; url: string }>(http, '/v1/redirect_urls');
@@ -236,6 +262,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'oauth_clients',
+      fileKeys: [...OAUTH_CLIENT_KEYS, ...OAUTH_CLIENT_WRITE_KEYS],
       keyOf: (c) => String(obj(c).name ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/oauth_clients');
@@ -290,13 +317,32 @@ function registry(): ResourceSpec[] {
           throw err;
         }
       },
-      normalize: (c) => redactSecrets(c, ['before_user_create']),
+      fileKeys: ['before_user_create'],
+      nestedKeys: { before_user_create: ['url', 'timeout_ms', 'fail_closed', 'enabled', 'signing_secret'] },
+      reportsSecrets: true,
     },
 
     // 5. Social / enterprise OAuth providers — key = the catalog provider slug.
     {
       kind: 'collection',
       type: 'oauth_providers',
+      fileKeys: [...OAUTH_PROVIDER_KEYS, 'client_secret', 'values', 'settings'],
+      reportsSecrets: true,
+      defaulted: ['mode'],
+      writeOnly: ['values'],
+      warnings(config, live) {
+        const c = obj(config);
+        const lv = obj(live ?? null);
+        const inFile = typeof c.client_secret === 'string' && c.client_secret !== '';
+        const out: string[] = [];
+        if (c.mode === 'redirect' && !inFile && !lv.client_secret) {
+          out.push(`oauth_providers ${String(c.provider)}: mode redirect needs a client_secret, and neither the file nor the instance has one.`);
+        }
+        if ((c.mode ?? lv.mode) === 'native' && inFile) {
+          out.push(`oauth_providers ${String(c.provider)}: secret unused in native mode. Remove client_secret, or set mode: redirect.`);
+        }
+        return out;
+      },
       keyOf: (c) => String(obj(c).provider ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/oauth_providers');
@@ -305,7 +351,11 @@ function registry(): ResourceSpec[] {
           .map((r) => ({
             key: String(r.provider ?? ''),
             id: String(r.provider ?? ''),
-            config: pick(r, OAUTH_PROVIDER_KEYS),
+            config: {
+              ...obj(pick(r, OAUTH_PROVIDER_KEYS)),
+              ...(r.setting_values && Object.keys(r.setting_values as object).length ? { settings: r.setting_values as Json } : {}),
+              ...(r.has_secret === true ? { client_secret: SECRET_SET } : {}),
+            },
           }));
       },
       create: putProvider,
@@ -319,13 +369,15 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'custom_oauth_providers',
+      fileKeys: [...CUSTOM_PROVIDER_KEYS, ...CUSTOM_PROVIDER_WRITE_KEYS],
+      reportsSecrets: true,
       keyOf: (c) => String(obj(c).provider_key ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/custom_oauth_providers');
         return rows.map((r) => ({
           key: String(r.provider_key ?? ''),
           id: String(r.id ?? ''),
-          config: pick(r, CUSTOM_PROVIDER_KEYS),
+          config: { ...obj(pick(r, CUSTOM_PROVIDER_KEYS)), ...(r.has_secret === true ? { client_secret: SECRET_SET } : {}) },
         }));
       },
       async create(http, config) {
@@ -345,6 +397,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'resource_servers',
+      fileKeys: [...RESOURCE_SERVER_KEYS, 'publish_resource_metadata', 'access_token_format', 'refresh_token_absolute_ttl_seconds', 'refresh_token_idle_ttl_seconds', 'introspection_client_ids'],
       keyOf: (c) => String(obj(c).identifier ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/resource_servers');
@@ -374,6 +427,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'jwt_templates',
+      fileKeys: ['name', 'claims'],
       keyOf: (c) => String(obj(c).name ?? ''),
       async fetchLive(http) {
         const rows = await listData<{ name: string; claims: Json }>(http, '/v1/jwt_templates');
@@ -399,6 +453,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'permissions',
+      fileKeys: PERMISSION_KEYS,
       keyOf: (c) => String(obj(c).key ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/permissions');
@@ -422,6 +477,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'roles',
+      fileKeys: [...ROLE_KEYS, 'visibility'],
       keyOf: (c) => String(obj(c).key ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/roles');
@@ -455,6 +511,16 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'webhook_endpoints',
+      fileKeys: [...WEBHOOK_KEYS, 'secret'],
+      // A dry-run rotation tells a new secret from the stored one without revealing either.
+      async secretChanged(http, live, config) {
+        try {
+          await http.post(`/v1/webhook_endpoints/${enc(live.id)}/rotate_secret?dry_run=true`, { secret: obj(config).secret });
+          return true;
+        } catch (err) {
+          return isSameSecretRefusal(err) ? false : null;
+        }
+      },
       keyOf: (c) => String(obj(c).url ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/webhook_endpoints');
@@ -472,10 +538,19 @@ function registry(): ResourceSpec[] {
           enabled_events: c.enabled_events ?? [],
           // Sent on create so a paused endpoint is never live, even briefly.
           ...(typeof c.active === 'boolean' ? { active: c.active } : {}),
+          ...(typeof c.secret === 'string' ? { secret: c.secret } : {}),
         });
       },
       async update(http, live, config) {
-        await http.patch(`/v1/webhook_endpoints/${enc(live.id)}`, compact(config, true));
+        // PATCH leaves the signing secret alone; only rotate_secret changes it.
+        const { secret, ...rest } = obj(config);
+        await http.patch(`/v1/webhook_endpoints/${enc(live.id)}`, compact(rest, true));
+        if (typeof secret !== 'string' || !secret) return;
+        try {
+          await http.post(`/v1/webhook_endpoints/${enc(live.id)}/rotate_secret`, { secret });
+        } catch (err) {
+          if (!isSameSecretRefusal(err)) throw err;
+        }
       },
       async remove(http, live) {
         await http.delete(`/v1/webhook_endpoints/${enc(live.id)}`);
@@ -486,11 +561,14 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'sso_connections',
+      fileKeys: [...SSO_KEYS, ...SSO_WRITE_KEYS],
+      reportsSecrets: true,
+      writeOnly: ['saml_idp_certificate'],
       keyOf: ssoKey,
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/sso_connections');
         return rows.map((r) => {
-          const config = pick(r, SSO_KEYS);
+          const config = { ...obj(pick(r, SSO_KEYS)), ...(r.has_secret === true ? { oidc_client_secret: SECRET_SET, discourse_secret: SECRET_SET } : {}) };
           return { key: ssoKey(config), id: String(r.id ?? ''), config };
         });
       },
@@ -512,6 +590,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'sso_onboarding_profiles',
+      fileKeys: SSO_PROFILE_KEYS,
       keyOf: (c) => String(obj(c).name ?? ''),
       async fetchLive(http) {
         let rows: Record<string, unknown>[];
@@ -541,6 +620,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'billing_plans',
+      fileKeys: [...BILLING_KEYS, 'grace_days', 'provider_price_id', 'annual_amount', 'seat_feature_id', 'promotion'],
       keyOf: (c) => String(obj(c).slug ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/billing/plans');
@@ -567,6 +647,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'notification_templates',
+      fileKeys: NOTIFICATION_KEYS,
       keyOf: (c) => String(obj(c).name ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/notification_templates');
@@ -593,6 +674,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'email_templates',
+      fileKeys: EMAIL_KEYS,
       keyOf: (c) => String(obj(c).name ?? ''),
       async fetchLive(http) {
         const rows = await listData<{
@@ -623,6 +705,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'organization_policies',
+      fileKeys: ORG_POLICY_KEYS,
       keyOf: (c) => String(obj(c).organization_id ?? ''),
       async fetchLive(http) {
         const orgs = await listData<{ id: string }>(http, '/v1/organizations');
@@ -678,6 +761,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'singleton',
       type: 'cookie_consent',
+      fileKeys: COOKIE_CONSENT_KEYS,
       async fetchLive(http) {
         let cc: Record<string, Json>;
         try {
@@ -706,6 +790,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'singleton',
       type: 'sign_in_with_atlas',
+      fileKeys: ['enabled', 'connection_id'],
       async fetchLive(http) {
         let live: { enabled?: Json };
         try {
@@ -732,6 +817,7 @@ function registry(): ResourceSpec[] {
     {
       kind: 'singleton',
       type: 'signing_key_policy',
+      fileKeys: ['prepublish_days'],
       async fetchLive(http) {
         let live: { prepublish_days?: Json };
         try {
@@ -780,6 +866,20 @@ const OAUTH_CLIENT_KEYS = [
   'access_token_format',
   'token_lifetimes',
 ] as const;
+/** What a file may also send on an OAuth client: accepted on write, never exported. */
+const OAUTH_CLIENT_WRITE_KEYS = [
+  'application_type',
+  'client_secret',
+  'secret_expires_in_seconds',
+  'jwks',
+  'jwks_uri',
+  'tls_client_auth_subject_dn',
+  'frontchannel_logout_session_required',
+  'disabled',
+  'metadata',
+  'external_ref',
+  'add_redirect_origins',
+] as const;
 const OAUTH_PROVIDER_KEYS = [
   'provider',
   'enabled',
@@ -787,6 +887,7 @@ const OAUTH_PROVIDER_KEYS = [
   'allow_sign_up',
   'scopes',
   'client_id',
+  'mode',
 ] as const;
 const RESOURCE_SERVER_KEYS = [
   'identifier',
@@ -820,6 +921,18 @@ const CUSTOM_PROVIDER_KEYS = [
   'allow_sign_in',
   'allow_sign_up',
 ] as const;
+const CUSTOM_PROVIDER_WRITE_KEYS = [
+  'client_secret',
+  'end_session_endpoint',
+  'revocation_endpoint',
+  'host_params_schema',
+  'data_only',
+  'scope_separator',
+  'userinfo_auth',
+  'client_assertion_audience',
+  'logout',
+  'idp_initiated_login',
+] as const;
 const WEBHOOK_KEYS = ['url', 'enabled_events', 'active'] as const;
 const SSO_KEYS = [
   'type',
@@ -837,6 +950,29 @@ const SSO_KEYS = [
   'allowed_domains',
   'claim_role_mappings',
   'default_role_id',
+] as const;
+const SSO_WRITE_KEYS = [
+  'oidc_client_secret',
+  'saml_idp_certificate',
+  'saml_single_logout',
+  'saml_idp_slo_url',
+  'saml_idp_slo_response_url',
+  'saml_idp_slo_binding',
+  'saml_idp_slo_soap_url',
+  'saml_require_encrypted_assertions',
+  'saml_acs_path',
+  'require_consent_screen',
+  'discourse_secret',
+  'provisioning_mode',
+  'manual_endpoints',
+  'github_access',
+  'attribute_mapping',
+  'oidc_scopes',
+  'profile_mapping',
+  'token_endpoint_auth_method',
+  'client_assertion_audience',
+  'logout',
+  'idp_initiated_login',
 ] as const;
 const SSO_PROFILE_KEYS = ['name', 'allowed_connection_types', 'organization_id', 'company_name', 'allow_scim', 'intents', 'return_url'] as const;
 const COOKIE_CONSENT_KEYS = ['enabled', 'script_url', 'script_id', 'site_id', 'blocking_mode', 'extra_origins', 'settings_link', 'culture', 'host_aliases'] as const;
@@ -880,20 +1016,88 @@ function obj(config: Config): Record<string, Json> {
 
 /** What a write-only secret looks like on the live side, and in a plan. */
 const SECRET_SET = '(secret set)';
-const SECRET_KEY = /(secret|token|password|passwd|api_?key|private_?key)/i;
+
+const isObj = (x: Json | undefined): x is { [k: string]: Json } => x !== null && typeof x === 'object' && !Array.isArray(x);
 
 /**
- * Show each secret value under `groups` as "(secret set)" so a plan never echoes it
- * and compares equal to the live "(secret set)". An unresolved \${VAR} stays visible
- * (apply refuses it), as does an empty value.
+ * Bring a file's secrets and the live document to one comparable shape. A secret
+ * value becomes "(secret set)", so a plan never holds it and it compares equal to
+ * the live marker. `unverifiable` lists the secrets set on both sides, or that the
+ * API never reports (`reported` false): Atlas cannot say whether they differ, so
+ * they are not drift, and the plan says so. A secret the API reports as unset stays
+ * a difference. An unresolved ${VAR} stays visible (apply refuses it), as does an
+ * empty value.
  */
-function redactSecrets(config: Config, groups: string[]): Config {
-  const out = { ...obj(config) };
-  const mask = (g: Record<string, Json>): Record<string, Json> =>
-    Object.fromEntries(
-      Object.entries(g).map(([k, v]) => [k, SECRET_KEY.test(k) && typeof v === 'string' && v !== '' && !/^\$\{[A-Z0-9_]+\}$/.test(v) ? SECRET_SET : v]),
-    );
-  for (const g of groups) if (out[g] && typeof out[g] === 'object' && !Array.isArray(out[g])) out[g] = mask(obj(out[g]!));
+function reconcileSecrets(desired: Json, live: Json | undefined, reported: boolean, prefix = ''): { desired: Json; live: Json | undefined; unverifiable: string[] } {
+  if (!isObj(desired)) return { desired, live, unverifiable: [] };
+  const d: { [k: string]: Json } = { ...desired };
+  const l: { [k: string]: Json } = isObj(live) ? { ...live } : {};
+  const unverifiable: string[] = [];
+  for (const [k, v] of Object.entries(desired)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (isObj(v)) {
+      const inner = reconcileSecrets(v, l[k], reported, path);
+      d[k] = inner.desired;
+      if (isObj(l[k])) l[k] = inner.live as Json;
+      unverifiable.push(...inner.unverifiable);
+    } else if (isSecretKey(k) && typeof v === 'string' && v !== '' && v !== SECRET_SET && !isPlaceholder(v)) {
+      if (l[k] === SECRET_SET) {
+        d[k] = SECRET_SET;
+        unverifiable.push(path);
+      } else if (l[k] === undefined || l[k] === null) {
+        d[k] = SECRET_SET;
+        if (!reported) {
+          l[k] = SECRET_SET;
+          unverifiable.push(path);
+        }
+      }
+    }
+  }
+  return { desired: d, live: isObj(live) || unverifiable.length ? l : live, unverifiable };
+}
+
+/** The live document without the secret markers and server defaults the file says nothing about. */
+function withoutUnstated(live: Json, desired: Json, defaulted: readonly string[] = []): Json {
+  if (!isObj(live)) return live;
+  const want = isObj(desired) ? desired : {};
+  const out: { [k: string]: Json } = {};
+  for (const [k, v] of Object.entries(live)) {
+    if (!(k in want) && (v === SECRET_SET || defaulted.includes(k))) continue;
+    out[k] = isObj(v) && isObj(want[k]) ? withoutUnstated(v, want[k]!) : v;
+  }
+  return out;
+}
+
+/** How close two key names are (edit distance). */
+function distance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) row[j] = Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = row;
+  }
+  return prev[b.length]!;
+}
+
+function didYouMean(key: string, known: readonly string[]): string {
+  const norm = (x: string) => x.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  const best = [...known].sort((a, b) => distance(norm(key), a) - distance(norm(key), b))[0];
+  return best && distance(norm(key), best) <= Math.max(2, Math.floor(key.length / 3)) ? ` (did you mean ${best}?)` : '';
+}
+
+/** The keys in one parsed resource file that no spec knows, each named with its nearest real key. */
+function unknownFileKeys(spec: ResourceSpec, doc: Json): string[] {
+  const out: string[] = [];
+  const check = (value: Json, known: readonly string[], label: string) => {
+    if (!isObj(value)) return;
+    for (const k of Object.keys(value)) if (!known.includes(k)) out.push(`${label}: ${k}${didYouMean(k, known)}`);
+  };
+  if (spec.kind === 'collection') {
+    for (const entry of asArray(doc)) check(entry, spec.fileKeys, `${spec.type} ${spec.keyOf(entry) || '(no key)'}`);
+  } else if (spec.fileKeys) {
+    check(doc, spec.fileKeys, spec.type);
+    for (const [k, known] of Object.entries(spec.nestedKeys ?? {})) if (isObj(doc)) check(doc[k]!, known, `${spec.type}.${k}`);
+  }
   return out;
 }
 
@@ -941,6 +1145,7 @@ async function putProvider(http: ConfigHttp, config: Config): Promise<void> {
   if (Array.isArray(c.scopes)) body.scopes = c.scopes;
   // Credential-less providers (siwe, siws, siwb, siwf) take verifier settings instead.
   if (c.settings && typeof c.settings === 'object' && !Array.isArray(c.settings)) body.settings = c.settings;
+  if (c.mode === 'native' || c.mode === 'redirect') body.mode = c.mode;
   const provider = String(c.provider ?? '');
   if (Object.keys(body).length) {
     await http.put(`/v1/oauth_providers/${enc(provider)}`, body);
@@ -1011,10 +1216,10 @@ function resolveDir(values: Values): string {
 }
 
 /** Build the config HTTP client from the resolved profile credential. */
-function requireHttp(ctx: RunContext, values: Values): ConfigHttp {
+function requireHttp(ctx: RunContext, values: Values, onUnknownFields?: (n: UnknownFieldsNotice) => void): ConfigHttp {
   const auth = resolveAuth(ctx, values);
   const make = ctx.makeHttp ?? createConfigHttp;
-  return make({ secretKey: auth.secretKey, apiUrl: auth.apiUrl });
+  return make({ secretKey: auth.secretKey, apiUrl: auth.apiUrl, ...(onUnknownFields ? { onUnknownFields } : {}) });
 }
 
 /** Write every resource type's live config to `dir` (deterministic, secrets omitted); returns the file count. */
@@ -1033,7 +1238,7 @@ async function writeExport(http: ConfigHttp, dir: string, format: Format): Promi
       const entries = (await spec.fetchLive(http)).filter((e) => !e.managedBy);
       // Deterministic: entries sorted by natural key, keys sorted inside each.
       const sorted = [...entries].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-      const doc = sorted.map((e) => canonicalize(e.config));
+      const doc = sorted.map((e) => canonicalize(withoutMarkers(e.config)));
       writeFileSync(join(dir, `${spec.type}.${ext}`), serialize(doc, format));
       fileCount += 1;
     }
@@ -1058,8 +1263,12 @@ export interface Change {
   key: string;
   /** The live document (absent on a create). Carried for `atlas config plan`'s field diff. */
   before?: Config;
-  /** The desired document (absent on a delete). */
+  /** The desired document (absent on a delete). A secret value appears only as "(secret set)". */
   after?: Config;
+  /** The file's document with its real values: what `--show-secrets` prints. */
+  raw?: Config;
+  /** Secrets known to differ, or being re-sent, that the documents alone do not show. */
+  changedSecrets?: string[];
 }
 
 /** A planned change and the call that applies it. */
@@ -1074,6 +1283,10 @@ export interface ConfigPlan {
   skippedDeletes: Change[];
   /** Live resources owned by a connected platform: shown for information, never changed. */
   managed: Array<{ type: string; key: string; managedBy: string }>;
+  /** Advice about the file (a secret unused in native mode, …). */
+  warnings: string[];
+  /** Secrets in the file that Atlas cannot compare with what it stores. */
+  unverifiableSecrets: Array<{ type: string; key: string; path: string }>;
 }
 
 /**
@@ -1083,7 +1296,7 @@ export interface ConfigPlan {
  */
 export async function planConfigImport(
   http: ConfigHttp,
-  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; forceHook?: boolean },
+  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; forceHook?: boolean; rotateSecrets?: boolean },
 ): Promise<ConfigPlan> {
   const { dir, format, env, prune } = opts;
   const applyOpts: ApplyOpts = { forceHook: opts.forceHook === true };
@@ -1093,6 +1306,14 @@ export async function planConfigImport(
   }
   const present = new Set(readdirSync(dir));
 
+  const unknown = registry().flatMap((spec) =>
+    present.has(`${spec.type}.${ext}`) ? unknownFileKeys(spec, deserialize(readFileSync(join(dir, `${spec.type}.${ext}`), 'utf8'), format)) : [],
+  );
+  if (unknown.length) throw new CliError(`Unknown key(s) in the config:\n  ${unknown.join('\n  ')}`);
+
+  const rotate = opts.rotateSecrets === true;
+  const warnings: string[] = [];
+  const unverifiableSecrets: ConfigPlan['unverifiableSecrets'] = [];
   const changes: PlannedChange[] = [];
   let unchanged = 0;
   const skippedDeletes: Change[] = [];
@@ -1115,12 +1336,20 @@ export async function planConfigImport(
         unchanged += 1;
         continue;
       }
-      const live = liveRaw === null ? null : comparable(norm(liveRaw), desiredN, prune);
-      if (live !== null && deepEqual(desiredN, live)) {
+      if (liveRaw === null) {
+        const masked = reconcileSecrets(desiredN, undefined, true).desired;
+        changes.push({ type: spec.type, action: 'create', key: '', after: masked, raw: desiredN, apply: () => spec.apply(http, desired, applyOpts) });
+        continue;
+      }
+      const seen = withoutUnstated(comparable(norm(liveRaw), desiredN, prune), desiredN);
+      const r = reconcileSecrets(desiredN, seen, spec.reportsSecrets === true);
+      const forced = rotate ? r.unverifiable : [];
+      if (!rotate) unverifiableSecrets.push(...r.unverifiable.map((path) => ({ type: spec.type, key: '', path })));
+      if (forced.length === 0 && deepEqual(r.desired, r.live as Json)) {
         unchanged += 1;
         continue;
       }
-      changes.push({ type: spec.type, action: live === null ? 'create' : 'update', key: '', ...(live === null ? {} : { before: live }), after: desiredN, apply: () => spec.apply(http, desired, applyOpts) });
+      changes.push({ type: spec.type, action: 'update', key: '', before: r.live as Json, after: r.desired, raw: desiredN, changedSecrets: forced, apply: () => spec.apply(http, desired, applyOpts) });
       continue;
     }
 
@@ -1135,19 +1364,41 @@ export async function planConfigImport(
 
     for (const [key, cfg] of desiredByKey) {
       const existing = liveByKey.get(key);
+      warnings.push(...(spec.warnings?.(cfg, existing?.config) ?? []));
       if (!existing) {
-        changes.push({ type: spec.type, action: 'create', key, after: cfg, apply: () => spec.create(http, cfg) });
-      } else if (!deepEqual(cfg, comparable(existing.config, cfg, prune))) {
-        if (!spec.update) {
-          throw new CliError(
-            `${spec.type} '${key}' changed but is immutable; recreate it instead.`,
-          );
-        }
-        const upd = spec.update;
-        changes.push({ type: spec.type, action: 'update', key, before: comparable(existing.config, cfg, prune), after: cfg, apply: () => upd(http, existing, cfg) });
-      } else {
-        unchanged += 1;
+        changes.push({ type: spec.type, action: 'create', key, after: reconcileSecrets(cfg, undefined, true).desired, raw: cfg, apply: () => spec.create(http, cfg) });
+        continue;
       }
+      const seen = withoutUnstated(comparable(existing.config, cfg, prune), cfg, spec.defaulted);
+      const r = reconcileSecrets(cfg, seen, spec.reportsSecrets === true);
+      const unverifiable = [...r.unverifiable];
+      const liveSeen = obj(r.live as Json);
+      for (const k of spec.writeOnly ?? []) {
+        if (obj(r.desired)[k] === undefined) continue;
+        liveSeen[k] = obj(r.desired)[k]!;
+        unverifiable.push(k);
+      }
+      let forced = rotate ? unverifiable : [];
+      let unknownToApi = rotate ? [] : unverifiable;
+      if (spec.secretChanged && unverifiable.length) {
+        const changed = await spec.secretChanged(http, existing, cfg);
+        if (changed !== null) {
+          forced = changed ? unverifiable : [];
+          unknownToApi = [];
+        }
+      }
+      unverifiableSecrets.push(...unknownToApi.map((path) => ({ type: spec.type, key, path })));
+      if (forced.length === 0 && deepEqual(r.desired, liveSeen)) {
+        unchanged += 1;
+        continue;
+      }
+      if (!spec.update) {
+        throw new CliError(
+          `${spec.type} '${key}' changed but is immutable; recreate it instead.`,
+        );
+      }
+      const upd = spec.update;
+      changes.push({ type: spec.type, action: 'update', key, before: liveSeen, after: r.desired, raw: cfg, changedSecrets: forced, apply: () => upd(http, existing, cfg) });
     }
 
     for (const entry of live) {
@@ -1165,7 +1416,7 @@ export async function planConfigImport(
       }
     }
   }
-  return { changes, unchanged, skippedDeletes, managed };
+  return { changes, unchanged, skippedDeletes, managed, warnings, unverifiableSecrets };
 }
 
 /** True for a non-empty object whose every leaf is `null` (a file that only clears fields). */
@@ -1184,7 +1435,6 @@ function onlyNulls(x: Json | undefined): boolean {
  */
 function comparable(live: Config, desired: Config, prune: boolean): Config {
   if (prune) return live;
-  const isObj = (x: Json | undefined): x is { [k: string]: Json } => x !== null && typeof x === 'object' && !Array.isArray(x);
   if (!isObj(live) || !isObj(desired)) return live;
   const out: { [k: string]: Json } = {};
   for (const k of Object.keys(desired)) {
@@ -1245,6 +1495,7 @@ async function promoteConfig(ctx: RunContext, values: Values): Promise<number> {
     const plan = await planConfigImport(target.http, { dir, format, env: ctx.env, prune });
     ctx.io.out(`Promoting ${from} -> ${to}`);
     printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
+    printPlanNotes(ctx, plan);
     if (dryRun) return 0;
     for (const change of plan.changes) await change.apply();
     ctx.io.out(plan.changes.length ? `Applied ${plan.changes.length} change(s) to ${to}.` : 'No changes to apply.');
@@ -1261,8 +1512,9 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
   const dryRun = values['dry-run'] === true;
   const prune = values.prune === true;
 
-  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune, forceHook: values['force-hook'] === true });
+  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
   printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
+  printPlanNotes(ctx, plan);
 
   if (dryRun) return 0;
   for (const change of plan.changes) await change.apply();
@@ -1280,7 +1532,6 @@ export interface FieldDiff {
 
 /** Leaf-level differences between two documents, as dotted paths (arrays compare whole). */
 export function diffFields(before: Json | undefined, after: Json | undefined, path = ''): FieldDiff[] {
-  const isObj = (x: Json | undefined): x is { [k: string]: Json } => x !== null && typeof x === 'object' && !Array.isArray(x);
   if (isObj(before) && isObj(after)) {
     const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
     return keys.flatMap((k) => diffFields(before[k], after[k], path ? `${path}.${k}` : k));
@@ -1291,6 +1542,40 @@ export function diffFields(before: Json | undefined, after: Json | undefined, pa
 }
 
 const show = (v: Json | undefined) => (v === undefined ? '(unset)' : typeof v === 'string' ? JSON.stringify(v) : JSON.stringify(v));
+
+/** One printable difference: a secret carries only that it changed. */
+export interface PrintedField extends FieldDiff {
+  redacted?: true;
+  changed?: true;
+}
+
+/**
+ * The only form a change's fields are printed or serialised in. A secret-named
+ * string is `<redacted>` with a changed flag, whatever the resource; everything else
+ * goes through the deep redactor.
+ */
+export function printedFields(c: Change): PrintedField[] {
+  const reveal = revealingSecrets();
+  const diffs = diffFields(c.before, reveal ? (c.raw ?? c.after) : c.after);
+  const rows: PrintedField[] = diffs.map((f) => {
+    const leaf = f.path.split('.').pop()!;
+    const textual = [f.before, f.after].every((v) => v === undefined || v === null || typeof v === 'string');
+    if (!reveal && isSecretKey(leaf) && textual && !isPlaceholder(f.after)) return { path: f.path, redacted: true, changed: true };
+    return { path: f.path, ...(f.before === undefined ? {} : { before: redactDeep(f.before, leaf) }), ...(f.after === undefined ? {} : { after: redactDeep(f.after, leaf) }) };
+  });
+  for (const path of c.changedSecrets ?? []) if (!rows.some((r) => r.path === path)) rows.push({ path, redacted: true, changed: true });
+  return rows;
+}
+
+const printedLine = (f: PrintedField) => (f.redacted ? `${f.path}: ${REDACTED} (changed)` : `${f.path}: ${show(f.before)} -> ${show(f.after)}`);
+
+/** The plan's advice: warnings, and the secrets Atlas cannot compare. */
+function printPlanNotes(ctx: RunContext, plan: Pick<ConfigPlan, 'warnings' | 'unverifiableSecrets'>): void {
+  for (const w of plan.warnings) ctx.io.out(`warning: ${w}`);
+  for (const u of plan.unverifiableSecrets) {
+    ctx.io.out(`note: ${u.type}${u.key ? ` ${u.key}` : ''} ${u.path}: Atlas does not return this value, so a change to it cannot be detected. Send it again with --rotate-secret.`);
+  }
+}
 
 /**
  * `atlas config plan`: a Terraform-style, read-only diff of a config directory
@@ -1303,14 +1588,14 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
   const { dir, format, env } = source;
   const where = source.label ?? dir;
   const prune = values.prune === true;
-  const plan = await planConfigImport(http, { dir, format, env, prune });
+  const plan = await planConfigImport(http, { dir, format, env, prune, rotateSecrets: values['rotate-secret'] === true });
   const deletes: Change[] = prune ? [] : plan.skippedDeletes;
   const all: Change[] = plan.changes;
   const rows = all.map((c) => ({
     type: c.type,
     key: c.key || null,
     action: c.action,
-    fields: c.action === 'update' ? diffFields(c.before, c.after) : [],
+    fields: c.action === 'update' ? printedFields(c) : [],
   }));
   const pending = rows.length;
 
@@ -1323,6 +1608,8 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
           unchanged: plan.unchanged,
           unmanaged_live: deletes.map((d) => ({ type: d.type, key: d.key || null })),
           managed_by_platform: plan.managed.map((m) => ({ type: m.type, key: m.key, managed_by: m.managedBy })),
+          warnings: plan.warnings,
+          unverifiable_secrets: plan.unverifiableSecrets.map((u) => ({ type: u.type, key: u.key || null, path: u.path })),
           has_changes: pending > 0,
         },
         null,
@@ -1337,7 +1624,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
       ctx.io.out('');
       ctx.io.out(`${sign[c.action]} ${label} (${c.action})`);
       if (c.action === 'update') {
-        for (const f of diffFields(c.before, c.after)) ctx.io.out(`    ${f.path}: ${show(f.before)} -> ${show(f.after)}`);
+        for (const f of printedFields(c)) ctx.io.out(`    ${printedLine(f)}`);
       }
     }
     if (deletes.length) {
@@ -1350,6 +1637,8 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
       ctx.io.out('Managed by a connected platform (not part of this file; never pruned):');
       for (const m of plan.managed) ctx.io.out(`    ${m.type} ${m.key} (${m.managedBy})`);
     }
+    if (plan.warnings.length || plan.unverifiableSecrets.length) ctx.io.out('');
+    printPlanNotes(ctx, plan);
     if (pending === 0) ctx.io.out(`No drift: the instance matches ${where}.`);
   }
   return wantsCheck(values) && pending > 0 ? 2 : 0;
@@ -1502,10 +1791,19 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
   if (values.check === true || values['exit-code'] === true) return planCommand(ctx, args);
   const source = await resolveSource(ctx, args);
   try {
-    const kept = keepingSecrets(requireHttp(ctx, values), str(values, 'out') || productDir(ctx.env, 'atlas'));
+    const onUnknownFields = (n: UnknownFieldsNotice) =>
+      ctx.io.err(`atlas: warning: ${n.method} ${n.path} ignored field(s) ${n.fields}${n.suggestions ? ` (did you mean: ${n.suggestions})` : ''}. This instance is lenient; set auth_config.strictRequestBodies to refuse them.`);
+    const kept = keepingSecrets(requireHttp(ctx, values, onUnknownFields), str(values, 'out') || productDir(ctx.env, 'atlas'));
     const prune = values.prune === true;
-    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, forceHook: values['force-hook'] === true });
+    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
     printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun: false, prune });
+    for (const c of plan.changes) {
+      if (c.action !== 'update') continue;
+      const fields = printedFields(c);
+      if (fields.length) ctx.io.out(`  ~ ${c.key ? `${c.type} ${c.key}` : c.type}:`);
+      for (const f of fields) ctx.io.out(`      ${printedLine(f)}`);
+    }
+    printPlanNotes(ctx, plan);
     if (plan.changes.length === 0) {
       ctx.io.out('No changes to apply.');
       return 0;
@@ -1550,7 +1848,8 @@ function keepingSecrets(http: ConfigHttp, dir: string): { http: ConfigHttp; save
       let entries: Record<string, string> | null = null;
       if (path === '/v1/oauth_clients' && typeof r.client_secret === 'string') {
         entries = { ATLAS_CLIENT_ID: String(r.client_id ?? ''), ATLAS_CLIENT_SECRET: r.client_secret };
-      } else if (path === '/v1/webhook_endpoints' && typeof r.secret === 'string') {
+      } else if (path === '/v1/webhook_endpoints' && typeof r.secret === 'string' && !(body as { secret?: unknown } | null)?.secret) {
+        // A secret the file chose is already the caller's; only a minted one needs keeping.
         entries = { ATLAS_WEBHOOK_SECRET: r.secret };
       }
       if (entries) {
@@ -1604,14 +1903,19 @@ function asArray(value: Json): Config[] {
  * on disk. An unset variable is left verbatim so the plan surfaces it rather
  * than silently blanking a credential.
  */
-export function interpolate(value: Json, env: NodeJS.ProcessEnv): Json {
+export function interpolate(value: Json, env: NodeJS.ProcessEnv, key?: string): Json {
   if (typeof value === 'string') {
-    return value.replace(/\$\{([A-Z0-9_]+)\}/g, (match, name: string) => env[name] ?? match);
+    return value.replace(/\$\{([A-Z0-9_]+)\}/g, (match, name: string) => {
+      const resolved = env[name];
+      if (resolved === undefined) return match;
+      rememberResolved(key, resolved);
+      return resolved;
+    });
   }
-  if (Array.isArray(value)) return value.map((v) => interpolate(v, env));
+  if (Array.isArray(value)) return value.map((v) => interpolate(v, env, key));
   if (value !== null && typeof value === 'object') {
     const out: { [k: string]: Json } = {};
-    for (const [k, v] of Object.entries(value)) out[k] = interpolate(v, env);
+    for (const [k, v] of Object.entries(value)) out[k] = interpolate(v, env, k);
     return out;
   }
   return value;
