@@ -1,5 +1,11 @@
 # @atlasauth/types changelog
 
+## 0.13.0 — 2026-11-05
+
+### Added
+
+- `machine_membership.created`, `.updated` and `.deleted` webhook event types.
+
 ## 0.12.0 — 2026-10-28
 
 - Webhook payload types for workflows, feature flags, chat approvals, risk, device assurance, billing discounts, agent governance, gateway tool changes and connection triggers

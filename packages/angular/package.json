@@ -3,7 +3,7 @@
   "version": "0.14.0",
   "description": "Official Angular SDK for Atlas \u2014 the Angular peer of @atlasauth/react.",
   "license": "MIT",
-  "module": "./dist/fesm2022/atlas-angular.mjs",
+  "module": "./dist/fesm2022/atlasauth-angular.mjs",
   "typings": "./dist/index.d.ts",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -12,8 +12,8 @@
     },
     ".": {
       "types": "./dist/index.d.ts",
-      "esm2022": "./dist/esm2022/atlas-angular.mjs",
-      "default": "./dist/fesm2022/atlas-angular.mjs"
+      "esm2022": "./dist/esm2022/atlasauth-angular.mjs",
+      "default": "./dist/fesm2022/atlasauth-angular.mjs"
     }
   },
   "sideEffects": false,
