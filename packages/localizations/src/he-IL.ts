@@ -37,6 +37,7 @@ export const heIL: LocalizationResource = {
   'signIn.passkeyButton': 'כניסה באמצעות מפתח גישה',
   'signIn.passkeyCancelled': 'הכניסה באמצעות מפתח הגישה לא הושלמה. נסו שוב או השתמשו בשיטה אחרת.',
   'signIn.passwordHoldReleased': 'כתובת האימייל שלך אומתה. יש להזין את הסיסמה כדי להיכנס.',
+  'signUp.existingAccount': 'כבר היה לך חשבון. הסיסמה הקיימת שלך עדיין בתוקף.',
 
   'signUp.title': 'יצירת החשבון שלך',
   'signUp.submit': 'המשך',
@@ -272,6 +273,7 @@ export const heIL: LocalizationResource = {
   'error.sign_up_restricted': 'ההרשמה לאפליקציה זו היא בהזמנה בלבד.',
   'error.sign_up_denied': 'ההרשמה אינה זמינה עבור חשבון זה.',
   'error.password_not_yet_usable': 'אמת את כתובת האימייל שלך לפני הכניסה באמצעות סיסמה זו.',
+  'error.account_deleted': 'החשבון של כתובת זו נמחק, ולכן לא ניתן להשתמש בה כדי להירשם שוב.',
   'error.waitlisted': 'אתה ברשימת ההמתנה. נשלח לך אימייל כשיתפנה מקום.',
   'error.identifier_not_allowed': 'כתובת האימייל או מספר הטלפון הזה אינם מותרים באפליקציה זו.',
   'error.disposable_email_blocked': 'אין אפשרות להירשם עם כתובת אימייל זמנית או חד-פעמית.',

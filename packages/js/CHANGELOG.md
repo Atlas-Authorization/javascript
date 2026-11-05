@@ -1,5 +1,15 @@
 # @atlasauth/js changelog
 
+## 0.32.0 — 2026-11-05
+
+### Fixed
+
+- `pollAttempt` stops and sets `passwordHold.released` when a sign-in link only lifted a password hold (`password_hold_released` on the attempt), so the tab asks for the password instead of polling until the attempt expires.
+
+### Also
+
+- The existing-account notice after a sign-up reaches an account on hold (`FlowState.existingAccount`), and the `account_deleted` error reason.
+
 ## 0.31.0 — 2026-11-05
 
 ### Added

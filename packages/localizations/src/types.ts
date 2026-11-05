@@ -77,6 +77,7 @@ export interface LocalizationResource {
   'signIn.passkeyButton': string;
   'signIn.passkeyCancelled': string;
   'signIn.passwordHoldReleased': string;
+  'signUp.existingAccount': string;
 
   // --- Sign up ---------------------------------------------------------------
   'signUp.title': string;
@@ -331,6 +332,7 @@ export interface LocalizationResource {
   'error.sign_up_restricted': string;
   'error.sign_up_denied': string;
   'error.password_not_yet_usable': string;
+  'error.account_deleted': string;
   'error.waitlisted': string;
   'error.identifier_not_allowed': string;
   'error.disposable_email_blocked': string;

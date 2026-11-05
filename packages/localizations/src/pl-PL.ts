@@ -38,6 +38,7 @@ export const plPL: LocalizationResource = {
   'signIn.passkeyButton': 'Zaloguj się kluczem dostępu',
   'signIn.passkeyCancelled': 'Logowanie kluczem dostępu nie zostało ukończone. Spróbuj ponownie lub użyj innej metody.',
   'signIn.passwordHoldReleased': 'Adres e-mail został zweryfikowany. Wpisz hasło, aby się zalogować.',
+  'signUp.existingAccount': 'Masz już konto. Twoje dotychczasowe hasło nadal obowiązuje.',
 
   'signUp.title': 'Utwórz konto',
   'signUp.submit': 'Dalej',
@@ -224,6 +225,7 @@ export const plPL: LocalizationResource = {
   'error.sign_up_restricted': 'Rejestracja w tej aplikacji jest możliwa tylko na zaproszenie.',
   'error.sign_up_denied': 'Rejestracja nie jest dostępna dla tego konta.',
   'error.password_not_yet_usable': 'Zweryfikuj swój adres e-mail przed zalogowaniem się tym hasłem.',
+  'error.account_deleted': 'Konto powiązane z tym adresem zostało usunięte, więc nie można go ponownie użyć do rejestracji.',
   'error.waitlisted': 'Jesteś na liście oczekujących. Powiadomimy Cię e-mailem, gdy zwolni się miejsce.',
   'error.identifier_not_allowed': 'Ten adres e-mail lub numer telefonu jest niedozwolony w tej aplikacji.',
   'error.disposable_email_blocked': 'Rejestracja za pomocą tymczasowego lub jednorazowego adresu e-mail jest niedozwolona.',

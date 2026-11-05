@@ -209,6 +209,13 @@ export interface AccessTokenVerifierOptions {
    * adapters do). See {@link memoryDpopNonceSource} / {@link hmacDpopNonceSource}.
    */
   dpopNonces?: DpopNonceSource;
+  /**
+   * Also accept machine tokens (`token_use: m2m`) minted with this API as their
+   * `audience`, verified locally the same way. `sub` is then the machine id. Off by
+   * default, so a verifier never starts accepting a new kind of caller on its own.
+   * Pair it with an `audience`: a machine token with no `aud` is not meant for any one API.
+   */
+  acceptMachineTokens?: boolean;
   /** `WWW-Authenticate` realm. */
   realm?: string;
   /**
@@ -512,7 +519,8 @@ export function createAccessTokenVerifier(
         return fail(401, 'invalid_token', 'The access token is invalid or expired.');
       }
     }
-    if (claims.token_use !== undefined && claims.token_use !== 'access_token') {
+    const acceptedMachineToken = options.acceptMachineTokens === true && claims.token_use === 'm2m';
+    if (claims.token_use !== undefined && claims.token_use !== 'access_token' && !acceptedMachineToken) {
       return fail(401, 'invalid_token', 'The token is not an access token.');
     }
     if (audiences) {

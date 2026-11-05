@@ -1,6 +1,8 @@
 import {
+  acknowledgeExistingAccount,
   acknowledgeRecoveryCodes,
   advance,
+  pendingExistingAccountNotice,
   pendingRecoveryCodes,
   closeOAuthPopupAfterSignIn,
   completeOAuthPopupLanding,
@@ -189,6 +191,12 @@ export async function exchange(w: AtlasWidget, attemptId: string, ticket: string
  * bubbles and is cancelable-free; its detail carries the attempt id.
  */
 export async function complete(w: AtlasWidget, attemptId: string | null): Promise<void> {
+  // The address already had an account: the session is in place, but neither the
+  // redirect nor `atlas:complete` happens until the notice's Continue.
+  if (pendingExistingAccountNotice(w.state)) {
+    render(w);
+    return;
+  }
   // ADM-08 attach the campaign attribution captured on this page to the new user (best effort; the server only
   // attributes a recently created user, and only when the instance captures and the visitor consented).
   if (!w.options.preview) await flushMarketing(w.client).catch(() => undefined);
@@ -334,6 +342,14 @@ export async function saveRecoveryCodes(w: AtlasWidget): Promise<void> {
   } finally {
     w.busy = false;
   }
+  await complete(w, attemptId);
+}
+
+/** The existing-account notice's Continue: the ticket is spent, so only finishing is left. */
+export async function continueAfterExistingAccount(w: AtlasWidget): Promise<void> {
+  if (w.busy || !pendingExistingAccountNotice(w.state)) return;
+  const attemptId = w.state.attempt?.id ?? null;
+  w.state = acknowledgeExistingAccount(w.state);
   await complete(w, attemptId);
 }
 
@@ -635,6 +651,8 @@ export async function submitReset(w: AtlasWidget, values: Record<string, string>
   if (done?.attempt?.status === 'complete') {
     const attemptId = done.attempt.id;
     w.resetFlow = null;
+    // Reached from the existing-account notice: the new password settles what it was warning about.
+    if (pendingExistingAccountNotice(w.state)) w.state = acknowledgeExistingAccount(w.state);
     if (done.ticket) {
       // Auto sign-in: exchange the ticket for a session, exactly like a normal
       // sign-in completion.

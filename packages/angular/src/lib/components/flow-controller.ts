@@ -3,6 +3,8 @@ import {
   FapiClient,
   advanceWithCaptcha,
   atlasCaptchaLabels,
+  attemptPasswordHoldProof,
+  preparePasswordHoldProof,
   createCaptchaController,
   createPasskeySignInController,
   createPasskeySignUp,
@@ -12,7 +14,9 @@ import {
   fetchLastSignInMethod,
   startSignInWithAtlas,
   createMfaEnrollment,
+  acknowledgeExistingAccount,
   acknowledgeRecoveryCodes,
+  pendingExistingAccountNotice,
   pendingRecoveryCodes,
   mfaChoicesFrom,
   prepareSecondFactorCode,
@@ -84,7 +88,7 @@ export class AtlasFlowController {
    * current `needs_first_factor` step — the form then collects its code. Null
    * otherwise.
    */
-  readonly preparedFactor = signal<'email_code' | null>(null);
+  readonly preparedFactor = signal<'email_code' | 'email_link' | null>(null);
   /**
    * "Email me a code instead" at the second factor ({@link sendEmailSecondFactor}):
    * in flight, where the code went, or why it was not sent. Null until asked,
@@ -121,6 +125,8 @@ export class AtlasFlowController {
     pending: { id: string; status: string } | null,
     /** Resolves the captcha messages' catalog keys. Defaults to en-US. */
     private readonly t: (key: string) => string = (key) => translate(EN_US, key),
+    /** Wait for {@link continueAfterExistingAccount} (`<atlas-sign-up>` draws the notice). */
+    private readonly holdExistingAccountNotice = false,
   ) {
     // Seeded from a redirect that came back mid-flow (e.g. OAuth needing a second
     // factor) so the user resumes at the demanded step instead of starting over.
@@ -189,9 +195,27 @@ export class AtlasFlowController {
   firstFactors(): string[] {
     const attempt = this.state().attempt;
     const step = attempt ? nextStep(attempt) : null;
-    return step?.kind === 'collect_first_factor'
-      ? offeredFirstFactors(step.strategies, this.settings()?.emailDelivery)
-      : [];
+    if (step?.kind !== 'collect_first_factor') return [];
+    const offered = offeredFirstFactors(step.strategies, this.settings()?.emailDelivery);
+    const proof = this.holdProof();
+    return proof && !offered.includes(proof) ? [...offered, proof] : offered;
+  }
+
+  /**
+   * The emailed proof a password hold still waits on (`FlowState.passwordHold`): the
+   * code, or a link where the instance verifies by link only. Null with no hold, once
+   * proven, or while the app cannot deliver email.
+   */
+  holdProof(): 'email_code' | 'email_link' | null {
+    const hold = this.state().passwordHold;
+    if (!hold || hold.released || this.settings()?.emailDelivery?.available === false) return null;
+    return this.settings()?.account?.emailVerification === 'link' ? 'email_link' : 'email_code';
+  }
+
+  /** Back from the emailed factor to the password field. */
+  usePassword(): void {
+    this.preparedFactor.set(null);
+    this.state.update((current) => ({ ...current, prepared: null, pollSecret: null, errors: [] }));
   }
 
   /**
@@ -211,14 +235,20 @@ export class AtlasFlowController {
   /**
    * Ask the server to email a sign-in code for the current `needs_first_factor`
    * step (`POST …/prepare_first_factor`); the form then collects the code, which
-   * {@link submit} posts as the `email_code` strategy.
+   * {@link submit} posts as the `email_code` strategy. While a password hold waits
+   * on it ({@link holdProof}), this emails that proof instead.
    */
-  async prepare(strategy: 'email_code'): Promise<void> {
+  async prepare(strategy: 'email_code' | 'email_link'): Promise<void> {
     if (!this.firstFactors().includes(strategy)) return;
+    const proof = this.holdProof();
     this.state.update((current) => ({ ...current, busy: true, errors: [] }));
-    const next = await prepareFactor(this.client, this.state(), strategy);
+    const next =
+      strategy === proof
+        ? await preparePasswordHoldProof(this.client, this.state(), proof)
+        : await prepareFactor(this.client, this.state(), strategy);
     this.setState(next);
     if (!next.errors.length) this.preparedFactor.set(strategy);
+    this.syncPolling();
   }
 
   /** Keep both captchas in step with the settings and the flow's current step. */
@@ -238,8 +268,11 @@ export class AtlasFlowController {
   }
 
   private setState(next: FlowState): void {
-    const previousId = this.state().attempt?.id ?? null;
+    const previous = this.state();
+    const previousId = previous.attempt?.id ?? null;
     this.state.set(next);
+    // A proven hold goes back to the password field.
+    if (next.passwordHold?.released && !previous.passwordHold?.released) this.preparedFactor.set(null);
     // A prepared factor belongs to the first-factor step it was sent for.
     if (next.attempt?.status !== 'needs_first_factor') this.preparedFactor.set(null);
     // An emailed second-factor code belongs to the second-factor step of this attempt.
@@ -275,6 +308,11 @@ export class AtlasFlowController {
   async submit(values: Record<string, string>): Promise<void> {
     this.state.update((current) => ({ ...current, busy: true, errors: [] }));
 
+    // A code that lifts a password hold goes to its own attempt, not this sign-in.
+    if (this.preparedFactor() === 'email_code' && this.holdProof() === 'email_code') {
+      this.setState(await attemptPasswordHoldProof(this.client, this.state(), values.code ?? ''));
+      return;
+    }
     const out = await advanceWithCaptcha(this.client, this.state(), values, {
       captcha: this.captcha,
       identifier: this.identifier,
@@ -383,6 +421,16 @@ export class AtlasFlowController {
     await this.finish(acknowledgeRecoveryCodes(this.state()));
   }
 
+  /** The address belonged to an existing account: the notice is up until {@link continueAfterExistingAccount}. */
+  existingAccountNotice(): boolean {
+    return pendingExistingAccountNotice(this.state());
+  }
+
+  /** The user read the notice: finish the sign-up. */
+  async continueAfterExistingAccount(): Promise<void> {
+    await this.finish(acknowledgeExistingAccount(this.state()));
+  }
+
   private async finish(next: FlowState): Promise<void> {
     // An enrolment's recovery codes are shown first; `saveRecoveryCodes` finishes.
     if (pendingRecoveryCodes(next)) {
@@ -400,6 +448,10 @@ export class AtlasFlowController {
           ticket: next.ticket,
         });
         exchanged = res.ok;
+      }
+      if (exchanged && this.holdExistingAccountNotice && pendingExistingAccountNotice(next)) {
+        this.setState({ ...next, ticket: null, busy: false });
+        return;
       }
       const kept = exchanged && (await this.reload());
       this.setState({ ...next, busy: false, sessionKept: kept });

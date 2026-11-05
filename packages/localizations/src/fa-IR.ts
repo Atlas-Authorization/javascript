@@ -38,6 +38,7 @@ export const faIR: LocalizationResource = {
   'signIn.passkeyButton': 'ورود با گذرکلید',
   'signIn.passkeyCancelled': 'ورود با گذرکلید کامل نشد. دوباره تلاش کنید یا از روش دیگری وارد شوید.',
   'signIn.passwordHoldReleased': 'ایمیل شما تأیید شد. برای ورود، گذرواژه خود را وارد کنید.',
+  'signUp.existingAccount': 'شما از قبل حساب کاربری داشتید. گذرواژه فعلی شما همچنان معتبر است.',
 
   'signUp.title': 'ایجاد حساب کاربری',
   'signUp.submit': 'ادامه',
@@ -271,6 +272,7 @@ export const faIR: LocalizationResource = {
   'error.sign_up_restricted': 'ثبت‌نام در این برنامه فقط با دعوت‌نامه امکان‌پذیر است.',
   'error.sign_up_denied': 'ثبت‌نام برای این حساب امکان‌پذیر نیست.',
   'error.password_not_yet_usable': 'پیش از ورود با این گذرواژه، نشانی ایمیل خود را تأیید کنید.',
+  'error.account_deleted': 'حساب این نشانی حذف شده است، بنابراین نمی‌توان دوباره با آن ثبت‌نام کرد.',
   'error.waitlisted': 'شما در فهرست انتظار هستید. وقتی جایی خالی شود به شما ایمیل می‌زنیم.',
   'error.identifier_not_allowed': 'این ایمیل یا شماره تلفن در این برنامه مجاز نیست.',
   'error.disposable_email_blocked': 'ثبت‌نام با ایمیل یک‌بارمصرف یا موقت مجاز نیست.',

@@ -38,6 +38,7 @@ export const frFR: LocalizationResource = {
   'signIn.passkeyButton': 'Se connecter avec une clé d\'accès',
   'signIn.passkeyCancelled': 'La connexion avec la clé d\'accès n\'a pas abouti. Réessayez ou utilisez une autre méthode.',
   'signIn.passwordHoldReleased': 'Votre adresse e-mail est vérifiée. Saisissez votre mot de passe pour vous connecter.',
+  'signUp.existingAccount': 'Vous aviez déjà un compte. Votre mot de passe actuel reste valable.',
 
   'signUp.title': 'Créer votre compte',
   'signUp.submit': 'Continuer',
@@ -224,6 +225,7 @@ export const frFR: LocalizationResource = {
   'error.sign_up_restricted': "L'inscription à cette application se fait uniquement sur invitation.",
   'error.sign_up_denied': 'L’inscription n’est pas disponible pour ce compte.',
   'error.password_not_yet_usable': 'Vérifiez votre adresse e-mail avant de vous connecter avec ce mot de passe.',
+  'error.account_deleted': 'Le compte associé à cette adresse a été supprimé : elle ne peut plus servir à s’inscrire.',
   'error.waitlisted': "Vous êtes sur la liste d'attente. Nous vous enverrons un e-mail dès qu'une place se libérera.",
   'error.identifier_not_allowed': "Cette adresse e-mail ou ce numéro de téléphone n'est pas autorisé sur cette application.",
   'error.disposable_email_blocked': "L'inscription avec une adresse e-mail jetable ou temporaire n'est pas autorisée.",

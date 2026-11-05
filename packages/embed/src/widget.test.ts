@@ -2219,3 +2219,116 @@ describe('accessibility of the mounted panel', () => {
     expect(own.getAttribute('lang')).toBe('fr');
   });
 });
+
+describe('sign-up on an address that already has an account', () => {
+  const signUpHandlers = (verified: Record<string, unknown>) => ({
+    'GET /v1/appearance': () => ({ body: envelope([]) }),
+    'POST /v1/client/sign_ups': () => ({
+      status: 201,
+      body: { object: 'sign_up_attempt', id: 'sua_e', status: 'needs_email_verification', identifier: 'ada@example.com' },
+    }),
+    'POST /v1/client/sign_ups/sua_e/attempt_verification': () => ({
+      body: { object: 'sign_up_attempt', id: 'sua_e', identifier: 'ada@example.com', ...verified },
+    }),
+    'POST /v1/client/tickets/exchange': () => ({ body: { object: 'session' } }),
+  });
+
+  // Filling the six boxes submits the step.
+  const enterCode = async (root: HTMLElement) => {
+    const boxes = Array.from(root.querySelectorAll('.atlas-embed-code-box')) as HTMLInputElement[];
+    expect(boxes.length).toBe(6);
+    boxes.forEach((box, i) => {
+      box.value = String(i + 1);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flush();
+  };
+
+  const toCodeAccepted = async (handlers: Parameters<typeof makeFetch>[0], over: Record<string, unknown> = {}) => {
+    const made = makeFetch(handlers);
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const events: unknown[] = [];
+    root.addEventListener('atlas:complete', (e) => events.push((e as CustomEvent).detail));
+    await new AtlasWidget(root, { ...OPTS, mode: 'sign-up', fetchImpl: made.impl, ...over }).mount();
+    await flush();
+    (root.querySelector('[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    (root.querySelector('[name="password"]') as HTMLInputElement).value = 'typed-at-sign-up';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    await enterCode(root);
+    return { root, events, calls: made.calls };
+  };
+  const notice = (root: HTMLElement) => root.querySelector('[data-atlas="existing-account"]');
+  const clickContinue = async (root: HTMLElement) => {
+    (root.querySelector('[data-atlas="existing-account-continue"]') as HTMLButtonElement).click();
+    await flush();
+  };
+  const forgot = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('.atlas-embed-step-back')).find((b) => (b.textContent ?? '').includes('Forgot')) as HTMLButtonElement | undefined;
+
+  it('exchanges the ticket, then holds atlas:complete on the notice until Continue', async () => {
+    const { root, events, calls } = await toCodeAccepted(signUpHandlers({ status: 'complete', ticket: 'tk_e', existing_account: true }));
+    expect(calls.some((c) => c.path === '/v1/client/tickets/exchange')).toBe(true);
+    expect(notice(root)?.textContent).toContain('You already had an account. Your existing password still applies.');
+    expect(forgot(root)).toBeTruthy();
+    expect(events).toEqual([]);
+
+    await clickContinue(root);
+    expect(events).toEqual([{ attemptId: 'sua_e', redirected: false }]);
+    expect(notice(root)).toBeNull();
+  });
+
+  it('does not show it without existing_account', async () => {
+    const { root, events } = await toCodeAccepted(signUpHandlers({ status: 'complete', ticket: 'tk_e' }));
+    expect(notice(root)).toBeNull();
+    expect(events).toHaveLength(1);
+  });
+
+  it('leaves out the reset entry when the reset email cannot be delivered', async () => {
+    const { root } = await toCodeAccepted({
+      ...signUpHandlers({ status: 'complete', ticket: 'tk_e', existing_account: true }),
+      'GET /v1/appearance': () => ({ body: { ...envelope([]), email_delivery: { available: true, password_reset: false, password_sign_up: true } } }),
+    });
+    expect(notice(root)).toBeTruthy();
+    expect(forgot(root)).toBeUndefined();
+  });
+
+  it('runs the reset from the notice: back returns to it, and a finished reset does not show it again', async () => {
+    const { root, events } = await toCodeAccepted({
+      ...signUpHandlers({ status: 'complete', ticket: 'tk_e', existing_account: true }),
+      'POST /v1/client/password_resets': () => ({ status: 201, body: { id: 'pr_e', status: 'needs_email_verification' } }),
+      'POST /v1/client/password_resets/pr_e/attempt_verification': () => ({ body: { id: 'pr_e', status: 'needs_new_password' } }),
+      'POST /v1/client/password_resets/pr_e/set_new_password': () => ({ body: { id: 'pr_e', status: 'complete', ticket: 'tk_r' } }),
+    });
+    forgot(root)!.click();
+    expect((root.querySelector('input[name="email"]') as HTMLInputElement).value).toBe('ada@example.com');
+
+    (Array.from(root.querySelectorAll('.atlas-embed-step-back')).find((b) => (b.textContent ?? '').includes('Back')) as HTMLButtonElement).click();
+    expect(notice(root)).toBeTruthy();
+    expect(events).toEqual([]);
+
+    forgot(root)!.click();
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    await enterCode(root);
+    (root.querySelector('input[name="password"]') as HTMLInputElement).value = 'a-brand-new-passphrase';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(notice(root)).toBeNull();
+    expect(events).toEqual([{ attemptId: 'pr_e', redirected: false }]);
+  });
+
+  it('keeps the signal through a second factor: the notice waits for it', async () => {
+    const { root, events } = await toCodeAccepted({
+      ...signUpHandlers({ status: 'needs_second_factor', existing_account: true }),
+      'POST /v1/client/sign_ins/sua_e/attempt_second_factor': () => ({ body: { id: 'sua_e', object: 'sign_in_attempt', status: 'complete', ticket: 'tk_2' } }),
+    });
+    expect(notice(root)).toBeNull();
+    await enterCode(root);
+    expect(notice(root)).toBeTruthy();
+    expect(events).toEqual([]);
+    await clickContinue(root);
+    expect(events).toHaveLength(1);
+  });
+});

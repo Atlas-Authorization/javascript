@@ -1,5 +1,11 @@
 # @atlasauth/localizations changelog
 
+## 0.15.0 — 2026-11-05
+
+### Added
+
+- `signUp.existingAccount` and `account_deleted`.
+
 ## 0.14.0 — 2026-11-05
 
 - `signIn.passwordHoldReleased` in every bundle.

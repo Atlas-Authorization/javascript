@@ -537,3 +537,37 @@ describe('<SignIn> Sign in with Atlas', () => {
     expect(el.querySelector('[data-atlas-provider="atlas"]')).toBeNull();
   });
 });
+
+describe('<SignUp> on an existing account', () => {
+  it('exchanges the ticket, then holds the app on the notice until Continue', async () => {
+    const el = await mountFlow(SignUp, {
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+            ? json({ id: 'sua_1', status: 'complete', ticket: 'tkt_1', existing_account: true })
+            : undefined,
+      ],
+    });
+    await setInput(el, 'email', 'held@example.com');
+    await setInput(el, 'password', 'blue tangerine anvil 71!');
+    await submit(el);
+    await waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    expect(el.querySelector('[data-atlas-existing-account]')).toBeNull();
+    const boots = calls.filter((c) => c.path === '/v1/client').length;
+
+    await setInput(el, 'code', '424242');
+    await submit(el);
+    await waitFor(() => expect((el.querySelector('[data-atlas-existing-account] button') as HTMLButtonElement | null)?.disabled).toBe(false));
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+    const notice = el.querySelector('[data-atlas-existing-account]')!;
+    expect(notice.textContent).toContain('You already had an account. Your existing password still applies.');
+    expect(notice.querySelector('a')!.getAttribute('href')).toContain('/hosted/sign-in');
+    expect(calls.filter((c) => c.path === '/v1/client').length).toBe(boots);
+
+    await fireEvent.click(notice.querySelector('button')!);
+    await waitFor(() => expect(el.querySelector('[data-atlas-existing-account]')).toBeNull());
+    expect(calls.filter((c) => c.path === '/v1/client').length).toBeGreaterThan(boots);
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+  });
+});

@@ -38,6 +38,7 @@ export const deDE: LocalizationResource = {
   'signIn.passkeyButton': 'Mit einem Passkey anmelden',
   'signIn.passkeyCancelled': 'Die Anmeldung mit dem Passkey wurde nicht abgeschlossen. Versuchen Sie es erneut oder melden Sie sich anders an.',
   'signIn.passwordHoldReleased': 'Ihre E-Mail-Adresse wurde bestätigt. Geben Sie Ihr Passwort ein, um sich anzumelden.',
+  'signUp.existingAccount': 'Sie hatten bereits ein Konto. Ihr bisheriges Passwort gilt weiterhin.',
 
   'signUp.title': 'Konto erstellen',
   'signUp.submit': 'Weiter',
@@ -224,6 +225,7 @@ export const deDE: LocalizationResource = {
   'error.sign_up_restricted': 'Die Registrierung für diese App ist nur auf Einladung möglich.',
   'error.sign_up_denied': 'Die Registrierung ist für dieses Konto nicht möglich.',
   'error.password_not_yet_usable': 'Bestätigen Sie Ihre E-Mail-Adresse, bevor Sie sich mit diesem Passwort anmelden.',
+  'error.account_deleted': 'Das Konto zu dieser Adresse wurde gelöscht. Sie kann nicht für eine neue Registrierung verwendet werden.',
   'error.waitlisted': 'Sie stehen auf der Warteliste. Wir benachrichtigen Sie per E-Mail, sobald ein Platz frei wird.',
   'error.identifier_not_allowed': 'Diese E-Mail-Adresse oder Telefonnummer ist für diese App nicht zugelassen.',
   'error.disposable_email_blocked': 'Die Registrierung mit einer Wegwerf- oder temporären E-Mail-Adresse ist nicht erlaubt.',

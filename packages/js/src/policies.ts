@@ -191,6 +191,7 @@ export async function acceptAttemptPolicies(
     ticket: view.ticket ?? null,
     prepared: null,
     policyToken: view.policy_acceptance_token ?? null,
+    ...(state.existingAccount ? { existingAccount: true } : {}),
   };
 }
 

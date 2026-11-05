@@ -38,6 +38,7 @@ export const zhCN: LocalizationResource = {
   'signIn.passkeyButton': '使用通行密钥登录',
   'signIn.passkeyCancelled': '通行密钥登录未完成。请重试或使用其他方式登录。',
   'signIn.passwordHoldReleased': '您的邮箱已验证。请输入密码登录。',
+  'signUp.existingAccount': '您已有账户。您现有的密码仍然有效。',
 
   'signUp.title': '创建账户',
   'signUp.submit': '继续',
@@ -224,6 +225,7 @@ export const zhCN: LocalizationResource = {
   'error.sign_up_restricted': '此应用仅限受邀注册。',
   'error.sign_up_denied': '此账户无法注册。',
   'error.password_not_yet_usable': '请先验证您的电子邮件地址，然后再使用此密码登录。',
+  'error.account_deleted': '此地址的账户已被删除，因此无法再用于注册。',
   'error.waitlisted': '您已加入候补名单。有名额时我们会通过电子邮件通知您。',
   'error.identifier_not_allowed': '此应用不允许使用该电子邮件或手机号码。',
   'error.disposable_email_blocked': '不允许使用一次性或临时电子邮件地址注册。',

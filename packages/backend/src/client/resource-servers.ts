@@ -12,6 +12,8 @@ export interface ResourceServer {
   identifier: string;
   name: string;
   scopes: ResourceServerScope[];
+  /** Named bundles over `scopes`. Send names as `scope_presets` wherever this API's scopes are requested. */
+  scope_presets: Record<string, string[]>;
   token_ttl_seconds: number;
   /** RS256 (default) or ES256: the algorithm of this API's access tokens. */
   signing_alg: 'RS256' | 'ES256' | string;
@@ -47,6 +49,8 @@ export interface CreateResourceServerBody extends ResourceServerTokenFields {
   name: string;
   /** Each scope is a bare string or `{ value, description? }`. */
   scopes?: Array<string | ResourceServerScope>;
+  /** `{ name: [scope values] }`. Each value must be one of `scopes`. */
+  scope_presets?: Record<string, string[]>;
   token_ttl_seconds?: number;
   /** RS256 (default) or ES256. */
   signing_alg?: 'RS256' | 'ES256';
@@ -57,6 +61,8 @@ export interface CreateResourceServerBody extends ResourceServerTokenFields {
 export interface UpdateResourceServerBody extends ResourceServerTokenFields {
   name?: string;
   scopes?: Array<string | ResourceServerScope>;
+  /** Replaces the presets. A write that leaves a preset naming a missing scope is refused, including one that removes the scope. */
+  scope_presets?: Record<string, string[]>;
   token_ttl_seconds?: number;
   /** RS256 (default) or ES256. */
   signing_alg?: 'RS256' | 'ES256';

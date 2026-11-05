@@ -666,6 +666,27 @@ describe('machines: device registry, enrolment tokens, m2m verify', () => {
     });
   });
 
+  it('machine grants and organization memberships hit their routes', async () => {
+    const { impl, calls } = mockFetch(Array.from({ length: 7 }, () => ({ body: {} })));
+    const c = client(impl);
+    await c.machines.createGrant('mch_1', { resource_server_id: 'rs_1', scope_presets: ['readonly'] });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/machines/mch_1/grants` });
+    expect(JSON.parse(last(calls).body!)).toEqual({ resource_server_id: 'rs_1', scope_presets: ['readonly'] });
+    await c.machines.listGrants('mch_1');
+    expect(last(calls)).toMatchObject({ method: 'GET', url: `${API_URL}/v1/machines/mch_1/grants` });
+    await c.machines.deleteGrant('mch_1', 'mrg_1');
+    expect(last(calls)).toMatchObject({ method: 'DELETE', url: `${API_URL}/v1/machines/mch_1/grants/mrg_1` });
+    await c.machines.addToOrganization('org_1', { machine_id: 'mch_1', role: 'org:admin' });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/organizations/org_1/machine_memberships` });
+    await c.machines.updateOrganizationRole('org_1', 'mch_1', 'org:member');
+    expect(last(calls)).toMatchObject({ method: 'PATCH', url: `${API_URL}/v1/organizations/org_1/machine_memberships/mch_1` });
+    expect(JSON.parse(last(calls).body!)).toEqual({ role: 'org:member' });
+    await c.machines.listOrganizationMembers('org_1', { limit: 5 });
+    expect(last(calls).url).toBe(`${API_URL}/v1/organizations/org_1/machine_memberships?limit=5`);
+    await c.machines.removeFromOrganization('org_1', 'mch_1');
+    expect(last(calls)).toMatchObject({ method: 'DELETE', url: `${API_URL}/v1/organizations/org_1/machine_memberships/mch_1` });
+  });
+
   it('verifyM2mToken POSTs the token to /v1/m2m_tokens/verify', async () => {
     const { impl, calls } = mockFetch([
       { body: { object: 'm2m_verification', valid: true, machine_id: 'mch_1', name: 'ci' } },

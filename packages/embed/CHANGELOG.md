@@ -1,5 +1,11 @@
 # @atlasauth/embed changelog
 
+## 0.17.0 — 2026-11-05
+
+### Added
+
+- The existing-account notice on sign-up, with the reset flow and Continue before completing.
+
 ## 0.16.0 — 2026-11-02
 
 ### Added

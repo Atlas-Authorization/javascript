@@ -8,7 +8,9 @@ import {
   startPlanCheckout,
   type PublicBillingPlan,
   awaitingPasskey,
+  existingAccountResetUrl,
   flowNeedsCaptcha,
+  pendingExistingAccountNotice,
   isPolicyAcceptanceRequired,
   passkeysSupported,
   registerSignUpPasskey,
@@ -52,7 +54,7 @@ import { ATLAS_REACT_SDK } from './version';
  * server would refuse the sign-up anyway.
  */
 export function SignUp(props: FlowProps = {}) {
-  const { instanceSettings } = useAtlas();
+  const { instanceSettings, frontendApi } = useAtlas();
   const t = useText();
   // Plan selection: the chosen plan rides a ref so the post-sign-up hook sees the latest choice.
   const planRef = useRef<string | null>(null);
@@ -67,10 +69,11 @@ export function SignUp(props: FlowProps = {}) {
     },
     [props.planSelection, props.afterUrl],
   );
-  const { state, setState, submit, client, finish } = useFlow({
+  const { state, setState, submit, client, finish, continueAfterExistingAccount } = useFlow({
     afterUrl: props.afterUrl,
     afterSignIn,
     signInCaptcha: false,
+    holdExistingAccountNotice: true,
     referral: props.referral,
     referralConsent: props.referralConsent,
   });
@@ -157,6 +160,17 @@ export function SignUp(props: FlowProps = {}) {
     return <PasskeySignUpStep busy={state.busy} errors={state.errors} hideTitle={props.hideTitle} onCreate={createPasskey} />;
   }
 
+  if (pendingExistingAccountNotice(state)) {
+    return (
+      <ExistingAccountNotice
+        busy={state.busy}
+        hideTitle={props.hideTitle}
+        resetHref={existingAccountResetUrl({ url: props.resetPasswordUrl, frontendApi, redirectUrl: props.afterUrl })}
+        onContinue={continueAfterExistingAccount}
+      />
+    );
+  }
+
   if (state.attempt) {
     return (
       <AttemptFlow
@@ -241,6 +255,41 @@ function SignUpPlanStep({ client, required, onChange }: { client: FapiClient; re
 }
 
 /** The passkey-only sign-up's last step: create the passkey (which creates the account). */
+/** The address belonged to an existing account: the password typed at sign-up was not saved. */
+function ExistingAccountNotice({
+  busy,
+  hideTitle,
+  resetHref,
+  onContinue,
+}: {
+  busy: boolean;
+  hideTitle?: boolean;
+  resetHref: string | null;
+  onContinue(): void;
+}) {
+  const t = useText();
+  const cardClass = useClass('card', 'atlas-card');
+  const titleClass = useClass('headerTitle', 'atlas-title');
+  const buttonClass = useClass('formButtonPrimary', 'atlas-button');
+  const cls = useClasses();
+  return (
+    <div className={cardClass} data-atlas-existing-account="">
+      {hideTitle ? null : <h1 className={titleClass}>{t('signUp.title')}</h1>}
+      <p className={cls('text', 'atlas-text')}>{t('signUp.existingAccount')}</p>
+      {resetHref ? (
+        <p className={cls('text', 'atlas-text')}>
+          <a className="atlas-link" href={resetHref}>
+            {t('signIn.forgotPassword')}
+          </a>
+        </p>
+      ) : null}
+      <button className={buttonClass} type="button" disabled={busy} onClick={() => onContinue()}>
+        {t('signUp.submit')}
+      </button>
+    </div>
+  );
+}
+
 function PasskeySignUpStep({
   busy,
   errors,

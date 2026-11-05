@@ -564,6 +564,24 @@ export type WebhookDataMachine = {
   [key: string]: unknown;
 };
 
+/** A machine's membership of an organization. */
+export type WebhookDataMachineMembership = {
+  object: "machine_membership";
+  id: string;
+  organization_id: string;
+  machine_id: string;
+  /** The role key. */
+  role: string;
+  role_id: string;
+  /** Created (epoch ms). */
+  created_at: number;
+  /** machine_membership.updated only: the role key before the change. */
+  previous_role?: string;
+  /** machine_membership.updated only: the role id before the change. */
+  previous_role_id?: string;
+  [key: string]: unknown;
+};
+
 /** A pinned MCP tool changed its definition and is blocked until re-approved. */
 export type WebhookDataMcpToolChange = {
   object: "mcp_tool_change";
@@ -1377,6 +1395,9 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"machine.enrolled", WebhookDataMachine>
   | AtlasWebhookEnvelope<"machine.revoked", WebhookDataMachine>
   | AtlasWebhookEnvelope<"machine.updated", WebhookDataMachine>
+  | AtlasWebhookEnvelope<"machine_membership.created", WebhookDataMachineMembership>
+  | AtlasWebhookEnvelope<"machine_membership.deleted", WebhookDataMachineMembership>
+  | AtlasWebhookEnvelope<"machine_membership.updated", WebhookDataMachineMembership>
   | AtlasWebhookEnvelope<"mcp_gateway.tool_changed", WebhookDataMcpToolChange>
   | AtlasWebhookEnvelope<"message.rate_limited", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"mfa_factor.quarantined", WebhookDataSecuritySignal>
@@ -1563,6 +1584,9 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "machine.enrolled",
   "machine.revoked",
   "machine.updated",
+  "machine_membership.created",
+  "machine_membership.deleted",
+  "machine_membership.updated",
   "mcp_gateway.tool_changed",
   "message.rate_limited",
   "mfa_factor.quarantined",

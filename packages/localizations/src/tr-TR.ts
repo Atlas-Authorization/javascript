@@ -37,6 +37,7 @@ export const trTR: LocalizationResource = {
   'signIn.passkeyButton': 'Geçiş anahtarıyla oturum açın',
   'signIn.passkeyCancelled': 'Geçiş anahtarıyla oturum açma tamamlanmadı. Tekrar deneyin veya başka bir yöntem kullanın.',
   'signIn.passwordHoldReleased': 'E-posta adresiniz doğrulandı. Oturum açmak için parolanızı girin.',
+  'signUp.existingAccount': 'Zaten bir hesabınız vardı. Mevcut parolanız geçerliliğini koruyor.',
 
   'signUp.title': 'Hesabınızı oluşturun',
   'signUp.submit': 'Devam',
@@ -271,6 +272,7 @@ export const trTR: LocalizationResource = {
   'error.sign_up_restricted': 'Bu uygulamaya kayıt yalnızca davetle yapılabilir.',
   'error.sign_up_denied': 'Bu hesap için kayıt kullanılamıyor.',
   'error.password_not_yet_usable': 'Bu parolayla oturum açmadan önce e-posta adresinizi doğrulayın.',
+  'error.account_deleted': 'Bu adresin hesabı silindi, bu nedenle yeniden kaydolmak için kullanılamaz.',
   'error.waitlisted': 'Bekleme listesindesiniz. Yer açıldığında size e-posta göndereceğiz.',
   'error.identifier_not_allowed': 'Bu e-posta adresine veya telefon numarasına bu uygulamada izin verilmiyor.',
   'error.disposable_email_blocked': 'Geçici veya tek kullanımlık bir e-posta adresiyle kayda izin verilmiyor.',

@@ -1,5 +1,15 @@
 # @atlasauth/react changelog
 
+## 0.28.0 — 2026-11-05
+
+### Fixed
+
+- A sign-in link on an account whose password is on hold now brings the waiting tab back to the password field with the confirmation message (through `@atlasauth/js` 0.32.0).
+
+### Also
+
+- The existing-account notice after a sign-up reaches an account on hold (`FlowState.existingAccount`), and the `account_deleted` error reason.
+
 ## 0.27.0 — 2026-11-05
 
 ### Fixed

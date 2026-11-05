@@ -38,6 +38,7 @@ export const viVN: LocalizationResource = {
   'signIn.passkeyButton': 'Đăng nhập bằng khóa truy cập (passkey)',
   'signIn.passkeyCancelled': 'Chưa hoàn tất đăng nhập bằng khóa truy cập. Hãy thử lại hoặc dùng cách khác.',
   'signIn.passwordHoldReleased': 'Email của bạn đã được xác minh. Nhập mật khẩu để đăng nhập.',
+  'signUp.existingAccount': 'Bạn đã có tài khoản. Mật khẩu hiện tại của bạn vẫn có hiệu lực.',
 
   'signUp.title': 'Tạo tài khoản',
   'signUp.submit': 'Tiếp tục',
@@ -224,6 +225,7 @@ export const viVN: LocalizationResource = {
   'error.sign_up_restricted': 'Việc đăng ký vào ứng dụng này chỉ dành cho người được mời.',
   'error.sign_up_denied': 'Không thể đăng ký với tài khoản này.',
   'error.password_not_yet_usable': 'Hãy xác minh địa chỉ email của bạn trước khi đăng nhập bằng mật khẩu này.',
+  'error.account_deleted': 'Tài khoản của địa chỉ này đã bị xóa nên không thể dùng để đăng ký lại.',
   'error.waitlisted': 'Bạn đang trong danh sách chờ. Chúng tôi sẽ gửi email cho bạn khi có chỗ trống.',
   'error.identifier_not_allowed': 'Địa chỉ email hoặc số điện thoại này không được phép sử dụng với ứng dụng này.',
   'error.disposable_email_blocked': 'Không cho phép đăng ký bằng địa chỉ email tạm thời hoặc dùng một lần.',

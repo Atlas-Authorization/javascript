@@ -15,6 +15,7 @@ import {
   type AttemptView,
   type CaptchaController,
   type FieldError,
+  type FlowState,
   type MfaEnrollmentController,
   type MfaEnrollmentState,
   type MfaEnrollmentStrategy,
@@ -32,7 +33,7 @@ import { translate } from '../i18n';
  * minor. For a `message` row, `labelKey` carries the message's i18n key.
  */
 interface StepField {
-  kind: 'input' | 'message' | 'alert';
+  kind: 'input' | 'message' | 'alert' | 'released';
   name: string;
   labelKey: string;
   type: string;
@@ -65,6 +66,9 @@ interface StepField {
       <form (submit)="onSubmit($event)">
         @if (codeSentText(); as sentText) {
           <p class="atlas-text" data-atlas-code-sent="">{{ sentText }}</p>
+        }
+        @if (linkSentText(); as sentLink) {
+          <p class="atlas-text" data-atlas-link-sent="">{{ sentLink }}</p>
         }
         @if (linkOnly()) {
           <!-- Nothing to type: the flow polls until the emailed link is opened (anywhere). -->
@@ -174,6 +178,8 @@ interface StepField {
                 <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
               }
             </label>
+          } @else if (f.kind === 'released') {
+            <p class="atlas-text" data-atlas-password-released="">{{ t(f.labelKey) }}</p>
           } @else if (f.kind === 'alert') {
             <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ t(f.labelKey) }}</p>
           } @else {
@@ -255,6 +261,31 @@ interface StepField {
             {{ t(preparedFactor === 'email_code' ? 'signIn.resendCode' : 'signIn.useEmailCode') }}
           </button>
         }
+
+        @if (holdProof === 'email_link' && step().kind === 'collect_first_factor') {
+          <button
+            [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+            [disabled]="busy"
+            type="button"
+            [attr.data-strategy]="preparedFactor === 'email_link' ? null : 'email_link'"
+            [attr.data-atlas-resend]="preparedFactor === 'email_link' ? '' : null"
+            (click)="chooseFactor.emit('email_link')"
+          >
+            {{ t(preparedFactor === 'email_link' ? 'signIn.resendLink' : 'signIn.useEmailLink') }}
+          </button>
+        }
+
+        @if (preparedFactor && offered().includes('password')) {
+          <button
+            [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+            [disabled]="busy"
+            type="button"
+            data-strategy="password"
+            (click)="usePassword.emit()"
+          >
+            {{ t('signIn.passwordOption') }}
+          </button>
+        }
       </form>
     </div>
   `,
@@ -282,11 +313,17 @@ export class AttemptFlowComponent {
   @Input() firstFactors: string[] | null = null;
   /** The first factor already sent (`AtlasFlowController.preparedFactor()`): its code is collected. */
   @Input() preparedFactor: string | null = null;
+  /** `FlowState.passwordHold`: where the proof went, and whether the password signs in now. */
+  @Input() passwordHold: FlowState['passwordHold'] = null;
+  /** `AtlasFlowController.holdProof()`: the emailed proof a password hold still waits on. */
+  @Input() holdProof: 'email_code' | 'email_link' | null = null;
 
   /** Emits the collected field values when the form is submitted. */
   @Output() submitFlow = new EventEmitter<Record<string, string>>();
   /** Emits when the user picks a first factor the server must send first (an emailed code). */
-  @Output() chooseFactor = new EventEmitter<'email_code'>();
+  @Output() chooseFactor = new EventEmitter<'email_code' | 'email_link'>();
+  /** Emits on "Use your password instead", from an emailed factor already sent. */
+  @Output() usePassword = new EventEmitter<void>();
   /**
    * Offer "Email me a code instead" at the second factor (the instance's
    * `account.emailSecondFactor`); `emailSecondFactor` asks for it and
@@ -352,6 +389,11 @@ export class AttemptFlowComponent {
       });
       return;
     }
+    // Only what is on screen: a code typed earlier must not turn a password into a code attempt.
+    if (this.step().kind === 'collect_first_factor') {
+      this.submitFlow.emit(this.preparedFactor === 'email_code' ? { code: this.values['code'] ?? '' } : { password: this.values['password'] ?? '' });
+      return;
+    }
     this.submitFlow.emit(this.values);
   }
 
@@ -400,7 +442,7 @@ export class AttemptFlowComponent {
     return this.errors.filter((error) => error.param === name);
   }
 
-  private step() {
+  protected step() {
     return this.attempt ? nextStep(this.attempt) : ({ kind: 'collect_identifier' } as const);
   }
 
@@ -410,7 +452,7 @@ export class AttemptFlowComponent {
   }
 
   /** The first factors on offer at a `needs_first_factor` step (empty on any other). */
-  private offered(): string[] {
+  protected offered(): string[] {
     const step = this.step();
     if (step.kind !== 'collect_first_factor') return [];
     return this.firstFactors ?? step.strategies;
@@ -439,7 +481,13 @@ export class AttemptFlowComponent {
   /** The "we sent a code to …" line on the code step. */
   protected codeSentText(): string | null {
     if (this.step().kind !== 'collect_first_factor' || this.preparedFactor !== 'email_code') return null;
-    return this.t('signIn.codeSentTo', { email: this.attempt?.identifier ?? '' });
+    return this.t('signIn.codeSentTo', { email: this.passwordHold?.email ?? this.attempt?.identifier ?? '' });
+  }
+
+  /** The "we sent a link to …" line, once a link was sent. */
+  protected linkSentText(): string | null {
+    if (this.step().kind !== 'collect_first_factor' || this.preparedFactor !== 'email_link') return null;
+    return this.t('signIn.linkSentTo', { email: this.passwordHold?.email ?? this.attempt?.identifier ?? '' });
   }
 
   /** The attempt is `needs_policy_acceptance`. */
@@ -451,7 +499,7 @@ export class AttemptFlowComponent {
     const kind = this.step().kind;
     // Nothing to submit on a first-factor step that only offers an emailed code
     // until that code is sent.
-    if (kind === 'collect_first_factor') return this.fields().length > 0;
+    if (kind === 'collect_first_factor') return this.fields().some((f) => f.kind === 'input');
     if (this.linkOnly()) return false;
     // Enrolment: nothing to submit while choosing a method or fetching the setup.
     if (this.enrolling() && this.enrollmentState && !enrollmentSubmitKey(this.enrollmentState)) return false;
@@ -465,15 +513,23 @@ export class AttemptFlowComponent {
         // `webauthn`: saved passkeys appear in this field's autofill while <atlas-sign-in> holds a conditional request.
         return [{ kind: 'input', name: 'identifier', labelKey: 'signIn.identifierLabel', type: 'email', autocomplete: 'username webauthn' }];
       case 'collect_first_factor': {
+        // A link proved an address on an existing account: no session, and the password signs in.
+        if (this.attempt?.object === 'sign_up_attempt' && !(this.attempt.supported_first_factors ?? []).includes('passkey')) {
+          return [released()];
+        }
         if (this.preparedFactor === 'email_code') {
           return [{ kind: 'input', name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
         }
+        if (this.preparedFactor === 'email_link') return [];
         // The password field unless the only offer is an emailed code (chosen
         // with the button below the form).
         const offered = this.offered();
         return offered.includes('email_code') && !offered.includes('password')
           ? []
-          : [{ kind: 'input', name: 'password', labelKey: 'signIn.passwordLabel', type: 'password' }];
+          : [
+              ...(this.passwordHold?.released ? [released()] : []),
+              { kind: 'input', name: 'password', labelKey: 'signIn.passwordLabel', type: 'password' },
+            ];
       }
       case 'collect_second_factor':
         return [{ kind: 'input', name: 'code', labelKey: 'mfa.codeLabel', type: 'text' }];
@@ -518,4 +574,8 @@ export class AttemptFlowComponent {
 /** A read-only message row: `labelKey` holds the i18n key of the text to show. */
 function msg(labelKey: string): StepField {
   return { kind: 'message', name: '', labelKey, type: 'text' };
+}
+
+function released(): StepField {
+  return { kind: 'released', name: '', labelKey: 'signIn.passwordHoldReleased', type: 'text' };
 }

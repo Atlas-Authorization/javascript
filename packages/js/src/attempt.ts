@@ -106,6 +106,10 @@ export interface AttemptIdentityVerification {
 }
 
 export interface AttemptView {
+  /** A sign-in link proved the address of an account whose password was on hold. No session was made: the password signs in now. */
+  password_hold_released?: boolean;
+  /** The code just proved an address on an existing account: the password typed at sign-up was not saved. Only on that response; `FlowState.existingAccount` keeps it. */
+  existing_account?: boolean;
   /**
    * The attempt id — what the next submit targets and what a completion's ticket
    * exchange is keyed on, so consumers read `attempt.id` directly rather than

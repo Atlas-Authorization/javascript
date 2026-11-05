@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, sep } from 'node:path';
 import { LineCounter, isMap, isPair, isScalar, isSeq, parseDocument, type Node } from 'yaml';
 import type { RunContext } from '../context';
 import { CliError } from '../errors';
@@ -131,23 +131,25 @@ export function folderHoldsKey(dir: string, kind: 'test' | 'live'): boolean {
   );
 }
 
-/** One folder's `*.env` files holding both a test and a live secret key. */
+/** `*.env` files holding both a test and a live secret key, in one folder or in a folder and one below it. */
 export function scanEnvFolders(files: Array<{ path: string; text: string }>): ScanFinding[] {
+  const byDir = new Map<string, Array<{ file: string; line: number; kind: 'test' | 'live' }>>();
+  for (const f of files.filter((x) => isEnvFile(basename(x.path)))) {
+    const dir = dirname(f.path);
+    byDir.set(dir, [...(byDir.get(dir) ?? []), ...keyLines(f.text).map((h) => ({ file: f.path, ...h }))]);
+  }
+  // Sibling folders stay fine: that is one environment per folder.
+  const related = (a: string, b: string) => a === b || a.startsWith(b + sep) || b.startsWith(a + sep);
   const out: ScanFinding[] = [];
-  const byDir = new Map<string, Array<{ path: string; text: string }>>();
-  for (const f of files.filter((x) => isEnvFile(basename(x.path)))) byDir.set(dirname(f.path), [...(byDir.get(dirname(f.path)) ?? []), f]);
-  for (const group of byDir.values()) {
-    const hits: Array<{ file: string; line: number; kind: 'test' | 'live' }> = [];
-    for (const f of group) hits.push(...keyLines(f.text).map((h) => ({ file: f.path, ...h })));
-    if (hits.some((h) => h.kind === 'test') && hits.some((h) => h.kind === 'live')) {
-      for (const h of hits) {
-        out.push({
-          file: h.file,
-          line: h.line,
-          code: 'dev_and_prod_keys_together',
-          message: `A ${h.kind === 'live' ? 'production' : 'development'} secret key, in a folder that holds both. A deploy script reading this folder can ship the wrong one; keep one environment per folder and delete stale files.`,
-        });
-      }
+  for (const [dir, hits] of byDir) {
+    for (const h of hits) {
+      if (![...byDir].some(([other, theirs]) => related(dir, other) && theirs.some((t) => t.kind !== h.kind))) continue;
+      out.push({
+        file: h.file,
+        line: h.line,
+        code: 'dev_and_prod_keys_together',
+        message: `A ${h.kind === 'live' ? 'production' : 'development'} secret key, in a folder that holds both, directly or in a subfolder. A deploy script reading this folder can ship the wrong one; keep one environment per folder and delete stale files.`,
+      });
     }
   }
   return out;

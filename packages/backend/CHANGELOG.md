@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.38.0 — 2026-11-05
+
+### Added
+
+- Machine grants, machine organization memberships, scope presets on resource servers, and `acceptMachineTokens` on `createAccessTokenVerifier`.
+
 ## Unreleased
 
 ## 0.37.0 — 2026-11-04

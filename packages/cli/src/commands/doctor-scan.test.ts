@@ -101,6 +101,35 @@ describe('atlas doctor --scan-dir', () => {
     expect((await scan()).code).toBe(0);
   });
 
+  it('flags a production key beside a development subfolder, which is what init can leave', async () => {
+    writeFileSync(join(dir, 'production.env'), `ATLAS_SECRET_KEY=${LIVE}\n`);
+    mkdirSync(join(dir, 'development'));
+    writeFileSync(join(dir, 'development', 'atlas.env'), `ATLAS_SECRET_KEY=${TEST}\n`);
+    const { code, out } = await scan();
+    expect(code).toBe(1);
+    expect(out).toContain('production.env:1');
+    expect(out).toContain(`${join('development', 'atlas.env')}:1`);
+    expect(out).toContain('dev_and_prod_keys_together');
+  });
+
+  it('does not treat sibling folders, a skipped folder or a symlink out as a subfolder', async () => {
+    writeFileSync(join(dir, 'production.env'), `ATLAS_SECRET_KEY=${LIVE}\n`);
+    mkdirSync(join(dir, 'node_modules'));
+    writeFileSync(join(dir, 'node_modules', 'atlas.env'), `ATLAS_SECRET_KEY=${TEST}\n`);
+    const outside = mkdtempSync(join(tmpdir(), 'atlas-cli-scan-out-'));
+    writeFileSync(join(outside, 'atlas.env'), `ATLAS_SECRET_KEY=${TEST}\n`);
+    symlinkSync(outside, join(dir, 'development'));
+    expect((await scan()).code).toBe(0);
+    rmSync(outside, { recursive: true, force: true });
+
+    rmSync(join(dir, 'production.env'));
+    mkdirSync(join(dir, 'prod'));
+    writeFileSync(join(dir, 'prod', 'atlas.env'), `ATLAS_SECRET_KEY=${LIVE}\n`);
+    mkdirSync(join(dir, 'dev'));
+    writeFileSync(join(dir, 'dev', 'atlas.env'), `ATLAS_SECRET_KEY=${TEST}\n`);
+    expect((await scan()).code).toBe(0);
+  });
+
   it('skips node_modules, .git, binary and big files, and symlinks', async () => {
     for (const d of ['node_modules', '.git']) {
       mkdirSync(join(dir, d));

@@ -37,6 +37,7 @@ export const koKR: LocalizationResource = {
   'signIn.passkeyButton': '패스키로 로그인',
   'signIn.passkeyCancelled': '패스키 로그인이 완료되지 않았습니다. 다시 시도하거나 다른 방법으로 로그인하세요.',
   'signIn.passwordHoldReleased': '이메일이 인증되었습니다. 로그인하려면 비밀번호를 입력하세요.',
+  'signUp.existingAccount': '이미 계정이 있습니다. 기존 비밀번호를 계속 사용할 수 있습니다.',
 
   'signUp.title': '계정 만들기',
   'signUp.submit': '계속',
@@ -223,6 +224,7 @@ export const koKR: LocalizationResource = {
   'error.sign_up_restricted': '이 앱은 초대를 통해서만 가입할 수 있습니다.',
   'error.sign_up_denied': '이 계정으로는 가입할 수 없습니다.',
   'error.password_not_yet_usable': '이 비밀번호로 로그인하기 전에 이메일 주소를 인증해 주세요.',
+  'error.account_deleted': '이 주소의 계정은 삭제되었으므로 다시 가입하는 데 사용할 수 없습니다.',
   'error.waitlisted': '대기자 명단에 등록되어 있습니다. 자리가 나면 이메일로 알려드리겠습니다.',
   'error.identifier_not_allowed': '이 이메일 주소 또는 전화번호는 이 앱에서 사용할 수 없습니다.',
   'error.disposable_email_blocked': '일회용 또는 임시 이메일 주소로는 가입할 수 없습니다.',

@@ -741,8 +741,8 @@ SDKs read (__session, __atlas_uat, __atlas_rt, __client).
 
 --scan-dir <path> and --scan-image <ref> need no key. They flag secret keys and
 webhook or hook secrets in Dockerfile ARG / ENV lines, compose build.args, and an
-image's docker history and environment, plus folders whose *.env files hold both
-a development and a production key. Prints the file and line, never the value.
+image's docker history and environment, plus folders whose *.env files, directly
+or in a subfolder, hold both a development and a production key. Prints the file and line, never the value.
 Exits 1 on a finding. Only the publishable key belongs in a build arg.`,
 
   golive: `atlas golive — take an instance live for one app origin

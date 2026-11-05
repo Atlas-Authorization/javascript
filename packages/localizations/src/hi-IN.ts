@@ -37,6 +37,7 @@ export const hiIN: LocalizationResource = {
   'signIn.passkeyButton': 'पासकी से साइन इन करें',
   'signIn.passkeyCancelled': 'पासकी से साइन इन पूरा नहीं हुआ। फिर से कोशिश करें या किसी दूसरे तरीके से साइन इन करें।',
   'signIn.passwordHoldReleased': 'आपका ईमेल सत्यापित हो गया है। साइन इन करने के लिए अपना पासवर्ड दर्ज करें।',
+  'signUp.existingAccount': 'आपका खाता पहले से मौजूद था। आपका मौजूदा पासवर्ड अब भी मान्य है।',
 
   'signUp.title': 'अपना खाता बनाएं',
   'signUp.submit': 'जारी रखें',
@@ -272,6 +273,7 @@ export const hiIN: LocalizationResource = {
   'error.sign_up_restricted': 'इस ऐप पर साइन अप केवल आमंत्रण द्वारा किया जा सकता है।',
   'error.sign_up_denied': 'इस खाते के लिए साइन अप उपलब्ध नहीं है।',
   'error.password_not_yet_usable': 'इस पासवर्ड से साइन इन करने से पहले अपना ईमेल पता सत्यापित करें।',
+  'error.account_deleted': 'इस पते का खाता हटा दिया गया था, इसलिए इससे दोबारा साइन अप नहीं किया जा सकता।',
   'error.waitlisted': 'आप प्रतीक्षा सूची में हैं। जगह खाली होने पर हम आपको ईमेल करेंगे।',
   'error.identifier_not_allowed': 'इस ऐप पर यह ईमेल या फ़ोन नंबर स्वीकार्य नहीं है।',
   'error.disposable_email_blocked': 'अस्थायी या डिस्पोज़ेबल ईमेल पते से साइन अप करने की अनुमति नहीं है।',

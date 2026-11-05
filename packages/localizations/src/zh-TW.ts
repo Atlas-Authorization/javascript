@@ -37,6 +37,7 @@ export const zhTW: LocalizationResource = {
   'signIn.passkeyButton': '使用通行金鑰登入',
   'signIn.passkeyCancelled': '通行金鑰登入未完成。請再試一次或改用其他方式登入。',
   'signIn.passwordHoldReleased': '你的電子郵件已驗證。請輸入密碼以登入。',
+  'signUp.existingAccount': '您已有帳戶。您現有的密碼仍然有效。',
 
   'signUp.title': '建立您的帳戶',
   'signUp.submit': '繼續',
@@ -271,6 +272,7 @@ export const zhTW: LocalizationResource = {
   'error.sign_up_restricted': '此應用程式僅開放受邀者註冊。',
   'error.sign_up_denied': '此帳戶無法註冊。',
   'error.password_not_yet_usable': '請先驗證您的電子郵件地址，再使用此密碼登入。',
+  'error.account_deleted': '此地址的帳戶已遭刪除，因此無法再用於註冊。',
   'error.waitlisted': '您已在候補名單中，有名額時我們會以電子郵件通知您。',
   'error.identifier_not_allowed': '此應用程式不允許使用這個電子郵件或電話號碼。',
   'error.disposable_email_blocked': '不允許使用拋棄式或臨時電子郵件地址註冊。',

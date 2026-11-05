@@ -9,6 +9,7 @@ import {
   referralCacheKeyFor,
   rememberReferralLanding,
   seedReferralConfig,
+  signIn as hostedSignIn,
   type ReferralCaptureOptions,
   type ReferralConsent,
   type ReferralSourceReader,
@@ -564,6 +565,12 @@ export interface FlowState {
    * `released` turns true once it is proven, so the password can sign in.
    */
   passwordHold?: { attemptId: string; email: string | null; released: boolean } | null;
+  /**
+   * A sign-up's code proved an address on an existing account (`existing_account`):
+   * the typed password was not saved and the existing one still applies. Kept through
+   * any later step (a second factor), since only the proof's response says it.
+   */
+  existingAccount?: boolean;
 }
 
 export const initialFlow: FlowState = {
@@ -817,6 +824,7 @@ export async function advance(
     // A completion response carries the ticket to exchange for cookies.
     ticket: view.ticket ?? null,
     prepared: sameAttempt ? (state.prepared ?? null) : null,
+    ...(view.existing_account || state.existingAccount ? { existingAccount: true } : {}),
     ...(recoveryCodes ? { recoveryCodes } : {}),
     ...(view.policy_acceptance_token || view.required_action_token
       ? { policyToken: view.policy_acceptance_token ?? view.required_action_token }
@@ -1014,6 +1022,16 @@ export async function pollAttempt(
 
   if (!response.ok || !response.data) return { state, ticket: null };
 
+  // The link proved the address of an account whose password was on hold and made
+  // no session: the password signs in now, so stop polling and ask for it.
+  if (response.data.password_hold_released) {
+    const email = response.data.identifier ?? null;
+    return {
+      state: { ...state, attempt: response.data, pollSecret: null, prepared: null, passwordHold: { attemptId: id, email, released: true } },
+      ticket: null,
+    };
+  }
+
   return {
     state: { ...state, attempt: response.data },
     ticket: response.data.ticket ?? null,
@@ -1027,6 +1045,41 @@ export function shouldKeepPolling(state: FlowState): boolean {
   // for this tab's passkey, and a link that proved an existing account made no session.
   const a = state.attempt;
   return !(a.object === 'sign_up_attempt' && a.status === 'needs_first_factor');
+}
+
+/**
+ * The sign-up is done and the user should first read that their existing password
+ * still applies. Components hold here AFTER exchanging the ticket (it lives 60
+ * seconds; the cookies then exist, so leaving the page loses nothing) and BEFORE
+ * telling the app, so nothing unmounts or redirects past the notice.
+ */
+export function pendingExistingAccountNotice(state: Pick<FlowState, 'attempt' | 'existingAccount' | 'sessionKept' | 'recoveryCodes'>): boolean {
+  return state.attempt?.status === 'complete' && state.existingAccount === true && state.sessionKept === undefined && !state.recoveryCodes?.length;
+}
+
+/** The flow once the user continued past the notice: the ticket is already spent. */
+export function acknowledgeExistingAccount(state: FlowState): FlowState {
+  return { ...state, existingAccount: false, ticket: null };
+}
+
+/**
+ * The notice's "Forgot password?" target: `url` when the app has its own page,
+ * null to hide the link, else the hosted sign-in page, open on its reset flow.
+ */
+export function existingAccountResetUrl(options: { url?: string | null | undefined; frontendApi?: string | undefined; redirectUrl?: string | undefined }): string | null {
+  if (options.url !== undefined) return options.url;
+  try {
+    const redirectUrl = options.redirectUrl ?? (typeof window !== 'undefined' ? window.location.href : undefined);
+    const target = hostedSignIn({
+      ...(options.frontendApi ? { frontendApi: options.frontendApi } : {}),
+      ...(redirectUrl ? { redirectUrl } : {}),
+      navigate: false,
+    });
+    // The hosted page opens straight on its reset flow.
+    return `${target}${target.includes('?') ? '&' : '?'}forgot_password=1`;
+  } catch {
+    return null;
+  }
 }
 
 /**

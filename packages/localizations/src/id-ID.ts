@@ -37,6 +37,7 @@ export const idID: LocalizationResource = {
   'signIn.passkeyButton': 'Masuk dengan kunci sandi (passkey)',
   'signIn.passkeyCancelled': 'Masuk dengan kunci sandi tidak selesai. Coba lagi atau gunakan cara lain.',
   'signIn.passwordHoldReleased': 'Email Anda telah diverifikasi. Masukkan kata sandi Anda untuk masuk.',
+  'signUp.existingAccount': 'Anda sudah memiliki akun. Kata sandi Anda yang ada tetap berlaku.',
 
   'signUp.title': 'Buat akun Anda',
   'signUp.submit': 'Lanjutkan',
@@ -271,6 +272,7 @@ export const idID: LocalizationResource = {
   'error.sign_up_restricted': 'Pendaftaran di aplikasi ini hanya melalui undangan.',
   'error.sign_up_denied': 'Pendaftaran tidak tersedia untuk akun ini.',
   'error.password_not_yet_usable': 'Verifikasi alamat email Anda sebelum masuk dengan kata sandi ini.',
+  'error.account_deleted': 'Akun untuk alamat ini telah dihapus, jadi alamat ini tidak dapat digunakan untuk mendaftar lagi.',
   'error.waitlisted': 'Anda berada dalam daftar tunggu. Kami akan mengirim email kepada Anda saat tersedia tempat.',
   'error.identifier_not_allowed': 'Email atau nomor telepon ini tidak diizinkan di aplikasi ini.',
   'error.disposable_email_blocked': 'Pendaftaran dengan alamat email sekali pakai atau sementara tidak diizinkan.',

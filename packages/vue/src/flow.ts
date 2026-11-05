@@ -2,6 +2,8 @@ import { onScopeDispose, shallowRef, watch, type ShallowRef } from 'vue';
 import {
   advanceWithCaptcha,
   atlasCaptchaLabels,
+  attemptPasswordHoldProof,
+  preparePasswordHoldProof,
   createCaptchaController,
   createPasskeySignInController,
   createPasskeySignUp,
@@ -10,7 +12,9 @@ import {
   fetchInstanceSettings,
   fetchLastSignInMethod,
   createMfaEnrollment,
+  acknowledgeExistingAccount,
   acknowledgeRecoveryCodes,
+  pendingExistingAccountNotice,
   pendingRecoveryCodes,
   mfaChoicesFrom,
   prepareSecondFactorCode,
@@ -99,6 +103,8 @@ export interface FlowController {
    * for this before exchanging the ticket and finishing the sign-in.
    */
   saveRecoveryCodes(): void;
+  /** With `holdExistingAccountNotice`: the user read `pendingExistingAccountNotice(state)`; finish the sign-up. */
+  continueAfterExistingAccount(): void;
   /** Resend a sign-up's emailed code / link (the earlier one stops working). Resolves whether it was sent. */
   resendSignUp(): Promise<boolean>;
   /**
@@ -139,7 +145,7 @@ export interface FlowController {
   passkey: PasskeySignInController;
 }
 
-export function useFlow(): FlowController {
+export function useFlow(options: { holdExistingAccountNotice?: boolean } = {}): FlowController {
   const atlas = useAtlas();
   // Seeded from a redirect that came back mid-flow (e.g. OAuth needing a second
   // factor), so the user resumes at the demanded step instead of starting over.
@@ -189,13 +195,35 @@ export function useFlow(): FlowController {
       });
       exchanged = res.ok;
     }
+    if (exchanged && options.holdExistingAccountNotice && pendingExistingAccountNotice(next)) {
+      state.value = { ...next, ticket: null, busy: false };
+      return;
+    }
     const kept = exchanged && (await atlas.reload());
     state.value = { ...next, busy: false, sessionKept: kept };
   };
 
+  // What lifts a password hold on this instance: the emailed code, or a link where it verifies by link only.
+  const holdProof = (): 'email_code' | 'email_link' =>
+    settings.value?.account.emailVerification === 'link' ? 'email_link' : 'email_code';
+
   const submit = (values: Record<string, string>) => {
     void (async () => {
       state.value = { ...state.value, busy: true, errors: [] };
+      const { attempt, passwordHold, prepared } = state.value;
+      // A code that lifts a password hold goes to its own attempt, not this sign-in.
+      // `values.code`: "Use your password instead" leaves `prepared` set.
+      if (
+        attempt?.status === 'needs_first_factor' &&
+        passwordHold &&
+        !passwordHold.released &&
+        prepared === 'email_code' &&
+        holdProof() === 'email_code' &&
+        values.code !== undefined
+      ) {
+        state.value = await attemptPasswordHoldProof(client, state.value, values.code);
+        return;
+      }
       const out = await advanceWithCaptcha(client, state.value, values, { captcha, identifier, t });
       identifier = out.identifier;
       await finish(out.state);
@@ -274,6 +302,10 @@ export function useFlow(): FlowController {
     void finish(acknowledgeRecoveryCodes(state.value));
   };
 
+  const continueAfterExistingAccount = () => {
+    void finish(acknowledgeExistingAccount(state.value));
+  };
+
   const resendSignUp = async (): Promise<boolean> => {
     state.value = { ...state.value, busy: true, errors: [] };
     state.value = await resendSignUpVerification(client, state.value);
@@ -282,7 +314,12 @@ export function useFlow(): FlowController {
 
   const prepare = async (strategy: 'email_code' | 'email_link') => {
     state.value = { ...state.value, busy: true, errors: [] };
-    const next = await prepareFactor(client, state.value, strategy);
+    const hold = state.value.passwordHold;
+    const proof = holdProof();
+    const next =
+      hold && !hold.released && strategy === proof
+        ? await preparePasswordHoldProof(client, state.value, proof)
+        : await prepareFactor(client, state.value, strategy);
     state.value = { ...next, busy: false };
     return next.errors.length === 0;
   };
@@ -363,6 +400,7 @@ export function useFlow(): FlowController {
     enrollment,
     enrollmentState,
     saveRecoveryCodes,
+    continueAfterExistingAccount,
     resendSignUp,
     prepare,
     settings,

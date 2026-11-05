@@ -703,3 +703,36 @@ describe('<SignIn> Sign in with Atlas', () => {
     expect(w.find('[data-atlas-provider="atlas"]').exists()).toBe(false);
   });
 });
+
+describe('<SignUp> on an existing account', () => {
+  it('exchanges the ticket, then holds the app on the notice until Continue', async () => {
+    const w = await mountFlow(SignUp, {
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+            ? json({ id: 'sua_1', status: 'complete', ticket: 'tkt_1', existing_account: true })
+            : undefined,
+      ],
+    });
+    await setInput(w, 'email', 'held@example.com');
+    await setInput(w, 'password', 'blue tangerine anvil 71!');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('input[name="code"]').exists()).toBe(true));
+    expect(w.find('[data-atlas-existing-account]').exists()).toBe(false);
+
+    await setInput(w, 'code', '424242');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('[data-atlas-existing-account] button').attributes('disabled')).toBeUndefined());
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+    expect(w.find('[data-atlas-existing-account]').text()).toContain('You already had an account. Your existing password still applies.');
+    expect(w.find('[data-atlas-existing-account] a').attributes('href')).toContain('/hosted/sign-in');
+    expect(reload).not.toHaveBeenCalled();
+
+    await w.find('[data-atlas-existing-account] button').trigger('click');
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+    await flush();
+    expect(w.find('[data-atlas-existing-account]').exists()).toBe(false);
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+  });
+});

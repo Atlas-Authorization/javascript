@@ -113,6 +113,8 @@
   titleKey="signIn.title"
   onSubmit={submitIdentifier}
   onPrepare={flow.prepare}
+  passwordHold={$flowState.passwordHold ?? null}
+  emailVerification={$settings?.account.emailVerification ?? 'code'}
   onEmailSecondFactor={$settings?.account.emailSecondFactor ? flow.sendEmailSecondFactor : null}
   onSmsSecondFactor={$settings && flow.mfaChoices().sms ? flow.sendSmsSecondFactor : null}
   enrollment={flow.enrollment}

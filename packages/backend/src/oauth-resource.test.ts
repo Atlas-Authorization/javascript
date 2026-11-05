@@ -80,6 +80,19 @@ async function proof(
 }
 
 describe('createAccessTokenVerifier', () => {
+  it('refuses a machine token unless acceptMachineTokens is set, and then still checks the audience', async () => {
+    const { opts, mint } = await setup();
+    const token = await mint({ token_use: 'm2m' });
+    expect((await createAccessTokenVerifier(opts())(req(`Bearer ${token}`))).ok).toBe(false);
+    const accepting = createAccessTokenVerifier(opts({ acceptMachineTokens: true, requiredScopes: ['tools:read'] }));
+    expect((await accepting(req(`Bearer ${token}`))).ok).toBe(true);
+    const otherApi = await mint({ token_use: 'm2m', aud: 'https://other.example.com' });
+    expect((await accepting(req(`Bearer ${otherApi}`))).ok).toBe(false);
+    // The option admits machine tokens only, not every other token_use.
+    const session = await mint({ token_use: 'session' });
+    expect((await accepting(req(`Bearer ${session}`))).ok).toBe(false);
+  });
+
   it('accepts a valid token for this API and surfaces subject, client and scopes', async () => {
     const { opts, mint } = await setup();
     const verify = createAccessTokenVerifier(opts({ requiredScopes: ['tools:read'] }));

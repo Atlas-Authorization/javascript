@@ -37,6 +37,7 @@ export const svSE: LocalizationResource = {
   'signIn.passkeyButton': 'Logga in med en nyckel (passkey)',
   'signIn.passkeyCancelled': 'Inloggningen med nyckeln slutfördes inte. Försök igen eller logga in på ett annat sätt.',
   'signIn.passwordHoldReleased': 'Din e-postadress är verifierad. Ange ditt lösenord för att logga in.',
+  'signUp.existingAccount': 'Du hade redan ett konto. Ditt befintliga lösenord gäller fortfarande.',
 
   'signUp.title': 'Skapa ditt konto',
   'signUp.submit': 'Fortsätt',
@@ -270,6 +271,7 @@ export const svSE: LocalizationResource = {
   'error.sign_up_restricted': 'Registrering i den här appen sker endast via inbjudan.',
   'error.sign_up_denied': 'Registrering är inte tillgänglig för det här kontot.',
   'error.password_not_yet_usable': 'Verifiera din e-postadress innan du loggar in med det här lösenordet.',
+  'error.account_deleted': 'Kontot för den här adressen har tagits bort, så den kan inte användas för att registrera sig igen.',
   'error.waitlisted': 'Du står på väntelistan. Vi skickar ett e-postmeddelande när en plats blir ledig.',
   'error.identifier_not_allowed': 'Den här e-postadressen eller det här telefonnumret är inte tillåtet i den här appen.',
   'error.disposable_email_blocked': 'Registrering med en tillfällig e-postadress eller engångsadress är inte tillåten.',

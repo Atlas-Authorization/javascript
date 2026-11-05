@@ -384,3 +384,38 @@ describe('<SignIn> Sign in with Atlas', () => {
     expect(el.querySelector('[data-atlas-provider="atlas"]')).toBeNull();
   });
 });
+
+describe('<SignUp> on an existing account', () => {
+  it('exchanges the ticket, then holds the app on the notice until Continue', async () => {
+    const el = await mountFlow(SignUp, {
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+            ? json({ id: 'sua_1', status: 'complete', ticket: 'tkt_1', existing_account: true })
+            : undefined,
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'email', 'held@example.com');
+    setInput(el, 'password', 'blue tangerine anvil 71!');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    expect(el.querySelector('[data-atlas-existing-account]')).toBeNull();
+    const boots = calls.filter((c) => c.path === '/v1/client').length;
+
+    setInput(el, 'code', '424242');
+    submit(el);
+    await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-existing-account]')).not.toBeNull());
+    const notice = el.querySelector('[data-atlas-existing-account]')!;
+    expect(notice.textContent).toContain('You already had an account. Your existing password still applies.');
+    expect(notice.querySelector('a')!.getAttribute('href')).toContain('/hosted/sign-in');
+    expect(calls.filter((c) => c.path === '/v1/client').length).toBe(boots);
+
+    (notice.querySelector('button') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-existing-account]')).toBeNull());
+    await vi.waitFor(() => expect(calls.filter((c) => c.path === '/v1/client').length).toBeGreaterThan(boots));
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+  });
+});

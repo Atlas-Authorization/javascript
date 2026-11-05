@@ -37,6 +37,7 @@ export const itIT: LocalizationResource = {
   'signIn.passkeyButton': 'Accedi con una passkey',
   'signIn.passkeyCancelled': 'L\'accesso con la passkey non è stato completato. Riprova o usa un altro metodo.',
   'signIn.passwordHoldReleased': 'Il tuo indirizzo e-mail è stato verificato. Inserisci la password per accedere.',
+  'signUp.existingAccount': 'Avevi già un account. La tua password attuale resta valida.',
 
   'signUp.title': 'Crea il tuo account',
   'signUp.submit': 'Continua',
@@ -272,6 +273,7 @@ export const itIT: LocalizationResource = {
   'error.sign_up_restricted': 'La registrazione a questa app è possibile solo su invito.',
   'error.sign_up_denied': 'La registrazione non è disponibile per questo account.',
   'error.password_not_yet_usable': 'Verifica il tuo indirizzo e-mail prima di accedere con questa password.',
+  'error.account_deleted': 'L’account di questo indirizzo è stato eliminato, quindi non può essere usato per registrarsi di nuovo.',
   'error.waitlisted': 'Sei in lista d’attesa. Ti scriveremo via e-mail quando si libererà un posto.',
   'error.identifier_not_allowed': 'Questo indirizzo e-mail o numero di telefono non è consentito in questa app.',
   'error.disposable_email_blocked': 'Non è consentita la registrazione con un indirizzo e-mail temporaneo o usa e getta.',

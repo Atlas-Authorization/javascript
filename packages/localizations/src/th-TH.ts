@@ -37,6 +37,7 @@ export const thTH: LocalizationResource = {
   'signIn.passkeyButton': 'ลงชื่อเข้าใช้ด้วยพาสคีย์',
   'signIn.passkeyCancelled': 'การลงชื่อเข้าใช้ด้วยพาสคีย์ไม่เสร็จสมบูรณ์ ลองอีกครั้งหรือใช้วิธีอื่น',
   'signIn.passwordHoldReleased': 'ยืนยันอีเมลของคุณแล้ว ป้อนรหัสผ่านเพื่อลงชื่อเข้าใช้',
+  'signUp.existingAccount': 'คุณมีบัญชีอยู่แล้ว รหัสผ่านเดิมของคุณยังใช้ได้',
 
   'signUp.title': 'สร้างบัญชีของคุณ',
   'signUp.submit': 'ดำเนินการต่อ',
@@ -271,6 +272,7 @@ export const thTH: LocalizationResource = {
   'error.sign_up_restricted': 'การลงทะเบียนในแอปนี้ทำได้เฉพาะผู้ที่ได้รับเชิญเท่านั้น',
   'error.sign_up_denied': 'ไม่สามารถลงทะเบียนด้วยบัญชีนี้ได้',
   'error.password_not_yet_usable': 'โปรดยืนยันที่อยู่อีเมลของคุณก่อนเข้าสู่ระบบด้วยรหัสผ่านนี้',
+  'error.account_deleted': 'บัญชีของที่อยู่นี้ถูกลบแล้ว จึงไม่สามารถใช้สมัครใหม่ได้',
   'error.waitlisted': 'คุณอยู่ในรายชื่อรอ เราจะส่งอีเมลถึงคุณเมื่อมีที่ว่าง',
   'error.identifier_not_allowed': 'ไม่อนุญาตให้ใช้อีเมลหรือหมายเลขโทรศัพท์นี้ในแอปนี้',
   'error.disposable_email_blocked': 'ไม่อนุญาตให้ลงทะเบียนด้วยอีเมลชั่วคราวหรืออีเมลแบบใช้แล้วทิ้ง',

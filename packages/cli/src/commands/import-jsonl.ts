@@ -21,7 +21,7 @@ export interface JobResult {
   total: number;
   succeeded: number;
   failed: number;
-  results?: Array<{ outcome: 'created' | 'updated' | 'matched' | 'failed' }> | null;
+  results?: Array<{ outcome: 'created' | 'updated' | 'matched' | 'failed'; warnings?: Array<{ code: string; message: string }> }> | null;
 }
 
 /** One row's failure from `GET /v1/jobs/:id/errors`. `email` is there too and is never printed. */
@@ -105,6 +105,33 @@ const ROW_KEYS = [
   'updated_at',
 ] as const;
 
+/** The parameters the API reads, including aliases. Kept the same as its list by a test on the API side. */
+const HASH_PARAM_KEYS = [
+  'key_len', 'keylen', 'dk_len', 'dklen', 'length', 'hash_encoding', 'digest_encoding', 'cost', 'iteration', 'hash_function', 'prf',
+  'digest', 'encoding', 'iterations', 'key', 'key_encoding', 'key_length', 'layout', 'ln', 'log_n', 'm', 'mem_cost', 'n',
+  'normalize', 'p', 'password_encoding', 'pepper', 'r', 'rounds', 'salt', 'salt_encoding', 'salt_position', 'salt_separator',
+  'scheme', 'signer_key', 't', 'type', 'version',
+] as const;
+
+/** What a row-level warning means, worded to follow "N row(s)". */
+const ROW_WARNINGS: Record<string, string> = {
+  password_policy_not_applied: 'already have a verified email address, so the password was not put on hold and stays usable.',
+  unverified_without_hold:
+    'have an unverified address and a credential, with no hold on it, so proving the address does not reach them. If the person signs up or signs in with an email code, they get a second account and this row keeps the external_id. Use --password-policy until_email_verified for a row with a password, or email_verified if you confirmed the address.',
+};
+
+/** The warnings on one job's rows, as `code: warned row ids`. A row never appears by its email. */
+export function collectRowWarnings(job: JobResult, batch: Array<{ external_id?: unknown }>, into: Map<string, Set<string>>): void {
+  job.results?.forEach((r, i) => {
+    for (const w of r.warnings ?? []) into.set(w.code, (into.get(w.code) ?? new Set<string>()).add(String(batch[i]?.external_id ?? `#${i}`)));
+  });
+}
+
+/** `warning` for each collected code, in the report's wording. */
+export function rowWarningText(code: string): string {
+  return ROW_WARNINGS[code] ?? 'were flagged by the import.';
+}
+
 /** Node's `scrypt$N$r$p$salt$key`; the API reads this shape as Node when the salt is not all digits. */
 const NODE_SCRYPT = /^scrypt\$\d+\$\d+\$\d+\$([^$]+)\$[^$]+$/;
 const HEX_SALT = /^(?:[0-9a-f]{2}){4,}$/i;
@@ -134,6 +161,12 @@ export function parseUsersJsonl(text: string): InputRow[] {
     if (typeof row.email !== 'string' || !row.email.trim()) throw new CliError(`Line ${line} has no email.`);
     if (seen.has(row.external_id)) throw new CliError(`Line ${line} repeats an external_id from an earlier line.`);
     if (row.password_hash_params !== undefined && row.password_hash_params !== null) {
+      if (typeof row.password_hash_params === 'object') {
+        const unknown = Object.keys(row.password_hash_params).filter((k) => !(HASH_PARAM_KEYS as readonly string[]).includes(k.trim().toLowerCase()));
+        if (unknown.length) {
+          throw new CliError(`Line ${line} has unknown password_hash_params key(s): ${unknown.map((k) => `${k}${didYouMean(k, HASH_PARAM_KEYS)}`).join(', ')}. A hash imported with one could never be checked.`);
+        }
+      }
       if (!row.password_digest) throw new CliError(`Line ${line} has password_hash_params but no password_digest.`);
       const salt = NODE_SCRYPT.exec(row.password_digest)?.[1];
       if (!row.algorithm && (!salt || /^\d+$/.test(salt))) throw new CliError(`Line ${line} has password_hash_params but no algorithm naming what they belong to.`);
@@ -233,17 +266,21 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
   const direct: Array<{ row: InputRow; user: LiveUser; verifyId?: string }> = [];
   const emailChanged: string[] = [];
   const passwordNotApplied: string[] = [];
+  const skippedUnheld: string[] = [];
+  const rowWarned = new Map<string, Set<string>>();
+  const wantsHold = policy === 'until_email_verified';
   rows.forEach((row, i) => {
     const user = live[i];
     if (!user) {
       creates.push(toImportRow(row));
       return;
     }
+    const address = user.email_addresses?.find((e) => e.email_address.toLowerCase() === row.email.trim().toLowerCase());
     if (onConflict === 'skip') {
+      if (wantsHold && address && address.verified !== true && user.password_enabled === true) skippedUnheld.push(row.external_id);
       skipped += 1;
       return;
     }
-    const address = user.email_addresses?.find((e) => e.email_address.toLowerCase() === row.email.trim().toLowerCase());
     // The import matches on a verified email, so a changed address would make a second user.
     if (!address) {
       emailChanged.push(row.external_id);
@@ -252,6 +289,14 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
     }
     const namesDiffer = (row.first_name !== undefined && row.first_name !== user.first_name) || (row.last_name !== undefined && row.last_name !== user.last_name);
     const verifyNow = row.email_verified === true && address.verified !== true;
+    if (wantsHold && address.verified !== true && !verifyNow && user.password_enabled === true) {
+      // The API finds this row by external_id and applies the hold to its stored password.
+      upserts.push(toImportRow(row));
+      return;
+    }
+    if (wantsHold && (address.verified === true || verifyNow) && (user.password_enabled === true || row.password_digest)) {
+      rowWarned.set('password_policy_not_applied', (rowWarned.get('password_policy_not_applied') ?? new Set<string>()).add(row.external_id));
+    }
     const wantsPassword = Boolean(row.password_digest) && user.password_enabled === false;
     const missingIdentity = Boolean(
       user.external_accounts && row.oauth_identities?.some((a) => !user.external_accounts!.some((b) => b.provider === a.provider && b.provider_user_id === a.provider_user_id)),
@@ -295,9 +340,13 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
   const notes = [
     ...(emailChanged.length ? [`${emailChanged.length} row(s) have a different email from the existing user and were left alone; change the address on the user first. external_id: ${emailChanged.join(', ')}`] : []),
     ...(passwordNotApplied.length ? [`${passwordNotApplied.length} row(s) hold a password or identity that cannot be added while the address is unverified. external_id: ${passwordNotApplied.join(', ')}`] : []),
+    ...(skippedUnheld.length ? [`${skippedUnheld.length} existing unverified row(s) with a password were skipped, so this run did not change their hold. If they were imported without one, run again with --on-conflict update. external_id: ${skippedUnheld.join(', ')}`] : []),
   ];
 
-  if (!dry) {
+  if (dry) {
+    const unheld = creates.filter((r) => r.email_verified !== true && (r.external_accounts || r.password_hash) && !(wantsHold && r.password_hash));
+    if (unheld.length) rowWarned.set('unverified_without_hold', new Set(unheld.map((r) => String(r.external_id))));
+  } else {
     // What was planned as created may still meet a verified email already here.
     report.created = 0;
     report.updated = 0;
@@ -305,6 +354,7 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
     const send = async (batch: Record<string, unknown>[], upsert: boolean) => {
       const job = await sendImportBatch(ctx, http, { users: batch, upsert, ...(policy ? { password_policy: policy } : {}) });
       report.jobs.push(job.id);
+      collectRowWarnings(job, batch, rowWarned);
       if (job.failed > 0) {
         // Only the reasons depend on this read: the import has happened and the counts below still report it.
         const errors = await http.get<{ data?: JobRowError[] }>(`/v1/jobs/${job.id}/errors`).catch(() => ({ data: [] as JobRowError[] }));
@@ -340,10 +390,12 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
     }
     for (const [message, ids] of unsupported) warn('unsupported_password_hash', ids, `were not imported. ${message}`);
   }
+  for (const [code, ids] of rowWarned) warn(code, [...ids], rowWarningText(code));
 
   if (json) printJson(ctx.io, { dry_run: dry, ...report, notes, warnings });
   else {
-    ctx.io.out(dry ? `Dry run of ${all.length} row(s). Nothing was sent.` : `Imported ${all.length} row(s).`);
+    const landed = report.created + report.updated;
+    ctx.io.out(dry ? `Dry run: would import ${landed} of ${all.length} row(s). Nothing was sent.` : `Imported ${landed} of ${all.length} row(s).`);
     ctx.io.out(`  created: ${report.created}`);
     ctx.io.out(`  updated: ${report.updated}`);
     ctx.io.out(`  skipped: ${report.skipped}`);

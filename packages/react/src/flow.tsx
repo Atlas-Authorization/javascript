@@ -14,7 +14,9 @@ import {
   journeyRedirectUrl,
   flowNeedsCaptcha,
   atlasCaptchaLabels,
+  acknowledgeExistingAccount,
   acknowledgeRecoveryCodes,
+  pendingExistingAccountNotice,
   enrollmentSubmitKey,
   pendingRecoveryCodes,
   fetchLastSignInMethod,
@@ -95,6 +97,11 @@ export interface FlowProps {
    * it says nothing about whether an email has an account.
    */
   signUpUrl?: string | null;
+  /**
+   * `<SignUp>`: where the existing-account notice's "Forgot password?" goes.
+   * Default: the instance's hosted sign-in page. `null` hides the link.
+   */
+  resetPasswordUrl?: string | null;
   /**
    * Also show Google One-Tap above the "Sign in with Google" button. OFF by
    * default: the button alone (a user-initiated popup) converts better and never
@@ -772,10 +779,13 @@ export function useFlow({
   afterUrl,
   afterSignIn,
   signInCaptcha = true,
+  holdExistingAccountNotice = false,
   referral,
   referralConsent,
 }: {
   afterUrl?: string;
+  /** Wait for `continueAfterExistingAccount` (see `pendingExistingAccountNotice`). `<SignUp>` draws the notice. */
+  holdExistingAccountNotice?: boolean;
   /**
    * Runs once the session is held (after the re-boot), before `afterUrl`. Resolve
    * `true` when it navigated the user itself (e.g. to a plan's Checkout), which
@@ -798,6 +808,7 @@ export function useFlow({
   // Seeded from a redirect that came back mid-flow (e.g. OAuth needing a second
   // factor), so the user resumes at the demanded step instead of starting over.
   const [state, setState] = useState<FlowState>(() => flowFromPending(pendingAttempt));
+  const heldJourneyUrl = useRef<string | null>(null);
 
   /**
    * §5 the sign-in captcha. Drawn on the identifier step when the instance
@@ -860,7 +871,7 @@ export function useFlow({
       setState({ ...next, busy: true });
       let exchanged = true;
       // Where the sign-in journey sends the user next, when it names a place.
-      let journeyUrl: string | null = null;
+      let journeyUrl = heldJourneyUrl.current;
       if (next.ticket) {
         const res = await client.post('/v1/client/tickets/exchange', {
           attempt_id: (next.attempt as { id?: string }).id,
@@ -868,6 +879,11 @@ export function useFlow({
         });
         exchanged = res.ok;
         journeyUrl = res.ok ? journeyRedirectUrl(res.data) : null;
+      }
+      if (exchanged && holdExistingAccountNotice && pendingExistingAccountNotice(next)) {
+        heldJourneyUrl.current = journeyUrl;
+        setState({ ...next, ticket: null, busy: false });
+        return;
       }
       const kept = exchanged && (await reload());
       setState({ ...next, busy: false, sessionKept: kept });
@@ -882,7 +898,7 @@ export function useFlow({
       // §10.2 send the user on once signed-in — no-op when afterUrl is unset.
       navigateAfterComplete(afterUrl);
     },
-    [afterSignIn, afterUrl, broadcastSessionChange, client, reload],
+    [afterSignIn, afterUrl, broadcastSessionChange, client, holdExistingAccountNotice, reload],
   );
 
   const submit = useCallback(
@@ -1030,7 +1046,11 @@ export function useFlow({
     void finish(acknowledgeRecoveryCodes(state));
   }, [finish, state]);
 
-  return { state, setState, submit, client, finish, captcha, prepare, usePassword, saveRecoveryCodes };
+  const continueAfterExistingAccount = useCallback(() => {
+    void finish(acknowledgeExistingAccount(state));
+  }, [finish, state]);
+
+  return { state, setState, submit, client, finish, captcha, prepare, usePassword, saveRecoveryCodes, continueAfterExistingAccount };
 }
 
 /** Google's multi-color "G" mark — trusted, static, first-party SVG. */

@@ -1,5 +1,15 @@
 # @atlasauth/solid changelog
 
+## 0.12.0 — 2026-11-05
+
+### Added
+
+- Sign-in offers the emailed proof when a password is on hold, even with email code sign-in off, and shows the password field with a confirmation once it is proven.
+
+### Also
+
+- The existing-account notice after a sign-up reaches an account on hold (`FlowState.existingAccount`), and the `account_deleted` error reason.
+
 ## 0.11.0 — 2026-10-30
 
 - `<SignIn>` offers "Sign in with a passkey" and passkey autofill on the identifier field when the instance enables passkeys.

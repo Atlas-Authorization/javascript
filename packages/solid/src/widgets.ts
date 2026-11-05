@@ -17,6 +17,8 @@ import {
   type ErrorStrings,
   advanceWithCaptcha,
   atlasCaptchaLabels,
+  attemptPasswordHoldProof,
+  preparePasswordHoldProof,
   createCaptchaController,
   createPasskeySignInController,
   createSignUp,
@@ -32,7 +34,10 @@ import {
   mountPolicyConsent,
   flowFromPending,
   flowNeedsCaptcha,
+  acknowledgeExistingAccount,
+  existingAccountResetUrl,
   nextStep,
+  pendingExistingAccountNotice,
   offeredFirstFactors,
   passkeysSupported,
   pollAttempt,
@@ -120,6 +125,9 @@ export const SIGN_UP_TEXT: Record<string, string> = {
   'captcha.puzzleTile': 'Picture {n}',
   'captcha.puzzleAlternative': "Can't do the picture check? Use a longer automatic check instead.",
   'signIn.continueWithAtlas': 'Continue with Atlas',
+  'signIn.passwordHoldReleased': 'Your email is verified. Enter your password to sign in.',
+  'signUp.existingAccount': 'You already had an account. Your existing password still applies.',
+  'signIn.forgotPassword': 'Forgot password?',
 };
 
 const t = (key: string, vars: Record<string, string> = {}) =>
@@ -194,6 +202,11 @@ function strategyNames(strategies: readonly unknown[]): string[] {
 /** An emailed first factor the user asked for: a code to type, or a link to open. */
 type EmailFactor = 'email_code' | 'email_link';
 
+/** The password can sign in now that a proof lifted its hold. */
+function passwordReleased(): JSX.Element {
+  return h('p', { class: 'atlas-text', 'data-atlas-password-released': '' }, t('signIn.passwordHoldReleased'));
+}
+
 /**
  * The first-factor step: the factors this app can actually offer
  * (`offeredFirstFactors` — no email code / link while it cannot deliver email).
@@ -207,15 +220,21 @@ function renderFirstFactor(
   listed: boolean,
   sent: EmailFactor | null,
   send: (strategy: EmailFactor) => void,
+  released: boolean,
+  usePassword: () => void,
 ): JSX.Element {
+  const back = () =>
+    offered.includes('password')
+      ? h('button', { class: 'atlas-link', type: 'button', 'data-strategy': 'password', onClick: usePassword }, 'Use your password instead')
+      : null;
   const resend = (strategy: EmailFactor) =>
     h('button', { class: 'atlas-link', type: 'button', 'data-atlas-resend': '', onClick: () => send(strategy) },
       strategy === 'email_code' ? 'Resend code' : 'Resend link');
   if (sent === 'email_code') {
-    return [h('p', { class: 'atlas-text', 'data-atlas-code-sent': '' }, 'We sent you a code. Enter it below.'), field('code', 'Email code'), resend('email_code')];
+    return [h('p', { class: 'atlas-text', 'data-atlas-code-sent': '' }, 'We sent you a code. Enter it below.'), field('code', 'Email code'), resend('email_code'), back()];
   }
   if (sent === 'email_link') {
-    return [h('p', { class: 'atlas-text', 'data-atlas-link-sent': '' }, 'Check your email for a sign-in link.'), resend('email_link')];
+    return [h('p', { class: 'atlas-text', 'data-atlas-link-sent': '' }, 'Check your email for a sign-in link.'), resend('email_link'), back()];
   }
   const out: JSX.Element[] = [];
   // No password on offer: the emailed factor is being sent on its own; the
@@ -223,6 +242,7 @@ function renderFirstFactor(
   if (listed && !offered.includes('password') && (offered.includes('email_code') || offered.includes('email_link'))) {
     out.push(h('p', { class: 'atlas-text', 'aria-live': 'polite' }, 'Sending…'));
   }
+  if (released) out.push(passwordReleased());
   if (!listed || offered.includes('password')) out.push(field('password', 'Password', 'password'));
   if (offered.includes('email_code')) {
     out.push(h('button', { class: 'atlas-link', type: 'button', onClick: () => send('email_code') }, 'Email me a code'));
@@ -423,19 +443,36 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
   const finish = async (next: FlowState) => {
     setState(next);
     if (next.attempt?.status === 'complete') {
+      let exchanged = true;
       if (next.ticket) {
-        await fapi.post('/v1/client/tickets/exchange', {
+        const res = await fapi.post('/v1/client/tickets/exchange', {
           attempt_id: (next.attempt as { id?: string }).id,
           ticket: next.ticket,
         });
+        exchanged = res.ok;
+        if (!exchanged) setState((s) => ({ ...s, sessionKept: false }));
+      }
+      // Hold before the app learns of the session, so nothing unmounts this notice.
+      if (exchanged && pendingExistingAccountNotice(next)) {
+        setState({ ...next, ticket: null });
+        return;
       }
       await client.reload();
     }
   };
 
+  // What lifts a password hold on this instance: the emailed code, or a link where it verifies by link only.
+  const holdProof = (): EmailFactor => (settings()?.account?.emailVerification === 'link' ? 'email_link' : 'email_code');
+
   const submit = (values: Record<string, string>) => {
     void (async () => {
       setState((s) => ({ ...s, busy: true, errors: [] }));
+      const hold = state().passwordHold;
+      // A code that lifts a password hold goes to its own attempt, not this sign-in.
+      if (kind() === 'collect_first_factor' && hold && !hold.released && emailSent() === 'email_code' && holdProof() === 'email_code') {
+        setState(await attemptPasswordHoldProof(fapi, state(), values.code ?? ''));
+        return;
+      }
       const out = await advanceWithCaptcha(fapi, state(), values, { captcha, identifier, t });
       identifier = out.identifier;
       await finish(out.state);
@@ -540,25 +577,50 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
   createEffect(() => (passkeyOffered() ? passkey.armAutofill() : passkey.stopAutofill()));
   onCleanup(() => passkey.stopAutofill());
 
+  // A link proved an address on an existing account: no session, and the password signs in.
+  const provedSignUp = createMemo(() => {
+    const attempt = state().attempt;
+    return attempt?.object === 'sign_up_attempt' && attempt.status === 'needs_first_factor' && !(attempt.supported_first_factors ?? []).includes('passkey');
+  });
+
   // §email delivery: the first factors this app can offer, keyed as a string so
   // the inputs are re-created only when the offer itself changes.
   const firstFactor = createMemo(() => {
     const attempt = state().attempt;
     const step = attempt ? nextStep(attempt) : null;
-    if (step?.kind !== 'collect_first_factor') return '';
+    if (step?.kind !== 'collect_first_factor' || provedSignUp()) return '';
     const listed = strategyNames(step.strategies ?? []);
     const offered = offeredFirstFactors(listed, settings()?.emailDelivery);
-    return `${listed.length ? 'listed' : 'unlisted'}:${offered.join(',')}`;
+    const hold = state().passwordHold;
+    // The emailed proof of a password hold, whichever factors the instance signs in with.
+    const withProof =
+      hold && !hold.released && settings()?.emailDelivery?.available !== false && !offered.includes(holdProof())
+        ? [...offered, holdProof()]
+        : offered;
+    return `${listed.length ? 'listed' : 'unlisted'}:${withProof.join(',')}`;
   });
+  const passwordHoldReleased = createMemo(() => state().passwordHold?.released === true);
+  const existingAccountNotice = createMemo(() => pendingExistingAccountNotice(state()));
   const [emailSent, setEmailSent] = createSignal<EmailFactor | null>(null);
   createEffect(() => {
     kind();
+    // A proven hold goes back to the password field.
+    passwordHoldReleased();
     setEmailSent(null);
   });
+  const usePassword = () => {
+    setEmailSent(null);
+    setState((s) => ({ ...s, prepared: null, pollSecret: null, errors: [] }));
+  };
   const sendEmailFactor = (strategy: EmailFactor) => {
     void (async () => {
       setState((s) => ({ ...s, busy: true, errors: [] }));
-      const next = await prepareFactor(fapi, state(), strategy);
+      const hold = state().passwordHold;
+      const proof = holdProof();
+      const next =
+        hold && !hold.released && strategy === proof
+          ? await preparePasswordHoldProof(fapi, state(), proof)
+          : await prepareFactor(fapi, state(), strategy);
       setState(next);
       if (!next.errors.length) setEmailSent(strategy);
     })();
@@ -628,11 +690,25 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
           : null,
       () => renderErrors(state().errors, client.localization),
       () => {
+        // Through the memo: reading state() here would redraw the inputs and lose what's typed.
+        if (existingAccountNotice()) {
+          const resetHref = existingAccountResetUrl({ frontendApi: client.frontendApi });
+          return h('div', { 'data-atlas-existing-account': '' }, [
+            h('p', { class: 'atlas-text' }, t('signUp.existingAccount')),
+            resetHref ? h('p', { class: 'atlas-text' }, h('a', { class: 'atlas-link', href: resetHref }, t('signIn.forgotPassword'))) : null,
+            h(
+              'button',
+              { class: 'atlas-button', type: 'button', disabled: state().busy, onClick: () => void finish(acknowledgeExistingAccount(state())) },
+              'Continue',
+            ),
+          ]);
+        }
         if (kind() === 'create_account') return signUpBlocked() ? emailUnavailable() : renderSignUpFields(settings(), hasPolicies());
         if (kind() === 'accept_policies') return policyStep();
+        if (provedSignUp()) return passwordReleased();
         if (kind() === 'collect_first_factor') {
           const [listed, offered] = firstFactor().split(':') as [string, string];
-          return renderFirstFactor(offered ? offered.split(',') : [], listed === 'listed', emailSent(), sendEmailFactor);
+          return renderFirstFactor(offered ? offered.split(',') : [], listed === 'listed', emailSent(), sendEmailFactor, passwordHoldReleased(), usePassword);
         }
         return renderFields(kind());
       },
@@ -648,7 +724,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         captcha,
         () => (kind() === 'collect_identifier' || kind() === 'collect_captcha') && captchaDrawn(),
       ),
-      () => renderSubmit(kind(), state().busy, signUpBlocked() || awaitingEmail(), kind() === 'create_account' && policiesBlocked()),
+      () => renderSubmit(kind(), state().busy, signUpBlocked() || awaitingEmail() || provedSignUp(), kind() === 'create_account' && policiesBlocked()),
       () =>
         passkeyOffered()
           ? h(

@@ -40,6 +40,7 @@ export const enUS: LocalizationResource = {
   'signIn.passkeyButton': 'Sign in with a passkey',
   'signIn.passkeyCancelled': 'Passkey sign-in didn\'t finish. Try again, or use another way to sign in.',
   'signIn.passwordHoldReleased': 'Your email is verified. Enter your password to sign in.',
+  'signUp.existingAccount': 'You already had an account. Your existing password still applies.',
 
   'signUp.title': 'Create your account',
   'signUp.submit': 'Continue',
@@ -274,6 +275,7 @@ export const enUS: LocalizationResource = {
   'error.sign_up_restricted': 'Sign-up on this app is by invitation only.',
   'error.sign_up_denied': 'Sign-up is not available for this account.',
   'error.password_not_yet_usable': 'Verify your email address before signing in with this password.',
+  'error.account_deleted': 'The account for this address was deleted, so it can’t be used to sign up again.',
   'error.waitlisted': "You're on the waitlist. We'll email you when a place opens up.",
   'error.identifier_not_allowed': 'This email or phone number is not allowed on this app.',
   'error.disposable_email_blocked': 'Sign-up with a disposable or temporary email address is not allowed.',

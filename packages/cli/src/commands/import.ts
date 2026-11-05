@@ -8,7 +8,7 @@ import { httpFor } from '../project';
 import { VENDORS, mapExport, parseExport, summarize, type ImportRow, type Vendor } from '../import/vendors';
 import { resolveAuth, wantsJson } from './shared';
 import { importBetterAuthBundle } from './import-better-auth';
-import { importJsonl, parseOnConflict, parsePasswordPolicy, parseSince, parseTimestamp, sendImportBatch } from './import-jsonl';
+import { collectRowWarnings, importJsonl, parseOnConflict, parsePasswordPolicy, parseSince, parseTimestamp, rowWarningText, sendImportBatch } from './import-jsonl';
 
 /**
  * `atlas import --from <vendor> <file>` — move users from another auth provider.
@@ -129,6 +129,7 @@ export async function importUsers(ctx: RunContext, args: ParsedArgs): Promise<nu
   const http = httpFor(ctx, { secretKey: auth.secretKey, apiUrl: auth.apiUrl });
   for (const w of warnings) ctx.io.err(`note: ${w}`);
 
+  const rowWarned = new Map<string, Set<string>>();
   while (state.next_index < rows.length) {
     const batch = rows.slice(state.next_index, state.next_index + batchSize);
     const body: Record<string, unknown> = { users: batch, upsert: onConflict === 'update' };
@@ -136,6 +137,7 @@ export async function importUsers(ctx: RunContext, args: ParsedArgs): Promise<nu
     if (args.values['create-orgs']) body.create_organizations = true;
     if (hashConfig) body.password_hash_config = { firebase: hashConfig };
     const job = await sendImportBatch(ctx, http, body);
+    collectRowWarnings(job, batch, rowWarned);
     // Under --on-conflict skip an existing user is reported as a row issue; it is not one here.
     const matched = (job.results ?? []).filter((r) => r.outcome === 'matched').length;
     state.next_index += batch.length;
@@ -147,9 +149,11 @@ export async function importUsers(ctx: RunContext, args: ParsedArgs): Promise<nu
     if (!json) ctx.io.err(`  ${state.next_index}/${rows.length} sent (job ${job.id}: ${job.succeeded} ok, ${job.failed} issues)`);
   }
 
+  for (const [code, ids] of rowWarned) warnings.push(`${code}: ${ids.size} row(s) ${rowWarningText(code)} external_id: ${[...ids].join(', ')}`);
   if (json) printJson(ctx.io, { ...state, summary, warnings });
   else {
-    ctx.io.out(`Imported ${rows.length} user(s) from ${vendor}: ${state.succeeded} created or updated, ${state.skipped ? `${state.skipped} skipped, ` : ''}${state.failed} row issue(s).`);
+    for (const [code, ids] of rowWarned) ctx.io.out(`warning: ${code}: ${ids.size} row(s) ${rowWarningText(code)} external_id: ${[...ids].join(', ')}`);
+    ctx.io.out(`Imported ${state.succeeded} of ${rows.length} user(s) from ${vendor}: ${state.succeeded} created or updated, ${state.skipped ? `${state.skipped} skipped, ` : ''}${state.failed} row issue(s).`);
     if (state.failed) ctx.io.out(`Per-row issues: GET /v1/jobs/<job-id>/errors for jobs ${state.jobs.join(', ')}`);
   }
   return state.failed > 0 ? 2 : 0;

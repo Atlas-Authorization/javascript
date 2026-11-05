@@ -17,6 +17,8 @@ class Api implements ConfigHttp {
   verifies: string[] = [];
   /** external_id -> the reason the API refuses that row's hash. */
   refused: Record<string, string> = {};
+  /** external_id -> warnings the API returns on that row. */
+  rowWarnings: Record<string, Array<{ code: string; message: string }>> = {};
   jobErrors: Array<Record<string, unknown>> = [];
   errorsUnreadable = false;
 
@@ -42,6 +44,15 @@ class Api implements ConfigHttp {
         failed += 1;
         this.jobErrors.push({ index, email: row.email_address, code: 'unsupported_password_hash', message: reason });
         return { outcome: 'failed' };
+      }
+      const warnings = this.rowWarnings[row.external_id];
+      if (warnings) return { outcome: 'created', warnings };
+      const unverified = (b as Record<string, any>).password_policy && b.upsert
+        ? this.users.find((u) => u.external_id === row.external_id && u.password_enabled && u.email_addresses.some((e: any) => !e.verified && e.email_address === row.email_address))
+        : undefined;
+      if (unverified) {
+        unverified.held = true;
+        return { outcome: 'updated' };
       }
       const hit = this.users.find((u) => u.email_addresses.some((e: any) => e.verified && e.email_address === row.email_address));
       if (hit && !b.upsert) return { outcome: 'matched' };
@@ -319,6 +330,106 @@ describe('atlas import: password hash parameters', () => {
     const { code, body } = await report(api, [write([ANN])]);
     expect(code).toBe(2);
     expect(body).toMatchObject({ failed: 1, warnings: [] });
+  });
+});
+
+describe('atlas import: holds and what the report says about them', () => {
+  const HOLD = ['--password-policy', 'until_email_verified', '--on-conflict', 'update'];
+
+  it('sends an existing unverified row with a password to the import, which holds it; nothing is duplicated', async () => {
+    const api = new Api();
+    await report(api, [write([BOB])]);
+    const { code, body } = await report(api, [write([BOB]), ...HOLD]);
+    expect(code).toBe(0);
+    expect(body).toMatchObject({ created: 0, updated: 1, skipped: 0 });
+    expect(api.bodies[1]).toMatchObject({ upsert: true, password_policy: 'until_email_verified', users: [{ external_id: 'b2' }] });
+    expect(api.users).toHaveLength(1);
+    expect(api.users[0]!.held).toBe(true);
+    expect(api.patches).toEqual([]);
+  });
+
+  it('names a verified row as not held, once, whether or not it needed sending', async () => {
+    const api = new Api();
+    await report(api, [write([ANN])]);
+    const unchanged = await report(api, [write([ANN]), ...HOLD]);
+    expect(unchanged.body.warnings).toMatchObject([{ code: 'password_policy_not_applied', count: 1, external_ids: ['a1'] }]);
+    api.rowWarnings = { a1: [{ code: 'password_policy_not_applied', message: 'x' }] };
+    const changed = await report(api, [write([{ ...ANN, first_name: 'Ann' }]), ...HOLD]);
+    expect(changed.body.warnings).toMatchObject([{ code: 'password_policy_not_applied', count: 1, external_ids: ['a1'] }]);
+  });
+
+  it('notes that a skip left an existing unverified row as it was', async () => {
+    const api = new Api();
+    await report(api, [write([BOB])]);
+    const { body } = await report(api, [write([BOB]), '--password-policy', 'until_email_verified']);
+    expect(body).toMatchObject({ skipped: 1 });
+    expect(body.notes.join()).toContain('--on-conflict update');
+    expect(body.notes.join()).toContain('b2');
+  });
+
+  it('reports the API warning by external_id, and says what will happen, with no failed count or address', async () => {
+    const api = new Api();
+    api.rowWarnings = { b2: [{ code: 'unverified_without_hold', message: 'x' }] };
+    const { code, body } = await report(api, [write([BOB])]);
+    expect(code).toBe(0);
+    expect(body.failed).toBe(0);
+    expect(body.warnings).toMatchObject([{ code: 'unverified_without_hold', external_ids: ['b2'] }]);
+    expect(body.warnings[0].message).toContain('second account');
+    expect(JSON.stringify(body)).not.toContain('@example.com');
+  });
+
+  it('a dry run predicts the warning for a row with a credential, not a credential-less or held one', async () => {
+    const bare = { external_id: 'n1', email: 'n@example.com' };
+    const linked = { external_id: 'o1', email: 'o@example.com', oauth_identities: [{ provider: 'google', provider_user_id: 'g' }] };
+    const plain = await report(new Api(), [write([ANN, BOB, bare, linked]), '--dry-run']);
+    expect(plain.body.warnings).toMatchObject([{ code: 'unverified_without_hold', count: 2, external_ids: ['b2', 'o1'] }]);
+    const held = await report(new Api(), [write([ANN, BOB, bare, linked]), '--dry-run', '--password-policy', 'until_email_verified']);
+    expect(held.body.warnings).toMatchObject([{ code: 'unverified_without_hold', count: 1, external_ids: ['o1'] }]);
+  });
+});
+
+describe('atlas import: the headline', () => {
+  const headline = async (api: Api, argv: string[]) => {
+    const io = captureIO();
+    const code = await run(['import', ...argv], ctx(io, api));
+    return { code, first: io.stdout().split('\n')[0] };
+  };
+
+  it('counts rows actually created or updated, not rows in the file', async () => {
+    const api = new Api();
+    api.refused = { a1: 'password_hash: not self-describing.' };
+    expect(await headline(api, [write([ANN])])).toEqual({ code: 2, first: 'Imported 0 of 1 row(s).' });
+    const mixed = new Api();
+    mixed.refused = { a1: 'nope', c3: 'nope' };
+    expect((await headline(mixed, [write([ANN, BOB, { external_id: 'c3', email: 'c@example.com' }])])).first).toBe('Imported 1 of 3 row(s).');
+  });
+
+  it('a re-run says it imported nothing; a dry run says what it would do', async () => {
+    const api = new Api();
+    const f = write([ANN, BOB]);
+    expect((await headline(api, [f, '--dry-run'])).first).toBe('Dry run: would import 2 of 2 row(s). Nothing was sent.');
+    await headline(api, [f]);
+    expect((await headline(api, [f])).first).toBe('Imported 0 of 2 row(s).');
+    expect((await headline(api, [f, '--dry-run'])).first).toBe('Dry run: would import 0 of 2 row(s). Nothing was sent.');
+  });
+});
+
+describe('atlas import: unknown password_hash_params keys', () => {
+  it('refuses them before sending anything, naming the line, the key and its nearest match', async () => {
+    const api = new Api();
+    const io = captureIO();
+    const typo = { ...HEX_ROW, password_hash_params: { salt_encodng: 'hex' } };
+    expect(await run(['import', write([BOB, typo])], ctx(io, api))).toBe(1);
+    expect(io.stderr()).toContain('Line 2');
+    expect(io.stderr()).toContain('salt_encodng (did you mean salt_encoding?)');
+    expect(io.stderr()).not.toContain('@example.com');
+    expect(io.stderr()).not.toContain(HEX_HASH);
+    expect(api.bodies).toEqual([]);
+  });
+
+  it('accepts the API\'s aliases and any case, as the API does', async () => {
+    const row = { ...HEX_ROW, password_hash_params: { Salt_Encoding: 'hex', key_len: 64, cost: 16384 } };
+    expect((await report(new Api(), [write([row])])).code).toBe(0);
   });
 });
 

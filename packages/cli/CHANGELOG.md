@@ -1,5 +1,15 @@
 # @atlasauth/cli changelog
 
+## 0.28.0 — 2026-11-05
+
+### Changed
+
+- `--password-policy until_email_verified --on-conflict update` holds existing unverified rows that have a password.
+- The import warns by name about `unverified_without_hold` and `password_policy_not_applied` rows.
+- Unknown keys inside `password_hash_params` exit 1 before anything is sent.
+- The headline reads `Imported X of N row(s)`.
+- `doctor --scan-dir` catches mixed keys across a folder and its subfolder.
+
 ## 0.27.0 — 2026-11-05
 
 ### Changed

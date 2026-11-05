@@ -11,6 +11,7 @@
     type CaptchaController,
     type EmailDelivery,
     type FieldError,
+    type FlowState,
     type MfaEnrollmentController,
     type MfaEnrollmentState,
   } from '@atlasauth/js';
@@ -77,6 +78,8 @@
   export let onResend: (() => Promise<boolean>) | null = null;
   /** The user declined a policy the sign-in was waiting on (`needs_policy_acceptance`): cancel the attempt. */
   export let onPolicyDecline: ((title: string) => void) | null = null;
+  /** `FlowState.passwordHold`: offers the emailed proof, whichever factors the instance signs in with. */
+  export let passwordHold: FlowState['passwordHold'] = null;
 
   type EmailStrategy = 'email_code' | 'email_link';
 
@@ -105,15 +108,33 @@
     step.kind === 'collect_first_factor'
       ? offeredFirstFactors(step.strategies.map(strategyName), emailDelivery)
       : [];
-  $: emailOptions = onPrepare
-    ? offered.filter((s): s is EmailStrategy => s === 'email_code' || s === 'email_link')
-    : [];
+  let holdOption: EmailStrategy | null = null;
+  $: holdOption =
+    passwordHold && !passwordHold.released && emailDelivery?.available !== false
+      ? emailVerification === 'link' ? 'email_link' : 'email_code'
+      : null;
+  let emailOptions: EmailStrategy[] = [];
+  $: {
+    const listed = offered.filter((s): s is EmailStrategy => s === 'email_code' || s === 'email_link');
+    emailOptions = !onPrepare ? [] : holdOption && !listed.includes(holdOption) ? [...listed, holdOption] : listed;
+  }
+  // A link proved an address on an existing account: no session, and the password signs in.
+  $: provedSignUp =
+    step.kind === 'collect_first_factor' &&
+    attempt?.object === 'sign_up_attempt' &&
+    !(attempt.supported_first_factors ?? []).includes('passkey');
   // A password field only when the server offers `password` (planFirstFactor).
   $: plan = planFirstFactor(offered);
   $: showPassword = offered.includes('password') || emailOptions.length === 0;
 
   // Which emailed factor was sent, for which attempt (a new attempt starts over).
   let prepared: { strategy: EmailStrategy; attemptId: string | null } | null = null;
+  // A proven hold goes back to the password field.
+  $: released = passwordHold?.released === true;
+  $: if (released) {
+    prepared = null;
+    values = {};
+  }
   $: sent = prepared && prepared.attemptId === (attempt?.id ?? null) ? prepared.strategy : null;
 
   async function prepare(strategy: EmailStrategy) {
@@ -137,7 +158,7 @@
     void prepare(plan.autoSend);
   }
   $: sending = step.kind === 'collect_first_factor' && sent === null && !!onPrepare && !plan.password && emailOptions.length > 0;
-  $: identifier = attempt?.identifier ?? '';
+  $: identifier = passwordHold?.email ?? attempt?.identifier ?? '';
 
   // "Email me a code instead" at the second factor: where it went, or why not.
   let emailed: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string } | null = null;
@@ -180,6 +201,7 @@
         // `webauthn`: saved passkeys appear in this field's autofill while <SignIn> holds a conditional request.
         return [{ name: 'identifier', labelKey: 'signIn.identifierLabel', type: 'email', autocomplete: 'username webauthn' }];
       case 'collect_first_factor':
+        if (provedSignUp) return [];
         if (sent === 'email_code') {
           return [{ name: 'code', labelKey: 'signIn.emailCodeLabel', type: 'text' }];
         }
@@ -301,6 +323,9 @@
       {/if}
       {#if sending}
         <p class="atlas-text" aria-live="polite">{t('signIn.sending')}</p>
+      {/if}
+      {#if provedSignUp || (step.kind === 'collect_first_factor' && released && sent === null)}
+        <p class="atlas-text" data-atlas-password-released="">{t('signIn.passwordHoldReleased')}</p>
       {/if}
       {#if linkOnly}
         <p class="atlas-text" data-atlas-link-sent aria-live="polite">{t('signUp.linkSentTo', { email: identifier })}</p>

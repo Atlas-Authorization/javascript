@@ -13,8 +13,35 @@ import { COPY } from './constants';
 import { cls, doc, el, submitButton } from './dom';
 import { render } from './render';
 import { mountSignUpPolicies, policyT } from './policies';
-import { resendSignUp, sendEmailFactor, startReset, submit, submitReset, submitSignUp } from './flow';
-import { renderEnrollment, renderSecondFactorAlternatives, submitEnrollment } from './mfa';
+import { continueAfterExistingAccount, resendSignUp, sendEmailFactor, startReset, submit, submitReset, submitSignUp } from './flow';
+import { renderEnrollment, renderSecondFactorAlternatives, say, submitEnrollment } from './mfa';
+
+/**
+ * The sign-up's code proved an address that already had an account: its password
+ * still applies. The session is already in place; Continue finishes.
+ */
+export function renderExistingAccountNotice(w: AtlasWidget): HTMLElement {
+  const box = el(w, 'div', 'atlas-embed-existing-account');
+  box.setAttribute('data-atlas', 'existing-account');
+  const note = el(w, 'p', 'atlas-embed-note', say(w, 'signUp.existingAccount'));
+  note.setAttribute('role', 'status');
+  box.appendChild(note);
+  if (w.passwordResetEnabled) {
+    const forgot = el(w, 'button', 'atlas-embed-step-back', say(w, 'signIn.forgotPassword')) as HTMLButtonElement;
+    forgot.type = 'button';
+    forgot.addEventListener('click', () => {
+      w.enteredIdentifier ??= w.state.attempt?.identifier ?? null;
+      startReset(w);
+    });
+    box.appendChild(forgot);
+  }
+  const next = el(w, 'button', cls(w, 'buttonPrimary', 'atlas-embed-button'), say(w, 'signUp.submit')) as HTMLButtonElement;
+  next.type = 'button';
+  next.setAttribute('data-atlas', 'existing-account-continue');
+  next.addEventListener('click', () => void continueAfterExistingAccount(w));
+  box.appendChild(next);
+  return box;
+}
 
 /**
  * §5.4 the reset sub-flow panel: email → emailed code → (2FA) → new password →

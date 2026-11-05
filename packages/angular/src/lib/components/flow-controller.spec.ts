@@ -57,7 +57,7 @@ afterEach(() => {
   delete g.turnstile;
 });
 
-async function controller(opts: { captchaFlows?: Record<string, unknown>; signInWithAtlas?: Record<string, unknown>; routes: Route[] }) {
+async function controller(opts: { captchaFlows?: Record<string, unknown>; signInWithAtlas?: Record<string, unknown>; routes: Route[]; holdExistingAccountNotice?: boolean }) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const call: Call = {
@@ -84,6 +84,8 @@ async function controller(opts: { captchaFlows?: Record<string, unknown>; signIn
     new FapiClient({ publishableKey: 'pk_test_x', baseUrl: FAPI, fetchImpl }),
     reload,
     null,
+    undefined,
+    opts.holdExistingAccountNotice ?? false,
   );
   await flow.loadSettings();
   return flow;
@@ -335,5 +337,87 @@ describe('AtlasFlowController Sign in with Atlas', () => {
     expect(flow.settings()?.signInWithAtlas).toBeUndefined();
     await flow.signInWithAtlas('ssoc_1');
     expect(flow.signInWithAtlasError()).toBe('Not active.');
+  });
+});
+
+describe('AtlasFlowController password hold', () => {
+  it('offers the emailed proof after the refusal, sends it through the sign-up routes, then frees the password', async () => {
+    const flow = await controller({
+      routes: [
+        (c) =>
+          c.path === '/v1/client/sign_ins'
+            ? json({ id: 'sia_1', status: 'needs_first_factor', identifier: 'held@example.com', supported_first_factors: ['password'] }, 201)
+            : undefined,
+        (c) =>
+          c.path === '/v1/client/sign_ins/sia_1/attempt_first_factor'
+            ? json({ errors: [{ code: 'password_not_yet_usable', message: 'Verify your email first.', meta: { verification_attempt_id: 'sua_9' } }] }, 403)
+            : undefined,
+        (c) => (c.path === '/v1/client/sign_ups/sua_9/prepare_verification' ? json({ identifier: 'held@example.com' }) : undefined),
+      ],
+    });
+
+    await flow.submit({ identifier: 'held@example.com' });
+    expect(flow.firstFactors()).toEqual(['password']);
+
+    await flow.submit({ password: 'the-right-password' });
+    expect(flow.firstFactors()).toEqual(['password', 'email_code']);
+
+    await flow.prepare('email_code');
+    expect(posts('/v1/client/sign_ups/sua_9/prepare_verification')).toHaveLength(1);
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_first_factor')).toHaveLength(0);
+    expect(flow.preparedFactor()).toBe('email_code');
+
+    await flow.submit({ code: '123456' });
+    expect(posts('/v1/client/sign_ups/sua_9/attempt_verification')[0]!.body).toEqual({ code: '123456' });
+    expect(flow.preparedFactor()).toBeNull();
+    expect(flow.state().passwordHold?.released).toBe(true);
+    flow.destroy();
+  });
+});
+
+describe('AtlasFlowController existing account', () => {
+  it('exchanges the ticket, then holds the app on the notice until Continue', async () => {
+    const flow = await controller({
+      holdExistingAccountNotice: true,
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+            ? json({ id: 'sua_1', status: 'complete', ticket: 'tkt_1', existing_account: true })
+            : undefined,
+      ],
+    });
+    await flow.create({ email: 'held@example.com', password: 'blue tangerine anvil 71!' });
+    expect(flow.existingAccountNotice()).toBe(false);
+
+    await flow.submit({ code: '424242' });
+    expect(flow.existingAccountNotice()).toBe(true);
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+    expect(reload).not.toHaveBeenCalled();
+
+    await flow.continueAfterExistingAccount();
+    expect(flow.existingAccountNotice()).toBe(false);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+    flow.destroy();
+  });
+
+  it('a refused exchange says the session was not kept instead of the notice', async () => {
+    const flow = await controller({
+      holdExistingAccountNotice: true,
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+            ? json({ id: 'sua_1', status: 'complete', ticket: 'tkt_1', existing_account: true })
+            : undefined,
+        (c) => (c.path === '/v1/client/tickets/exchange' ? json({ errors: [{ code: 'x', message: 'expired' }] }, 400) : undefined),
+      ],
+    });
+    await flow.create({ email: 'held@example.com', password: 'blue tangerine anvil 71!' });
+    await flow.submit({ code: '424242' });
+    expect(flow.existingAccountNotice()).toBe(false);
+    expect(flow.state().sessionKept).toBe(false);
+    flow.destroy();
   });
 });

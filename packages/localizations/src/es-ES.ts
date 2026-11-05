@@ -38,6 +38,7 @@ export const esES: LocalizationResource = {
   'signIn.passkeyButton': 'Iniciar sesión con una llave de acceso',
   'signIn.passkeyCancelled': 'No se completó el inicio de sesión con la llave de acceso. Inténtalo de nuevo o usa otro método.',
   'signIn.passwordHoldReleased': 'Tu correo está verificado. Introduce tu contraseña para iniciar sesión.',
+  'signUp.existingAccount': 'Ya tenías una cuenta. Tu contraseña actual sigue siendo válida.',
 
   'signUp.title': 'Crea tu cuenta',
   'signUp.submit': 'Continuar',
@@ -224,6 +225,7 @@ export const esES: LocalizationResource = {
   'error.sign_up_restricted': 'El registro en esta aplicación es solo por invitación.',
   'error.sign_up_denied': 'El registro no está disponible para esta cuenta.',
   'error.password_not_yet_usable': 'Verifica tu dirección de correo antes de iniciar sesión con esta contraseña.',
+  'error.account_deleted': 'La cuenta de esta dirección se eliminó, por lo que no se puede usar para registrarse de nuevo.',
   'error.waitlisted': 'Estás en la lista de espera. Te enviaremos un correo cuando haya una plaza disponible.',
   'error.identifier_not_allowed': 'Este correo electrónico o número de teléfono no está permitido en esta aplicación.',
   'error.disposable_email_blocked': 'No se permite registrarse con una dirección de correo desechable o temporal.',

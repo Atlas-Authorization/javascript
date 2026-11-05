@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { awaitingPasskey, passkeysSupported } from '@atlasauth/js';
+  import { awaitingPasskey, existingAccountResetUrl, passkeysSupported, pendingExistingAccountNotice } from '@atlasauth/js';
   import { signUp } from '../accessors';
+  import { classFor, type ElementKey } from '../appearance';
+  import { useAtlas } from '../context';
+  import { translate } from '../i18n';
   import AttemptFlow from './AttemptFlow.svelte';
   import PasskeySignUpStep from './PasskeySignUpStep.svelte';
   import SignUpForm from './SignUpForm.svelte';
@@ -14,9 +17,13 @@
    * `<SignIn/>` (the emailed-code step, then the ticket exchange).
    */
   export let afterUrl: string | undefined = undefined;
-  void afterUrl;
+  /** Where the existing-account notice's "Forgot password?" goes. Default: the hosted sign-in page; `null` hides it. */
+  export let resetPasswordUrl: string | null | undefined = undefined;
 
-  const flow = signUp();
+  const atlas = useAtlas();
+  const cls = (key: ElementKey, base: string) => classFor(key, atlas.appearance, base);
+  const t = (key: string) => translate(atlas.catalog, key);
+  const flow = signUp({ holdExistingAccountNotice: true });
   const flowState = flow.state;
   const settings = flow.settings;
   onDestroy(() => flow.destroy());
@@ -38,7 +45,19 @@
   }
 </script>
 
-{#if $flowState.attempt && awaitingPasskey($flowState.attempt)}
+{#if pendingExistingAccountNotice($flowState)}
+  {@const resetHref = existingAccountResetUrl({ url: resetPasswordUrl, frontendApi: atlas.frontendApi, redirectUrl: afterUrl })}
+  <div class={cls('card', 'atlas-card')} data-atlas-existing-account="">
+    <h1 class={cls('headerTitle', 'atlas-title')}>{t('signUp.title')}</h1>
+    <p class="atlas-text">{t('signUp.existingAccount')}</p>
+    {#if resetHref}
+      <p class="atlas-text"><a class="atlas-link" href={resetHref}>{t('signIn.forgotPassword')}</a></p>
+    {/if}
+    <button class={cls('formButtonPrimary', 'atlas-button')} type="button" disabled={$flowState.busy} on:click={() => flow.continueAfterExistingAccount()}>
+      {t('signUp.submit')}
+    </button>
+  </div>
+{:else if $flowState.attempt && awaitingPasskey($flowState.attempt)}
   <PasskeySignUpStep busy={$flowState.busy} errors={$flowState.errors} onCreate={flow.createPasskey} />
 {:else if $flowState.attempt}
   <AttemptFlow

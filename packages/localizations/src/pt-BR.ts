@@ -38,6 +38,7 @@ export const ptBR: LocalizationResource = {
   'signIn.passkeyButton': 'Entrar com uma chave de acesso',
   'signIn.passkeyCancelled': 'O login com a chave de acesso não foi concluído. Tente novamente ou use outro método.',
   'signIn.passwordHoldReleased': 'Seu e-mail foi verificado. Digite sua senha para entrar.',
+  'signUp.existingAccount': 'Você já tinha uma conta. Sua senha atual continua válida.',
 
   'signUp.title': 'Crie sua conta',
   'signUp.submit': 'Continuar',
@@ -224,6 +225,7 @@ export const ptBR: LocalizationResource = {
   'error.sign_up_restricted': 'O cadastro neste app é feito somente por convite.',
   'error.sign_up_denied': 'O cadastro não está disponível para esta conta.',
   'error.password_not_yet_usable': 'Verifique seu endereço de e-mail antes de entrar com esta senha.',
+  'error.account_deleted': 'A conta deste endereço foi excluída, portanto ele não pode ser usado para se cadastrar novamente.',
   'error.waitlisted': 'Você está na lista de espera. Enviaremos um e-mail quando houver uma vaga.',
   'error.identifier_not_allowed': 'Este e-mail ou número de telefone não é permitido neste app.',
   'error.disposable_email_blocked': 'Não é permitido se cadastrar com um endereço de e-mail descartável ou temporário.',

@@ -36,6 +36,7 @@ export const jaJP: Localization = {
   'signIn.passkeyButton': 'パスキーでサインイン',
   'signIn.passkeyCancelled': 'パスキーでのサインインが完了しませんでした。もう一度お試しいただくか、別の方法でサインインしてください。',
   'signIn.passwordHoldReleased': 'メールアドレスを確認しました。パスワードを入力してサインインしてください。',
+  'signUp.existingAccount': 'すでにアカウントをお持ちです。現在のパスワードは引き続き有効です。',
 
   'signUp.title': 'アカウントを作成',
   'signUp.submit': '続行',
@@ -222,6 +223,7 @@ export const jaJP: Localization = {
   'error.sign_up_restricted': 'このアプリへの登録は招待制です。',
   'error.sign_up_denied': 'このアカウントでは登録できません。',
   'error.password_not_yet_usable': 'このパスワードでサインインする前に、メールアドレスを確認してください。',
+  'error.account_deleted': 'このアドレスのアカウントは削除されたため、再度登録に使用することはできません。',
   'error.waitlisted': 'ウェイトリストに登録されています。空きが出しだいメールでお知らせします。',
   'error.identifier_not_allowed': 'このメールアドレスまたは電話番号は、このアプリでは使用できません。',
   'error.disposable_email_blocked': '使い捨てまたは一時的なメールアドレスでは登録できません。',

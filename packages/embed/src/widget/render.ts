@@ -1,8 +1,8 @@
-import { awaitingSignUpLink, initialFlow, nextStep, passkeysSupported, pendingRecoveryCodes, resetStep, type FieldError } from '@atlasauth/js';
+import { awaitingSignUpLink, initialFlow, nextStep, passkeysSupported, pendingExistingAccountNotice, pendingRecoveryCodes, resetStep, type FieldError } from '@atlasauth/js';
 import type { AtlasWidget } from '../widget';
 import { COPY } from './constants';
 import { cls, doc, el } from './dom';
-import { renderForm, renderReset, renderSignUpForm } from './forms';
+import { renderExistingAccountNotice, renderForm, renderReset, renderSignUpForm } from './forms';
 import { renderHandlePrompt, renderPasskeyButton, renderSocial, socialProviders } from './social';
 import { renderRecoveryCodes, say } from './mfa';
 import { disposePolicyUi, renderPolicyStep } from './policies';
@@ -98,6 +98,15 @@ export function render(w: AtlasWidget): void {
     if (w.lastStepKind !== 'recovery_codes') card.setAttribute('data-enter', '');
     w.lastStepKind = 'recovery_codes';
     card.appendChild(renderRecoveryCodes(w, recoveryCodes));
+    w.root.appendChild(card);
+    return;
+  }
+
+  if (pendingExistingAccountNotice(w.state)) {
+    card.setAttribute('data-step', 'existing_account');
+    if (w.lastStepKind !== 'existing_account') card.setAttribute('data-enter', '');
+    w.lastStepKind = 'existing_account';
+    card.appendChild(renderExistingAccountNotice(w));
     w.root.appendChild(card);
     return;
   }

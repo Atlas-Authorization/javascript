@@ -92,7 +92,8 @@ export interface MachineOrganizationMembership {
   object: 'organization_membership';
   organization_id: string;
   organization_slug: string;
-  role: null;
+  /** The role it holds as a member. Null when the org owns the machine but has not made it a member. */
+  role: string | null;
   plan: string | null;
   joined_at: number;
 }
@@ -148,7 +149,57 @@ export interface CreateEnrolmentTokenBody {
  */
 export type M2mTokenVerification =
   | { object: 'm2m_verification'; valid: false }
-  | { object: 'm2m_verification'; valid: true; machine_id: string; name: string };
+  | {
+      object: 'm2m_verification';
+      valid: true;
+      machine_id: string;
+      name: string;
+      /** Machine JWT only: the resource server it is bound to. */
+      audience?: string | null;
+      /** Machine JWT only: the scopes it carries. */
+      scopes?: string[];
+      /** Machine JWT only: its organization context. */
+      organization_id?: string | null;
+      org_role?: string | null;
+      org_permissions?: string[];
+      /** Machine JWT only: when it expires (epoch ms). */
+      expires_at?: number | null;
+      /** What the machine holds now. */
+      grants: Array<{ resource_server_id: string; audience: string; scopes: string[] }>;
+      organization_memberships: Array<{ organization_id: string; role: string }>;
+    };
+
+/** A machine's authorization for a resource server: it may obtain tokens for that API, up to `scopes`. */
+export interface MachineGrant {
+  object: 'machine_grant';
+  id: string;
+  machine_id: string;
+  resource_server_id: string;
+  scopes: string[];
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateMachineGrantBody {
+  resource_server_id: string;
+  /** Scopes the machine may request. Each must be defined on the resource server. */
+  scopes?: string[];
+  /** Names from the resource server's `scope_presets`, unioned with `scopes`. The expanded list is stored. */
+  scope_presets?: string[];
+}
+
+/** A machine as an organization member with a role. Holds no seat. */
+export interface MachineMembership {
+  object: 'machine_membership';
+  id: string;
+  organization_id: string;
+  machine_id: string;
+  /** The organization role key. */
+  role: string;
+  role_id: string;
+  created_at: number;
+  updated_at: number;
+}
 
 export function machinesResource(request: RequestFn) {
   return {
@@ -195,9 +246,53 @@ export function machinesResource(request: RequestFn) {
     delete(id: string): Promise<{ object: 'machine'; id: string; deleted: true }> {
       return request({ method: 'DELETE', path: `/v1/machines/${enc(id)}` });
     },
-    /** The machine's org memberships (0 or 1 entry). */
+    /** The org that owns the machine and every org it is a member of. */
     organizationMemberships(id: string): Promise<MachineOrganizationMembershipPage> {
       return request({ method: 'GET', path: `/v1/machines/${enc(id)}/organization_memberships` });
+    },
+
+    /** The resource servers this machine may obtain tokens for (`GET /v1/machines/:id/grants`). */
+    listGrants(id: string): Promise<ListPage<MachineGrant>> {
+      return request({ method: 'GET', path: `/v1/machines/${enc(id)}/grants` });
+    },
+    /** Authorize the machine for a resource server and its scopes. Takes effect from its next token. */
+    createGrant(id: string, body: CreateMachineGrantBody): Promise<MachineGrant> {
+      return request({ method: 'POST', path: `/v1/machines/${enc(id)}/grants`, body });
+    },
+    /** Revoke a grant. A token already issued lasts until it expires. */
+    deleteGrant(id: string, grantId: string): Promise<{ object: 'machine_grant'; id: string; deleted: true }> {
+      return request({ method: 'DELETE', path: `/v1/machines/${enc(id)}/grants/${enc(grantId)}` });
+    },
+
+    /** The machines that are members of an organization. Paginated with `limit` + `starting_after`. */
+    listOrganizationMembers(
+      organizationId: string,
+      query: { limit?: number; starting_after?: string } = {},
+    ): Promise<ListPage<MachineMembership>> {
+      return request({ method: 'GET', path: `/v1/organizations/${enc(organizationId)}/machine_memberships`, query: { ...query } });
+    },
+    /** Make a machine a member of an organization. `role` defaults to `org:member`. */
+    addToOrganization(
+      organizationId: string,
+      body: { machine_id: string; role?: string },
+      idempotencyKey?: string,
+    ): Promise<MachineMembership> {
+      return request({ method: 'POST', path: `/v1/organizations/${enc(organizationId)}/machine_memberships`, body, idempotencyKey });
+    },
+    /** Change a machine's role in an organization. New tokens carry the new role. */
+    updateOrganizationRole(organizationId: string, machineId: string, role: string): Promise<MachineMembership> {
+      return request({
+        method: 'PATCH',
+        path: `/v1/organizations/${enc(organizationId)}/machine_memberships/${enc(machineId)}`,
+        body: { role },
+      });
+    },
+    /** Remove a machine from an organization. */
+    removeFromOrganization(
+      organizationId: string,
+      machineId: string,
+    ): Promise<{ object: 'machine_membership'; id: string; deleted: true }> {
+      return request({ method: 'DELETE', path: `/v1/organizations/${enc(organizationId)}/machine_memberships/${enc(machineId)}` });
     },
 
     /** Mint an enrolment token. The `met_` secret is returned once, here. */
@@ -218,7 +313,9 @@ export function machinesResource(request: RequestFn) {
 
     /**
      * Verify a presented M2M credential (`POST /v1/m2m_tokens/verify`). Resolve a
-     * machine secret to its machine; every negative resolves to `{ valid: false }`.
+     * machine secret or machine JWT to its machine and what it holds; every negative
+     * resolves to `{ valid: false }`. To check a machine JWT with no call to Atlas, use
+     * `createAccessTokenVerifier` with `acceptMachineTokens`.
      */
     verifyM2mToken(token: string): Promise<M2mTokenVerification> {
       return request({ method: 'POST', path: '/v1/m2m_tokens/verify', body: { token } });

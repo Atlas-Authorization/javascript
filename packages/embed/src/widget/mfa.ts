@@ -50,6 +50,9 @@ const EN: Record<string, string> = {
   'signIn.codeSentTo': 'We sent a code to {email}. Enter it below.',
   'signIn.resendCode': 'Resend code',
   'signIn.sending': 'Sending…',
+  'signIn.forgotPassword': 'Forgot password?',
+  'signUp.existingAccount': 'You already had an account. Your existing password still applies.',
+  'signUp.submit': 'Continue',
 };
 
 /** A string in the widget's language: its `localization` catalog, else English. */

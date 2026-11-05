@@ -7,7 +7,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { awaitingPasskey, localizedErrorMessage, passkeysSupported, type FieldError } from '@atlasauth/js';
+import { awaitingPasskey, existingAccountResetUrl, localizedErrorMessage, passkeysSupported, type FieldError } from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
 import { classFor, type ElementKey } from '../appearance';
 import { translate } from '../i18n';
@@ -33,7 +33,23 @@ import { AtlasFlowController } from './flow-controller';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [AttemptFlowComponent, SignUpFormComponent],
   template: `
-    @if (awaitingPasskey()) {
+    @if (flow.existingAccountNotice()) {
+      <div [class]="cls('card', 'atlas-card')" data-atlas-existing-account="">
+        <h1 [class]="cls('headerTitle', 'atlas-title')">{{ t('signUp.title') }}</h1>
+        <p class="atlas-text">{{ t('signUp.existingAccount') }}</p>
+        @if (resetHref(); as href) {
+          <p class="atlas-text"><a class="atlas-link" [href]="href">{{ t('signIn.forgotPassword') }}</a></p>
+        }
+        <button
+          [class]="cls('formButtonPrimary', 'atlas-button')"
+          type="button"
+          [disabled]="flow.state().busy"
+          (click)="flow.continueAfterExistingAccount()"
+        >
+          {{ t('signUp.submit') }}
+        </button>
+      </div>
+    } @else if (awaitingPasskey()) {
       <div [class]="cls('card', 'atlas-card')" data-atlas-passkey-sign-up="">
         <h1 [class]="cls('headerTitle', 'atlas-title')">{{ t('signUp.title') }}</h1>
         @for (error of flow.state().errors; track error.code) {
@@ -83,11 +99,15 @@ export class SignUpComponent implements OnInit, OnDestroy {
   /** Where to send the user once the flow completes. Reserved for host routing. */
   @Input() afterUrl?: string;
 
+  /** Where the existing-account notice's "Forgot password?" goes. Default: the hosted sign-in page; `null` hides it. */
+  @Input() resetPasswordUrl?: string | null;
+
   protected readonly flow = new AtlasFlowController(
     this.atlas.createFapiClient(),
     () => this.atlas.reload(),
     this.atlas.pendingAttempt,
     (key) => translate(this.atlas.localization, key),
+    true,
   );
 
   /** Password or passkey-only sign-up (the latter when the instance offers it). */
@@ -105,6 +125,10 @@ export class SignUpComponent implements OnInit, OnDestroy {
   protected toggleMode(): void {
     this.flow.state.update((current) => ({ ...current, errors: [] }));
     this.mode.set(this.passkeyForm() ? 'password' : 'passkey');
+  }
+
+  protected resetHref(): string | null {
+    return existingAccountResetUrl({ url: this.resetPasswordUrl, frontendApi: this.atlas.frontendApi, redirectUrl: this.afterUrl });
   }
 
   protected awaitingPasskey(): boolean {
