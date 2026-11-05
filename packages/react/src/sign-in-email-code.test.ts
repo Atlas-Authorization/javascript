@@ -286,6 +286,94 @@ describe('<SignIn> with both password and email code', () => {
   });
 });
 
+describe('<SignIn> when a correct password waits for an email to be proven', () => {
+  const REFUSAL = {
+    errors: [
+      {
+        code: 'PASSWORD_NOT_YET_USABLE',
+        reason: 'password_not_yet_usable',
+        message: 'Verify your email address before signing in with this password.',
+        meta: { action: 'verify_email', verification_attempt_id: 'sua_hold' },
+      },
+    ],
+  };
+  /** The password is refused until the hold's code has been accepted. */
+  const holdRoutes = (): Route[] => {
+    let released = false;
+    return [
+      (c) => {
+        if (c.path === '/v1/client/sign_ups/sua_hold/prepare_verification') {
+          return json({ object: 'sign_up_attempt', id: 'sua_hold', status: 'needs_email_verification', identifier: 'someone@example.com' });
+        }
+        if (c.path === '/v1/client/sign_ups/sua_hold/attempt_verification') {
+          if (c.body?.code !== '424242') return json({ errors: [{ code: 'VERIFICATION_FAILED', message: 'That code is incorrect or has expired.' }] }, 400);
+          released = true;
+          return json({ object: 'sign_up_attempt', id: 'sua_hold', status: 'needs_first_factor', identifier: 'someone@example.com' });
+        }
+        if (c.path === '/v1/client/sign_ins/sia_1/attempt_first_factor' && !released) return json(REFUSAL, 403);
+        return undefined;
+      },
+      attemptRoute,
+    ];
+  };
+
+  it('verifies through the hold\'s attempt, returns to the password step, and the password signs in, with email code sign-in off', async () => {
+    const el = await mount({ routes: [signInRoute(['password']), ...holdRoutes()] });
+    await enterEmail(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    expect(el.querySelector('[data-strategy="email_code"]')).toBeNull();
+
+    setInput(el, 'password', 'correct horse');
+    await submit(el);
+    await vi.waitFor(() => expect(el.textContent).toContain('Verify your email address'));
+
+    await click(el.querySelector('[data-strategy="email_code"]'));
+    await vi.waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    expect(posts('/v1/client/sign_ups/sua_hold/prepare_verification')).toHaveLength(1);
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_first_factor')).toHaveLength(0);
+
+    setInput(el, 'code', '424242');
+    await submit(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-password-released]')).not.toBeNull());
+    expect(el.querySelector('[data-atlas-password-released]')?.textContent).toBe('Your email is verified. Enter your password to sign in.');
+    expect(el.querySelector('[data-strategy="email_code"]')).toBeNull();
+    expect(posts('/v1/client/sign_ups/sua_hold/attempt_verification')[0]!.body).toEqual({ code: '424242' });
+
+    setInput(el, 'password', 'correct horse');
+    await submit(el);
+    await vi.waitFor(() => expect(posts('/v1/client/tickets/exchange')).toHaveLength(1));
+    expect(posts('/v1/client/sign_ins/sia_1/attempt_first_factor')).toHaveLength(2);
+  });
+
+  it('uses the hold\'s attempt when email code sign-in is on too, and keeps the code step on a wrong code', async () => {
+    const el = await mount({ routes: [signInRoute(['password', 'email_code']), ...holdRoutes(), prepareRoute()] });
+    await enterEmail(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'password', 'correct horse');
+    await submit(el);
+    await vi.waitFor(() => expect(el.textContent).toContain('Verify your email address'));
+
+    await click(el.querySelector('[data-strategy="email_code"]'));
+    await vi.waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_first_factor')).toHaveLength(0);
+
+    setInput(el, 'code', '000000');
+    await submit(el);
+    await vi.waitFor(() => expect(el.textContent).toContain('That code is incorrect or has expired.'));
+    expect(el.querySelector('input[name="code"]')).not.toBeNull();
+  });
+
+  it('offers nothing where the app cannot send email', async () => {
+    const el = await mount({ routes: [signInRoute(['password']), ...holdRoutes()], emailDelivery: { available: false, passwordSignUp: false } });
+    await enterEmail(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'password', 'correct horse');
+    await submit(el);
+    await vi.waitFor(() => expect(el.textContent).toContain('Verify your email address'));
+    expect(el.querySelector('[data-strategy="email_code"]')).toBeNull();
+  });
+});
+
 describe('<SignIn> on an email-link-only instance', () => {
   it('sends the link, says so, and this tab completes when the link is opened', async () => {
     let polls = 0;

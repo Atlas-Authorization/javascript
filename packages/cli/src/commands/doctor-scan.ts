@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { LineCounter, isMap, isPair, isScalar, isSeq, parseDocument, type Node } from 'yaml';
 import type { RunContext } from '../context';
@@ -112,6 +112,25 @@ export function scanCompose(file: string, text: string): ScanFinding[] {
   return out;
 }
 
+/** The secret keys in one env file, by line. */
+function keyLines(text: string): Array<{ line: number; kind: 'test' | 'live' }> {
+  const out: Array<{ line: number; kind: 'test' | 'live' }> = [];
+  text.split(/\r?\n/).forEach((raw, i) => {
+    if (raw.trim().startsWith('#')) return;
+    if (TEST_KEY.test(raw)) out.push({ line: i + 1, kind: 'test' });
+    if (LIVE_KEY.test(raw)) out.push({ line: i + 1, kind: 'live' });
+  });
+  return out;
+}
+
+/** True when a `*.env` file directly in `dir` holds a secret key of this kind. A missing folder holds none. */
+export function folderHoldsKey(dir: string, kind: 'test' | 'live'): boolean {
+  if (!existsSync(dir)) return false;
+  return readdirSync(dir, { withFileTypes: true }).some(
+    (e) => e.isFile() && isEnvFile(e.name) && keyLines(readFileSync(join(dir, e.name), 'utf8')).some((h) => h.kind === kind),
+  );
+}
+
 /** One folder's `*.env` files holding both a test and a live secret key. */
 export function scanEnvFolders(files: Array<{ path: string; text: string }>): ScanFinding[] {
   const out: ScanFinding[] = [];
@@ -119,13 +138,7 @@ export function scanEnvFolders(files: Array<{ path: string; text: string }>): Sc
   for (const f of files.filter((x) => isEnvFile(basename(x.path)))) byDir.set(dirname(f.path), [...(byDir.get(dirname(f.path)) ?? []), f]);
   for (const group of byDir.values()) {
     const hits: Array<{ file: string; line: number; kind: 'test' | 'live' }> = [];
-    for (const f of group) {
-      f.text.split(/\r?\n/).forEach((raw, i) => {
-        if (raw.trim().startsWith('#')) return;
-        if (TEST_KEY.test(raw)) hits.push({ file: f.path, line: i + 1, kind: 'test' });
-        if (LIVE_KEY.test(raw)) hits.push({ file: f.path, line: i + 1, kind: 'live' });
-      });
-    }
+    for (const f of group) hits.push(...keyLines(f.text).map((h) => ({ file: f.path, ...h })));
     if (hits.some((h) => h.kind === 'test') && hits.some((h) => h.kind === 'live')) {
       for (const h of hits) {
         out.push({

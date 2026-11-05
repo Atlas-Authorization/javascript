@@ -37,6 +37,7 @@ export const zhCN: LocalizationResource = {
   'signIn.passwordOption': '改为使用密码',
   'signIn.passkeyButton': '使用通行密钥登录',
   'signIn.passkeyCancelled': '通行密钥登录未完成。请重试或使用其他方式登录。',
+  'signIn.passwordHoldReleased': '您的邮箱已验证。请输入密码登录。',
 
   'signUp.title': '创建账户',
   'signUp.submit': '继续',

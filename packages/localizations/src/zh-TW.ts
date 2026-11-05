@@ -36,6 +36,7 @@ export const zhTW: LocalizationResource = {
   'signIn.passwordOption': '改用密碼登入',
   'signIn.passkeyButton': '使用通行金鑰登入',
   'signIn.passkeyCancelled': '通行金鑰登入未完成。請再試一次或改用其他方式登入。',
+  'signIn.passwordHoldReleased': '你的電子郵件已驗證。請輸入密碼以登入。',
 
   'signUp.title': '建立您的帳戶',
   'signUp.submit': '繼續',

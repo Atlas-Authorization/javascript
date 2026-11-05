@@ -15,6 +15,7 @@ import {
   type ProjectManifest,
 } from '../project';
 import { assertProductName, productDir, readEnvFile, writeSecretFile } from '../secrets';
+import { folderHoldsKey } from './doctor-scan';
 import { envApiUrl, wantsJson } from './shared';
 import { scaffoldNext } from './init-next';
 
@@ -75,11 +76,14 @@ interface InitOptions {
 
 /**
  * Where one environment's secret files live. An existing flat `<env>.env` keeps its
- * layout. New with `--with-dev`, and from then on: one folder per environment, so
- * a script that reads a folder's `*.env` never mixes a development and a production key.
+ * layout. New with `--with-dev`, once the folder holds the other environment's key,
+ * and from then on: one folder per environment, so a script that reads a folder's
+ * `*.env` never mixes a development and a production key.
  */
 function secretLayout(dir: string, env: InstanceEnv, withDev: boolean): { dir: string; key: string; client: string; webhook: string } {
-  const nested = !existsSync(join(dir, `${env}.env`)) && (withDev || existsSync(join(dir, env, 'atlas.env')));
+  const other = env === 'production' ? 'development' : 'production';
+  const holdsOther = existsSync(join(dir, `${other}.env`)) || folderHoldsKey(dir, env === 'production' ? 'test' : 'live');
+  const nested = !existsSync(join(dir, `${env}.env`)) && (withDev || existsSync(join(dir, env, 'atlas.env')) || holdsOther);
   return nested
     ? { dir: join(dir, env), key: 'atlas.env', client: 'oauth-client.env', webhook: 'webhook.env' }
     : { dir, key: `${env}.env`, client: `${env}-oauth-client.env`, webhook: `${env}-webhook.env` };
@@ -281,6 +285,9 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   if (opts.webhookUrl) log(`  webhook:    ${opts.webhookUrl}`);
   if (opts.withDev) log('  sibling:    a development instance, each environment in its own folder');
   log(opts.noEnvFiles ? '  secrets:    once, in the JSON output on stdout (no files)' : `  secrets:    ${dir} (0600 files, never printed)`);
+  if (!opts.noEnvFiles && !opts.withDev && layout.dir !== dir && !existsSync(secretFile)) {
+    log(`  note:       ${dir} already holds another environment's key, so the ${env} files go in ${layout.dir}.`);
+  }
   if (args.values.yes !== true) {
     const answer = (await ctx.prompt.text('Proceed? (y/N)')).trim().toLowerCase();
     if (answer !== 'y' && answer !== 'yes') throw new CliError('Aborted. Nothing was changed.');

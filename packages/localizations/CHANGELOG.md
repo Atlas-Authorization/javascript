@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.14.0 — 2026-11-05
+
+- `signIn.passwordHoldReleased` in every bundle.
+
 ## 0.13.0 — 2026-11-05
 
 - `error.password_not_yet_usable` in every bundle.

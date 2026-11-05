@@ -15,8 +15,16 @@ class Api implements ConfigHttp {
   bodies: Array<Record<string, any>> = [];
   patches: Array<{ path: string; body: unknown }> = [];
   verifies: string[] = [];
+  /** external_id -> the reason the API refuses that row's hash. */
+  refused: Record<string, string> = {};
+  jobErrors: Array<Record<string, unknown>> = [];
+  errorsUnreadable = false;
 
   async get<T>(path: string): Promise<T> {
+    if (path.endsWith('/errors')) {
+      if (this.errorsUnreadable) throw new Error('no jobs:read');
+      return { object: 'list', data: this.jobErrors } as T;
+    }
     const id = new URL(path, 'https://x').searchParams.get('external_id');
     return { data: this.users.filter((u) => u.external_id === id) } as T;
   }
@@ -27,7 +35,14 @@ class Api implements ConfigHttp {
     }
     const b = body as { users: Array<Record<string, any>>; upsert: boolean };
     this.bodies.push(b);
-    const results = b.users.map((row) => {
+    let failed = 0;
+    const results = b.users.map((row, index) => {
+      const reason = this.refused[row.external_id];
+      if (reason) {
+        failed += 1;
+        this.jobErrors.push({ index, email: row.email_address, code: 'unsupported_password_hash', message: reason });
+        return { outcome: 'failed' };
+      }
       const hit = this.users.find((u) => u.email_addresses.some((e: any) => e.verified && e.email_address === row.email_address));
       if (hit && !b.upsert) return { outcome: 'matched' };
       if (hit) {
@@ -44,7 +59,7 @@ class Api implements ConfigHttp {
       });
       return { outcome: 'created' };
     });
-    return { id: `job_${this.bodies.length}`, status: 'completed', total: b.users.length, succeeded: b.users.length, failed: 0, results } as T;
+    return { id: `job_${this.bodies.length}`, status: 'completed', total: b.users.length, succeeded: b.users.length - failed, failed, results } as T;
   }
   async put<T>(): Promise<T> {
     return {} as T;
@@ -207,6 +222,136 @@ describe('atlas import <users.jsonl>', () => {
     expect(code).toBe(0);
     expect(api.bodies[0]).toMatchObject({ upsert: false, password_policy: 'until_email_verified' });
     expect(api.bodies[0]!.users).toHaveLength(1);
+  });
+});
+
+const KEY = 'ab'.repeat(32);
+const HEX_HASH = `scrypt$16384$8$1$a1b2c3d4e5f60718$${KEY}`;
+const HEX_ROW = { external_id: 'h1', email: 'hex@example.com', email_verified: true, password_digest: HEX_HASH, algorithm: 'scrypt_node' };
+
+describe('atlas import: password hash parameters', () => {
+  it('sends password_hash_params under password_hash_algorithm, the only way the API reads them', async () => {
+    const api = new Api();
+    const { code, body } = await report(api, [write([{ ...HEX_ROW, password_hash_params: { salt_encoding: 'hex' } }])]);
+    expect(code).toBe(0);
+    const sent = api.bodies[0]!.users[0];
+    expect(sent).toMatchObject({ password_hash: HEX_HASH, password_hash_algorithm: 'scrypt_node', password_hash_params: { salt_encoding: 'hex' } });
+    expect(sent).not.toHaveProperty('password_hasher');
+    expect(body.warnings).toEqual([]);
+  });
+
+  it('with no algorithm, a Node scrypt string is named scrypt_node, as the API would read it', async () => {
+    const api = new Api();
+    const { algorithm: _a, ...row } = HEX_ROW;
+    await report(api, [write([{ ...row, password_hash_params: { salt_encoding: 'hex' } }])]);
+    expect(api.bodies[0]!.users[0]).toMatchObject({ password_hash_algorithm: 'scrypt_node' });
+  });
+
+  it('refuses parameters the API could not attach to anything, before sending', async () => {
+    const api = new Api();
+    const noDigest = { external_id: 'x', email: 'x@example.com', password_hash_params: { n: 16384 } };
+    const noAlgorithm = { ...noDigest, password_digest: 'c2FsdA$aGFzaA' };
+    const digitSalt = { ...noDigest, password_digest: `scrypt$16384$8$1$123456$${KEY}` };
+    for (const [row, msg] of [[noDigest, 'no password_digest'], [noAlgorithm, 'no algorithm'], [digitSalt, 'no algorithm']] as const) {
+      const io = captureIO();
+      expect(await run(['import', write([row])], ctx(io, api))).toBe(1);
+      expect(io.stderr()).toContain('Line 1');
+      expect(io.stderr()).toContain(msg);
+    }
+    expect(api.bodies).toEqual([]);
+  });
+
+  it('a named scrypt format settles an all-digit salt; any other algorithm stays password_hasher', async () => {
+    const api = new Api();
+    await report(api, [write([{ ...HEX_ROW, password_digest: `scrypt$16384$8$1$123456$${KEY}` }, { ...ANN, external_id: 'a2', email: 'a2@example.com' }])]);
+    const [digits, bcrypt] = api.bodies[0]!.users;
+    expect(digits).toMatchObject({ password_hash_algorithm: 'scrypt_node' });
+    expect(bcrypt).toMatchObject({ password_hasher: 'bcrypt' });
+    expect(bcrypt).not.toHaveProperty('password_hash_algorithm');
+  });
+
+  it('warns about a hex-looking scrypt salt with no salt_encoding, by external id and without the hash', async () => {
+    const api = new Api();
+    for (const argv of [['--dry-run'], []]) {
+      const { code, body } = await report(api, [write([HEX_ROW]), ...argv]);
+      expect(code).toBe(0);
+      expect(body.warnings).toMatchObject([{ code: 'ambiguous_scrypt_salt', count: 1, external_ids: ['h1'] }]);
+      expect(JSON.stringify(body)).not.toContain('a1b2c3d4e5f60718');
+      api.users = [];
+    }
+    const io = captureIO();
+    expect(await run(['import', write([HEX_ROW])], ctx(io, new Api()))).toBe(0);
+    expect(io.stdout()).toContain('warning: ambiguous_scrypt_salt: 1 row(s)');
+    expect(io.stdout()).toContain('external_id: h1');
+    expect(io.stdout()).not.toContain(KEY);
+  });
+
+  it('does not warn when the salt encoding is stated, the salt is not hex, or the digest is not scrypt', async () => {
+    const rows = [
+      { ...HEX_ROW, external_id: 's1', email: 's1@example.com', password_hash_params: { salt_encoding: 'utf8' } },
+      { ...HEX_ROW, external_id: 's2', email: 's2@example.com', password_digest: `scrypt$16384$8$1$not-hex-salt$${KEY}` },
+      { ...ANN, external_id: 's3', email: 's3@example.com', password_salt: 'a1b2c3d4e5f60718' },
+    ];
+    expect((await report(new Api(), [write(rows)])).body.warnings).toEqual([]);
+  });
+
+  it('warns about a hex-looking password_salt under a named scrypt too', async () => {
+    const row = { ...HEX_ROW, password_digest: KEY, algorithm: 'scrypt', password_salt: 'a1b2c3d4e5f60718' };
+    expect((await report(new Api(), [write([row])])).body.warnings).toMatchObject([{ code: 'ambiguous_scrypt_salt' }]);
+  });
+
+  it('names rows the API refuses as unsupported_password_hash, grouped by reason, with no email', async () => {
+    const api = new Api();
+    api.refused = { a1: 'password_hash: not self-describing.', b2: 'password_hash: not self-describing.' };
+    const { code, body } = await report(api, [write([ANN, BOB])]);
+    expect(code).toBe(2);
+    expect(body).toMatchObject({ created: 0, failed: 2 });
+    expect(body.warnings).toMatchObject([{ code: 'unsupported_password_hash', count: 2, external_ids: ['a1', 'b2'] }]);
+    expect(body.warnings[0].message).toContain('not self-describing');
+    expect(JSON.stringify(body)).not.toContain('@example.com');
+    expect(JSON.stringify(body)).not.toContain('digest');
+  });
+
+  it('still reports the counts when the row errors cannot be read', async () => {
+    const api = new Api();
+    api.refused = { a1: 'nope' };
+    api.errorsUnreadable = true;
+    const { code, body } = await report(api, [write([ANN])]);
+    expect(code).toBe(2);
+    expect(body).toMatchObject({ failed: 1, warnings: [] });
+  });
+});
+
+describe('atlas import: unknown row keys', () => {
+  it('refuses them before sending anything, naming the line, each key and its nearest match', async () => {
+    const api = new Api();
+    const { password_digest: _p, email_verified: _e, ...rest } = ANN;
+    const io = captureIO();
+    expect(await run(['import', write([BOB, { ...rest, paswword_digest: 'x', emial_verified: true }])], ctx(io, api))).toBe(1);
+    expect(io.stderr()).toContain('Line 2');
+    expect(io.stderr()).toContain('paswword_digest (did you mean password_digest?)');
+    expect(io.stderr()).toContain('emial_verified (did you mean email_verified?)');
+    expect(io.stderr()).not.toContain('@example.com');
+    expect(api.bodies).toEqual([]);
+  });
+
+  it('a misspelled required key is named as misspelled, not as missing', async () => {
+    const io = captureIO();
+    expect(await run(['import', write([{ externl_id: 'a', email: 'a@example.com' }])], ctx(io, new Api()))).toBe(1);
+    expect(io.stderr()).toContain('externl_id (did you mean external_id?)');
+  });
+
+  it('a key nothing like a real one still fails, and the message lists what is allowed', async () => {
+    const io = captureIO();
+    expect(await run(['import', write([{ ...BOB, zzzzzzzzzzzz: 1 }])], ctx(io, new Api()))).toBe(1);
+    expect(io.stderr()).toContain('zzzzzzzzzzzz');
+    expect(io.stderr()).not.toContain('did you mean');
+    expect(io.stderr()).toContain('password_hash_params');
+  });
+
+  it('accepts every key the importer reads', async () => {
+    const row = { ...ANN, password_salt: 'plain', password_hash_params: { n: 16384 }, first_name: 'A', last_name: 'B', updated_at: '2026-02-01T00:00:00Z' };
+    expect((await report(new Api(), [write([row])])).code).toBe(0);
   });
 });
 

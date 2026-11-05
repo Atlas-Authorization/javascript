@@ -1,11 +1,29 @@
 # @atlasauth/cli changelog
 
+## 0.27.0 — 2026-11-05
+
+### Changed
+
+- **`atlas import users.jsonl` refuses unknown row keys** before sending anything, exit 1, naming the line, each key and its nearest match. A file with an extra column stops working until it's fixed.
+- **`plan` and `apply` refuse a provider `mode` other than `native` or `redirect`**, exit 1. It used to be dropped silently and then show as drift on every run. `mode: null` is refused too: leave the key out.
+- **`plan` and `apply` check a webhook `secret`'s format locally**, whether or not it can be compared: `whsec_` (or `atlas_live_whsec_` / `atlas_test_whsec_`) and 32 to 256 characters. Exit 1, and the value is never printed. A malformed secret on an existing endpoint used to be a silent no-op.
+- **`atlas init` keeps environments apart.** When the folder already holds another environment's key, the new one goes in `<env>/`, and a line says so. An existing `<env>.env` for the same environment stays where it is. Readers go through the manifest, so `atlas env` and `atlas preflight` find it.
+
+### Added
+
+- `password_hash_params` on an import row. It's sent with the row's `algorithm` as `password_hash_algorithm`, so a hash whose salt was hex-decoded (`"password_hash_params":{"salt_encoding":"hex"}`) signs in. With no `algorithm`, a `scrypt$N$r$p$salt$key` string is named `scrypt_node`.
+- `warnings` in the import report (`warnings` array in `--json`), each with a code, count and external ids, never a hash: `ambiguous_scrypt_salt` for a hex-looking scrypt salt with no `salt_encoding`, which may never sign in, and `unsupported_password_hash` for a row the API refused, with its reason.
+
+### Fixed
+
+- `algorithm: scrypt_node` or `scrypt_django` on an import row now settles a scrypt hash with an all-digit salt, which used to be refused.
+
 ## 0.26.0 — 2026-11-05
 
 ### Security
 
 - `atlas plan`, `apply`, `preflight`, `golive` and their `--json` forms no longer print secrets, and API error messages are masked. **If you ran `atlas plan` on 0.25.1 or older with a provider `client_secret` in the file, the value was printed: rotate every provider secret that was ever planned, and treat terminal and CI logs from those runs as exposed.**
-- Masking happens where output is written: secret-named fields at any depth, Atlas-key-shaped values, and every value a `${VAR}` resolved to, under any key. A changed secret prints `client_secret: <redacted> (changed)`.
+- Masking happens where output is written: secret-named fields at any depth, Atlas-key-shaped values, and values a `${VAR}` resolved to, except under `client_id`, `provider`, `from_address` and plain URLs. A changed secret prints `client_secret: <redacted> (changed)`.
 - `--show-secrets` prints values in a terminal only: it is refused when stdout is not a TTY or `CI` is set.
 
 ### Added

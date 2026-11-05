@@ -278,6 +278,70 @@ describe('atlas init: secret layouts and strict bodies', () => {
     expect(state.writes.filter((w) => w.path === '/v1/platform/apps').at(-1)?.body).toMatchObject({ environment: 'development' });
   });
 
+  describe('a second environment in the same folder', () => {
+    const DEV = ['init', '--product', 'acme', '--instance-env', 'development', '--yes'];
+
+    it('goes in its own folder, and says so', async () => {
+      expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+      const io = captureIO();
+      expect(await run(DEV, ctxWith(io))).toBe(0);
+      noSecrets(io);
+      const dir = join(home, 'acme');
+      expect(existsSync(join(dir, 'production.env'))).toBe(true);
+      expect(existsSync(join(dir, 'development.env'))).toBe(false);
+      expect(readFileSync(join(dir, 'development', 'atlas.env'), 'utf8')).toContain(`ATLAS_SECRET_KEY=${SK}`);
+      expect(mode(join(dir, 'development', 'atlas.env'))).toBe(0o600);
+      expect(io.stdout()).toContain(`already holds another environment's key, so the development files go in ${join(dir, 'development')}`);
+      expect(JSON.parse(readFileSync(join(dir, 'atlas.json'), 'utf8')).instances.development.secret_file).toBe(join(dir, 'development', 'atlas.env'));
+    });
+
+    it('works the other way round, and a re-run neither moves anything nor repeats the line', async () => {
+      expect(await run(DEV, ctxWith(captureIO()))).toBe(0);
+      expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+      const dir = join(home, 'acme');
+      expect(existsSync(join(dir, 'production', 'atlas.env'))).toBe(true);
+      expect(existsSync(join(dir, 'development.env'))).toBe(true);
+      const again = captureIO();
+      expect(await run(BASE, ctxWith(again))).toBe(0);
+      expect(again.stdout()).not.toContain('already holds');
+      expect(existsSync(join(dir, 'production.env'))).toBe(false);
+    });
+
+    it('a flat file for the same environment keeps its layout, even beside the other one', async () => {
+      expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+      const dir = join(home, 'acme');
+      writeFileSync(join(dir, 'development.env'), `ATLAS_SECRET_KEY=${DEV_SK}\n`, { mode: 0o600 });
+      const io = captureIO();
+      expect(await run(BASE, ctxWith(io))).toBe(0);
+      expect(io.stdout()).not.toContain('already holds');
+      expect(existsSync(join(dir, 'production'))).toBe(false);
+    });
+
+    it('sees a key of the other kind in any env file, as doctor --scan-dir does', async () => {
+      const dir = join(home, 'acme');
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      writeFileSync(join(dir, '.env'), 'ATLAS_SECRET_KEY=sk_live_left_behind\n', { mode: 0o600 });
+      expect(await run(DEV, ctxWith(captureIO()))).toBe(0);
+      expect(existsSync(join(dir, 'development', 'atlas.env'))).toBe(true);
+    });
+
+    it('a key of the same kind, or a commented-out one, is no reason to move', async () => {
+      const dir = join(home, 'acme');
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      writeFileSync(join(dir, '.env'), `ATLAS_SECRET_KEY=${DEV_SK}\n# ATLAS_SECRET_KEY=sk_live_old\n`, { mode: 0o600 });
+      expect(await run(DEV, ctxWith(captureIO()))).toBe(0);
+      expect(existsSync(join(dir, 'development.env'))).toBe(true);
+    });
+
+    it('--json stays valid: the line goes to stderr', async () => {
+      expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+      const io = captureIO();
+      expect(await run([...DEV, '--json'], ctxWith(io))).toBe(0);
+      expect(JSON.parse(io.stdout()).secret_file).toBe(join(home, 'acme', 'development', 'atlas.env'));
+      expect(io.stderr()).toContain('already holds');
+    });
+  });
+
   it('--with-dev is refused for a development app', async () => {
     const io = captureIO();
     expect(await run([...BASE, '--with-dev', '--instance-env', 'development'], ctxWith(io))).toBe(1);

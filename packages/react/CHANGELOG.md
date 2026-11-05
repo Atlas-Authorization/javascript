@@ -1,5 +1,15 @@
 # @atlasauth/react changelog
 
+## 0.27.0 — 2026-11-05
+
+### Fixed
+
+- `<SignIn>`: when a correct password is refused with `password_not_yet_usable`, "Email me a code instead" now verifies the address through `meta.verification_attempt_id`, then returns to the password step with a short message, so the password signs in. It is offered even where email-code sign-in is off. On an instance that verifies by link only, it emails the link.
+
+### Added
+
+- `signIn.passwordHoldReleased` in the i18n catalog.
+
 ## 0.26.0 — 2026-11-03
 
 ### Added

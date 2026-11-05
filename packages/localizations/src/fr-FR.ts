@@ -37,6 +37,7 @@ export const frFR: LocalizationResource = {
   'signIn.passwordOption': 'Utiliser mon mot de passe',
   'signIn.passkeyButton': 'Se connecter avec une clé d\'accès',
   'signIn.passkeyCancelled': 'La connexion avec la clé d\'accès n\'a pas abouti. Réessayez ou utilisez une autre méthode.',
+  'signIn.passwordHoldReleased': 'Votre adresse e-mail est vérifiée. Saisissez votre mot de passe pour vous connecter.',
 
   'signUp.title': 'Créer votre compte',
   'signUp.submit': 'Continuer',

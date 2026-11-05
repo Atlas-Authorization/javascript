@@ -22,10 +22,12 @@ import {
   lastUsedMethodLabel,
   mintNativeNonce,
   nativeSignIn,
+  attemptPasswordHoldProof,
   nextStep,
   offeredFirstFactors,
   planFirstFactor,
   prepareFactor,
+  preparePasswordHoldProof,
   resendSignUpVerification,
   retryAfterSeconds,
   renderGoogleOverlayButton,
@@ -200,6 +202,11 @@ export function usePrefilledValues(key: string | null, email?: string) {
   return [values, setValues] as const;
 }
 
+/** What lifts a password hold on this instance: the emailed code, or a link where it verifies by link only. */
+function passwordHoldProof(emailVerification: string | null | undefined): EmailFactor {
+  return emailVerification === 'link' ? 'email_link' : 'email_code';
+}
+
 /**
  * The server-driven flow shell.
  *
@@ -223,6 +230,7 @@ export function AttemptFlow({
   onPolicyDecline,
   prefill,
   alternatives,
+  passwordHold = null,
 }: {
   attempt: AttemptView | null;
   onSubmit(values: Record<string, string>): void;
@@ -263,6 +271,8 @@ export function AttemptFlow({
   prefill?: FlowProps['initialValues'];
   /** Drawn inside the card, under the form (`layout.alternativeMethods: 'inside'`). */
   alternatives?: ReactNode;
+  /** `FlowState.passwordHold`: offers the emailed proof, whichever factors the instance signs in with. */
+  passwordHold?: FlowState['passwordHold'];
 }) {
   const t = useText();
   const errorText = useErrorText();
@@ -297,12 +307,16 @@ export function AttemptFlow({
    * emailed the code (or link) and this step collects it. See `planFirstFactor`.
    */
   const plan = planFirstFactor(firstFactors);
-  const emailOptions = onPrepare ? plan.email : [];
+  const holdOption =
+    passwordHold && !passwordHold.released && instanceSettings?.emailDelivery?.available !== false
+      ? passwordHoldProof(instanceSettings?.account?.emailVerification)
+      : null;
+  const emailOptions = onPrepare ? (holdOption && !plan.email.includes(holdOption) ? [...plan.email, holdOption] : plan.email) : [];
   const sent = step.kind === 'collect_first_factor' && !noFirstFactor ? prepared : null;
   // Sending on its own (no password on offer): nothing to type until it lands.
   const sending =
     step.kind === 'collect_first_factor' && !noFirstFactor && sent === null && !plan.password && emailOptions.length > 0;
-  const identifier = (attempt as { identifier?: string | null } | null)?.identifier ?? '';
+  const identifier = passwordHold?.email ?? (attempt as { identifier?: string | null } | null)?.identifier ?? '';
   // A sign-up on an instance that verifies by link only: nothing to type — the
   // tab polls until the emailed link is opened (anywhere).
   const linkOnlySignUp =
@@ -356,6 +370,14 @@ export function AttemptFlow({
         // `webauthn`: saved passkeys appear in this field's autofill while <SignIn> holds a conditional request.
         return [field('identifier', 'signIn.identifierLabel', 'email', { autoComplete: 'username webauthn' })];
       case 'collect_first_factor':
+        // A link proved an address on an existing account: no session, and the password signs in.
+        if (attempt?.object === 'sign_up_attempt' && !(attempt.supported_first_factors ?? []).includes('passkey')) {
+          return [
+            <p key="released" className={cls('text', 'atlas-text')} data-atlas-password-released="">
+              {t('signIn.passwordHoldReleased')}
+            </p>,
+          ];
+        }
         if (noFirstFactor) {
           return [
             <p key="email-unavailable" className={errorClass} role="alert" data-atlas-email-unavailable="">
@@ -385,7 +407,16 @@ export function AttemptFlow({
             </p>,
           ];
         }
-        return [field('password', 'signIn.passwordLabel', 'password', { autoComplete: 'current-password' })];
+        return [
+          ...(passwordHold?.released
+            ? [
+                <p key="released" className={cls('text', 'atlas-text')} data-atlas-password-released="">
+                  {t('signIn.passwordHoldReleased')}
+                </p>,
+              ]
+            : []),
+          field('password', 'signIn.passwordLabel', 'password', { autoComplete: 'current-password' }),
+        ];
       case 'collect_second_factor':
         // "Text me a code instead" / "Email me a code instead", where the app offers them.
         return [
@@ -860,6 +891,17 @@ export function useFlow({
         setState((current) => ({ ...current, busy: true, errors: [] }));
 
         const kind = state.attempt ? nextStep(state.attempt).kind : 'collect_identifier';
+        // A code that lifts a password hold goes to its own attempt, not this sign-in.
+        if (
+          kind === 'collect_first_factor' &&
+          state.passwordHold &&
+          !state.passwordHold.released &&
+          state.prepared === 'email_code' &&
+          passwordHoldProof(instanceSettings?.account?.emailVerification) === 'email_code'
+        ) {
+          setState(await attemptPasswordHoldProof(client, state, values.code ?? ''));
+          return;
+        }
         let input = values;
         let sentToken = false;
         if (kind === 'collect_identifier' || kind === 'collect_captcha') {
@@ -902,7 +944,7 @@ export function useFlow({
         await finish(next);
       })();
     },
-    [captcha, client, finish, state, t],
+    [captcha, client, finish, instanceSettings, state, t],
   );
   submitRef.current = submit;
 
@@ -916,12 +958,16 @@ export function useFlow({
     (strategy: EmailFactor) => {
       void (async () => {
         setState((current) => ({ ...current, busy: true, errors: [] }));
-        const next = await prepareFactor(client, { ...state, busy: true }, strategy);
+        const holdProof = passwordHoldProof(instanceSettings?.account?.emailVerification);
+        const next =
+          state.passwordHold && !state.passwordHold.released && strategy === holdProof
+            ? await preparePasswordHoldProof(client, { ...state, busy: true }, holdProof)
+            : await prepareFactor(client, { ...state, busy: true }, strategy);
         // A failed resend keeps the step the user was on.
         setState(next.errors.length > 0 ? { ...next, prepared: state.prepared ?? null } : next);
       })();
     },
-    [client, state],
+    [client, instanceSettings, state],
   );
 
   /** Back from the emailed factor to the password field. */

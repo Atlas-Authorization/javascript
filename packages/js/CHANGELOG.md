@@ -1,5 +1,11 @@
 # @atlasauth/js changelog
 
+## 0.31.0 — 2026-11-05
+
+### Added
+
+- `FlowState.passwordHold`, set by `advance` when a correct password is refused with `password_not_yet_usable`, plus `preparePasswordHoldProof` and `attemptPasswordHoldProof`: email the code that verifies the address through the sign-up verification routes, which work with email-code sign-in switched off. The password then signs in on the same attempt.
+
 ## 0.30.0 — 2026-11-05
 
 ### Added

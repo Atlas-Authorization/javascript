@@ -37,6 +37,7 @@ export const faIR: LocalizationResource = {
   'signIn.passwordOption': 'به‌جای آن، از گذرواژه استفاده کنید',
   'signIn.passkeyButton': 'ورود با گذرکلید',
   'signIn.passkeyCancelled': 'ورود با گذرکلید کامل نشد. دوباره تلاش کنید یا از روش دیگری وارد شوید.',
+  'signIn.passwordHoldReleased': 'ایمیل شما تأیید شد. برای ورود، گذرواژه خود را وارد کنید.',
 
   'signUp.title': 'ایجاد حساب کاربری',
   'signUp.submit': 'ادامه',

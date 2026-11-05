@@ -557,6 +557,13 @@ export interface FlowState {
    * `__atlas_policy_token`). Sent by `acceptAttemptPolicies`.
    */
   policyToken?: string | null;
+  /**
+   * The right password was refused because it waits for an email to be proven
+   * (`password_not_yet_usable`). `attemptId` is the refusal's
+   * `meta.verification_attempt_id`, `email` the address the proof went to, and
+   * `released` turns true once it is proven, so the password can sign in.
+   */
+  passwordHold?: { attemptId: string; email: string | null; released: boolean } | null;
 }
 
 export const initialFlow: FlowState = {
@@ -789,7 +796,13 @@ export async function advance(
      * the identifier step after one wrong password, losing the progress they
      * made and re-triggering the anti-enumeration path for no reason.
      */
-    return { ...state, busy: false, errors: response.errors };
+    const holdAttempt = response.errors.map((e) => e.meta?.verification_attempt_id).find((id) => typeof id === 'string');
+    return {
+      ...state,
+      busy: false,
+      errors: response.errors,
+      ...(holdAttempt ? { passwordHold: { attemptId: holdAttempt as string, email: null, released: false } } : {}),
+    };
   }
 
   // An enrolment's recovery codes are shown once and never kept on the attempt.
@@ -876,6 +889,39 @@ export async function resendSignUpVerification(client: FapiClient, state: FlowSt
   if (!id) return state;
   const response = await client.post(`/v1/client/sign_ups/${id}/prepare_verification`, {});
   return response.ok ? { ...state, busy: false, errors: [] } : { ...state, busy: false, errors: response.errors };
+}
+
+/**
+ * Email the proof that lifts a password hold (`FlowState.passwordHold`), through
+ * the sign-up verification routes: they work with email-code sign-in switched off.
+ * `via` is what the instance sends, a code or (verification by link only) a link.
+ */
+export async function preparePasswordHoldProof(
+  client: FapiClient,
+  state: FlowState,
+  via: 'email_code' | 'email_link' = 'email_code',
+): Promise<FlowState> {
+  const hold = state.passwordHold;
+  if (!hold) return state;
+  const response = await client.post<{ identifier?: string | null }>(`/v1/client/sign_ups/${hold.attemptId}/prepare_verification`, {});
+  if (!response.ok) return { ...state, busy: false, errors: response.errors };
+  return {
+    ...state,
+    busy: false,
+    errors: [],
+    pollSecret: null,
+    prepared: via,
+    passwordHold: { ...hold, email: response.data?.identifier ?? null },
+  };
+}
+
+/** Check the emailed code for a password hold. It proves the address and makes no session: the password then signs in. */
+export async function attemptPasswordHoldProof(client: FapiClient, state: FlowState, code: string): Promise<FlowState> {
+  const hold = state.passwordHold;
+  if (!hold) return state;
+  const response = await client.post(`/v1/client/sign_ups/${hold.attemptId}/attempt_verification`, { code });
+  if (!response.ok) return { ...state, busy: false, errors: response.errors };
+  return { ...state, busy: false, errors: [], prepared: null, passwordHold: { ...hold, released: true } };
 }
 
 /**
@@ -977,11 +1023,10 @@ export async function pollAttempt(
 /** Whether polling should continue, so a tab does not poll a dead attempt forever. */
 export function shouldKeepPolling(state: FlowState): boolean {
   if (!state.pollSecret || !state.attempt || isTerminal(state.attempt)) return false;
-  // A passkey-only sign-up waiting for its passkey: only this tab can move it on.
+  // A sign-up at its first factor can't move on by itself: a passkey-only sign-up waits
+  // for this tab's passkey, and a link that proved an existing account made no session.
   const a = state.attempt;
-  const waitingForPasskey =
-    a.object === 'sign_up_attempt' && a.status === 'needs_first_factor' && (a.supported_first_factors ?? []).includes('passkey');
-  return !waitingForPasskey;
+  return !(a.object === 'sign_up_attempt' && a.status === 'needs_first_factor');
 }
 
 /**

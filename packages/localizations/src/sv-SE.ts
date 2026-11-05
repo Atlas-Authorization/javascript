@@ -36,6 +36,7 @@ export const svSE: LocalizationResource = {
   'signIn.passwordOption': 'Använd ditt lösenord i stället',
   'signIn.passkeyButton': 'Logga in med en nyckel (passkey)',
   'signIn.passkeyCancelled': 'Inloggningen med nyckeln slutfördes inte. Försök igen eller logga in på ett annat sätt.',
+  'signIn.passwordHoldReleased': 'Din e-postadress är verifierad. Ange ditt lösenord för att logga in.',
 
   'signUp.title': 'Skapa ditt konto',
   'signUp.submit': 'Fortsätt',

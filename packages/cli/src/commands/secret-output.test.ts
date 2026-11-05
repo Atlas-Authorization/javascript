@@ -13,6 +13,7 @@ import { run } from '../run';
 /** Secrets must never reach stdout or stderr, whichever form the output takes. */
 
 const SENTINEL = 'sentinel-provider-secret-8f3a91c2';
+const WEBHOOK_SENTINEL = `whsec_${SENTINEL}`;
 
 class Api implements ConfigHttp {
   writes: Array<{ method: string; path: string; body: unknown }> = [];
@@ -101,7 +102,7 @@ const file = (doc: unknown) => {
 };
 const secrets = (extra = '') => {
   const p = join(dir, 'secrets.env');
-  writeFileSync(p, `GOOGLE_SECRET=${SENTINEL}\n${extra}`);
+  writeFileSync(p, `GOOGLE_SECRET=${SENTINEL}\nWEBHOOK_SECRET=${WEBHOOK_SENTINEL}\n${extra}`);
   chmodSync(p, 0o600);
   return p;
 };
@@ -321,7 +322,7 @@ describe('unknown keys', () => {
     expect(io.stderr()).not.toContain('did you mean');
   });
   it('keys that only go in are accepted', async () => {
-    const doc = { webhook_endpoints: [{ url: 'https://a.example/h', secret: 'whsec_abc', active: false }], sso_connections: [{ type: 'oidc', oidc_issuer: 'https://i', oidc_client_secret: 'x', saml_idp_certificate: 'c' }], oauth_clients: [{ name: 'n', client_secret: 's' }] };
+    const doc = { webhook_endpoints: [{ url: 'https://a.example/h', secret: `whsec_${'a'.repeat(32)}`, active: false }], sso_connections: [{ type: 'oidc', oidc_issuer: 'https://i', oidc_client_secret: 'x', saml_idp_certificate: 'c' }], oauth_clients: [{ name: 'n', client_secret: 's' }] };
     const io = captureIO();
     await run(['plan', file(doc)], ctx(io, new Api()));
     expect(io.stderr()).not.toContain('Unknown key');
@@ -364,14 +365,14 @@ describe('Atlas-Unknown-Fields', () => {
 });
 
 describe('webhook_endpoints with a secret', () => {
-  const doc = () => ({ webhook_endpoints: [{ url: 'https://a.example/h', enabled_events: ['*'], secret: '${GOOGLE_SECRET}', active: false }] });
+  const doc = () => ({ webhook_endpoints: [{ url: 'https://a.example/h', enabled_events: ['*'], secret: '${WEBHOOK_SECRET}', active: false }] });
 
   it('create sends the chosen secret and active:false, and saves no file for it', async () => {
     const api = new Api();
     const out = join(dir, 'kept');
     const io = captureIO();
     expect(await run(['apply', file(doc()), '--yes', '--out', out, '--secrets-file', secrets()], ctx(io, api))).toBe(0);
-    expect(api.writes[0]).toMatchObject({ path: '/v1/webhook_endpoints', body: { secret: SENTINEL, active: false } });
+    expect(api.writes[0]).toMatchObject({ path: '/v1/webhook_endpoints', body: { secret: WEBHOOK_SENTINEL, active: false } });
     expect(io.stdout()).not.toContain('A new secret was written');
     clean(io);
   });
@@ -393,9 +394,9 @@ describe('webhook_endpoints with a secret', () => {
     expect(await run(['apply', file(doc()), '--yes', '--secrets-file', secrets()], ctx(io, api))).toBe(0);
     expect(io.stdout()).toContain('secret: <redacted> (changed)');
     clean(io);
-    expect(api.writes.find((w) => w.path === '/v1/webhook_endpoints/we_1/rotate_secret')?.body).toEqual({ secret: SENTINEL });
+    expect(api.writes.find((w) => w.path === '/v1/webhook_endpoints/we_1/rotate_secret')?.body).toEqual({ secret: WEBHOOK_SENTINEL });
     expect(JSON.stringify(api.writes.find((w) => w.method === 'PATCH')?.body)).not.toContain(SENTINEL);
-    expect(api.storedWebhookSecret).toBe(SENTINEL);
+    expect(api.storedWebhookSecret).toBe(WEBHOOK_SENTINEL);
   });
 
   it('when the API cannot say, the plan says so', async () => {
@@ -405,5 +406,65 @@ describe('webhook_endpoints with a secret', () => {
     const io = captureIO();
     expect(await run(['plan', file(doc()), '--check', '--secrets-file', secrets()], ctx(io, api))).toBe(0);
     expect(io.stdout()).toContain('webhook_endpoints https://a.example/h secret: Atlas does not return this value');
+  });
+});
+
+describe('local format checks', () => {
+  const hook = (secret: unknown) => ({ webhook_endpoints: [{ url: 'https://a.example/h', enabled_events: ['*'], active: false, secret }] });
+
+  it('a mode that is not native or redirect fails plan and apply, naming mode and the valid values', async () => {
+    for (const verb of ['plan', 'apply'] as const) {
+      for (const mode of ['bogus', null, 1]) {
+        const api = new Api();
+        const io = captureIO();
+        expect(await run([verb, file({ oauth_providers: [{ provider: 'github', client_id: 'cid', mode }] }), '--yes'], ctx(io, api))).toBe(1);
+        expect(io.stderr()).toContain('oauth_providers github: mode must be native or redirect');
+        expect(api.writes).toEqual([]);
+      }
+    }
+  });
+
+  it('a mode from a placeholder is checked once resolved', async () => {
+    const io = captureIO();
+    const doc = { oauth_providers: [{ provider: 'github', client_id: 'cid', mode: '${A_MODE}' }] };
+    expect(await run(['plan', file(doc), '--secrets-file', secrets('A_MODE=bogus\n')], ctx(io, new Api()))).toBe(1);
+    expect(io.stderr()).toContain('mode must be native or redirect');
+  });
+
+  it('a malformed webhook secret fails plan and apply, on a new endpoint and an existing one, without printing it', async () => {
+    const bad = 'short-sentinel-value';
+    for (const verb of ['plan', 'apply'] as const) {
+      for (const existing of [false, true]) {
+        const api = new Api();
+        if (existing) api.webhooks = [{ id: 'we_1', url: 'https://a.example/h', enabled_events: ['*'], active: false }];
+        const io = captureIO();
+        expect(await run([verb, file(hook(bad)), '--yes'], ctx(io, api))).toBe(1);
+        expect(io.stderr()).toContain('webhook_endpoints https://a.example/h: secret must start with "whsec_"');
+        expect(io.stderr()).not.toContain(bad);
+        expect(io.stdout()).not.toContain(bad);
+        expect(api.writes).toEqual([]);
+      }
+    }
+  });
+
+  it('a malformed webhook secret from a placeholder is refused and stays unprinted', async () => {
+    const io = captureIO();
+    expect(await run(['plan', file(hook('${BAD_HOOK}')), '--secrets-file', secrets('BAD_HOOK=short-sentinel-value\n')], ctx(io, new Api()))).toBe(1);
+    expect(io.stderr()).toContain('secret must start with "whsec_"');
+    expect(io.stderr()).not.toContain('short-sentinel-value');
+  });
+
+  it('follows the API rule at its edges', async () => {
+    const good = [`whsec_${'a'.repeat(32)}`, `whsec_${'a'.repeat(256)}`, `atlas_live_whsec_${'a'.repeat(32)}`, `atlas_test_whsec_${'A1+/=_-'.repeat(5)}`];
+    const bad = [`whsec_${'a'.repeat(31)}`, `whsec_${'a'.repeat(257)}`, `sk_${'a'.repeat(40)}`, `whsec_${'a'.repeat(31)}!`, `atlas_prod_whsec_${'a'.repeat(32)}`, '', 42];
+    for (const secret of good) expect(await run(['plan', file(hook(secret))], ctx(captureIO(), new Api())), String(secret).slice(0, 24)).toBe(0);
+    for (const secret of bad) expect(await run(['plan', file(hook(secret))], ctx(captureIO(), new Api())), String(secret).slice(0, 24)).toBe(1);
+  });
+
+  it('an unresolved placeholder is left to apply\'s own refusal', async () => {
+    const io = captureIO();
+    await run(['apply', file(hook('${NOT_SET_ANYWHERE}')), '--yes'], ctx(io, new Api()));
+    expect(io.stderr()).toContain('Unresolved placeholder');
+    expect(io.stderr()).not.toContain('must start with');
   });
 });

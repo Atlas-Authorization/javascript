@@ -37,6 +37,7 @@ export const deDE: LocalizationResource = {
   'signIn.passwordOption': 'Stattdessen Passwort verwenden',
   'signIn.passkeyButton': 'Mit einem Passkey anmelden',
   'signIn.passkeyCancelled': 'Die Anmeldung mit dem Passkey wurde nicht abgeschlossen. Versuchen Sie es erneut oder melden Sie sich anders an.',
+  'signIn.passwordHoldReleased': 'Ihre E-Mail-Adresse wurde bestätigt. Geben Sie Ihr Passwort ein, um sich anzumelden.',
 
   'signUp.title': 'Konto erstellen',
   'signUp.submit': 'Weiter',

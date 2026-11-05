@@ -247,12 +247,17 @@ Usage:
   atlas import --from better-auth             (prints the import key and export command)
 
 With no --from the file has one user per line: external_id and email (required),
-email_verified, password_digest + algorithm, oauth_identities [{provider,
-provider_user_id}], first_name, last_name, created_at, updated_at. Each row is
+email_verified, password_digest + algorithm, password_salt, password_hash_params,
+oauth_identities [{provider, provider_user_id}], first_name, last_name, created_at,
+updated_at. Any other key is an error, with the line and the nearest real key, and
+nothing is sent. Each row is
 matched by external_id, so running it again changes nothing. --since keeps rows
 updated (or else created) at or after <ts>. --on-conflict skip (the default here)
 leaves existing users alone; update applies rows that changed. It reports created,
 updated, skipped and unverified-with-password counts, and never an email address.
+A hash that cannot be checked is listed by external_id: warning ambiguous_scrypt_salt
+for a hex-looking scrypt salt with no salt_encoding, and unsupported_password_hash for
+a row the API refused.
 
 Vendors and the file each one reads:
   auth0        the user export job (NDJSON/JSON); --hashes <file> merges the password export
@@ -694,6 +699,8 @@ Turns on strict request bodies unless the instance has them or opted out.
 environment in its own folder (~/.config/<product>/production/atlas.env and
 development/atlas.env), so a script reading a folder's *.env files never mixes
 keys. An existing <env>.env stays where it is.
+Without --with-dev the same applies once the folder holds the other environment's
+key: the new environment gets its own folder, and init prints a line saying so.
 --no-env-files writes no secret file: each secret is handed over once in the
 --json output on stdout. Without --json it is refused and names the paths it
 would have written.
@@ -917,7 +924,9 @@ Without --prune the plan compares only the keys the file sets.
   --out <dir>     where a new client or webhook secret is saved (mode 0600;
                   default ~/.config/atlas). It is shown only once.
 Applying stops if any \${VAR} is unresolved. A key the resource does not have is an
-error, with the nearest real key. Secrets are never printed: a changed one shows as
+error, with the nearest real key. So is a provider mode other than native or redirect,
+and a webhook secret that is not whsec_ plus 32 to 256 characters, checked whether or
+not it can be compared. Secrets are never printed: a changed one shows as
 "client_secret: <redacted> (changed)". Where Atlas cannot tell whether a secret changed
 the plan says so instead of showing drift. A changed webhook secret is rotated with no
 overlap: the old one stops signing at once.`,

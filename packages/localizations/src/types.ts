@@ -76,6 +76,7 @@ export interface LocalizationResource {
   'signIn.passwordOption': string;
   'signIn.passkeyButton': string;
   'signIn.passkeyCancelled': string;
+  'signIn.passwordHoldReleased': string;
 
   // --- Sign up ---------------------------------------------------------------
   'signUp.title': string;

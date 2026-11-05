@@ -36,6 +36,7 @@ export const thTH: LocalizationResource = {
   'signIn.passwordOption': 'ใช้รหัสผ่านของคุณแทน',
   'signIn.passkeyButton': 'ลงชื่อเข้าใช้ด้วยพาสคีย์',
   'signIn.passkeyCancelled': 'การลงชื่อเข้าใช้ด้วยพาสคีย์ไม่เสร็จสมบูรณ์ ลองอีกครั้งหรือใช้วิธีอื่น',
+  'signIn.passwordHoldReleased': 'ยืนยันอีเมลของคุณแล้ว ป้อนรหัสผ่านเพื่อลงชื่อเข้าใช้',
 
   'signUp.title': 'สร้างบัญชีของคุณ',
   'signUp.submit': 'ดำเนินการต่อ',

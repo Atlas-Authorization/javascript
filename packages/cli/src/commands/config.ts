@@ -62,6 +62,8 @@ interface CollectionSpec {
   secretChanged?(http: ConfigHttp, live: LiveEntry, config: Config): Promise<boolean | null>;
   /** Advice about a desired entry, shown with the plan. */
   warnings?(config: Config, live: Config | undefined): string[];
+  /** Local format errors in a desired entry, with `${VAR}` resolved. Never put a secret's value in one. */
+  validate?(config: Config): string[];
 }
 
 /** A singleton resource — exactly one document per instance (the instance config, a schema). */
@@ -327,6 +329,11 @@ function registry(): ResourceSpec[] {
       kind: 'collection',
       type: 'oauth_providers',
       fileKeys: [...OAUTH_PROVIDER_KEYS, 'client_secret', 'values', 'settings'],
+      validate(config) {
+        const { provider, mode } = obj(config);
+        if (mode === undefined || mode === 'native' || mode === 'redirect' || hasPlaceholder(mode)) return [];
+        return [`oauth_providers ${String(provider)}: mode must be native or redirect, got ${JSON.stringify(mode)}.`];
+      },
       reportsSecrets: true,
       defaulted: ['mode'],
       writeOnly: ['values'],
@@ -512,6 +519,12 @@ function registry(): ResourceSpec[] {
       kind: 'collection',
       type: 'webhook_endpoints',
       fileKeys: [...WEBHOOK_KEYS, 'secret'],
+      validate(config) {
+        const { url, secret } = obj(config);
+        if (secret === undefined || secret === null || hasPlaceholder(secret)) return [];
+        if (typeof secret === 'string' && WEBHOOK_SECRET.test(secret)) return [];
+        return [`webhook_endpoints ${String(url)}: secret must start with "whsec_" followed by 32 to 256 characters (letters, digits, + / = _ -). Omit it and Atlas generates one.`];
+      },
       // A dry-run rotation tells a new secret from the stored one without revealing either.
       async secretChanged(http, live, config) {
         try {
@@ -1079,7 +1092,7 @@ function distance(a: string, b: string): number {
   return prev[b.length]!;
 }
 
-function didYouMean(key: string, known: readonly string[]): string {
+export function didYouMean(key: string, known: readonly string[]): string {
   const norm = (x: string) => x.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
   const best = [...known].sort((a, b) => distance(norm(key), a) - distance(norm(key), b))[0];
   return best && distance(norm(key), best) <= Math.max(2, Math.floor(key.length / 3)) ? ` (did you mean ${best}?)` : '';
@@ -1098,6 +1111,20 @@ function unknownFileKeys(spec: ResourceSpec, doc: Json): string[] {
     check(doc, spec.fileKeys, spec.type);
     for (const [k, known] of Object.entries(spec.nestedKeys ?? {})) if (isObj(doc)) check(doc[k]!, known, `${spec.type}.${k}`);
   }
+  return out;
+}
+
+/** The API's rule for a client-chosen webhook signing secret, including its `atlas_<env>_whsec_` form. */
+const WEBHOOK_SECRET = /^(?:atlas_(?:live|test)_)?whsec_[A-Za-z0-9+/=_-]{32,256}$/;
+
+/** A `${VAR}` still in a value: there is nothing to check yet, and apply refuses it on its own. */
+const hasPlaceholder = (v: Json | undefined): boolean => typeof v === 'string' && /\$\{[A-Z0-9_]+\}/.test(v);
+
+/** What one resource file's values break, from each spec's own rules. */
+function invalidFileValues(spec: ResourceSpec, doc: Json): string[] {
+  if (spec.kind !== 'collection' || !spec.validate) return [];
+  const out: string[] = [];
+  for (const entry of asArray(doc)) out.push(...spec.validate(entry));
   return out;
 }
 
@@ -1145,7 +1172,7 @@ async function putProvider(http: ConfigHttp, config: Config): Promise<void> {
   if (Array.isArray(c.scopes)) body.scopes = c.scopes;
   // Credential-less providers (siwe, siws, siwb, siwf) take verifier settings instead.
   if (c.settings && typeof c.settings === 'object' && !Array.isArray(c.settings)) body.settings = c.settings;
-  if (c.mode === 'native' || c.mode === 'redirect') body.mode = c.mode;
+  if (c.mode !== undefined) body.mode = c.mode;
   const provider = String(c.provider ?? '');
   if (Object.keys(body).length) {
     await http.put(`/v1/oauth_providers/${enc(provider)}`, body);
@@ -1306,10 +1333,13 @@ export async function planConfigImport(
   }
   const present = new Set(readdirSync(dir));
 
-  const unknown = registry().flatMap((spec) =>
-    present.has(`${spec.type}.${ext}`) ? unknownFileKeys(spec, deserialize(readFileSync(join(dir, `${spec.type}.${ext}`), 'utf8'), format)) : [],
+  const files = registry().flatMap((spec) =>
+    present.has(`${spec.type}.${ext}`) ? [{ spec, doc: deserialize(readFileSync(join(dir, `${spec.type}.${ext}`), 'utf8'), format) }] : [],
   );
+  const unknown = files.flatMap(({ spec, doc }) => unknownFileKeys(spec, doc));
   if (unknown.length) throw new CliError(`Unknown key(s) in the config:\n  ${unknown.join('\n  ')}`);
+  const invalid = files.flatMap(({ spec, doc }) => invalidFileValues(spec, interpolate(doc, env)));
+  if (invalid.length) throw new CliError(`Invalid value(s) in the config:\n  ${invalid.join('\n  ')}`);
 
   const rotate = opts.rotateSecrets === true;
   const warnings: string[] = [];

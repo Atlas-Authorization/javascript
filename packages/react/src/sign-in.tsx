@@ -91,6 +91,7 @@ export function SignIn(props: FlowProps = {}) {
         prepared={state.prepared ?? null}
         onPrepare={prepare}
         onUsePassword={usePassword}
+        passwordHold={state.passwordHold}
         recoveryCodes={pendingRecoveryCodes(state)}
         onRecoveryCodesSaved={saveRecoveryCodes}
         onPolicyDecline={(policy) =>
