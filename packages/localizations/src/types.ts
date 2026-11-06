@@ -151,6 +151,7 @@ export interface LocalizationResource {
   'mfa.sendCode': string;
   'mfa.codeTextedTo': string;
   'mfa.codeWait': string;
+  'mfa.codeWaitMinutes': string;
   'mfa.smsCodeOption': string;
   'mfa.recoveryCodesTitle': string,
   'mfa.recoveryCodesHelp': string,

@@ -107,6 +107,7 @@ export const jaJP: Localization = {
   'mfa.sendCode': 'SMSでコードを受け取る',
   'mfa.codeTextedTo': '{phone} に送信したコードを入力してください。',
   'mfa.codeWait': '{seconds} 秒後に別のコードをリクエストできます。',
+  'mfa.codeWaitMinutes': '{minutes} 分後に別のコードをリクエストできます。',
   'mfa.smsCodeOption': '代わりにSMSでコードを受け取る',
   'mfa.recoveryCodesTitle': 'リカバリコードを保存',
   'mfa.recoveryCodesHelp': '各コードは 1 回だけ使えます。2 つ目の手順を使えないときは、これらのコードでサインインしてください。安全な場所に保管してください。再表示はされません。',

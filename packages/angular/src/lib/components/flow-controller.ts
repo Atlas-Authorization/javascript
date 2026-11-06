@@ -23,6 +23,8 @@ import {
   sendOnlyWaySecondFactorCode,
   holdsSecondFactor,
   secondFactorSendText,
+  codeWaitSeconds,
+  createCodeWaits,
   continueOnHostedPage,
   resendSignUpVerification,
   flowNeedsCaptcha,
@@ -98,9 +100,9 @@ export class AtlasFlowController {
    * in flight, where the code went, or why it was not sent. Null until asked,
    * and again once the flow leaves that step.
    */
-  readonly emailSecondFactor = signal<{ busy?: boolean; sentTo?: string; error?: string } | null>(null);
+  readonly emailSecondFactor = signal<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null>(null);
   /** "Text me a code instead" at the second factor ({@link sendSmsSecondFactor}): as {@link emailSecondFactor}. */
-  readonly smsSecondFactor = signal<{ busy?: boolean; sentTo?: string; error?: string } | null>(null);
+  readonly smsSecondFactor = signal<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null>(null);
   /**
    * The MFA enrolment step (`needs_mfa_enrollment`): the authenticator app's
    * setup (QR code, setup key) or a texted code. Started and reset with the flow.
@@ -285,6 +287,7 @@ export class AtlasFlowController {
     if (next.attempt?.status !== 'needs_second_factor' || (next.attempt?.id ?? null) !== previousId) {
       this.emailSecondFactor.set(null);
       this.smsSecondFactor.set(null);
+      this.codeWaits.stopAll();
     }
     this.syncCaptcha();
     this.syncEnrollment();
@@ -294,10 +297,12 @@ export class AtlasFlowController {
 
   private autoSentFor: string | null = null;
   private onlyWayFor: string | null = null;
-  private readonly notHeld = signal<string[]>([]);
+  // Nothing is offered until the account's answer is in, so an option never flashes and goes.
+  private readonly held = signal<string[]>([]);
+  private readonly codeWaits = createCodeWaits();
   /** The account can't use this second factor: its option is hidden. */
   lacks(factor: 'passkey' | 'sms' | 'email_code'): boolean {
-    return this.notHeld().includes(`${this.state().attempt?.id}:${factor}`);
+    return !this.held().includes(`${this.state().attempt?.id}:${factor}`);
   }
   /** Once per attempt, on arrival at the second factor: send the code if that channel is the only way. */
   private autoSendOnlyWay(): void {
@@ -308,11 +313,11 @@ export class AtlasFlowController {
     if (!emailCode && !sms && !passkey) return;
     this.onlyWayFor = id;
     for (const factor of ['passkey', 'sms', 'email_code'] as const) {
-      void holdsSecondFactor(this.client, id, factor).then((held) => { if (!held) this.notHeld.update((list) => [...list, `${id}:${factor}`]); });
+      void holdsSecondFactor(this.client, id, factor).then((yes) => { if (yes) this.held.update((list) => [...list, `${id}:${factor}`]); });
     }
     // A stale answer (the flow moved to another attempt) is dropped.
-    if (emailCode) void sendOnlyWaySecondFactorCode(this.client, id, 'email_code', (seconds) => { if (this.state().attempt?.id === id) this.emailSecondFactor.set({ error: this.t('mfa.codeWait').replace('{seconds}', String(seconds)) }); }).then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.emailSecondFactor.set({ sentTo }); });
-    if (sms) void sendOnlyWaySecondFactorCode(this.client, id, 'sms', (seconds) => { if (this.state().attempt?.id === id) this.smsSecondFactor.set({ error: this.t('mfa.codeWait').replace('{seconds}', String(seconds)) }); }).then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.smsSecondFactor.set({ sentTo }); });
+    if (emailCode) void sendOnlyWaySecondFactorCode(this.client, id, 'email_code', (seconds) => { if (this.state().attempt?.id === id) this.codeWaits.start('email_code', seconds, (w) => this.emailSecondFactor.set(w)); }).then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.emailSecondFactor.set({ sentTo }); });
+    if (sms) void sendOnlyWaySecondFactorCode(this.client, id, 'sms', (seconds) => { if (this.state().attempt?.id === id) this.codeWaits.start('sms', seconds, (w) => this.smsSecondFactor.set(w)); }).then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.smsSecondFactor.set({ sentTo }); });
   }
 
   /** "Use a passkey" at the second factor: leaves for the hosted page. */
@@ -407,11 +412,12 @@ export class AtlasFlowController {
 
   private async sendSecondFactorCode(
     strategy: 'sms' | 'email_code',
-    out: WritableSignal<{ busy?: boolean; sentTo?: string; error?: string } | null>,
+    out: WritableSignal<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null>,
   ): Promise<void> {
     const id = this.state().attempt?.id;
     if (!id) return;
     const before = out()?.sentTo;
+    this.codeWaits.stop(strategy);
     out.set({ sentTo: before, busy: true });
     try {
       const { sentTo } = await prepareSecondFactorCode(this.client, id, strategy);
@@ -419,7 +425,9 @@ export class AtlasFlowController {
       // A wrong code's message no longer applies once a new code has gone out.
       this.state.update((current) => ({ ...current, errors: [] }));
     } catch (error) {
-      out.set({ sentTo: before, error: secondFactorSendText(error, (key, vars) => this.t(key).replace('{seconds}', vars.seconds)) });
+      const seconds = codeWaitSeconds(error);
+      if (seconds !== null) this.codeWaits.start(strategy, seconds, (w) => out.set({ sentTo: before, ...w }));
+      else out.set({ sentTo: before, error: secondFactorSendText(error, (key) => this.t(key)) });
     }
   }
 
@@ -549,6 +557,7 @@ export class AtlasFlowController {
 
   /** Release the poll timer and the captcha widgets — call from the component's `ngOnDestroy`. */
   destroy(): void {
+    this.codeWaits.stopAll();
     this.passkey.stopAutofill();
     this.stopPolling();
     this.captcha.destroy();

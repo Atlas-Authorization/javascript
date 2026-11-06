@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.17.2 — 2026-11-06
+
+- New key `mfa.codeWaitMinutes`.
+
 ## 0.17.0 — 2026-11-06
 
 - Emailed link confirmation and enrolment factor strings and shapes.

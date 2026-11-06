@@ -144,7 +144,7 @@ export class AtlasWidget {
   /** The mailed-link page, when opened from one. Undefined until first looked for. */
   emailLinkPage: EmailLinkConfirmation | null | undefined = undefined;
   /** "Text me a code instead" / "Email me a code instead" at the second factor: sending, sent, or refused. */
-  secondFactorCode: { attemptId: string; strategy: 'sms' | 'email_code'; busy?: boolean; sentTo?: string; error?: string } | null = null;
+  secondFactorCode: { attemptId: string; strategy: 'sms' | 'email_code'; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null = null;
   /**
    * The email/username the user typed at the identifier step, kept so later steps
    * can show it as context ("Enter the code we sent to you@example.com") — the

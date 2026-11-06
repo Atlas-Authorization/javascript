@@ -109,6 +109,7 @@ export const zhTW: LocalizationResource = {
   'mfa.sendCode': '傳送簡訊驗證碼給我',
   'mfa.codeTextedTo': '請輸入我們以簡訊傳送至 {phone} 的驗證碼。',
   'mfa.codeWait': '{seconds} 秒後可以再次取得驗證碼。',
+  'mfa.codeWaitMinutes': '{minutes} 分鐘後可以再次取得驗證碼。',
   'mfa.smsCodeOption': '改以簡訊傳送驗證碼給我',
   'mfa.recoveryCodesTitle': '儲存您的復原碼',
   'mfa.recoveryCodesHelp': '每組復原碼只能使用一次。如果無法使用第二個驗證步驟，可使用其中一組登入。請妥善保管，這些復原碼不會再次顯示。',

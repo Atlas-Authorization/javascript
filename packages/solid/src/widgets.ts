@@ -71,6 +71,9 @@ import {
   type FlowState,
   type InstanceSettings,
   type PublicSignUpField,
+  codeWaitSeconds,
+  codeWaitText,
+  createCodeWaits,
 } from '@atlasauth/js';
 import { useAtlas } from './context';
 import type { AtlasClient } from './provider';
@@ -189,6 +192,7 @@ export const SIGN_UP_TEXT: Record<string, string> = {
   'mfa.sendCode': 'Text me a code',
   'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
   'mfa.codeWait': 'You can ask for another code in {seconds} seconds.',
+  'mfa.codeWaitMinutes': 'You can ask for another code in {minutes} minutes.',
   'mfa.codeLabel': 'Code',
   'mfa.recoveryCodesTitle': 'Save your recovery codes',
   'mfa.recoveryCodesHelp': "Each code works once. If you can't use your second step, sign in with one of these. Keep them somewhere safe: they won't be shown again.",
@@ -725,7 +729,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
       out.push(
         h('p', { class: 'atlas-text', 'aria-live': 'polite', 'data-atlas': 'mfa-code-texted' }, t('mfa.codeTextedTo', { phone: s.enrollment.phone ?? '' })),
         field('code', t('mfa.codeLabel'), 'text', 'one-time-code'),
-        h('button', { class: 'atlas-link', type: 'button', 'data-atlas-resend': '', onClick: () => void enrollment.resend() }, t('signIn.resendCode')),
+        h('button', { class: 'atlas-link', type: 'button', 'data-atlas-resend': '', disabled: () => !!enrollmentState().wait, onClick: () => void enrollment.resend() }, t('signIn.resendCode')),
       );
     }
     if (s.method !== null && s.options.length > 1) out.push(...s.options.filter((m) => m !== s.method).map(method));
@@ -788,17 +792,20 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     sendEmailFactor(strategy);
   });
   // Second factor: "Email me a code" (and the on-arrival send when the inbox is the only way), "Use a passkey".
-  const [secondMail, setSecondMail] = createSignal<{ attemptId: string; busy?: boolean; sentTo?: string; error?: string } | null>(null);
+  const [secondMail, setSecondMail] = createSignal<{ attemptId: string; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null>(null);
   const secondMailNow = () => {
     const m = secondMail();
     return m && m.attemptId === (state().attempt?.id ?? null) ? m : null;
   };
-  const [secondText, setSecondText] = createSignal<{ attemptId: string; busy?: boolean; sentTo?: string; error?: string } | null>(null);
+  const [secondText, setSecondText] = createSignal<{ attemptId: string; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null>(null);
   const secondTextNow = () => {
     const m = secondText();
     return m && m.attemptId === (state().attempt?.id ?? null) ? m : null;
   };
-  const [notHeld, setNotHeld] = createSignal<string[]>([]);
+  // Nothing is offered until the account's answer is in, so an option never flashes and goes.
+  const [held, setHeld] = createSignal<string[]>([]);
+  const codeWaits = createCodeWaits();
+  onCleanup(() => codeWaits.stopAll());
   let onlyWayFor: string | null = null;
   createEffect(() => {
     const id = state().attempt?.id ?? null;
@@ -806,19 +813,20 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     if (kind() !== 'collect_second_factor' || !id || onlyWayFor === id || (!emailCode && !sms && !passkey)) return;
     onlyWayFor = id;
     for (const factor of ['passkey', 'sms', 'email_code'] as const) {
-      void holdsSecondFactor(fapi, id, factor).then((held) => { if (!held) setNotHeld((list) => [...list, `${id}:${factor}`]); });
+      void holdsSecondFactor(fapi, id, factor).then((yes) => { if (yes) setHeld((list) => [...list, `${id}:${factor}`]); });
     }
     // secondMailNow and secondTextNow ignore an answer for an attempt the flow has left.
-    if (emailCode) void sendOnlyWaySecondFactorCode(fapi, id, 'email_code', (seconds) => setSecondMail({ attemptId: id, error: t('mfa.codeWait', { seconds: String(seconds) }) })).then((sentTo) => { if (sentTo) setSecondMail({ attemptId: id, sentTo }); });
-    if (sms) void sendOnlyWaySecondFactorCode(fapi, id, 'sms', (seconds) => setSecondText({ attemptId: id, error: t('mfa.codeWait', { seconds: String(seconds) }) })).then((sentTo) => { if (sentTo) setSecondText({ attemptId: id, sentTo }); });
+    if (emailCode) void sendOnlyWaySecondFactorCode(fapi, id, 'email_code', (seconds) => codeWaits.start('email_code', seconds, (w) => setSecondMail({ attemptId: id, ...w }))).then((sentTo) => { if (sentTo) setSecondMail({ attemptId: id, sentTo }); });
+    if (sms) void sendOnlyWaySecondFactorCode(fapi, id, 'sms', (seconds) => codeWaits.start('sms', seconds, (w) => setSecondText({ attemptId: id, ...w }))).then((sentTo) => { if (sentTo) setSecondText({ attemptId: id, sentTo }); });
   });
   const sendSecondCode = (
     attemptId: string,
     strategy: 'email_code' | 'sms',
     now: () => { sentTo?: string } | null,
-    set: (value: { attemptId: string; busy?: boolean; sentTo?: string; error?: string }) => void,
+    set: (value: { attemptId: string; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean }) => void,
   ) => {
     const before = now()?.sentTo;
+    codeWaits.stop(strategy);
     set({ attemptId, sentTo: before, busy: true });
     prepareSecondFactorCode(fapi, attemptId, strategy)
       .then(({ sentTo }) => {
@@ -826,7 +834,11 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         // A wrong code's message no longer applies once a new code has gone out.
         setState((s) => ({ ...s, errors: [] }));
       })
-      .catch((e: unknown) => set({ attemptId, sentTo: before, error: secondFactorSendText(e, t) }));
+      .catch((e: unknown) => {
+        const seconds = codeWaitSeconds(e);
+        if (seconds === null) set({ attemptId, sentTo: before, error: secondFactorSendText(e, t) });
+        else codeWaits.start(strategy, seconds, (w) => set({ attemptId, sentTo: before, ...w }));
+      });
   };
   const sendSecondMail = (attemptId: string) => sendSecondCode(attemptId, 'email_code', secondMailNow, setSecondMail);
   const sendSecondText = (attemptId: string) => sendSecondCode(attemptId, 'sms', secondTextNow, setSecondText);
@@ -834,16 +846,17 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     const attempt = state().attempt;
     const choices = mfaChoicesFrom(settings()?.account);
     if (!attempt) return null;
-    const lacks = (factor: string) => notHeld().includes(`${attempt.id}:${factor}`);
-    const option = (name: string, m: { busy?: boolean; sentTo?: string; error?: string } | null, line: (to: string) => string, label: string, send: () => void) => {
+    const lacks = (factor: string) => !held().includes(`${attempt.id}:${factor}`);
+    const option = (name: string, m: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null, line: (to: string) => string, label: string, send: () => void) => {
       const sent = m?.sentTo !== undefined;
       return [
         sent ? h('p', { class: 'atlas-text', 'data-atlas': `${name}-sent`, 'aria-live': 'polite' }, line(m!.sentTo!)) : null,
         h(
           'button',
-          { class: 'atlas-link', type: 'button', 'data-atlas': sent ? `${name}-resend` : name, disabled: state().busy || !!m?.busy, onClick: send },
-          m?.busy ? t('signIn.sending') : sent || m?.error ? t('signIn.resendCode') : t(label),
+          { class: 'atlas-link', type: 'button', 'data-atlas': sent ? `${name}-resend` : name, disabled: state().busy || !!m?.busy || !!m?.wait, onClick: send },
+          m?.busy ? t('signIn.sending') : sent || m?.error || m?.wait ? t('signIn.resendCode') : t(label),
         ),
+        m?.wait ? h('p', { class: 'atlas-error', 'data-atlas': 'code-wait', role: m.ticking ? 'timer' : 'alert' }, codeWaitText(m.wait, t)) : null,
         m?.error ? h('p', { class: 'atlas-error', role: 'alert' }, m.error) : null,
       ];
     };
@@ -968,6 +981,12 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         captcha,
         () => (kind() === 'collect_identifier' || kind() === 'collect_captcha') && captchaDrawn(),
       ),
+      () => {
+        const s = enrollmentState();
+        return kind() === 'enroll_second_factor' && s.wait
+          ? h('p', { class: 'atlas-error', 'data-atlas': 'code-wait', role: s.waitTicking ? 'timer' : 'alert' }, codeWaitText(s.wait, t))
+          : null;
+      },
       () => (kind() === 'enroll_second_factor' ? renderErrors(enrollmentState().errors, client.localization) : null),
       // The code to type on another device. Only ever shown on the tab that started the flow.
       () =>

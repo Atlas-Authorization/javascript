@@ -112,6 +112,7 @@ export const enUS: LocalizationResource = {
   'mfa.sendCode': 'Text me a code',
   'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
   'mfa.codeWait': 'You can ask for another code in {seconds} seconds.',
+  'mfa.codeWaitMinutes': 'You can ask for another code in {minutes} minutes.',
   'mfa.smsCodeOption': 'Text me a code instead',
   'mfa.recoveryCodesTitle': 'Save your recovery codes',
   'mfa.recoveryCodesHelp': "Each code works once. If you can't use your second step, sign in with one of these. Keep them somewhere safe: they won't be shown again.",

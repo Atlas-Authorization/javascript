@@ -16,6 +16,8 @@ import {
   planFirstFactor,
   lastUsedMethodLabel,
   enrollmentSubmitKey,
+  codeWaitText,
+  createCodeWaits,
   enrollmentOptionKey,
   createEmailLinkConfirmation,
   emailLinkFromUrl,
@@ -316,7 +318,7 @@ const AttemptFlow = defineComponent({
      * `account.emailSecondFactor`). Without it the step asks for the code only.
      */
     onEmailSecondFactor: {
-      type: Function as PropType<() => Promise<{ sentTo?: string; error?: string }>>,
+      type: Function as PropType<() => Promise<{ sentTo?: string; error?: string; retryAfter?: number | null }>>,
       default: undefined,
     },
     /**
@@ -324,7 +326,7 @@ const AttemptFlow = defineComponent({
      * texted codes). Without it the step offers no texted code.
      */
     onSmsSecondFactor: {
-      type: Function as PropType<() => Promise<{ sentTo?: string; error?: string }>>,
+      type: Function as PropType<() => Promise<{ sentTo?: string; error?: string; retryAfter?: number | null }>>,
       default: undefined,
     },
     /** On arrival at the second factor: emails the code if the inbox is the only way (masked address, or null). */
@@ -381,28 +383,32 @@ const AttemptFlow = defineComponent({
     // code field / "check your email" once an emailed code / link was sent.
     const factor = ref<'password' | 'email_code' | 'email_link'>('password');
     // "Email me a code instead" at the second factor: where it went, or why not.
-    const emailed = ref<{ busy?: boolean; sentTo?: string; error?: string }>({});
+    const emailed = ref<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean }>({});
     // "Text me a code instead": the same, for the texted code.
-    const texted = ref<{ busy?: boolean; sentTo?: string; error?: string }>({});
+    const texted = ref<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean }>({});
     watch(
       () => props.attempt?.id,
       () => {
         factor.value = 'password';
         emailed.value = {};
         texted.value = {};
+        waits.stopAll();
       },
     );
 
     // Once per attempt: email the code on arrival when the inbox is the only way.
-    const notHeld = ref<string[]>([]);
-    const lacks = (factor: string) => notHeld.value.includes(`${props.attempt?.id}:${factor}`);
+    // Nothing is offered until the account's answer is in, so an option never flashes and goes.
+    const held = ref<string[]>([]);
+    const lacks = (factor: string) => !!props.onHoldsFactor && !held.value.includes(`${props.attempt?.id}:${factor}`);
+    const waits = createCodeWaits();
+    onUnmounted(() => waits.stopAll());
     watch(
       () => (props.attempt && props.onHoldsFactor && nextStep(props.attempt).kind === 'collect_second_factor' ? props.attempt.id : null),
       (id) => {
         if (!id || !props.onHoldsFactor) return;
         for (const factor of ['passkey', 'sms', 'email_code'] as const) {
-          void props.onHoldsFactor(id, factor).then((held) => {
-            if (!held) notHeld.value = [...notHeld.value, `${id}:${factor}`];
+          void props.onHoldsFactor(id, factor).then((yes) => {
+            if (yes) held.value = [...held.value, `${id}:${factor}`];
           });
         }
       },
@@ -416,7 +422,7 @@ const AttemptFlow = defineComponent({
         onlyWayFor = id;
         if (props.onEmailSecondFactor) {
           const wait = (seconds: number) => {
-            if (props.attempt?.id === id) emailed.value = { error: t('mfa.codeWait', { seconds: String(seconds) }) };
+            if (props.attempt?.id === id) waits.start('email-second-factor', seconds, (w) => { emailed.value = w; });
           };
           void props.onOnlyWay(id, 'email_code', wait).then((sentTo) => {
             if (sentTo && props.attempt?.id === id) emailed.value = { sentTo };
@@ -424,7 +430,7 @@ const AttemptFlow = defineComponent({
         }
         if (props.onSmsSecondFactor) {
           const wait = (seconds: number) => {
-            if (props.attempt?.id === id) texted.value = { error: t('mfa.codeWait', { seconds: String(seconds) }) };
+            if (props.attempt?.id === id) waits.start('sms-second-factor', seconds, (w) => { texted.value = w; });
           };
           void props.onOnlyWay(id, 'sms', wait).then((sentTo) => {
             if (sentTo && props.attempt?.id === id) texted.value = { sentTo };
@@ -587,13 +593,14 @@ const AttemptFlow = defineComponent({
               class: cls('formButtonSecondary', 'atlas-button-secondary'),
               type: 'button',
               'data-atlas-resend': '',
-              disabled: props.busy || s.busy,
+              disabled: props.busy || s.busy || !!s.wait,
               onClick: () => void enrol.resend(),
             },
             t('signIn.resendCode'),
           ),
         );
       }
+      if (s.wait) out.push(h('p', { key: 'code-wait', class: cls('formFieldError', 'atlas-error'), 'data-atlas': 'code-wait', role: s.waitTicking ? 'timer' : 'alert' }, codeWaitText(s.wait, t)));
       for (const error of s.errors) {
         out.push(h('p', { key: `enrol-error-${error.code}-${error.param ?? ''}`, class: cls('formFieldError', 'atlas-error'), role: 'alert' }, error.message));
       }
@@ -676,10 +683,10 @@ const AttemptFlow = defineComponent({
           const out: VNode[] = [field('code', 'mfa.codeLabel')];
           const option = (
             name: string,
-            state: { value: { busy?: boolean; sentTo?: string; error?: string } },
+            state: { value: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } },
             sentLine: (to: string) => string,
             label: Parameters<typeof t>[0],
-            send: () => Promise<{ sentTo?: string; error?: string }>,
+            send: () => Promise<{ sentTo?: string; error?: string; retryAfter?: number | null }>,
           ) => {
             const now = state.value;
             const sent = now.sentTo !== undefined;
@@ -692,17 +699,20 @@ const AttemptFlow = defineComponent({
                   class: cls('formButtonSecondary', 'atlas-button-secondary'),
                   type: 'button',
                   'data-atlas': sent ? `${name}-resend` : name,
-                  disabled: props.busy || now.busy,
+                  disabled: props.busy || now.busy || !!now.wait,
                   onClick: () => {
+                    waits.stop(name);
                     state.value = { sentTo: now.sentTo, busy: true };
                     void send().then((r) => {
-                      state.value = r.error ? { sentTo: now.sentTo, error: r.error } : { sentTo: r.sentTo ?? '' };
+                      if (r.retryAfter) waits.start(name, r.retryAfter, (w) => { state.value = { sentTo: now.sentTo, ...w }; });
+                      else state.value = r.error ? { sentTo: now.sentTo, error: r.error } : { sentTo: r.sentTo ?? '' };
                     });
                   },
                 },
-                now.busy ? t('signIn.sending') : sent || now.error ? t('signIn.resendCode') : t(label),
+                now.busy ? t('signIn.sending') : sent || now.error || now.wait ? t('signIn.resendCode') : t(label),
               ),
             );
+            if (now.wait) out.push(h('p', { key: `${name}-wait`, class: cls('formFieldError', 'atlas-error'), 'data-atlas': 'code-wait', role: now.ticking ? 'timer' : 'alert' }, codeWaitText(now.wait, t)));
             if (now.error) out.push(h('p', { key: `${name}-error`, class: cls('formFieldError', 'atlas-error'), role: 'alert' }, now.error));
           };
           if (props.onSmsSecondFactor && !lacks('sms')) option('sms-second-factor', texted, (phone) => t('mfa.codeTextedTo', { phone }), 'mfa.smsCodeOption', props.onSmsSecondFactor);

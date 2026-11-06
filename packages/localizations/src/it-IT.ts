@@ -109,6 +109,7 @@ export const itIT: LocalizationResource = {
   'mfa.sendCode': 'Inviami un codice via SMS',
   'mfa.codeTextedTo': 'Inserisci il codice che abbiamo inviato via SMS a {phone}.',
   'mfa.codeWait': 'Puoi richiedere un altro codice tra {seconds} secondi.',
+  'mfa.codeWaitMinutes': 'Puoi richiedere un altro codice tra {minutes} minuti.',
   'mfa.smsCodeOption': 'Inviami invece un codice via SMS',
   'mfa.recoveryCodesTitle': 'Salva i tuoi codici di ripristino',
   'mfa.recoveryCodesHelp':

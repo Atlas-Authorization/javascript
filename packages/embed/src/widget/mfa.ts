@@ -11,6 +11,10 @@ import {
   sendOnlyWaySecondFactorCode,
   holdsSecondFactor,
   secondFactorSendText,
+  codeWaitSeconds,
+  codeWaitText,
+  createCodeWaits,
+  type CodeWaits,
   continueOnHostedPage,
   type MfaEnrollmentController,
   type MfaEnrollmentStrategy,
@@ -62,6 +66,7 @@ const EN: Record<string, string> = {
   'mfa.sendCode': 'Text me a code',
   'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
   'mfa.codeWait': 'You can ask for another code in {seconds} seconds.',
+  'mfa.codeWaitMinutes': 'You can ask for another code in {minutes} minutes.',
   'mfa.codeLabel': 'Code',
   'mfa.smsCodeOption': 'Text me a code instead',
   'mfa.recoveryCodesTitle': 'Save your recovery codes',
@@ -115,7 +120,15 @@ export function enrollmentFor(w: AtlasWidget): MfaEnrollmentController | null {
     w.enrollment = createMfaEnrollment(w.client, () => mfaChoicesFrom(w.account));
     // Redraw after the step's own requests; deferred, so a change raised while
     // the panel is being drawn never redraws inside that draw.
-    w.enrollment.subscribe(() => queueMicrotask(() => render(w)));
+    let drawn = w.enrollment.state;
+    w.enrollment.subscribe((s) => {
+      // A tick redraws nothing: a redraw would throw away what's being typed.
+      const tick =
+        !!drawn.wait && s.wait !== drawn.wait && s.busy === drawn.busy && s.errors === drawn.errors && s.method === drawn.method && s.enrollment === drawn.enrollment && s.options === drawn.options;
+      drawn = s;
+      if (tick) drawCodeWait(w, s.wait ?? null);
+      else queueMicrotask(() => render(w));
+    });
   }
   w.enrollment.start(id);
   return w.enrollment;
@@ -211,10 +224,12 @@ export function renderEnrollment(
     const again = el(w, 'button', 'atlas-embed-step-back', say(w, 'signIn.resendCode')) as HTMLButtonElement;
     again.type = 'button';
     again.setAttribute('data-atlas-resend', '');
-    again.disabled = w.busy || s.busy;
+    again.disabled = w.busy || s.busy || !!s.wait;
+    if (s.wait) again.setAttribute('data-atlas-waiting', '');
     again.addEventListener('click', () => void enrol.resend());
     helpers.trailing.push(again);
   }
+  if (s.wait) form.appendChild(codeWaitLine(w, s.wait, !!s.waitTicking));
   for (const error of s.errors) {
     const p = el(w, 'p', 'atlas-embed-error', w.errorText(error));
     p.setAttribute('role', 'alert');
@@ -241,19 +256,64 @@ export async function submitEnrollment(w: AtlasWidget, values: Record<string, st
  */
 const onlyWaySent = new WeakMap<AtlasWidget, string>();
 const heldAsked = new WeakMap<AtlasWidget, string>();
-const notHeld = new WeakMap<AtlasWidget, Set<string>>();
+const heldAnswer = new WeakMap<AtlasWidget, Set<string>>();
+const codeWaits = new WeakMap<AtlasWidget, CodeWaits>();
+
+function codeWaitLine(w: AtlasWidget, left: number, ticking: boolean): HTMLElement {
+  const line = el(w, 'p', 'atlas-embed-error', codeWaitText(left, (key, vars) => say(w, key, vars)));
+  line.setAttribute('data-atlas', 'code-wait');
+  line.setAttribute('role', ticking ? 'timer' : 'alert');
+  return line;
+}
+
+/** One second of a wait, in place. At zero the line goes and the button comes back. */
+function drawCodeWait(w: AtlasWidget, left: number | null): void {
+  const line = w.root.querySelector('[data-atlas="code-wait"]');
+  if (left === null) {
+    line?.remove();
+    for (const b of Array.from(w.root.querySelectorAll<HTMLButtonElement>('[data-atlas-waiting]'))) {
+      b.removeAttribute('data-atlas-waiting');
+      b.disabled = w.busy;
+    }
+  } else if (line) {
+    line.textContent = codeWaitText(left, (key, vars) => say(w, key, vars));
+    line.setAttribute('role', 'timer');
+  }
+}
+
+function startCodeWait(w: AtlasWidget, id: string, strategy: 'sms' | 'email_code', seconds: number, sentTo?: string): void {
+  let waits = codeWaits.get(w);
+  if (!waits) codeWaits.set(w, (waits = createCodeWaits()));
+  const running = waits;
+  running.start(strategy, seconds, ({ wait, ticking }) => {
+    if (w.state.attempt?.id !== id) {
+      running.stopAll();
+      return;
+    }
+    w.secondFactorCode = wait === null ? { attemptId: id, strategy, sentTo } : { attemptId: id, strategy, sentTo, wait, ticking };
+    if (ticking || wait === null) drawCodeWait(w, wait);
+    else render(w);
+  });
+}
+
 export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLElement[]): void {
   const id = w.state.attempt?.id;
   if (!id) return;
   const choices = mfaChoicesFrom(w.account);
   if (heldAsked.get(w) !== id) {
     heldAsked.set(w, id);
-    notHeld.set(w, new Set());
+    heldAnswer.delete(w);
+    // Options are drawn hidden until the account's answer is in, then shown or dropped in place.
     for (const factor of ['passkey', 'sms', 'email_code'] as const) {
       void holdsSecondFactor(w.client, id, factor).then((held) => {
-        if (held) return;
-        notHeld.get(w)?.add(`${id}:${factor}`);
-        render(w);
+        if (heldAsked.get(w) !== id) return;
+        let answer = heldAnswer.get(w);
+        if (!answer) heldAnswer.set(w, (answer = new Set()));
+        answer.add(`${factor}:${held}`);
+        for (const b of Array.from(w.root.querySelectorAll<HTMLElement>(`[data-atlas-factor="${factor}"]`))) {
+          if (held) b.style.display = '';
+          else b.remove();
+        }
       });
     }
   }
@@ -264,8 +324,7 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
     for (const strategy of channels) {
       const limited = (seconds: number) => {
         if (w.state.attempt?.id !== id) return;
-        w.secondFactorCode = { attemptId: id, strategy, error: say(w, 'mfa.codeWait', { seconds: String(seconds) }) };
-        render(w);
+        startCodeWait(w, id, strategy, seconds);
       };
       void sendOnlyWaySecondFactorCode(w.client, id, strategy, limited).then((sentTo) => {
         if (!sentTo || w.state.attempt?.id !== id) return;
@@ -279,7 +338,7 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
   if (choices.sms) offer.push('sms');
   if (choices.emailCode) offer.push('email_code');
   for (const strategy of offer) {
-    if (notHeld.get(w)?.has(`${id}:${strategy}`)) continue;
+    if (heldAnswer.get(w)?.has(`${strategy}:false`)) continue;
     const name = strategy === 'sms' ? 'sms-second-factor' : 'email-second-factor';
     const mine = sent?.strategy === strategy ? sent : null;
     const wasSent = mine?.sentTo !== undefined;
@@ -295,13 +354,17 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
       trailing.push(note);
     }
     const busy = mine?.busy === true;
-    const label = busy ? 'signIn.sending' : wasSent || mine?.error ? 'signIn.resendCode' : strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption';
+    const label = busy ? 'signIn.sending' : wasSent || mine?.error || mine?.wait ? 'signIn.resendCode' : strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption';
     const b = el(w, 'button', 'atlas-embed-step-back', say(w, label)) as HTMLButtonElement;
     b.type = 'button';
     b.setAttribute('data-atlas', wasSent ? `${name}-resend` : name);
-    b.disabled = w.busy || busy;
+    b.disabled = w.busy || busy || !!mine?.wait;
+    if (mine?.wait) b.setAttribute('data-atlas-waiting', '');
+    b.setAttribute('data-atlas-factor', strategy);
+    if (!heldAnswer.get(w)?.has(`${strategy}:true`)) b.style.display = 'none';
     b.addEventListener('click', () => {
       const before = mine?.sentTo;
+      codeWaits.get(w)?.stop(strategy);
       w.secondFactorCode = { attemptId: id, strategy, sentTo: before, busy: true };
       render(w);
       prepareSecondFactorCode(w.client, id, strategy).then(
@@ -312,22 +375,30 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
           render(w);
         },
         (error: unknown) => {
+          const seconds = codeWaitSeconds(error);
+          if (seconds !== null) {
+            startCodeWait(w, id, strategy, seconds, before);
+            return;
+          }
           w.secondFactorCode = { attemptId: id, strategy, sentTo: before, error: secondFactorSendText(error, (key, vars) => say(w, key, vars)) };
           render(w);
         },
       );
     });
     trailing.push(b);
+    if (mine?.wait) trailing.push(codeWaitLine(w, mine.wait, !!mine.ticking));
     if (mine?.error) {
       const p = el(w, 'p', 'atlas-embed-error', mine.error);
       p.setAttribute('role', 'alert');
       trailing.push(p);
     }
   }
-  if (choices.passkey && !notHeld.get(w)?.has(`${id}:passkey`)) {
+  if (choices.passkey && !heldAnswer.get(w)?.has('passkey:false')) {
     const b = el(w, 'button', 'atlas-embed-step-back', say(w, 'mfa.enrollPasskeyOption')) as HTMLButtonElement;
     b.type = 'button';
     b.setAttribute('data-atlas', 'passkey-second-factor');
+    b.setAttribute('data-atlas-factor', 'passkey');
+    if (!heldAnswer.get(w)?.has('passkey:true')) b.style.display = 'none';
     b.disabled = w.busy;
     b.addEventListener('click', () => continueOnHostedPage(choices, id, 'needs_second_factor'));
     trailing.push(b);

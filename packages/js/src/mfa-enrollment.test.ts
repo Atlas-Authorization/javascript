@@ -14,7 +14,7 @@ import {
   mfaChoicesFrom,
   prepareSecondFactorCode,
   type MfaChoices,
-  passkeyRunsHere, holdsPasskeySecondFactor, holdsSecondFactor, sendOnlyWaySecondFactorCode, secondFactorSendText } from './mfa-enrollment';
+  passkeyRunsHere, holdsPasskeySecondFactor, holdsSecondFactor, sendOnlyWaySecondFactorCode, secondFactorSendText, codeWaitText, createCodeWaits } from './mfa-enrollment';
 import type { WebAuthnHost } from './passkey';
 
 function scripted(route: (path: string, body: Record<string, unknown> | null) => { status?: number; body: unknown }) {
@@ -340,10 +340,68 @@ describe('every factor the instance offers at the enrolment step', () => {
     const waits: number[] = [];
     expect(await sendOnlyWaySecondFactorCode(limited, 'sia_1', 'sms', (s) => waits.push(s))).toBeNull();
     expect(waits).toEqual([13]);
-    const t = (_key: 'mfa.codeWait', vars: { seconds: string }) => `wait ${vars.seconds}`;
+    const t = (_key: string, vars: Record<string, string>) => `wait ${vars.seconds}`;
     const failure = await prepareSecondFactorCode(limited, 'sia_1', 'sms').catch((e: unknown) => e);
     expect(secondFactorSendText(failure, t)).toBe('wait 13');
     expect(secondFactorSendText(new Error('no route'), t)).toBe('no route');
+  });
+
+  it('a hung question stops hiding the options after 3 seconds', async () => {
+    vi.useFakeTimers();
+    try {
+      const hung = { get: () => new Promise(() => {}) } as never;
+      const answer = holdsSecondFactor(hung, 'sia_1', 'sms');
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(await answer).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('counts a wait down to null, one timer per channel, and a long wait reads in minutes', () => {
+    vi.useFakeTimers();
+    try {
+      const seen: unknown[] = [];
+      const waits = createCodeWaits();
+      waits.start('sms', 2, (w) => seen.push(w));
+      vi.advanceTimersByTime(3000);
+      expect(seen).toEqual([{ wait: 2, ticking: false }, { wait: 1, ticking: true }, { wait: null, ticking: false }]);
+      const restarted: unknown[] = [];
+      waits.start('sms', 5, () => restarted.push('old'));
+      waits.start('sms', 5, () => restarted.push('new'));
+      waits.stopAll();
+      vi.advanceTimersByTime(6000);
+      expect(restarted).toEqual(['old', 'new']);
+    } finally {
+      vi.useRealTimers();
+    }
+    const t = (key: string, vars: Record<string, string>) => `${key} ${Object.values(vars)[0]}`;
+    expect(codeWaitText(120, t)).toBe('mfa.codeWait 120');
+    expect(codeWaitText(121, t)).toBe('mfa.codeWaitMinutes 3');
+  });
+
+  it('a limited enrolment text counts down and clears, and stops with the attempt', async () => {
+    vi.useFakeTimers();
+    try {
+      const post = async () => ({ ok: false, status: 429, data: null, errors: [{ code: 'RATE_LIMITED', message: 'Too many requests.', meta: { retry_after: 2 } }] });
+      const enrol = createMfaEnrollment({ post } as never, { ...BOTH, totp: false });
+      enrol.start('sia_1');
+      await enrol.sendPhone('+12015550100');
+      expect(enrol.state.wait).toBe(2);
+      expect(enrol.state.waitTicking).toBe(false);
+      expect(enrol.state.errors).toEqual([]);
+      vi.advanceTimersByTime(1000);
+      expect(enrol.state.wait).toBe(1);
+      expect(enrol.state.waitTicking).toBe(true);
+      vi.advanceTimersByTime(1000);
+      expect(enrol.state.wait).toBeNull();
+      await enrol.sendPhone('+12015550100');
+      enrol.start('sia_2');
+      vi.advanceTimersByTime(5000);
+      expect(enrol.state.wait ?? null).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('holdsPasskeySecondFactor reads the answer, and anything unanswered as yes', async () => {

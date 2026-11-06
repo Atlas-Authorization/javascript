@@ -227,11 +227,14 @@ function passwordHoldProof(emailVerification: string | null | undefined): EmailF
  * Every branch comes from `nextStep`, which is exhaustive — including the
  * `unknown` case, which renders an honest message instead of nothing.
  */
+// A stable default: the cleared-errors check below compares by identity.
+const NO_ERRORS: FieldError[] = [];
+
 export function AttemptFlow({
   attempt,
   onSubmit,
   busy,
-  errors: errorsGiven,
+  errors: errorsGiven = NO_ERRORS,
   titleKey,
   hideTitle,
   captcha,
@@ -252,7 +255,7 @@ export function AttemptFlow({
   attempt: AttemptView | null;
   onSubmit(values: Record<string, string>): void;
   busy: boolean;
-  errors: FieldError[];
+  errors?: FieldError[];
   titleKey: string;
   hideTitle?: boolean;
   /**
@@ -1842,6 +1845,7 @@ export function SocialSignInButtons({
             await onComplete({
               attempt: { id: out.attemptId, status: 'complete' },
               ticket: out.ticket,
+              errors: [],
             } as unknown as FlowState);
             return;
           }
@@ -1855,7 +1859,7 @@ export function SocialSignInButtons({
           // finished the sign-in itself (the browser severed window.opener). Drive
           // the same completion path, minus the ticket the cookies already used.
           if (out.sessionDetected) {
-            await onComplete({ attempt: { status: 'complete' } } as unknown as FlowState);
+            await onComplete({ attempt: { status: 'complete' }, errors: [] } as unknown as FlowState);
             return;
           }
           // popup_closed / start_failed → the user cancelled; nothing to do.

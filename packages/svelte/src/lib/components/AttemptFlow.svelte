@@ -17,6 +17,8 @@
     type MfaEnrollmentState,
     type MfaEnrollmentStrategy,
   } from '@atlasauth/js';
+  import { codeWaitText, createCodeWaits } from '@atlasauth/js';
+  import { onDestroy } from 'svelte';
   import { useAtlas } from '../context';
   import { classFor, type ElementKey } from '../appearance';
   import { translate } from '../i18n';
@@ -60,12 +62,12 @@
    * "Email me a code instead" at the second factor (`account.emailSecondFactor`).
    * Null: the step asks for the code only.
    */
-  export let onEmailSecondFactor: (() => Promise<{ sentTo?: string; error?: string }>) | null = null;
+  export let onEmailSecondFactor: (() => Promise<{ sentTo?: string; error?: string; retryAfter?: number | null }>) | null = null;
   /**
    * "Text me a code instead" at the second factor (where the app offers texted
    * codes). Null: the step offers no texted code.
    */
-  export let onSmsSecondFactor: (() => Promise<{ sentTo?: string; error?: string }>) | null = null;
+  export let onSmsSecondFactor: (() => Promise<{ sentTo?: string; error?: string; retryAfter?: number | null }>) | null = null;
   /** On arrival at the second factor: emails the code if the inbox is the only way (masked address, or null). */
   export let onOnlyWay: ((attemptId: string, strategy: 'email_code' | 'sms', onWait?: (seconds: number) => void) => Promise<string | null>) | null = null;
   /** "Use a passkey" at the second factor: leaves for the hosted page. */
@@ -168,23 +170,31 @@
   $: identifier = passwordHold?.email ?? attempt?.identifier ?? '';
 
   // "Email me a code instead" at the second factor: where it went, or why not.
-  let emailed: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string } | null = null;
+  const codeWaits = createCodeWaits();
+  onDestroy(() => codeWaits.stopAll());
+  let emailed: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null = null;
   $: emailedNow = emailed && emailed.attemptId === (attempt?.id ?? null) ? emailed : null;
   async function emailSecondFactor() {
     if (!onEmailSecondFactor) return;
     const attemptId = attempt?.id ?? null;
     const before = emailedNow?.sentTo;
+    codeWaits.stop('email_code');
     emailed = { attemptId, sentTo: before, busy: true };
     const r = await onEmailSecondFactor();
+    if (r.retryAfter) {
+      codeWaits.start('email_code', r.retryAfter, (w) => { emailed = { attemptId, sentTo: before, ...w }; });
+      return;
+    }
     emailed = r.error ? { attemptId, sentTo: before, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
   }
   let askedHeldFor: string | null = null;
-  let notHeld: string[] = [];
+  // Nothing is offered until the account's answer is in, so an option never flashes and goes.
+  let held: string[] = [];
   $: if (step.kind === 'collect_second_factor' && onHoldsFactor && attempt?.id && askedHeldFor !== attempt.id) {
     const attemptId = attempt.id;
     askedHeldFor = attemptId;
     for (const factor of ['passkey', 'sms', 'email_code'] as const) {
-      void onHoldsFactor(attemptId, factor).then((held) => { if (!held) notHeld = [...notHeld, `${attemptId}:${factor}`]; });
+      void onHoldsFactor(attemptId, factor).then((yes) => { if (yes) held = [...held, `${attemptId}:${factor}`]; });
     }
   }
   // Once per attempt: send the code on arrival when that channel is the only way.
@@ -193,18 +203,23 @@
     const attemptId = attempt.id;
     onlyWayFor = attemptId;
     // emailedNow and textedNow only show an answer for the current attempt, so a stale one is ignored.
-    if (onEmailSecondFactor) void onOnlyWay(attemptId, 'email_code', (seconds) => { emailed = { attemptId, error: t('mfa.codeWait', { seconds: String(seconds) }) }; }).then((sentTo) => { if (sentTo) emailed = { attemptId, sentTo }; });
-    if (onSmsSecondFactor) void onOnlyWay(attemptId, 'sms', (seconds) => { texted = { attemptId, error: t('mfa.codeWait', { seconds: String(seconds) }) }; }).then((sentTo) => { if (sentTo) texted = { attemptId, sentTo }; });
+    if (onEmailSecondFactor) void onOnlyWay(attemptId, 'email_code', (seconds) => { codeWaits.start('email_code', seconds, (w) => { emailed = { attemptId, ...w }; }); }).then((sentTo) => { if (sentTo) emailed = { attemptId, sentTo }; });
+    if (onSmsSecondFactor) void onOnlyWay(attemptId, 'sms', (seconds) => { codeWaits.start('sms', seconds, (w) => { texted = { attemptId, ...w }; }); }).then((sentTo) => { if (sentTo) texted = { attemptId, sentTo }; });
   }
   // "Text me a code instead": the same, for the texted code.
-  let texted: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string } | null = null;
+  let texted: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null = null;
   $: textedNow = texted && texted.attemptId === (attempt?.id ?? null) ? texted : null;
   async function smsSecondFactor() {
     if (!onSmsSecondFactor) return;
     const attemptId = attempt?.id ?? null;
     const before = textedNow?.sentTo;
+    codeWaits.stop('sms');
     texted = { attemptId, sentTo: before, busy: true };
     const r = await onSmsSecondFactor();
+    if (r.retryAfter) {
+      codeWaits.start('sms', r.retryAfter, (w) => { texted = { attemptId, sentTo: before, ...w }; });
+      return;
+    }
     texted = r.error ? { attemptId, sentTo: before, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
   }
   // The enrolment step drawn from the shared controller (when one is passed).
@@ -448,11 +463,14 @@
             class={cls('formButtonSecondary', 'atlas-button-secondary')}
             type="button"
             data-atlas-resend
-            disabled={busy || enrollmentState.busy}
+            disabled={busy || enrollmentState.busy || !!enrollmentState.wait}
             on:click={() => void enrollment?.resend()}
           >
             {t('signIn.resendCode')}
           </button>
+        {/if}
+        {#if enrollmentState.wait}
+          <p class={cls('formFieldError', 'atlas-error')} data-atlas="code-wait" role={enrollmentState.waitTicking ? 'timer' : 'alert'}>{codeWaitText(enrollmentState.wait, t)}</p>
         {/if}
         {#each enrollmentState.errors as error (`${error.code}-${error.param ?? ''}`)}
           <p class={cls('formFieldError', 'atlas-error')} role="alert">{error.message}</p>
@@ -509,7 +527,7 @@
           </button>
         {/if}
       {/if}
-      {#if step.kind === 'collect_second_factor' && onSmsSecondFactor && !(attempt?.id && notHeld.includes(`${attempt.id}:sms`))}
+      {#if step.kind === 'collect_second_factor' && onSmsSecondFactor && (!onHoldsFactor || (attempt?.id && held.includes(`${attempt.id}:sms`)))}
         {#if textedNow && textedNow.sentTo !== undefined}
           <p class="atlas-text" data-atlas="sms-second-factor-sent" aria-live="polite">
             {t('mfa.codeTextedTo', { phone: textedNow.sentTo })}
@@ -519,16 +537,19 @@
           class={cls('formButtonSecondary', 'atlas-button-secondary')}
           type="button"
           data-atlas={textedNow?.sentTo !== undefined ? 'sms-second-factor-resend' : 'sms-second-factor'}
-          disabled={busy || !!textedNow?.busy}
+          disabled={busy || !!textedNow?.busy || !!textedNow?.wait}
           on:click={() => void smsSecondFactor()}
         >
-          {textedNow?.busy ? t('signIn.sending') : textedNow?.sentTo !== undefined || textedNow?.error ? t('signIn.resendCode') : t('mfa.smsCodeOption')}
+          {textedNow?.busy ? t('signIn.sending') : textedNow?.sentTo !== undefined || textedNow?.error || textedNow?.wait ? t('signIn.resendCode') : t('mfa.smsCodeOption')}
         </button>
+        {#if textedNow?.wait}
+          <p class={cls('formFieldError', 'atlas-error')} data-atlas="code-wait" role={textedNow.ticking ? 'timer' : 'alert'}>{codeWaitText(textedNow.wait, t)}</p>
+        {/if}
         {#if textedNow?.error}
           <p class={cls('formFieldError', 'atlas-error')} role="alert">{textedNow.error}</p>
         {/if}
       {/if}
-      {#if step.kind === 'collect_second_factor' && onEmailSecondFactor && !(attempt?.id && notHeld.includes(`${attempt.id}:email_code`))}
+      {#if step.kind === 'collect_second_factor' && onEmailSecondFactor && (!onHoldsFactor || (attempt?.id && held.includes(`${attempt.id}:email_code`)))}
         {#if emailedNow && emailedNow.sentTo !== undefined}
           <p class="atlas-text" data-atlas="email-second-factor-sent" aria-live="polite">
             {t('signIn.codeSentTo', { email: emailedNow.sentTo })}
@@ -538,16 +559,19 @@
           class={cls('formButtonSecondary', 'atlas-button-secondary')}
           type="button"
           data-atlas={emailedNow?.sentTo !== undefined ? 'email-second-factor-resend' : 'email-second-factor'}
-          disabled={busy || !!emailedNow?.busy}
+          disabled={busy || !!emailedNow?.busy || !!emailedNow?.wait}
           on:click={() => void emailSecondFactor()}
         >
-          {emailedNow?.busy ? t('signIn.sending') : emailedNow?.sentTo !== undefined || emailedNow?.error ? t('signIn.resendCode') : t('signIn.emailCodeOption')}
+          {emailedNow?.busy ? t('signIn.sending') : emailedNow?.sentTo !== undefined || emailedNow?.error || emailedNow?.wait ? t('signIn.resendCode') : t('signIn.emailCodeOption')}
         </button>
+        {#if emailedNow?.wait}
+          <p class={cls('formFieldError', 'atlas-error')} data-atlas="code-wait" role={emailedNow.ticking ? 'timer' : 'alert'}>{codeWaitText(emailedNow.wait, t)}</p>
+        {/if}
         {#if emailedNow?.error}
           <p class={cls('formFieldError', 'atlas-error')} role="alert">{emailedNow.error}</p>
         {/if}
       {/if}
-      {#if step.kind === 'collect_second_factor' && onPasskeySecondFactor && attempt?.id && !notHeld.includes(`${attempt.id}:passkey`)}
+      {#if step.kind === 'collect_second_factor' && onPasskeySecondFactor && attempt?.id && (!onHoldsFactor || held.includes(`${attempt.id}:passkey`))}
         <button
           class={cls('formButtonSecondary', 'atlas-button-secondary')}
           type="button"

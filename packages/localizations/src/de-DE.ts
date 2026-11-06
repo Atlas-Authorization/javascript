@@ -109,6 +109,7 @@ export const deDE: LocalizationResource = {
   'mfa.sendCode': 'Code per SMS senden',
   'mfa.codeTextedTo': 'Geben Sie den Code ein, den wir an {phone} gesendet haben.',
   'mfa.codeWait': 'Sie können in {seconds} Sekunden einen neuen Code anfordern.',
+  'mfa.codeWaitMinutes': 'Sie können in {minutes} Minuten einen neuen Code anfordern.',
   'mfa.smsCodeOption': 'Stattdessen Code per SMS senden',
   'mfa.recoveryCodesTitle': 'Speichern Sie Ihre Wiederherstellungscodes',
   'mfa.recoveryCodesHelp': 'Jeder Code funktioniert nur einmal. Wenn Sie Ihren zweiten Schritt nicht nutzen können, melden Sie sich mit einem davon an. Bewahren Sie sie sicher auf: Sie werden nicht noch einmal angezeigt.',

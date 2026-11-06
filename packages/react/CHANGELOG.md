@@ -2,6 +2,11 @@
 
 
 
+## 0.30.7 — 2026-11-06
+
+- Fixed: `<SignIn>` crashed the page when a popup OAuth sign-in completed (`oauthMode="popup"`).
+- A limited code send counts down, in seconds or minutes, and the resend comes back at zero, at the second factor and at enrolment. Second-factor options stay hidden until the account's answer is in, so one it can't use never appears.
+
 ## 0.30.6 — 2026-11-06
 
 - The second-factor step offers only what the account can use, adds Resend code once a code has gone out, and says how long to wait when a send is limited.

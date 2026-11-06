@@ -221,6 +221,10 @@ export interface MfaEnrollmentState {
   errors: FieldError[];
   /** How many authenticator code fields to draw. */
   totpCodes: 1 | 2;
+  /** Seconds until another code can be asked for, after a limited send. See {@link codeWaitText}. */
+  wait?: number | null;
+  /** See {@link CodeWait}. */
+  waitTicking?: boolean;
 }
 
 export interface MfaEnrollmentController {
@@ -279,6 +283,7 @@ export function createMfaEnrollment(
   let generation = 0;
   // A submitted passkey's challenge is spent, even when the server refused it.
   let passkeySpent = false;
+  const waits = createCodeWaits();
   const listeners = new Set<(s: MfaEnrollmentState) => void>();
   const set = (patch: Partial<MfaEnrollmentState>) => {
     state = { ...state, ...patch };
@@ -289,11 +294,18 @@ export function createMfaEnrollment(
     const id = attemptId;
     if (!id) return;
     const gen = generation;
-    set({ busy: true, errors: [] });
+    waits.stopAll();
+    set({ busy: true, errors: [], wait: null, waitTicking: false });
     const out = await prepareMfaEnrollment(client, id, input);
     if (gen !== generation) return; // the flow moved on meanwhile
     if (out.enrollment) {
       set({ busy: false, enrollment: out.enrollment, errors: [] });
+      return;
+    }
+    const seconds = out.status === 429 ? retryAfterSeconds(out.errors) : null;
+    if (seconds) {
+      set({ busy: false });
+      waits.start('enrol', seconds, ({ wait, ticking }) => set({ wait, waitTicking: ticking }));
       return;
     }
     // A number they typed being refused is about that number: they stay on it and read why.
@@ -363,6 +375,7 @@ export function createMfaEnrollment(
     start(id) {
       if (id === attemptId) return;
       generation += 1;
+      waits.stopAll();
       attemptId = id;
       phone = '';
       passkeySpent = false;
@@ -414,6 +427,7 @@ export function createMfaEnrollment(
     },
     reset() {
       generation += 1;
+      waits.stopAll();
       attemptId = null;
       phone = '';
       passkeySpent = false;
@@ -466,10 +480,70 @@ export async function prepareSecondFactorCode(
 }
 
 /** What a failed send should say: how long to wait when the server limited it, else its message. */
-export function secondFactorSendText(error: unknown, t: (key: 'mfa.codeWait', vars: { seconds: string }) => string): string {
-  const wait = (error as { retryAfter?: unknown } | null)?.retryAfter;
-  if (typeof wait === 'number') return t('mfa.codeWait', { seconds: String(wait) });
+export function secondFactorSendText(error: unknown, t: CodeWaitLocalize): string {
+  const wait = codeWaitSeconds(error);
+  if (wait !== null) return codeWaitText(wait, t);
   return error instanceof Error ? error.message : String(error);
+}
+
+export type CodeWaitLocalize = (key: 'mfa.codeWait' | 'mfa.codeWaitMinutes', vars: Record<string, string>) => string;
+
+/** How long a failed send said to wait, or null when it wasn't limited. */
+export function codeWaitSeconds(error: unknown): number | null {
+  const wait = (error as { retryAfter?: unknown } | null)?.retryAfter;
+  return typeof wait === 'number' ? wait : null;
+}
+
+/** The wait, in words: minutes once it's long (the hourly limit can answer up to an hour). */
+export function codeWaitText(seconds: number, t: CodeWaitLocalize): string {
+  return seconds > 120 ? t('mfa.codeWaitMinutes', { minutes: String(Math.ceil(seconds / 60)) }) : t('mfa.codeWait', { seconds: String(seconds) });
+}
+
+/**
+ * `wait`: seconds left, null when it's over. `ticking`: false on the first call, so the line can be
+ * an alert once and then a timer, which a screen reader doesn't read out every second.
+ */
+export interface CodeWait {
+  wait: number | null;
+  ticking: boolean;
+}
+
+export interface CodeWaits {
+  start(channel: string, seconds: number, show: (wait: CodeWait) => void): void;
+  stop(channel: string): void;
+  stopAll(): void;
+}
+
+/** Counts down a limited send, one timer per channel. Reads the clock, so a throttled tab stays right. */
+export function createCodeWaits(): CodeWaits {
+  const timers = new Map<string, ReturnType<typeof setInterval>>();
+  const stop = (channel: string) => {
+    clearInterval(timers.get(channel));
+    timers.delete(channel);
+  };
+  return {
+    start(channel, seconds, show) {
+      stop(channel);
+      const end = Date.now() + seconds * 1000;
+      let ticking = false;
+      const tick = () => {
+        const left = Math.ceil((end - Date.now()) / 1000);
+        if (left <= 0) {
+          stop(channel);
+          show({ wait: null, ticking: false });
+          return;
+        }
+        show({ wait: left, ticking });
+        ticking = true;
+      };
+      timers.set(channel, setInterval(tick, 1000));
+      tick();
+    },
+    stop,
+    stopAll() {
+      for (const channel of [...timers.keys()]) stop(channel);
+    },
+  };
 }
 
 // One request per attempt, however many options on the step ask.
@@ -482,10 +556,12 @@ const heldAsked = new WeakMap<FapiClient, { attemptId: string; answer: Promise<r
 export async function holdsSecondFactor(client: FapiClient, attemptId: string, factor: 'passkey' | 'sms' | 'email_code'): Promise<boolean> {
   let asked = heldAsked.get(client);
   if (asked?.attemptId !== attemptId) {
-    const answer = client
+    const asking = client
       .get<{ factors?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/second_factors`)
       .then((response) => (response.ok && Array.isArray(response.data?.factors) ? (response.data.factors as unknown[]) : null))
       .catch(() => null);
+    // The options wait for this answer, so a request that hangs must not keep them hidden.
+    const answer = Promise.race([asking, new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000))]);
     asked = { attemptId, answer };
     heldAsked.set(client, asked);
   }

@@ -460,6 +460,8 @@ describe('<SignIn> MFA enrolment and the texted second factor', () => {
   const TOTP_SETUP = { object: 'mfa_enrollment', strategy: 'totp', factor_id: 'mfa_t', secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/x', qr_code: 'data:image/gif;base64,R0lG' };
   const SMS_ACCOUNT = { username: null, email_verification: 'code', password_reset: 'code', mfa: { totp: true, sms: true, totp_codes: 1 } };
   const routes = (status: string): Route[] => [
+    // On arrival the server sends nothing unless this channel is the only way.
+    (c) => (c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' && c.body?.only_way ? json({ object: 'second_factor_challenge', sent_to: null }) : undefined),
     (c) => (c.path === '/v1/client/sign_ins' ? json({ id: 'sia_1', status }, 201) : undefined),
     (c) =>
       c.path === '/v1/client/sign_ins/sia_1/prepare_mfa_enrollment'
@@ -513,7 +515,7 @@ describe('<SignIn> MFA enrolment and the texted second factor', () => {
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     const withCodes = routes('needs_mfa_enrollment');
-    withCodes[2] = (c) =>
+    withCodes[3] = (c) =>
       c.path === '/v1/client/sign_ins/sia_1/attempt_mfa_enrollment'
         ? json({ id: 'sia_1', status: 'complete', ticket: 'tkt_e', backup_codes: ['aaaa-1111', 'bbbb-2222'] })
         : undefined;

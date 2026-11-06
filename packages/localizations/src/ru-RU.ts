@@ -109,6 +109,7 @@ export const ruRU: LocalizationResource = {
   'mfa.sendCode': 'Отправить код в SMS',
   'mfa.codeTextedTo': 'Введите код, который мы отправили в SMS на номер {phone}.',
   'mfa.codeWait': 'Запросить новый код можно через {seconds} с.',
+  'mfa.codeWaitMinutes': 'Запросить новый код можно через {minutes} мин.',
   'mfa.smsCodeOption': 'Отправить код в SMS',
   'mfa.recoveryCodesTitle': 'Сохраните резервные коды',
   'mfa.recoveryCodesHelp': 'Каждый код действует один раз. Если вы не можете пройти второй этап, войдите с помощью одного из этих кодов. Храните их в надёжном месте: повторно они показаны не будут.',

@@ -2231,7 +2231,16 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
     await flush();
     prepareLimited = false;
     expect(limited.root.textContent).toContain('another code in 30 seconds');
-    expect(limited.root.querySelector('[data-atlas="sms-second-factor"]')!.textContent).toBe('Resend code');
+    const again = limited.root.querySelector<HTMLButtonElement>('[data-atlas="sms-second-factor"]')!;
+    expect(again.textContent).toBe('Resend code');
+    expect(again.disabled).toBe(true);
+    // A tick updates the line in place: what's typed in the code field stays.
+    const typed = limited.root.querySelector<HTMLInputElement>('input')!;
+    typed.value = '12';
+    await new Promise((r) => setTimeout(r, 1100));
+    expect(limited.root.querySelector('input')).toBe(typed);
+    expect(typed.value).toBe('12');
+    expect(limited.root.querySelector('[data-atlas="code-wait"]')!.getAttribute('role')).toBe('timer');
   });
 
   it('emails the code on arrival at the second factor when the inbox is an option and shows where it went', async () => {

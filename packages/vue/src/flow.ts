@@ -22,6 +22,7 @@ import {
   continueOnHostedPage,
   holdsSecondFactor,
   secondFactorSendText,
+  codeWaitSeconds,
   resendSignUpVerification,
   signInCaptchaOptions,
   PolicyAcceptanceController,
@@ -85,7 +86,7 @@ export interface FlowController {
    * `account.emailSecondFactor` is on): mails a code to the account's verified
    * email; the code is then posted with {@link submit} like any 2FA code.
    */
-  sendEmailSecondFactor(): Promise<{ sentTo?: string; error?: string }>;
+  sendEmailSecondFactor(): Promise<{ sentTo?: string; error?: string; retryAfter?: number | null }>;
   /** On arrival at the second factor: emails the code if the inbox is the only way. Resolves the masked address, or null. */
   sendOnlyWay(attemptId: string, strategy: 'email_code' | 'sms', onWait?: (seconds: number) => void): Promise<string | null>;
   /** Leaves for the hosted page to do the second factor with a passkey there. */
@@ -96,7 +97,7 @@ export interface FlowController {
    * texted codes, `mfaChoices().sms`): texts a code to the account's enrolled
    * phone; the code is then posted with {@link submit}.
    */
-  sendSmsSecondFactor(): Promise<{ sentTo?: string; error?: string }>;
+  sendSmsSecondFactor(): Promise<{ sentTo?: string; error?: string; retryAfter?: number | null }>;
   /** What the app lets the MFA steps offer (from {@link settings}). */
   mfaChoices(): MfaChoices;
   /**
@@ -274,7 +275,7 @@ export function useFlow(options: { holdExistingAccountNotice?: boolean } = {}): 
     })();
   };
 
-  const sendSecondFactorCode = async (strategy: 'sms' | 'email_code'): Promise<{ sentTo?: string; error?: string }> => {
+  const sendSecondFactorCode = async (strategy: 'sms' | 'email_code'): Promise<{ sentTo?: string; error?: string; retryAfter?: number | null }> => {
     const id = state.value.attempt?.id;
     if (!id) return { error: t('error.generic') };
     try {
@@ -283,7 +284,7 @@ export function useFlow(options: { holdExistingAccountNotice?: boolean } = {}): 
       state.value = { ...state.value, errors: [] };
       return sent;
     } catch (error) {
-      return { error: secondFactorSendText(error, t) };
+      return { error: secondFactorSendText(error, t), retryAfter: codeWaitSeconds(error) };
     }
   };
   const sendEmailSecondFactor = () => sendSecondFactorCode('email_code');

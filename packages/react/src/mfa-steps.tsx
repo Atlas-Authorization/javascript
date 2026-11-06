@@ -17,6 +17,10 @@ import {
   sendOnlyWaySecondFactorCode,
   holdsPasskeySecondFactor,
   holdsSecondFactor,
+  codeWaitSeconds,
+  codeWaitText,
+  createCodeWaits,
+  type CodeWait,
   secondFactorSendText,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
@@ -179,7 +183,7 @@ export function MfaEnrollmentFields({
         type="button"
         className={cls('link', 'atlas-link')}
         data-atlas-resend=""
-        disabled={busy || state.busy}
+        disabled={busy || state.busy || !!state.wait}
         onClick={() => void controller.resend()}
       >
         {t('signIn.resendCode')}
@@ -187,6 +191,13 @@ export function MfaEnrollmentFields({
     );
   }
 
+  if (state.wait) {
+    out.push(
+      <p key="code-wait" className={errorClass} data-atlas="code-wait" role={state.waitTicking ? 'timer' : 'alert'}>
+        {codeWaitText(state.wait, t)}
+      </p>,
+    );
+  }
   for (const error of state.errors) {
     out.push(
       <p key={`enrol-error-${error.code}-${error.param ?? ''}`} className={errorClass} role="alert">
@@ -226,13 +237,15 @@ export function SecondFactorCodeOption({ attemptId, strategy, onSent }: { attemp
   const client = useFapiClient();
   const t = useText();
   const cls = useClasses();
-  const [state, setState] = useState<{ sentTo?: string; error?: string; busy?: boolean }>({});
-  const [held, setHeld] = useState(true);
+  const [state, setState] = useState<{ sentTo?: string; error?: string; busy?: boolean } & Partial<CodeWait>>({});
+  const [heldFor, setHeldFor] = useState<string | null>(null);
+  const waits = useRef(createCodeWaits()).current;
+  useEffect(() => () => waits.stopAll(), [waits]);
   const name = strategy === 'sms' ? 'sms-second-factor' : 'email-second-factor';
   useEffect(() => {
     let live = true;
     void holdsSecondFactor(client, attemptId, strategy).then((yes) => {
-      if (live) setHeld(yes);
+      if (live && yes) setHeldFor(attemptId);
     });
     return () => {
       live = false;
@@ -244,22 +257,27 @@ export function SecondFactorCodeOption({ attemptId, strategy, onSent }: { attemp
     if (arrived.current === attemptId) return;
     arrived.current = attemptId;
     const wait = (seconds: number) => {
-      if (arrived.current === attemptId) setState({ error: t('mfa.codeWait', { seconds: String(seconds) }) });
+      if (arrived.current === attemptId) waits.start('send', seconds, (w) => setState(w));
     };
     void sendOnlyWaySecondFactorCode(client, attemptId, strategy, wait).then((sentTo) => {
       if (arrived.current === attemptId && sentTo !== null) setState({ sentTo });
     });
-  }, [client, attemptId, strategy, t]);
+  }, [client, attemptId, strategy, waits]);
   const send = () => {
+    waits.stop('send');
     setState((s) => ({ sentTo: s.sentTo, busy: true }));
     prepareSecondFactorCode(client, attemptId, strategy)
       .then(({ sentTo }) => {
         setState({ sentTo });
         onSent?.();
       })
-      .catch((e: unknown) => setState((s) => ({ sentTo: s.sentTo, error: secondFactorSendText(e, t) })));
+      .catch((e: unknown) => {
+        const seconds = codeWaitSeconds(e);
+        if (seconds === null) setState((s) => ({ sentTo: s.sentTo, error: secondFactorSendText(e, t) }));
+        else waits.start('send', seconds, (w) => setState((s) => ({ sentTo: s.sentTo, ...w })));
+      });
   };
-  if (!held) return null;
+  if (heldFor !== attemptId) return null;
   const sent = state.sentTo !== undefined;
   return (
     <>
@@ -268,9 +286,14 @@ export function SecondFactorCodeOption({ attemptId, strategy, onSent }: { attemp
           {strategy === 'sms' ? t('mfa.codeTextedTo', { phone: state.sentTo! }) : t('signIn.codeSentTo', { email: state.sentTo! })}
         </p>
       ) : null}
-      <button type="button" className={cls('link', 'atlas-link')} data-atlas={sent ? `${name}-resend` : name} disabled={state.busy} onClick={send}>
-        {state.busy ? t('signIn.sending') : sent || state.error ? t('signIn.resendCode') : t(strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption')}
+      <button type="button" className={cls('link', 'atlas-link')} data-atlas={sent ? `${name}-resend` : name} disabled={state.busy || !!state.wait} onClick={send}>
+        {state.busy ? t('signIn.sending') : sent || state.error || state.wait ? t('signIn.resendCode') : t(strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption')}
       </button>
+      {state.wait ? (
+        <div className={cls('alert', 'atlas-alert')} data-atlas="code-wait" role={state.ticking ? 'timer' : 'alert'}>
+          {codeWaitText(state.wait, t)}
+        </div>
+      ) : null}
       {state.error ? (
         <div className={cls('alert', 'atlas-alert')} role="alert">
           {state.error}
@@ -285,17 +308,17 @@ export function PasskeySecondFactorOption({ attemptId, onChoose }: { attemptId: 
   const client = useFapiClient();
   const t = useText();
   const cls = useClasses();
-  const [held, setHeld] = useState(true);
+  const [heldFor, setHeldFor] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     void holdsPasskeySecondFactor(client, attemptId).then((yes) => {
-      if (live) setHeld(yes);
+      if (live && yes) setHeldFor(attemptId);
     });
     return () => {
       live = false;
     };
   }, [client, attemptId]);
-  if (!held) return null;
+  if (heldFor !== attemptId) return null;
   return (
     <button type="button" className={cls('link', 'atlas-link')} data-atlas="passkey-second-factor" onClick={onChoose}>
       {t('mfa.enrollPasskeyOption')}

@@ -9,6 +9,7 @@ import {
 import {
   awaitingSignUpLink,
   enrollmentOptionKey,
+  codeWaitText,
   enrollmentSubmitKey,
   groupSetupKey,
   localizedErrorMessage,
@@ -162,7 +163,7 @@ interface StepField {
                 [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
                 type="button"
                 data-atlas-resend=""
-                [disabled]="busy || enrol.busy"
+                [disabled]="busy || enrol.busy || !!enrol.wait"
                 (click)="resendEnrollment()"
               >
                 {{ t('signIn.resendCode') }}
@@ -174,6 +175,9 @@ interface StepField {
               </label>
               <p class="atlas-text">{{ t('mfa.phoneHint') }}</p>
             }
+          }
+          @if (enrol.wait; as left) {
+            <p [class]="cls('formFieldError', 'atlas-error')" data-atlas="code-wait" [attr.role]="enrol.waitTicking ? 'timer' : 'alert'">{{ waitText(left) }}</p>
           }
           @for (error of enrol.errors; track $index) {
             <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ error.message }}</p>
@@ -247,11 +251,14 @@ interface StepField {
             [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
             type="button"
             [attr.data-atlas]="smsSecondFactorSentTo() ? 'sms-second-factor-resend' : 'sms-second-factor'"
-            [disabled]="busy || !!textedSecondFactor?.busy"
+            [disabled]="busy || !!textedSecondFactor?.busy || !!textedSecondFactor?.wait"
             (click)="smsSecondFactor.emit()"
           >
-            {{ textedSecondFactor?.busy ? t('signIn.sending') : smsSecondFactorSentTo() || textedSecondFactor?.error ? t('signIn.resendCode') : t('mfa.smsCodeOption') }}
+            {{ textedSecondFactor?.busy ? t('signIn.sending') : smsSecondFactorSentTo() || textedSecondFactor?.error || textedSecondFactor?.wait ? t('signIn.resendCode') : t('mfa.smsCodeOption') }}
           </button>
+          @if (textedSecondFactor?.wait; as left) {
+            <p [class]="cls('formFieldError', 'atlas-error')" data-atlas="code-wait" [attr.role]="textedSecondFactor?.ticking ? 'timer' : 'alert'">{{ waitText(left) }}</p>
+          }
           @if (textedSecondFactor?.error; as message) {
             <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ message }}</p>
           }
@@ -267,11 +274,14 @@ interface StepField {
             [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
             type="button"
             [attr.data-atlas]="emailSecondFactorSentTo() ? 'email-second-factor-resend' : 'email-second-factor'"
-            [disabled]="busy || !!emailedSecondFactor?.busy"
+            [disabled]="busy || !!emailedSecondFactor?.busy || !!emailedSecondFactor?.wait"
             (click)="emailSecondFactor.emit()"
           >
-            {{ emailedSecondFactor?.busy ? t('signIn.sending') : emailSecondFactorSentTo() || emailedSecondFactor?.error ? t('signIn.resendCode') : t('signIn.emailCodeOption') }}
+            {{ emailedSecondFactor?.busy ? t('signIn.sending') : emailSecondFactorSentTo() || emailedSecondFactor?.error || emailedSecondFactor?.wait ? t('signIn.resendCode') : t('signIn.emailCodeOption') }}
           </button>
+          @if (emailedSecondFactor?.wait; as left) {
+            <p [class]="cls('formFieldError', 'atlas-error')" data-atlas="code-wait" [attr.role]="emailedSecondFactor?.ticking ? 'timer' : 'alert'">{{ waitText(left) }}</p>
+          }
           @if (emailedSecondFactor?.error; as message) {
             <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ message }}</p>
           }
@@ -373,7 +383,7 @@ export class AttemptFlowComponent {
    */
   @Input() offerEmailSecondFactor = false;
   /** `AtlasFlowController.emailSecondFactor()`: in flight, where it went, or why not. */
-  @Input() emailedSecondFactor: { busy?: boolean; sentTo?: string; error?: string } | null = null;
+  @Input() emailedSecondFactor: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null = null;
   @Output() emailSecondFactor = new EventEmitter<void>();
   /** "Use a passkey" at the second factor (`mfaChoices().passkey`): leaves for the hosted page. */
   @Input() offerPasskeySecondFactor = false;
@@ -385,7 +395,7 @@ export class AttemptFlowComponent {
    */
   @Input() offerSmsSecondFactor = false;
   /** `AtlasFlowController.smsSecondFactor()`: in flight, where it went, or why not. */
-  @Input() textedSecondFactor: { busy?: boolean; sentTo?: string; error?: string } | null = null;
+  @Input() textedSecondFactor: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null = null;
   @Output() smsSecondFactor = new EventEmitter<void>();
   /**
    * The MFA enrolment step (`AtlasFlowController.enrollment` and
@@ -407,6 +417,10 @@ export class AttemptFlowComponent {
   @Output() policyDeclined = new EventEmitter<string>();
 
   protected values: Record<string, string> = {};
+
+  protected waitText(seconds: number): string {
+    return codeWaitText(seconds, (key, vars) => this.t(key, vars));
+  }
 
   protected t(key: string, vars?: Record<string, string>): string {
     return translate(this.atlas.localization, key, vars);

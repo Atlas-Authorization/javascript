@@ -2,6 +2,10 @@
 
 
 
+## 0.34.6 — 2026-11-06
+
+- `createCodeWaits()`, `codeWaitText()`, `codeWaitSeconds()`: a limited send counts down. `holdsSecondFactor` answers true after 3 seconds if the question hangs. The enrolment controller exposes `wait` and `waitTicking` when a text is limited.
+
 ## 0.34.5 — 2026-11-06
 
 - `holdsSecondFactor(client, attemptId, factor)` and `secondFactorSendText(error, t)`. `sendOnlyWaySecondFactorCode` takes `onWait`, and a limited `prepareSecondFactorCode` error carries `retryAfter`.

@@ -109,6 +109,7 @@ export const faIR: LocalizationResource = {
   'mfa.sendCode': 'ارسال کد با پیامک',
   'mfa.codeTextedTo': 'کدی را که به {phone} پیامک کردیم وارد کنید.',
   'mfa.codeWait': 'می‌توانید پس از {seconds} ثانیه کد دیگری درخواست کنید.',
+  'mfa.codeWaitMinutes': 'می‌توانید پس از {minutes} دقیقه کد دیگری درخواست کنید.',
   'mfa.smsCodeOption': 'به‌جای آن، کد را با پیامک بفرستید',
   'mfa.recoveryCodesTitle': 'کدهای پشتیبان خود را ذخیره کنید',
   'mfa.recoveryCodesHelp': 'هر کد فقط یک بار کار می‌کند. اگر نمی‌توانید از مرحله دوم خود استفاده کنید، با یکی از این کدها وارد شوید. آن‌ها را در جای امنی نگه دارید: دوباره نمایش داده نمی‌شوند.',

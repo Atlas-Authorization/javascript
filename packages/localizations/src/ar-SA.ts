@@ -109,6 +109,7 @@ export const arSA: LocalizationResource = {
   'mfa.sendCode': 'أرسل لي رمزًا نصيًا',
   'mfa.codeTextedTo': 'أدخل الرمز الذي أرسلناه إلى {phone}.',
   'mfa.codeWait': 'يمكنك طلب رمز آخر بعد {seconds} ثانية.',
+  'mfa.codeWaitMinutes': 'يمكنك طلب رمز آخر بعد {minutes} دقيقة.',
   'mfa.smsCodeOption': 'أرسل لي رمزًا نصيًا بدلًا من ذلك',
   'mfa.recoveryCodesTitle': 'احفظ رموز الاسترداد',
   'mfa.recoveryCodesHelp': 'يعمل كل رمز مرة واحدة فقط. إذا تعذّر عليك استخدام خطوتك الثانية، فسجّل الدخول بأحد هذه الرموز. احتفظ بها في مكان آمن، فلن تُعرض مرة أخرى.',
