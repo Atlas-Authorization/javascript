@@ -2385,6 +2385,23 @@ describe('sign-up on an address that already has an account', () => {
     expect(root.querySelector('[data-atlas-email-confirmed]')).toBeNull();
   });
 
+  it('a sign-up lost to a race: the code step shows the message and a way to sign in', async () => {
+    const { root } = await toCodeAccepted({
+      ...signUpHandlers({}),
+      'POST /v1/client/sign_ups/sua_e/attempt_verification': () => ({
+        status: 409,
+        body: { errors: [{ code: 'IDENTIFIER_EXISTS', message: 'An account already uses this email address. Sign in instead.', reason: 'form_identifier_exists' }] },
+      }),
+    });
+    expect(root.querySelector('.atlas-embed-form-error')?.textContent).toContain('An account already uses this email address. Sign in instead.');
+    const toSignIn = root.querySelector('.atlas-embed-form-error [data-atlas="identifier-exists-sign-in"]') as HTMLButtonElement;
+    expect(toSignIn.textContent).toBe('Sign in');
+    toSignIn.click();
+    await flush();
+    expect((root.querySelector('[name="identifier"]') as HTMLInputElement).value).toBe('ada@example.com');
+    expect(root.querySelector('.atlas-embed-form-error')).toBeNull();
+  });
+
   it('does not show it without existing_account', async () => {
     const { root, events } = await toCodeAccepted(signUpHandlers({ status: 'complete', ticket: 'tk_e' }));
     expect(notice(root)).toBeNull();

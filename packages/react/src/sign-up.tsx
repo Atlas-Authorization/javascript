@@ -200,6 +200,7 @@ function SignUpFlow(props: FlowProps) {
         }
         recoveryCodes={pendingRecoveryCodes(state)}
         onRecoveryCodesSaved={saveRecoveryCodes}
+        signInHref={signInAfterProofUrl({ url: props.signInUrl, frontendApi, redirectUrl: props.afterUrl })}
       />
     );
   }

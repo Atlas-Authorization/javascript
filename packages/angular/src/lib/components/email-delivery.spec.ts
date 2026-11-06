@@ -306,3 +306,29 @@ describe('first factor with no password on offer', () => {
     flow.destroy();
   });
 });
+
+describe('a sign-up lost to a race at the code step', () => {
+  it('shows the server message and a sign-in link', async () => {
+    const flow = await controller(undefined, [
+      (path) => (path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+      (path) =>
+        path === '/v1/client/sign_ups/sua_1/attempt_verification'
+          ? json({ errors: [{ code: 'IDENTIFIER_EXISTS', message: 'An account already uses this email address. Sign in instead.', reason: 'form_identifier_exists' }] }, 409)
+          : undefined,
+    ]);
+    await flow.create({ email: 'new@example.com', password: 'blue tangerine anvil 71!' });
+    await flow.submit({ code: '424242' });
+
+    const ref = render(AttemptFlowComponent, {
+      attempt: flow.state().attempt,
+      errors: flow.state().errors,
+      signInHref: 'https://fapi.example/hosted/sign-in',
+    });
+    const el = ref.location.nativeElement as HTMLElement;
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain('An account already uses this email address. Sign in instead.');
+    const link = el.querySelector('[role="alert"] a') as HTMLAnchorElement | null;
+    expect(link?.textContent?.trim()).toBe(EN_US['signIn.title']);
+    expect(link?.href).toBe('https://fapi.example/hosted/sign-in');
+    flow.destroy();
+  });
+});

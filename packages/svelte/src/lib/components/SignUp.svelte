@@ -103,6 +103,7 @@
     enrollment={flow.enrollment}
     enrollmentState={$enrollmentState}
     onPolicyDecline={flow.declinePolicy}
+    signInHref={signInAfterProofUrl({ url: signInUrl, frontendApi: atlas.frontendApi, redirectUrl: afterUrl })}
   />
 {:else}
   <SignUpForm

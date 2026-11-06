@@ -354,6 +354,8 @@ const AttemptFlow = defineComponent({
     onRecoveryCodesSaved: { type: Function as PropType<() => void>, default: undefined },
     /** The user declined a policy the sign-in was waiting on (`needs_policy_acceptance`): cancel the attempt. */
     onPolicyDecline: { type: Function as PropType<(title: string) => void>, default: undefined },
+    /** Sign-up only: the sign-in link beside the code step's "an account already uses this email". */
+    signInHref: { type: String as PropType<string | null>, default: null },
   },
   setup(props) {
     const t = useText();
@@ -826,7 +828,9 @@ const AttemptFlow = defineComponent({
             h(
               'p',
               { class: cls('formFieldError', 'atlas-error'), role: 'alert', key: error.code },
-              errorText(error),
+              props.signInHref && step.kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS'
+                ? [errorText(error), ' ', h('a', { class: 'atlas-link', href: props.signInHref }, t('signIn.title'))]
+                : errorText(error),
             ),
           ),
 
@@ -1407,6 +1411,7 @@ export const SignUp = defineComponent({
             recoveryCodes: pendingRecoveryCodes(state.value),
             onRecoveryCodesSaved: saveRecoveryCodes,
             onPolicyDecline: declinePolicy,
+            signInHref: signInAfterProofUrl({ url: props.signInUrl, frontendApi: atlas.frontendApi, redirectUrl: props.afterUrl }),
           })
         : h(SignUpForm, {
             settings: settings.value,

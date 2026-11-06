@@ -102,6 +102,7 @@ import { AtlasFlowController } from './flow-controller';
         (emailSecondFactor)="flow.sendEmailSecondFactor()"
         (smsSecondFactor)="flow.sendSmsSecondFactor()"
         (policyDeclined)="flow.declinePolicy($event)"
+        [signInHref]="signInHref()"
       ></atlas-attempt-flow>
     } @else {
       <atlas-sign-up-form

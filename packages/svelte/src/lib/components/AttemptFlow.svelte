@@ -38,6 +38,8 @@
   export let sessionKept: boolean | undefined = undefined;
   export let titleKey: string;
   export let onSubmit: (values: Record<string, string>) => void;
+  /** Sign-up only: the sign-in link beside the code step's "an account already uses this email". */
+  export let signInHref: string | null = null;
   /**
    * The sign-in captcha, drawn above the submit button on the identifier step
    * (an always-on sign-in captcha) and on the challenge step the server demands
@@ -293,7 +295,7 @@
   <h1 class={cls('headerTitle', 'atlas-title')}>{t(titleKey)}</h1>
 
   {#each errors.filter((e) => !e.param) as error (error.code)}
-    <p class={cls('formFieldError', 'atlas-error')} role="alert">{errorText(error)}</p>
+    <p class={cls('formFieldError', 'atlas-error')} role="alert">{errorText(error)}{#if signInHref && step.kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS'}{' '}<a class="atlas-link" href={signInHref}>{t('signIn.title')}</a>{/if}</p>
   {/each}
 
   <form on:submit={handleSubmit}>

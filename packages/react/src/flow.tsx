@@ -245,6 +245,7 @@ export function AttemptFlow({
   prefill,
   alternatives,
   passwordHold = null,
+  signInHref = null,
 }: {
   attempt: AttemptView | null;
   onSubmit(values: Record<string, string>): void;
@@ -291,6 +292,8 @@ export function AttemptFlow({
   alternatives?: ReactNode;
   /** `FlowState.passwordHold`: offers the emailed proof, whichever factors the instance signs in with. */
   passwordHold?: FlowState['passwordHold'];
+  /** Sign-up only: the sign-in link beside the code step's "an account already uses this email". */
+  signInHref?: string | null;
 }) {
   const t = useText();
   const errorText = useErrorText();
@@ -646,6 +649,14 @@ export function AttemptFlow({
         .map((error) => (
           <p key={error.code} className={errorClass} role="alert">
             {errorText(error)}
+            {signInHref && step.kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS' ? (
+              <>
+                {' '}
+                <a className="atlas-link" href={signInHref}>
+                  {t('signIn.title')}
+                </a>
+              </>
+            ) : null}
           </p>
         ))}
 

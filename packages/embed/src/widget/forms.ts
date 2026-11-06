@@ -435,7 +435,16 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
 
   const formError = w.state.errors.find((e) => !e.param);
   if (formError) {
-    form.appendChild(el(w, 'div', 'atlas-embed-form-error', w.errorText(formError)));
+    const shown = el(w, 'div', 'atlas-embed-form-error', w.errorText(formError));
+    // The losing tab of a sign-up race: the address is taken, so the way on is signing in.
+    if (w.mode === 'sign-up' && stepKind === 'collect_email_code' && formError.code === 'IDENTIFIER_EXISTS') {
+      const toSignIn = el(w, 'button', 'atlas-embed-step-back', say(w, 'signIn.title')) as HTMLButtonElement;
+      toSignIn.type = 'button';
+      toSignIn.setAttribute('data-atlas', 'identifier-exists-sign-in');
+      toSignIn.addEventListener('click', () => signInAfterProof(w));
+      shown.append(' ', toSignIn);
+    }
+    form.appendChild(shown);
   }
 
   const inputs = new Map<string, HTMLInputElement>();

@@ -193,6 +193,31 @@ describe('<SignUp> creates the account', () => {
   });
 });
 
+describe('<SignUp> loses a sign-up race at the code step', () => {
+  it('shows the server message and a sign-in link', async () => {
+    const w = await mountFlow(SignUp, {
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+            ? json({ errors: [{ code: 'IDENTIFIER_EXISTS', message: 'An account already uses this email address. Sign in instead.', reason: 'form_identifier_exists' }] }, 409)
+            : undefined,
+      ],
+    });
+    await setInput(w, 'email', 'new@example.com');
+    await setInput(w, 'password', 'blue tangerine anvil 71!');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('input[name="code"]').exists()).toBe(true));
+    await setInput(w, 'code', '424242');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('[role="alert"]').exists()).toBe(true));
+    expect(w.find('[role="alert"]').text()).toContain('An account already uses this email address. Sign in instead.');
+    const link = w.find('[role="alert"] a');
+    expect(link.text()).toBe(EN_US['signIn.title']);
+    expect(link.attributes('href')).toContain('/hosted/sign-in');
+  });
+});
+
 describe('<SignUp> captcha', () => {
   it('draws the configured widget and sends its token as captcha_token on create', async () => {
     const ts = fakeTurnstile();

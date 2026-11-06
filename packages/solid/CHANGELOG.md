@@ -1,5 +1,9 @@
 # @atlasauth/solid changelog
 
+## 0.14.1 — 2026-11-06
+
+- The sign-up code step shows a sign-in link beside the taken-address error.
+
 ## 0.14.0 — 2026-11-06
 
 - Uses `@atlasauth/js` 0.34.0. Emailed links now need the browser that started the flow or the code shown on the starting tab; the components show the code, ask for it on the link page, and offer every factor the instance has on at enrolment.

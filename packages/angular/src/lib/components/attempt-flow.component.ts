@@ -61,7 +61,12 @@ interface StepField {
       <h1 [class]="cls('headerTitle', 'atlas-title')">{{ t(titleKey) }}</h1>
 
       @for (error of formErrors(); track error.code) {
-        <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ errorText(error) }}</p>
+        <p [class]="cls('formFieldError', 'atlas-error')" role="alert">
+          {{ errorText(error) }}
+          @if (signInLink(error); as href) {
+            <a class="atlas-link" [href]="href">{{ t('signIn.title') }}</a>
+          }
+        </p>
       }
 
       <form (submit)="onSubmit($event)">
@@ -324,6 +329,8 @@ export class AttemptFlowComponent {
   /** `FlowState.sessionKept`: whether this browser kept the session the sign-in created. */
   @Input() sessionKept: boolean | undefined = undefined;
   @Input() titleKey = 'signIn.title';
+  /** Sign-up only: the sign-in link beside the code step's "an account already uses this email". */
+  @Input() signInHref: string | null = null;
   /**
    * The sign-in captcha, drawn above the submit button on the identifier step
    * (an always-on sign-in captcha) and on the challenge step the server demands
@@ -471,6 +478,10 @@ export class AttemptFlowComponent {
 
   protected formErrors(): FieldError[] {
     return this.errors.filter((error) => !error.param);
+  }
+
+  protected signInLink(error: FieldError): string | null {
+    return this.step().kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS' ? this.signInHref : null;
   }
 
   protected fieldErrorsFor(name: string): FieldError[] {

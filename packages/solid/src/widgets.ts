@@ -104,11 +104,18 @@ function field(name: string, label: string, type = 'text', autocomplete?: string
 /** The flow's errors, rendered as alerts. Field-scoped ones (e.g. a rejected
  * password) are included: these forms have no per-field error slot, and an
  * error the user never sees is a form they cannot get past. */
-function renderErrors(errors: FlowErrors, strings?: ErrorStrings): JSX.Element {
+function renderErrors(errors: FlowErrors, strings?: ErrorStrings, signInHref?: string | null): JSX.Element {
   // A server error in the app's language: `error.<reason>` from the client's
   // `localization`, else the server's (Accept-Language-localised) message.
   return errors.map((error) =>
-    h('p', { class: 'atlas-error', role: 'alert' }, localizedErrorMessage(error, strings)),
+    h(
+      'p',
+      { class: 'atlas-error', role: 'alert' },
+      localizedErrorMessage(error, strings),
+      signInHref && error.code === 'IDENTIFIER_EXISTS' && !error.param
+        ? [' ', h('a', { class: 'atlas-link', href: signInHref }, t('signIn.title'))]
+        : null,
+    ),
   );
 }
 
@@ -827,7 +834,15 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
               atlasError() ? h('p', { class: 'atlas-error', role: 'alert' }, atlasError()!) : null,
             ]
           : null,
-      () => renderErrors(state().errors, client.localization),
+      () =>
+        renderErrors(
+          state().errors,
+          client.localization,
+          // The losing tab of a sign-up race: the address is taken, so the way on is signing in.
+          props.mode === 'sign-up' && kind() === 'collect_email_code'
+            ? signInAfterProofUrl({ url: props.links?.signInUrl, frontendApi: client.frontendApi })
+            : null,
+        ),
       () => {
         // Through the memo: reading state() here would redraw the inputs and lose what's typed.
         const codes = recoveryCodes();
