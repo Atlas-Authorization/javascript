@@ -342,6 +342,56 @@ describe('<SignIn> second-factor alternatives', () => {
     await vi.waitFor(() => expect(el.querySelector('[data-atlas="passkey-second-factor"]')).toBeNull());
   });
 
+  it('hides "Text me a code instead" from an account with no phone', async () => {
+    const el = await mount({
+      account: { mfa: { totp: true, sms: true, totp_codes: 1 } },
+      routes: [
+        signInRoute(['password']),
+        passwordRoute('needs_second_factor'),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/second_factors' ? json({ object: 'second_factors', factors: ['totp'] }) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' ? json({ object: 'second_factor_challenge', strategy: 'sms', sent_to: null }) : undefined),
+      ],
+    });
+    await signInTo(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor"]')).toBeNull());
+  });
+
+  it('the arrival screen can resend, and a limited send says how long to wait', async () => {
+    let limited = false;
+    const el = await mount({
+      account: { mfa: { totp: false, sms: true, totp_codes: 1 } },
+      routes: [
+        signInRoute(['password']),
+        passwordRoute('needs_second_factor'),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor'
+          ? limited ? json({ errors: [{ code: 'RATE_LIMITED', message: 'Too many requests. Please retry later.', meta: { retry_after: 30 } }] }, 429) : json({ object: 'second_factor_challenge', strategy: 'sms', sent_to: '+1•••0101' })
+          : undefined),
+      ],
+    });
+    await signInTo(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor-resend"]')?.textContent).toBe('Resend code'));
+    limited = true;
+    await click(el.querySelector('[data-atlas="sms-second-factor-resend"]'));
+    await vi.waitFor(() => expect(el.textContent).toContain('another code in 30 seconds'));
+    // The code already sent still works, so the line saying where it went stays.
+    expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')).not.toBeNull();
+  });
+
+  it('a send limited on arrival says so at once, and the button asks again', async () => {
+    const el = await mount({
+      account: { mfa: { totp: false, sms: true, totp_codes: 1 } },
+      routes: [
+        signInRoute(['password']),
+        passwordRoute('needs_second_factor'),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' ? json({ errors: [{ code: 'RATE_LIMITED', message: 'Too many requests. Please retry later.', meta: { retry_after: 30 } }] }, 429) : undefined),
+      ],
+    });
+    await signInTo(el);
+    await vi.waitFor(() => expect(el.textContent).toContain('another code in 30 seconds'));
+    expect(el.querySelector('[data-atlas="sms-second-factor"]')?.textContent).toBe('Resend code');
+  });
+
   it("a wrong code's message clears once a new code has been sent", async () => {
     const el = await mount({
       account: { mfa: { totp: false, sms: true, totp_codes: 1 } },

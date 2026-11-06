@@ -108,6 +108,7 @@ export const heIL: LocalizationResource = {
   'mfa.phoneHint': 'יש לכלול את קידומת המדינה, לדוגמה +14155550101.',
   'mfa.sendCode': 'שלחו לי קוד בהודעת טקסט',
   'mfa.codeTextedTo': 'הזן את הקוד ששלחנו בהודעת טקסט אל {phone}.',
+  'mfa.codeWait': 'אפשר לבקש קוד נוסף בעוד {seconds} שניות.',
   'mfa.smsCodeOption': 'שלחו לי קוד בהודעת טקסט',
   'mfa.recoveryCodesTitle': 'שמירת קודי השחזור שלך',
   'mfa.recoveryCodesHelp':

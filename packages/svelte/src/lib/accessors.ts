@@ -37,7 +37,8 @@ import {
   prepareSecondFactorCode,
   sendOnlyWaySecondFactorCode,
   continueOnHostedPage,
-  holdsPasskeySecondFactor,
+  holdsSecondFactor,
+  secondFactorSendText,
   resendSignUpVerification,
   PolicyAcceptanceController,
   loadPolicies as loadPolicyList,
@@ -261,10 +262,10 @@ export interface FlowController {
    */
   sendSmsSecondFactor(): Promise<{ sentTo?: string; error?: string }>;
   /** On arrival at the second factor: emails the code if the inbox is the only way. Resolves the masked address, or null. */
-  sendOnlyWay(attemptId: string, strategy: 'email_code' | 'sms'): Promise<string | null>;
+  sendOnlyWay(attemptId: string, strategy: 'email_code' | 'sms', onWait?: (seconds: number) => void): Promise<string | null>;
   /** Leaves for the hosted page to do the second factor with a passkey there. */
   continueWithPasskey(attemptId: string): boolean;
-  holdsPasskey(attemptId: string): Promise<boolean>;
+  holdsFactor(attemptId: string, factor: 'passkey' | 'sms' | 'email_code'): Promise<boolean>;
   /** What the app lets the MFA steps offer (from {@link settings}). */
   mfaChoices(): MfaChoices;
   /**
@@ -498,13 +499,13 @@ function createFlow(options: { holdExistingAccountNotice?: boolean } = {}): Flow
       state.update((current) => ({ ...current, errors: [] }));
       return sent;
     } catch (error) {
-      return { error: error instanceof Error ? error.message : t('error.generic') };
+      return { error: secondFactorSendText(error, t) };
     }
   }
   const sendEmailSecondFactor = () => sendSecondFactorCode('email_code');
   const sendSmsSecondFactor = () => sendSecondFactorCode('sms');
-  const sendOnlyWay = (attemptId: string, strategy: 'email_code' | 'sms') => sendOnlyWaySecondFactorCode(client, attemptId, strategy);
-  const holdsPasskey = (attemptId: string) => holdsPasskeySecondFactor(client, attemptId);
+  const sendOnlyWay = (attemptId: string, strategy: 'email_code' | 'sms', onWait?: (seconds: number) => void) => sendOnlyWaySecondFactorCode(client, attemptId, strategy, onWait);
+  const holdsFactor = (attemptId: string, factor: 'passkey' | 'sms' | 'email_code') => holdsSecondFactor(client, attemptId, factor);
   const continueWithPasskey = (attemptId: string) => continueOnHostedPage(mfaChoices(), attemptId, 'needs_second_factor');
 
   // The MFA enrolment step: started while the flow is at needs_mfa_enrollment.
@@ -594,7 +595,7 @@ function createFlow(options: { holdExistingAccountNotice?: boolean } = {}): Flow
     sendSmsSecondFactor,
     sendOnlyWay,
     continueWithPasskey,
-    holdsPasskey,
+    holdsFactor,
     mfaChoices,
     enrollment,
     enrollmentState: { subscribe: enrollmentState.subscribe },

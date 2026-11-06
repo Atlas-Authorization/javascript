@@ -107,6 +107,7 @@ export const nlNL: Localization = {
   'mfa.phoneHint': 'Met landcode, bijvoorbeeld +31612345678.',
   'mfa.sendCode': 'Stuur me een code per sms',
   'mfa.codeTextedTo': 'Voer de code in die we naar {phone} hebben gestuurd.',
+  'mfa.codeWait': 'Je kunt over {seconds} seconden een nieuwe code aanvragen.',
   'mfa.smsCodeOption': 'Stuur me liever een code per sms',
   'mfa.recoveryCodesTitle': 'Bewaar je herstelcodes',
   'mfa.recoveryCodesHelp': 'Elke code werkt één keer. Kun je je tweede stap niet gebruiken, log dan in met een van deze codes. Bewaar ze op een veilige plek: ze worden niet opnieuw getoond.',

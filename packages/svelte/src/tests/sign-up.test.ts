@@ -404,6 +404,32 @@ describe('link-only verification and the emailed second factor', () => {
     expect(el.querySelector('input[name="code"]')).not.toBeNull();
   });
 
+  it('<SignIn> hides what the account lacks, offers a resend, and says how long a limited send must wait', async () => {
+    const account = { username: null, email_verification: 'code', password_reset: 'code', mfa: { totp: true, sms: true, passkey: true, totp_codes: 1 } };
+    const route = (factors: string[], prepare: () => Response) => [
+      (c: { path: string }) => (c.path === '/v1/client/sign_ins' ? json({ id: 'sia_1', status: 'needs_second_factor' }, 201) : undefined),
+      (c: { path: string }) => (c.path === '/v1/client/sign_ins/sia_1/second_factors' ? json({ object: 'second_factors', factors }) : undefined),
+      (c: { path: string }) => (c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' ? prepare() : undefined),
+    ];
+    const none = await mountFlow(SignIn, { account, routes: route(['totp'], () => json({ object: 'second_factor_challenge', sent_to: null })) });
+    await setInput(none, 'identifier', 'ada@example.com');
+    await submit(none);
+    await waitFor(() => expect(none.querySelector('input[name="code"]')).not.toBeNull());
+    await waitFor(() => expect(none.querySelector('[data-atlas="sms-second-factor"]')).toBeNull());
+    expect(none.querySelector('[data-atlas="passkey-second-factor"]')).toBeNull();
+
+    const sent = await mountFlow(SignIn, { account, routes: route(['sms'], () => json({ object: 'second_factor_challenge', sent_to: '+1•••0101' })) });
+    await setInput(sent, 'identifier', 'ada@example.com');
+    await submit(sent);
+    await waitFor(() => expect(sent.querySelector('[data-atlas="sms-second-factor-resend"]')?.textContent?.trim()).toBe('Resend code'));
+
+    const limited = await mountFlow(SignIn, { account, routes: route(['sms'], () => json({ errors: [{ code: 'RATE_LIMITED', message: 'Too many requests. Please retry later.', meta: { retry_after: 30 } }] }, 429)) });
+    await setInput(limited, 'identifier', 'ada@example.com');
+    await submit(limited);
+    await waitFor(() => expect(limited.textContent).toContain('another code in 30 seconds'));
+    expect(limited.querySelector('[data-atlas="sms-second-factor"]')?.textContent?.trim()).toBe('Resend code');
+  });
+
   it('<SignIn> emails the code on arrival at the second factor and shows where it went', async () => {
     const el = await mountFlow(SignIn, {
       account: { username: null, email_verification: 'code', password_reset: 'code', email_second_factor: true },

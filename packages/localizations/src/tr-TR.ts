@@ -108,6 +108,7 @@ export const trTR: LocalizationResource = {
   'mfa.phoneHint': 'Ülke kodunu ekleyin, örneğin +14155550101.',
   'mfa.sendCode': 'Bana kod gönder',
   'mfa.codeTextedTo': '{phone} numarasına kısa mesajla gönderdiğimiz kodu girin.',
+  'mfa.codeWait': '{seconds} saniye sonra yeni bir kod isteyebilirsiniz.',
   'mfa.smsCodeOption': 'Bunun yerine kısa mesajla kod gönderin',
   'mfa.recoveryCodesTitle': 'Kurtarma kodlarınızı kaydedin',
   'mfa.recoveryCodesHelp': 'Her kod yalnızca bir kez kullanılabilir. İkinci adımınızı kullanamazsanız bunlardan biriyle oturum açın. Güvenli bir yerde saklayın: bir daha gösterilmeyecekler.',

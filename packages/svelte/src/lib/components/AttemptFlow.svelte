@@ -67,11 +67,11 @@
    */
   export let onSmsSecondFactor: (() => Promise<{ sentTo?: string; error?: string }>) | null = null;
   /** On arrival at the second factor: emails the code if the inbox is the only way (masked address, or null). */
-  export let onOnlyWay: ((attemptId: string, strategy: 'email_code' | 'sms') => Promise<string | null>) | null = null;
+  export let onOnlyWay: ((attemptId: string, strategy: 'email_code' | 'sms', onWait?: (seconds: number) => void) => Promise<string | null>) | null = null;
   /** "Use a passkey" at the second factor: leaves for the hosted page. */
   export let onPasskeySecondFactor: ((attemptId: string) => void) | null = null;
   /** Whether the account holds a passkey: "Use a passkey" is hidden when it doesn't. */
-  export let onHoldsPasskey: ((attemptId: string) => Promise<boolean>) | null = null;
+  export let onHoldsFactor: ((attemptId: string, factor: 'passkey' | 'sms' | 'email_code') => Promise<boolean>) | null = null;
   /**
    * The MFA enrolment step (`FlowController.enrollment` and its state): the
    * authenticator app's QR code and setup key, or a texted code. Null: the step
@@ -173,16 +173,19 @@
   async function emailSecondFactor() {
     if (!onEmailSecondFactor) return;
     const attemptId = attempt?.id ?? null;
-    emailed = { attemptId, busy: true };
+    const before = emailedNow?.sentTo;
+    emailed = { attemptId, sentTo: before, busy: true };
     const r = await onEmailSecondFactor();
-    emailed = r.error ? { attemptId, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
+    emailed = r.error ? { attemptId, sentTo: before, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
   }
-  let askedPasskeyFor: string | null = null;
-  let noPasskeyFor: string | null = null;
-  $: if (step.kind === 'collect_second_factor' && onHoldsPasskey && attempt?.id && askedPasskeyFor !== attempt.id) {
+  let askedHeldFor: string | null = null;
+  let notHeld: string[] = [];
+  $: if (step.kind === 'collect_second_factor' && onHoldsFactor && attempt?.id && askedHeldFor !== attempt.id) {
     const attemptId = attempt.id;
-    askedPasskeyFor = attemptId;
-    void onHoldsPasskey(attemptId).then((held) => { if (!held) noPasskeyFor = attemptId; });
+    askedHeldFor = attemptId;
+    for (const factor of ['passkey', 'sms', 'email_code'] as const) {
+      void onHoldsFactor(attemptId, factor).then((held) => { if (!held) notHeld = [...notHeld, `${attemptId}:${factor}`]; });
+    }
   }
   // Once per attempt: send the code on arrival when that channel is the only way.
   let onlyWayFor: string | null = null;
@@ -190,8 +193,8 @@
     const attemptId = attempt.id;
     onlyWayFor = attemptId;
     // emailedNow and textedNow only show an answer for the current attempt, so a stale one is ignored.
-    if (onEmailSecondFactor) void onOnlyWay(attemptId, 'email_code').then((sentTo) => { if (sentTo) emailed = { attemptId, sentTo }; });
-    if (onSmsSecondFactor) void onOnlyWay(attemptId, 'sms').then((sentTo) => { if (sentTo) texted = { attemptId, sentTo }; });
+    if (onEmailSecondFactor) void onOnlyWay(attemptId, 'email_code', (seconds) => { emailed = { attemptId, error: t('mfa.codeWait', { seconds: String(seconds) }) }; }).then((sentTo) => { if (sentTo) emailed = { attemptId, sentTo }; });
+    if (onSmsSecondFactor) void onOnlyWay(attemptId, 'sms', (seconds) => { texted = { attemptId, error: t('mfa.codeWait', { seconds: String(seconds) }) }; }).then((sentTo) => { if (sentTo) texted = { attemptId, sentTo }; });
   }
   // "Text me a code instead": the same, for the texted code.
   let texted: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string } | null = null;
@@ -199,9 +202,10 @@
   async function smsSecondFactor() {
     if (!onSmsSecondFactor) return;
     const attemptId = attempt?.id ?? null;
-    texted = { attemptId, busy: true };
+    const before = textedNow?.sentTo;
+    texted = { attemptId, sentTo: before, busy: true };
     const r = await onSmsSecondFactor();
-    texted = r.error ? { attemptId, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
+    texted = r.error ? { attemptId, sentTo: before, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
   }
   // The enrolment step drawn from the shared controller (when one is passed).
   $: enrolling = step.kind === 'enroll_second_factor' && !!enrollment && !!enrollmentState;
@@ -505,47 +509,45 @@
           </button>
         {/if}
       {/if}
-      {#if step.kind === 'collect_second_factor' && onSmsSecondFactor}
+      {#if step.kind === 'collect_second_factor' && onSmsSecondFactor && !(attempt?.id && notHeld.includes(`${attempt.id}:sms`))}
         {#if textedNow && textedNow.sentTo !== undefined}
           <p class="atlas-text" data-atlas="sms-second-factor-sent" aria-live="polite">
             {t('mfa.codeTextedTo', { phone: textedNow.sentTo })}
           </p>
-        {:else}
-          <button
-            class={cls('formButtonSecondary', 'atlas-button-secondary')}
-            type="button"
-            data-atlas="sms-second-factor"
-            disabled={busy || !!textedNow?.busy}
-            on:click={() => void smsSecondFactor()}
-          >
-            {textedNow?.busy ? t('signIn.sending') : t('mfa.smsCodeOption')}
-          </button>
-          {#if textedNow?.error}
-            <p class={cls('formFieldError', 'atlas-error')} role="alert">{textedNow.error}</p>
-          {/if}
+        {/if}
+        <button
+          class={cls('formButtonSecondary', 'atlas-button-secondary')}
+          type="button"
+          data-atlas={textedNow?.sentTo !== undefined ? 'sms-second-factor-resend' : 'sms-second-factor'}
+          disabled={busy || !!textedNow?.busy}
+          on:click={() => void smsSecondFactor()}
+        >
+          {textedNow?.busy ? t('signIn.sending') : textedNow?.sentTo !== undefined || textedNow?.error ? t('signIn.resendCode') : t('mfa.smsCodeOption')}
+        </button>
+        {#if textedNow?.error}
+          <p class={cls('formFieldError', 'atlas-error')} role="alert">{textedNow.error}</p>
         {/if}
       {/if}
-      {#if step.kind === 'collect_second_factor' && onEmailSecondFactor}
+      {#if step.kind === 'collect_second_factor' && onEmailSecondFactor && !(attempt?.id && notHeld.includes(`${attempt.id}:email_code`))}
         {#if emailedNow && emailedNow.sentTo !== undefined}
           <p class="atlas-text" data-atlas="email-second-factor-sent" aria-live="polite">
             {t('signIn.codeSentTo', { email: emailedNow.sentTo })}
           </p>
-        {:else}
-          <button
-            class={cls('formButtonSecondary', 'atlas-button-secondary')}
-            type="button"
-            data-atlas="email-second-factor"
-            disabled={busy || !!emailedNow?.busy}
-            on:click={() => void emailSecondFactor()}
-          >
-            {emailedNow?.busy ? t('signIn.sending') : t('signIn.emailCodeOption')}
-          </button>
-          {#if emailedNow?.error}
-            <p class={cls('formFieldError', 'atlas-error')} role="alert">{emailedNow.error}</p>
-          {/if}
+        {/if}
+        <button
+          class={cls('formButtonSecondary', 'atlas-button-secondary')}
+          type="button"
+          data-atlas={emailedNow?.sentTo !== undefined ? 'email-second-factor-resend' : 'email-second-factor'}
+          disabled={busy || !!emailedNow?.busy}
+          on:click={() => void emailSecondFactor()}
+        >
+          {emailedNow?.busy ? t('signIn.sending') : emailedNow?.sentTo !== undefined || emailedNow?.error ? t('signIn.resendCode') : t('signIn.emailCodeOption')}
+        </button>
+        {#if emailedNow?.error}
+          <p class={cls('formFieldError', 'atlas-error')} role="alert">{emailedNow.error}</p>
         {/if}
       {/if}
-      {#if step.kind === 'collect_second_factor' && onPasskeySecondFactor && attempt?.id && noPasskeyFor !== attempt.id}
+      {#if step.kind === 'collect_second_factor' && onPasskeySecondFactor && attempt?.id && !notHeld.includes(`${attempt.id}:passkey`)}
         <button
           class={cls('formButtonSecondary', 'atlas-button-secondary')}
           type="button"

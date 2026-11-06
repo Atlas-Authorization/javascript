@@ -150,6 +150,7 @@ export interface LocalizationResource {
   'mfa.phoneHint': string;
   'mfa.sendCode': string;
   'mfa.codeTextedTo': string;
+  'mfa.codeWait': string;
   'mfa.smsCodeOption': string;
   'mfa.recoveryCodesTitle': string,
   'mfa.recoveryCodesHelp': string,

@@ -1,5 +1,11 @@
 # @atlasauth/react changelog
 
+
+
+## 0.30.6 — 2026-11-06
+
+- The second-factor step offers only what the account can use, adds Resend code once a code has gone out, and says how long to wait when a send is limited.
+
 ## 0.30.3 — 2026-11-06
 
 - The second-factor step emails the code on arrival when that's the account's only way, and offers "Use a passkey", which continues on the hosted page. Picks up the passkey origin handling from `@atlasauth/js` 0.34.2.

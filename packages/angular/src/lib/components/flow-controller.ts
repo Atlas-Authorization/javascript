@@ -21,7 +21,8 @@ import {
   mfaChoicesFrom,
   prepareSecondFactorCode,
   sendOnlyWaySecondFactorCode,
-  holdsPasskeySecondFactor,
+  holdsSecondFactor,
+  secondFactorSendText,
   continueOnHostedPage,
   resendSignUpVerification,
   flowNeedsCaptcha,
@@ -293,8 +294,11 @@ export class AtlasFlowController {
 
   private autoSentFor: string | null = null;
   private onlyWayFor: string | null = null;
-  /** The attempt whose account holds no passkey: "Use a passkey" is hidden for it. */
-  readonly noPasskeyFor = signal<string | null>(null);
+  private readonly notHeld = signal<string[]>([]);
+  /** The account can't use this second factor: its option is hidden. */
+  lacks(factor: 'passkey' | 'sms' | 'email_code'): boolean {
+    return this.notHeld().includes(`${this.state().attempt?.id}:${factor}`);
+  }
   /** Once per attempt, on arrival at the second factor: send the code if that channel is the only way. */
   private autoSendOnlyWay(): void {
     const { attempt } = this.state();
@@ -303,10 +307,12 @@ export class AtlasFlowController {
     const { emailCode, sms, passkey } = this.mfaChoices();
     if (!emailCode && !sms && !passkey) return;
     this.onlyWayFor = id;
-    if (passkey) void holdsPasskeySecondFactor(this.client, id).then((held) => { if (!held) this.noPasskeyFor.set(id); });
+    for (const factor of ['passkey', 'sms', 'email_code'] as const) {
+      void holdsSecondFactor(this.client, id, factor).then((held) => { if (!held) this.notHeld.update((list) => [...list, `${id}:${factor}`]); });
+    }
     // A stale answer (the flow moved to another attempt) is dropped.
-    if (emailCode) void sendOnlyWaySecondFactorCode(this.client, id, 'email_code').then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.emailSecondFactor.set({ sentTo }); });
-    if (sms) void sendOnlyWaySecondFactorCode(this.client, id, 'sms').then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.smsSecondFactor.set({ sentTo }); });
+    if (emailCode) void sendOnlyWaySecondFactorCode(this.client, id, 'email_code', (seconds) => { if (this.state().attempt?.id === id) this.emailSecondFactor.set({ error: this.t('mfa.codeWait').replace('{seconds}', String(seconds)) }); }).then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.emailSecondFactor.set({ sentTo }); });
+    if (sms) void sendOnlyWaySecondFactorCode(this.client, id, 'sms', (seconds) => { if (this.state().attempt?.id === id) this.smsSecondFactor.set({ error: this.t('mfa.codeWait').replace('{seconds}', String(seconds)) }); }).then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.smsSecondFactor.set({ sentTo }); });
   }
 
   /** "Use a passkey" at the second factor: leaves for the hosted page. */
@@ -405,14 +411,15 @@ export class AtlasFlowController {
   ): Promise<void> {
     const id = this.state().attempt?.id;
     if (!id) return;
-    out.set({ busy: true });
+    const before = out()?.sentTo;
+    out.set({ sentTo: before, busy: true });
     try {
       const { sentTo } = await prepareSecondFactorCode(this.client, id, strategy);
       out.set({ sentTo });
       // A wrong code's message no longer applies once a new code has gone out.
       this.state.update((current) => ({ ...current, errors: [] }));
     } catch (error) {
-      out.set({ error: error instanceof Error ? error.message : this.t('error.generic') });
+      out.set({ sentTo: before, error: secondFactorSendText(error, (key, vars) => this.t(key).replace('{seconds}', vars.seconds)) });
     }
   }
 

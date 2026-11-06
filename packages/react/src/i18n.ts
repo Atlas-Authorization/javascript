@@ -117,6 +117,7 @@ export const EN_US: Catalog = {
   'mfa.phoneHint': 'Include the country code, for example +14155550101.',
   'mfa.sendCode': 'Text me a code',
   'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
+  'mfa.codeWait': 'You can ask for another code in {seconds} seconds.',
   'mfa.smsCodeOption': 'Text me a code instead',
   'mfa.recoveryCodesTitle': 'Save your recovery codes',
   'mfa.recoveryCodesHelp': "Each code works once. If you can't use your second step, sign in with one of these. Keep them somewhere safe: they won't be shown again.",

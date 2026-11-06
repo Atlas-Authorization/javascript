@@ -16,6 +16,8 @@ import {
   type MfaEnrollmentState,
   sendOnlyWaySecondFactorCode,
   holdsPasskeySecondFactor,
+  holdsSecondFactor,
+  secondFactorSendText,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { useClass, useClasses, useFapiClient, useText } from './components-shared';
@@ -225,40 +227,49 @@ export function SecondFactorCodeOption({ attemptId, strategy, onSent }: { attemp
   const t = useText();
   const cls = useClasses();
   const [state, setState] = useState<{ sentTo?: string; error?: string; busy?: boolean }>({});
+  const [held, setHeld] = useState(true);
   const name = strategy === 'sms' ? 'sms-second-factor' : 'email-second-factor';
-  // This channel is the account's only way: the code goes out now, and the step says so.
-  const arrived = useRef<string | null>(null);
   useEffect(() => {
-    if (arrived.current === attemptId) return;
-    arrived.current = attemptId;
     let live = true;
-    void sendOnlyWaySecondFactorCode(client, attemptId, strategy).then((sentTo) => {
-      if (live && sentTo !== null) setState({ sentTo });
+    void holdsSecondFactor(client, attemptId, strategy).then((yes) => {
+      if (live) setHeld(yes);
     });
     return () => {
       live = false;
     };
   }, [client, attemptId, strategy]);
+  // This channel is the account's only way: the code goes out now, and the step says so.
+  const arrived = useRef<string | null>(null);
+  useEffect(() => {
+    if (arrived.current === attemptId) return;
+    arrived.current = attemptId;
+    const wait = (seconds: number) => {
+      if (arrived.current === attemptId) setState({ error: t('mfa.codeWait', { seconds: String(seconds) }) });
+    };
+    void sendOnlyWaySecondFactorCode(client, attemptId, strategy, wait).then((sentTo) => {
+      if (arrived.current === attemptId && sentTo !== null) setState({ sentTo });
+    });
+  }, [client, attemptId, strategy, t]);
   const send = () => {
-    setState({ busy: true });
+    setState((s) => ({ sentTo: s.sentTo, busy: true }));
     prepareSecondFactorCode(client, attemptId, strategy)
       .then(({ sentTo }) => {
         setState({ sentTo });
         onSent?.();
       })
-      .catch((e: unknown) => setState({ error: e instanceof Error ? e.message : String(e) }));
+      .catch((e: unknown) => setState((s) => ({ sentTo: s.sentTo, error: secondFactorSendText(e, t) })));
   };
-  if (state.sentTo !== undefined) {
-    return (
-      <p className={cls('text', 'atlas-text')} data-atlas={`${name}-sent`} aria-live="polite">
-        {strategy === 'sms' ? t('mfa.codeTextedTo', { phone: state.sentTo }) : t('signIn.codeSentTo', { email: state.sentTo })}
-      </p>
-    );
-  }
+  if (!held) return null;
+  const sent = state.sentTo !== undefined;
   return (
     <>
-      <button type="button" className={cls('link', 'atlas-link')} data-atlas={name} disabled={state.busy} onClick={send}>
-        {state.busy ? t('signIn.sending') : t(strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption')}
+      {sent ? (
+        <p className={cls('text', 'atlas-text')} data-atlas={`${name}-sent`} aria-live="polite">
+          {strategy === 'sms' ? t('mfa.codeTextedTo', { phone: state.sentTo! }) : t('signIn.codeSentTo', { email: state.sentTo! })}
+        </p>
+      ) : null}
+      <button type="button" className={cls('link', 'atlas-link')} data-atlas={sent ? `${name}-resend` : name} disabled={state.busy} onClick={send}>
+        {state.busy ? t('signIn.sending') : sent || state.error ? t('signIn.resendCode') : t(strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption')}
       </button>
       {state.error ? (
         <div className={cls('alert', 'atlas-alert')} role="alert">

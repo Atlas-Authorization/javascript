@@ -100,4 +100,41 @@ describe('<SignIn> second factor', () => {
     expect(prepared).toEqual([{ strategy: 'sms', only_way: true }]);
     await vi.waitFor(() => expect(el.querySelector('[data-atlas="passkey-second-factor"]')).toBeNull());
   });
+
+  const reach = async (factors: string[], prepare: () => Response) => {
+    let environmentAsked = false;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/v1/client') return json({ session: null, user: null });
+      if (path === '/v1/client/environment' || path === '/v1/appearance') {
+        environmentAsked = true;
+        return json({ account: { mfa: { totp: true, sms: true, totp_codes: 1 } } });
+      }
+      if (path === '/v1/client/sign_ins') return json({ id: 'sia_1', status: 'needs_second_factor' }, 201);
+      if (path === '/v1/client/sign_ins/sia_1/second_factors') return json({ object: 'second_factors', factors });
+      if (path === '/v1/client/sign_ins/sia_1/prepare_second_factor') return prepare();
+      return json({});
+    }) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+    const el = render(() => h(AtlasProvider, { publishableKey: 'pk_test_x', frontendApi: FAPI, fetchImpl }, h(SignIn, {}))).container as HTMLElement;
+    await vi.waitFor(() => expect(el.querySelector('input[name="identifier"]')).not.toBeNull());
+    await vi.waitFor(() => expect(environmentAsked).toBe(true));
+    (el.querySelector('input[name="identifier"]') as HTMLInputElement).value = 'a@example.com';
+    el.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    return el;
+  };
+
+  it('hides the texted option from an account with no phone', async () => {
+    const el = await reach(['totp'], () => json({ object: 'second_factor_challenge', sent_to: null }));
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor"]')).toBeNull());
+  });
+
+  it('offers a resend after the arrival send, and says how long a limited send must wait', async () => {
+    const sent = await reach(['sms'], () => json({ object: 'second_factor_challenge', sent_to: '+1•••0101' }, 201));
+    await vi.waitFor(() => expect(sent.querySelector('[data-atlas="sms-second-factor-resend"]')?.textContent).toBe('Resend code'));
+    const limited = await reach(['sms'], () => json({ errors: [{ code: 'RATE_LIMITED', message: 'Too many requests. Please retry later.', meta: { retry_after: 30 } }] }, 429));
+    await vi.waitFor(() => expect(limited.textContent).toContain('another code in 30 seconds'));
+    expect(limited.querySelector('[data-atlas="sms-second-factor"]')?.textContent).toBe('Resend code');
+  });
 });

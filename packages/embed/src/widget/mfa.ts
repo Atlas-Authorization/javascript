@@ -9,7 +9,8 @@ import {
   mfaChoicesFrom,
   prepareSecondFactorCode,
   sendOnlyWaySecondFactorCode,
-  holdsPasskeySecondFactor,
+  holdsSecondFactor,
+  secondFactorSendText,
   continueOnHostedPage,
   type MfaEnrollmentController,
   type MfaEnrollmentStrategy,
@@ -60,6 +61,7 @@ const EN: Record<string, string> = {
   'mfa.phoneHint': 'Include the country code, for example +14155550101.',
   'mfa.sendCode': 'Text me a code',
   'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
+  'mfa.codeWait': 'You can ask for another code in {seconds} seconds.',
   'mfa.codeLabel': 'Code',
   'mfa.smsCodeOption': 'Text me a code instead',
   'mfa.recoveryCodesTitle': 'Save your recovery codes',
@@ -238,18 +240,34 @@ export async function submitEnrollment(w: AtlasWidget, values: Record<string, st
  * step, where the app offers them; once sent, the line saying where it went.
  */
 const onlyWaySent = new WeakMap<AtlasWidget, string>();
-const passkeyAsked = new Set<string>();
-const noPasskey = new Set<string>();
+const heldAsked = new WeakMap<AtlasWidget, string>();
+const notHeld = new WeakMap<AtlasWidget, Set<string>>();
 export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLElement[]): void {
   const id = w.state.attempt?.id;
   if (!id) return;
   const choices = mfaChoicesFrom(w.account);
+  if (heldAsked.get(w) !== id) {
+    heldAsked.set(w, id);
+    notHeld.set(w, new Set());
+    for (const factor of ['passkey', 'sms', 'email_code'] as const) {
+      void holdsSecondFactor(w.client, id, factor).then((held) => {
+        if (held) return;
+        notHeld.get(w)?.add(`${id}:${factor}`);
+        render(w);
+      });
+    }
+  }
   // Once per attempt, on arrival: send the code if that channel is the only way.
   if ((choices.emailCode || choices.sms) && onlyWaySent.get(w) !== id) {
     onlyWaySent.set(w, id);
     const channels: ('sms' | 'email_code')[] = [...(choices.sms ? (['sms'] as const) : []), ...(choices.emailCode ? (['email_code'] as const) : [])];
     for (const strategy of channels) {
-      void sendOnlyWaySecondFactorCode(w.client, id, strategy).then((sentTo) => {
+      const limited = (seconds: number) => {
+        if (w.state.attempt?.id !== id) return;
+        w.secondFactorCode = { attemptId: id, strategy, error: say(w, 'mfa.codeWait', { seconds: String(seconds) }) };
+        render(w);
+      };
+      void sendOnlyWaySecondFactorCode(w.client, id, strategy, limited).then((sentTo) => {
         if (!sentTo || w.state.attempt?.id !== id) return;
         w.secondFactorCode = { attemptId: id, strategy, sentTo };
         render(w);
@@ -261,26 +279,30 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
   if (choices.sms) offer.push('sms');
   if (choices.emailCode) offer.push('email_code');
   for (const strategy of offer) {
+    if (notHeld.get(w)?.has(`${id}:${strategy}`)) continue;
     const name = strategy === 'sms' ? 'sms-second-factor' : 'email-second-factor';
-    if (sent?.strategy === strategy && sent.sentTo !== undefined) {
+    const mine = sent?.strategy === strategy ? sent : null;
+    const wasSent = mine?.sentTo !== undefined;
+    if (wasSent) {
       const note = el(
         w,
         'p',
         'atlas-embed-note',
-        strategy === 'sms' ? say(w, 'mfa.codeTextedTo', { phone: sent.sentTo }) : say(w, 'signIn.codeSentTo', { email: sent.sentTo }),
+        strategy === 'sms' ? say(w, 'mfa.codeTextedTo', { phone: mine!.sentTo! }) : say(w, 'signIn.codeSentTo', { email: mine!.sentTo! }),
       );
       note.setAttribute('data-atlas', `${name}-sent`);
       note.setAttribute('aria-live', 'polite');
       trailing.push(note);
-      continue;
     }
-    const busy = sent?.strategy === strategy && sent.busy === true;
-    const b = el(w, 'button', 'atlas-embed-step-back', busy ? say(w, 'signIn.sending') : say(w, strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption')) as HTMLButtonElement;
+    const busy = mine?.busy === true;
+    const label = busy ? 'signIn.sending' : wasSent || mine?.error ? 'signIn.resendCode' : strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption';
+    const b = el(w, 'button', 'atlas-embed-step-back', say(w, label)) as HTMLButtonElement;
     b.type = 'button';
-    b.setAttribute('data-atlas', name);
+    b.setAttribute('data-atlas', wasSent ? `${name}-resend` : name);
     b.disabled = w.busy || busy;
     b.addEventListener('click', () => {
-      w.secondFactorCode = { attemptId: id, strategy, busy: true };
+      const before = mine?.sentTo;
+      w.secondFactorCode = { attemptId: id, strategy, sentTo: before, busy: true };
       render(w);
       prepareSecondFactorCode(w.client, id, strategy).then(
         ({ sentTo }) => {
@@ -290,27 +312,19 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
           render(w);
         },
         (error: unknown) => {
-          w.secondFactorCode = { attemptId: id, strategy, error: error instanceof Error ? error.message : String(error) };
+          w.secondFactorCode = { attemptId: id, strategy, sentTo: before, error: secondFactorSendText(error, (key, vars) => say(w, key, vars)) };
           render(w);
         },
       );
     });
     trailing.push(b);
-    if (sent?.strategy === strategy && sent.error) {
-      const p = el(w, 'p', 'atlas-embed-error', sent.error);
+    if (mine?.error) {
+      const p = el(w, 'p', 'atlas-embed-error', mine.error);
       p.setAttribute('role', 'alert');
       trailing.push(p);
     }
   }
-  if (choices.passkey && !passkeyAsked.has(id)) {
-    passkeyAsked.add(id);
-    void holdsPasskeySecondFactor(w.client, id).then((held) => {
-      if (held) return;
-      noPasskey.add(id);
-      render(w);
-    });
-  }
-  if (choices.passkey && !noPasskey.has(id)) {
+  if (choices.passkey && !notHeld.get(w)?.has(`${id}:passkey`)) {
     const b = el(w, 'button', 'atlas-embed-step-back', say(w, 'mfa.enrollPasskeyOption')) as HTMLButtonElement;
     b.type = 'button';
     b.setAttribute('data-atlas', 'passkey-second-factor');

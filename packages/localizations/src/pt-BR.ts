@@ -108,6 +108,7 @@ export const ptBR: LocalizationResource = {
   'mfa.phoneHint': 'Inclua o código do país, por exemplo +5511912345678.',
   'mfa.sendCode': 'Enviar um código por SMS',
   'mfa.codeTextedTo': 'Digite o código que enviamos para {phone}.',
+  'mfa.codeWait': 'Você pode pedir outro código em {seconds} segundos.',
   'mfa.smsCodeOption': 'Enviar um código por SMS',
   'mfa.recoveryCodesTitle': 'Salve seus códigos de recuperação',
   'mfa.recoveryCodesHelp': 'Cada código funciona uma vez. Se não puder usar sua segunda etapa, entre com um deles. Guarde-os em um lugar seguro: eles não serão mostrados de novo.',

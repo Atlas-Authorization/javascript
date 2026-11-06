@@ -133,6 +133,8 @@ let calls: { method: string; path: string; body: Record<string, unknown> | null 
 const TOTP_SETUP = { object: 'mfa_enrollment', strategy: 'totp', factor_id: 'mfa_t', secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/x', qr_code: 'data:image/gif;base64,R0lG' };
 const SMS_ACCOUNT = { username: null, email_verification: 'code', password_reset: 'code', mfa: { totp: true, sms: true, totp_codes: 1 } };
 
+let factorsHeld = ['sms', 'totp', 'passkey'];
+let prepareAnswer: (() => Response) | null = null;
 async function controller(status: string, account?: Record<string, unknown>, backupCodes: string[] = []) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -148,7 +150,10 @@ async function controller(status: string, account?: Record<string, unknown>, bac
       case '/v1/client/sign_ins/sia_1/attempt_mfa_enrollment':
         return json({ id: 'sia_1', status: 'complete', ticket: 'tkt_e', backup_codes: backupCodes });
       case '/v1/client/sign_ins/sia_1/prepare_second_factor':
+        if (prepareAnswer) return prepareAnswer();
         return json({ object: 'second_factor_challenge', strategy: body?.strategy, sent_to: '+1•••0101' }, 201);
+      case '/v1/client/sign_ins/sia_1/second_factors':
+        return json({ object: 'second_factors', factors: factorsHeld });
       default:
         return json({});
     }
@@ -320,6 +325,30 @@ describe('texted second factor', () => {
     refs.pop()!.destroy();
     el = draw(flow).location.nativeElement as HTMLElement;
     expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')!.textContent).toContain('+1•••0101');
+    flow.destroy();
+  });
+
+  it('offers a resend after a send, and says how long a limited send must wait', async () => {
+    const flow = await controller('needs_second_factor', SMS_ACCOUNT);
+    await flow.sendSmsSecondFactor();
+    let el = draw(flow).location.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-atlas="sms-second-factor-resend"]')!.textContent).toContain('Resend code');
+    prepareAnswer = () => json({ errors: [{ code: 'RATE_LIMITED', message: 'Too many requests. Please retry later.', meta: { retry_after: 30 } }] }, 429);
+    await flow.sendSmsSecondFactor();
+    prepareAnswer = null;
+    refs.pop()!.destroy();
+    el = draw(flow).location.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('another code in 30 seconds');
+    expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')).not.toBeNull();
+    flow.destroy();
+  });
+
+  it('hides what the account lacks', async () => {
+    factorsHeld = ['totp'];
+    const flow = await controller('needs_second_factor', SMS_ACCOUNT);
+    await vi.waitFor(() => expect(flow.lacks('sms')).toBe(true));
+    expect(flow.lacks('passkey')).toBe(true);
+    factorsHeld = ['sms', 'totp', 'passkey'];
     flow.destroy();
   });
 

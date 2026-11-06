@@ -329,13 +329,13 @@ const AttemptFlow = defineComponent({
     },
     /** On arrival at the second factor: emails the code if the inbox is the only way (masked address, or null). */
     onOnlyWay: {
-      type: Function as PropType<(attemptId: string, strategy: 'email_code' | 'sms') => Promise<string | null>>,
+      type: Function as PropType<(attemptId: string, strategy: 'email_code' | 'sms', onWait?: (seconds: number) => void) => Promise<string | null>>,
       default: undefined,
     },
     /** "Use a passkey" at the second factor: leaves for the hosted page. */
-    /** Whether the account holds a passkey: "Use a passkey" is hidden when it doesn't. */
-    onHoldsPasskey: {
-      type: Function as PropType<(attemptId: string) => Promise<boolean>>,
+    /** Whether the account can use a second factor: its option is hidden when it can't. */
+    onHoldsFactor: {
+      type: Function as PropType<(attemptId: string, factor: 'passkey' | 'sms' | 'email_code') => Promise<boolean>>,
       default: undefined,
     },
     onPasskeySecondFactor: {
@@ -394,14 +394,17 @@ const AttemptFlow = defineComponent({
     );
 
     // Once per attempt: email the code on arrival when the inbox is the only way.
-    const noPasskeyFor = ref<string | null>(null);
+    const notHeld = ref<string[]>([]);
+    const lacks = (factor: string) => notHeld.value.includes(`${props.attempt?.id}:${factor}`);
     watch(
-      () => (props.attempt && props.onHoldsPasskey && nextStep(props.attempt).kind === 'collect_second_factor' ? props.attempt.id : null),
+      () => (props.attempt && props.onHoldsFactor && nextStep(props.attempt).kind === 'collect_second_factor' ? props.attempt.id : null),
       (id) => {
-        if (!id || !props.onHoldsPasskey) return;
-        void props.onHoldsPasskey(id).then((held) => {
-          if (!held) noPasskeyFor.value = id;
-        });
+        if (!id || !props.onHoldsFactor) return;
+        for (const factor of ['passkey', 'sms', 'email_code'] as const) {
+          void props.onHoldsFactor(id, factor).then((held) => {
+            if (!held) notHeld.value = [...notHeld.value, `${id}:${factor}`];
+          });
+        }
       },
       { immediate: true },
     );
@@ -412,12 +415,18 @@ const AttemptFlow = defineComponent({
         if (!id || !props.onOnlyWay || onlyWayFor === id) return;
         onlyWayFor = id;
         if (props.onEmailSecondFactor) {
-          void props.onOnlyWay(id, 'email_code').then((sentTo) => {
+          const wait = (seconds: number) => {
+            if (props.attempt?.id === id) emailed.value = { error: t('mfa.codeWait', { seconds: String(seconds) }) };
+          };
+          void props.onOnlyWay(id, 'email_code', wait).then((sentTo) => {
             if (sentTo && props.attempt?.id === id) emailed.value = { sentTo };
           });
         }
         if (props.onSmsSecondFactor) {
-          void props.onOnlyWay(id, 'sms').then((sentTo) => {
+          const wait = (seconds: number) => {
+            if (props.attempt?.id === id) texted.value = { error: t('mfa.codeWait', { seconds: String(seconds) }) };
+          };
+          void props.onOnlyWay(id, 'sms', wait).then((sentTo) => {
             if (sentTo && props.attempt?.id === id) texted.value = { sentTo };
           });
         }
@@ -665,65 +674,40 @@ const AttemptFlow = defineComponent({
         }
         case 'collect_second_factor': {
           const out: VNode[] = [field('code', 'mfa.codeLabel')];
-          if (props.onSmsSecondFactor) {
-            const state = texted.value;
-            if (state.sentTo !== undefined) {
-              out.push(
-                h('p', { key: 'sms-2fa-sent', class: 'atlas-text', 'data-atlas': 'sms-second-factor-sent', 'aria-live': 'polite' }, t('mfa.codeTextedTo', { phone: state.sentTo })),
-              );
-            } else {
-              out.push(
-                h(
-                  'button',
-                  {
-                    key: 'sms-2fa',
-                    class: cls('formButtonSecondary', 'atlas-button-secondary'),
-                    type: 'button',
-                    'data-atlas': 'sms-second-factor',
-                    disabled: props.busy || state.busy,
-                    onClick: () => {
-                      texted.value = { busy: true };
-                      void props.onSmsSecondFactor!().then((r) => {
-                        texted.value = r.error ? { error: r.error } : { sentTo: r.sentTo ?? '' };
-                      });
-                    },
+          const option = (
+            name: string,
+            state: { value: { busy?: boolean; sentTo?: string; error?: string } },
+            sentLine: (to: string) => string,
+            label: Parameters<typeof t>[0],
+            send: () => Promise<{ sentTo?: string; error?: string }>,
+          ) => {
+            const now = state.value;
+            const sent = now.sentTo !== undefined;
+            if (sent) out.push(h('p', { key: `${name}-sent`, class: 'atlas-text', 'data-atlas': `${name}-sent`, 'aria-live': 'polite' }, sentLine(now.sentTo!)));
+            out.push(
+              h(
+                'button',
+                {
+                  key: name,
+                  class: cls('formButtonSecondary', 'atlas-button-secondary'),
+                  type: 'button',
+                  'data-atlas': sent ? `${name}-resend` : name,
+                  disabled: props.busy || now.busy,
+                  onClick: () => {
+                    state.value = { sentTo: now.sentTo, busy: true };
+                    void send().then((r) => {
+                      state.value = r.error ? { sentTo: now.sentTo, error: r.error } : { sentTo: r.sentTo ?? '' };
+                    });
                   },
-                  state.busy ? t('signIn.sending') : t('mfa.smsCodeOption'),
-                ),
-              );
-              if (state.error) out.push(h('p', { key: 'sms-2fa-error', class: cls('formFieldError', 'atlas-error'), role: 'alert' }, state.error));
-            }
-          }
-          if (props.onEmailSecondFactor) {
-            const state = emailed.value;
-            if (state.sentTo !== undefined) {
-              out.push(
-                h('p', { key: 'email-2fa-sent', class: 'atlas-text', 'data-atlas': 'email-second-factor-sent', 'aria-live': 'polite' }, t('signIn.codeSentTo', { email: state.sentTo })),
-              );
-            } else {
-              out.push(
-                h(
-                  'button',
-                  {
-                    key: 'email-2fa',
-                    class: cls('formButtonSecondary', 'atlas-button-secondary'),
-                    type: 'button',
-                    'data-atlas': 'email-second-factor',
-                    disabled: props.busy || state.busy,
-                    onClick: () => {
-                      emailed.value = { busy: true };
-                      void props.onEmailSecondFactor!().then((r) => {
-                        emailed.value = r.error ? { error: r.error } : { sentTo: r.sentTo ?? '' };
-                      });
-                    },
-                  },
-                  state.busy ? t('signIn.sending') : t('signIn.emailCodeOption'),
-                ),
-              );
-              if (state.error) out.push(h('p', { key: 'email-2fa-error', class: cls('formFieldError', 'atlas-error'), role: 'alert' }, state.error));
-            }
-          }
-          if (props.onPasskeySecondFactor && props.attempt && noPasskeyFor.value !== props.attempt.id) {
+                },
+                now.busy ? t('signIn.sending') : sent || now.error ? t('signIn.resendCode') : t(label),
+              ),
+            );
+            if (now.error) out.push(h('p', { key: `${name}-error`, class: cls('formFieldError', 'atlas-error'), role: 'alert' }, now.error));
+          };
+          if (props.onSmsSecondFactor && !lacks('sms')) option('sms-second-factor', texted, (phone) => t('mfa.codeTextedTo', { phone }), 'mfa.smsCodeOption', props.onSmsSecondFactor);
+          if (props.onEmailSecondFactor && !lacks('email_code')) option('email-second-factor', emailed, (email) => t('signIn.codeSentTo', { email }), 'signIn.emailCodeOption', props.onEmailSecondFactor);
+          if (props.onPasskeySecondFactor && props.attempt && !lacks('passkey')) {
             const attemptId = props.attempt.id;
             out.push(
               h(
@@ -966,7 +950,7 @@ export const SignIn = defineComponent({
     signUpUrl: { type: null as unknown as PropType<string | null | undefined>, default: undefined },
   },
   setup(props) {
-    const { state, submit, prepare, captcha, settings, lastMethod, sendEmailSecondFactor, sendSmsSecondFactor, holdsPasskey, sendOnlyWay, continueWithPasskey, mfaChoices, enrollment, enrollmentState, saveRecoveryCodes, declinePolicy, passkey } =
+    const { state, submit, prepare, captcha, settings, lastMethod, sendEmailSecondFactor, sendSmsSecondFactor, holdsFactor, sendOnlyWay, continueWithPasskey, mfaChoices, enrollment, enrollmentState, saveRecoveryCodes, declinePolicy, passkey } =
       useFlow();
     const emailLink = useEmailLink('sign_in');
     const atlas = useAtlas();
@@ -1030,7 +1014,7 @@ export const SignIn = defineComponent({
         onSmsSecondFactor: mfaChoices().sms ? sendSmsSecondFactor : undefined,
         onOnlyWay: mfaChoices().emailCode || mfaChoices().sms ? sendOnlyWay : undefined,
         onPasskeySecondFactor: mfaChoices().passkey ? continueWithPasskey : undefined,
-        onHoldsPasskey: mfaChoices().passkey ? holdsPasskey : undefined,
+        onHoldsFactor: holdsFactor,
         enrollment,
         enrollmentState: enrollmentState.value,
         recoveryCodes: pendingRecoveryCodes(state.value),
@@ -1420,7 +1404,7 @@ export const SignUp = defineComponent({
     signInUrl: { type: null as unknown as PropType<string | null | undefined>, default: undefined },
   },
   setup(props) {
-    const { state, submit, create, createWithPasskey, createPasskey, resendSignUp, settings, signUpCaptcha, policies, loadPolicies, continueAfterExistingAccount, saveRecoveryCodes, sendEmailSecondFactor, sendSmsSecondFactor, holdsPasskey, sendOnlyWay, continueWithPasskey, mfaChoices, enrollment, enrollmentState, declinePolicy } = useFlow({ holdExistingAccountNotice: true });
+    const { state, submit, create, createWithPasskey, createPasskey, resendSignUp, settings, signUpCaptcha, policies, loadPolicies, continueAfterExistingAccount, saveRecoveryCodes, sendEmailSecondFactor, sendSmsSecondFactor, holdsFactor, sendOnlyWay, continueWithPasskey, mfaChoices, enrollment, enrollmentState, declinePolicy } = useFlow({ holdExistingAccountNotice: true });
     const emailLink = useEmailLink('sign_up');
     const atlas = useAtlas();
     const t = useText();
@@ -1475,7 +1459,7 @@ export const SignUp = defineComponent({
             onSmsSecondFactor: mfaChoices().sms ? sendSmsSecondFactor : undefined,
         onOnlyWay: mfaChoices().emailCode || mfaChoices().sms ? sendOnlyWay : undefined,
         onPasskeySecondFactor: mfaChoices().passkey ? continueWithPasskey : undefined,
-        onHoldsPasskey: mfaChoices().passkey ? holdsPasskey : undefined,
+        onHoldsFactor: holdsFactor,
             enrollment,
             enrollmentState: enrollmentState.value,
             recoveryCodes: pendingRecoveryCodes(state.value),

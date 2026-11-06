@@ -108,6 +108,7 @@ export const plPL: LocalizationResource = {
   'mfa.phoneHint': 'Wraz z numerem kierunkowym kraju, na przykład +48123456789.',
   'mfa.sendCode': 'Wyślij kod SMS-em',
   'mfa.codeTextedTo': 'Wpisz kod, który wysłaliśmy SMS-em na numer {phone}.',
+  'mfa.codeWait': 'Kolejny kod możesz poprosić za {seconds} s.',
   'mfa.smsCodeOption': 'Wyślij mi kod SMS-em',
   'mfa.recoveryCodesTitle': 'Zachowaj kody zapasowe',
   'mfa.recoveryCodesHelp': 'Każdy kod działa tylko raz. Jeśli nie możesz użyć drugiego etapu, zaloguj się jednym z tych kodów. Przechowuj je w bezpiecznym miejscu: nie zostaną wyświetlone ponownie.',

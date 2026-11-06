@@ -2124,6 +2124,8 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
   const TOTP_SETUP = { object: 'mfa_enrollment', strategy: 'totp', factor_id: 'mfa_t', secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/x', qr_code: 'data:image/gif;base64,R0lG' };
   const SMS_ACCOUNT = { mfa: { totp: true, sms: true, totp_codes: 1 }, email_second_factor: true };
   let onlyWayAnswers = false; // whether the arrival send reports an address
+  let factorsHeld: string[] | null = null;
+  let prepareLimited = false;
   const start = async (status: string, account?: Record<string, unknown>) => {
     const made = makeFetch({
       'GET /v1/appearance': () => ({ body: { ...envelope([]), ...(account ? { account } : {}) } }),
@@ -2133,7 +2135,10 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
         body: body?.strategy === 'phone_code' ? { object: 'mfa_enrollment', strategy: 'phone_code', factor_id: 'mfa_s', phone: '+1•••0101' } : TOTP_SETUP,
       }),
       'POST /v1/client/sign_ins/sia_m/attempt_mfa_enrollment': () => ({ body: { id: 'sia_m', status: 'needs_mfa_enrollment' } }),
-      'POST /v1/client/sign_ins/sia_m/prepare_second_factor': (body) => ({
+      'GET /v1/client/sign_ins/sia_m/second_factors': () => (factorsHeld ? { body: { object: 'second_factors', factors: factorsHeld } } : { status: 500, body: {} }),
+      'POST /v1/client/sign_ins/sia_m/prepare_second_factor': (body) => prepareLimited
+        ? { status: 429, body: { errors: [{ code: 'RATE_LIMITED', message: 'Too many requests.', meta: { retry_after: 30 } }] } }
+        : ({
         status: 201,
         body: { object: 'second_factor_challenge', strategy: body?.strategy, ...(body?.only_way && !onlyWayAnswers ? {} : { sent_to: body?.strategy === 'sms' ? '+1•••0101' : 'a•••@example.com' }) },
       }),
@@ -2206,6 +2211,27 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
     (root.querySelector('[data-atlas="email-second-factor"]') as HTMLButtonElement).click();
     await flush();
     expect(root.querySelector('[data-atlas="email-second-factor-sent"]')!.textContent).toContain('a•••@example.com');
+  });
+
+  it('hides what the account lacks, offers a resend, and says how long a limited send must wait', async () => {
+    factorsHeld = ['totp'];
+    const lacking = await start('needs_second_factor', SMS_ACCOUNT);
+    await flush();
+    factorsHeld = null;
+    expect(lacking.root.querySelector('[data-atlas="sms-second-factor"]')).toBeNull();
+
+    onlyWayAnswers = true;
+    const sent = await start('needs_second_factor', { mfa: { totp: false, sms: true, totp_codes: 1 } });
+    onlyWayAnswers = false;
+    await flush();
+    expect(sent.root.querySelector('[data-atlas="sms-second-factor-resend"]')!.textContent).toBe('Resend code');
+
+    prepareLimited = true;
+    const limited = await start('needs_second_factor', { mfa: { totp: false, sms: true, totp_codes: 1 } });
+    await flush();
+    prepareLimited = false;
+    expect(limited.root.textContent).toContain('another code in 30 seconds');
+    expect(limited.root.querySelector('[data-atlas="sms-second-factor"]')!.textContent).toBe('Resend code');
   });
 
   it('emails the code on arrival at the second factor when the inbox is an option and shows where it went', async () => {

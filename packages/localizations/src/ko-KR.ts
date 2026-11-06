@@ -107,6 +107,7 @@ export const koKR: LocalizationResource = {
   'mfa.phoneHint': '국가 번호를 포함해 주세요. 예: +821012345678',
   'mfa.sendCode': '문자로 코드 받기',
   'mfa.codeTextedTo': '{phone}(으)로 문자로 보낸 코드를 입력해 주세요.',
+  'mfa.codeWait': '{seconds}초 후에 다른 코드를 요청할 수 있습니다.',
   'mfa.smsCodeOption': '대신 문자로 코드 받기',
   'mfa.recoveryCodesTitle': '복구 코드를 저장해 주세요',
   'mfa.recoveryCodesHelp': '각 코드는 한 번만 사용할 수 있습니다. 두 번째 단계를 사용할 수 없을 때 이 코드 중 하나로 로그인할 수 있습니다. 다시 표시되지 않으니 안전한 곳에 보관해 주세요.',

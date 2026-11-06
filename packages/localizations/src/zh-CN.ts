@@ -108,6 +108,7 @@ export const zhCN: LocalizationResource = {
   'mfa.phoneHint': '请包含国家/地区代码，例如 +8613800138000。',
   'mfa.sendCode': '通过短信发送验证码',
   'mfa.codeTextedTo': '请输入我们发送到 {phone} 的验证码。',
+  'mfa.codeWait': '{seconds} 秒后可以再次获取验证码。',
   'mfa.smsCodeOption': '改为通过短信发送验证码',
   'mfa.recoveryCodesTitle': '保存您的备份码',
   'mfa.recoveryCodesHelp': '每个备份码只能使用一次。如果无法使用第二验证步骤，可使用其中一个备份码登录。请妥善保管：它们不会再次显示。',

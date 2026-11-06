@@ -108,6 +108,7 @@ export const svSE: LocalizationResource = {
   'mfa.phoneHint': 'Ange landskod, till exempel +46701234567.',
   'mfa.sendCode': 'Skicka en kod via sms',
   'mfa.codeTextedTo': 'Ange koden som vi skickade via sms till {phone}.',
+  'mfa.codeWait': 'Du kan begära en ny kod om {seconds} sekunder.',
   'mfa.smsCodeOption': 'Skicka en kod via sms i stället',
   'mfa.recoveryCodesTitle': 'Spara dina reservkoder',
   'mfa.recoveryCodesHelp': 'Varje kod fungerar bara en gång. Om du inte kan använda ditt andra steg kan du logga in med någon av dessa. Förvara dem på ett säkert ställe: de visas inte igen.',

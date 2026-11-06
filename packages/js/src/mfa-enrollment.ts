@@ -31,6 +31,7 @@ import type { FieldError } from './attempt';
 import type { AccountUx } from './environment';
 import type { FapiClient, FlowState } from './fapi';
 import { createPasskey, getPasskeyAssertion, passkeysSupported, type WebAuthnHost } from './passkey';
+import { retryAfterSeconds } from './first-factor';
 import { stripRedirectParams } from './redirect';
 
 export type MfaEnrollmentStrategy = 'totp' | 'phone_code' | 'hotp' | 'yubikey' | 'duo' | 'passkey';
@@ -455,37 +456,70 @@ export async function prepareSecondFactorCode(
   );
   if (!response.ok) {
     const first = response.errors[0];
-    const error = new Error(first?.message ?? 'Could not send the code.') as Error & { code?: string };
+    const error = new Error(first?.message ?? 'Could not send the code.') as Error & { code?: string; retryAfter?: number };
     if (first?.code) error.code = first.code;
+    const wait = retryAfterSeconds(response.errors);
+    if (wait) error.retryAfter = wait;
     throw error;
   }
   return { sentTo: typeof response.data?.sent_to === 'string' ? response.data.sent_to : '' };
 }
 
+/** What a failed send should say: how long to wait when the server limited it, else its message. */
+export function secondFactorSendText(error: unknown, t: (key: 'mfa.codeWait', vars: { seconds: string }) => string): string {
+  const wait = (error as { retryAfter?: unknown } | null)?.retryAfter;
+  if (typeof wait === 'number') return t('mfa.codeWait', { seconds: String(wait) });
+  return error instanceof Error ? error.message : String(error);
+}
+
+// One request per attempt, however many options on the step ask.
+const heldAsked = new WeakMap<FapiClient, { attemptId: string; answer: Promise<readonly unknown[] | null> }>();
+
 /**
- * Does this account hold a passkey, at the second-factor step? An unanswered question reads true:
- * the hosted page then says so, where a hidden button would leave a real passkey unusable.
+ * Can this account use this second factor? No answer reads true: a real way in must never be
+ * hidden because a request failed, and the send then says what's wrong.
  */
-export async function holdsPasskeySecondFactor(client: FapiClient, attemptId: string): Promise<boolean> {
-  try {
-    const response = await client.get<{ factors?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/second_factors`);
-    return !response.ok || !Array.isArray(response.data?.factors) || response.data.factors.includes('passkey');
-  } catch {
-    return true;
+export async function holdsSecondFactor(client: FapiClient, attemptId: string, factor: 'passkey' | 'sms' | 'email_code'): Promise<boolean> {
+  let asked = heldAsked.get(client);
+  if (asked?.attemptId !== attemptId) {
+    const answer = client
+      .get<{ factors?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/second_factors`)
+      .then((response) => (response.ok && Array.isArray(response.data?.factors) ? (response.data.factors as unknown[]) : null))
+      .catch(() => null);
+    asked = { attemptId, answer };
+    heldAsked.set(client, asked);
   }
+  const held = await asked.answer;
+  return held === null || held.includes(factor);
+}
+
+/** Does this account hold a passkey, at the second-factor step? See {@link holdsSecondFactor}. */
+export function holdsPasskeySecondFactor(client: FapiClient, attemptId: string): Promise<boolean> {
+  return holdsSecondFactor(client, attemptId, 'passkey');
 }
 
 /**
  * On arrival at the second-factor step: sends the code only if this channel is the account's only way.
- * Resolves the masked address or number, or null when nothing was sent; a failure leaves the person the button.
+ * Resolves the masked address or number, or null when nothing was sent. `onWait` hears how long to
+ * wait when the send was limited; any other failure leaves the person the button.
  */
-export async function sendOnlyWaySecondFactorCode(client: FapiClient, attemptId: string, strategy: 'email_code' | 'sms' = 'email_code'): Promise<string | null> {
+export async function sendOnlyWaySecondFactorCode(
+  client: FapiClient,
+  attemptId: string,
+  strategy: 'email_code' | 'sms' = 'email_code',
+  onWait?: (seconds: number) => void,
+): Promise<string | null> {
   try {
     const response = await client.post<{ sent_to?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/prepare_second_factor`, {
       strategy,
       only_way: true,
     });
-    return response.ok && typeof response.data?.sent_to === 'string' ? response.data.sent_to : null;
+    if (!response.ok) {
+      const wait = retryAfterSeconds(response.errors);
+      if (wait) onWait?.(wait);
+      return null;
+    }
+    return typeof response.data?.sent_to === 'string' ? response.data.sent_to : null;
   } catch {
     return null;
   }

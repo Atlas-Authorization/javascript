@@ -1,5 +1,11 @@
 # @atlasauth/js changelog
 
+
+
+## 0.34.5 — 2026-11-06
+
+- `holdsSecondFactor(client, attemptId, factor)` and `secondFactorSendText(error, t)`. `sendOnlyWaySecondFactorCode` takes `onWait`, and a limited `prepareSecondFactorCode` error carries `retryAfter`.
+
 ## 0.34.2 — 2026-11-06
 
 - A passkey that can't run on this page's origin sends the step to the hosted page instead of showing the browser's error. New `continueOnHostedPage`, `passkeyRunsHere` and `sendOnlyWaySecondFactorCode`.

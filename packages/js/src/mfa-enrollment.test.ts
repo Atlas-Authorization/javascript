@@ -14,7 +14,7 @@ import {
   mfaChoicesFrom,
   prepareSecondFactorCode,
   type MfaChoices,
-  passkeyRunsHere, holdsPasskeySecondFactor } from './mfa-enrollment';
+  passkeyRunsHere, holdsPasskeySecondFactor, holdsSecondFactor, sendOnlyWaySecondFactorCode, secondFactorSendText } from './mfa-enrollment';
 import type { WebAuthnHost } from './passkey';
 
 function scripted(route: (path: string, body: Record<string, unknown> | null) => { status?: number; body: unknown }) {
@@ -323,6 +323,27 @@ describe('every factor the instance offers at the enrolment step', () => {
       attestation_object: 'AQ',
       client_data_json: 'Ag',
     });
+  });
+
+  it('holdsSecondFactor asks once per attempt, whichever factors are asked about', async () => {
+    const get = vi.fn(async () => ({ ok: true, status: 200, data: { factors: ['totp'] }, errors: [] }));
+    const client = { get } as never;
+    expect(await holdsSecondFactor(client, 'sia_1', 'sms')).toBe(false);
+    expect(await holdsSecondFactor(client, 'sia_1', 'email_code')).toBe(false);
+    expect(get).toHaveBeenCalledTimes(1);
+    await holdsSecondFactor(client, 'sia_2', 'sms');
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('a limited send says how long to wait, on arrival and on a press', async () => {
+    const limited = { post: async () => ({ ok: false, status: 429, data: null, errors: [{ code: 'RATE_LIMITED', message: 'Too many', meta: { retry_after: 12.5 } }] }) } as never;
+    const waits: number[] = [];
+    expect(await sendOnlyWaySecondFactorCode(limited, 'sia_1', 'sms', (s) => waits.push(s))).toBeNull();
+    expect(waits).toEqual([13]);
+    const t = (_key: 'mfa.codeWait', vars: { seconds: string }) => `wait ${vars.seconds}`;
+    const failure = await prepareSecondFactorCode(limited, 'sia_1', 'sms').catch((e: unknown) => e);
+    expect(secondFactorSendText(failure, t)).toBe('wait 13');
+    expect(secondFactorSendText(new Error('no route'), t)).toBe('no route');
   });
 
   it('holdsPasskeySecondFactor reads the answer, and anything unanswered as yes', async () => {

@@ -51,7 +51,8 @@ import {
   mfaChoicesFrom,
   prepareSecondFactorCode,
   sendOnlyWaySecondFactorCode,
-  holdsPasskeySecondFactor,
+  holdsSecondFactor,
+  secondFactorSendText,
   continueOnHostedPage,
   nextStep,
   pendingExistingAccountNotice,
@@ -187,6 +188,7 @@ export const SIGN_UP_TEXT: Record<string, string> = {
   'mfa.phoneHint': 'Include the country code, for example +14155550101.',
   'mfa.sendCode': 'Text me a code',
   'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
+  'mfa.codeWait': 'You can ask for another code in {seconds} seconds.',
   'mfa.codeLabel': 'Code',
   'mfa.recoveryCodesTitle': 'Save your recovery codes',
   'mfa.recoveryCodesHelp': "Each code works once. If you can't use your second step, sign in with one of these. Keep them somewhere safe: they won't be shown again.",
@@ -796,68 +798,62 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     const m = secondText();
     return m && m.attemptId === (state().attempt?.id ?? null) ? m : null;
   };
-  const [noPasskeyFor, setNoPasskeyFor] = createSignal<string | null>(null);
+  const [notHeld, setNotHeld] = createSignal<string[]>([]);
   let onlyWayFor: string | null = null;
   createEffect(() => {
     const id = state().attempt?.id ?? null;
     const { emailCode, sms, passkey } = mfaChoicesFrom(settings()?.account);
     if (kind() !== 'collect_second_factor' || !id || onlyWayFor === id || (!emailCode && !sms && !passkey)) return;
     onlyWayFor = id;
-    if (passkey) void holdsPasskeySecondFactor(fapi, id).then((held) => { if (!held) setNoPasskeyFor(id); });
+    for (const factor of ['passkey', 'sms', 'email_code'] as const) {
+      void holdsSecondFactor(fapi, id, factor).then((held) => { if (!held) setNotHeld((list) => [...list, `${id}:${factor}`]); });
+    }
     // secondMailNow and secondTextNow ignore an answer for an attempt the flow has left.
-    if (emailCode) void sendOnlyWaySecondFactorCode(fapi, id, 'email_code').then((sentTo) => { if (sentTo) setSecondMail({ attemptId: id, sentTo }); });
-    if (sms) void sendOnlyWaySecondFactorCode(fapi, id, 'sms').then((sentTo) => { if (sentTo) setSecondText({ attemptId: id, sentTo }); });
+    if (emailCode) void sendOnlyWaySecondFactorCode(fapi, id, 'email_code', (seconds) => setSecondMail({ attemptId: id, error: t('mfa.codeWait', { seconds: String(seconds) }) })).then((sentTo) => { if (sentTo) setSecondMail({ attemptId: id, sentTo }); });
+    if (sms) void sendOnlyWaySecondFactorCode(fapi, id, 'sms', (seconds) => setSecondText({ attemptId: id, error: t('mfa.codeWait', { seconds: String(seconds) }) })).then((sentTo) => { if (sentTo) setSecondText({ attemptId: id, sentTo }); });
   });
-  const sendSecondMail = (attemptId: string) => {
-    setSecondMail({ attemptId, busy: true });
-    prepareSecondFactorCode(fapi, attemptId, 'email_code')
+  const sendSecondCode = (
+    attemptId: string,
+    strategy: 'email_code' | 'sms',
+    now: () => { sentTo?: string } | null,
+    set: (value: { attemptId: string; busy?: boolean; sentTo?: string; error?: string }) => void,
+  ) => {
+    const before = now()?.sentTo;
+    set({ attemptId, sentTo: before, busy: true });
+    prepareSecondFactorCode(fapi, attemptId, strategy)
       .then(({ sentTo }) => {
-        setSecondMail({ attemptId, sentTo });
+        set({ attemptId, sentTo });
         // A wrong code's message no longer applies once a new code has gone out.
         setState((s) => ({ ...s, errors: [] }));
       })
-      .catch((e: unknown) => setSecondMail({ attemptId, error: e instanceof Error ? e.message : t('error.generic') }));
+      .catch((e: unknown) => set({ attemptId, sentTo: before, error: secondFactorSendText(e, t) }));
   };
-  const sendSecondText = (attemptId: string) => {
-    setSecondText({ attemptId, busy: true });
-    prepareSecondFactorCode(fapi, attemptId, 'sms')
-      .then(({ sentTo }) => {
-        setSecondText({ attemptId, sentTo });
-        setState((s) => ({ ...s, errors: [] }));
-      })
-      .catch((e: unknown) => setSecondText({ attemptId, error: e instanceof Error ? e.message : t('error.generic') }));
-  };
+  const sendSecondMail = (attemptId: string) => sendSecondCode(attemptId, 'email_code', secondMailNow, setSecondMail);
+  const sendSecondText = (attemptId: string) => sendSecondCode(attemptId, 'sms', secondTextNow, setSecondText);
   const secondFactorOptions = (): JSX.Element => {
     const attempt = state().attempt;
     const choices = mfaChoicesFrom(settings()?.account);
     if (!attempt) return null;
-    const mail = secondMailNow();
-    const email = mail && mail.sentTo !== undefined
-      ? h('p', { class: 'atlas-text', 'data-atlas': 'email-second-factor-sent', 'aria-live': 'polite' }, t('signIn.codeSentTo', { email: mail.sentTo }))
-      : !settings()?.account.emailSecondFactor
-        ? null
-        : [
-            h(
-              'button',
-              { class: 'atlas-link', type: 'button', 'data-atlas': 'email-second-factor', disabled: state().busy || !!mail?.busy, onClick: () => sendSecondMail(attempt.id!) },
-              mail?.busy ? t('signIn.sending') : t('signIn.emailCodeOption'),
-            ),
-            mail?.error ? h('p', { class: 'atlas-error', role: 'alert' }, mail.error) : null,
-          ];
-    const text = secondTextNow();
-    const sms = text && text.sentTo !== undefined
-      ? h('p', { class: 'atlas-text', 'data-atlas': 'sms-second-factor-sent', 'aria-live': 'polite' }, t('mfa.codeTextedTo', { phone: text.sentTo }))
-      : !choices.sms
-        ? null
-        : [
-            h(
-              'button',
-              { class: 'atlas-link', type: 'button', 'data-atlas': 'sms-second-factor', disabled: state().busy || !!text?.busy, onClick: () => sendSecondText(attempt.id!) },
-              text?.busy ? t('signIn.sending') : t('mfa.smsCodeOption'),
-            ),
-            text?.error ? h('p', { class: 'atlas-error', role: 'alert' }, text.error) : null,
-          ];
-    const passkeyButton = choices.passkey && noPasskeyFor() !== attempt.id
+    const lacks = (factor: string) => notHeld().includes(`${attempt.id}:${factor}`);
+    const option = (name: string, m: { busy?: boolean; sentTo?: string; error?: string } | null, line: (to: string) => string, label: string, send: () => void) => {
+      const sent = m?.sentTo !== undefined;
+      return [
+        sent ? h('p', { class: 'atlas-text', 'data-atlas': `${name}-sent`, 'aria-live': 'polite' }, line(m!.sentTo!)) : null,
+        h(
+          'button',
+          { class: 'atlas-link', type: 'button', 'data-atlas': sent ? `${name}-resend` : name, disabled: state().busy || !!m?.busy, onClick: send },
+          m?.busy ? t('signIn.sending') : sent || m?.error ? t('signIn.resendCode') : t(label),
+        ),
+        m?.error ? h('p', { class: 'atlas-error', role: 'alert' }, m.error) : null,
+      ];
+    };
+    const email = !settings()?.account.emailSecondFactor || lacks('email_code')
+      ? null
+      : option('email-second-factor', secondMailNow(), (to) => t('signIn.codeSentTo', { email: to }), 'signIn.emailCodeOption', () => sendSecondMail(attempt.id!));
+    const sms = !choices.sms || lacks('sms')
+      ? null
+      : option('sms-second-factor', secondTextNow(), (to) => t('mfa.codeTextedTo', { phone: to }), 'mfa.smsCodeOption', () => sendSecondText(attempt.id!));
+    const passkeyButton = choices.passkey && !lacks('passkey')
       ? h(
           'button',
           { class: 'atlas-link', type: 'button', 'data-atlas': 'passkey-second-factor', disabled: state().busy, onClick: () => continueOnHostedPage(choices, attempt.id!, 'needs_second_factor') },

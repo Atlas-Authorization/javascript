@@ -242,19 +242,18 @@ interface StepField {
             <p class="atlas-text" data-atlas="sms-second-factor-sent" aria-live="polite">
               {{ t('mfa.codeTextedTo', { phone: sentTo }) }}
             </p>
-          } @else {
-            <button
-              [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
-              type="button"
-              data-atlas="sms-second-factor"
-              [disabled]="busy || !!textedSecondFactor?.busy"
-              (click)="smsSecondFactor.emit()"
-            >
-              {{ textedSecondFactor?.busy ? t('signIn.sending') : t('mfa.smsCodeOption') }}
-            </button>
-            @if (textedSecondFactor?.error; as message) {
-              <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ message }}</p>
-            }
+          }
+          <button
+            [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+            type="button"
+            [attr.data-atlas]="smsSecondFactorSentTo() ? 'sms-second-factor-resend' : 'sms-second-factor'"
+            [disabled]="busy || !!textedSecondFactor?.busy"
+            (click)="smsSecondFactor.emit()"
+          >
+            {{ textedSecondFactor?.busy ? t('signIn.sending') : smsSecondFactorSentTo() || textedSecondFactor?.error ? t('signIn.resendCode') : t('mfa.smsCodeOption') }}
+          </button>
+          @if (textedSecondFactor?.error; as message) {
+            <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ message }}</p>
           }
         }
 
@@ -263,19 +262,18 @@ interface StepField {
             <p class="atlas-text" data-atlas="email-second-factor-sent" aria-live="polite">
               {{ t('signIn.codeSentTo', { email: sentTo }) }}
             </p>
-          } @else {
-            <button
-              [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
-              type="button"
-              data-atlas="email-second-factor"
-              [disabled]="busy || !!emailedSecondFactor?.busy"
-              (click)="emailSecondFactor.emit()"
-            >
-              {{ emailedSecondFactor?.busy ? t('signIn.sending') : t('signIn.emailCodeOption') }}
-            </button>
-            @if (emailedSecondFactor?.error; as message) {
-              <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ message }}</p>
-            }
+          }
+          <button
+            [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+            type="button"
+            [attr.data-atlas]="emailSecondFactorSentTo() ? 'email-second-factor-resend' : 'email-second-factor'"
+            [disabled]="busy || !!emailedSecondFactor?.busy"
+            (click)="emailSecondFactor.emit()"
+          >
+            {{ emailedSecondFactor?.busy ? t('signIn.sending') : emailSecondFactorSentTo() || emailedSecondFactor?.error ? t('signIn.resendCode') : t('signIn.emailCodeOption') }}
+          </button>
+          @if (emailedSecondFactor?.error; as message) {
+            <p [class]="cls('formFieldError', 'atlas-error')" role="alert">{{ message }}</p>
           }
         }
 
