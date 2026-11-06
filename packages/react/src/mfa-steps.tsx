@@ -14,6 +14,7 @@ import {
   type MfaChoices,
   type MfaEnrollmentController,
   type MfaEnrollmentState,
+  sendOnlyWaySecondFactorCode,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { useClass, useClasses, useFapiClient, useText } from './components-shared';
@@ -224,6 +225,19 @@ export function SecondFactorCodeOption({ attemptId, strategy }: { attemptId: str
   const cls = useClasses();
   const [state, setState] = useState<{ sentTo?: string; error?: string; busy?: boolean }>({});
   const name = strategy === 'sms' ? 'sms-second-factor' : 'email-second-factor';
+  // The inbox is this account's only way: the code goes out now, and the step says so.
+  const arrived = useRef<string | null>(null);
+  useEffect(() => {
+    if (strategy !== 'email_code' || arrived.current === attemptId) return;
+    arrived.current = attemptId;
+    let live = true;
+    void sendOnlyWaySecondFactorCode(client, attemptId).then((sentTo) => {
+      if (live && sentTo !== null) setState({ sentTo });
+    });
+    return () => {
+      live = false;
+    };
+  }, [client, attemptId, strategy]);
   const send = () => {
     setState({ busy: true });
     prepareSecondFactorCode(client, attemptId, strategy)

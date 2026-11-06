@@ -15,6 +15,7 @@ import {
   flowNeedsCaptcha,
   atlasCaptchaLabels,
   acknowledgeExistingAccount,
+  continueOnHostedPage,
   acknowledgeRecoveryCodes,
   pendingExistingAccountNotice,
   enrollmentSubmitKey,
@@ -443,6 +444,19 @@ export function AttemptFlow({
             : []),
           ...(mfaChoices.duo && attempt?.id
             ? [<DuoSecondFactorOption key="duo-2fa" attemptId={attempt.id} onSubmit={onSubmit} />]
+            : []),
+          ...(mfaChoices.passkey && mfaChoices.passkeyCeremony?.hostedSignInUrl && attempt?.id
+            ? [
+                <button
+                  key="passkey-2fa"
+                  type="button"
+                  className={cls('link', 'atlas-link')}
+                  data-atlas="passkey-second-factor"
+                  onClick={() => continueOnHostedPage(mfaChoices, attempt.id!, 'needs_second_factor')}
+                >
+                  {t('mfa.enrollPasskeyOption')}
+                </button>,
+              ]
             : []),
         ];
       case 'enroll_second_factor':

@@ -1,5 +1,9 @@
 # @atlasauth/vue changelog
 
+## 0.18.3 — 2026-11-06
+
+- The second-factor step emails the code on arrival when that's the account's only way, and offers "Use a passkey", which continues on the hosted page. Picks up the passkey origin handling from `@atlasauth/js` 0.34.2.
+
 ## 0.18.2 — 2026-11-06
 
 - A username taken while the sign-up waited no longer shows a sign-in link beside the error. Picks up passkey promotion from `@atlasauth/js` 0.34.1.

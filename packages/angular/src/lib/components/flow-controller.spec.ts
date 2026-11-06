@@ -57,7 +57,7 @@ afterEach(() => {
   delete g.turnstile;
 });
 
-async function controller(opts: { captchaFlows?: Record<string, unknown>; signInWithAtlas?: Record<string, unknown>; routes: Route[]; holdExistingAccountNotice?: boolean }) {
+async function controller(opts: { captchaFlows?: Record<string, unknown>; signInWithAtlas?: Record<string, unknown>; account?: Record<string, unknown>; routes: Route[]; holdExistingAccountNotice?: boolean }) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const call: Call = {
@@ -71,6 +71,7 @@ async function controller(opts: { captchaFlows?: Record<string, unknown>; signIn
         object: 'appearance',
         appearance: { legal: { termsUrl: null, privacyUrl: null, required: false }, signUpFields: [] },
         captchaFlows: opts.captchaFlows ?? {},
+        ...(opts.account ? { account: opts.account } : {}),
         ...(opts.signInWithAtlas ? { sign_in_with_atlas: opts.signInWithAtlas } : {}),
       });
     }
@@ -266,6 +267,20 @@ describe('AtlasFlowController emailed second factor and sign-up resend', () => {
     expect(flow.emailSecondFactor()).toEqual({ sentTo: 'a•••@example.com' });
     await flow.submit({ code: '123456' });
     expect(flow.emailSecondFactor()).toBeNull();
+    flow.destroy();
+  });
+
+  it('emails the code on arrival at the second factor (once) and reports where it went', async () => {
+    const flow = await controller({
+      account: { email_second_factor: true },
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ins' ? json({ id: 'sia_1', status: 'needs_second_factor' }, 201) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' ? json({ sent_to: 'a•••@example.com' }) : undefined),
+      ],
+    });
+    await flow.submit({ identifier: 'ada@example.com' });
+    await vi.waitFor(() => expect(flow.emailSecondFactor()).toEqual({ sentTo: 'a•••@example.com' }));
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').map((c) => c.body)).toEqual([{ strategy: 'email_code', only_way: true }]);
     flow.destroy();
   });
 

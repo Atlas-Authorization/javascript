@@ -49,6 +49,9 @@ import {
   existingAccountResetUrl,
   groupSetupKey,
   mfaChoicesFrom,
+  prepareSecondFactorCode,
+  sendOnlyWaySecondFactorCode,
+  continueOnHostedPage,
   nextStep,
   pendingExistingAccountNotice,
   pendingRecoveryCodes,
@@ -781,6 +784,54 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     autoSentFor = id;
     sendEmailFactor(strategy);
   });
+  // Second factor: "Email me a code" (and the on-arrival send when the inbox is the only way), "Use a passkey".
+  const [secondMail, setSecondMail] = createSignal<{ attemptId: string; busy?: boolean; sentTo?: string; error?: string } | null>(null);
+  const secondMailNow = () => {
+    const m = secondMail();
+    return m && m.attemptId === (state().attempt?.id ?? null) ? m : null;
+  };
+  let onlyWayFor: string | null = null;
+  createEffect(() => {
+    const id = state().attempt?.id ?? null;
+    if (kind() !== 'collect_second_factor' || !id || onlyWayFor === id || !mfaChoicesFrom(settings()?.account).emailCode) return;
+    onlyWayFor = id;
+    void sendOnlyWaySecondFactorCode(fapi, id).then((sentTo) => {
+      // secondMailNow ignores an answer for an attempt the flow has left.
+      if (sentTo) setSecondMail({ attemptId: id, sentTo });
+    });
+  });
+  const sendSecondMail = (attemptId: string) => {
+    setSecondMail({ attemptId, busy: true });
+    prepareSecondFactorCode(fapi, attemptId, 'email_code')
+      .then(({ sentTo }) => setSecondMail({ attemptId, sentTo }))
+      .catch((e: unknown) => setSecondMail({ attemptId, error: e instanceof Error ? e.message : t('error.generic') }));
+  };
+  const secondFactorOptions = (): JSX.Element => {
+    const attempt = state().attempt;
+    const choices = mfaChoicesFrom(settings()?.account);
+    if (!attempt) return null;
+    const mail = secondMailNow();
+    const email = mail && mail.sentTo !== undefined
+      ? h('p', { class: 'atlas-text', 'data-atlas': 'email-second-factor-sent', 'aria-live': 'polite' }, t('signIn.codeSentTo', { email: mail.sentTo }))
+      : !settings()?.account.emailSecondFactor
+        ? null
+        : [
+            h(
+              'button',
+              { class: 'atlas-link', type: 'button', 'data-atlas': 'email-second-factor', disabled: state().busy || !!mail?.busy, onClick: () => sendSecondMail(attempt.id!) },
+              mail?.busy ? t('signIn.sending') : t('signIn.emailCodeOption'),
+            ),
+            mail?.error ? h('p', { class: 'atlas-error', role: 'alert' }, mail.error) : null,
+          ];
+    const passkeyButton = choices.passkey
+      ? h(
+          'button',
+          { class: 'atlas-link', type: 'button', 'data-atlas': 'passkey-second-factor', disabled: state().busy, onClick: () => continueOnHostedPage(choices, attempt.id!, 'needs_second_factor') },
+          t('mfa.enrollPasskeyOption'),
+        )
+      : null;
+    return [email, passkeyButton];
+  };
   // Nothing to submit while only an emailed factor is on offer and not yet sent.
   const awaitingEmail = () => {
     if (kind() !== 'collect_first_factor' || emailSent() === 'email_code') return false;
@@ -893,6 +944,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         matchCode() && !provedSignUp() && (kind() === 'collect_email_code' || (kind() === 'collect_first_factor' && emailSent() === 'email_link'))
           ? h('p', { class: 'atlas-text', 'data-atlas': 'link-match-code' }, `${t('link.matchCodeHint')} `, h('strong', h('code', matchCode()!)))
           : null,
+      () => (kind() === 'collect_second_factor' ? secondFactorOptions() : null),
       () => {
         const enrolKey = kind() === 'enroll_second_factor' ? enrollmentSubmitKey(enrollmentState()) : undefined;
         return renderSubmit(

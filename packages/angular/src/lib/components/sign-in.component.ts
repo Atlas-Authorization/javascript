@@ -77,6 +77,8 @@ import { AtlasFlowController } from './flow-controller';
       [enrollmentState]="flow.enrollmentState()"
       (emailSecondFactor)="flow.sendEmailSecondFactor()"
       (smsSecondFactor)="flow.sendSmsSecondFactor()"
+      [offerPasskeySecondFactor]="flow.settings() !== null && flow.mfaChoices().passkey"
+      (passkeySecondFactor)="flow.continueWithPasskey()"
       (policyDeclined)="flow.declinePolicy($event)"
     ></atlas-attempt-flow>
     }

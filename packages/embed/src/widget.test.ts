@@ -2123,6 +2123,7 @@ describe('link-only verification and reset', () => {
 describe('MFA enrolment mid-sign-in and the texted second factor', () => {
   const TOTP_SETUP = { object: 'mfa_enrollment', strategy: 'totp', factor_id: 'mfa_t', secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/x', qr_code: 'data:image/gif;base64,R0lG' };
   const SMS_ACCOUNT = { mfa: { totp: true, sms: true, totp_codes: 1 }, email_second_factor: true };
+  let onlyWayAnswers = false; // whether the arrival send reports an address
   const start = async (status: string, account?: Record<string, unknown>) => {
     const made = makeFetch({
       'GET /v1/appearance': () => ({ body: { ...envelope([]), ...(account ? { account } : {}) } }),
@@ -2134,7 +2135,7 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
       'POST /v1/client/sign_ins/sia_m/attempt_mfa_enrollment': () => ({ body: { id: 'sia_m', status: 'needs_mfa_enrollment' } }),
       'POST /v1/client/sign_ins/sia_m/prepare_second_factor': (body) => ({
         status: 201,
-        body: { object: 'second_factor_challenge', strategy: body?.strategy, sent_to: body?.strategy === 'sms' ? '+1•••0101' : 'a•••@example.com' },
+        body: { object: 'second_factor_challenge', strategy: body?.strategy, ...(body?.only_way && !onlyWayAnswers ? {} : { sent_to: body?.strategy === 'sms' ? '+1•••0101' : 'a•••@example.com' }) },
       }),
     });
     const root = document.createElement('div');
@@ -2200,10 +2201,18 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
     const { root, calls } = await start('needs_second_factor', SMS_ACCOUNT);
     (root.querySelector('[data-atlas="sms-second-factor"]') as HTMLButtonElement).click();
     await flush();
-    expect(posted(calls, '/v1/client/sign_ins/sia_m/prepare_second_factor')).toEqual([{ strategy: 'sms' }]);
+    expect(posted(calls, '/v1/client/sign_ins/sia_m/prepare_second_factor')).toEqual([{ strategy: 'email_code', only_way: true }, { strategy: 'sms' }]);
     expect(root.querySelector('[data-atlas="sms-second-factor-sent"]')!.textContent).toContain('+1•••0101');
     (root.querySelector('[data-atlas="email-second-factor"]') as HTMLButtonElement).click();
     await flush();
+    expect(root.querySelector('[data-atlas="email-second-factor-sent"]')!.textContent).toContain('a•••@example.com');
+  });
+
+  it('emails the code on arrival at the second factor when the inbox is an option and shows where it went', async () => {
+    onlyWayAnswers = true;
+    const { root, calls } = await start('needs_second_factor', { email_second_factor: true });
+    onlyWayAnswers = false;
+    expect(posted(calls, '/v1/client/sign_ins/sia_m/prepare_second_factor')).toEqual([{ strategy: 'email_code', only_way: true }]);
     expect(root.querySelector('[data-atlas="email-second-factor-sent"]')!.textContent).toContain('a•••@example.com');
   });
 

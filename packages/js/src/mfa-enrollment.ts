@@ -31,6 +31,7 @@ import type { FieldError } from './attempt';
 import type { AccountUx } from './environment';
 import type { FapiClient, FlowState } from './fapi';
 import { createPasskey, getPasskeyAssertion, passkeysSupported, type WebAuthnHost } from './passkey';
+import { stripRedirectParams } from './redirect';
 
 export type MfaEnrollmentStrategy = 'totp' | 'phone_code' | 'hotp' | 'yubikey' | 'duo' | 'passkey';
 
@@ -64,7 +65,52 @@ export interface MfaChoices {
   yubikey?: boolean;
   /** Set up a passkey as the second factor. */
   passkey?: boolean;
+  /** Where a passkey ceremony can run. Absent means anywhere, as an older server can't say. */
+  passkeyCeremony?: { rpId: string; origins: string[]; hostedSignInUrl: string | null };
 }
+
+const pageOrigin = () => (typeof window !== 'undefined' ? window.location.origin : '');
+
+/** A browser refuses a ceremony unless the page is on the RP ID or under it, or is an origin it accepts as related. */
+export function passkeyRunsHere(ceremony: MfaChoices['passkeyCeremony'], origin = pageOrigin()): boolean {
+  if (!ceremony || !origin) return true;
+  let host: string;
+  try {
+    host = new URL(origin).hostname;
+  } catch {
+    return true;
+  }
+  return host === ceremony.rpId || host.endsWith(`.${ceremony.rpId}`) || ceremony.origins.includes(origin);
+}
+
+/**
+ * Leave for the instance's hosted page to do this step there, where a passkey can run. It sends the
+ * ticket back to this page. False when there's no hosted page to go to.
+ */
+export function continueOnHostedPage(
+  choices: MfaChoices,
+  attemptId: string,
+  status: 'needs_second_factor' | 'needs_mfa_enrollment',
+  navigate: (url: string) => void = (url) => window.location.assign(url),
+): boolean {
+  const hosted = choices.passkeyCeremony?.hostedSignInUrl;
+  if (!hosted || typeof window === 'undefined') return false;
+  const url = new URL(hosted);
+  url.searchParams.set('redirect_url', stripRedirectParams(window.location.href));
+  url.searchParams.set('__atlas_attempt', attemptId);
+  url.searchParams.set('__atlas_status', status);
+  url.searchParams.set('__atlas_handoff', '1');
+  navigate(url.toString());
+  return true;
+}
+
+const hasOtherFactor = (c: MfaChoices) => Boolean(c.totp || c.sms || c.hotp || c.yubikey || c.duo);
+
+const setupUnavailable = (): FieldError => ({
+  code: 'MFA_SETUP_UNAVAILABLE',
+  reason: 'mfa_setup_unavailable',
+  message: "This account needs 2-Step Verification, but it can't be set up here. Contact the app's support to continue.",
+});
 
 /**
  * The MFA choices from the instance's settings (`InstanceSettings.account`).
@@ -84,6 +130,7 @@ export function mfaChoicesFrom(account: Pick<AccountUx, 'emailSecondFactor' | 'm
     ...(mfa?.hotp === true ? { hotp: true } : {}),
     ...(mfa?.yubikey === true ? { yubikey: true } : {}),
     ...(mfa?.passkey === true ? { passkey: true } : {}),
+    ...(mfa?.passkeyCeremony ? { passkeyCeremony: mfa.passkeyCeremony } : {}),
   };
 }
 
@@ -201,7 +248,7 @@ export interface MfaEnrollmentController {
 export function createMfaEnrollment(
   client: FapiClient,
   choices: MfaChoices | (() => MfaChoices),
-  opts: { host?: WebAuthnHost } = {},
+  opts: { host?: WebAuthnHost; /** Tests: the page's origin. */ origin?: string; /** Tests: instead of leaving the page. */ navigate?: (url: string) => void } = {},
 ): MfaEnrollmentController {
   const read = () => (typeof choices === 'function' ? choices() : choices);
   const offered = (c: MfaChoices): MfaEnrollmentStrategy[] => {
@@ -211,7 +258,7 @@ export function createMfaEnrollment(
     if (c.hotp) out.push('hotp');
     if (c.yubikey) out.push('yubikey');
     if (c.duo) out.push('duo');
-    if (c.passkey && passkeysSupported(opts.host)) out.push('passkey');
+    if (c.passkey && passkeysSupported(opts.host) && passkeyRunsHere(c.passkeyCeremony, opts.origin)) out.push('passkey');
     // Nothing on offer is a misconfiguration; the authenticator app is the
     // default the server enrols, so ask for it rather than draw nothing.
     return out.length ? out : ['totp'];
@@ -284,6 +331,13 @@ export function createMfaEnrollment(
       set({ busy: false });
       return { enrollStrategy: 'passkey', challenge: body.challenge, attestation_object: body.attestation_object, client_data_json: body.client_data_json };
     } catch (error) {
+      if (gen === generation && (error as { name?: unknown } | null)?.name === 'SecurityError') {
+        // The browser won't run a ceremony for this RP on this page, whatever the list said.
+        const others = state.options.filter((m) => m !== 'passkey');
+        if (attemptId && continueOnHostedPage(read(), attemptId, 'needs_mfa_enrollment', opts.navigate)) return null;
+        set({ busy: false, options: others.length ? others : state.options, method: null, enrollment: null, errors: [setupUnavailable()] });
+        return null;
+      }
       if (gen === generation) {
         set({ busy: false, errors: [{ code: 'PASSKEY_CANCELLED', message: error instanceof Error && error.message ? error.message : 'The passkey was not created.' }] });
       }
@@ -307,6 +361,16 @@ export function createMfaEnrollment(
       passkeySpent = false;
       state = empty();
       set({});
+      const c = read();
+      // A passkey is the only factor and this page can't run one: do this step where it can.
+      if (c.passkey && passkeysSupported(opts.host) && !passkeyRunsHere(c.passkeyCeremony, opts.origin) && !hasOtherFactor(c)) {
+        if (continueOnHostedPage(c, id, 'needs_mfa_enrollment', opts.navigate)) {
+          set({ busy: true });
+          return;
+        }
+        set({ errors: [setupUnavailable()] });
+        return;
+      }
       if (state.options.length === 1) void controller.choose(state.options[0]!);
     },
     async choose(method) {
@@ -390,6 +454,22 @@ export async function prepareSecondFactorCode(
     throw error;
   }
   return { sentTo: typeof response.data?.sent_to === 'string' ? response.data.sent_to : '' };
+}
+
+/**
+ * On arrival at the second-factor step: mails the code only if the inbox is this account's only way.
+ * Resolves the masked address, or null when nothing was sent; a failure leaves the person the button.
+ */
+export async function sendOnlyWaySecondFactorCode(client: FapiClient, attemptId: string): Promise<string | null> {
+  try {
+    const response = await client.post<{ sent_to?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/prepare_second_factor`, {
+      strategy: 'email_code',
+      only_way: true,
+    });
+    return response.ok && typeof response.data?.sent_to === 'string' ? response.data.sent_to : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

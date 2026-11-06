@@ -35,6 +35,8 @@ import {
   pendingRecoveryCodes,
   mfaChoicesFrom,
   prepareSecondFactorCode,
+  sendOnlyWaySecondFactorCode,
+  continueOnHostedPage,
   resendSignUpVerification,
   PolicyAcceptanceController,
   loadPolicies as loadPolicyList,
@@ -257,6 +259,10 @@ export interface FlowController {
    * it is then posted with {@link submit}.
    */
   sendSmsSecondFactor(): Promise<{ sentTo?: string; error?: string }>;
+  /** On arrival at the second factor: emails the code if the inbox is the only way. Resolves the masked address, or null. */
+  sendOnlyWayEmail(attemptId: string): Promise<string | null>;
+  /** Leaves for the hosted page to do the second factor with a passkey there. */
+  continueWithPasskey(attemptId: string): boolean;
   /** What the app lets the MFA steps offer (from {@link settings}). */
   mfaChoices(): MfaChoices;
   /**
@@ -492,6 +498,8 @@ function createFlow(options: { holdExistingAccountNotice?: boolean } = {}): Flow
   }
   const sendEmailSecondFactor = () => sendSecondFactorCode('email_code');
   const sendSmsSecondFactor = () => sendSecondFactorCode('sms');
+  const sendOnlyWayEmail = (attemptId: string) => sendOnlyWaySecondFactorCode(client, attemptId);
+  const continueWithPasskey = (attemptId: string) => continueOnHostedPage(mfaChoices(), attemptId, 'needs_second_factor');
 
   // The MFA enrolment step: started while the flow is at needs_mfa_enrollment.
   const mfaChoices = () => mfaChoicesFrom(get(settings)?.account);
@@ -578,6 +586,8 @@ function createFlow(options: { holdExistingAccountNotice?: boolean } = {}): Flow
     createPasskey,
     sendEmailSecondFactor,
     sendSmsSecondFactor,
+    sendOnlyWayEmail,
+    continueWithPasskey,
     mfaChoices,
     enrollment,
     enrollmentState: { subscribe: enrollmentState.subscribe },

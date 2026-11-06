@@ -304,6 +304,10 @@ describe('<SignIn> second-factor alternatives', () => {
         signInRoute(['password']),
         passwordRoute('needs_second_factor'),
         (c) =>
+          c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' && c.body?.only_way
+            ? json({ object: 'second_factor_challenge', strategy: 'email_code', sent_to: null })
+            : undefined,
+        (c) =>
           c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor'
             ? json({ object: 'second_factor_challenge', strategy: c.body?.strategy, sent_to: c.body?.strategy === 'sms' ? '+1•••0101' : 's•••@example.com' }, 201)
             : undefined,
@@ -315,8 +319,27 @@ describe('<SignIn> second-factor alternatives', () => {
 
     await click(el.querySelector('[data-atlas="sms-second-factor"]'));
     await vi.waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')).not.toBeNull());
-    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor')[0]!.body).toEqual({ strategy: 'sms' });
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').at(-1)!.body).toEqual({ strategy: 'sms' });
     expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')!.textContent).toContain('+1•••0101');
+  });
+
+  it('the emailed code goes out on arrival where the inbox is the only way, and the step says so', async () => {
+    const el = await mount({
+      account: { email_second_factor: true, mfa: { totp: false, sms: false, totp_codes: 1 } },
+      routes: [
+        signInRoute(['password']),
+        passwordRoute('needs_second_factor'),
+        (c) =>
+          c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor'
+            ? json({ object: 'second_factor_challenge', strategy: 'email_code', sent_to: 'f***@example.com' }, 201)
+            : undefined,
+      ],
+    });
+    await signInTo(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="email-second-factor-sent"]')).not.toBeNull());
+    expect(el.querySelector('[data-atlas="email-second-factor"]')).toBeNull();
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor')).toHaveLength(1);
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor')[0]!.body).toEqual({ strategy: 'email_code', only_way: true });
   });
 
   it('offers "Use Duo instead" and polls the sign-in until Duo approves it', async () => {

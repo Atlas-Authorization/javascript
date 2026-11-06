@@ -66,6 +66,10 @@
    * codes). Null: the step offers no texted code.
    */
   export let onSmsSecondFactor: (() => Promise<{ sentTo?: string; error?: string }>) | null = null;
+  /** On arrival at the second factor: emails the code if the inbox is the only way (masked address, or null). */
+  export let onOnlyWayEmail: ((attemptId: string) => Promise<string | null>) | null = null;
+  /** "Use a passkey" at the second factor: leaves for the hosted page. */
+  export let onPasskeySecondFactor: ((attemptId: string) => void) | null = null;
   /**
    * The MFA enrolment step (`FlowController.enrollment` and its state): the
    * authenticator app's QR code and setup key, or a texted code. Null: the step
@@ -170,6 +174,16 @@
     emailed = { attemptId, busy: true };
     const r = await onEmailSecondFactor();
     emailed = r.error ? { attemptId, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
+  }
+  // Once per attempt: email the code on arrival when the inbox is the only way.
+  let onlyWayFor: string | null = null;
+  $: if (step.kind === 'collect_second_factor' && onOnlyWayEmail && attempt?.id && onlyWayFor !== attempt.id) {
+    const attemptId = attempt.id;
+    onlyWayFor = attemptId;
+    void onOnlyWayEmail(attemptId).then((sentTo) => {
+      // emailedNow only shows an answer for the current attempt, so a stale one is ignored.
+      if (sentTo) emailed = { attemptId, sentTo };
+    });
   }
   // "Text me a code instead": the same, for the texted code.
   let texted: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string } | null = null;
@@ -522,6 +536,17 @@
             <p class={cls('formFieldError', 'atlas-error')} role="alert">{emailedNow.error}</p>
           {/if}
         {/if}
+      {/if}
+      {#if step.kind === 'collect_second_factor' && onPasskeySecondFactor && attempt?.id}
+        <button
+          class={cls('formButtonSecondary', 'atlas-button-secondary')}
+          type="button"
+          data-atlas="passkey-second-factor"
+          disabled={busy}
+          on:click={() => onPasskeySecondFactor?.(attempt?.id ?? '')}
+        >
+          {t('mfa.enrollPasskeyOption')}
+        </button>
       {/if}
       {#if showEmailOptions}
         {#each emailOptions as strategy (strategy)}

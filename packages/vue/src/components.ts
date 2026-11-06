@@ -327,6 +327,16 @@ const AttemptFlow = defineComponent({
       type: Function as PropType<() => Promise<{ sentTo?: string; error?: string }>>,
       default: undefined,
     },
+    /** On arrival at the second factor: emails the code if the inbox is the only way (masked address, or null). */
+    onOnlyWayEmail: {
+      type: Function as PropType<(attemptId: string) => Promise<string | null>>,
+      default: undefined,
+    },
+    /** "Use a passkey" at the second factor: leaves for the hosted page. */
+    onPasskeySecondFactor: {
+      type: Function as PropType<(attemptId: string) => void>,
+      default: undefined,
+    },
     /**
      * The MFA enrolment step (`useFlow().enrollment` and its state): the
      * authenticator app's QR code and setup key, or a texted code. Without it
@@ -376,6 +386,20 @@ const AttemptFlow = defineComponent({
         emailed.value = {};
         texted.value = {};
       },
+    );
+
+    // Once per attempt: email the code on arrival when the inbox is the only way.
+    let onlyWayFor: string | null = null;
+    watch(
+      () => (props.attempt && props.onOnlyWayEmail && nextStep(props.attempt).kind === 'collect_second_factor' ? props.attempt.id : null),
+      (id) => {
+        if (!id || !props.onOnlyWayEmail || onlyWayFor === id) return;
+        onlyWayFor = id;
+        void props.onOnlyWayEmail(id).then((sentTo) => {
+          if (sentTo && props.attempt?.id === id) emailed.value = { sentTo };
+        });
+      },
+      { immediate: true },
     );
 
     // The first factors on offer for the current step, and the plan for them:
@@ -676,6 +700,23 @@ const AttemptFlow = defineComponent({
               if (state.error) out.push(h('p', { key: 'email-2fa-error', class: cls('formFieldError', 'atlas-error'), role: 'alert' }, state.error));
             }
           }
+          if (props.onPasskeySecondFactor && props.attempt) {
+            const attemptId = props.attempt.id;
+            out.push(
+              h(
+                'button',
+                {
+                  key: 'passkey-2fa',
+                  class: cls('formButtonSecondary', 'atlas-button-secondary'),
+                  type: 'button',
+                  'data-atlas': 'passkey-second-factor',
+                  disabled: props.busy,
+                  onClick: () => props.onPasskeySecondFactor!(attemptId!),
+                },
+                t('mfa.enrollPasskeyOption'),
+              ),
+            );
+          }
           return out;
         }
         case 'enroll_second_factor':
@@ -902,7 +943,7 @@ export const SignIn = defineComponent({
     signUpUrl: { type: null as unknown as PropType<string | null | undefined>, default: undefined },
   },
   setup(props) {
-    const { state, submit, prepare, captcha, settings, lastMethod, sendEmailSecondFactor, sendSmsSecondFactor, mfaChoices, enrollment, enrollmentState, saveRecoveryCodes, declinePolicy, passkey } =
+    const { state, submit, prepare, captcha, settings, lastMethod, sendEmailSecondFactor, sendSmsSecondFactor, sendOnlyWayEmail, continueWithPasskey, mfaChoices, enrollment, enrollmentState, saveRecoveryCodes, declinePolicy, passkey } =
       useFlow();
     const emailLink = useEmailLink('sign_in');
     const atlas = useAtlas();
@@ -964,6 +1005,8 @@ export const SignIn = defineComponent({
         emailVerification: settings.value?.account.emailVerification ?? 'code',
         onEmailSecondFactor: settings.value?.account.emailSecondFactor ? sendEmailSecondFactor : undefined,
         onSmsSecondFactor: mfaChoices().sms ? sendSmsSecondFactor : undefined,
+        onOnlyWayEmail: mfaChoices().emailCode ? sendOnlyWayEmail : undefined,
+        onPasskeySecondFactor: mfaChoices().passkey ? continueWithPasskey : undefined,
         enrollment,
         enrollmentState: enrollmentState.value,
         recoveryCodes: pendingRecoveryCodes(state.value),
@@ -1353,7 +1396,7 @@ export const SignUp = defineComponent({
     signInUrl: { type: null as unknown as PropType<string | null | undefined>, default: undefined },
   },
   setup(props) {
-    const { state, submit, create, createWithPasskey, createPasskey, resendSignUp, settings, signUpCaptcha, policies, loadPolicies, continueAfterExistingAccount, saveRecoveryCodes, sendEmailSecondFactor, sendSmsSecondFactor, mfaChoices, enrollment, enrollmentState, declinePolicy } = useFlow({ holdExistingAccountNotice: true });
+    const { state, submit, create, createWithPasskey, createPasskey, resendSignUp, settings, signUpCaptcha, policies, loadPolicies, continueAfterExistingAccount, saveRecoveryCodes, sendEmailSecondFactor, sendSmsSecondFactor, sendOnlyWayEmail, continueWithPasskey, mfaChoices, enrollment, enrollmentState, declinePolicy } = useFlow({ holdExistingAccountNotice: true });
     const emailLink = useEmailLink('sign_up');
     const atlas = useAtlas();
     const t = useText();
@@ -1406,6 +1449,8 @@ export const SignUp = defineComponent({
             // A held account signs in from here: its second factor, enrolment and codes.
             onEmailSecondFactor: settings.value?.account.emailSecondFactor ? sendEmailSecondFactor : undefined,
             onSmsSecondFactor: mfaChoices().sms ? sendSmsSecondFactor : undefined,
+        onOnlyWayEmail: mfaChoices().emailCode ? sendOnlyWayEmail : undefined,
+        onPasskeySecondFactor: mfaChoices().passkey ? continueWithPasskey : undefined,
             enrollment,
             enrollmentState: enrollmentState.value,
             recoveryCodes: pendingRecoveryCodes(state.value),

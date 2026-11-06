@@ -279,6 +279,18 @@ interface StepField {
           }
         }
 
+        @if (offerPasskeySecondFactor && step().kind === 'collect_second_factor') {
+          <button
+            [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
+            type="button"
+            data-atlas="passkey-second-factor"
+            [disabled]="busy"
+            (click)="passkeySecondFactor.emit()"
+          >
+            {{ t('mfa.enrollPasskeyOption') }}
+          </button>
+        }
+
         @if (showEmailCodeOption()) {
           <button
             [class]="cls('formButtonSecondary', 'atlas-button-secondary')"
@@ -365,6 +377,9 @@ export class AttemptFlowComponent {
   /** `AtlasFlowController.emailSecondFactor()`: in flight, where it went, or why not. */
   @Input() emailedSecondFactor: { busy?: boolean; sentTo?: string; error?: string } | null = null;
   @Output() emailSecondFactor = new EventEmitter<void>();
+  /** "Use a passkey" at the second factor (`mfaChoices().passkey`): leaves for the hosted page. */
+  @Input() offerPasskeySecondFactor = false;
+  @Output() passkeySecondFactor = new EventEmitter<void>();
   /**
    * Offer "Text me a code instead" at the second factor (where the app offers
    * texted codes, `AtlasFlowController.mfaChoices().sms`); `smsSecondFactor`

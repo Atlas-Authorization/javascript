@@ -120,6 +120,8 @@ export interface AccountUx {
     duo?: boolean;
     /** A verified passkey as the second factor. */
     passkey?: boolean;
+    /** Where a passkey ceremony can run, and the hosted page that can always run one. */
+    passkeyCeremony?: { rpId: string; origins: string[]; hostedSignInUrl: string | null };
     securityQuestions?: boolean;
     smartCard?: boolean;
   };
@@ -171,6 +173,15 @@ export function accountUxFrom(body: unknown): AccountUx {
             ...(raw.mfa.yubikey === true ? { yubikey: true } : {}),
             ...(raw.mfa.duo === true ? { duo: true } : {}),
             ...(raw.mfa.passkey === true ? { passkey: true } : {}),
+            ...(isRecord(raw.mfa.passkey_ceremony) && typeof raw.mfa.passkey_ceremony.rp_id === 'string'
+              ? {
+                  passkeyCeremony: {
+                    rpId: raw.mfa.passkey_ceremony.rp_id,
+                    origins: Array.isArray(raw.mfa.passkey_ceremony.origins) ? raw.mfa.passkey_ceremony.origins.filter((o): o is string => typeof o === 'string') : [],
+                    hostedSignInUrl: typeof raw.mfa.passkey_ceremony.hosted_sign_in_url === 'string' ? raw.mfa.passkey_ceremony.hosted_sign_in_url : null,
+                  },
+                }
+              : {}),
             ...(raw.mfa.security_questions === true ? { securityQuestions: true } : {}),
             ...(raw.mfa.smart_card === true ? { smartCard: true } : {}),
           } as const,

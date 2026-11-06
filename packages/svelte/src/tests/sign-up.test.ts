@@ -391,7 +391,7 @@ describe('link-only verification and the emailed second factor', () => {
       account: { username: null, email_verification: 'code', password_reset: 'code', email_second_factor: true },
       routes: [
         (c) => (c.path === '/v1/client/sign_ins' ? json({ id: 'sia_1', status: 'needs_second_factor' }, 201) : undefined),
-        (c) => (c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' ? json({ object: 'second_factor_challenge', sent_to: 'a•••@example.com' }) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' ? json({ object: 'second_factor_challenge', ...(c.body?.only_way ? {} : { sent_to: 'a•••@example.com' }) }) : undefined),
       ],
     });
     await setInput(el, 'identifier', 'ada@example.com');
@@ -399,9 +399,24 @@ describe('link-only verification and the emailed second factor', () => {
     await waitFor(() => expect(el.querySelector('[data-atlas="email-second-factor"]')).not.toBeNull());
     await fireEvent.click(el.querySelector('[data-atlas="email-second-factor"]')!);
     await waitFor(() => expect(el.querySelector('[data-atlas="email-second-factor-sent"]')).not.toBeNull());
-    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor')[0]!.body).toEqual({ strategy: 'email_code' });
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').map((c) => c.body)).toEqual([{ strategy: 'email_code', only_way: true }, { strategy: 'email_code' }]);
     expect(el.querySelector('[data-atlas="email-second-factor-sent"]')!.textContent).toContain('a•••@example.com');
     expect(el.querySelector('input[name="code"]')).not.toBeNull();
+  });
+
+  it('<SignIn> emails the code on arrival at the second factor and shows where it went', async () => {
+    const el = await mountFlow(SignIn, {
+      account: { username: null, email_verification: 'code', password_reset: 'code', email_second_factor: true },
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ins' ? json({ id: 'sia_1', status: 'needs_second_factor' }, 201) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' ? json({ object: 'second_factor_challenge', sent_to: 'a•••@example.com' }) : undefined),
+      ],
+    });
+    await setInput(el, 'identifier', 'ada@example.com');
+    await submit(el);
+    await waitFor(() => expect(el.querySelector('[data-atlas="email-second-factor-sent"]')).not.toBeNull());
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').map((c) => c.body)).toEqual([{ strategy: 'email_code', only_way: true }]);
+    expect(el.querySelector('[data-atlas="email-second-factor"]')).toBeNull();
   });
 
   it('<SignIn> does not offer it when the instance does not', async () => {

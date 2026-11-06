@@ -8,6 +8,8 @@ import {
   groupSetupKey,
   mfaChoicesFrom,
   prepareSecondFactorCode,
+  sendOnlyWaySecondFactorCode,
+  continueOnHostedPage,
   type MfaEnrollmentController,
   type MfaEnrollmentStrategy,
 } from '@atlasauth/js';
@@ -234,10 +236,20 @@ export async function submitEnrollment(w: AtlasWidget, values: Record<string, st
  * "Text me a code instead" / "Email me a code instead" at the second-factor
  * step, where the app offers them; once sent, the line saying where it went.
  */
+const onlyWaySent = new WeakMap<AtlasWidget, string>();
 export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLElement[]): void {
   const id = w.state.attempt?.id;
   if (!id) return;
   const choices = mfaChoicesFrom(w.account);
+  // Once per attempt, on arrival: email the code if the inbox is the only way.
+  if (choices.emailCode && onlyWaySent.get(w) !== id) {
+    onlyWaySent.set(w, id);
+    void sendOnlyWaySecondFactorCode(w.client, id).then((sentTo) => {
+      if (!sentTo || w.state.attempt?.id !== id) return;
+      w.secondFactorCode = { attemptId: id, strategy: 'email_code', sentTo };
+      render(w);
+    });
+  }
   const sent = w.secondFactorCode && w.secondFactorCode.attemptId === id ? w.secondFactorCode : null;
   const offer: ('sms' | 'email_code')[] = [];
   if (choices.sms) offer.push('sms');
@@ -281,6 +293,14 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
       p.setAttribute('role', 'alert');
       trailing.push(p);
     }
+  }
+  if (choices.passkey) {
+    const b = el(w, 'button', 'atlas-embed-step-back', say(w, 'mfa.enrollPasskeyOption')) as HTMLButtonElement;
+    b.type = 'button';
+    b.setAttribute('data-atlas', 'passkey-second-factor');
+    b.disabled = w.busy;
+    b.addEventListener('click', () => continueOnHostedPage(choices, id, 'needs_second_factor'));
+    trailing.push(b);
   }
 }
 

@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.34.2 — 2026-11-06
+
+- A passkey that can't run on this page's origin sends the step to the hosted page instead of showing the browser's error. New `continueOnHostedPage`, `passkeyRunsHere` and `sendOnlyWaySecondFactorCode`.
+
 ## 0.34.1 — 2026-11-06
 
 - `createMfaEnrollment`: a device that already holds one of the account's passkeys signs for the factor when the create call refuses.

@@ -20,6 +20,8 @@ import {
   pendingRecoveryCodes,
   mfaChoicesFrom,
   prepareSecondFactorCode,
+  sendOnlyWaySecondFactorCode,
+  continueOnHostedPage,
   resendSignUpVerification,
   flowNeedsCaptcha,
   signInCaptchaOptions,
@@ -283,9 +285,29 @@ export class AtlasFlowController {
     this.syncCaptcha();
     this.syncEnrollment();
     this.autoSend();
+    this.autoSendOnlyWay();
   }
 
   private autoSentFor: string | null = null;
+  private onlyWayFor: string | null = null;
+  /** Once per attempt, on arrival at the second factor: email the code if the inbox is the only way. */
+  private autoSendOnlyWay(): void {
+    const { attempt } = this.state();
+    const id = attempt?.id ?? null;
+    if (!id || attempt?.status !== 'needs_second_factor' || this.onlyWayFor === id || !this.mfaChoices().emailCode) return;
+    this.onlyWayFor = id;
+    void sendOnlyWaySecondFactorCode(this.client, id).then((sentTo) => {
+      // A stale answer (the flow moved to another attempt) is dropped.
+      if (sentTo && this.state().attempt?.id === id) this.emailSecondFactor.set({ sentTo });
+    });
+  }
+
+  /** "Use a passkey" at the second factor: leaves for the hosted page. */
+  continueWithPasskey(): boolean {
+    const id = this.state().attempt?.id;
+    return !!id && continueOnHostedPage(this.mfaChoices(), id, 'needs_second_factor');
+  }
+
   /**
    * With no password on offer, email the code as soon as the server asks for a
    * first factor — once per attempt, so a failed send waits for the user's retry

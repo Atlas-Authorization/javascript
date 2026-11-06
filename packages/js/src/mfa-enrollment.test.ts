@@ -14,6 +14,7 @@ import {
   mfaChoicesFrom,
   prepareSecondFactorCode,
   type MfaChoices,
+  passkeyRunsHere,
 } from './mfa-enrollment';
 import type { WebAuthnHost } from './passkey';
 
@@ -322,6 +323,61 @@ describe('every factor the instance offers at the enrolment step', () => {
       challenge: 'Y2g',
       attestation_object: 'AQ',
       client_data_json: 'Ag',
+    });
+  });
+
+  describe('a page a passkey cannot run on', () => {
+    const ceremony = { rpId: 'clerk.example.test', origins: ['https://listed.example'], hostedSignInUrl: 'https://clerk.example.test/hosted/sign-in' };
+
+    it('knows the RP rule: the RP ID, under it, or a related origin', () => {
+      expect(passkeyRunsHere(ceremony, 'https://clerk.example.test')).toBe(true);
+      expect(passkeyRunsHere(ceremony, 'https://a.clerk.example.test')).toBe(true);
+      expect(passkeyRunsHere(ceremony, 'https://listed.example')).toBe(true);
+      expect(passkeyRunsHere(ceremony, 'http://localhost:3000')).toBe(false);
+      expect(passkeyRunsHere(ceremony, 'https://notclerk.example.test')).toBe(false);
+      expect(passkeyRunsHere(undefined, 'http://localhost:3000')).toBe(true);
+    });
+
+    it('leaves passkey out where another factor can be set up', () => {
+      const enrol = createMfaEnrollment(scripted(server).client, { ...ALL, passkeyCeremony: ceremony }, { host, origin: 'http://localhost:3000' });
+      expect(enrol.state.options).not.toContain('passkey');
+    });
+
+    const onPage = () => vi.stubGlobal('window', { location: { href: 'http://localhost:3000/in?__atlas_status=x', origin: 'http://localhost:3000' } });
+
+    it('sends the step to the hosted page when a passkey is the only factor', () => {
+      onPage();
+      const navigate = vi.fn();
+      const only = { totp: false, sms: false, emailCode: false, totpCodes: 1 as const, passkey: true, passkeyCeremony: ceremony };
+      const enrol = createMfaEnrollment(scripted(server).client, only, { host, origin: 'http://localhost:3000', navigate });
+      enrol.start('sia_1');
+      const url = new URL(navigate.mock.calls[0]![0] as string);
+      expect(url.origin + url.pathname).toBe('https://clerk.example.test/hosted/sign-in');
+      expect(url.searchParams.get('__atlas_attempt')).toBe('sia_1');
+      expect(url.searchParams.get('__atlas_status')).toBe('needs_mfa_enrollment');
+      expect(url.searchParams.get('__atlas_handoff')).toBe('1');
+      expect(url.searchParams.get('redirect_url')).toBe('http://localhost:3000/in');
+      vi.unstubAllGlobals();
+    });
+
+    it('a ceremony the browser refuses for the origin goes to the hosted page, never showing its error', async () => {
+      onPage();
+      const navigate = vi.fn();
+      const refusing = {
+        credentials: {
+          create: vi.fn(async () => {
+            throw Object.assign(new Error('The relying party ID is not a registrable domain suffix'), { name: 'SecurityError' });
+          }),
+        },
+      } as unknown as WebAuthnHost;
+      const only = { totp: false, sms: false, emailCode: false, totpCodes: 1 as const, passkey: true, passkeyCeremony: ceremony };
+      const enrol = createMfaEnrollment(scripted(server).client, only, { host: refusing, origin: 'https://listed.example', navigate });
+      enrol.start('sia_1');
+      await vi.waitFor(() => expect(enrol.state.enrollment).not.toBeNull());
+      expect(await enrol.submit({})).toBeNull();
+      expect(navigate).toHaveBeenCalledOnce();
+      expect(JSON.stringify(enrol.state.errors)).not.toContain('relying party');
+      vi.unstubAllGlobals();
     });
   });
 

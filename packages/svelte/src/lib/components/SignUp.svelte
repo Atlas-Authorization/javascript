@@ -100,6 +100,8 @@
     matchCode={$flowState.matchCode ?? null}
     onEmailSecondFactor={$settings?.account.emailSecondFactor ? flow.sendEmailSecondFactor : null}
     onSmsSecondFactor={$settings && flow.mfaChoices().sms ? flow.sendSmsSecondFactor : null}
+    onOnlyWayEmail={$settings && flow.mfaChoices().emailCode ? flow.sendOnlyWayEmail : null}
+    onPasskeySecondFactor={$settings && flow.mfaChoices().passkey ? flow.continueWithPasskey : null}
     enrollment={flow.enrollment}
     enrollmentState={$enrollmentState}
     onPolicyDecline={flow.declinePolicy}
