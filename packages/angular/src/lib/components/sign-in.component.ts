@@ -6,12 +6,16 @@ import {
   OnInit,
   computed,
   effect,
+  afterNextRender,
   inject,
+  signal,
 } from '@angular/core';
+import { emailLinkFromUrl, type EmailLink } from '@atlasauth/js';
 import { lastUsedMethodLabel, passkeysSupported, signUp as hostedSignUp } from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
 import { translate } from '../i18n';
 import { AttemptFlowComponent } from './attempt-flow.component';
+import { EmailLinkComponent } from './email-link.component';
 import { RecoveryCodesComponent } from './recovery-codes.component';
 import { AtlasFlowController } from './flow-controller';
 
@@ -29,8 +33,11 @@ import { AtlasFlowController } from './flow-controller';
   selector: 'atlas-sign-in',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AttemptFlowComponent, RecoveryCodesComponent],
+  imports: [EmailLinkComponent, AttemptFlowComponent, RecoveryCodesComponent],
   template: `
+    @if (emailLink(); as link) {
+      <atlas-email-link [link]="link"></atlas-email-link>
+    } @else {
     @if (lastUsedLabel(); as label) {
       <p class="atlas-text atlas-last-used-hint" data-atlas="last-used" [attr.data-atlas-method]="flow.lastMethod()">
         {{ t('signIn.lastUsed') }}: {{ label }}
@@ -56,6 +63,7 @@ import { AtlasFlowController } from './flow-controller';
       [captcha]="flow.captchaDrawn() ? flow.captcha : null"
       [firstFactors]="flow.firstFactors()"
       [preparedFactor]="flow.preparedFactor()"
+      [matchCode]="flow.state().matchCode ?? null"
       [passwordHold]="flow.state().passwordHold ?? null"
       [holdProof]="flow.holdProof()"
       (usePassword)="flow.usePassword()"
@@ -88,10 +96,18 @@ import { AtlasFlowController } from './flow-controller';
         {{ t('signIn.noAccount') }} <a class="atlas-link" [href]="href">{{ t('signIn.signUpLink') }}</a>
       </p>
     }
+    }
   `,
 })
 export class SignInComponent implements OnInit, OnDestroy {
   private readonly atlas = inject(AtlasService);
+
+  /** Opened from a mailed link: that page, not the flow. Read after the first render, so hydration matches. */
+  protected readonly emailLink = signal<EmailLink | null>(null);
+
+  constructor() {
+    afterNextRender(() => this.emailLink.set(emailLinkFromUrl(undefined, 'sign_in')));
+  }
 
   /** Where to send the user once the flow completes. Reserved for host routing. */
   @Input() afterUrl?: string;

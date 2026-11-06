@@ -15,6 +15,7 @@
  *      begin → navigator.credentials.create → finish and returns the completed
  *      flow with its one-time ticket for POST /v1/client/tickets/exchange.
  */
+import { rememberLinkProof } from './email-link';
 import { initialFlow, type FapiClient, type FlowState } from './fapi';
 import type { AttemptView } from './attempt';
 import type { PolicyAcceptance } from './policies';
@@ -38,7 +39,7 @@ export interface PasskeySignUpInput {
 /** Start a passkey-only sign-up. No account exists until the passkey is registered. */
 export async function startPasskeySignUp(client: FapiClient, input: PasskeySignUpInput): Promise<FlowState> {
   const hasFields = input.fields && Object.keys(input.fields).length > 0;
-  const response = await client.post<AttemptView & { ticket?: string; poll_secret?: string }>('/v1/client/sign_ups/passkey', {
+  const response = await client.post<AttemptView & { ticket?: string; poll_secret?: string; match_code?: string }>('/v1/client/sign_ups/passkey', {
     ...(input.email ? { email: input.email } : {}),
     ...(input.username ? { username: input.username } : {}),
     ...(hasFields ? { fields: input.fields } : {}),
@@ -47,11 +48,13 @@ export async function startPasskeySignUp(client: FapiClient, input: PasskeySignU
     ...(input.policyAcceptances && input.policyAcceptances.length > 0 ? { policy_acceptances: input.policyAcceptances } : {}),
   });
   if (!response.ok || !response.data) return { ...initialFlow, errors: response.errors };
+  const matchCode = rememberLinkProof(response.data.id ?? '', response.data);
   return {
     ...initialFlow,
     attempt: response.data,
     // Kept in memory only: the passkey steps (and link-mode polling) need it.
     pollSecret: response.data.poll_secret ?? null,
+    ...(matchCode ? { matchCode } : {}),
   };
 }
 

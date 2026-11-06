@@ -2,6 +2,7 @@ import { acceptPoliciesBody, type PolicyAcceptance } from './policies';
 import { fieldErrors, isTerminal, nextStep, type AttemptView, type FieldError } from './attempt';
 import { ATLAS_JS_SDK, SDK_HEADER, reportSdkAdvisory, sdkHeaderValue, type AtlasSdkInfo } from './sdk-advisory';
 import { setPersistence, withDevBrowser, type PersistenceMode } from './dev-browser';
+import { forgetLinkSecret, rememberLinkProof } from './email-link';
 import { recoveryCodesFrom } from './mfa-enrollment';
 import {
   acceptsReferral,
@@ -536,7 +537,7 @@ export interface FlowState {
    * server returns a new attempt.
    */
   prepared?: 'email_code' | 'email_link' | null;
-  /** Cross-device link: the code to show on this device; the device that opens the link shows the same one. */
+  /** A mailed link: the code to show on this device, which a person opening the link on another device must type there. */
   matchCode?: string | null;
   /**
    * After a sign-in completed here: true when this browser now holds the
@@ -668,6 +669,20 @@ export function requestForStep(
         return {
           path: `/v1/client/sign_ins/${id}/attempt_mfa_enrollment`,
           body: { factor_id: values.factorId ?? '', code: values.code ?? '' },
+        };
+      }
+      if (values.enrollStrategy === 'hotp' || values.enrollStrategy === 'duo' || values.enrollStrategy === 'yubikey' || values.enrollStrategy === 'passkey') {
+        const strategy = values.enrollStrategy;
+        return {
+          path: `/v1/client/sign_ins/${id}/attempt_mfa_enrollment`,
+          body:
+            strategy === 'hotp'
+              ? { strategy, factor_id: values.factorId ?? '', code: values.code ?? '' }
+              : strategy === 'duo'
+                ? { strategy, factor_id: values.factorId ?? '' }
+                : strategy === 'yubikey'
+                  ? { strategy, otp: values.otp ?? '' }
+                  : { strategy, challenge: values.challenge ?? '', attestation_object: values.attestation_object ?? '', client_data_json: values.client_data_json ?? '' },
         };
       }
       return {
@@ -816,6 +831,7 @@ export async function advance(
   const { backup_codes: backupCodes, ...view } = response.data as AttemptView & { ticket?: string; backup_codes?: unknown };
   const recoveryCodes = recoveryCodesFrom(backupCodes);
   const sameAttempt = view.id === state.attempt?.id && view.status === state.attempt?.status;
+  if (state.attempt?.id && isTerminal(view)) forgetLinkSecret(state.attempt.id);
   return {
     attempt: view,
     errors: [],
@@ -824,6 +840,7 @@ export async function advance(
     // A completion response carries the ticket to exchange for cookies.
     ticket: view.ticket ?? null,
     prepared: sameAttempt ? (state.prepared ?? null) : null,
+    ...(sameAttempt && state.matchCode ? { matchCode: state.matchCode } : {}),
     ...(view.existing_account || state.existingAccount ? { existingAccount: true } : {}),
     ...(recoveryCodes ? { recoveryCodes } : {}),
     ...(view.policy_acceptance_token || view.required_action_token
@@ -874,6 +891,7 @@ export async function startSignUp(
     return { ...initialFlow, busy: false, errors: response.errors };
   }
 
+  const matchCode = rememberLinkProof(response.data.id ?? '', response.data as { poll_secret?: unknown; match_code?: unknown });
   return {
     attempt: response.data,
     errors: [],
@@ -882,6 +900,7 @@ export async function startSignUp(
     // tab collects the session by polling with the secret the create returned.
     pollSecret: (response.data as { poll_secret?: string }).poll_secret ?? initialFlow.pollSecret,
     ticket: response.data.ticket ?? null,
+    ...(matchCode ? { matchCode } : {}),
     ...(response.data.policy_acceptance_token || response.data.required_action_token ? { policyToken: response.data.policy_acceptance_token ?? response.data.required_action_token } : {}),
   };
 }
@@ -890,13 +909,22 @@ export async function startSignUp(
  * Resend a sign-up's emailed proof (a code, a link, or both — whatever the
  * instance sends): `POST /v1/client/sign_ups/:id/prepare_verification`. The
  * earlier code / link stops working. A refusal (a 429 with `retry_after`)
- * comes back as `errors` with the attempt kept.
+ * comes back as `errors` with the attempt kept. A new link rotates the poll
+ * secret (the old one stops working) and comes with a new code: both replace the
+ * old ones, here and in this browser's storage.
  */
 export async function resendSignUpVerification(client: FapiClient, state: FlowState): Promise<FlowState> {
   const id = state.attempt?.id;
   if (!id) return state;
-  const response = await client.post(`/v1/client/sign_ups/${id}/prepare_verification`, {});
-  return response.ok ? { ...state, busy: false, errors: [] } : { ...state, busy: false, errors: response.errors };
+  const response = await client.post<{ poll_secret?: string; match_code?: string }>(`/v1/client/sign_ups/${id}/prepare_verification`, {});
+  if (!response.ok) return { ...state, busy: false, errors: response.errors };
+  const pollSecret = response.data?.poll_secret;
+  // No new secret: only a code went out, and the tab's wait is unchanged.
+  if (!pollSecret) return { ...state, busy: false, errors: [] };
+  const matchCode = rememberLinkProof(id, response.data ?? {});
+  // Rotated with nothing mailed: the stored secret is dead, and there's no code to show.
+  if (!matchCode) forgetLinkSecret(id);
+  return { ...state, busy: false, errors: [], pollSecret, matchCode };
 }
 
 /**
@@ -911,14 +939,16 @@ export async function preparePasswordHoldProof(
 ): Promise<FlowState> {
   const hold = state.passwordHold;
   if (!hold) return state;
-  const response = await client.post<{ identifier?: string | null }>(`/v1/client/sign_ups/${hold.attemptId}/prepare_verification`, {});
+  const response = await client.post<{ identifier?: string | null; poll_secret?: string; match_code?: string }>(`/v1/client/sign_ups/${hold.attemptId}/prepare_verification`, {});
   if (!response.ok) return { ...state, busy: false, errors: response.errors };
+  const matchCode = rememberLinkProof(hold.attemptId, response.data ?? {});
   return {
     ...state,
     busy: false,
     errors: [],
     pollSecret: null,
     prepared: via,
+    ...(matchCode ? { matchCode } : {}),
     passwordHold: { ...hold, email: response.data?.identifier ?? null },
   };
 }
@@ -951,14 +981,15 @@ export async function prepareFactor(
   client: FapiClient,
   state: FlowState,
   strategy: 'email_code' | 'email_link',
-  opts: { crossDevice?: boolean } = {},
+  /** @deprecated Every mailed link now needs a tie to this tab; this changes nothing. */
+  _opts: { crossDevice?: boolean } = {},
 ): Promise<FlowState> {
   const id = state.attempt?.id;
   if (!id) return state;
 
   const response = await client.post<{ poll_secret?: string; match_code?: string }>(
     `/v1/client/sign_ins/${id}/prepare_first_factor`,
-    { strategy, ...(opts.crossDevice && strategy === 'email_link' ? { cross_device: true } : {}) },
+    { strategy },
   );
 
   if (!response.ok) return { ...state, busy: false, errors: response.errors };
@@ -972,35 +1003,8 @@ export async function prepareFactor(
     // there is nothing to poll for.
     pollSecret: strategy === 'email_link' ? (response.data?.poll_secret ?? null) : null,
     prepared: strategy,
-    matchCode: response.data?.match_code ?? null,
+    matchCode: strategy === 'email_link' ? rememberLinkProof(id, response.data ?? {}) : null,
   };
-}
-
-/** What the page the cross-device link opens needs: whether to ask for confirmation, and the code to compare. */
-export interface CrossDeviceLinkPreview {
-  requiresConfirmation: boolean;
-  matchCode: string | null;
-}
-
-/**
- * Cross-device magic link, second device: read the code from the opened link (`?attempt=&token=&cross_device=1`)
- * so the page can show it next to the prompt "does this match the code on your other device?". Completes nothing.
- */
-export async function previewCrossDeviceLink(client: FapiClient, link: { attempt: string; token: string }): Promise<CrossDeviceLinkPreview | null> {
-  const response = await client.get<{ requires_confirmation?: boolean; match_code?: string }>(
-    `/v1/client/sign_ins/verify?attempt=${encodeURIComponent(link.attempt)}&token=${encodeURIComponent(link.token)}&cross_device=1`,
-  );
-  if (!response.ok || !response.data) return null;
-  return { requiresConfirmation: response.data.requires_confirmation === true, matchCode: response.data.match_code ?? null };
-}
-
-/**
- * Cross-device magic link, second device: confirm with the code both devices show. The first device's
- * `pollAttempt` then returns the ticket. One use; a wrong code invalidates the link.
- */
-export async function confirmCrossDeviceLink(client: FapiClient, link: { attempt: string; token: string; matchCode: string }): Promise<boolean> {
-  const response = await client.post('/v1/client/sign_ins/verify/confirm', { attempt: link.attempt, token: link.token, match_code: link.matchCode });
-  return response.ok;
 }
 
 /**
@@ -1026,16 +1030,18 @@ export async function pollAttempt(
   // no session: the password signs in now, so stop polling and ask for it.
   if (response.data.password_hold_released) {
     const email = response.data.identifier ?? null;
+    forgetLinkSecret(id);
     return {
-      state: { ...state, attempt: response.data, pollSecret: null, prepared: null, passwordHold: { attemptId: id, email, released: true } },
+      state: { ...state, attempt: response.data, pollSecret: null, prepared: null, matchCode: null, passwordHold: { attemptId: id, email, released: true } },
       ticket: null,
     };
   }
 
-  return {
-    state: { ...state, attempt: response.data },
-    ticket: response.data.ticket ?? null,
-  };
+  const next: FlowState = { ...state, attempt: response.data };
+  if (shouldKeepPolling(next)) return { state: next, ticket: response.data.ticket ?? null };
+  // The wait is over, one way or another: the code and the stored secret are done with.
+  forgetLinkSecret(id);
+  return { state: { ...next, matchCode: null }, ticket: response.data.ticket ?? null };
 }
 
 /** Whether polling should continue, so a tab does not poll a dead attempt forever. */
@@ -1044,6 +1050,8 @@ export function shouldKeepPolling(state: FlowState): boolean {
   // A sign-up polls for its link only. Past that this tab drives every step (the passkey,
   // MFA set-up, policies), and a poll that collected a ticket would skip the recovery codes.
   const a = state.attempt;
+  // An earlier sign-up for this address finished: no ticket will ever come here.
+  if (a.finished_elsewhere) return false;
   return !(a.object === 'sign_up_attempt' && a.status !== 'needs_email_verification');
 }
 
@@ -1065,14 +1073,15 @@ export function acknowledgeExistingAccount(state: FlowState): FlowState {
 /**
  * A sign-up's emailed link proved the address and made no session, so this tab
  * can only go and sign in. The tab's poll secret proves nothing about the mailbox:
- * say the same thing whichever account the address belongs to.
+ * say the same thing whichever account the address belongs to. So too a repeat
+ * sign-up whose earlier attempt finished (`finished_elsewhere`).
  */
 export function signUpProvedByLink(attempt: AttemptView | null | undefined): boolean {
   return (
     !!attempt &&
     attempt.object === 'sign_up_attempt' &&
-    attempt.status === 'needs_first_factor' &&
-    !(attempt.supported_first_factors ?? []).includes('passkey')
+    (attempt.finished_elsewhere === true ||
+      (attempt.status === 'needs_first_factor' && !(attempt.supported_first_factors ?? []).includes('passkey')))
   );
 }
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     awaitingSignUpLink,
+    enrollmentOptionKey,
     enrollmentSubmitKey,
     groupSetupKey,
     localizedErrorMessage,
@@ -14,6 +15,7 @@
     type FlowState,
     type MfaEnrollmentController,
     type MfaEnrollmentState,
+    type MfaEnrollmentStrategy,
   } from '@atlasauth/js';
   import { useAtlas } from '../context';
   import { classFor, type ElementKey } from '../appearance';
@@ -69,6 +71,8 @@
    */
   export let enrollment: MfaEnrollmentController | null = null;
   export let enrollmentState: MfaEnrollmentState | null = null;
+  /** `FlowState.matchCode`: shown while a mailed link waits, to type if it's opened on another device. */
+  export let matchCode: string | null = null;
   /**
    * The instance's `account.emailVerification`. On `link` a sign-up's
    * verification step has nothing to type: it says to open the emailed link
@@ -178,7 +182,7 @@
   // The enrolment step drawn from the shared controller (when one is passed).
   $: enrolling = step.kind === 'enroll_second_factor' && !!enrollment && !!enrollmentState;
   $: enrolSubmitKey = enrolling && enrollmentState ? enrollmentSubmitKey(enrollmentState) : null;
-  function chooseMethod(m: 'totp' | 'phone_code') {
+  function chooseMethod(m: MfaEnrollmentStrategy) {
     values = {};
     void enrollment?.choose(m);
   }
@@ -335,6 +339,9 @@
           </button>
         {/if}
       {/if}
+      {#if matchCode && (step.kind === 'collect_email_code' || (step.kind === 'collect_first_factor' && sent === 'email_link'))}
+        <p class="atlas-text" data-atlas="link-match-code">{t('link.matchCodeHint')} <strong><code>{matchCode}</code></strong></p>
+      {/if}
       {#if enrolling && enrollmentState}
         {#if enrollmentState.method === null}
           <p class="atlas-text">{t('mfa.enrollChoose')}</p>
@@ -346,10 +353,29 @@
               disabled={busy || enrollmentState.busy}
               on:click={() => chooseMethod(m)}
             >
-              {t(m === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption')}
+              {t(enrollmentOptionKey(m))}
             </button>
           {/each}
-        {:else if enrollmentState.method === 'totp'}
+        {:else if enrollmentState.method === 'yubikey'}
+          <label class="atlas-field">
+            <span>{t('mfa.yubikeyLabel')}</span>
+            <input class={cls('formFieldInput', 'atlas-input')} type="text" name="otp" autocomplete="off" value={values.otp ?? ''} on:input={(e) => (values.otp = e.currentTarget.value)} />
+          </label>
+          {#each errors.filter((e) => e.param === 'otp') as error (error.code)}
+            <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
+          {/each}
+        {:else if enrollmentState.method === 'duo' || enrollmentState.method === 'passkey'}
+          {#if !enrollmentState.enrollment}
+            <p class="atlas-text" aria-live="polite">{enrollmentState.busy ? t('mfa.enrollPreparing') : ''}</p>
+          {:else if enrollmentState.method === 'passkey'}
+            <p class="atlas-text">{t('mfa.enrollPasskeyHelp')}</p>
+          {:else}
+            <p class="atlas-text">{t('mfa.enrollDuoHelp')}</p>
+            {#if enrollmentState.enrollment.authorizationUrl}
+              <a class="atlas-link" data-atlas="mfa-duo-open" href={enrollmentState.enrollment.authorizationUrl} target="_blank" rel="noopener noreferrer">{t('mfa.enrollDuoOpen')}</a>
+            {/if}
+          {/if}
+        {:else if enrollmentState.method === 'totp' || enrollmentState.method === 'hotp'}
           {#if !enrollmentState.enrollment}
             <p class="atlas-text" aria-live="polite">{enrollmentState.busy ? t('mfa.enrollPreparing') : ''}</p>
           {:else}
@@ -366,13 +392,13 @@
               <span>{t('mfa.enrollFirstCodeLabel')}</span>
               <input class={cls('formFieldInput', 'atlas-input')} type="text" name="code" autocomplete="one-time-code" inputmode="numeric" value={values.code ?? ''} on:input={(e) => (values.code = e.currentTarget.value)} />
             </label>
-            {#if enrollmentState.totpCodes >= 2}
+            {#if enrollmentState.method === 'totp' && enrollmentState.totpCodes >= 2}
               <label class="atlas-field">
                 <span>{t('mfa.enrollSecondCodeLabel')}</span>
                 <input class={cls('formFieldInput', 'atlas-input')} type="text" name="secondCode" autocomplete="one-time-code" inputmode="numeric" value={values.secondCode ?? ''} on:input={(e) => (values.secondCode = e.currentTarget.value)} />
               </label>
             {/if}
-            {#each errors.filter((e) => e.param === 'codes') as error (error.code)}
+            {#each errors.filter((e) => e.param === 'codes' || e.param === 'code') as error (error.code)}
               <span class={cls('formFieldError', 'atlas-error')}>{errorText(error)}</span>
             {/each}
           {/if}
@@ -412,7 +438,7 @@
               disabled={busy || enrollmentState.busy}
               on:click={() => chooseMethod(other)}
             >
-              {t(other === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption')}
+              {t(enrollmentOptionKey(other))}
             </button>
           {/each}
         {/if}

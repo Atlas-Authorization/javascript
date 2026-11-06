@@ -234,6 +234,8 @@ export function AttemptFlow({
   hideTitle,
   captcha,
   prepared = null,
+  matchCode = null,
+  onLinkResent,
   onPrepare,
   onUsePassword,
   sessionKept,
@@ -261,6 +263,10 @@ export function AttemptFlow({
    * first-factor step then collects the code, or says to open the link.
    */
   prepared?: EmailFactor | null;
+  /** `FlowState.matchCode`: shown while a mailed link waits, to type if it's opened on another device. */
+  matchCode?: string | null;
+  /** A sign-up's link was re-sent: its new code and poll secret replace the old ones. */
+  onLinkResent?(next: FlowState): void;
   /**
    * Send (or resend) an emailed factor (`useFlow().prepare`). Without it the
    * first-factor step offers the password only.
@@ -402,6 +408,7 @@ export function AttemptFlow({
             <p key="link-sent" className={cls('text', 'atlas-text')} data-atlas-link-sent="">
               {t('signIn.linkSentTo', { email: identifier })}
             </p>,
+            matchCode ? <MatchCodeHint key="match-code" code={matchCode} /> : null,
           ];
         }
         if (sending) {
@@ -457,10 +464,11 @@ export function AttemptFlow({
             <p key="link-sent" className={cls('text', 'atlas-text')} data-atlas-link-sent="" aria-live="polite">
               {t('signUp.linkSentTo', { email: attempt?.identifier ?? '' })}
             </p>,
-            attempt ? <ResendSignUpLink key="resend" attempt={attempt} /> : null,
+            matchCode ? <MatchCodeHint key="match-code" code={matchCode} /> : null,
+            attempt ? <ResendSignUpLink key="resend" attempt={attempt} onResent={onLinkResent} /> : null,
           ];
         }
-        return [field('code', 'signIn.emailCodeLabel')];
+        return [field('code', 'signIn.emailCodeLabel'), matchCode ? <MatchCodeHint key="match-code" code={matchCode} /> : null];
       case 'collect_new_password':
         return [field('password', 'reset.newPasswordLabel', 'password')];
       case 'complete_required_action': {
@@ -1020,7 +1028,8 @@ export function useFlow({
     const timer = setInterval(() => {
       void (async () => {
         const { state: next, ticket } = await pollAttempt(client, state);
-        setState(next);
+        // A resend rotated the secret meanwhile: this answer is stale.
+        setState((current) => (current.pollSecret === state.pollSecret ? next : current));
         if (!ticket || !next.attempt) return;
 
         // The ticket is exchanged by a normal request, so no session token has
@@ -1619,7 +1628,18 @@ export function IdentityVerificationStep({ attempt, busy, onSubmit }: { attempt:
   );
 }
 
-function ResendSignUpLink({ attempt }: { attempt: AttemptView }) {
+/** The code to type on another device. Only ever shown on the tab that started the flow. */
+function MatchCodeHint({ code }: { code: string }) {
+  const t = useText();
+  const cls = useClasses();
+  return (
+    <p className={cls('text', 'atlas-text')} data-atlas="link-match-code">
+      {t('link.matchCodeHint')} <strong><code>{code}</code></strong>
+    </p>
+  );
+}
+
+function ResendSignUpLink({ attempt, onResent }: { attempt: AttemptView; onResent?: ((next: FlowState) => void) | undefined }) {
   const client = useFapiClient();
   const t = useText();
   const errorText = useErrorText();
@@ -1627,9 +1647,10 @@ function ResendSignUpLink({ attempt }: { attempt: AttemptView }) {
   const [state, setState] = useState<{ busy?: boolean; sent?: boolean; error?: FieldError }>({});
   const send = () => {
     setState({ busy: true });
-    void resendSignUpVerification(client, { attempt, errors: [], busy: true, pollSecret: null, ticket: null }).then((next) =>
-      setState(next.errors[0] ? { error: next.errors[0] } : { sent: true }),
-    );
+    void resendSignUpVerification(client, { attempt, errors: [], busy: true, pollSecret: null, ticket: null }).then((next) => {
+      setState(next.errors[0] ? { error: next.errors[0] } : { sent: true });
+      if (!next.errors[0]) onResent?.(next);
+    });
   };
   return (
     <>

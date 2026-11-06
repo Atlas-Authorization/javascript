@@ -35,6 +35,8 @@ import {
   localizedErrorMessage,
   signInCaptchaOptions,
   startSignUp,
+  forgetLinkSecret,
+  rememberLinkProof,
   advance,
   nextStep,
   prepareFactor,
@@ -65,6 +67,8 @@ export interface FlowContextValue {
   attempt: AttemptView | null;
   errors: FieldError[];
   busy: boolean;
+  /** Show this while a mailed link waits: whoever opens the link on another device types it there. */
+  matchCode?: string | null;
   /** The fields collected so far, keyed by `<Field name>`. */
   values: Record<string, string>;
   /** Write one field (what `<Field.Input onChange>` calls). */
@@ -352,9 +356,16 @@ export function useFlowDriver(
     // Sign-up verification re-send. The server pairs `attempt_verification` with a
     // `prepare_verification`; re-posting it re-issues the emailed code.
     const id = (state.attempt as { id?: string }).id ?? '';
-    await client.post(`/v1/client/sign_ups/${id}/prepare_verification`, {
+    const response = await client.post<{ poll_secret?: string; match_code?: string }>(`/v1/client/sign_ups/${id}/prepare_verification`, {
       strategy: 'email_code',
     });
+    // A new link rotates the poll secret and comes with a new code.
+    const pollSecret = response.ok ? response.data?.poll_secret : undefined;
+    if (pollSecret) {
+      const matchCode = rememberLinkProof(id, response.data ?? {});
+      if (!matchCode) forgetLinkSecret(id);
+      setState((current) => ({ ...current, matchCode, pollSecret }));
+    }
   }, [client, mode, state]);
 
   const startOauth = useCallback(
@@ -443,6 +454,7 @@ export function useFlowDriver(
       attempt: state.attempt,
       errors,
       busy: state.busy,
+      matchCode: state.matchCode ?? null,
       values,
       setValue,
       submit,
@@ -464,6 +476,7 @@ export function useFlowDriver(
       state.attempt,
       errors,
       state.busy,
+      state.matchCode,
       values,
       setValue,
       submit,

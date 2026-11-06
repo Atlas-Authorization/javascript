@@ -36,6 +36,7 @@ export const ERROR_REASONS = Object.freeze([
   'form_password_reused',
   'password_expired',
   'email_not_verified',
+  'mfa_setup_unavailable',
   'sign_in_token_invalid',
   'too_many_attempts',
   'too_many_requests',

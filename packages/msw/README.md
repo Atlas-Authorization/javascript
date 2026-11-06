@@ -87,7 +87,7 @@ sessions.
 | `GET /v1/client/environment` | Enabled first factors + social providers (the seeded instance config) |
 | `GET /v1/client` | Session boot — `session: null` until signed in, otherwise the active session + user + memberships |
 | `POST /v1/client/sign_ins` | Start a sign-in attempt from an identifier |
-| `POST /v1/client/sign_ins/:id/prepare_first_factor` | Send an email/phone code; returns a `poll_secret` |
+| `POST /v1/client/sign_ins/:id/prepare_first_factor` | Send an email/phone code; returns a `poll_secret` (and a `match_code` for an email link) |
 | `POST /v1/client/sign_ins/:id/attempt_first_factor` | Present `password` or `code`; on success completes + returns a `ticket` |
 | `GET /v1/client/sign_ins/:id?poll_secret=…` | Poll an attempt (cross-device) |
 | `POST /v1/client/sign_ups` | Start a sign-up (email + password) |

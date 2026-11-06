@@ -6,6 +6,7 @@ import {
   copyRecoveryCodes,
   createMfaEnrollment,
   downloadRecoveryCodes,
+  enrollmentOptionKey,
   groupSetupKey,
   mfaChoicesFrom,
   prepareDuo,
@@ -53,8 +54,9 @@ export function useMfaEnrollment(
 }
 
 /**
- * The enrolment step's body: the method choice, the authenticator's QR code and
- * setup key with its code field(s), or the phone number then the texted code.
+ * The enrolment step's body: the method choice, the authenticator's (or counter
+ * token's) QR code and setup key with its code field(s), the phone number then
+ * the texted code, the YubiKey field, the link to Duo, or the passkey prompt.
  * `field` draws an input the way the rest of the form does.
  */
 export function MfaEnrollmentFields({
@@ -94,11 +96,38 @@ export function MfaEnrollmentFields({
             void controller.choose(m);
           }}
         >
-          {t(m === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption')}
+          {t(enrollmentOptionKey(m))}
         </button>
       )),
     );
-  } else if (method === 'totp') {
+  } else if (method === 'yubikey') {
+    out.push(field('otp', 'mfa.yubikeyLabel', 'text', { autoComplete: 'off' }));
+  } else if (method === 'duo' || method === 'passkey') {
+    if (!enrollment) {
+      out.push(
+        <p key="preparing" className={cls('text', 'atlas-text')} aria-live="polite">
+          {state.busy ? t('mfa.enrollPreparing') : null}
+        </p>,
+      );
+    } else if (method === 'passkey') {
+      out.push(
+        <p key="passkey" className={cls('text', 'atlas-text')}>
+          {t('mfa.enrollPasskeyHelp')}
+        </p>,
+      );
+    } else {
+      out.push(
+        <p key="duo" className={cls('text', 'atlas-text')}>
+          {t('mfa.enrollDuoHelp')}
+        </p>,
+        enrollment.authorizationUrl ? (
+          <a key="duo-open" className={cls('link', 'atlas-link')} data-atlas="mfa-duo-open" href={enrollment.authorizationUrl} target="_blank" rel="noopener noreferrer">
+            {t('mfa.enrollDuoOpen')}
+          </a>
+        ) : null,
+      );
+    }
+  } else if (method === 'totp' || method === 'hotp') {
     if (!enrollment) {
       out.push(
         <p key="preparing" className={cls('text', 'atlas-text')} aria-live="polite">
@@ -124,7 +153,7 @@ export function MfaEnrollmentFields({
         );
       }
       out.push(field('code', 'mfa.enrollFirstCodeLabel', 'text', { autoComplete: 'one-time-code', inputMode: 'numeric' }));
-      if (state.totpCodes >= 2) {
+      if (method === 'totp' && state.totpCodes >= 2) {
         out.push(field('secondCode', 'mfa.enrollSecondCodeLabel', 'text', { autoComplete: 'one-time-code', inputMode: 'numeric' }));
       }
     }
@@ -163,22 +192,23 @@ export function MfaEnrollmentFields({
   }
 
   if (method !== null && options.length > 1) {
-    const other = options.find((m) => m !== method)!;
-    out.push(
-      <button
-        key="switch"
-        type="button"
-        className={cls('link', 'atlas-link')}
-        data-atlas-mfa-method={other}
-        disabled={busy || state.busy}
-        onClick={() => {
-          clearValues();
-          void controller.choose(other);
-        }}
-      >
-        {t(other === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption')}
-      </button>,
-    );
+    for (const other of options.filter((m) => m !== method)) {
+      out.push(
+        <button
+          key={`switch-${other}`}
+          type="button"
+          className={cls('link', 'atlas-link')}
+          data-atlas-mfa-method={other}
+          disabled={busy || state.busy}
+          onClick={() => {
+            clearValues();
+            void controller.choose(other);
+          }}
+        >
+          {t(enrollmentOptionKey(other))}
+        </button>,
+      );
+    }
   }
   return <>{out}</>;
 }

@@ -363,3 +363,46 @@ describe('<SignIn> second-factor alternatives', () => {
     expect(el.querySelector('[data-atlas="sms-second-factor"]')).toBeNull();
   });
 });
+
+describe('<SignIn> enrolment offers every factor the app offers', () => {
+  const ACCOUNT = { username: null, email_verification: 'code', password_reset: 'code', mfa: { totp: true, sms: false, totp_codes: 1, hotp: true, yubikey: true, duo: true } };
+
+  it('draws each one; a YubiKey posts its OTP', async () => {
+    const el = await mount({
+      account: ACCOUNT,
+      routes: [
+        signInRoute(['password']),
+        passwordRoute('needs_mfa_enrollment'),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/attempt_mfa_enrollment' ? json({ ...attempt([]), status: 'complete', ticket: 'tkt_e', backup_codes: [] }) : undefined),
+      ],
+    });
+    await signInTo(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-mfa-method="totp"]')).not.toBeNull());
+    for (const m of ['hotp', 'yubikey', 'duo']) expect(el.querySelector(`[data-atlas-mfa-method="${m}"]`)).not.toBeNull();
+    await act(async () => {
+      (el.querySelector('[data-atlas-mfa-method="yubikey"]') as HTMLButtonElement).click();
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="otp"]')).not.toBeNull());
+    setInput(el, 'otp', 'ccccccfjkbbb');
+    await submit(el);
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')).toHaveLength(1));
+    expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ strategy: 'yubikey', otp: 'ccccccfjkbbb' });
+  });
+
+  it('Duo: a link to its prompt, then continue', async () => {
+    const el = await mount({
+      account: ACCOUNT,
+      routes: [
+        signInRoute(['password']),
+        passwordRoute('needs_mfa_enrollment'),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/prepare_mfa_enrollment' ? json({ strategy: 'duo', factor_id: 'mfa_d', authorization_url: 'https://api-1.duosecurity.com/x' }, 201) : undefined),
+      ],
+    });
+    await signInTo(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-mfa-method="duo"]')).not.toBeNull());
+    await act(async () => {
+      (el.querySelector('[data-atlas-mfa-method="duo"]') as HTMLButtonElement).click();
+    });
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="mfa-duo-open"]')?.getAttribute('href')).toBe('https://api-1.duosecurity.com/x'));
+  });
+});

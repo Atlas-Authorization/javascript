@@ -135,6 +135,13 @@ export function renderReset(w: AtlasWidget): HTMLElement {
       showSubmit = false;
       form.appendChild(el(w, 'p', 'atlas-embed-note', 'You’re all set.'));
   }
+  // The code to type on another device. Only ever shown on the tab that asked for the reset.
+  if (step === 'collect_email_code' && flow.attempt?.match_code) {
+    const hint = el(w, 'p', 'atlas-embed-note', `${say(w, 'link.matchCodeHint')} `);
+    hint.setAttribute('data-atlas', 'link-match-code');
+    hint.appendChild(el(w, 'code', 'atlas-embed-mfa-key', flow.attempt.match_code));
+    form.appendChild(hint);
+  }
 
   if (subtitle) {
     wrap.appendChild(el(w, 'p', cls(w, 'subtitle', 'atlas-embed-subtitle'), subtitle));
@@ -442,6 +449,27 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
   let submitLabel: string = COPY[w.mode].submit;
   // Secondary actions drawn under the submit button (resend, other factors).
   const trailing: HTMLElement[] = [];
+  // The emailed link made no session here, or an earlier sign-up finished. Says the same for any address.
+  const emailConfirmedNotice = () => {
+    showSubmit = false;
+    const confirmed = el(w, 'p', 'atlas-embed-note', say(w, 'signUp.emailConfirmed'));
+    confirmed.setAttribute('role', 'status');
+    confirmed.setAttribute('data-atlas-email-confirmed', '');
+    form.appendChild(confirmed);
+    const toSignIn = el(w, 'button', cls(w, 'buttonPrimary', 'atlas-embed-button'), say(w, 'signIn.title')) as HTMLButtonElement;
+    toSignIn.type = 'button';
+    toSignIn.setAttribute('data-atlas', 'email-confirmed-sign-in');
+    toSignIn.addEventListener('click', () => signInAfterProof(w));
+    form.appendChild(toSignIn);
+  };
+  // The code to type on another device. Only ever shown on the tab that started the flow.
+  const matchCodeHint = () => {
+    if (!w.state.matchCode) return;
+    const hint = el(w, 'p', 'atlas-embed-note', `${say(w, 'link.matchCodeHint')} `);
+    hint.setAttribute('data-atlas', 'link-match-code');
+    hint.appendChild(el(w, 'code', 'atlas-embed-mfa-key', w.state.matchCode));
+    form.appendChild(hint);
+  };
   switch (stepKind) {
     case 'collect_identifier':
       // §5.5 the `webauthn` autocomplete token opts this field into passkey
@@ -502,17 +530,7 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
       break;
     case 'collect_first_factor': {
       if (signUpProvedByLink(w.state.attempt)) {
-        // The emailed link made no session here. Says the same for any address.
-        showSubmit = false;
-        const confirmed = el(w, 'p', 'atlas-embed-note', say(w, 'signUp.emailConfirmed'));
-        confirmed.setAttribute('role', 'status');
-        confirmed.setAttribute('data-atlas-email-confirmed', '');
-        form.appendChild(confirmed);
-        const toSignIn = el(w, 'button', cls(w, 'buttonPrimary', 'atlas-embed-button'), say(w, 'signIn.title')) as HTMLButtonElement;
-        toSignIn.type = 'button';
-        toSignIn.setAttribute('data-atlas', 'email-confirmed-sign-in');
-        toSignIn.addEventListener('click', () => signInAfterProof(w));
-        form.appendChild(toSignIn);
+        emailConfirmedNotice();
         break;
       }
       // §5.3 a password field only when the server offers `password`; an emailed
@@ -542,6 +560,7 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
         const note = el(w, 'p', 'atlas-embed-note', who ? `We sent a sign-in link to ${who}. Open it on any device to continue.` : 'Check your email for a sign-in link.');
         note.setAttribute('data-atlas-link-sent', '');
         form.appendChild(note);
+        matchCodeHint();
         trailing.push(action('email_link', 'Resend link', 'data-atlas-resend'));
       } else if (!plan.password && plan.email.length > 0) {
         // The automatic send failed (its error is shown above): retry here.
@@ -584,6 +603,10 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
       renderSecondFactorAlternatives(w, trailing);
       break;
     case 'collect_email_code': {
+      if (signUpProvedByLink(w.state.attempt)) {
+        emailConfirmedNotice();
+        break;
+      }
       const linkOnly = awaitingSignUpLink(w.state.attempt, w.account.emailVerification);
       if (linkOnly) {
         // Nothing to type: this tab polls and continues once the link is opened.
@@ -602,6 +625,7 @@ export function renderForm(w: AtlasWidget, stepKind: string): HTMLElement {
       } else {
         addCodeField('code', 'Verification code', true);
       }
+      matchCodeHint();
       // A sign-up can ask for a fresh email (the earlier code / link stops working).
       if (w.state.attempt?.object === 'sign_up_attempt') {
         const again = el(w, 'button', 'atlas-embed-step-back', linkOnly ? 'Resend link' : 'Resend code') as HTMLButtonElement;

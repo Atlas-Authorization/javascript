@@ -57,6 +57,7 @@ async function mountFlow(
   opts: {
     captchaFlows?: Record<string, unknown>;
     emailDelivery?: Record<string, unknown>;
+    account?: Record<string, unknown>;
     signInWithAtlas?: Record<string, unknown>;
     routes: Route[];
   },
@@ -76,6 +77,7 @@ async function mountFlow(
         appearance: { legal: { termsUrl: null, privacyUrl: null, required: false }, signUpFields: [] },
         captchaFlows: opts.captchaFlows ?? {},
         ...(opts.emailDelivery ? { email_delivery: opts.emailDelivery } : {}),
+        ...(opts.account ? { account: opts.account } : {}),
         ...(opts.signInWithAtlas ? { sign_in_with_atlas: opts.signInWithAtlas } : {}),
       });
     }
@@ -90,7 +92,7 @@ async function mountFlow(
   const { container } = render(() =>
     h(AtlasProvider, { publishableKey: 'pk_test_x', frontendApi: FAPI, fetchImpl }, h(component, {})),
   );
-  await vi.waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance')).toBe(true));
+  await vi.waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance' || c.path.endsWith('/verify'))).toBe(true));
   await new Promise((r) => setTimeout(r, 0));
   return container as HTMLElement;
 }
@@ -513,5 +515,79 @@ describe('<SignUp> on a held account: the other endings', () => {
     (el.querySelector('[data-atlas="recovery-codes-saved"]') as HTMLButtonElement).click();
     await vi.waitFor(() => expect(el.querySelector('[data-atlas-existing-account]')).not.toBeNull());
     expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
+  });
+});
+
+describe('a mailed link needs a tie to the tab that started the flow', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    window.localStorage.clear();
+  });
+
+  it('the waiting tab shows the code', async () => {
+    const el = await mountFlow(SignUp, {
+      routes: [
+        (c) =>
+          c.method === 'POST' && c.path === '/v1/client/sign_ups'
+            ? json({ id: 'sia_l', object: 'sign_up_attempt', status: 'needs_email_verification', identifier: 'l@example.com', poll_secret: 'ps_l', match_code: '482113' }, 201)
+            : undefined,
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'email', 'l@example.com');
+    setInput(el, 'password', 'blue tangerine anvil 71!');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="link-match-code"]')?.textContent).toContain('482113'));
+  });
+
+  it('opened on another device: asks for the typed code, then says to go back', async () => {
+    window.history.replaceState({}, '', '/?attempt=sia_l&token=tok');
+    const el = await mountFlow(SignUp, {
+      routes: [
+        (c) => (c.method === 'GET' && c.path === '/v1/client/sign_ups/verify' ? json({ requires_confirmation: true }) : undefined),
+        (c) => (c.path === '/v1/client/sign_ups/verify/confirm' ? json({ verified: true }) : undefined),
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="match_code"]')).not.toBeNull());
+    setInput(el, 'match_code', '482113');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-status="confirmed"]')).not.toBeNull());
+    expect(posts('/v1/client/sign_ups/verify/confirm')[0]!.body).toEqual({ attempt: 'sia_l', token: 'tok', match_code: '482113' });
+  });
+
+  it('opened in the browser that started it: confirms with the stored secret, no typing', async () => {
+    window.history.replaceState({}, '', '/?attempt=sia_s&token=tok');
+    window.localStorage.setItem('atlas_link_sia_s', 'ps_s');
+    const el = await mountFlow(SignIn, {
+      routes: [
+        (c) => (c.method === 'GET' && c.path === '/v1/client/sign_ins/verify' ? json({ requires_confirmation: true }) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/verify/confirm' ? json({ verified: true }) : undefined),
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-status="confirmed"]')).not.toBeNull());
+    expect(posts('/v1/client/sign_ins/verify/confirm')[0]!.body).toEqual({ attempt: 'sia_s', token: 'tok', poll_secret: 'ps_s' });
+  });
+});
+
+describe('<SignIn> enrolment offers every factor the app offers', () => {
+  it('draws each one; a YubiKey posts its OTP', async () => {
+    const el = await mountFlow(SignIn, {
+      account: { username: null, email_verification: 'code', password_reset: 'code', mfa: { totp: true, sms: false, totp_codes: 1, hotp: true, yubikey: true, duo: true } },
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ins' ? json({ id: 'sia_1', status: 'needs_mfa_enrollment' }, 201) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/attempt_mfa_enrollment' ? json({ id: 'sia_1', status: 'complete', ticket: 'tkt_e', backup_codes: [] }) : undefined),
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="identifier"]')).not.toBeNull());
+    setInput(el, 'identifier', 'ada@example.com');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-mfa-method="yubikey"]')).not.toBeNull());
+    for (const m of ['totp', 'hotp', 'duo']) expect(el.querySelector(`[data-atlas-mfa-method="${m}"]`)).not.toBeNull();
+    (el.querySelector('[data-atlas-mfa-method="yubikey"]') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(el.querySelector('input[name="otp"]')).not.toBeNull());
+    setInput(el, 'otp', 'ccccccfjkbbb');
+    submit(el);
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')).toHaveLength(1));
+    expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ strategy: 'yubikey', otp: 'ccccccfjkbbb' });
   });
 });

@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { lastUsedMethodLabel, passkeysSupported, pendingRecoveryCodes, signUp as hostedSignUp } from '@atlasauth/js';
+  import { emailLinkFromUrl, type EmailLink } from '@atlasauth/js';
   import { signIn } from '../accessors';
   import { useAtlas } from '../context';
   import { classFor } from '../appearance';
   import { translate } from '../i18n';
   import AttemptFlow from './AttemptFlow.svelte';
+  import EmailLinkPage from './EmailLinkPage.svelte';
   import RecoveryCodes from './RecoveryCodes.svelte';
 
   /**
@@ -80,8 +82,17 @@
     flow.passkey.stopAutofill();
     flow.submit(values);
   }
+
+  // Opened from a mailed link: that page, not the flow. Read once mounted, so hydration matches.
+  let emailLink: EmailLink | null = null;
+  onMount(() => {
+    emailLink = emailLinkFromUrl(undefined, 'sign_in');
+  });
 </script>
 
+{#if emailLink}
+  <EmailLinkPage link={emailLink} />
+{:else}
 {#if lastLabel}
   <p class={classFor('badge', atlas.appearance, 'atlas-text atlas-last-used-hint')} data-atlas="last-used" data-atlas-method={$lastMethod}>
     {t('signIn.lastUsed')}: {lastLabel}
@@ -113,6 +124,7 @@
   titleKey="signIn.title"
   onSubmit={submitIdentifier}
   onPrepare={flow.prepare}
+  matchCode={$flowState.matchCode ?? null}
   passwordHold={$flowState.passwordHold ?? null}
   emailVerification={$settings?.account.emailVerification ?? 'code'}
   onEmailSecondFactor={$settings?.account.emailSecondFactor ? flow.sendEmailSecondFactor : null}
@@ -141,4 +153,5 @@
   <p class={classFor('footerAction', atlas.appearance, 'atlas-footer')} data-atlas-sign-up-prompt="">
     {t('signIn.noAccount')} <a class="atlas-link" href={promptHref}>{t('signIn.signUpLink')}</a>
   </p>
+{/if}
 {/if}

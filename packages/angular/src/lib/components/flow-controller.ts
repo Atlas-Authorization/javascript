@@ -481,8 +481,10 @@ export class AtlasFlowController {
     if (this.pollTimer) return;
     this.pollTimer = setInterval(() => {
       void (async () => {
-        const { state: next, ticket } = await pollAttempt(this.client, this.state());
-        this.setState(next);
+        const polled = this.state();
+        const { state: next, ticket } = await pollAttempt(this.client, polled);
+        // A resend rotated the secret meanwhile: this answer is stale.
+        if (this.state().pollSecret === polled.pollSecret) this.setState(next);
         // e.g. a passkey sign-up whose email was just proven: only this tab can go on.
         if (!ticket && !shouldKeepPolling(next)) this.stopPolling();
         if (!ticket || !next.attempt) return;

@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.17.0 — 2026-11-06
+
+- Emailed link confirmation and enrolment factor strings and shapes.
+
 ## 0.16.0 — 2026-11-05
 
 - `signUp.emailConfirmed`.

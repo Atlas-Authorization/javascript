@@ -16,6 +16,9 @@ import {
   planFirstFactor,
   lastUsedMethodLabel,
   enrollmentSubmitKey,
+  enrollmentOptionKey,
+  createEmailLinkConfirmation,
+  emailLinkFromUrl,
   groupSetupKey,
   canDownloadRecoveryCodes,
   copyRecoveryCodes,
@@ -37,6 +40,8 @@ import {
   type InstanceSettings,
   type MfaEnrollmentController,
   type MfaEnrollmentState,
+  type MfaEnrollmentStrategy,
+  type EmailLink,
   type PublicSignUpField,
   type Step,
 } from '@atlasauth/js';
@@ -202,6 +207,80 @@ const RECOVERY_LIST_STYLE = {
   textAlign: 'center',
 } as const;
 
+/** The mailed link this page was opened with, once mounted (none on the server, so hydration matches). */
+function useEmailLink(flow: 'sign_in' | 'sign_up') {
+  const link = shallowRef<EmailLink | null>(null);
+  onMounted(() => {
+    link.value = emailLinkFromUrl(undefined, flow);
+  });
+  return link;
+}
+
+/**
+ * What `<SignIn>` / `<SignUp>` draw when opened from a mailed link: tries this
+ * browser's stored secret, then asks for the code the starting tab shows. A
+ * success signs nobody in here: the starting tab continues on its own.
+ */
+const EmailLinkPage = defineComponent({
+  name: 'EmailLinkPage',
+  props: { link: { type: Object as PropType<EmailLink>, required: true } },
+  setup(props) {
+    const atlas = useAtlas();
+    const t = useText();
+    const cls = useClass();
+    const errorText = useErrorText();
+    const controller = createEmailLinkConfirmation(
+      new FapiClient({ publishableKey: atlas.publishableKey, baseUrl: atlas.frontendApi, locale: atlas.locale, sdk: ATLAS_VUE_SDK }),
+      props.link,
+    );
+    const state = shallowRef(controller.state);
+    const code = ref('');
+    const stop = controller.subscribe((next) => {
+      state.value = next;
+    });
+    onMounted(() => void controller.start());
+    onUnmounted(stop);
+    return () => {
+      const s = state.value;
+      return h('div', { class: cls('card', 'atlas-card'), 'data-atlas': 'email-link', 'data-atlas-status': s.status }, [
+        h('h1', { class: cls('headerTitle', 'atlas-title') }, t('link.title')),
+        s.status === 'needs_code'
+          ? h(
+              'form',
+              {
+                onSubmit: (event: Event) => {
+                  event.preventDefault();
+                  void controller.submitCode(code.value);
+                },
+              },
+              [
+                h('p', { class: 'atlas-text' }, t('link.enterCodeHelp')),
+                h('label', { class: 'atlas-field' }, [
+                  h('span', t('link.codeLabel')),
+                  h('input', {
+                    class: cls('formFieldInput', 'atlas-input'),
+                    type: 'text',
+                    name: 'match_code',
+                    autocomplete: 'off',
+                    inputmode: 'numeric',
+                    required: true,
+                    value: code.value,
+                    onInput: (event: Event) => {
+                      code.value = (event.target as HTMLInputElement).value;
+                    },
+                  }),
+                ]),
+                ...s.errors.map((error) => h('p', { key: error.code, class: cls('formFieldError', 'atlas-error'), role: 'alert' }, errorText(error))),
+                h('button', { class: cls('formButtonPrimary', 'atlas-button'), type: 'submit', disabled: s.busy }, t('link.confirm')),
+              ],
+            )
+          : h('p', { class: 'atlas-text', role: 'status', 'aria-live': 'polite' }, t(s.status === 'confirmed' ? 'link.confirmed' : s.status === 'invalid' ? 'link.invalid' : 'link.checking')),
+        s.resetUrl ? h('p', { class: 'atlas-text' }, h('a', { class: 'atlas-link', 'data-atlas-reset-link': '', href: s.resetUrl }, t('signIn.forgotPassword'))) : null,
+      ]);
+    };
+  },
+});
+
 const AttemptFlow = defineComponent({
   name: 'AttemptFlow',
   props: {
@@ -261,6 +340,8 @@ const AttemptFlow = defineComponent({
      * while the flow polls, and offers a resend ({@link onResend}).
      */
     emailVerification: { type: String, default: 'code' },
+    /** `FlowState.matchCode`: shown while a mailed link waits, to type if it's opened on another device. */
+    matchCode: { type: String as PropType<string | null>, default: null },
     onResend: { type: Function as PropType<() => Promise<boolean>>, default: undefined },
     /** `FlowState.passwordHold`: offers the emailed proof, whichever factors the instance signs in with. */
     passwordHold: { type: Object as PropType<FlowState['passwordHold']>, default: null },
@@ -354,6 +435,10 @@ const AttemptFlow = defineComponent({
         t(labelKey),
       );
 
+    /** The code to type on another device. Only ever shown on the tab that started the flow. */
+    const matchCodeHint = (): VNode[] =>
+      props.matchCode ? [h('p', { key: 'match-code', class: 'atlas-text', 'data-atlas': 'link-match-code' }, [`${t('link.matchCodeHint')} `, h('strong', h('code', props.matchCode))])] : [];
+
     const field = (name: string, labelKey: string, type = 'text', autocomplete?: string): VNode =>
       h('label', { class: 'atlas-field', key: name }, [
         h('span', t(labelKey)),
@@ -375,12 +460,13 @@ const AttemptFlow = defineComponent({
       ]);
 
     /**
-     * The enrolment step: the method choice, the authenticator's QR code and
-     * setup key with its code field(s), or the phone number then the texted code.
+     * The enrolment step: the method choice, the authenticator's (or counter
+     * token's) QR code and setup key with its code field(s), the phone number then
+     * the texted code, the YubiKey field, the link to Duo, or the passkey prompt.
      */
     const enrollmentFields = (enrol: MfaEnrollmentController, s: MfaEnrollmentState): VNode[] => {
       const out: VNode[] = [];
-      const methodButton = (m: 'totp' | 'phone_code', key: string) =>
+      const methodButton = (m: MfaEnrollmentStrategy, key: string) =>
         h(
           'button',
           {
@@ -394,12 +480,26 @@ const AttemptFlow = defineComponent({
               void enrol.choose(m);
             },
           },
-          t(m === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption'),
+          t(enrollmentOptionKey(m)),
         );
       if (s.method === null) {
         out.push(h('p', { key: 'choose', class: 'atlas-text' }, t('mfa.enrollChoose')));
         for (const m of s.options) out.push(methodButton(m, `method-${m}`));
-      } else if (s.method === 'totp') {
+      } else if (s.method === 'yubikey') {
+        out.push(field('otp', 'mfa.yubikeyLabel', 'text', 'off'));
+      } else if (s.method === 'duo' || s.method === 'passkey') {
+        const e = s.enrollment;
+        if (!e) {
+          out.push(h('p', { key: 'preparing', class: 'atlas-text', 'aria-live': 'polite' }, s.busy ? t('mfa.enrollPreparing') : ''));
+        } else if (s.method === 'passkey') {
+          out.push(h('p', { key: 'passkey', class: 'atlas-text' }, t('mfa.enrollPasskeyHelp')));
+        } else {
+          out.push(h('p', { key: 'duo', class: 'atlas-text' }, t('mfa.enrollDuoHelp')));
+          if (e.authorizationUrl) {
+            out.push(h('a', { key: 'duo-open', class: 'atlas-link', 'data-atlas': 'mfa-duo-open', href: e.authorizationUrl, target: '_blank', rel: 'noopener noreferrer' }, t('mfa.enrollDuoOpen')));
+          }
+        }
+      } else if (s.method === 'totp' || s.method === 'hotp') {
         const e = s.enrollment;
         if (!e) {
           out.push(h('p', { key: 'preparing', class: 'atlas-text', 'aria-live': 'polite' }, s.busy ? t('mfa.enrollPreparing') : ''));
@@ -414,7 +514,7 @@ const AttemptFlow = defineComponent({
             );
           }
           out.push(field('code', 'mfa.enrollFirstCodeLabel', 'text', 'one-time-code'));
-          if (s.totpCodes >= 2) out.push(field('secondCode', 'mfa.enrollSecondCodeLabel', 'text', 'one-time-code'));
+          if (s.method === 'totp' && s.totpCodes >= 2) out.push(field('secondCode', 'mfa.enrollSecondCodeLabel', 'text', 'one-time-code'));
         }
       } else if (!s.enrollment) {
         out.push(field('phone', 'mfa.phoneLabel', 'tel', 'tel'), h('p', { key: 'phone-hint', class: 'atlas-text' }, t('mfa.phoneHint')));
@@ -440,8 +540,7 @@ const AttemptFlow = defineComponent({
         out.push(h('p', { key: `enrol-error-${error.code}-${error.param ?? ''}`, class: cls('formFieldError', 'atlas-error'), role: 'alert' }, error.message));
       }
       if (s.method !== null && s.options.length > 1) {
-        const other = s.options.find((m) => m !== s.method)!;
-        out.push(methodButton(other, 'switch'));
+        for (const other of s.options.filter((m) => m !== s.method)) out.push(methodButton(other, `switch-${other}`));
       }
       return out;
     };
@@ -478,6 +577,7 @@ const AttemptFlow = defineComponent({
               sent === 'email_code'
                 ? h('p', { key: 'code-sent', class: 'atlas-text', 'data-atlas-code-sent': '' }, t('signIn.codeSentTo', { email: identifier }))
                 : h('p', { key: 'link-sent', class: 'atlas-text', 'data-atlas-link-sent': '' }, t('signIn.linkSentTo', { email: identifier })),
+              ...(sent === 'email_link' ? matchCodeHint() : []),
               sent === 'email_code' ? field('code', 'signIn.emailCodeLabel') : null,
               h(
                 'button',
@@ -589,6 +689,7 @@ const AttemptFlow = defineComponent({
             // Nothing to type: the flow polls until the emailed link is opened (anywhere).
             return [
               h('p', { key: 'link-sent', class: 'atlas-text', 'data-atlas-link-sent': '', 'aria-live': 'polite' }, t('signUp.linkSentTo', { email: props.attempt?.identifier ?? '' })),
+              ...matchCodeHint(),
               props.onResend
                 ? h(
                     'button',
@@ -605,7 +706,7 @@ const AttemptFlow = defineComponent({
                 : null,
             ].filter((node): node is VNode => node !== null);
           }
-          return [field('code', 'signIn.emailCodeLabel')];
+          return [field('code', 'signIn.emailCodeLabel'), ...matchCodeHint()];
         case 'collect_new_password':
           return [field('password', 'reset.newPasswordLabel', 'password')];
         case 'accept_policies':
@@ -799,6 +900,7 @@ export const SignIn = defineComponent({
   setup(props) {
     const { state, submit, prepare, captcha, settings, lastMethod, sendEmailSecondFactor, sendSmsSecondFactor, mfaChoices, enrollment, enrollmentState, saveRecoveryCodes, declinePolicy, passkey } =
       useFlow();
+    const emailLink = useEmailLink('sign_in');
     const atlas = useAtlas();
     const t = useText();
     const cls = useClass();
@@ -818,7 +920,7 @@ export const SignIn = defineComponent({
     onMounted(() => {
       supported.value = passkeysSupported();
     });
-    const passkeyOffered = () => supported.value && !state.value.attempt && settings.value?.passkeySignIn === true;
+    const passkeyOffered = () => supported.value && !emailLink.value && !state.value.attempt && settings.value?.passkeySignIn === true;
     watch(passkeyOffered, (on) => (on ? passkey.armAutofill() : passkey.stopAutofill()));
     const submitIdentifier = (values: Record<string, string>) => {
       passkey.stopAutofill();
@@ -853,6 +955,7 @@ export const SignIn = defineComponent({
         captcha: captcha.needed ? captcha : null,
         emailDelivery: settings.value?.emailDelivery ?? null,
         onPrepare: prepare,
+        matchCode: state.value.matchCode ?? null,
         passwordHold: state.value.passwordHold ?? null,
         emailVerification: settings.value?.account.emailVerification ?? 'code',
         onEmailSecondFactor: settings.value?.account.emailSecondFactor ? sendEmailSecondFactor : undefined,
@@ -863,6 +966,7 @@ export const SignIn = defineComponent({
         onRecoveryCodesSaved: saveRecoveryCodes,
         onPolicyDecline: declinePolicy,
       });
+      if (emailLink.value) return h(EmailLinkPage, { link: emailLink.value });
       const passkeyButton = passkeyOffered()
         ? h(
             'button',
@@ -1246,6 +1350,7 @@ export const SignUp = defineComponent({
   },
   setup(props) {
     const { state, submit, create, createWithPasskey, createPasskey, resendSignUp, settings, signUpCaptcha, policies, loadPolicies, continueAfterExistingAccount, saveRecoveryCodes, sendEmailSecondFactor, sendSmsSecondFactor, mfaChoices, enrollment, enrollmentState, declinePolicy } = useFlow({ holdExistingAccountNotice: true });
+    const emailLink = useEmailLink('sign_up');
     const atlas = useAtlas();
     const t = useText();
     const cls = useClass();
@@ -1254,6 +1359,7 @@ export const SignUp = defineComponent({
       void loadPolicies();
     });
     return () => {
+      if (emailLink.value) return h(EmailLinkPage, { link: emailLink.value });
       const offer = settings.value?.account.passkeySignUp ?? null;
       const canPasskey = !!offer && passkeysSupported();
       const usingPasskey = mode.value === 'passkey' && canPasskey;
@@ -1291,6 +1397,7 @@ export const SignUp = defineComponent({
             titleKey: 'signUp.title',
             onSubmit: submit,
             emailVerification: settings.value?.account.emailVerification ?? 'code',
+            matchCode: state.value.matchCode ?? null,
             onResend: resendSignUp,
             // A held account signs in from here: its second factor, enrolment and codes.
             onEmailSecondFactor: settings.value?.account.emailSecondFactor ? sendEmailSecondFactor : undefined,

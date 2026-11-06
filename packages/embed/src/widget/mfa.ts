@@ -3,11 +3,13 @@ import {
   copyRecoveryCodes,
   createMfaEnrollment,
   downloadRecoveryCodes,
+  enrollmentOptionKey,
   enrollmentSubmitKey,
   groupSetupKey,
   mfaChoicesFrom,
   prepareSecondFactorCode,
   type MfaEnrollmentController,
+  type MfaEnrollmentStrategy,
 } from '@atlasauth/js';
 import type { AtlasWidget } from '../widget';
 import { cls, doc, el } from './dom';
@@ -16,8 +18,8 @@ import { saveRecoveryCodes, submit } from './flow';
 
 /**
  * The sign-in's MFA steps in the widget: setting up a second factor mid-sign-in
- * (`needs_mfa_enrollment`: the authenticator app with its QR code and setup
- * key, or a texted code where the app can text) and "Text me a code instead" /
+ * (`needs_mfa_enrollment`: whichever factors the app offers, drawn from the
+ * shared controller) and "Text me a code instead" /
  * "Email me a code instead" at the second-factor step. The requests and the
  * enrolment state come from `@atlasauth/js`, shared with the framework SDKs.
  *
@@ -28,6 +30,23 @@ const EN: Record<string, string> = {
   'mfa.enrollChoose': 'Set up a second step for signing in.',
   'mfa.enrollTotpOption': 'Use an authenticator app',
   'mfa.enrollSmsOption': 'Use text messages',
+  'link.title': "Confirm it's you",
+  'link.matchCodeHint': 'Opening the link on another device? Enter this code there.',
+  'link.checking': 'Checking your link…',
+  'link.enterCodeHelp': 'Enter the code shown on the device where you started.',
+  'link.codeLabel': 'Code',
+  'link.confirm': 'Confirm',
+  'link.confirmed': 'Confirmed. You can close this tab and go back to where you started.',
+  'link.invalid': 'This link is no longer valid. Go back to where you started and ask for a new one.',
+  'mfa.enrollHotpOption': 'Use a counter-based code generator',
+  'mfa.enrollYubikeyOption': 'Use a YubiKey',
+  'mfa.enrollDuoOption': 'Use Duo',
+  'mfa.enrollPasskeyOption': 'Use a passkey',
+  'mfa.yubikeyLabel': 'Touch your YubiKey',
+  'mfa.enrollDuoHelp': 'Open Duo and approve the request, then come back and continue.',
+  'mfa.enrollDuoOpen': 'Open Duo',
+  'mfa.enrollPasskeyHelp': 'Create a passkey on this device to use as your second step. It must ask for your PIN or biometrics.',
+  'mfa.enrollPasskeyCreate': 'Create passkey',
   'mfa.enrollScan': 'Scan this QR code with your authenticator app, or enter the setup key.',
   'mfa.enrollQrAlt': 'QR code for your authenticator app',
   'mfa.enrollSetupKey': 'Setup key',
@@ -115,8 +134,8 @@ export function renderEnrollment(
   const enrol = enrollmentFor(w);
   if (!enrol) return submitLabel;
   const s = enrol.state;
-  const methodButton = (m: 'totp' | 'phone_code', into: HTMLElement[] | HTMLElement) => {
-    const b = el(w, 'button', 'atlas-embed-step-back', say(w, m === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption')) as HTMLButtonElement;
+  const methodButton = (m: MfaEnrollmentStrategy, into: HTMLElement[] | HTMLElement) => {
+    const b = el(w, 'button', 'atlas-embed-step-back', say(w, enrollmentOptionKey(m))) as HTMLButtonElement;
     b.type = 'button';
     b.setAttribute('data-atlas-mfa-method', m);
     b.disabled = w.busy || s.busy;
@@ -128,7 +147,28 @@ export function renderEnrollment(
   if (s.method === null) {
     form.appendChild(el(w, 'p', 'atlas-embed-note', say(w, 'mfa.enrollChoose')));
     for (const m of s.options) methodButton(m, form);
-  } else if (s.method === 'totp') {
+  } else if (s.method === 'yubikey') {
+    helpers.addField('otp', say(w, 'mfa.yubikeyLabel'), 'text', 'off');
+  } else if (s.method === 'duo' || s.method === 'passkey') {
+    const e = s.enrollment;
+    if (!e) {
+      const note = el(w, 'p', 'atlas-embed-note', s.busy ? say(w, 'mfa.enrollPreparing') : '');
+      note.setAttribute('aria-live', 'polite');
+      form.appendChild(note);
+    } else if (s.method === 'passkey') {
+      form.appendChild(el(w, 'p', 'atlas-embed-note', say(w, 'mfa.enrollPasskeyHelp')));
+    } else {
+      form.appendChild(el(w, 'p', 'atlas-embed-note', say(w, 'mfa.enrollDuoHelp')));
+      if (e.authorizationUrl) {
+        const open = el(w, 'a', 'atlas-embed-step-back', say(w, 'mfa.enrollDuoOpen')) as HTMLAnchorElement;
+        open.setAttribute('data-atlas', 'mfa-duo-open');
+        open.href = e.authorizationUrl;
+        open.target = '_blank';
+        open.rel = 'noopener noreferrer';
+        form.appendChild(open);
+      }
+    }
+  } else if (s.method === 'totp' || s.method === 'hotp') {
     const e = s.enrollment;
     if (!e) {
       const note = el(w, 'p', 'atlas-embed-note', s.busy ? say(w, 'mfa.enrollPreparing') : '');
@@ -153,7 +193,7 @@ export function renderEnrollment(
         form.appendChild(key);
       }
       helpers.addCodeField('code', say(w, 'mfa.enrollFirstCodeLabel'), true);
-      if (s.totpCodes >= 2) helpers.addCodeField('secondCode', say(w, 'mfa.enrollSecondCodeLabel'), false);
+      if (s.method === 'totp' && s.totpCodes >= 2) helpers.addCodeField('secondCode', say(w, 'mfa.enrollSecondCodeLabel'), false);
     }
   } else if (!s.enrollment) {
     helpers.addField('phone', say(w, 'mfa.phoneLabel'), 'tel', 'tel');
@@ -179,7 +219,7 @@ export function renderEnrollment(
     for (const other of s.options.filter((m) => m !== s.method)) methodButton(other, helpers.trailing);
   }
   const key = enrollmentSubmitKey(s);
-  return key === null ? null : key === 'mfa.sendCode' ? say(w, 'mfa.sendCode') : submitLabel;
+  return key === null ? null : key === 'signIn.submit' ? submitLabel : say(w, key);
 }
 
 /** The enrolment form's submit: text the code to the typed number, or confirm the factor. */

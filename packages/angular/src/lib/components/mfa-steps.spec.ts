@@ -16,6 +16,7 @@ import { FapiClient } from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
 import { EN_US } from '../i18n';
 import { AttemptFlowComponent } from './attempt-flow.component';
+import { EmailLinkComponent } from './email-link.component';
 import { AtlasFlowController } from './flow-controller';
 import { RecoveryCodesComponent } from './recovery-codes.component';
 
@@ -185,6 +186,32 @@ afterEach(() => {
 });
 
 describe('MFA enrolment mid-sign-in', () => {
+  it('offers every factor the app offers; a YubiKey posts its OTP', async () => {
+    const flow = await controller('needs_mfa_enrollment', { ...SMS_ACCOUNT, mfa: { totp: true, sms: false, totp_codes: 1, hotp: true, yubikey: true, duo: true } });
+    await settle();
+    let el = draw(flow).location.nativeElement as HTMLElement;
+    for (const m of ['totp', 'hotp', 'yubikey', 'duo']) expect(el.querySelector(`[data-atlas-mfa-method="${m}"]`)).not.toBeNull();
+    await flow.enrollment.choose('yubikey');
+    refs.pop()!.destroy();
+    el = draw(flow).location.nativeElement as HTMLElement;
+    expect(el.querySelector('input[name="otp"]')).not.toBeNull();
+    const values = await flow.enrollment.submit({ otp: 'ccccccfjkbbb' });
+    await flow.submit(values!);
+    expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ strategy: 'yubikey', otp: 'ccccccfjkbbb' });
+    flow.destroy();
+  });
+
+  it('the waiting tab shows the code from a mailed link', () => {
+    const ref = render(AttemptFlowComponent, {
+      attempt: { id: 'sia_l', object: 'sign_up_attempt', status: 'needs_email_verification', identifier: 'l@example.com' },
+      busy: false,
+      errors: [],
+      emailVerification: 'link',
+      matchCode: '482113',
+    });
+    expect((ref.location.nativeElement as HTMLElement).querySelector('[data-atlas="link-match-code"]')!.textContent).toContain('482113');
+  });
+
   it('authenticator app only: the setup is fetched at once and drawn with its QR code and setup key', async () => {
     const flow = await controller('needs_mfa_enrollment');
     await settle();
@@ -301,5 +328,51 @@ describe('texted second factor', () => {
     const el = draw(flow).location.nativeElement as HTMLElement;
     expect(el.querySelector('[data-atlas="sms-second-factor"]')).toBeNull();
     flow.destroy();
+  });
+});
+
+describe('<atlas-email-link>', () => {
+  const stub = atlasStub as unknown as { createFapiClient?: () => FapiClient };
+  afterEach(() => {
+    delete stub.createFapiClient;
+    window.localStorage.clear();
+  });
+  const client = (confirm: unknown) => () =>
+    new FapiClient({
+      publishableKey: 'pk_test_x',
+      baseUrl: FAPI,
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        calls.push({ method: init?.method ?? 'GET', path: url.pathname, body: typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null });
+        return json(url.pathname.endsWith('/confirm') ? confirm : { requires_confirmation: true });
+      }) as typeof fetch,
+    });
+
+  it('with nothing stored, asks for the typed code and confirms with it', async () => {
+    stub.createFapiClient = client({ verified: true });
+    const ref = render(EmailLinkComponent, { link: { attempt: 'sia_l', token: 'tok', flow: 'sign_up' } });
+    await settle();
+    ref.changeDetectorRef.detectChanges();
+    const el = ref.location.nativeElement as HTMLElement;
+    const input = el.querySelector('input[name="match_code"]') as HTMLInputElement;
+    input.value = '482113';
+    input.dispatchEvent(new Event('input'));
+    el.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await settle();
+    ref.changeDetectorRef.detectChanges();
+    expect(el.querySelector('[data-atlas-status="confirmed"]')).not.toBeNull();
+    expect(posts('/v1/client/sign_ups/verify/confirm')[0]!.body).toEqual({ attempt: 'sia_l', token: 'tok', match_code: '482113' });
+  });
+
+  it('with the secret stored, confirms with no typing', async () => {
+    stub.createFapiClient = client({ verified: true });
+    window.localStorage.setItem('atlas_link_sia_s', 'ps_s');
+    const ref = render(EmailLinkComponent, { link: { attempt: 'sia_s', token: 'tok', flow: 'sign_in' } });
+    await settle();
+    ref.changeDetectorRef.detectChanges();
+    const el = ref.location.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-atlas-status="confirmed"]')).not.toBeNull();
+    expect(el.querySelector('input[name="match_code"]')).toBeNull();
+    expect(posts('/v1/client/sign_ins/verify/confirm')[0]!.body).toEqual({ attempt: 'sia_s', token: 'tok', poll_secret: 'ps_s' });
   });
 });

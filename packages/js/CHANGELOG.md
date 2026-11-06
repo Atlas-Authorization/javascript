@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.34.0 — 2026-11-06
+
+- Breaking: `previewCrossDeviceLink` no longer returns a match code. Flow state carries `matchCode`, the tab stores its secret for the link page, and enrolment supports HOTP, YubiKey, Duo and passkey. A sign-up resend rotates the secret; `finished_elsewhere` ends the wait.
+
 ## 0.33.1 — 2026-11-05
 
 - A sign-up polls only while it waits for a proof, so a poll can no longer collect a ticket past the recovery codes.

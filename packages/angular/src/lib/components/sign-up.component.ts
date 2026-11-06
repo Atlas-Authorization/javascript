@@ -1,17 +1,20 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  afterNextRender,
   Input,
   OnDestroy,
   OnInit,
   inject,
   signal,
 } from '@angular/core';
+import { emailLinkFromUrl, type EmailLink } from '@atlasauth/js';
 import { awaitingPasskey, existingAccountResetUrl, localizedErrorMessage, passkeysSupported, signInAfterProofUrl, signUpProvedByLink, type FieldError } from '@atlasauth/js';
 import { AtlasService } from '../atlas.service';
 import { classFor, type ElementKey } from '../appearance';
 import { translate } from '../i18n';
 import { AttemptFlowComponent } from './attempt-flow.component';
+import { EmailLinkComponent } from './email-link.component';
 import { RecoveryCodesComponent } from './recovery-codes.component';
 import { SignUpFormComponent } from './sign-up-form.component';
 import { AtlasFlowController } from './flow-controller';
@@ -32,8 +35,11 @@ import { AtlasFlowController } from './flow-controller';
   selector: 'atlas-sign-up',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AttemptFlowComponent, RecoveryCodesComponent, SignUpFormComponent],
+  imports: [EmailLinkComponent, AttemptFlowComponent, RecoveryCodesComponent, SignUpFormComponent],
   template: `
+    @if (emailLink(); as link) {
+      <atlas-email-link [link]="link"></atlas-email-link>
+    } @else {
     @if (flow.recoveryCodes(); as codes) {
       <atlas-recovery-codes [codes]="codes" [busy]="flow.state().busy" (saved)="flow.saveRecoveryCodes()"></atlas-recovery-codes>
     } @else if (flow.existingAccountNotice()) {
@@ -86,6 +92,7 @@ import { AtlasFlowController } from './flow-controller';
         [emailVerification]="flow.settings()?.account?.emailVerification ?? 'code'"
         (submitFlow)="flow.submit($event)"
         (resend)="flow.resendSignUp()"
+        [matchCode]="flow.state().matchCode ?? null"
         [offerEmailSecondFactor]="flow.settings()?.account?.emailSecondFactor === true"
         [emailedSecondFactor]="flow.emailSecondFactor()"
         [offerSmsSecondFactor]="flow.settings() !== null && flow.mfaChoices().sms"
@@ -111,10 +118,18 @@ import { AtlasFlowController } from './flow-controller';
         "
       ></atlas-sign-up-form>
     }
+    }
   `,
 })
 export class SignUpComponent implements OnInit, OnDestroy {
   private readonly atlas = inject(AtlasService);
+
+  /** Opened from a mailed link: that page, not the flow. Read after the first render, so hydration matches. */
+  protected readonly emailLink = signal<EmailLink | null>(null);
+
+  constructor() {
+    afterNextRender(() => this.emailLink.set(emailLinkFromUrl(undefined, 'sign_up')));
+  }
 
   /** Where to send the user once the flow completes. Reserved for host routing. */
   @Input() afterUrl?: string;

@@ -29,6 +29,7 @@ import { CaptchaSlot, localizeCaptchaErrors, useCaptcha, type CaptchaController 
 import { forceCaptchaFlow, useReferralChallenge } from './referral';
 import { PolicyClickwrap, PolicyConsent, PolicyScrollQueue, usePolicies, usePolicyText, type UsePoliciesResult } from './policies';
 import { useClass, useClasses, useErrorText, useText } from './components-shared';
+import { EmailLinkPage, useEmailLink } from './email-link';
 import type { InstanceSettings, PublicSignUpField } from './instance-settings';
 import { ATLAS_REACT_SDK } from './version';
 
@@ -57,6 +58,11 @@ import { ATLAS_REACT_SDK } from './version';
  * server would refuse the sign-up anyway.
  */
 export function SignUp(props: FlowProps = {}) {
+  const link = useEmailLink('sign_up');
+  return link ? <EmailLinkPage link={link} hideTitle={props.hideTitle} /> : <SignUpFlow {...props} />;
+}
+
+function SignUpFlow(props: FlowProps) {
   const { instanceSettings, frontendApi } = useAtlas();
   const t = useText();
   // Plan selection: the chosen plan rides a ref so the post-sign-up hook sees the latest choice.
@@ -188,6 +194,10 @@ export function SignUp(props: FlowProps = {}) {
         titleKey="signUp.title"
         hideTitle={props.hideTitle}
         onSubmit={submit}
+        matchCode={state.matchCode ?? null}
+        onLinkResent={(next) =>
+          setState((current) => (next.pollSecret ? { ...current, matchCode: next.matchCode ?? null, pollSecret: next.pollSecret } : current))
+        }
         recoveryCodes={pendingRecoveryCodes(state)}
         onRecoveryCodesSaved={saveRecoveryCodes}
       />

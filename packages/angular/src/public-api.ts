@@ -31,6 +31,7 @@ export { AtlasOrganizationAuditLog } from './lib/components/organization-audit-l
 export type { OrganizationAuditLogEntry, OrganizationAuditLogState, OrganizationAuditLogOptions } from '@atlasauth/js';
 export { ImpersonationBannerComponent } from './lib/components/impersonation-banner.component';
 export { AttemptFlowComponent } from './lib/components/attempt-flow.component';
+export { EmailLinkComponent } from './lib/components/email-link.component';
 export {
   SignUpFormComponent,
   type SignUpFormSubmit,

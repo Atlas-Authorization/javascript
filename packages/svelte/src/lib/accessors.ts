@@ -373,8 +373,10 @@ function createFlow(options: { holdExistingAccountNotice?: boolean } = {}): Flow
     if (pollTimer || !shouldKeepPolling(get(state))) return;
     pollTimer = setInterval(() => {
       void (async () => {
-        const { state: next, ticket } = await pollAttempt(client, get(state));
-        state.set(next);
+        const polled = get(state);
+        const { state: next, ticket } = await pollAttempt(client, polled);
+        // A resend rotated the secret meanwhile: this answer is stale.
+        if (get(state).pollSecret === polled.pollSecret) state.set(next);
         if (!shouldKeepPolling(next)) stopPolling();
         if (!ticket || !next.attempt) return;
 

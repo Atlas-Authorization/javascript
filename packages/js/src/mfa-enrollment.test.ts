@@ -5,6 +5,8 @@ import {
   acknowledgeRecoveryCodes,
   copyRecoveryCodes,
   createMfaEnrollment,
+  enrollmentOptionKey,
+  enrollmentSubmitKey,
   pendingRecoveryCodes,
   recoveryCodesFrom,
   recoveryCodesText,
@@ -13,6 +15,7 @@ import {
   prepareSecondFactorCode,
   type MfaChoices,
 } from './mfa-enrollment';
+import type { WebAuthnHost } from './passkey';
 
 function scripted(route: (path: string, body: Record<string, unknown> | null) => { status?: number; body: unknown }) {
   const calls: { path: string; body: Record<string, unknown> | null }[] = [];
@@ -209,5 +212,139 @@ describe('recovery codes after an enrolment', () => {
     vi.stubGlobal('navigator', {});
     await expect(copyRecoveryCodes(['a'])).resolves.toBe(false);
     vi.unstubAllGlobals();
+  });
+});
+
+describe('every factor the instance offers at the enrolment step', () => {
+  const ALL = { totp: true, sms: true, emailCode: false, totpCodes: 1 as const, hotp: true, yubikey: true, duo: true, passkey: true };
+  const host = {
+    credentials: {
+      create: vi.fn(async () => ({
+        response: { attestationObject: new Uint8Array([1]).buffer, clientDataJSON: new Uint8Array([2]).buffer },
+        getClientExtensionResults: () => ({}),
+      })),
+    },
+  } as unknown as WebAuthnHost;
+  const OPTIONS = {
+    challenge: 'Y2g',
+    rp: { id: 'x', name: 'x' },
+    user: { id: 'dQ', name: 'a', displayName: 'a' },
+    pubKeyCredParams: [],
+    authenticatorSelection: { userVerification: 'required' },
+  };
+  const server = (path: string, body: Record<string, unknown> | null) => {
+    if (!path.endsWith('/prepare_mfa_enrollment')) return { body: {} };
+    if (body?.strategy === 'hotp') return { status: 201, body: { strategy: 'hotp', factor_id: 'mfa_h', secret: 'ABCDEFGH', uri: 'otpauth://hotp/x', qr_code: 'data:image/gif;base64,R0lG' } };
+    if (body?.strategy === 'duo') return { status: 201, body: { strategy: 'duo', factor_id: 'mfa_d', authorization_url: 'https://api-1.duosecurity.com/oauth' } };
+    if (body?.strategy === 'passkey') return { status: 201, body: { strategy: 'passkey', options: OPTIONS } };
+    return { status: 201, body: { strategy: 'totp', factor_id: 'mfa_t', secret: 'ABCD', uri: 'otpauth://totp/x' } };
+  };
+
+  it('reads them from account.mfa; an older server offers none of them', () => {
+    expect(mfaChoicesFrom(accountUxFrom({ account: { mfa: { totp: true, sms: false, totp_codes: 1, hotp: true, yubikey: true, duo: true, passkey: true } } }))).toMatchObject({ hotp: true, yubikey: true, duo: true, passkey: true });
+    const older = mfaChoicesFrom(accountUxFrom({ account: { mfa: { totp: true, sms: false, totp_codes: 1 } } }));
+    expect(older).not.toHaveProperty('hotp');
+    expect(older).not.toHaveProperty('passkey');
+  });
+
+  it('offers all of them, each with its own label', () => {
+    const { client } = scripted(server);
+    const enrol = createMfaEnrollment(client, ALL, { host });
+    expect(enrol.state.options).toEqual(['totp', 'phone_code', 'hotp', 'yubikey', 'duo', 'passkey']);
+    expect(enrol.state.options.map(enrollmentOptionKey)).toEqual([
+      'mfa.enrollTotpOption',
+      'mfa.enrollSmsOption',
+      'mfa.enrollHotpOption',
+      'mfa.enrollYubikeyOption',
+      'mfa.enrollDuoOption',
+      'mfa.enrollPasskeyOption',
+    ]);
+  });
+
+  it('never offers a passkey where the browser has no WebAuthn', () => {
+    const { client } = scripted(server);
+    vi.stubGlobal('PublicKeyCredential', undefined);
+    expect(createMfaEnrollment(client, { ...ALL }).state.options).not.toContain('passkey');
+    vi.unstubAllGlobals();
+  });
+
+  it('a counter token: set up like the authenticator app, confirmed with one code', async () => {
+    const { client, calls } = scripted(server);
+    const enrol = createMfaEnrollment(client, ALL, { host });
+    enrol.start('sia_1');
+    await enrol.choose('hotp');
+    expect(calls[0]!.body).toEqual({ strategy: 'hotp' });
+    expect(enrol.state.enrollment).toMatchObject({ strategy: 'hotp', factorId: 'mfa_h', secret: 'ABCDEFGH', qrCode: 'data:image/gif;base64,R0lG' });
+    expect(enrollmentSubmitKey(enrol.state)).toBe('signIn.submit');
+    const values = await enrol.submit({ code: '123456' });
+    expect(requestForStep({ id: 'sia_1', status: 'needs_mfa_enrollment' }, values!)!.body).toEqual({ strategy: 'hotp', factor_id: 'mfa_h', code: '123456' });
+  });
+
+  it('a YubiKey: nothing to prepare, the touched OTP is the proof', async () => {
+    const { client, calls } = scripted(server);
+    const enrol = createMfaEnrollment(client, ALL, { host });
+    enrol.start('sia_1');
+    await enrol.choose('yubikey');
+    expect(calls).toHaveLength(0);
+    expect(enrollmentSubmitKey(enrol.state)).toBe('signIn.submit');
+    const values = await enrol.submit({ otp: 'cccc' });
+    expect(requestForStep({ id: 'sia_1', status: 'needs_mfa_enrollment' }, values!)!.body).toEqual({ strategy: 'yubikey', otp: 'cccc' });
+  });
+
+  it('Duo: a link to its prompt, then the factor id', async () => {
+    const { client } = scripted(server);
+    const enrol = createMfaEnrollment(client, ALL, { host });
+    enrol.start('sia_1');
+    await enrol.choose('duo');
+    expect(enrol.state.enrollment?.authorizationUrl).toBe('https://api-1.duosecurity.com/oauth');
+    const values = await enrol.submit({});
+    expect(requestForStep({ id: 'sia_1', status: 'needs_mfa_enrollment' }, values!)!.body).toEqual({ strategy: 'duo', factor_id: 'mfa_d' });
+  });
+
+  it('Duo: a URL that is not https is never linked', async () => {
+    const { client } = scripted(() => ({ status: 201, body: { factor_id: 'mfa_d', authorization_url: 'javascript:alert(1)' } }));
+    const enrol = createMfaEnrollment(client, ALL, { host });
+    enrol.start('sia_1');
+    await enrol.choose('duo');
+    expect(enrol.state.enrollment?.authorizationUrl).toBeUndefined();
+  });
+
+  it('a passkey: prepared at once, the ceremony runs from the submit, no factor id is needed', async () => {
+    const { client } = scripted(server);
+    const enrol = createMfaEnrollment(client, ALL, { host });
+    enrol.start('sia_1');
+    await enrol.choose('passkey');
+    expect(enrol.state.enrollment).toMatchObject({ strategy: 'passkey', factorId: '', passkeyOptions: OPTIONS });
+    expect(enrollmentSubmitKey(enrol.state)).toBe('mfa.enrollPasskeyCreate');
+    const values = await enrol.submit({});
+    expect(requestForStep({ id: 'sia_1', status: 'needs_mfa_enrollment' }, values!)!.body).toEqual({
+      strategy: 'passkey',
+      challenge: 'Y2g',
+      attestation_object: 'AQ',
+      client_data_json: 'Ag',
+    });
+  });
+
+  it('a passkey retry after a refusal fetches a fresh challenge; a cancelled prompt keeps the unspent one', async () => {
+    const { client, calls } = scripted(server);
+    const enrol = createMfaEnrollment(client, ALL, { host });
+    enrol.start('sia_1');
+    await enrol.choose('passkey');
+    (host.credentials.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('cancelled'));
+    expect(await enrol.submit({})).toBeNull();
+    expect(enrol.state.errors[0]).toMatchObject({ code: 'PASSKEY_CANCELLED', message: 'cancelled' });
+    expect(calls).toHaveLength(1);
+    await enrol.submit({});
+    expect(calls).toHaveLength(1);
+    await enrol.submit({});
+    expect(calls).toHaveLength(2);
+  });
+
+  it('a factor refused as off is dropped from what is offered', async () => {
+    const { client } = scripted(() => ({ status: 422, body: { errors: [{ code: 'STRATEGY_DISABLED', message: 'Off.', param: 'strategy' }] } }));
+    const enrol = createMfaEnrollment(client, { ...ALL, sms: false, yubikey: false, passkey: false, totp: false }, { host });
+    enrol.start('sia_1');
+    await enrol.choose('duo');
+    expect(enrol.state.options).toEqual(['hotp']);
   });
 });

@@ -1,5 +1,9 @@
 # @atlasauth/vue changelog
 
+## 0.18.0 — 2026-11-06
+
+- Uses `@atlasauth/js` 0.34.0. Emailed links now need the browser that started the flow or the code shown on the starting tab; the components show the code, ask for it on the link page, and offer every factor the instance has on at enrolment.
+
 ## 0.17.1 — 2026-11-05
 
 - Uses `@atlasauth/js` 0.33.1: a sign-up polls only while it waits for a proof, so a poll can't collect a ticket past the recovery codes.

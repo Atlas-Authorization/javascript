@@ -1,4 +1,4 @@
-import { captureMarketing, type PasskeyPrfRequest } from '@atlasauth/js';
+import { captureMarketing, type EmailLinkConfirmation, type PasskeyPrfRequest } from '@atlasauth/js';
 import {
   initialFlow,
   BehaviorRecorder,
@@ -141,6 +141,8 @@ export class AtlasWidget {
   policyDispose: (() => void)[] = [];
   /** The MFA enrolment step's state and requests (`needs_mfa_enrollment`), created on first use. */
   enrollment: MfaEnrollmentController | null = null;
+  /** The mailed-link page, when opened from one. Undefined until first looked for. */
+  emailLinkPage: EmailLinkConfirmation | null | undefined = undefined;
   /** "Text me a code instead" / "Email me a code instead" at the second factor: sending, sent, or refused. */
   secondFactorCode: { attemptId: string; strategy: 'sms' | 'email_code'; busy?: boolean; sentTo?: string; error?: string } | null = null;
   /**

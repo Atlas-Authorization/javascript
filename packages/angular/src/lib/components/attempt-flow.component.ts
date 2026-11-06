@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 import {
   awaitingSignUpLink,
+  enrollmentOptionKey,
   enrollmentSubmitKey,
   groupSetupKey,
   localizedErrorMessage,
@@ -85,6 +86,9 @@ interface StepField {
             {{ t('signIn.resendLink') }}
           </button>
         }
+        @if (showMatchCode()) {
+          <p class="atlas-text" data-atlas="link-match-code">{{ t('link.matchCodeHint') }} <strong><code>{{ matchCode }}</code></strong></p>
+        }
         @if (enrolling() && enrollmentState; as enrol) {
           @if (enrol.method === null) {
             <p class="atlas-text">{{ t('mfa.enrollChoose') }}</p>
@@ -96,10 +100,31 @@ interface StepField {
                 [disabled]="busy || enrol.busy"
                 (click)="chooseMethod(m)"
               >
-                {{ t(m === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption') }}
+                {{ t(optionKey(m)) }}
               </button>
             }
-          } @else if (enrol.method === 'totp') {
+          } @else if (enrol.method === 'yubikey') {
+            <label class="atlas-field">
+              <span>{{ t('mfa.yubikeyLabel') }}</span>
+              <input [class]="cls('formFieldInput', 'atlas-input')" type="text" name="otp" autocomplete="off" [value]="values['otp'] ?? ''" (input)="setValue('otp', $any($event.target).value)" />
+              @for (error of fieldErrorsFor('otp'); track error.code) {
+                <span [class]="cls('formFieldError', 'atlas-error')">{{ errorText(error) }}</span>
+              }
+            </label>
+          } @else if (enrol.method === 'duo' || enrol.method === 'passkey') {
+            @if (enrol.enrollment; as setup) {
+              @if (enrol.method === 'passkey') {
+                <p class="atlas-text">{{ t('mfa.enrollPasskeyHelp') }}</p>
+              } @else {
+                <p class="atlas-text">{{ t('mfa.enrollDuoHelp') }}</p>
+                @if (setup.authorizationUrl) {
+                  <a class="atlas-link" data-atlas="mfa-duo-open" [href]="setup.authorizationUrl" target="_blank" rel="noopener noreferrer">{{ t('mfa.enrollDuoOpen') }}</a>
+                }
+              }
+            } @else {
+              <p class="atlas-text" aria-live="polite">{{ enrol.busy ? t('mfa.enrollPreparing') : '' }}</p>
+            }
+          } @else if (enrol.method === 'totp' || enrol.method === 'hotp') {
             @if (enrol.enrollment; as setup) {
               <p class="atlas-text">{{ t('mfa.enrollScan') }}</p>
               @if (setup.qrCode) {
@@ -112,7 +137,7 @@ interface StepField {
                 <span>{{ t('mfa.enrollFirstCodeLabel') }}</span>
                 <input [class]="cls('formFieldInput', 'atlas-input')" type="text" name="code" autocomplete="one-time-code" inputmode="numeric" [value]="values['code'] ?? ''" (input)="setValue('code', $any($event.target).value)" />
               </label>
-              @if (enrol.totpCodes >= 2) {
+              @if (enrol.method === 'totp' && enrol.totpCodes >= 2) {
                 <label class="atlas-field">
                   <span>{{ t('mfa.enrollSecondCodeLabel') }}</span>
                   <input [class]="cls('formFieldInput', 'atlas-input')" type="text" name="secondCode" autocomplete="one-time-code" inputmode="numeric" [value]="values['secondCode'] ?? ''" (input)="setValue('secondCode', $any($event.target).value)" />
@@ -157,7 +182,7 @@ interface StepField {
                 [disabled]="busy || enrol.busy"
                 (click)="chooseMethod(other)"
               >
-                {{ t(other === 'totp' ? 'mfa.enrollTotpOption' : 'mfa.enrollSmsOption') }}
+                {{ t(optionKey(other)) }}
               </button>
             }
           }
@@ -355,6 +380,8 @@ export class AttemptFlowComponent {
    * while the flow polls, and offers a resend (`resend`).
    */
   @Input() emailVerification: string = 'code';
+  /** `FlowState.matchCode`: shown while a mailed link waits, to type if it's opened on another device. */
+  @Input() matchCode: string | null = null;
   @Output() resend = new EventEmitter<void>();
   /** The user declined a policy the sign-in was waiting on (`needs_policy_acceptance`): cancel the attempt. */
   @Output() policyDeclined = new EventEmitter<string>();
@@ -409,6 +436,14 @@ export class AttemptFlowComponent {
 
   protected resendEnrollment(): void {
     void this.enrollment?.resend();
+  }
+
+  protected optionKey(method: MfaEnrollmentStrategy): string {
+    return enrollmentOptionKey(method);
+  }
+
+  protected showMatchCode(): boolean {
+    return !!this.matchCode && (this.step().kind === 'collect_email_code' || this.linkSentText() !== null);
   }
 
   protected otherMethods(state: MfaEnrollmentState): MfaEnrollmentStrategy[] {

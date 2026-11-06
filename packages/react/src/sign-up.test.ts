@@ -578,3 +578,90 @@ describe('<SignUp> link-only verification', () => {
     expect(posts('/v1/client/tickets/exchange')[0]!.body).toMatchObject({ attempt_id: 'sua_l', ticket: 'tkt_l' });
   }, 10_000);
 });
+
+describe('a mailed link needs a tie to the tab that started the flow', () => {
+  const LINK_ACCOUNT = { username: null, last_sign_in_method: false, email_verification: 'link', password_reset: 'code' };
+  afterEach(() => window.history.replaceState({}, '', '/'));
+
+  it('the waiting tab shows the code, and the resend swaps in the new one', async () => {
+    const el = await mount(SignUp, {
+      account: LINK_ACCOUNT,
+      routes: [
+        (c) =>
+          c.method === 'POST' && c.path === '/v1/client/sign_ups'
+            ? json({ id: 'sia_l', object: 'sign_up_attempt', status: 'needs_email_verification', identifier: 'l@example.com', poll_secret: 'ps_l', match_code: '482113' }, 201)
+            : undefined,
+        (c) => (c.path === '/v1/client/sign_ups/sia_l/prepare_verification' ? json({ poll_secret: 'ps_2', match_code: '990011' }) : undefined),
+        (c) => (c.method === 'GET' && c.path === '/v1/client/sign_ups/sia_l' ? json({ id: 'sia_l', object: 'sign_up_attempt', status: 'needs_email_verification' }) : undefined),
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'email', 'l@example.com');
+    setInput(el, 'password', 'blue tangerine anvil 71!');
+    await submit(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="link-match-code"]')?.textContent).toContain('482113'));
+    await act(async () => {
+      (el.querySelector('[data-atlas-resend]') as HTMLButtonElement).click();
+    });
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="link-match-code"]')?.textContent).toContain('990011'));
+  });
+
+  it('a repeat sign-up whose earlier attempt finished stops waiting and says to sign in', async () => {
+    const el = await mount(SignUp, {
+      account: LINK_ACCOUNT,
+      routes: [
+        (c) =>
+          c.method === 'POST' && c.path === '/v1/client/sign_ups'
+            ? json({ id: 'sia_l', object: 'sign_up_attempt', status: 'needs_email_verification', poll_secret: 'ps_l', match_code: '482113' }, 201)
+            : undefined,
+        (c) => (c.method === 'GET' && c.path === '/v1/client/sign_ups/sia_l' ? json({ id: 'sia_l', object: 'sign_up_attempt', status: 'needs_email_verification', finished_elsewhere: true }) : undefined),
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'email', 'l@example.com');
+    setInput(el, 'password', 'blue tangerine anvil 71!');
+    await submit(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-email-confirmed]')).not.toBeNull(), { timeout: 6000 });
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(0);
+  }, 10_000);
+
+  it('opened on another device: asks for the typed code, then says to go back', async () => {
+    window.history.replaceState({}, '', '/?attempt=sia_l&token=tok');
+    const el = await mount(SignUp, {
+      routes: [
+        (c) => (c.method === 'GET' && c.path === '/v1/client/sign_ups/verify' ? json({ requires_confirmation: true }) : undefined),
+        (c) => (c.path === '/v1/client/sign_ups/verify/confirm' ? json({ verified: true }) : undefined),
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="match_code"]')).not.toBeNull());
+    expect(el.querySelector('input[name="password"]')).toBeNull();
+    setInput(el, 'match_code', '482113');
+    await submit(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-status="confirmed"]')).not.toBeNull());
+    expect(posts('/v1/client/sign_ups/verify/confirm')[0]!.body).toEqual({ attempt: 'sia_l', token: 'tok', match_code: '482113' });
+    expect(posts('/v1/client/tickets/exchange')).toHaveLength(0);
+  });
+
+  it('opened in the browser that started it: confirms with the stored secret, no typing', async () => {
+    window.history.replaceState({}, '', '/?attempt=sia_s&token=tok');
+    window.localStorage.setItem('atlas_link_sia_s', 'ps_s');
+    const el = await mount(SignIn, {
+      routes: [
+        (c) => (c.method === 'GET' && c.path === '/v1/client/sign_ins/verify' ? json({ requires_confirmation: true }) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/verify/confirm' ? json({ verified: true }) : undefined),
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-status="confirmed"]')).not.toBeNull());
+    expect(el.querySelector('input[name="match_code"]')).toBeNull();
+    expect(posts('/v1/client/sign_ins/verify/confirm')[0]!.body).toEqual({ attempt: 'sia_s', token: 'tok', poll_secret: 'ps_s' });
+    expect(window.localStorage.getItem('atlas_link_sia_s')).toBeNull();
+  });
+
+  it('a dead link says so', async () => {
+    window.history.replaceState({}, '', '/?attempt=sia_d&token=tok');
+    const el = await mount(SignIn, {
+      routes: [(c) => (c.path === '/v1/client/sign_ins/verify' ? json({ verified: false }, 400) : undefined)],
+    });
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas-status="invalid"]')).not.toBeNull());
+  });
+});

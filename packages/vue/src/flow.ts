@@ -374,8 +374,10 @@ export function useFlow(options: { holdExistingAccountNotice?: boolean } = {}): 
 
       poller = setInterval(() => {
         void (async () => {
-          const { state: next, ticket } = await pollAttempt(client, state.value);
-          state.value = next;
+          const polled = state.value;
+          const { state: next, ticket } = await pollAttempt(client, polled);
+          // A resend rotated the secret meanwhile: this answer is stale.
+          if (state.value.pollSecret === polled.pollSecret) state.value = next;
           if (!ticket || !next.attempt) return;
 
           // The ticket is exchanged by a normal request, so no session token has

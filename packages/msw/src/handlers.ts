@@ -236,6 +236,7 @@ function fapiHandlers(mock: AtlasMock, base: string): HttpHandler[] {
         status: attempt.status,
         strategy,
         poll_secret: attempt.pollSecret,
+        ...(strategy === 'email_link' ? { match_code: '123456' } : {}),
       });
     }),
 

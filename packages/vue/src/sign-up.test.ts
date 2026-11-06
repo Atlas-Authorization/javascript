@@ -788,3 +788,76 @@ describe('<SignUp> on a held account: the other endings', () => {
     expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
   });
 });
+
+describe('a mailed link needs a tie to the tab that started the flow', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    window.localStorage.clear();
+  });
+
+  it('the waiting tab shows the code', async () => {
+    const w = await mountFlow(SignUp, {
+      account: { username: null, email_verification: 'link', password_reset: 'code' },
+      routes: [
+        (c) =>
+          c.method === 'POST' && c.path === '/v1/client/sign_ups'
+            ? json({ id: 'sia_l', object: 'sign_up_attempt', status: 'needs_email_verification', identifier: 'l@example.com', poll_secret: 'ps_l', match_code: '482113' }, 201)
+            : undefined,
+      ],
+    });
+    await setInput(w, 'email', 'l@example.com');
+    await setInput(w, 'password', 'blue tangerine anvil 71!');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('[data-atlas="link-match-code"]').text()).toContain('482113'));
+  });
+
+  it('opened on another device: asks for the typed code, then says to go back', async () => {
+    window.history.replaceState({}, '', '/?attempt=sia_l&token=tok');
+    const w = await mountFlow(SignUp, {
+      routes: [
+        (c) => (c.method === 'GET' && c.path === '/v1/client/sign_ups/verify' ? json({ requires_confirmation: true }) : undefined),
+        (c) => (c.path === '/v1/client/sign_ups/verify/confirm' ? json({ verified: true }) : undefined),
+      ],
+    });
+    await vi.waitFor(() => expect(w.find('input[name="match_code"]').exists()).toBe(true));
+    await setInput(w, 'match_code', '482113');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('[data-atlas-status="confirmed"]').exists()).toBe(true));
+    expect(posts('/v1/client/sign_ups/verify/confirm')[0]!.body).toEqual({ attempt: 'sia_l', token: 'tok', match_code: '482113' });
+  });
+
+  it('opened in the browser that started it: confirms with the stored secret, no typing', async () => {
+    window.history.replaceState({}, '', '/?attempt=sia_s&token=tok');
+    window.localStorage.setItem('atlas_link_sia_s', 'ps_s');
+    const w = await mountFlow(SignIn, {
+      routes: [
+        (c) => (c.method === 'GET' && c.path === '/v1/client/sign_ins/verify' ? json({ requires_confirmation: true }) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/verify/confirm' ? json({ verified: true }) : undefined),
+      ],
+    });
+    await vi.waitFor(() => expect(w.find('[data-atlas-status="confirmed"]').exists()).toBe(true));
+    expect(posts('/v1/client/sign_ins/verify/confirm')[0]!.body).toEqual({ attempt: 'sia_s', token: 'tok', poll_secret: 'ps_s' });
+  });
+});
+
+describe('<SignIn> enrolment offers every factor the app offers', () => {
+  it('draws each one; a YubiKey posts its OTP', async () => {
+    const w = await mountFlow(SignIn, {
+      account: { username: null, email_verification: 'code', password_reset: 'code', mfa: { totp: true, sms: false, totp_codes: 1, hotp: true, yubikey: true, duo: true } },
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ins' ? json({ id: 'sia_1', status: 'needs_mfa_enrollment' }, 201) : undefined),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/attempt_mfa_enrollment' ? json({ id: 'sia_1', status: 'complete', ticket: 'tkt_e', backup_codes: [] }) : undefined),
+      ],
+    });
+    await setInput(w, 'identifier', 'ada@example.com');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('[data-atlas-mfa-method="yubikey"]').exists()).toBe(true));
+    for (const m of ['totp', 'hotp', 'duo']) expect(w.find(`[data-atlas-mfa-method="${m}"]`).exists()).toBe(true);
+    await w.find('[data-atlas-mfa-method="yubikey"]').trigger('click');
+    await vi.waitFor(() => expect(w.find('input[name="otp"]').exists()).toBe(true));
+    await setInput(w, 'otp', 'ccccccfjkbbb');
+    await submit(w);
+    await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')).toHaveLength(1));
+    expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ strategy: 'yubikey', otp: 'ccccccfjkbbb' });
+  });
+});

@@ -4,6 +4,7 @@ import { COPY } from './constants';
 import { cls, doc, el } from './dom';
 import { renderExistingAccountNotice, renderForm, renderReset, renderSignUpForm } from './forms';
 import { renderHandlePrompt, renderPasskeyButton, renderSocial, socialProviders } from './social';
+import { emailLinkPageFor, renderEmailLinkPage } from './email-link';
 import { renderRecoveryCodes, say } from './mfa';
 import { disposePolicyUi, renderPolicyStep } from './policies';
 
@@ -70,6 +71,15 @@ export function render(w: AtlasWidget): void {
     img.src = logoUrl;
     img.alt = w.appearance?.applicationName ?? '';
     card.appendChild(img);
+  }
+
+  // Opened from a mailed link: that page, not the flow.
+  const linkPage = emailLinkPageFor(w);
+  if (linkPage) {
+    card.setAttribute('data-step', 'email_link');
+    card.appendChild(renderEmailLinkPage(w, linkPage));
+    w.root.appendChild(card);
+    return;
   }
 
   // §5.4 the "forgot password" sub-flow takes over the whole panel until it
@@ -206,6 +216,7 @@ export function renderStepContext(w: AtlasWidget, stepKind: string): HTMLElement
   let back = false;
   switch (stepKind) {
     case 'collect_email_code':
+      if (signUpProvedByLink(w.state.attempt)) return null;
       text = awaitingSignUpLink(w.state.attempt, w.account.emailVerification)
         ? 'Check your email'
         : email

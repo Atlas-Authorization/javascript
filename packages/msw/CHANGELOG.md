@@ -1,5 +1,9 @@
 # @atlasauth/msw changelog
 
+## 0.3.0 — 2026-11-06
+
+- Emailed link confirmation and enrolment factor strings and shapes.
+
 ## 0.2.0 — 2026-10-24
 
 - Integrator platform release: see the Atlas changelog for 2026-10-24.

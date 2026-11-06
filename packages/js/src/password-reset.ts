@@ -12,6 +12,7 @@
  * reset signs the user in through the normal cookie exchange).
  */
 import type { AttemptView, FieldError, PendingRequiredAction } from './attempt';
+import { forgetLinkSecret, rememberLinkProof } from './email-link';
 import { initialFlow, type FapiClient, type FlowState } from './fapi';
 import { getResetSecurityQuestions } from './mfa-factors';
 
@@ -24,6 +25,8 @@ export interface ResetAttempt {
    * another device), then carry on from the new status.
    */
   poll_secret?: string;
+  /** Link mode: show this on the starting tab; whoever opens the link on another device types it there. */
+  match_code?: string;
   /** Held for policies or a required action once the new password is set: see {@link flowFromHeldReset}. */
   pending_policies?: AttemptView['pending_policies'];
   policy_acceptance_token?: string;
@@ -62,6 +65,7 @@ export async function startPasswordReset(
     captcha_token: captchaToken,
   });
   if (!res.ok || !res.data) return { ...initialResetFlow, errors: res.errors };
+  rememberLinkProof(res.data.id, res.data);
   return { attempt: res.data, errors: [], busy: false, ticket: null };
 }
 
@@ -106,6 +110,7 @@ export async function advancePasswordReset(
     return { ...state, busy: false, errors: res.errors };
   }
   const { id, status, pending_policies, policy_acceptance_token, pending_required_actions, required_action_token } = res.data;
+  if (status !== 'needs_email_verification') forgetLinkSecret(attempt.id);
   return {
     attempt: {
       id,
@@ -179,9 +184,11 @@ export async function pollPasswordReset(client: FapiClient, state: ResetFlowStat
     `/v1/client/password_resets/${attempt.id}?poll_secret=${encodeURIComponent(attempt.poll_secret)}`,
   );
   if (!res.ok || !res.data) return state;
+  const waiting = res.data.status === 'needs_email_verification';
+  if (!waiting) forgetLinkSecret(attempt.id);
   return {
     ...state,
-    attempt: { id: res.data.id, status: res.data.status, poll_secret: attempt.poll_secret },
+    attempt: { id: res.data.id, status: res.data.status, poll_secret: attempt.poll_secret, ...(waiting && attempt.match_code ? { match_code: attempt.match_code } : {}) },
     ...(opts.askQuestions ? await questionsFor(client, res.data.id, res.data.status) : {}),
   };
 }

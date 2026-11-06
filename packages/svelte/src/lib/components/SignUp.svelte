@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { awaitingPasskey, existingAccountResetUrl, passkeysSupported, pendingExistingAccountNotice, pendingRecoveryCodes, signInAfterProofUrl, signUpProvedByLink } from '@atlasauth/js';
+  import { emailLinkFromUrl, type EmailLink } from '@atlasauth/js';
   import { signUp } from '../accessors';
   import { classFor, type ElementKey } from '../appearance';
   import { useAtlas } from '../context';
   import { translate } from '../i18n';
   import AttemptFlow from './AttemptFlow.svelte';
+  import EmailLinkPage from './EmailLinkPage.svelte';
   import PasskeySignUpStep from './PasskeySignUpStep.svelte';
   import RecoveryCodes from './RecoveryCodes.svelte';
   import SignUpForm from './SignUpForm.svelte';
@@ -48,8 +50,17 @@
   function switchMode() {
     mode = usingPasskey ? 'password' : 'passkey';
   }
+
+  // Opened from a mailed link: that page, not the flow. Read once mounted, so hydration matches.
+  let emailLink: EmailLink | null = null;
+  onMount(() => {
+    emailLink = emailLinkFromUrl(undefined, 'sign_up');
+  });
 </script>
 
+{#if emailLink}
+  <EmailLinkPage link={emailLink} />
+{:else}
 {#if recoveryCodes}
   <RecoveryCodes codes={recoveryCodes} busy={$flowState.busy} onSaved={flow.saveRecoveryCodes} />
 {:else if pendingExistingAccountNotice($flowState)}
@@ -86,6 +97,7 @@
     onSubmit={flow.submit}
     emailVerification={$settings?.account.emailVerification ?? 'code'}
     onResend={flow.resendSignUp}
+    matchCode={$flowState.matchCode ?? null}
     onEmailSecondFactor={$settings?.account.emailSecondFactor ? flow.sendEmailSecondFactor : null}
     onSmsSecondFactor={$settings && flow.mfaChoices().sms ? flow.sendSmsSecondFactor : null}
     enrollment={flow.enrollment}
@@ -103,4 +115,5 @@
     passkey={usingPasskey && offer ? { email: offer.email } : null}
     onSwitchMode={canPasskey ? switchMode : undefined}
   />
+{/if}
 {/if}

@@ -30,9 +30,15 @@ import {
 } from './flow';
 import { ATLAS_REACT_SDK } from './version';
 import { useClass, useText } from './components-shared';
+import { EmailLinkPage, useEmailLink } from './email-link';
 import type { CaptchaController } from './captcha';
 
 export function SignIn(props: FlowProps = {}) {
+  const link = useEmailLink('sign_in');
+  return link ? <EmailLinkPage link={link} hideTitle={props.hideTitle} /> : <SignInFlow {...props} />;
+}
+
+function SignInFlow(props: FlowProps) {
   const t = usePolicyText();
   const { state, setState, submit, client, finish, captcha, prepare, usePassword, saveRecoveryCodes } = useFlow({
     afterUrl: props.afterUrl,
@@ -89,6 +95,7 @@ export function SignIn(props: FlowProps = {}) {
         }}
         captcha={<CaptchaSlot controller={captcha} />}
         prepared={state.prepared ?? null}
+        matchCode={state.matchCode ?? null}
         onPrepare={prepare}
         onUsePassword={usePassword}
         passwordHold={state.passwordHold}

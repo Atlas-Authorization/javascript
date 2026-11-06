@@ -1,5 +1,9 @@
 # @atlasauth/elements changelog
 
+## 0.12.0 — 2026-11-06
+
+- Emailed link confirmation and enrolment factor strings and shapes.
+
 ## Unreleased
 
 ## 0.11.0 — 2026-10-26

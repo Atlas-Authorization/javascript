@@ -118,6 +118,8 @@ export interface AccountUx {
     hotp?: boolean;
     yubikey?: boolean;
     duo?: boolean;
+    /** A verified passkey as the second factor. */
+    passkey?: boolean;
     securityQuestions?: boolean;
     smartCard?: boolean;
   };
@@ -168,6 +170,7 @@ export function accountUxFrom(body: unknown): AccountUx {
             ...(raw.mfa.hotp === true ? { hotp: true } : {}),
             ...(raw.mfa.yubikey === true ? { yubikey: true } : {}),
             ...(raw.mfa.duo === true ? { duo: true } : {}),
+            ...(raw.mfa.passkey === true ? { passkey: true } : {}),
             ...(raw.mfa.security_questions === true ? { securityQuestions: true } : {}),
             ...(raw.mfa.smart_card === true ? { smartCard: true } : {}),
           } as const,

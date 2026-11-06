@@ -11,8 +11,12 @@
  *   - Text message, where the app offers the SMS factor and can text: the user
  *     types a phone number, `prepare_mfa_enrollment` (`strategy: "phone_code"`)
  *     texts a code, and the user confirms with it.
+ *   - Counter token (`hotp`): set up like the authenticator app, confirmed with one code.
+ *   - YubiKey (`yubikey`): nothing to prepare; the user touches the key into a field.
+ *   - Duo (`duo`): a link to Duo's prompt; the user approves, then continues here.
+ *   - Passkey (`passkey`): the prepared options run the browser's ceremony on submit.
  *
- * Either confirmation (`attempt_mfa_enrollment`, posted by `advance` with the
+ * Any confirmation (`attempt_mfa_enrollment`, posted by `advance` with the
  * values {@link MfaEnrollmentController.submit} returns) completes the sign-in
  * and comes with the account's one-time recovery codes. `advance` moves them
  * off the attempt into `FlowState.recoveryCodes`; the components show them
@@ -26,8 +30,21 @@
 import type { FieldError } from './attempt';
 import type { AccountUx } from './environment';
 import type { FapiClient, FlowState } from './fapi';
+import { createPasskey, passkeysSupported, type WebAuthnHost } from './passkey';
 
-export type MfaEnrollmentStrategy = 'totp' | 'phone_code';
+export type MfaEnrollmentStrategy = 'totp' | 'phone_code' | 'hotp' | 'yubikey' | 'duo' | 'passkey';
+
+/** The catalog key of a method's button at the enrolment step. */
+export function enrollmentOptionKey(method: MfaEnrollmentStrategy): string {
+  return {
+    totp: 'mfa.enrollTotpOption',
+    phone_code: 'mfa.enrollSmsOption',
+    hotp: 'mfa.enrollHotpOption',
+    yubikey: 'mfa.enrollYubikeyOption',
+    duo: 'mfa.enrollDuoOption',
+    passkey: 'mfa.enrollPasskeyOption',
+  }[method];
+}
 
 /** What the app lets a sign-in's MFA steps offer. */
 export interface MfaChoices {
@@ -39,8 +56,14 @@ export interface MfaChoices {
   emailCode: boolean;
   /** How many authenticator codes enrolment asks for. */
   totpCodes: 1 | 2;
-  /** "Use Duo instead" at the second factor (see `prepareDuo`). */
+  /** "Use Duo instead" at the second factor (see `prepareDuo`), and setting Duo up. */
   duo?: boolean;
+  /** Set up a counter token. */
+  hotp?: boolean;
+  /** Set up a YubiKey. */
+  yubikey?: boolean;
+  /** Set up a passkey as the second factor. */
+  passkey?: boolean;
 }
 
 /**
@@ -58,6 +81,9 @@ export function mfaChoicesFrom(account: Pick<AccountUx, 'emailSecondFactor' | 'm
     emailCode: account?.emailSecondFactor === true,
     totpCodes: mfa ? mfa.totpCodes : 2,
     ...(mfa?.duo === true ? { duo: true } : {}),
+    ...(mfa?.hotp === true ? { hotp: true } : {}),
+    ...(mfa?.yubikey === true ? { yubikey: true } : {}),
+    ...(mfa?.passkey === true ? { passkey: true } : {}),
   };
 }
 
@@ -73,25 +99,36 @@ export interface MfaEnrollment {
   qrCode?: string;
   /** phone_code: the number the code was texted to, masked. */
   phone?: string;
+  /** duo: where the person approves the request. */
+  authorizationUrl?: string;
+  /** passkey: the `navigator.credentials.create` options, as the server sent them. `factorId` is empty: none exists yet. */
+  passkeyOptions?: Record<string, unknown>;
 }
 
 /** `POST /v1/client/sign_ins/:id/prepare_mfa_enrollment`. */
 export async function prepareMfaEnrollment(
   client: FapiClient,
   attemptId: string,
-  input: { strategy: 'totp' } | { strategy: 'phone_code'; phone: string },
+  input: { strategy: 'totp' | 'hotp' | 'duo' | 'passkey' } | { strategy: 'phone_code'; phone: string },
 ): Promise<{ enrollment: MfaEnrollment | null; errors: FieldError[]; status: number }> {
   const response = await client.post<Record<string, unknown>>(
     `/v1/client/sign_ins/${encodeURIComponent(attemptId)}/prepare_mfa_enrollment`,
-    input.strategy === 'phone_code' ? { strategy: 'phone_code', phone: input.phone } : { strategy: 'totp' },
+    input,
   );
   const d = response.data;
-  if (!response.ok || !d || typeof d.factor_id !== 'string') {
+  const proper = d && (input.strategy === 'passkey' ? typeof d.options === 'object' && d.options !== null : typeof d.factor_id === 'string');
+  if (!response.ok || !d || !proper) {
     return { enrollment: null, errors: response.errors, status: response.status };
   }
   const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
-  const enrollment: MfaEnrollment = { strategy: input.strategy, factorId: d.factor_id };
-  if (input.strategy === 'totp') {
+  const enrollment: MfaEnrollment = { strategy: input.strategy, factorId: str(d.factor_id) ?? '' };
+  if (input.strategy === 'passkey') {
+    enrollment.passkeyOptions = d.options as Record<string, unknown>;
+  } else if (input.strategy === 'duo') {
+    // Only a page a link can safely go to.
+    const url = str(d.authorization_url);
+    if (url && /^https:\/\//i.test(url)) enrollment.authorizationUrl = url;
+  } else if (input.strategy === 'totp' || input.strategy === 'hotp') {
     if (str(d.secret)) enrollment.secret = str(d.secret);
     if (str(d.uri)) enrollment.uri = str(d.uri);
     // Only an image URL a page can show safely.
@@ -140,7 +177,7 @@ export interface MfaEnrollmentController {
    * only the authenticator app on offer its setup is fetched straight away.
    */
   start(attemptId: string): void;
-  /** Pick a method: the authenticator app is prepared at once; texts ask for a number first. */
+  /** Pick a method: most are prepared at once; texts ask for a number first, and a YubiKey needs nothing prepared. */
   choose(method: MfaEnrollmentStrategy): Promise<void>;
   /** Text a code to `phone` (E.164). */
   sendPhone(phone: string): Promise<void>;
@@ -148,8 +185,9 @@ export interface MfaEnrollmentController {
   resend(): Promise<void>;
   /**
    * The form's submit. Before a code was texted it sends the typed `phone` and
-   * resolves null; otherwise it resolves the values to `advance` with (the
-   * factor id and the code(s)), or null when there is nothing to submit yet.
+   * resolves null; a passkey runs the browser's ceremony here. Otherwise it
+   * resolves the values to `advance` with (the factor id and the code(s)), or
+   * null when there is nothing to submit yet.
    */
   submit(values: Record<string, string>): Promise<Record<string, string> | null>;
   /** Forget the step (the flow left it). */
@@ -160,12 +198,17 @@ export interface MfaEnrollmentController {
 export function createMfaEnrollment(
   client: FapiClient,
   choices: MfaChoices | (() => MfaChoices),
+  opts: { host?: WebAuthnHost } = {},
 ): MfaEnrollmentController {
   const read = () => (typeof choices === 'function' ? choices() : choices);
   const offered = (c: MfaChoices): MfaEnrollmentStrategy[] => {
     const out: MfaEnrollmentStrategy[] = [];
     if (c.totp) out.push('totp');
     if (c.sms) out.push('phone_code');
+    if (c.hotp) out.push('hotp');
+    if (c.yubikey) out.push('yubikey');
+    if (c.duo) out.push('duo');
+    if (c.passkey && passkeysSupported(opts.host)) out.push('passkey');
     // Nothing on offer is a misconfiguration; the authenticator app is the
     // default the server enrols, so ask for it rather than draw nothing.
     return out.length ? out : ['totp'];
@@ -179,13 +222,15 @@ export function createMfaEnrollment(
   let attemptId: string | null = null;
   let phone = '';
   let generation = 0;
+  // A submitted passkey's challenge is spent, even when the server refused it.
+  let passkeySpent = false;
   const listeners = new Set<(s: MfaEnrollmentState) => void>();
   const set = (patch: Partial<MfaEnrollmentState>) => {
     state = { ...state, ...patch };
     for (const listener of listeners) listener(state);
   };
 
-  const prepare = async (input: { strategy: 'totp' } | { strategy: 'phone_code'; phone: string }) => {
+  const prepare = async (input: Parameters<typeof prepareMfaEnrollment>[2]) => {
     const id = attemptId;
     if (!id) return;
     const gen = generation;
@@ -206,6 +251,30 @@ export function createMfaEnrollment(
     set({ busy: false, errors: out.errors });
   };
 
+  const submitPasskey = async (): Promise<Record<string, string> | null> => {
+    const gen = generation;
+    if (passkeySpent) {
+      await prepare({ strategy: 'passkey' });
+      if (gen !== generation || state.errors.length > 0) return null;
+      passkeySpent = false;
+    }
+    const options = state.enrollment?.passkeyOptions;
+    if (!options) return null;
+    set({ busy: true, errors: [] });
+    try {
+      const body = await createPasskey(options, { ...(opts.host ? { host: opts.host } : {}) });
+      if (gen !== generation) return null;
+      passkeySpent = true;
+      set({ busy: false });
+      return { enrollStrategy: 'passkey', challenge: body.challenge, attestation_object: body.attestation_object, client_data_json: body.client_data_json };
+    } catch (error) {
+      if (gen === generation) {
+        set({ busy: false, errors: [{ code: 'PASSKEY_CANCELLED', message: error instanceof Error && error.message ? error.message : 'The passkey was not created.' }] });
+      }
+      return null;
+    }
+  };
+
   const controller: MfaEnrollmentController = {
     get state() {
       return state;
@@ -219,14 +288,16 @@ export function createMfaEnrollment(
       generation += 1;
       attemptId = id;
       phone = '';
+      passkeySpent = false;
       state = empty();
       set({});
       if (state.options.length === 1) void controller.choose(state.options[0]!);
     },
     async choose(method) {
       if (!state.options.includes(method)) return;
+      passkeySpent = false;
       set({ method, enrollment: null, errors: [] });
-      if (method === 'totp') await prepare({ strategy: 'totp' });
+      if (method !== 'phone_code' && method !== 'yubikey') await prepare({ strategy: method });
     },
     async sendPhone(value) {
       const number = value.trim();
@@ -245,18 +316,20 @@ export function createMfaEnrollment(
         await controller.sendPhone(values.phone ?? '');
         return null;
       }
+      if (state.method === 'yubikey') return { enrollStrategy: 'yubikey', otp: values.otp ?? '' };
       const e = state.enrollment;
       if (!e) return null;
-      const out: Record<string, string> =
-        e.strategy === 'phone_code'
-        ? { factorId: e.factorId, enrollStrategy: 'phone_code', code: values.code ?? '' }
-        : { factorId: e.factorId, code: values.code ?? '', secondCode: values.secondCode ?? '' };
-      return out;
+      if (e.strategy === 'passkey') return submitPasskey();
+      if (e.strategy === 'phone_code') return { factorId: e.factorId, enrollStrategy: 'phone_code', code: values.code ?? '' };
+      if (e.strategy === 'hotp') return { factorId: e.factorId, enrollStrategy: 'hotp', code: values.code ?? '' };
+      if (e.strategy === 'duo') return { factorId: e.factorId, enrollStrategy: 'duo' };
+      return { factorId: e.factorId, code: values.code ?? '', secondCode: values.secondCode ?? '' };
     },
     reset() {
       generation += 1;
       attemptId = null;
       phone = '';
+      passkeySpent = false;
       state = empty();
       set({});
     },
@@ -267,11 +340,14 @@ export function createMfaEnrollment(
 /**
  * The enrolment form's submit button: the catalog key of its label, or null
  * when the step has nothing to submit yet (choosing a method, or fetching the
- * authenticator's setup). `mfa.sendCode` before a code was texted.
+ * authenticator's setup). `mfa.sendCode` before a code was texted,
+ * `mfa.enrollPasskeyCreate` for a passkey: both name what the button does.
  */
-export function enrollmentSubmitKey(state: MfaEnrollmentState): 'mfa.sendCode' | 'signIn.submit' | null {
+export function enrollmentSubmitKey(state: MfaEnrollmentState): 'mfa.sendCode' | 'mfa.enrollPasskeyCreate' | 'signIn.submit' | null {
   if (state.method === null) return null;
   if (state.method === 'phone_code' && !state.enrollment) return 'mfa.sendCode';
+  if (state.method === 'yubikey') return 'signIn.submit';
+  if (state.method === 'passkey' && state.enrollment) return 'mfa.enrollPasskeyCreate';
   return state.enrollment ? 'signIn.submit' : null;
 }
 

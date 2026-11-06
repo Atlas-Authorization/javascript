@@ -54,6 +54,7 @@ export * from './attestation';
 export * from './device-key';
 // The sign-in's MFA steps: second-factor setup (authenticator app / texts) and the texted / emailed code.
 export * from './mfa-enrollment';
+export * from './email-link';
 // HOTP, YubiKey (Yubico OTP), Duo, security questions (password-reset recovery).
 export * from './mfa-factors';
 // Passkey sign-in's ceremony start, carrying the sign-in captcha when one is required.

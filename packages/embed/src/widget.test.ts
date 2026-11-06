@@ -1956,6 +1956,77 @@ describe('link-only verification and reset', () => {
   });
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+  it('a mailed link: the waiting tab shows the code; a finished earlier sign-up stops the wait and says to sign in', async () => {
+    let finished = false;
+    const { impl, calls } = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...envelope([]), account: linkAccount({ email_verification: 'link' }) } }),
+      'POST /v1/client/sign_ups': () => ({
+        status: 201,
+        body: { object: 'sign_up_attempt', id: 'sia_l', status: 'needs_email_verification', identifier: 'ada@example.com', poll_secret: 'ps_l', match_code: '482113' },
+      }),
+      'GET /v1/client/sign_ups/sia_l': () => ({
+        body: { object: 'sign_up_attempt', id: 'sia_l', status: 'needs_email_verification', ...(finished ? { finished_elsewhere: true } : {}) },
+      }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, mode: 'sign-up', fetchImpl: impl }).mount();
+    await flush();
+    (root.querySelector('[name="identifier"]') as HTMLInputElement).value = 'ada@example.com';
+    (root.querySelector('[name="password"]') as HTMLInputElement).value = 'sup3rSecretPw!';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(root.querySelector('[data-atlas="link-match-code"]')?.textContent).toContain('482113');
+    expect(window.localStorage.getItem('atlas_link_sia_l')).toBe('ps_l');
+
+    finished = true;
+    await wait(2_200);
+    await flush();
+    expect(root.querySelector('[data-atlas-email-confirmed]')).not.toBeNull();
+    expect(root.querySelector('[data-atlas-resend]')).toBeNull();
+    expect(calls.some((c) => c.path === '/v1/client/tickets/exchange')).toBe(false);
+    expect(window.localStorage.getItem('atlas_link_sia_l')).toBeNull();
+  });
+
+  it('a reset by link: the tab that asked shows the code and stores the secret', async () => {
+    const { impl } = makeFetch({
+      'GET /v1/appearance': () => ({ body: { ...envelope([]), account: linkAccount({ password_reset: 'link' }) } }),
+      'POST /v1/client/password_resets': () => ({ status: 201, body: { id: 'sia_r', status: 'needs_email_verification', poll_secret: 'ps_r', match_code: '771122' } }),
+      'GET /v1/client/password_resets/sia_r': () => ({ body: { id: 'sia_r', status: 'needs_email_verification' } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+    (Array.from(root.querySelectorAll('.atlas-embed-step-back')).find((b) => (b.textContent ?? '').includes('Forgot')) as HTMLButtonElement).click();
+    (root.querySelector('input[name="email"]') as HTMLInputElement).value = 'ada@example.com';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(root.querySelector('[data-atlas="link-match-code"]')?.textContent).toContain('771122');
+    expect(window.localStorage.getItem('atlas_link_sia_r')).toBe('ps_r');
+    window.localStorage.removeItem('atlas_link_sia_r');
+  });
+
+  it('opened from a mailed link: asks for the typed code and confirms; the flow never mounts', async () => {
+    window.history.replaceState({}, '', '/?attempt=sia_l&token=tok');
+    const { impl, calls } = makeFetch({
+      'GET /v1/appearance': () => ({ body: envelope([]) }),
+      'GET /v1/client/sign_ins/verify': () => ({ body: { requires_confirmation: true } }),
+      'POST /v1/client/sign_ins/verify/confirm': () => ({ body: { verified: true } }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, fetchImpl: impl }).mount();
+    await flush();
+    expect(root.querySelector('[name="identifier"]')).toBeNull();
+    (root.querySelector('[name="match_code"]') as HTMLInputElement).value = '482113';
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(root.querySelector('[data-atlas-status="confirmed"]')).not.toBeNull();
+    expect(calls.find((c) => c.path === '/v1/client/sign_ins/verify/confirm')?.body).toEqual({ attempt: 'sia_l', token: 'tok', match_code: '482113' });
+    window.history.replaceState({}, '', '/');
+  });
+
   it('sign-up in link mode: no code field and no submit, "check your email", then the poll signs this tab in', async () => {
     let opened = false;
     const { impl, calls } = makeFetch({
@@ -2092,6 +2163,17 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
     root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
     await flush();
     expect(posted(calls, '/v1/client/sign_ins/sia_m/attempt_mfa_enrollment')).toEqual([{ factor_id: 'mfa_t', codes: ['111111', '222222'] }]);
+  });
+
+  it('offers every factor the app offers; a YubiKey posts its OTP', async () => {
+    const { root, calls } = await start('needs_mfa_enrollment', { username: null, email_verification: 'code', password_reset: 'code', mfa: { totp: true, sms: false, totp_codes: 1, hotp: true, yubikey: true, duo: true } });
+    for (const m of ['totp', 'hotp', 'yubikey', 'duo']) expect(root.querySelector(`[data-atlas-mfa-method="${m}"]`)).not.toBeNull();
+    (root.querySelector('[data-atlas-mfa-method="yubikey"]') as HTMLButtonElement).click();
+    await flush();
+    setHidden(root, 'otp', 'ccccccfjkbbb');
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(posted(calls, '/v1/client/sign_ins/sia_m/attempt_mfa_enrollment')).toEqual([{ strategy: 'yubikey', otp: 'ccccccfjkbbb' }]);
   });
 
   it('where the app can text: choose texts, send the number, confirm with the texted code', async () => {
