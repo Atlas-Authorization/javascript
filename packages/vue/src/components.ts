@@ -828,7 +828,7 @@ const AttemptFlow = defineComponent({
             h(
               'p',
               { class: cls('formFieldError', 'atlas-error'), role: 'alert', key: error.code },
-              props.signInHref && step.kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS'
+              props.signInHref && step.kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS' && error.meta?.['identifier'] !== 'username'
                 ? [errorText(error), ' ', h('a', { class: 'atlas-link', href: props.signInHref }, t('signIn.title'))]
                 : errorText(error),
             ),

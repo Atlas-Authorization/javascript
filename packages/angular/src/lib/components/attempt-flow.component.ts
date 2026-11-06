@@ -481,7 +481,7 @@ export class AttemptFlowComponent {
   }
 
   protected signInLink(error: FieldError): string | null {
-    return this.step().kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS' ? this.signInHref : null;
+    return this.step().kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS' && error.meta?.['identifier'] !== 'username' ? this.signInHref : null;
   }
 
   protected fieldErrorsFor(name: string): FieldError[] {

@@ -682,7 +682,9 @@ export function requestForStep(
                 ? { strategy, factor_id: values.factorId ?? '' }
                 : strategy === 'yubikey'
                   ? { strategy, otp: values.otp ?? '' }
-                  : { strategy, challenge: values.challenge ?? '', attestation_object: values.attestation_object ?? '', client_data_json: values.client_data_json ?? '' },
+                  : values.credential_id
+                    ? { strategy, challenge: values.challenge ?? '', credential_id: values.credential_id, authenticator_data: values.authenticator_data ?? '', client_data_json: values.client_data_json ?? '', signature: values.signature ?? '' }
+                    : { strategy, challenge: values.challenge ?? '', attestation_object: values.attestation_object ?? '', client_data_json: values.client_data_json ?? '' },
         };
       }
       return {

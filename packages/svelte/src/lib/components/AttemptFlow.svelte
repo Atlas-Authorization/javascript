@@ -295,7 +295,7 @@
   <h1 class={cls('headerTitle', 'atlas-title')}>{t(titleKey)}</h1>
 
   {#each errors.filter((e) => !e.param) as error (error.code)}
-    <p class={cls('formFieldError', 'atlas-error')} role="alert">{errorText(error)}{#if signInHref && step.kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS'}{' '}<a class="atlas-link" href={signInHref}>{t('signIn.title')}</a>{/if}</p>
+    <p class={cls('formFieldError', 'atlas-error')} role="alert">{errorText(error)}{#if signInHref && step.kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS' && error.meta?.['identifier'] !== 'username'}{' '}<a class="atlas-link" href={signInHref}>{t('signIn.title')}</a>{/if}</p>
   {/each}
 
   <form on:submit={handleSubmit}>

@@ -649,7 +649,7 @@ export function AttemptFlow({
         .map((error) => (
           <p key={error.code} className={errorClass} role="alert">
             {errorText(error)}
-            {signInHref && step.kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS' ? (
+            {signInHref && step.kind === 'collect_email_code' && error.code === 'IDENTIFIER_EXISTS' && error.meta?.['identifier'] !== 'username' ? (
               <>
                 {' '}
                 <a className="atlas-link" href={signInHref}>

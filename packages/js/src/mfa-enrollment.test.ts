@@ -325,6 +325,40 @@ describe('every factor the instance offers at the enrolment step', () => {
     });
   });
 
+  it('a passkey this device already holds signs for the factor; any other failure stays a failure', async () => {
+    const held = { challenge: 'c2ln', rpId: 'x', allowCredentials: [], userVerification: 'required' };
+    const heldServer = (path: string, body: Record<string, unknown> | null) =>
+      body?.strategy === 'passkey' ? { status: 201, body: { strategy: 'passkey', options: OPTIONS, assertion_options: held } } : server(path, body);
+    const bytes = () => new Uint8Array([1]).buffer;
+    const signingHost = {
+      credentials: {
+        create: vi.fn(async () => {
+          throw Object.assign(new Error('exists'), { name: 'InvalidStateError' });
+        }),
+        get: vi.fn(async () => ({ rawId: bytes(), response: { authenticatorData: bytes(), clientDataJSON: bytes(), signature: bytes() } })),
+      },
+    } as unknown as WebAuthnHost;
+    const enrol = createMfaEnrollment(scripted(heldServer).client, { ...ALL, passkey: true }, { host: signingHost });
+    enrol.start('sia_1');
+    await enrol.choose('passkey');
+    const values = await enrol.submit({});
+    expect(requestForStep({ id: 'sia_1', status: 'needs_mfa_enrollment' }, values!)!.body).toEqual({
+      strategy: 'passkey',
+      challenge: 'c2ln',
+      credential_id: 'AQ',
+      authenticator_data: 'AQ',
+      client_data_json: 'AQ',
+      signature: 'AQ',
+    });
+
+    (signingHost.credentials.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('cancelled'));
+    const cancelled = createMfaEnrollment(scripted(heldServer).client, { ...ALL, passkey: true }, { host: signingHost });
+    cancelled.start('sia_1');
+    await cancelled.choose('passkey');
+    expect(await cancelled.submit({})).toBeNull();
+    expect(cancelled.state.errors[0]).toMatchObject({ code: 'PASSKEY_CANCELLED' });
+  });
+
   it('a passkey retry after a refusal fetches a fresh challenge; a cancelled prompt keeps the unspent one', async () => {
     const { client, calls } = scripted(server);
     const enrol = createMfaEnrollment(client, ALL, { host });

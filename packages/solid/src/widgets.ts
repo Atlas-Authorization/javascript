@@ -112,7 +112,7 @@ function renderErrors(errors: FlowErrors, strings?: ErrorStrings, signInHref?: s
       'p',
       { class: 'atlas-error', role: 'alert' },
       localizedErrorMessage(error, strings),
-      signInHref && error.code === 'IDENTIFIER_EXISTS' && !error.param
+      signInHref && error.code === 'IDENTIFIER_EXISTS' && !error.param && error.meta?.['identifier'] !== 'username'
         ? [' ', h('a', { class: 'atlas-link', href: signInHref }, t('signIn.title'))]
         : null,
     ),

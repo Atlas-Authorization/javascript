@@ -1,5 +1,9 @@
 # @atlasauth/embed changelog
 
+## 0.19.2 — 2026-11-06
+
+- A username taken while the sign-up waited no longer shows a sign-in link beside the error. Picks up passkey promotion from `@atlasauth/js` 0.34.1.
+
 ## 0.19.1 — 2026-11-06
 
 - The sign-up code step shows a sign-in link beside the taken-address error.

@@ -30,7 +30,7 @@
 import type { FieldError } from './attempt';
 import type { AccountUx } from './environment';
 import type { FapiClient, FlowState } from './fapi';
-import { createPasskey, passkeysSupported, type WebAuthnHost } from './passkey';
+import { createPasskey, getPasskeyAssertion, passkeysSupported, type WebAuthnHost } from './passkey';
 
 export type MfaEnrollmentStrategy = 'totp' | 'phone_code' | 'hotp' | 'yubikey' | 'duo' | 'passkey';
 
@@ -103,6 +103,8 @@ export interface MfaEnrollment {
   authorizationUrl?: string;
   /** passkey: the `navigator.credentials.create` options, as the server sent them. `factorId` is empty: none exists yet. */
   passkeyOptions?: Record<string, unknown>;
+  /** passkey, when the account already holds one: signs for the factor if this device refuses to make another. */
+  passkeyAssertionOptions?: Record<string, unknown>;
 }
 
 /** `POST /v1/client/sign_ins/:id/prepare_mfa_enrollment`. */
@@ -124,6 +126,7 @@ export async function prepareMfaEnrollment(
   const enrollment: MfaEnrollment = { strategy: input.strategy, factorId: str(d.factor_id) ?? '' };
   if (input.strategy === 'passkey') {
     enrollment.passkeyOptions = d.options as Record<string, unknown>;
+    if (d.assertion_options && typeof d.assertion_options === 'object') enrollment.passkeyAssertionOptions = d.assertion_options as Record<string, unknown>;
   } else if (input.strategy === 'duo') {
     // Only a page a link can safely go to.
     const url = str(d.authorization_url);
@@ -262,7 +265,20 @@ export function createMfaEnrollment(
     if (!options) return null;
     set({ busy: true, errors: [] });
     try {
-      const body = await createPasskey(options, { ...(opts.host ? { host: opts.host } : {}) });
+      const hostOpt = opts.host ? { host: opts.host } : {};
+      const held = state.enrollment?.passkeyAssertionOptions;
+      let body;
+      try {
+        body = await createPasskey(options, hostOpt);
+      } catch (error) {
+        // This device already holds one of the account's passkeys: use it.
+        if (!held || (error as { name?: unknown } | null)?.name !== 'InvalidStateError') throw error;
+        const signed = await getPasskeyAssertion(held, hostOpt);
+        if (gen !== generation) return null;
+        passkeySpent = true;
+        set({ busy: false });
+        return { enrollStrategy: 'passkey', challenge: signed.challenge, credential_id: signed.credential_id, authenticator_data: signed.authenticator_data, client_data_json: signed.client_data_json, signature: signed.signature };
+      }
       if (gen !== generation) return null;
       passkeySpent = true;
       set({ busy: false });
