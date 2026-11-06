@@ -1041,10 +1041,10 @@ export async function pollAttempt(
 /** Whether polling should continue, so a tab does not poll a dead attempt forever. */
 export function shouldKeepPolling(state: FlowState): boolean {
   if (!state.pollSecret || !state.attempt || isTerminal(state.attempt)) return false;
-  // A sign-up at its first factor can't move on by itself: a passkey-only sign-up waits
-  // for this tab's passkey, and a link that proved an existing account made no session.
+  // A sign-up polls for its link only. Past that this tab drives every step (the passkey,
+  // MFA set-up, policies), and a poll that collected a ticket would skip the recovery codes.
   const a = state.attempt;
-  return !(a.object === 'sign_up_attempt' && a.status === 'needs_first_factor');
+  return !(a.object === 'sign_up_attempt' && a.status !== 'needs_email_verification');
 }
 
 /**

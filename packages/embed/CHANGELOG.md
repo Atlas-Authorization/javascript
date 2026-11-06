@@ -1,5 +1,9 @@
 # @atlasauth/embed changelog
 
+## 0.18.1 — 2026-11-05
+
+- Uses `@atlasauth/js` 0.33.1: a sign-up polls only while it waits for a proof, so a poll can't collect a ticket past the recovery codes.
+
 ## 0.18.0 — 2026-11-05
 
 - A held password reset continues into policies and required actions; new required-action step.

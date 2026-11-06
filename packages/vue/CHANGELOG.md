@@ -1,5 +1,9 @@
 # @atlasauth/vue changelog
 
+## 0.17.1 — 2026-11-05
+
+- Uses `@atlasauth/js` 0.33.1: a sign-up polls only while it waits for a proof, so a poll can't collect a ticket past the recovery codes.
+
 ## 0.17.0 — 2026-11-05
 
 - `<SignUp>` second-factor, enrolment and recovery-code steps; new `signInUrl`.

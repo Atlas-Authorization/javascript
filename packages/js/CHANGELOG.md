@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.33.1 — 2026-11-05
+
+- A sign-up polls only while it waits for a proof, so a poll can no longer collect a ticket past the recovery codes.
+
 ## 0.33.0 — 2026-11-05
 
 - Existing-account sign-up helpers: `signInAfterProofUrl`, `signUpProvedByLink`, and session exchange as recovery codes appear.

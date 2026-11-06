@@ -1,5 +1,9 @@
 # @atlasauth/react changelog
 
+## 0.29.1 — 2026-11-05
+
+- Uses `@atlasauth/js` 0.33.1: a sign-up polls only while it waits for a proof, so a poll can't collect a ticket past the recovery codes.
+
 ## 0.29.0 — 2026-11-05
 
 - `<SignUp>` shows recovery codes before the existing-account notice; new `signInUrl`; removed the empty Continue button.
