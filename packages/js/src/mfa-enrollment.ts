@@ -80,7 +80,9 @@ export function passkeyRunsHere(ceremony: MfaChoices['passkeyCeremony'], origin 
   } catch {
     return true;
   }
-  return host === ceremony.rpId || host.endsWith(`.${ceremony.rpId}`) || ceremony.origins.includes(origin);
+  if (host === ceremony.rpId || host.endsWith(`.${ceremony.rpId}`)) return true;
+  // Related origins are for real sites: a browser won't take localhost or plain http that way, listed or not.
+  return origin.startsWith('https://') && ceremony.origins.includes(origin);
 }
 
 /**
@@ -100,6 +102,8 @@ export function continueOnHostedPage(
   url.searchParams.set('__atlas_attempt', attemptId);
   url.searchParams.set('__atlas_status', status);
   url.searchParams.set('__atlas_handoff', '1');
+  // They came here for a passkey, so the hosted page doesn't ask them to choose again.
+  if (status === 'needs_mfa_enrollment') url.searchParams.set('__atlas_factor', 'passkey');
   navigate(url.toString());
   return true;
 }
@@ -291,7 +295,9 @@ export function createMfaEnrollment(
       set({ busy: false, enrollment: out.enrollment, errors: [] });
       return;
     }
-    if (factorUnavailable(out.errors, out.status) && state.options.length > 1) {
+    // A number they typed being refused is about that number: they stay on it and read why.
+    const numberRefused = input.strategy === 'phone_code' && out.status === 409;
+    if (!numberRefused && factorUnavailable(out.errors, out.status) && state.options.length > 1) {
       // Not available after all: drop it and carry on with what is left.
       const options = state.options.filter((m) => m !== input.strategy);
       set({ busy: false, options, method: null, enrollment: null, errors: out.errors });
@@ -457,13 +463,13 @@ export async function prepareSecondFactorCode(
 }
 
 /**
- * On arrival at the second-factor step: mails the code only if the inbox is this account's only way.
- * Resolves the masked address, or null when nothing was sent; a failure leaves the person the button.
+ * On arrival at the second-factor step: sends the code only if this channel is the account's only way.
+ * Resolves the masked address or number, or null when nothing was sent; a failure leaves the person the button.
  */
-export async function sendOnlyWaySecondFactorCode(client: FapiClient, attemptId: string): Promise<string | null> {
+export async function sendOnlyWaySecondFactorCode(client: FapiClient, attemptId: string, strategy: 'email_code' | 'sms' = 'email_code'): Promise<string | null> {
   try {
     const response = await client.post<{ sent_to?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/prepare_second_factor`, {
-      strategy: 'email_code',
+      strategy,
       only_way: true,
     });
     return response.ok && typeof response.data?.sent_to === 'string' ? response.data.sent_to : null;

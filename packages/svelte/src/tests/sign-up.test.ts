@@ -525,7 +525,7 @@ describe('<SignIn> MFA enrolment and the texted second factor', () => {
     await waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor"]')).not.toBeNull());
     await fireEvent.click(el.querySelector('[data-atlas="sms-second-factor"]')!);
     await waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')).not.toBeNull());
-    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor')[0]!.body).toEqual({ strategy: 'sms' });
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').at(-1)!.body).toEqual({ strategy: 'sms' });
   });
 });
 

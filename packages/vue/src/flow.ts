@@ -85,7 +85,7 @@ export interface FlowController {
    */
   sendEmailSecondFactor(): Promise<{ sentTo?: string; error?: string }>;
   /** On arrival at the second factor: emails the code if the inbox is the only way. Resolves the masked address, or null. */
-  sendOnlyWayEmail(attemptId: string): Promise<string | null>;
+  sendOnlyWay(attemptId: string, strategy: 'email_code' | 'sms'): Promise<string | null>;
   /** Leaves for the hosted page to do the second factor with a passkey there. */
   continueWithPasskey(attemptId: string): boolean;
   /**
@@ -275,14 +275,17 @@ export function useFlow(options: { holdExistingAccountNotice?: boolean } = {}): 
     const id = state.value.attempt?.id;
     if (!id) return { error: t('error.generic') };
     try {
-      return await prepareSecondFactorCode(client, id, strategy);
+      const sent = await prepareSecondFactorCode(client, id, strategy);
+      // A wrong code's message no longer applies once a new code has gone out.
+      state.value = { ...state.value, errors: [] };
+      return sent;
     } catch (error) {
       return { error: error instanceof Error ? error.message : t('error.generic') };
     }
   };
   const sendEmailSecondFactor = () => sendSecondFactorCode('email_code');
   const sendSmsSecondFactor = () => sendSecondFactorCode('sms');
-  const sendOnlyWayEmail = (attemptId: string) => sendOnlyWaySecondFactorCode(client, attemptId);
+  const sendOnlyWay = (attemptId: string, strategy: 'email_code' | 'sms') => sendOnlyWaySecondFactorCode(client, attemptId, strategy);
   const continueWithPasskey = (attemptId: string) => continueOnHostedPage(mfaChoices(), attemptId, 'needs_second_factor');
 
   const passkey = createPasskeySignInController({
@@ -412,7 +415,7 @@ export function useFlow(options: { holdExistingAccountNotice?: boolean } = {}): 
     createPasskey,
     sendEmailSecondFactor,
     sendSmsSecondFactor,
-    sendOnlyWayEmail,
+    sendOnlyWay,
     continueWithPasskey,
     mfaChoices,
     enrollment,

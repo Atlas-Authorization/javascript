@@ -219,19 +219,19 @@ export function MfaEnrollmentFields({
  * sends the code for this attempt, then says where it went. The code is typed
  * into the step's code field like any second-factor code.
  */
-export function SecondFactorCodeOption({ attemptId, strategy }: { attemptId: string; strategy: 'sms' | 'email_code' }) {
+export function SecondFactorCodeOption({ attemptId, strategy, onSent }: { attemptId: string; strategy: 'sms' | 'email_code'; onSent?: () => void }) {
   const client = useFapiClient();
   const t = useText();
   const cls = useClasses();
   const [state, setState] = useState<{ sentTo?: string; error?: string; busy?: boolean }>({});
   const name = strategy === 'sms' ? 'sms-second-factor' : 'email-second-factor';
-  // The inbox is this account's only way: the code goes out now, and the step says so.
+  // This channel is the account's only way: the code goes out now, and the step says so.
   const arrived = useRef<string | null>(null);
   useEffect(() => {
-    if (strategy !== 'email_code' || arrived.current === attemptId) return;
+    if (arrived.current === attemptId) return;
     arrived.current = attemptId;
     let live = true;
-    void sendOnlyWaySecondFactorCode(client, attemptId).then((sentTo) => {
+    void sendOnlyWaySecondFactorCode(client, attemptId, strategy).then((sentTo) => {
       if (live && sentTo !== null) setState({ sentTo });
     });
     return () => {
@@ -241,7 +241,10 @@ export function SecondFactorCodeOption({ attemptId, strategy }: { attemptId: str
   const send = () => {
     setState({ busy: true });
     prepareSecondFactorCode(client, attemptId, strategy)
-      .then(({ sentTo }) => setState({ sentTo }))
+      .then(({ sentTo }) => {
+        setState({ sentTo });
+        onSent?.();
+      })
       .catch((e: unknown) => setState({ error: e instanceof Error ? e.message : String(e) }));
   };
   if (state.sentTo !== undefined) {

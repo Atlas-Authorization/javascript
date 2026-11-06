@@ -698,7 +698,7 @@ describe('<SignIn> MFA enrolment and the texted second factor', () => {
     await vi.waitFor(() => expect(w.find('[data-atlas="sms-second-factor"]').exists()).toBe(true));
     await w.find('[data-atlas="sms-second-factor"]').trigger('click');
     await vi.waitFor(() => expect(w.find('[data-atlas="sms-second-factor-sent"]').exists()).toBe(true));
-    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor')[0]!.body).toEqual({ strategy: 'sms' });
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').at(-1)!.body).toEqual({ strategy: 'sms' });
     expect(w.find('[data-atlas="sms-second-factor-sent"]').text()).toContain('+1•••0101');
   });
 });

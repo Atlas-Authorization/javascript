@@ -241,14 +241,17 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
   const id = w.state.attempt?.id;
   if (!id) return;
   const choices = mfaChoicesFrom(w.account);
-  // Once per attempt, on arrival: email the code if the inbox is the only way.
-  if (choices.emailCode && onlyWaySent.get(w) !== id) {
+  // Once per attempt, on arrival: send the code if that channel is the only way.
+  if ((choices.emailCode || choices.sms) && onlyWaySent.get(w) !== id) {
     onlyWaySent.set(w, id);
-    void sendOnlyWaySecondFactorCode(w.client, id).then((sentTo) => {
-      if (!sentTo || w.state.attempt?.id !== id) return;
-      w.secondFactorCode = { attemptId: id, strategy: 'email_code', sentTo };
-      render(w);
-    });
+    const channels: ('sms' | 'email_code')[] = [...(choices.sms ? (['sms'] as const) : []), ...(choices.emailCode ? (['email_code'] as const) : [])];
+    for (const strategy of channels) {
+      void sendOnlyWaySecondFactorCode(w.client, id, strategy).then((sentTo) => {
+        if (!sentTo || w.state.attempt?.id !== id) return;
+        w.secondFactorCode = { attemptId: id, strategy, sentTo };
+        render(w);
+      });
+    }
   }
   const sent = w.secondFactorCode && w.secondFactorCode.attemptId === id ? w.secondFactorCode : null;
   const offer: ('sms' | 'email_code')[] = [];
@@ -279,6 +282,8 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
       prepareSecondFactorCode(w.client, id, strategy).then(
         ({ sentTo }) => {
           w.secondFactorCode = { attemptId: id, strategy, sentTo };
+          // A wrong code's message no longer applies once a new code has gone out.
+          w.state = { ...w.state, errors: [] };
           render(w);
         },
         (error: unknown) => {

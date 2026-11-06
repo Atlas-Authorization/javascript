@@ -2201,7 +2201,7 @@ describe('MFA enrolment mid-sign-in and the texted second factor', () => {
     const { root, calls } = await start('needs_second_factor', SMS_ACCOUNT);
     (root.querySelector('[data-atlas="sms-second-factor"]') as HTMLButtonElement).click();
     await flush();
-    expect(posted(calls, '/v1/client/sign_ins/sia_m/prepare_second_factor')).toEqual([{ strategy: 'email_code', only_way: true }, { strategy: 'sms' }]);
+    expect(posted(calls, '/v1/client/sign_ins/sia_m/prepare_second_factor')).toEqual([{ strategy: 'sms', only_way: true }, { strategy: 'email_code', only_way: true }, { strategy: 'sms' }]);
     expect(root.querySelector('[data-atlas="sms-second-factor-sent"]')!.textContent).toContain('+1•••0101');
     (root.querySelector('[data-atlas="email-second-factor"]') as HTMLButtonElement).click();
     await flush();

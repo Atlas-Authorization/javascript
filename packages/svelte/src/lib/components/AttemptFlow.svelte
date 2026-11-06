@@ -67,7 +67,7 @@
    */
   export let onSmsSecondFactor: (() => Promise<{ sentTo?: string; error?: string }>) | null = null;
   /** On arrival at the second factor: emails the code if the inbox is the only way (masked address, or null). */
-  export let onOnlyWayEmail: ((attemptId: string) => Promise<string | null>) | null = null;
+  export let onOnlyWay: ((attemptId: string, strategy: 'email_code' | 'sms') => Promise<string | null>) | null = null;
   /** "Use a passkey" at the second factor: leaves for the hosted page. */
   export let onPasskeySecondFactor: ((attemptId: string) => void) | null = null;
   /**
@@ -175,15 +175,14 @@
     const r = await onEmailSecondFactor();
     emailed = r.error ? { attemptId, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
   }
-  // Once per attempt: email the code on arrival when the inbox is the only way.
+  // Once per attempt: send the code on arrival when that channel is the only way.
   let onlyWayFor: string | null = null;
-  $: if (step.kind === 'collect_second_factor' && onOnlyWayEmail && attempt?.id && onlyWayFor !== attempt.id) {
+  $: if (step.kind === 'collect_second_factor' && onOnlyWay && attempt?.id && onlyWayFor !== attempt.id) {
     const attemptId = attempt.id;
     onlyWayFor = attemptId;
-    void onOnlyWayEmail(attemptId).then((sentTo) => {
-      // emailedNow only shows an answer for the current attempt, so a stale one is ignored.
-      if (sentTo) emailed = { attemptId, sentTo };
-    });
+    // emailedNow and textedNow only show an answer for the current attempt, so a stale one is ignored.
+    if (onEmailSecondFactor) void onOnlyWay(attemptId, 'email_code').then((sentTo) => { if (sentTo) emailed = { attemptId, sentTo }; });
+    if (onSmsSecondFactor) void onOnlyWay(attemptId, 'sms').then((sentTo) => { if (sentTo) texted = { attemptId, sentTo }; });
   }
   // "Text me a code instead": the same, for the texted code.
   let texted: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string } | null = null;

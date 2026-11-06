@@ -290,16 +290,17 @@ export class AtlasFlowController {
 
   private autoSentFor: string | null = null;
   private onlyWayFor: string | null = null;
-  /** Once per attempt, on arrival at the second factor: email the code if the inbox is the only way. */
+  /** Once per attempt, on arrival at the second factor: send the code if that channel is the only way. */
   private autoSendOnlyWay(): void {
     const { attempt } = this.state();
     const id = attempt?.id ?? null;
-    if (!id || attempt?.status !== 'needs_second_factor' || this.onlyWayFor === id || !this.mfaChoices().emailCode) return;
+    if (!id || attempt?.status !== 'needs_second_factor' || this.onlyWayFor === id) return;
+    const { emailCode, sms } = this.mfaChoices();
+    if (!emailCode && !sms) return;
     this.onlyWayFor = id;
-    void sendOnlyWaySecondFactorCode(this.client, id).then((sentTo) => {
-      // A stale answer (the flow moved to another attempt) is dropped.
-      if (sentTo && this.state().attempt?.id === id) this.emailSecondFactor.set({ sentTo });
-    });
+    // A stale answer (the flow moved to another attempt) is dropped.
+    if (emailCode) void sendOnlyWaySecondFactorCode(this.client, id, 'email_code').then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.emailSecondFactor.set({ sentTo }); });
+    if (sms) void sendOnlyWaySecondFactorCode(this.client, id, 'sms').then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.smsSecondFactor.set({ sentTo }); });
   }
 
   /** "Use a passkey" at the second factor: leaves for the hosted page. */
@@ -402,6 +403,8 @@ export class AtlasFlowController {
     try {
       const { sentTo } = await prepareSecondFactorCode(this.client, id, strategy);
       out.set({ sentTo });
+      // A wrong code's message no longer applies once a new code has gone out.
+      this.state.update((current) => ({ ...current, errors: [] }));
     } catch (error) {
       out.set({ error: error instanceof Error ? error.message : this.t('error.generic') });
     }

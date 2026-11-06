@@ -230,7 +230,7 @@ export function AttemptFlow({
   attempt,
   onSubmit,
   busy,
-  errors,
+  errors: errorsGiven,
   titleKey,
   hideTitle,
   captcha,
@@ -350,6 +350,10 @@ export function AttemptFlow({
    * "Resend" waits out the server's `retry_after` when it answered 429, rather
    * than letting the user hit the same limit again.
    */
+  // A wrong code's message no longer applies once a new code has gone out.
+  const [clearedErrors, setClearedErrors] = useState<FieldError[] | null>(null);
+  const errors = clearedErrors === errorsGiven ? [] : errorsGiven;
+  const clearShownErrors = () => setClearedErrors(errorsGiven);
   const waitFor = step.kind === 'collect_first_factor' ? retryAfterSeconds(errors) : null;
   const [cooldown, setCooldown] = useState(0);
   useEffect(() => {
@@ -437,10 +441,10 @@ export function AttemptFlow({
         return [
           field('code', 'mfa.codeLabel'),
           ...(mfaChoices.sms && attempt?.id
-            ? [<SecondFactorCodeOption key="sms-2fa" attemptId={attempt.id} strategy="sms" />]
+            ? [<SecondFactorCodeOption key="sms-2fa" attemptId={attempt.id} strategy="sms" onSent={clearShownErrors} />]
             : []),
           ...(mfaChoices.emailCode && attempt?.id
-            ? [<SecondFactorCodeOption key="email-2fa" attemptId={attempt.id} strategy="email_code" />]
+            ? [<SecondFactorCodeOption key="email-2fa" attemptId={attempt.id} strategy="email_code" onSent={clearShownErrors} />]
             : []),
           ...(mfaChoices.duo && attempt?.id
             ? [<DuoSecondFactorOption key="duo-2fa" attemptId={attempt.id} onSubmit={onSubmit} />]

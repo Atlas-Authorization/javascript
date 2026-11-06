@@ -316,7 +316,7 @@ describe('texted second factor', () => {
     let el = draw(flow).location.nativeElement as HTMLElement;
     expect(el.querySelector('[data-atlas="sms-second-factor"]')).not.toBeNull();
     await flow.sendSmsSecondFactor();
-    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor')[0]!.body).toEqual({ strategy: 'sms' });
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').at(-1)!.body).toEqual({ strategy: 'sms' });
     refs.pop()!.destroy();
     el = draw(flow).location.nativeElement as HTMLElement;
     expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')!.textContent).toContain('+1•••0101');

@@ -129,7 +129,7 @@
   emailVerification={$settings?.account.emailVerification ?? 'code'}
   onEmailSecondFactor={$settings?.account.emailSecondFactor ? flow.sendEmailSecondFactor : null}
   onSmsSecondFactor={$settings && flow.mfaChoices().sms ? flow.sendSmsSecondFactor : null}
-  onOnlyWayEmail={$settings && flow.mfaChoices().emailCode ? flow.sendOnlyWayEmail : null}
+  onOnlyWay={$settings && (flow.mfaChoices().emailCode || flow.mfaChoices().sms) ? flow.sendOnlyWay : null}
   onPasskeySecondFactor={$settings && flow.mfaChoices().passkey ? flow.continueWithPasskey : null}
   enrollment={flow.enrollment}
   enrollmentState={$enrollmentState}

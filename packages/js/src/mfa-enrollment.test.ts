@@ -124,10 +124,10 @@ describe('createMfaEnrollment', () => {
     expect(enrol.state.method).toBe('phone_code');
   });
 
-  it('a texted factor the server cannot set up is dropped and the authenticator app is prepared', async () => {
+  it('a texted factor the server has turned off is dropped and the authenticator app is prepared', async () => {
     const { client, calls } = scripted((_p, body) =>
       body?.strategy === 'phone_code'
-        ? { status: 409, body: { errors: [{ code: 'INTERNAL', message: 'No SMS provider.' }] } }
+        ? { status: 400, body: { errors: [{ code: 'STRATEGY_DISABLED', message: 'SMS is off.' }] } }
         : { status: 201, body: TOTP },
     );
     const enrol = createMfaEnrollment(client, BOTH);
@@ -326,6 +326,20 @@ describe('every factor the instance offers at the enrolment step', () => {
     });
   });
 
+  it('stays on the number step with the message when a number is refused', async () => {
+    const refused = { code: 'MFA_SETUP_UNAVAILABLE', message: 'Use a test number.' };
+    const { client, calls } = scripted(() => ({ status: 409, body: { errors: [refused] } }));
+    const enrol = createMfaEnrollment(client, { totp: true, sms: true, emailCode: false, totpCodes: 1 });
+    enrol.start('sia_1');
+    await tick();
+    await enrol.choose('phone_code');
+    expect(await enrol.submit({ phone: '+14155552671' })).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(enrol.state.method).toBe('phone_code');
+    expect(enrol.state.options).toEqual(['totp', 'phone_code']);
+    expect(enrol.state.errors[0]?.message).toBe('Use a test number.');
+  });
+
   describe('a page a passkey cannot run on', () => {
     const ceremony = { rpId: 'clerk.example.test', origins: ['https://listed.example'], hostedSignInUrl: 'https://clerk.example.test/hosted/sign-in' };
 
@@ -336,6 +350,13 @@ describe('every factor the instance offers at the enrolment step', () => {
       expect(passkeyRunsHere(ceremony, 'http://localhost:3000')).toBe(false);
       expect(passkeyRunsHere(ceremony, 'https://notclerk.example.test')).toBe(false);
       expect(passkeyRunsHere(undefined, 'http://localhost:3000')).toBe(true);
+    });
+
+    it('does not count a listed localhost or plain http origin: the browser refuses those', () => {
+      const listed = { ...ceremony, origins: ['http://localhost:3000', 'http://app.example', 'https://listed.example'] };
+      expect(passkeyRunsHere(listed, 'http://localhost:3000')).toBe(false);
+      expect(passkeyRunsHere(listed, 'http://app.example')).toBe(false);
+      expect(passkeyRunsHere(listed, 'https://listed.example')).toBe(true);
     });
 
     it('leaves passkey out where another factor can be set up', () => {
