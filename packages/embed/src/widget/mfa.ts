@@ -9,6 +9,7 @@ import {
   mfaChoicesFrom,
   prepareSecondFactorCode,
   sendOnlyWaySecondFactorCode,
+  holdsPasskeySecondFactor,
   continueOnHostedPage,
   type MfaEnrollmentController,
   type MfaEnrollmentStrategy,
@@ -237,6 +238,8 @@ export async function submitEnrollment(w: AtlasWidget, values: Record<string, st
  * step, where the app offers them; once sent, the line saying where it went.
  */
 const onlyWaySent = new WeakMap<AtlasWidget, string>();
+const passkeyAsked = new Set<string>();
+const noPasskey = new Set<string>();
 export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLElement[]): void {
   const id = w.state.attempt?.id;
   if (!id) return;
@@ -299,7 +302,15 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
       trailing.push(p);
     }
   }
-  if (choices.passkey) {
+  if (choices.passkey && !passkeyAsked.has(id)) {
+    passkeyAsked.add(id);
+    void holdsPasskeySecondFactor(w.client, id).then((held) => {
+      if (held) return;
+      noPasskey.add(id);
+      render(w);
+    });
+  }
+  if (choices.passkey && !noPasskey.has(id)) {
     const b = el(w, 'button', 'atlas-embed-step-back', say(w, 'mfa.enrollPasskeyOption')) as HTMLButtonElement;
     b.type = 'button';
     b.setAttribute('data-atlas', 'passkey-second-factor');

@@ -14,8 +14,7 @@ import {
   mfaChoicesFrom,
   prepareSecondFactorCode,
   type MfaChoices,
-  passkeyRunsHere,
-} from './mfa-enrollment';
+  passkeyRunsHere, holdsPasskeySecondFactor } from './mfa-enrollment';
 import type { WebAuthnHost } from './passkey';
 
 function scripted(route: (path: string, body: Record<string, unknown> | null) => { status?: number; body: unknown }) {
@@ -324,6 +323,14 @@ describe('every factor the instance offers at the enrolment step', () => {
       attestation_object: 'AQ',
       client_data_json: 'Ag',
     });
+  });
+
+  it('holdsPasskeySecondFactor reads the answer, and anything unanswered as yes', async () => {
+    const answer = (status: number, body: unknown) => ({ get: async () => ({ ok: status === 200, status, data: body, errors: [] }) }) as never;
+    expect(await holdsPasskeySecondFactor(answer(200, { factors: ['totp'] }), 'sia_1')).toBe(false);
+    expect(await holdsPasskeySecondFactor(answer(200, { factors: ['passkey'] }), 'sia_1')).toBe(true);
+    expect(await holdsPasskeySecondFactor(answer(500, null), 'sia_1')).toBe(true);
+    expect(await holdsPasskeySecondFactor({ get: async () => { throw new Error('down'); } } as never, 'sia_1')).toBe(true);
   });
 
   it('stays on the number step with the message when a number is refused', async () => {

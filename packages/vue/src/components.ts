@@ -333,6 +333,11 @@ const AttemptFlow = defineComponent({
       default: undefined,
     },
     /** "Use a passkey" at the second factor: leaves for the hosted page. */
+    /** Whether the account holds a passkey: "Use a passkey" is hidden when it doesn't. */
+    onHoldsPasskey: {
+      type: Function as PropType<(attemptId: string) => Promise<boolean>>,
+      default: undefined,
+    },
     onPasskeySecondFactor: {
       type: Function as PropType<(attemptId: string) => void>,
       default: undefined,
@@ -389,6 +394,17 @@ const AttemptFlow = defineComponent({
     );
 
     // Once per attempt: email the code on arrival when the inbox is the only way.
+    const noPasskeyFor = ref<string | null>(null);
+    watch(
+      () => (props.attempt && props.onHoldsPasskey && nextStep(props.attempt).kind === 'collect_second_factor' ? props.attempt.id : null),
+      (id) => {
+        if (!id || !props.onHoldsPasskey) return;
+        void props.onHoldsPasskey(id).then((held) => {
+          if (!held) noPasskeyFor.value = id;
+        });
+      },
+      { immediate: true },
+    );
     let onlyWayFor: string | null = null;
     watch(
       () => (props.attempt && props.onOnlyWay && nextStep(props.attempt).kind === 'collect_second_factor' ? props.attempt.id : null),
@@ -707,7 +723,7 @@ const AttemptFlow = defineComponent({
               if (state.error) out.push(h('p', { key: 'email-2fa-error', class: cls('formFieldError', 'atlas-error'), role: 'alert' }, state.error));
             }
           }
-          if (props.onPasskeySecondFactor && props.attempt) {
+          if (props.onPasskeySecondFactor && props.attempt && noPasskeyFor.value !== props.attempt.id) {
             const attemptId = props.attempt.id;
             out.push(
               h(
@@ -950,7 +966,7 @@ export const SignIn = defineComponent({
     signUpUrl: { type: null as unknown as PropType<string | null | undefined>, default: undefined },
   },
   setup(props) {
-    const { state, submit, prepare, captcha, settings, lastMethod, sendEmailSecondFactor, sendSmsSecondFactor, sendOnlyWay, continueWithPasskey, mfaChoices, enrollment, enrollmentState, saveRecoveryCodes, declinePolicy, passkey } =
+    const { state, submit, prepare, captcha, settings, lastMethod, sendEmailSecondFactor, sendSmsSecondFactor, holdsPasskey, sendOnlyWay, continueWithPasskey, mfaChoices, enrollment, enrollmentState, saveRecoveryCodes, declinePolicy, passkey } =
       useFlow();
     const emailLink = useEmailLink('sign_in');
     const atlas = useAtlas();
@@ -1014,6 +1030,7 @@ export const SignIn = defineComponent({
         onSmsSecondFactor: mfaChoices().sms ? sendSmsSecondFactor : undefined,
         onOnlyWay: mfaChoices().emailCode || mfaChoices().sms ? sendOnlyWay : undefined,
         onPasskeySecondFactor: mfaChoices().passkey ? continueWithPasskey : undefined,
+        onHoldsPasskey: mfaChoices().passkey ? holdsPasskey : undefined,
         enrollment,
         enrollmentState: enrollmentState.value,
         recoveryCodes: pendingRecoveryCodes(state.value),
@@ -1403,7 +1420,7 @@ export const SignUp = defineComponent({
     signInUrl: { type: null as unknown as PropType<string | null | undefined>, default: undefined },
   },
   setup(props) {
-    const { state, submit, create, createWithPasskey, createPasskey, resendSignUp, settings, signUpCaptcha, policies, loadPolicies, continueAfterExistingAccount, saveRecoveryCodes, sendEmailSecondFactor, sendSmsSecondFactor, sendOnlyWay, continueWithPasskey, mfaChoices, enrollment, enrollmentState, declinePolicy } = useFlow({ holdExistingAccountNotice: true });
+    const { state, submit, create, createWithPasskey, createPasskey, resendSignUp, settings, signUpCaptcha, policies, loadPolicies, continueAfterExistingAccount, saveRecoveryCodes, sendEmailSecondFactor, sendSmsSecondFactor, holdsPasskey, sendOnlyWay, continueWithPasskey, mfaChoices, enrollment, enrollmentState, declinePolicy } = useFlow({ holdExistingAccountNotice: true });
     const emailLink = useEmailLink('sign_up');
     const atlas = useAtlas();
     const t = useText();
@@ -1458,6 +1475,7 @@ export const SignUp = defineComponent({
             onSmsSecondFactor: mfaChoices().sms ? sendSmsSecondFactor : undefined,
         onOnlyWay: mfaChoices().emailCode || mfaChoices().sms ? sendOnlyWay : undefined,
         onPasskeySecondFactor: mfaChoices().passkey ? continueWithPasskey : undefined,
+        onHoldsPasskey: mfaChoices().passkey ? holdsPasskey : undefined,
             enrollment,
             enrollmentState: enrollmentState.value,
             recoveryCodes: pendingRecoveryCodes(state.value),

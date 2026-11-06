@@ -15,6 +15,7 @@ import {
   type MfaEnrollmentController,
   type MfaEnrollmentState,
   sendOnlyWaySecondFactorCode,
+  holdsPasskeySecondFactor,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { useClass, useClasses, useFapiClient, useText } from './components-shared';
@@ -265,6 +266,29 @@ export function SecondFactorCodeOption({ attemptId, strategy, onSent }: { attemp
         </div>
       ) : null}
     </>
+  );
+}
+
+/** "Use a passkey" at the second factor, for an account that holds one. */
+export function PasskeySecondFactorOption({ attemptId, onChoose }: { attemptId: string; onChoose: () => void }) {
+  const client = useFapiClient();
+  const t = useText();
+  const cls = useClasses();
+  const [held, setHeld] = useState(true);
+  useEffect(() => {
+    let live = true;
+    void holdsPasskeySecondFactor(client, attemptId).then((yes) => {
+      if (live) setHeld(yes);
+    });
+    return () => {
+      live = false;
+    };
+  }, [client, attemptId]);
+  if (!held) return null;
+  return (
+    <button type="button" className={cls('link', 'atlas-link')} data-atlas="passkey-second-factor" onClick={onChoose}>
+      {t('mfa.enrollPasskeyOption')}
+    </button>
   );
 }
 

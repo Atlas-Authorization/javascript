@@ -20,6 +20,7 @@ import {
   prepareSecondFactorCode,
   sendOnlyWaySecondFactorCode,
   continueOnHostedPage,
+  holdsPasskeySecondFactor,
   resendSignUpVerification,
   signInCaptchaOptions,
   PolicyAcceptanceController,
@@ -88,6 +89,7 @@ export interface FlowController {
   sendOnlyWay(attemptId: string, strategy: 'email_code' | 'sms'): Promise<string | null>;
   /** Leaves for the hosted page to do the second factor with a passkey there. */
   continueWithPasskey(attemptId: string): boolean;
+  holdsPasskey(attemptId: string): Promise<boolean>;
   /**
    * "Text me a code instead" on the second-factor step (where the app offers
    * texted codes, `mfaChoices().sms`): texts a code to the account's enrolled
@@ -286,6 +288,7 @@ export function useFlow(options: { holdExistingAccountNotice?: boolean } = {}): 
   const sendEmailSecondFactor = () => sendSecondFactorCode('email_code');
   const sendSmsSecondFactor = () => sendSecondFactorCode('sms');
   const sendOnlyWay = (attemptId: string, strategy: 'email_code' | 'sms') => sendOnlyWaySecondFactorCode(client, attemptId, strategy);
+  const holdsPasskey = (attemptId: string) => holdsPasskeySecondFactor(client, attemptId);
   const continueWithPasskey = (attemptId: string) => continueOnHostedPage(mfaChoices(), attemptId, 'needs_second_factor');
 
   const passkey = createPasskeySignInController({
@@ -417,6 +420,7 @@ export function useFlow(options: { holdExistingAccountNotice?: boolean } = {}): 
     sendSmsSecondFactor,
     sendOnlyWay,
     continueWithPasskey,
+    holdsPasskey,
     mfaChoices,
     enrollment,
     enrollmentState,

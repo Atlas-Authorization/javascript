@@ -70,6 +70,8 @@
   export let onOnlyWay: ((attemptId: string, strategy: 'email_code' | 'sms') => Promise<string | null>) | null = null;
   /** "Use a passkey" at the second factor: leaves for the hosted page. */
   export let onPasskeySecondFactor: ((attemptId: string) => void) | null = null;
+  /** Whether the account holds a passkey: "Use a passkey" is hidden when it doesn't. */
+  export let onHoldsPasskey: ((attemptId: string) => Promise<boolean>) | null = null;
   /**
    * The MFA enrolment step (`FlowController.enrollment` and its state): the
    * authenticator app's QR code and setup key, or a texted code. Null: the step
@@ -174,6 +176,13 @@
     emailed = { attemptId, busy: true };
     const r = await onEmailSecondFactor();
     emailed = r.error ? { attemptId, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
+  }
+  let askedPasskeyFor: string | null = null;
+  let noPasskeyFor: string | null = null;
+  $: if (step.kind === 'collect_second_factor' && onHoldsPasskey && attempt?.id && askedPasskeyFor !== attempt.id) {
+    const attemptId = attempt.id;
+    askedPasskeyFor = attemptId;
+    void onHoldsPasskey(attemptId).then((held) => { if (!held) noPasskeyFor = attemptId; });
   }
   // Once per attempt: send the code on arrival when that channel is the only way.
   let onlyWayFor: string | null = null;
@@ -536,7 +545,7 @@
           {/if}
         {/if}
       {/if}
-      {#if step.kind === 'collect_second_factor' && onPasskeySecondFactor && attempt?.id}
+      {#if step.kind === 'collect_second_factor' && onPasskeySecondFactor && attempt?.id && noPasskeyFor !== attempt.id}
         <button
           class={cls('formButtonSecondary', 'atlas-button-secondary')}
           type="button"

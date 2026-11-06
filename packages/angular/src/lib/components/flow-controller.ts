@@ -21,6 +21,7 @@ import {
   mfaChoicesFrom,
   prepareSecondFactorCode,
   sendOnlyWaySecondFactorCode,
+  holdsPasskeySecondFactor,
   continueOnHostedPage,
   resendSignUpVerification,
   flowNeedsCaptcha,
@@ -185,6 +186,8 @@ export class AtlasFlowController {
     if (loaded) {
       this.settings.set(loaded);
       this.syncCaptcha();
+      // The attempt may have reached the second factor before these arrived.
+      this.autoSendOnlyWay();
       if (loaded.account.lastSignInMethod) this.lastMethod.set(await fetchLastSignInMethod(this.client));
     }
   }
@@ -290,14 +293,17 @@ export class AtlasFlowController {
 
   private autoSentFor: string | null = null;
   private onlyWayFor: string | null = null;
+  /** The attempt whose account holds no passkey: "Use a passkey" is hidden for it. */
+  readonly noPasskeyFor = signal<string | null>(null);
   /** Once per attempt, on arrival at the second factor: send the code if that channel is the only way. */
   private autoSendOnlyWay(): void {
     const { attempt } = this.state();
     const id = attempt?.id ?? null;
     if (!id || attempt?.status !== 'needs_second_factor' || this.onlyWayFor === id) return;
-    const { emailCode, sms } = this.mfaChoices();
-    if (!emailCode && !sms) return;
+    const { emailCode, sms, passkey } = this.mfaChoices();
+    if (!emailCode && !sms && !passkey) return;
     this.onlyWayFor = id;
+    if (passkey) void holdsPasskeySecondFactor(this.client, id).then((held) => { if (!held) this.noPasskeyFor.set(id); });
     // A stale answer (the flow moved to another attempt) is dropped.
     if (emailCode) void sendOnlyWaySecondFactorCode(this.client, id, 'email_code').then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.emailSecondFactor.set({ sentTo }); });
     if (sms) void sendOnlyWaySecondFactorCode(this.client, id, 'sms').then((sentTo) => { if (sentTo && this.state().attempt?.id === id) this.smsSecondFactor.set({ sentTo }); });

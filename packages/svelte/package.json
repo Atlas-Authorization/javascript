@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/svelte",
-  "version": "0.16.4",
+  "version": "0.16.5",
   "type": "module",
   "svelte": "./dist/index.js",
   "types": "./dist/index.d.ts",

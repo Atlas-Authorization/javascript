@@ -51,6 +51,7 @@ import {
   mfaChoicesFrom,
   prepareSecondFactorCode,
   sendOnlyWaySecondFactorCode,
+  holdsPasskeySecondFactor,
   continueOnHostedPage,
   nextStep,
   pendingExistingAccountNotice,
@@ -795,12 +796,14 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     const m = secondText();
     return m && m.attemptId === (state().attempt?.id ?? null) ? m : null;
   };
+  const [noPasskeyFor, setNoPasskeyFor] = createSignal<string | null>(null);
   let onlyWayFor: string | null = null;
   createEffect(() => {
     const id = state().attempt?.id ?? null;
-    const { emailCode, sms } = mfaChoicesFrom(settings()?.account);
-    if (kind() !== 'collect_second_factor' || !id || onlyWayFor === id || (!emailCode && !sms)) return;
+    const { emailCode, sms, passkey } = mfaChoicesFrom(settings()?.account);
+    if (kind() !== 'collect_second_factor' || !id || onlyWayFor === id || (!emailCode && !sms && !passkey)) return;
     onlyWayFor = id;
+    if (passkey) void holdsPasskeySecondFactor(fapi, id).then((held) => { if (!held) setNoPasskeyFor(id); });
     // secondMailNow and secondTextNow ignore an answer for an attempt the flow has left.
     if (emailCode) void sendOnlyWaySecondFactorCode(fapi, id, 'email_code').then((sentTo) => { if (sentTo) setSecondMail({ attemptId: id, sentTo }); });
     if (sms) void sendOnlyWaySecondFactorCode(fapi, id, 'sms').then((sentTo) => { if (sentTo) setSecondText({ attemptId: id, sentTo }); });
@@ -854,7 +857,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
             ),
             text?.error ? h('p', { class: 'atlas-error', role: 'alert' }, text.error) : null,
           ];
-    const passkeyButton = choices.passkey
+    const passkeyButton = choices.passkey && noPasskeyFor() !== attempt.id
       ? h(
           'button',
           { class: 'atlas-link', type: 'button', 'data-atlas': 'passkey-second-factor', disabled: state().busy, onClick: () => continueOnHostedPage(choices, attempt.id!, 'needs_second_factor') },

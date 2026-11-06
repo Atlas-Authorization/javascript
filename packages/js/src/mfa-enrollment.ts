@@ -463,6 +463,19 @@ export async function prepareSecondFactorCode(
 }
 
 /**
+ * Does this account hold a passkey, at the second-factor step? An unanswered question reads true:
+ * the hosted page then says so, where a hidden button would leave a real passkey unusable.
+ */
+export async function holdsPasskeySecondFactor(client: FapiClient, attemptId: string): Promise<boolean> {
+  try {
+    const response = await client.get<{ factors?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/second_factors`);
+    return !response.ok || !Array.isArray(response.data?.factors) || response.data.factors.includes('passkey');
+  } catch {
+    return true;
+  }
+}
+
+/**
  * On arrival at the second-factor step: sends the code only if this channel is the account's only way.
  * Resolves the masked address or number, or null when nothing was sent; a failure leaves the person the button.
  */

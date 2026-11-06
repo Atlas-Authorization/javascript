@@ -323,6 +323,55 @@ describe('<SignIn> second-factor alternatives', () => {
     expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')!.textContent).toContain('+1•••0101');
   });
 
+  it('texts on arrival where SMS is the only way, and hides "Use a passkey" from an account with none', async () => {
+    const el = await mount({
+      account: { mfa: { totp: false, sms: true, passkey: true, totp_codes: 1, passkey_ceremony: { rp_id: 'x.example', origins: [], hosted_sign_in_url: 'https://x.example/hosted/sign-in' } } },
+      routes: [
+        signInRoute(['password']),
+        passwordRoute('needs_second_factor'),
+        (c) => (c.path === '/v1/client/sign_ins/sia_1/second_factors' ? json({ object: 'second_factors', factors: ['sms'] }) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor'
+            ? json({ object: 'second_factor_challenge', strategy: 'sms', sent_to: '+1•••0101' })
+            : undefined,
+      ],
+    });
+    await signInTo(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')).not.toBeNull());
+    expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').map((c) => c.body)).toEqual([{ strategy: 'sms', only_way: true }]);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="passkey-second-factor"]')).toBeNull());
+  });
+
+  it("a wrong code's message clears once a new code has been sent", async () => {
+    const el = await mount({
+      account: { mfa: { totp: false, sms: true, totp_codes: 1 } },
+      routes: [
+        signInRoute(['password']),
+        passwordRoute('needs_second_factor'),
+        (c) =>
+          c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor' && c.body?.only_way
+            ? json({ object: 'second_factor_challenge', strategy: 'sms', sent_to: null })
+            : undefined,
+        (c) =>
+          c.path === '/v1/client/sign_ins/sia_1/prepare_second_factor'
+            ? json({ object: 'second_factor_challenge', strategy: 'sms', sent_to: '+1•••0101' })
+            : undefined,
+        (c) =>
+          c.path === '/v1/client/sign_ins/sia_1/attempt_second_factor'
+            ? json({ errors: [{ code: 'VERIFICATION_FAILED', message: 'That code is incorrect.' }] }, 400)
+            : undefined,
+      ],
+    });
+    await signInTo(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor"]')).not.toBeNull());
+    setInput(el, 'code', '000000');
+    await submit(el);
+    await vi.waitFor(() => expect(el.textContent).toContain('That code is incorrect.'));
+    await click(el.querySelector('[data-atlas="sms-second-factor"]'));
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')).not.toBeNull());
+    expect(el.textContent).not.toContain('That code is incorrect.');
+  });
+
   it('the emailed code goes out on arrival where the inbox is the only way, and the step says so', async () => {
     const el = await mount({
       account: { email_second_factor: true, mfa: { totp: false, sms: false, totp_codes: 1 } },

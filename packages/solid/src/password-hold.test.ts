@@ -62,3 +62,42 @@ describe('<SignIn> password hold', () => {
     expect(el.querySelector('input[name="password"]')).not.toBeNull();
   });
 });
+
+describe('<SignIn> second factor', () => {
+  it('texts on arrival where SMS is the only way, says where, and hides "Use a passkey" from an account with none', async () => {
+    const prepared: unknown[] = [];
+    let environmentAsked = false;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/v1/client') return json({ session: null, user: null });
+      if (path === '/v1/client/environment' || path === '/v1/appearance') {
+        environmentAsked = true;
+        return json({ account: { mfa: { totp: false, sms: true, passkey: true, totp_codes: 1, passkey_ceremony: { rp_id: 'x.example', origins: [], hosted_sign_in_url: 'https://x.example/hosted/sign-in' } } } });
+      }
+      if (path === '/v1/client/sign_ins') {
+        return json({ id: 'sia_1', status: 'needs_first_factor', identifier: 'a@example.com', supported_first_factors: ['password'] }, 201);
+      }
+      if (path === '/v1/client/sign_ins/sia_1/attempt_first_factor') return json({ id: 'sia_1', status: 'needs_second_factor', identifier: 'a@example.com' });
+      if (path === '/v1/client/sign_ins/sia_1/second_factors') return json({ object: 'second_factors', factors: ['sms'] });
+      if (path === '/v1/client/sign_ins/sia_1/prepare_second_factor') {
+        prepared.push(JSON.parse(String(init?.body)));
+        return json({ object: 'second_factor_challenge', strategy: 'sms', sent_to: '+1•••0101' }, 201);
+      }
+      return json({});
+    }) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchImpl);
+    const el = render(() => h(AtlasProvider, { publishableKey: 'pk_test_x', frontendApi: FAPI, fetchImpl }, h(SignIn, {}))).container as HTMLElement;
+    const send = (name: string, value: string) => {
+      (el.querySelector(`input[name="${name}"]`) as HTMLInputElement).value = value;
+      el.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    };
+    await vi.waitFor(() => expect(el.querySelector('input[name="identifier"]')).not.toBeNull());
+    await vi.waitFor(() => expect(environmentAsked).toBe(true));
+    send('identifier', 'a@example.com');
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    send('password', 'the-right-password');
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')?.textContent).toContain('+1•••0101'));
+    expect(prepared).toEqual([{ strategy: 'sms', only_way: true }]);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="passkey-second-factor"]')).toBeNull());
+  });
+});

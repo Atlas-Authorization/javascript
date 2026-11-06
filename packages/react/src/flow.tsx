@@ -60,6 +60,7 @@ import {
   MfaEnrollmentFields,
   RecoveryCodes,
   SecondFactorCodeOption,
+  PasskeySecondFactorOption,
   useMfaChoices,
   useMfaEnrollment,
 } from './mfa-steps';
@@ -451,15 +452,7 @@ export function AttemptFlow({
             : []),
           ...(mfaChoices.passkey && mfaChoices.passkeyCeremony?.hostedSignInUrl && attempt?.id
             ? [
-                <button
-                  key="passkey-2fa"
-                  type="button"
-                  className={cls('link', 'atlas-link')}
-                  data-atlas="passkey-second-factor"
-                  onClick={() => continueOnHostedPage(mfaChoices, attempt.id!, 'needs_second_factor')}
-                >
-                  {t('mfa.enrollPasskeyOption')}
-                </button>,
+                <PasskeySecondFactorOption key="passkey-2fa" attemptId={attempt.id} onChoose={() => continueOnHostedPage(mfaChoices, attempt.id!, 'needs_second_factor')} />,
               ]
             : []),
         ];
