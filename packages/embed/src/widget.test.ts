@@ -1331,13 +1331,17 @@ describe('forgot password (§5.4) — the reset sub-flow in the panel', () => {
   });
 
   it('runs email → code → new password to a signed-in state', async () => {
+    let redeemed = false;
     const { impl, calls } = makeFetch({
       'GET /v1/appearance': () => ({ body: envelope([]) }),
       'POST /v1/client/password_resets': () => ({ status: 201, body: { id: 'pr_1', status: 'needs_email_verification' } }),
       'POST /v1/client/password_resets/pr_1/attempt_verification': () => ({ body: { id: 'pr_1', status: 'needs_new_password' } }),
       'POST /v1/client/password_resets/pr_1/set_new_password': () => ({ body: { id: 'pr_1', status: 'complete', ticket: 'tk' } }),
-      'POST /v1/client/tickets/exchange': () => ({ body: { object: 'session' } }),
-      'GET /v1/client': () => ({ body: { user: { id: 'u1' }, session: { id: 's1' } } }),
+      'POST /v1/client/tickets/exchange': () => {
+        redeemed = true;
+        return { body: { object: 'session' } };
+      },
+      'GET /v1/client': () => ({ body: redeemed ? { user: { id: 'u1' }, session: { id: 's1' } } : {} }),
     });
     const root = document.createElement('div');
     document.body.appendChild(root);
@@ -2028,6 +2032,7 @@ describe('link-only verification and reset', () => {
   });
 
   it('sign-up in link mode: no code field and no submit, "check your email", then the poll signs this tab in', async () => {
+    let redeemed = false;
     let opened = false;
     const { impl, calls } = makeFetch({
       'GET /v1/appearance': () => ({ body: { ...envelope([]), account: linkAccount({ email_verification: 'link' }) } }),
@@ -2041,8 +2046,11 @@ describe('link-only verification and reset', () => {
           ? { object: 'sign_up_attempt', id: 'sua_l', status: 'complete', ticket: 'tk_l' }
           : { object: 'sign_up_attempt', id: 'sua_l', status: 'needs_email_verification' },
       }),
-      'POST /v1/client/tickets/exchange': () => ({ body: { object: 'session' } }),
-      'GET /v1/client': () => ({ body: { user: { id: 'u1' }, session: { id: 's1' } } }),
+      'POST /v1/client/tickets/exchange': () => {
+        redeemed = true;
+        return { body: { object: 'session' } };
+      },
+      'GET /v1/client': () => ({ body: redeemed ? { user: { id: 'u1' }, session: { id: 's1' } } : {} }),
     });
     const root = document.createElement('div');
     document.body.appendChild(root);
@@ -2566,5 +2574,31 @@ describe('a reset held after the new password', () => {
     );
     expect(root.textContent).not.toContain("You're all set");
     expect(root.textContent).toContain('Terms');
+  });
+});
+
+describe('someone is already signed in', () => {
+  const mountAs = async (signedIn: boolean, mode: 'sign-in' | 'sign-up') => {
+    const { impl, calls } = makeFetch({
+      'GET /v1/client': () => ({ body: signedIn ? { session: { id: 'sess_1' }, user: { id: 'user_1' } } : { session: null, user: null } }),
+      'GET /v1/appearance': () => ({ body: envelope([]) }),
+    });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    await new AtlasWidget(root, { ...OPTS, mode, fetchImpl: impl }).mount();
+    await flush();
+    return { root, calls };
+  };
+
+  it.each(['sign-in', 'sign-up'] as const)('draws no %s form, and never fetches the appearance', async (mode) => {
+    const { root, calls } = await mountAs(true, mode);
+    expect(root.querySelector('form')).toBeNull();
+    expect(root.querySelector('input')).toBeNull();
+    expect(calls.some((c) => c.path === '/v1/appearance')).toBe(false);
+  });
+
+  it('draws the form when nobody is signed in', async () => {
+    const { root } = await mountAs(false, 'sign-in');
+    expect(root.querySelector('form')).not.toBeNull();
   });
 });

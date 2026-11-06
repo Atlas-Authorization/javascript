@@ -109,6 +109,8 @@ export const frFR: LocalizationResource = {
   'mfa.sendCode': 'M’envoyer un code par SMS',
   'mfa.codeTextedTo': 'Saisissez le code envoyé au {phone}.',
   'mfa.codeWait': 'Vous pourrez demander un autre code dans {seconds} secondes.',
+  'mfa.codeWaitOne': 'Vous pourrez demander un autre code dans 1 seconde.',
+  'mfa.codeResent': 'Code envoyé.',
   'mfa.codeWaitMinutes': 'Vous pourrez demander un autre code dans {minutes} minutes.',
   'mfa.smsCodeOption': 'M’envoyer plutôt un code par SMS',
   'mfa.recoveryCodesTitle': 'Enregistrez vos codes de récupération',

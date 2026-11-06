@@ -20,6 +20,7 @@ import {
   prepareFactor,
   resendSignUpVerification,
   shouldKeepPolling,
+  pollAnswerStale,
   readRedirectResult,
   resetStep,
   sendTelemetry,
@@ -438,8 +439,8 @@ function startLinkPoll(w: AtlasWidget): void {
       const before = w.state.attempt?.status;
       const polled = w.state;
       const { state, ticket } = await pollAttempt(w.client, polled);
-      // A resend rotated the secret meanwhile: this answer is stale.
-      if (w.state.pollSecret === polled.pollSecret) w.state = state;
+      if (pollAnswerStale(w.state, polled)) return;
+      w.state = state;
       // Moved on without a session yet (e.g. a passkey sign-up whose email was just
       // proven): draw the new step.
       if (!ticket && state.attempt && (state.attempt.status !== before || state.attempt.finished_elsewhere)) render(w);

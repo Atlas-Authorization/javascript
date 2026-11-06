@@ -176,6 +176,9 @@ interface StepField {
               <p class="atlas-text">{{ t('mfa.phoneHint') }}</p>
             }
           }
+          @if (enrol.resent) {
+            <p class="atlas-text" data-atlas="mfa-code-resent" aria-live="polite">{{ t('mfa.codeResent') }}</p>
+          }
           @if (enrol.wait; as left) {
             <p [class]="cls('formFieldError', 'atlas-error')" data-atlas="code-wait" [attr.role]="enrol.waitTicking ? 'timer' : 'alert'">{{ waitText(left) }}</p>
           }
@@ -254,8 +257,11 @@ interface StepField {
             [disabled]="busy || !!textedSecondFactor?.busy || !!textedSecondFactor?.wait"
             (click)="smsSecondFactor.emit()"
           >
-            {{ textedSecondFactor?.busy ? t('signIn.sending') : smsSecondFactorSentTo() || textedSecondFactor?.error || textedSecondFactor?.wait ? t('signIn.resendCode') : t('mfa.smsCodeOption') }}
+            {{ textedSecondFactor?.busy ? t('signIn.sending') : smsSecondFactorSentTo() || textedSecondFactor?.error || textedSecondFactor?.wait !== undefined ? t('signIn.resendCode') : t('mfa.smsCodeOption') }}
           </button>
+          @if (textedSecondFactor?.resent) {
+            <p class="atlas-text" data-atlas="sms-second-factor-resent" aria-live="polite">{{ t('mfa.codeResent') }}</p>
+          }
           @if (textedSecondFactor?.wait; as left) {
             <p [class]="cls('formFieldError', 'atlas-error')" data-atlas="code-wait" [attr.role]="textedSecondFactor?.ticking ? 'timer' : 'alert'">{{ waitText(left) }}</p>
           }
@@ -277,8 +283,11 @@ interface StepField {
             [disabled]="busy || !!emailedSecondFactor?.busy || !!emailedSecondFactor?.wait"
             (click)="emailSecondFactor.emit()"
           >
-            {{ emailedSecondFactor?.busy ? t('signIn.sending') : emailSecondFactorSentTo() || emailedSecondFactor?.error || emailedSecondFactor?.wait ? t('signIn.resendCode') : t('signIn.emailCodeOption') }}
+            {{ emailedSecondFactor?.busy ? t('signIn.sending') : emailSecondFactorSentTo() || emailedSecondFactor?.error || emailedSecondFactor?.wait !== undefined ? t('signIn.resendCode') : t('signIn.emailCodeOption') }}
           </button>
+          @if (emailedSecondFactor?.resent) {
+            <p class="atlas-text" data-atlas="email-second-factor-resent" aria-live="polite">{{ t('mfa.codeResent') }}</p>
+          }
           @if (emailedSecondFactor?.wait; as left) {
             <p [class]="cls('formFieldError', 'atlas-error')" data-atlas="code-wait" [attr.role]="emailedSecondFactor?.ticking ? 'timer' : 'alert'">{{ waitText(left) }}</p>
           }
@@ -383,7 +392,7 @@ export class AttemptFlowComponent {
    */
   @Input() offerEmailSecondFactor = false;
   /** `AtlasFlowController.emailSecondFactor()`: in flight, where it went, or why not. */
-  @Input() emailedSecondFactor: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null = null;
+  @Input() emailedSecondFactor: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null = null;
   @Output() emailSecondFactor = new EventEmitter<void>();
   /** "Use a passkey" at the second factor (`mfaChoices().passkey`): leaves for the hosted page. */
   @Input() offerPasskeySecondFactor = false;
@@ -395,7 +404,7 @@ export class AttemptFlowComponent {
    */
   @Input() offerSmsSecondFactor = false;
   /** `AtlasFlowController.smsSecondFactor()`: in flight, where it went, or why not. */
-  @Input() textedSecondFactor: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null = null;
+  @Input() textedSecondFactor: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null = null;
   @Output() smsSecondFactor = new EventEmitter<void>();
   /**
    * The MFA enrolment step (`AtlasFlowController.enrollment` and
@@ -629,6 +638,8 @@ export class AttemptFlowComponent {
         // plainly. "Check the other tab" is for a sign-in completed on another device.
         if (this.sessionKept === true) return [msg('signIn.signedIn')];
         if (this.sessionKept === false) return [{ kind: 'alert', name: '', labelKey: 'signIn.sessionNotKept', type: 'text' }];
+        // Still redeeming this tab's own ticket: nothing to say yet.
+        if (this.busy) return [];
         return [msg('signIn.checkOtherTab')];
       case 'restart':
         return [msg('error.generic')];

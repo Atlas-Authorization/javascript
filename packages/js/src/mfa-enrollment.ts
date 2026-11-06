@@ -225,6 +225,8 @@ export interface MfaEnrollmentState {
   wait?: number | null;
   /** See {@link CodeWait}. */
   waitTicking?: boolean;
+  /** A resend just went out: the step says so, since the code screen otherwise looks the same. */
+  resent?: boolean;
 }
 
 export interface MfaEnrollmentController {
@@ -295,11 +297,12 @@ export function createMfaEnrollment(
     if (!id) return;
     const gen = generation;
     waits.stopAll();
-    set({ busy: true, errors: [], wait: null, waitTicking: false });
+    const resending = !!state.enrollment;
+    set({ busy: true, errors: [], wait: null, waitTicking: false, resent: false });
     const out = await prepareMfaEnrollment(client, id, input);
     if (gen !== generation) return; // the flow moved on meanwhile
     if (out.enrollment) {
-      set({ busy: false, enrollment: out.enrollment, errors: [] });
+      set({ busy: false, enrollment: out.enrollment, errors: [], resent: resending });
       return;
     }
     const seconds = out.status === 429 ? retryAfterSeconds(out.errors) : null;
@@ -486,7 +489,7 @@ export function secondFactorSendText(error: unknown, t: CodeWaitLocalize): strin
   return error instanceof Error ? error.message : String(error);
 }
 
-export type CodeWaitLocalize = (key: 'mfa.codeWait' | 'mfa.codeWaitMinutes', vars: Record<string, string>) => string;
+export type CodeWaitLocalize = (key: 'mfa.codeWait' | 'mfa.codeWaitMinutes' | 'mfa.codeWaitOne', vars: Record<string, string>) => string;
 
 /** How long a failed send said to wait, or null when it wasn't limited. */
 export function codeWaitSeconds(error: unknown): number | null {
@@ -496,6 +499,7 @@ export function codeWaitSeconds(error: unknown): number | null {
 
 /** The wait, in words: minutes once it's long (the hourly limit can answer up to an hour). */
 export function codeWaitText(seconds: number, t: CodeWaitLocalize): string {
+  if (seconds === 1) return t('mfa.codeWaitOne', {});
   return seconds > 120 ? t('mfa.codeWaitMinutes', { minutes: String(Math.ceil(seconds / 60)) }) : t('mfa.codeWait', { seconds: String(seconds) });
 }
 

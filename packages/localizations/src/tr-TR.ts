@@ -109,6 +109,8 @@ export const trTR: LocalizationResource = {
   'mfa.sendCode': 'Bana kod gönder',
   'mfa.codeTextedTo': '{phone} numarasına kısa mesajla gönderdiğimiz kodu girin.',
   'mfa.codeWait': '{seconds} saniye sonra yeni bir kod isteyebilirsiniz.',
+  'mfa.codeWaitOne': '1 saniye sonra yeni bir kod isteyebilirsiniz.',
+  'mfa.codeResent': 'Kod gönderildi.',
   'mfa.codeWaitMinutes': '{minutes} dakika sonra yeni bir kod isteyebilirsiniz.',
   'mfa.smsCodeOption': 'Bunun yerine kısa mesajla kod gönderin',
   'mfa.recoveryCodesTitle': 'Kurtarma kodlarınızı kaydedin',

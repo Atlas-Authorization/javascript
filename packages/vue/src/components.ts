@@ -383,9 +383,9 @@ const AttemptFlow = defineComponent({
     // code field / "check your email" once an emailed code / link was sent.
     const factor = ref<'password' | 'email_code' | 'email_link'>('password');
     // "Email me a code instead" at the second factor: where it went, or why not.
-    const emailed = ref<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean }>({});
+    const emailed = ref<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean }>({});
     // "Text me a code instead": the same, for the texted code.
-    const texted = ref<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean }>({});
+    const texted = ref<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean }>({});
     watch(
       () => props.attempt?.id,
       () => {
@@ -600,6 +600,7 @@ const AttemptFlow = defineComponent({
           ),
         );
       }
+      if (s.resent) out.push(h('p', { key: 'code-resent', class: 'atlas-text', 'data-atlas': 'mfa-code-resent', 'aria-live': 'polite' }, t('mfa.codeResent')));
       if (s.wait) out.push(h('p', { key: 'code-wait', class: cls('formFieldError', 'atlas-error'), 'data-atlas': 'code-wait', role: s.waitTicking ? 'timer' : 'alert' }, codeWaitText(s.wait, t)));
       for (const error of s.errors) {
         out.push(h('p', { key: `enrol-error-${error.code}-${error.param ?? ''}`, class: cls('formFieldError', 'atlas-error'), role: 'alert' }, error.message));
@@ -683,7 +684,7 @@ const AttemptFlow = defineComponent({
           const out: VNode[] = [field('code', 'mfa.codeLabel')];
           const option = (
             name: string,
-            state: { value: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } },
+            state: { value: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } },
             sentLine: (to: string) => string,
             label: Parameters<typeof t>[0],
             send: () => Promise<{ sentTo?: string; error?: string; retryAfter?: number | null }>,
@@ -705,13 +706,14 @@ const AttemptFlow = defineComponent({
                     state.value = { sentTo: now.sentTo, busy: true };
                     void send().then((r) => {
                       if (r.retryAfter) waits.start(name, r.retryAfter, (w) => { state.value = { sentTo: now.sentTo, ...w }; });
-                      else state.value = r.error ? { sentTo: now.sentTo, error: r.error } : { sentTo: r.sentTo ?? '' };
+                      else state.value = r.error ? { sentTo: now.sentTo, error: r.error } : { sentTo: r.sentTo ?? '', resent: now.sentTo !== undefined };
                     });
                   },
                 },
-                now.busy ? t('signIn.sending') : sent || now.error || now.wait ? t('signIn.resendCode') : t(label),
+                now.busy ? t('signIn.sending') : sent || now.error || now.wait !== undefined ? t('signIn.resendCode') : t(label),
               ),
             );
+            if (now.resent) out.push(h('p', { key: `${name}-resent`, class: 'atlas-text', 'data-atlas': `${name}-resent`, 'aria-live': 'polite' }, t('mfa.codeResent')));
             if (now.wait) out.push(h('p', { key: `${name}-wait`, class: cls('formFieldError', 'atlas-error'), 'data-atlas': 'code-wait', role: now.ticking ? 'timer' : 'alert' }, codeWaitText(now.wait, t)));
             if (now.error) out.push(h('p', { key: `${name}-error`, class: cls('formFieldError', 'atlas-error'), role: 'alert' }, now.error));
           };
@@ -793,6 +795,8 @@ const AttemptFlow = defineComponent({
           if (props.sessionKept === false) {
             return [h('p', { key: 'done', class: cls('formFieldError', 'atlas-error'), role: 'alert' }, t('signIn.sessionNotKept'))];
           }
+          // Still redeeming this tab's own ticket: nothing to say yet.
+          if (props.busy) return [];
           return [h('p', { key: 'done' }, t('signIn.checkOtherTab'))];
         case 'restart':
           return [h('p', { key: 'restart' }, t('error.generic'))];
@@ -982,7 +986,9 @@ export const SignIn = defineComponent({
     onMounted(() => {
       supported.value = passkeysSupported();
     });
-    const passkeyOffered = () => supported.value && !emailLink.value && !state.value.attempt && settings.value?.passkeySignIn === true;
+    // Already signed in with no flow of ours in progress (a held attempt covers recovery codes and finishing): draw nothing.
+    const hidden = () => atlas.status.value === 'signed_in' && !state.value.attempt && !state.value.busy;
+    const passkeyOffered = () => supported.value && !emailLink.value && !hidden() && !state.value.attempt && settings.value?.passkeySignIn === true;
     watch(passkeyOffered, (on) => (on ? passkey.armAutofill() : passkey.stopAutofill()));
     const submitIdentifier = (values: Record<string, string>) => {
       passkey.stopAutofill();
@@ -1032,6 +1038,7 @@ export const SignIn = defineComponent({
         onPolicyDecline: declinePolicy,
       });
       if (emailLink.value) return h(EmailLinkPage, { link: emailLink.value });
+      if (hidden()) return null;
       const passkeyButton = passkeyOffered()
         ? h(
             'button',
@@ -1453,6 +1460,8 @@ export const SignUp = defineComponent({
           signInHref ? h('a', { class: cls('formButtonPrimary', 'atlas-button'), href: signInHref }, t('signIn.title')) : null,
         ]);
       }
+      // Already signed in with no attempt held (those steps above keep finishing): draw nothing.
+      if (atlas.status.value === 'signed_in' && !state.value.attempt && !state.value.busy) return null;
       return state.value.attempt
         ? h(AttemptFlow, {
             attempt: state.value.attempt,

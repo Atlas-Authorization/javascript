@@ -117,6 +117,8 @@ export const EN_US: Catalog = {
   'mfa.sendCode': 'Text me a code',
   'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
   'mfa.codeWait': 'You can ask for another code in {seconds} seconds.',
+  'mfa.codeWaitOne': 'You can ask for another code in 1 second.',
+  'mfa.codeResent': 'Code sent.',
   'mfa.codeWaitMinutes': 'You can ask for another code in {minutes} minutes.',
   'mfa.smsCodeOption': 'Text me a code instead',
   'mfa.recoveryCodesTitle': 'Save your recovery codes',

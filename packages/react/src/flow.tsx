@@ -50,6 +50,7 @@ import {
   flowFromPending,
   pollAttempt,
   shouldKeepPolling,
+  pollAnswerStale,
   type FlowState,
 } from './fapi';
 import { useClass, useClasses, useErrorText, useFapiClient, useText } from './components-shared';
@@ -634,6 +635,8 @@ export function AttemptFlow({
         // completed on another device, where this tab never had a session to keep.
         if (sessionKept === true) return [<p key="done" className={cls('text', 'atlas-text')}>{t('signIn.signedIn')}</p>];
         if (sessionKept === false) return [<p key="done" className={errorClass} role="alert">{t('signIn.sessionNotKept')}</p>];
+        // Still redeeming this tab's own ticket: nothing to say yet.
+        if (busy) return [];
         return [<p key="done" className={cls('text', 'atlas-text')}>{t('signIn.checkOtherTab')}</p>];
       case 'restart':
         return [<p key="restart" className={cls('text', 'atlas-text')}>{t('error.generic')}</p>];
@@ -1046,6 +1049,8 @@ export function useFlow({
     prepare(autoSend);
   }, [autoSend, attemptId, prepare, state.prepared]);
 
+  const latestState = useRef(state);
+  latestState.current = state;
   /** §5.3: collect a sign-in completed by a link opened on another device. */
   useEffect(() => {
     if (!shouldKeepPolling(state)) return;
@@ -1053,8 +1058,9 @@ export function useFlow({
     const timer = setInterval(() => {
       void (async () => {
         const { state: next, ticket } = await pollAttempt(client, state);
-        // A resend rotated the secret meanwhile: this answer is stale.
-        setState((current) => (current.pollSecret === state.pollSecret ? next : current));
+        if (pollAnswerStale(latestState.current, state)) return;
+        // Busy until the session is held: only a sign-in that finished with no ticket here says "other tab".
+        setState(ticket ? { ...next, busy: true } : next);
         if (!ticket || !next.attempt) return;
 
         // The ticket is exchanged by a normal request, so no session token has
@@ -1064,7 +1070,7 @@ export function useFlow({
           ticket,
         });
         const kept = res.ok && (await reload());
-        setState((current) => ({ ...current, sessionKept: kept }));
+        setState((current) => ({ ...current, busy: false, sessionKept: kept }));
         if (!kept) return;
         const journeyUrl = journeyRedirectUrl(res.data);
         if (journeyUrl && typeof window !== 'undefined') {

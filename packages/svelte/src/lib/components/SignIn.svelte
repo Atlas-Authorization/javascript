@@ -47,6 +47,9 @@
   // Named `flowState`, not `state`, so it can never collide with Svelte 5's
   // `$state` rune when a consumer compiles this in runes mode.
   const flowState = flow.state;
+  const authStatus = atlas.status;
+  // Already signed in with no flow of ours in progress (a held attempt covers recovery codes and finishing): draw nothing.
+  $: hidden = $authStatus === 'signed_in' && !$flowState.attempt && !$flowState.busy;
   const settings = flow.settings;
   const lastMethod = flow.lastMethod;
   const enrollmentState = flow.enrollmentState;
@@ -75,7 +78,7 @@
   onMount(() => {
     supported = passkeysSupported();
   });
-  $: passkeyOffered = supported && !$flowState.attempt && $settings?.passkeySignIn === true;
+  $: passkeyOffered = supported && !hidden && !$flowState.attempt && $settings?.passkeySignIn === true;
   $: if (passkeyOffered) flow.passkey.armAutofill();
   else flow.passkey.stopAutofill();
   function submitIdentifier(values: Record<string, string>) {
@@ -92,6 +95,8 @@
 
 {#if emailLink}
   <EmailLinkPage link={emailLink} />
+{:else if hidden}
+  <!-- signed in: nothing to draw -->
 {:else}
 {#if lastLabel}
   <p class={classFor('badge', atlas.appearance, 'atlas-text atlas-last-used-hint')} data-atlas="last-used" data-atlas-method={$lastMethod}>

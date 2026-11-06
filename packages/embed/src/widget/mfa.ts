@@ -66,6 +66,8 @@ const EN: Record<string, string> = {
   'mfa.sendCode': 'Text me a code',
   'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
   'mfa.codeWait': 'You can ask for another code in {seconds} seconds.',
+  'mfa.codeWaitOne': 'You can ask for another code in 1 second.',
+  'mfa.codeResent': 'Code sent.',
   'mfa.codeWaitMinutes': 'You can ask for another code in {minutes} minutes.',
   'mfa.codeLabel': 'Code',
   'mfa.smsCodeOption': 'Text me a code instead',
@@ -229,6 +231,12 @@ export function renderEnrollment(
     again.addEventListener('click', () => void enrol.resend());
     helpers.trailing.push(again);
   }
+  if (s.resent) {
+    const again = el(w, 'p', 'atlas-embed-note', say(w, 'mfa.codeResent'));
+    again.setAttribute('data-atlas', 'mfa-code-resent');
+    again.setAttribute('aria-live', 'polite');
+    form.appendChild(again);
+  }
   if (s.wait) form.appendChild(codeWaitLine(w, s.wait, !!s.waitTicking));
   for (const error of s.errors) {
     const p = el(w, 'p', 'atlas-embed-error', w.errorText(error));
@@ -290,7 +298,7 @@ function startCodeWait(w: AtlasWidget, id: string, strategy: 'sms' | 'email_code
       running.stopAll();
       return;
     }
-    w.secondFactorCode = wait === null ? { attemptId: id, strategy, sentTo } : { attemptId: id, strategy, sentTo, wait, ticking };
+    w.secondFactorCode = { attemptId: id, strategy, sentTo, wait, ticking };
     if (ticking || wait === null) drawCodeWait(w, wait);
     else render(w);
   });
@@ -354,7 +362,7 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
       trailing.push(note);
     }
     const busy = mine?.busy === true;
-    const label = busy ? 'signIn.sending' : wasSent || mine?.error || mine?.wait ? 'signIn.resendCode' : strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption';
+    const label = busy ? 'signIn.sending' : wasSent || mine?.error || mine?.wait !== undefined ? 'signIn.resendCode' : strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption';
     const b = el(w, 'button', 'atlas-embed-step-back', say(w, label)) as HTMLButtonElement;
     b.type = 'button';
     b.setAttribute('data-atlas', wasSent ? `${name}-resend` : name);
@@ -369,7 +377,7 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
       render(w);
       prepareSecondFactorCode(w.client, id, strategy).then(
         ({ sentTo }) => {
-          w.secondFactorCode = { attemptId: id, strategy, sentTo };
+          w.secondFactorCode = { attemptId: id, strategy, sentTo, resent: before !== undefined };
           // A wrong code's message no longer applies once a new code has gone out.
           w.state = { ...w.state, errors: [] };
           render(w);
@@ -386,6 +394,12 @@ export function renderSecondFactorAlternatives(w: AtlasWidget, trailing: HTMLEle
       );
     });
     trailing.push(b);
+    if (mine?.resent) {
+      const again = el(w, 'p', 'atlas-embed-note', say(w, 'mfa.codeResent'));
+      again.setAttribute('data-atlas', `${name}-resent`);
+      again.setAttribute('aria-live', 'polite');
+      trailing.push(again);
+    }
     if (mine?.wait) trailing.push(codeWaitLine(w, mine.wait, !!mine.ticking));
     if (mine?.error) {
       const p = el(w, 'p', 'atlas-embed-error', mine.error);

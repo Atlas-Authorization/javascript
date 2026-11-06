@@ -42,6 +42,7 @@ import {
   pollAttempt,
   prepareFactor,
   shouldKeepPolling,
+  pollAnswerStale,
   type FlowState,
 } from './fapi';
 import { useAtlas } from './context';
@@ -392,8 +393,9 @@ export function useFlow(options: { holdExistingAccountNotice?: boolean } = {}): 
         void (async () => {
           const polled = state.value;
           const { state: next, ticket } = await pollAttempt(client, polled);
-          // A resend rotated the secret meanwhile: this answer is stale.
-          if (state.value.pollSecret === polled.pollSecret) state.value = next;
+          if (pollAnswerStale(state.value, polled)) return;
+          // Busy until the session is held: only a sign-in that finished with no ticket here says "other tab".
+          state.value = ticket ? { ...next, busy: true } : next;
           if (!ticket || !next.attempt) return;
 
           // The ticket is exchanged by a normal request, so no session token has
@@ -403,7 +405,7 @@ export function useFlow(options: { holdExistingAccountNotice?: boolean } = {}): 
             ticket,
           });
           const kept = res.ok && (await atlas.reload());
-          state.value = { ...state.value, sessionKept: kept };
+          state.value = { ...state.value, busy: false, sessionKept: kept };
         })();
       }, 2_000);
     },

@@ -264,7 +264,7 @@ describe('AtlasFlowController emailed second factor and sign-up resend', () => {
     expect(flow.state().attempt?.status).toBe('needs_second_factor');
     await flow.sendEmailSecondFactor();
     expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor')[0]!.body).toEqual({ strategy: 'email_code' });
-    expect(flow.emailSecondFactor()).toEqual({ sentTo: 'a•••@example.com' });
+    expect(flow.emailSecondFactor()).toMatchObject({ sentTo: 'a•••@example.com' });
     await flow.submit({ code: '123456' });
     expect(flow.emailSecondFactor()).toBeNull();
     flow.destroy();
@@ -279,7 +279,7 @@ describe('AtlasFlowController emailed second factor and sign-up resend', () => {
       ],
     });
     await flow.submit({ identifier: 'ada@example.com' });
-    await vi.waitFor(() => expect(flow.emailSecondFactor()).toEqual({ sentTo: 'a•••@example.com' }));
+    await vi.waitFor(() => expect(flow.emailSecondFactor()).toMatchObject({ sentTo: 'a•••@example.com' }));
     expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').map((c) => c.body)).toEqual([{ strategy: 'email_code', only_way: true }]);
     flow.destroy();
   });
@@ -412,6 +412,8 @@ describe('AtlasFlowController existing account', () => {
     await vi.waitFor(() => expect(flow.enrollmentState().enrollment?.strategy).toBe('totp'));
     await flow.submit((await flow.enrollment.submit({ code: '111111', secondCode: '222222' }))!);
     expect(flow.recoveryCodes()).toEqual(['aaaa-1111']);
+    // A session held while the codes show must not hide the flow (`<atlas-sign-in>` hides only when signed in and nothing is in progress).
+    expect(flow.inProgress()).toBe(true);
     expect(flow.existingAccountNotice()).toBe(false);
     expect(posts('/v1/client/tickets/exchange')).toHaveLength(1);
     expect(reload).not.toHaveBeenCalled();
@@ -469,5 +471,10 @@ describe('AtlasFlowController existing account', () => {
     expect(flow.existingAccountNotice()).toBe(false);
     expect(flow.state().sessionKept).toBe(false);
     flow.destroy();
+  });
+
+  it('a fresh flow is not in progress, so a signed-in page draws nothing', async () => {
+    const flow = await controller({ routes: [] });
+    expect(flow.inProgress()).toBe(false);
   });
 });

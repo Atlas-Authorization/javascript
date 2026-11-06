@@ -109,6 +109,8 @@ export const zhCN: LocalizationResource = {
   'mfa.sendCode': '通过短信发送验证码',
   'mfa.codeTextedTo': '请输入我们发送到 {phone} 的验证码。',
   'mfa.codeWait': '{seconds} 秒后可以再次获取验证码。',
+  'mfa.codeWaitOne': '1 秒后可以再次获取验证码。',
+  'mfa.codeResent': '验证码已发送。',
   'mfa.codeWaitMinutes': '{minutes} 分钟后可以再次获取验证码。',
   'mfa.smsCodeOption': '改为通过短信发送验证码',
   'mfa.recoveryCodesTitle': '保存您的备份码',

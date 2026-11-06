@@ -14,6 +14,7 @@ export {
   prepareFactor,
   pollAttempt,
   shouldKeepPolling,
+  pollAnswerStale,
   requestForStep,
   flowFromPending,
   initialFlow,

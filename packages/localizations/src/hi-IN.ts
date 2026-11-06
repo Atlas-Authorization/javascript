@@ -109,6 +109,8 @@ export const hiIN: LocalizationResource = {
   'mfa.sendCode': 'मुझे कोड टेक्स्ट करें',
   'mfa.codeTextedTo': 'वह कोड दर्ज करें जो हमने {phone} पर टेक्स्ट किया है।',
   'mfa.codeWait': 'आप {seconds} सेकंड बाद दूसरा कोड मांग सकते हैं।',
+  'mfa.codeWaitOne': 'आप 1 सेकंड बाद दूसरा कोड मांग सकते हैं।',
+  'mfa.codeResent': 'कोड भेज दिया गया।',
   'mfa.codeWaitMinutes': 'आप {minutes} मिनट बाद दूसरा कोड मांग सकते हैं।',
   'mfa.smsCodeOption': 'इसके बजाय मुझे टेक्स्ट से कोड भेजें',
   'mfa.recoveryCodesTitle': 'अपने रिकवरी कोड सहेजें',

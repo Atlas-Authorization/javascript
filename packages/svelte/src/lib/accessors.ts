@@ -19,6 +19,7 @@ import {
   pollAttempt,
   prepareFactor,
   shouldKeepPolling,
+  pollAnswerStale,
   createOrganizationAuditLog,
   type OrganizationAuditLogOptions,
   type OrganizationAuditLogState,
@@ -384,9 +385,14 @@ function createFlow(options: { holdExistingAccountNotice?: boolean } = {}): Flow
     pollTimer = setInterval(() => {
       void (async () => {
         const polled = get(state);
+        if (!shouldKeepPolling(polled)) {
+          stopPolling();
+          return;
+        }
         const { state: next, ticket } = await pollAttempt(client, polled);
-        // A resend rotated the secret meanwhile: this answer is stale.
-        if (get(state).pollSecret === polled.pollSecret) state.set(next);
+        if (pollAnswerStale(get(state), polled)) return;
+        // Busy until the session is held: only a sign-in that finished with no ticket here says "other tab".
+        state.set(ticket ? { ...next, busy: true } : next);
         if (!shouldKeepPolling(next)) stopPolling();
         if (!ticket || !next.attempt) return;
 
@@ -397,7 +403,7 @@ function createFlow(options: { holdExistingAccountNotice?: boolean } = {}): Flow
           ticket,
         });
         const kept = res.ok && (await atlas.reload());
-        state.update((current) => ({ ...current, sessionKept: kept }));
+        state.update((current) => ({ ...current, busy: false, sessionKept: kept }));
       })();
     }, 2_000);
   }

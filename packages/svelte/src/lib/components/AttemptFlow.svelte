@@ -172,7 +172,7 @@
   // "Email me a code instead" at the second factor: where it went, or why not.
   const codeWaits = createCodeWaits();
   onDestroy(() => codeWaits.stopAll());
-  let emailed: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null = null;
+  let emailed: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null = null;
   $: emailedNow = emailed && emailed.attemptId === (attempt?.id ?? null) ? emailed : null;
   async function emailSecondFactor() {
     if (!onEmailSecondFactor) return;
@@ -185,7 +185,7 @@
       codeWaits.start('email_code', r.retryAfter, (w) => { emailed = { attemptId, sentTo: before, ...w }; });
       return;
     }
-    emailed = r.error ? { attemptId, sentTo: before, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
+    emailed = r.error ? { attemptId, sentTo: before, error: r.error } : { attemptId, sentTo: r.sentTo ?? '', resent: before !== undefined };
   }
   let askedHeldFor: string | null = null;
   // Nothing is offered until the account's answer is in, so an option never flashes and goes.
@@ -207,7 +207,7 @@
     if (onSmsSecondFactor) void onOnlyWay(attemptId, 'sms', (seconds) => { codeWaits.start('sms', seconds, (w) => { texted = { attemptId, ...w }; }); }).then((sentTo) => { if (sentTo) texted = { attemptId, sentTo }; });
   }
   // "Text me a code instead": the same, for the texted code.
-  let texted: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null = null;
+  let texted: { attemptId: string | null; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null = null;
   $: textedNow = texted && texted.attemptId === (attempt?.id ?? null) ? texted : null;
   async function smsSecondFactor() {
     if (!onSmsSecondFactor) return;
@@ -220,7 +220,7 @@
       codeWaits.start('sms', r.retryAfter, (w) => { texted = { attemptId, sentTo: before, ...w }; });
       return;
     }
-    texted = r.error ? { attemptId, sentTo: before, error: r.error } : { attemptId, sentTo: r.sentTo ?? '' };
+    texted = r.error ? { attemptId, sentTo: before, error: r.error } : { attemptId, sentTo: r.sentTo ?? '', resent: before !== undefined };
   }
   // The enrolment step drawn from the shared controller (when one is passed).
   $: enrolling = step.kind === 'enroll_second_factor' && !!enrollment && !!enrollmentState;
@@ -281,6 +281,8 @@
         // said plainly (below). "Check the other tab" is for another device.
         if (sessionKept === true) return t('signIn.signedIn');
         if (sessionKept === false) return t('signIn.sessionNotKept');
+        // Still redeeming this tab's own ticket: nothing to say yet.
+        if (busy) return '';
         return t('signIn.checkOtherTab');
       case 'restart':
         return t('error.generic');
@@ -469,6 +471,9 @@
             {t('signIn.resendCode')}
           </button>
         {/if}
+        {#if enrollmentState.resent}
+          <p class="atlas-text" data-atlas="mfa-code-resent" aria-live="polite">{t('mfa.codeResent')}</p>
+        {/if}
         {#if enrollmentState.wait}
           <p class={cls('formFieldError', 'atlas-error')} data-atlas="code-wait" role={enrollmentState.waitTicking ? 'timer' : 'alert'}>{codeWaitText(enrollmentState.wait, t)}</p>
         {/if}
@@ -540,8 +545,11 @@
           disabled={busy || !!textedNow?.busy || !!textedNow?.wait}
           on:click={() => void smsSecondFactor()}
         >
-          {textedNow?.busy ? t('signIn.sending') : textedNow?.sentTo !== undefined || textedNow?.error || textedNow?.wait ? t('signIn.resendCode') : t('mfa.smsCodeOption')}
+          {textedNow?.busy ? t('signIn.sending') : textedNow?.sentTo !== undefined || textedNow?.error || textedNow?.wait !== undefined ? t('signIn.resendCode') : t('mfa.smsCodeOption')}
         </button>
+        {#if textedNow?.resent}
+          <p class="atlas-text" data-atlas="sms-second-factor-resent" aria-live="polite">{t('mfa.codeResent')}</p>
+        {/if}
         {#if textedNow?.wait}
           <p class={cls('formFieldError', 'atlas-error')} data-atlas="code-wait" role={textedNow.ticking ? 'timer' : 'alert'}>{codeWaitText(textedNow.wait, t)}</p>
         {/if}
@@ -562,8 +570,11 @@
           disabled={busy || !!emailedNow?.busy || !!emailedNow?.wait}
           on:click={() => void emailSecondFactor()}
         >
-          {emailedNow?.busy ? t('signIn.sending') : emailedNow?.sentTo !== undefined || emailedNow?.error || emailedNow?.wait ? t('signIn.resendCode') : t('signIn.emailCodeOption')}
+          {emailedNow?.busy ? t('signIn.sending') : emailedNow?.sentTo !== undefined || emailedNow?.error || emailedNow?.wait !== undefined ? t('signIn.resendCode') : t('signIn.emailCodeOption')}
         </button>
+        {#if emailedNow?.resent}
+          <p class="atlas-text" data-atlas="email-second-factor-resent" aria-live="polite">{t('mfa.codeResent')}</p>
+        {/if}
         {#if emailedNow?.wait}
           <p class={cls('formFieldError', 'atlas-error')} data-atlas="code-wait" role={emailedNow.ticking ? 'timer' : 'alert'}>{codeWaitText(emailedNow.wait, t)}</p>
         {/if}

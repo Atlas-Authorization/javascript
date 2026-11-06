@@ -2,6 +2,10 @@
 
 
 
+## 0.34.7 — 2026-11-06
+
+- `pollAnswerStale()`. `codeWaitText` says `1 second`. The enrolment controller exposes `resent`.
+
 ## 0.34.6 — 2026-11-06
 
 - `createCodeWaits()`, `codeWaitText()`, `codeWaitSeconds()`: a limited send counts down. `holdsSecondFactor` answers true after 3 seconds if the question hangs. The enrolment controller exposes `wait` and `waitTicking` when a text is limited.

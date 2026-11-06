@@ -65,6 +65,7 @@ import {
   prepareFactor,
   planFirstFactor,
   shouldKeepPolling,
+  pollAnswerStale,
   signInCaptchaOptions,
   startSignInWithAtlas,
   type CaptchaController,
@@ -192,6 +193,8 @@ export const SIGN_UP_TEXT: Record<string, string> = {
   'mfa.sendCode': 'Text me a code',
   'mfa.codeTextedTo': 'Enter the code we texted to {phone}.',
   'mfa.codeWait': 'You can ask for another code in {seconds} seconds.',
+  'mfa.codeWaitOne': 'You can ask for another code in 1 second.',
+  'mfa.codeResent': 'Code sent.',
   'mfa.codeWaitMinutes': 'You can ask for another code in {minutes} minutes.',
   'mfa.codeLabel': 'Code',
   'mfa.recoveryCodesTitle': 'Save your recovery codes',
@@ -643,8 +646,8 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
       void (async () => {
         const polled = state();
         const { state: next, ticket } = await pollAttempt(fapi, polled);
-        // A resend rotated the secret meanwhile: this answer is stale.
-        if (state().pollSecret === polled.pollSecret) setState(next);
+        if (pollAnswerStale(state(), polled)) return;
+        setState(next);
         if (!ticket || !next.attempt) return;
         await fapi.post('/v1/client/tickets/exchange', {
           attempt_id: (next.attempt as { id?: string }).id,
@@ -672,8 +675,10 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     captcha: () => captcha,
     cancelledMessage: () => t('signIn.passkeyCancelled'),
   });
+  // Already signed in with no flow of ours in progress (a held attempt covers recovery codes and finishing): draw nothing.
+  const hidden = () => client.state.status === 'signed_in' && !state().attempt && !state().busy;
   const passkeyOffered = createMemo(
-    () => props.mode === 'sign-in' && kind() === 'collect_identifier' && settings()?.passkeySignIn === true && passkeysSupported(),
+    () => props.mode === 'sign-in' && !hidden() && kind() === 'collect_identifier' && settings()?.passkeySignIn === true && passkeysSupported(),
   );
   createEffect(() => (passkeyOffered() ? passkey.armAutofill() : passkey.stopAutofill()));
   onCleanup(() => passkey.stopAutofill());
@@ -792,12 +797,12 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     sendEmailFactor(strategy);
   });
   // Second factor: "Email me a code" (and the on-arrival send when the inbox is the only way), "Use a passkey".
-  const [secondMail, setSecondMail] = createSignal<{ attemptId: string; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null>(null);
+  const [secondMail, setSecondMail] = createSignal<{ attemptId: string; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null>(null);
   const secondMailNow = () => {
     const m = secondMail();
     return m && m.attemptId === (state().attempt?.id ?? null) ? m : null;
   };
-  const [secondText, setSecondText] = createSignal<{ attemptId: string; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null>(null);
+  const [secondText, setSecondText] = createSignal<{ attemptId: string; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null>(null);
   const secondTextNow = () => {
     const m = secondText();
     return m && m.attemptId === (state().attempt?.id ?? null) ? m : null;
@@ -823,14 +828,14 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     attemptId: string,
     strategy: 'email_code' | 'sms',
     now: () => { sentTo?: string } | null,
-    set: (value: { attemptId: string; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean }) => void,
+    set: (value: { attemptId: string; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean }) => void,
   ) => {
     const before = now()?.sentTo;
     codeWaits.stop(strategy);
     set({ attemptId, sentTo: before, busy: true });
     prepareSecondFactorCode(fapi, attemptId, strategy)
       .then(({ sentTo }) => {
-        set({ attemptId, sentTo });
+        set({ attemptId, sentTo, resent: before !== undefined });
         // A wrong code's message no longer applies once a new code has gone out.
         setState((s) => ({ ...s, errors: [] }));
       })
@@ -847,15 +852,16 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     const choices = mfaChoicesFrom(settings()?.account);
     if (!attempt) return null;
     const lacks = (factor: string) => !held().includes(`${attempt.id}:${factor}`);
-    const option = (name: string, m: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null, line: (to: string) => string, label: string, send: () => void) => {
+    const option = (name: string, m: { busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null, line: (to: string) => string, label: string, send: () => void) => {
       const sent = m?.sentTo !== undefined;
       return [
         sent ? h('p', { class: 'atlas-text', 'data-atlas': `${name}-sent`, 'aria-live': 'polite' }, line(m!.sentTo!)) : null,
         h(
           'button',
           { class: 'atlas-link', type: 'button', 'data-atlas': sent ? `${name}-resend` : name, disabled: state().busy || !!m?.busy || !!m?.wait, onClick: send },
-          m?.busy ? t('signIn.sending') : sent || m?.error || m?.wait ? t('signIn.resendCode') : t(label),
+          m?.busy ? t('signIn.sending') : sent || m?.error || m?.wait !== undefined ? t('signIn.resendCode') : t(label),
         ),
+        m?.resent ? h('p', { class: 'atlas-text', 'data-atlas': `${name}-resent`, 'aria-live': 'polite' }, t('mfa.codeResent')) : null,
         m?.wait ? h('p', { class: 'atlas-error', 'data-atlas': 'code-wait', role: m.ticking ? 'timer' : 'alert' }, codeWaitText(m.wait, t)) : null,
         m?.error ? h('p', { class: 'atlas-error', role: 'alert' }, m.error) : null,
       ];
@@ -899,7 +905,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     else setAtlasError(started.error);
   };
 
-  return h(
+  return h(Show, { when: () => !hidden() }, () => h(
     'form',
     {
       class: 'atlas-card',
@@ -981,6 +987,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         captcha,
         () => (kind() === 'collect_identifier' || kind() === 'collect_captcha') && captchaDrawn(),
       ),
+      () => (kind() === 'enroll_second_factor' && enrollmentState().resent ? h('p', { class: 'atlas-text', 'data-atlas': 'mfa-code-resent', 'aria-live': 'polite' }, t('mfa.codeResent')) : null),
       () => {
         const s = enrollmentState();
         return kind() === 'enroll_second_factor' && s.wait
@@ -1023,7 +1030,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
           ? policyHost('p', (el) => mountPolicyClickwrap(el, policies, { t: pt }))
           : null,
     ],
-  );
+  ));
 }
 
 /** The signed-in user's avatar + a menu whose only built-in action is sign-out

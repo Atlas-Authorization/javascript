@@ -47,6 +47,9 @@ function fakeTurnstile() {
   };
 }
 
+const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+const JWT = `${b64({ alg: 'none' })}.${b64({ sid: 'sess_1', sub: 'user_1', exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`;
+let lastClient: ReturnType<typeof createAtlasClient> | null = null;
 let calls: Call[] = [];
 beforeEach(() => {
   calls = [];
@@ -62,6 +65,7 @@ async function mountFlow(
     captchaFlows?: Record<string, unknown>;
     account?: Record<string, unknown>;
     signInWithAtlas?: Record<string, unknown>;
+    signedIn?: () => boolean;
     routes: Route[];
   },
 ) {
@@ -73,7 +77,8 @@ async function mountFlow(
       body: typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null,
     };
     calls.push(call);
-    if (call.path === '/v1/client') return json({ session: null, user: null });
+    if (call.path === '/v1/client')
+      return json(opts.signedIn?.() ? { session: { id: 'sess_1', status: 'active' }, user: { id: 'user_1' }, jwt: JWT } : { session: null, user: null });
     if (call.path === '/v1/appearance') {
       return json({
         object: 'appearance',
@@ -97,6 +102,7 @@ async function mountFlow(
     fetchImpl,
     manualBoot: true,
   });
+  lastClient = client;
   const view = render(component, { context: new Map([[ATLAS_KEY, client]]) });
   await waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance')).toBe(true));
   return view.container as HTMLElement;
@@ -555,6 +561,30 @@ describe('<SignIn> MFA enrolment and the texted second factor', () => {
     await waitFor(() => expect(el.querySelector('[data-atlas="sms-second-factor-sent"]')).not.toBeNull());
     expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').at(-1)!.body).toEqual({ strategy: 'sms' });
   });
+
+  it('keeps the recovery codes on screen when the session appears mid-flow', async () => {
+    let held = false;
+    const withCodes = routes('needs_mfa_enrollment');
+    withCodes[3] = (c) =>
+      c.path === '/v1/client/sign_ins/sia_1/attempt_mfa_enrollment'
+        ? json({ id: 'sia_1', status: 'complete', ticket: 'tkt_e', backup_codes: ['aaaa-1111'] })
+        : undefined;
+    const el = await mountFlow(SignIn, {
+      account: { ...SMS_ACCOUNT, mfa: { totp: true, sms: false, totp_codes: 1 } },
+      signedIn: () => held,
+      routes: withCodes,
+    });
+    await setInput(el, 'identifier', 'ada@example.com');
+    await submit(el);
+    await waitFor(() => expect(el.querySelector('[data-atlas="mfa-qr"]')).not.toBeNull());
+    await setInput(el, 'code', '111111');
+    await submit(el);
+    await waitFor(() => expect(el.querySelector('[data-atlas="recovery-codes"]')).not.toBeNull());
+    held = true;
+    await lastClient!.reload();
+    await waitFor(() => expect(el.querySelector('[data-atlas="recovery-codes"]')).not.toBeNull());
+  });
+
 });
 
 describe('<SignIn> Sign in with Atlas', () => {
@@ -760,5 +790,15 @@ describe('<SignIn> enrolment offers every factor the app offers', () => {
     await submit(el);
     await waitFor(() => expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')).toHaveLength(1));
     expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ strategy: 'yubikey', otp: 'ccccccfjkbbb' });
+  });
+
+  it('draws nothing when someone is already signed in, and the form returns on sign-out', async () => {
+    let held = true;
+    const el = await mountFlow(SignIn, { signedIn: () => held, routes: [] });
+    await lastClient!.reload();
+    await waitFor(() => expect(el.querySelector('form')).toBeNull());
+    held = false;
+    await lastClient!.reload();
+    await waitFor(() => expect(el.querySelector('form')).not.toBeNull());
   });
 });

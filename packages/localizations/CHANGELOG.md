@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.17.3 — 2026-11-06
+
+- New keys `mfa.codeWaitOne` and `mfa.codeResent`.
+
 ## 0.17.2 — 2026-11-06
 
 - New key `mfa.codeWaitMinutes`.

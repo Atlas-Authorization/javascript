@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   afterNextRender,
+  computed,
   Input,
   OnDestroy,
   OnInit,
@@ -106,6 +107,8 @@ import { AtlasFlowController } from './flow-controller';
         (policyDeclined)="flow.declinePolicy($event)"
         [signInHref]="signInHref()"
       ></atlas-attempt-flow>
+    } @else if (hidden()) {
+      <!-- signed in with no attempt held: nothing to draw -->
     } @else {
       <atlas-sign-up-form
         [settings]="flow.settings()"
@@ -126,6 +129,9 @@ import { AtlasFlowController } from './flow-controller';
 })
 export class SignUpComponent implements OnInit, OnDestroy {
   private readonly atlas = inject(AtlasService);
+
+  // Already signed in with no attempt held (the steps above keep finishing): draw nothing.
+  protected readonly hidden = computed(() => this.atlas.isSignedIn() && !this.flow.inProgress());
 
   /** Opened from a mailed link: that page, not the flow. Read after the first render, so hydration matches. */
   protected readonly emailLink = signal<EmailLink | null>(null);

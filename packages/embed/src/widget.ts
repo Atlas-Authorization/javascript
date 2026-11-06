@@ -1,4 +1,4 @@
-import { captureMarketing, type EmailLinkConfirmation, type PasskeyPrfRequest } from '@atlasauth/js';
+import { captureMarketing, emailLinkFromUrl, type EmailLinkConfirmation, type PasskeyPrfRequest } from '@atlasauth/js';
 import {
   initialFlow,
   BehaviorRecorder,
@@ -144,7 +144,7 @@ export class AtlasWidget {
   /** The mailed-link page, when opened from one. Undefined until first looked for. */
   emailLinkPage: EmailLinkConfirmation | null | undefined = undefined;
   /** "Text me a code instead" / "Email me a code instead" at the second factor: sending, sent, or refused. */
-  secondFactorCode: { attemptId: string; strategy: 'sms' | 'email_code'; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null = null;
+  secondFactorCode: { attemptId: string; strategy: 'sms' | 'email_code'; busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null = null;
   /**
    * The email/username the user typed at the identifier step, kept so later steps
    * can show it as context ("Enter the code we sent to you@example.com") — the
@@ -235,6 +235,16 @@ export class AtlasWidget {
     });
   }
 
+  /** One `GET /v1/client`: does this browser hold a session right now? A failed check says no, so the form shows. */
+  private async signedIn(): Promise<boolean> {
+    try {
+      const res = await this.client.get<{ session?: unknown; user?: unknown }>('/v1/client');
+      return Boolean(res.ok && res.data?.session && res.data?.user);
+    } catch {
+      return false;
+    }
+  }
+
   /** A server error in the app's language: `error.<reason>` from `localization`, else the server's message. */
   errorText(error: ErrorLike): string {
     return localizedErrorMessage(error, this.options.localization);
@@ -259,6 +269,14 @@ export class AtlasWidget {
     // exchange the one-time ticket for cookies, scrub the URL, and finish.
     const handled = await handleRedirectLanding(this);
     if (handled) return;
+
+    // Someone is already signed in here: draw nothing (no redirect, so a page that holds the
+    // form can't loop). A mailed link still confirms; a preview always shows the form.
+    // Decided once, before any flow starts, so a session appearing mid-flow never hides it.
+    if (!this.options.preview && !emailLinkFromUrl(undefined, this.mode === 'sign-up' ? 'sign_up' : 'sign_in') && (await this.signedIn())) {
+      this.root.textContent = '';
+      return;
+    }
 
     const data: AppearanceResponse | null = await fetchAppearance(this.client);
     if (data) {

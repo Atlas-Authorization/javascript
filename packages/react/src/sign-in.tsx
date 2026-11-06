@@ -45,13 +45,17 @@ function SignInFlow(props: FlowProps) {
     referral: props.referral,
     referralConsent: props.referralConsent,
   });
+  const { status } = useAtlas();
+  // Already signed in and no flow of ours in progress (a held attempt covers the
+  // recovery-codes and finish steps): draw nothing. Loading keeps today's form.
+  const hidden = status === 'signed_in' && !state.attempt && !state.busy;
   const passkey = usePasskeySignIn({
     client,
     finish,
     setState,
     captcha,
     // Only on the first step, before an attempt exists (as the hosted page).
-    atStart: !state.attempt,
+    atStart: !state.attempt && !hidden,
     prf: props.passkeyPrf,
     onExtensionResults: props.onPasskeyExtensionResults,
   });
@@ -75,6 +79,7 @@ function SignInFlow(props: FlowProps) {
     </>
   );
 
+  if (hidden) return null;
   return (
     <>
       {!state.attempt ? <LastUsedHint client={client} /> : null}

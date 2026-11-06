@@ -108,6 +108,8 @@ export const koKR: LocalizationResource = {
   'mfa.sendCode': '문자로 코드 받기',
   'mfa.codeTextedTo': '{phone}(으)로 문자로 보낸 코드를 입력해 주세요.',
   'mfa.codeWait': '{seconds}초 후에 다른 코드를 요청할 수 있습니다.',
+  'mfa.codeWaitOne': '1초 후에 다른 코드를 요청할 수 있습니다.',
+  'mfa.codeResent': '코드를 보냈습니다.',
   'mfa.codeWaitMinutes': '{minutes}분 후에 다른 코드를 요청할 수 있습니다.',
   'mfa.smsCodeOption': '대신 문자로 코드 받기',
   'mfa.recoveryCodesTitle': '복구 코드를 저장해 주세요',

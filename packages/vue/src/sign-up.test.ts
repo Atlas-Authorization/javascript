@@ -48,6 +48,7 @@ function fakeTurnstile() {
 
 let calls: Call[] = [];
 let wrapper: VueWrapper | null = null;
+let lastClient: AtlasClient | null = null;
 const reload = vi.fn(async () => true);
 
 beforeEach(() => {
@@ -90,6 +91,7 @@ async function mountFlow(
     emailDelivery?: Record<string, boolean>;
     account?: Record<string, unknown>;
     signInWithAtlas?: Record<string, unknown>;
+    status?: AuthStatus;
     routes: Route[];
   },
 ) {
@@ -121,6 +123,8 @@ async function mountFlow(
     }),
   );
   const client = makeClient();
+  lastClient = client;
+  if (opts.status) (client.status as { value: AuthStatus }).value = opts.status;
   const Host = defineComponent({ setup: () => () => h(component) });
   wrapper = mount(Host, {
     attachTo: document.body,
@@ -730,6 +734,26 @@ describe('<SignIn> MFA enrolment and the texted second factor', () => {
     expect(posts('/v1/client/sign_ins/sia_1/prepare_second_factor').at(-1)!.body).toEqual({ strategy: 'sms' });
     expect(w.find('[data-atlas="sms-second-factor-sent"]').text()).toContain('+1•••0101');
   });
+
+  it('keeps the recovery codes on screen when the session appears mid-flow', async () => {
+    const withCodes = routes('needs_mfa_enrollment');
+    withCodes[4] = (c: { path: string }) =>
+      c.path === '/v1/client/sign_ins/sia_1/attempt_mfa_enrollment'
+        ? json({ id: 'sia_1', status: 'complete', ticket: 'tkt_e', backup_codes: ['aaaa-1111'] })
+        : undefined;
+    const w = await mountFlow(SignIn, {
+      account: { username: null, email_verification: 'code', password_reset: 'code', mfa: { totp: true, sms: false, totp_codes: 1 } },
+      routes: withCodes,
+    });
+    await signIn(w);
+    await vi.waitFor(() => expect(w.find('[data-atlas="mfa-qr"]').exists()).toBe(true));
+    await setInput(w, 'code', '111111');
+    await submit(w);
+    await vi.waitFor(() => expect(w.find('[data-atlas="recovery-codes"]').exists()).toBe(true));
+    (lastClient!.status as { value: AuthStatus }).value = 'signed_in';
+    await flush();
+    expect(w.find('[data-atlas="recovery-codes"]').exists()).toBe(true);
+  });
 });
 
 describe('<SignIn> Sign in with Atlas', () => {
@@ -928,5 +952,13 @@ describe('<SignIn> enrolment offers every factor the app offers', () => {
     await submit(w);
     await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')).toHaveLength(1));
     expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ strategy: 'yubikey', otp: 'ccccccfjkbbb' });
+  });
+
+  it('draws nothing when someone is already signed in, and the form returns on sign-out', async () => {
+    const w = await mountFlow(SignIn, { status: 'signed_in', routes: [] });
+    expect(w.find('form').exists()).toBe(false);
+    (lastClient!.status as { value: AuthStatus }).value = 'signed_out';
+    await flush();
+    expect(w.find('form').exists()).toBe(true);
   });
 });

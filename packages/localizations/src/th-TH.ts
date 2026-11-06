@@ -109,6 +109,8 @@ export const thTH: LocalizationResource = {
   'mfa.sendCode': 'ส่งรหัสทาง SMS',
   'mfa.codeTextedTo': 'ป้อนรหัสที่เราส่งทาง SMS ไปยัง {phone}',
   'mfa.codeWait': 'คุณขอรหัสใหม่ได้ในอีก {seconds} วินาที',
+  'mfa.codeWaitOne': 'คุณขอรหัสใหม่ได้ในอีก 1 วินาที',
+  'mfa.codeResent': 'ส่งรหัสแล้ว',
   'mfa.codeWaitMinutes': 'คุณขอรหัสใหม่ได้ในอีก {minutes} นาที',
   'mfa.smsCodeOption': 'ส่งรหัสทาง SMS แทน',
   'mfa.recoveryCodesTitle': 'บันทึกรหัสกู้คืนของคุณ',

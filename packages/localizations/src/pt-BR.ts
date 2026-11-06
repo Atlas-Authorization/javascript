@@ -109,6 +109,8 @@ export const ptBR: LocalizationResource = {
   'mfa.sendCode': 'Enviar um código por SMS',
   'mfa.codeTextedTo': 'Digite o código que enviamos para {phone}.',
   'mfa.codeWait': 'Você pode pedir outro código em {seconds} segundos.',
+  'mfa.codeWaitOne': 'Você pode pedir outro código em 1 segundo.',
+  'mfa.codeResent': 'Código enviado.',
   'mfa.codeWaitMinutes': 'Você pode pedir outro código em {minutes} minutos.',
   'mfa.smsCodeOption': 'Enviar um código por SMS',
   'mfa.recoveryCodesTitle': 'Salve seus códigos de recuperação',

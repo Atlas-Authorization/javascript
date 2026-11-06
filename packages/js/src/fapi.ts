@@ -1047,6 +1047,17 @@ export async function pollAttempt(
 }
 
 /** Whether polling should continue, so a tab does not poll a dead attempt forever. */
+/**
+ * A poll answer that was asked before the flow moved on (this tab submitted a code, or a resend
+ * rotated the secret) must not overwrite what the tab's own request found, or redeem a ticket.
+ */
+export function pollAnswerStale(
+  current: Pick<FlowState, 'pollSecret' | 'attempt' | 'busy'>,
+  polled: Pick<FlowState, 'pollSecret' | 'attempt'>,
+): boolean {
+  return current.busy || current.pollSecret !== polled.pollSecret || current.attempt !== polled.attempt;
+}
+
 export function shouldKeepPolling(state: FlowState): boolean {
   if (!state.pollSecret || !state.attempt || isTerminal(state.attempt)) return false;
   // A sign-up polls for its link only. Past that this tab drives every step (the passkey,

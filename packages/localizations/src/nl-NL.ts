@@ -108,6 +108,8 @@ export const nlNL: Localization = {
   'mfa.sendCode': 'Stuur me een code per sms',
   'mfa.codeTextedTo': 'Voer de code in die we naar {phone} hebben gestuurd.',
   'mfa.codeWait': 'Je kunt over {seconds} seconden een nieuwe code aanvragen.',
+  'mfa.codeWaitOne': 'Je kunt over 1 seconde een nieuwe code aanvragen.',
+  'mfa.codeResent': 'Code verzonden.',
   'mfa.codeWaitMinutes': 'Je kunt over {minutes} minuten een nieuwe code aanvragen.',
   'mfa.smsCodeOption': 'Stuur me liever een code per sms',
   'mfa.recoveryCodesTitle': 'Bewaar je herstelcodes',

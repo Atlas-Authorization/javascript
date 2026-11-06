@@ -191,6 +191,13 @@ export function MfaEnrollmentFields({
     );
   }
 
+  if (state.resent) {
+    out.push(
+      <p key="code-resent" className={cls('text', 'atlas-text')} data-atlas="mfa-code-resent" aria-live="polite">
+        {t('mfa.codeResent')}
+      </p>,
+    );
+  }
   if (state.wait) {
     out.push(
       <p key="code-wait" className={errorClass} data-atlas="code-wait" role={state.waitTicking ? 'timer' : 'alert'}>
@@ -237,7 +244,7 @@ export function SecondFactorCodeOption({ attemptId, strategy, onSent }: { attemp
   const client = useFapiClient();
   const t = useText();
   const cls = useClasses();
-  const [state, setState] = useState<{ sentTo?: string; error?: string; busy?: boolean } & Partial<CodeWait>>({});
+  const [state, setState] = useState<{ sentTo?: string; error?: string; busy?: boolean; resent?: boolean } & Partial<CodeWait>>({});
   const [heldFor, setHeldFor] = useState<string | null>(null);
   const waits = useRef(createCodeWaits()).current;
   useEffect(() => () => waits.stopAll(), [waits]);
@@ -268,7 +275,7 @@ export function SecondFactorCodeOption({ attemptId, strategy, onSent }: { attemp
     setState((s) => ({ sentTo: s.sentTo, busy: true }));
     prepareSecondFactorCode(client, attemptId, strategy)
       .then(({ sentTo }) => {
-        setState({ sentTo });
+        setState((s) => ({ sentTo, resent: s.sentTo !== undefined }));
         onSent?.();
       })
       .catch((e: unknown) => {
@@ -286,8 +293,13 @@ export function SecondFactorCodeOption({ attemptId, strategy, onSent }: { attemp
           {strategy === 'sms' ? t('mfa.codeTextedTo', { phone: state.sentTo! }) : t('signIn.codeSentTo', { email: state.sentTo! })}
         </p>
       ) : null}
+      {state.resent ? (
+        <p className={cls('text', 'atlas-text')} data-atlas={`${name}-resent`} aria-live="polite">
+          {t('mfa.codeResent')}
+        </p>
+      ) : null}
       <button type="button" className={cls('link', 'atlas-link')} data-atlas={sent ? `${name}-resend` : name} disabled={state.busy || !!state.wait} onClick={send}>
-        {state.busy ? t('signIn.sending') : sent || state.error || state.wait ? t('signIn.resendCode') : t(strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption')}
+        {state.busy ? t('signIn.sending') : sent || state.error || state.wait !== undefined ? t('signIn.resendCode') : t(strategy === 'sms' ? 'mfa.smsCodeOption' : 'signIn.emailCodeOption')}
       </button>
       {state.wait ? (
         <div className={cls('alert', 'atlas-alert')} data-atlas="code-wait" role={state.ticking ? 'timer' : 'alert'}>

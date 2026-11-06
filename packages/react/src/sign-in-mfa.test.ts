@@ -15,6 +15,9 @@ import { SignIn } from './sign-in';
  */
 
 const FAPI = 'https://fapi.example';
+const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+const JWT = `${b64({ alg: 'none' })}.${b64({ sid: 'sess_1', sub: 'user_1', exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`;
+const SIGNED_IN = { session: { id: 'sess_1', status: 'active' }, user: { id: 'user_1' }, jwt: JWT };
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -42,7 +45,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function mount(opts: { routes: Route[]; locale?: string; emailDelivery?: Record<string, boolean>; account?: Record<string, unknown> }) {
+async function mount(opts: { routes: Route[]; locale?: string; emailDelivery?: Record<string, boolean>; account?: Record<string, unknown>; signedIn?: () => boolean }) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const call: Call = {
@@ -53,7 +56,7 @@ async function mount(opts: { routes: Route[]; locale?: string; emailDelivery?: R
       headers: Object.fromEntries(new Headers(init?.headers).entries()),
     };
     calls.push(call);
-    if (call.path === '/v1/client') return json({ session: null, user: null });
+    if (call.path === '/v1/client') return json(opts.signedIn?.() ? SIGNED_IN : { session: null, user: null });
     if (call.path === '/v1/appearance') {
       return json({
         object: 'appearance',
@@ -526,5 +529,34 @@ describe('<SignIn> enrolment offers every factor the app offers', () => {
       (el.querySelector('[data-atlas-mfa-method="duo"]') as HTMLButtonElement).click();
     });
     await vi.waitFor(() => expect(el.querySelector('[data-atlas="mfa-duo-open"]')?.getAttribute('href')).toBe('https://api-1.duosecurity.com/x'));
+  });
+});
+
+describe('<SignIn> when someone is already signed in', () => {
+  it('draws nothing', async () => {
+    const el = await mount({ routes: [], signedIn: () => true });
+    await vi.waitFor(() => expect(el.querySelector('form')).toBeNull());
+    expect(el.querySelector('input[name="identifier"]')).toBeNull();
+  });
+
+  it('keeps the recovery codes on screen when the session appears mid-flow', async () => {
+    let held = false;
+    const el = await mount({
+      account: { mfa: { totp: true, sms: false, totp_codes: 1 } },
+      signedIn: () => held,
+      routes: [signInRoute(['password']), passwordRoute('needs_mfa_enrollment'), prepareEnrolRoute, confirmEnrolRoute],
+    });
+    await signInTo(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="mfa-qr"]')).not.toBeNull());
+    setInput(el, 'code', '111111');
+    await submit(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="recovery-codes"]')).not.toBeNull());
+
+    held = true;
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(el.querySelector('[data-atlas="recovery-codes"]')).not.toBeNull();
   });
 });

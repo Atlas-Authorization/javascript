@@ -109,6 +109,8 @@ export const viVN: LocalizationResource = {
   'mfa.sendCode': 'Gửi mã qua SMS',
   'mfa.codeTextedTo': 'Nhập mã chúng tôi đã gửi đến {phone}.',
   'mfa.codeWait': 'Bạn có thể yêu cầu mã khác sau {seconds} giây.',
+  'mfa.codeWaitOne': 'Bạn có thể yêu cầu mã khác sau 1 giây.',
+  'mfa.codeResent': 'Đã gửi mã.',
   'mfa.codeWaitMinutes': 'Bạn có thể yêu cầu mã khác sau {minutes} phút.',
   'mfa.smsCodeOption': 'Gửi mã qua SMS',
   'mfa.recoveryCodesTitle': 'Lưu mã khôi phục của bạn',

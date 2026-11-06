@@ -109,6 +109,8 @@ export const svSE: LocalizationResource = {
   'mfa.sendCode': 'Skicka en kod via sms',
   'mfa.codeTextedTo': 'Ange koden som vi skickade via sms till {phone}.',
   'mfa.codeWait': 'Du kan begära en ny kod om {seconds} sekunder.',
+  'mfa.codeWaitOne': 'Du kan begära en ny kod om 1 sekund.',
+  'mfa.codeResent': 'Koden har skickats.',
   'mfa.codeWaitMinutes': 'Du kan begära en ny kod om {minutes} minuter.',
   'mfa.smsCodeOption': 'Skicka en kod via sms i stället',
   'mfa.recoveryCodesTitle': 'Spara dina reservkoder',

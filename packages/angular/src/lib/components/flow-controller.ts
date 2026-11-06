@@ -37,6 +37,7 @@ import {
   prepareFactor,
   planFirstFactor,
   shouldKeepPolling,
+  pollAnswerStale,
   PolicyAcceptanceController,
   loadPolicies,
   type CaptchaController,
@@ -100,9 +101,9 @@ export class AtlasFlowController {
    * in flight, where the code went, or why it was not sent. Null until asked,
    * and again once the flow leaves that step.
    */
-  readonly emailSecondFactor = signal<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null>(null);
+  readonly emailSecondFactor = signal<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null>(null);
   /** "Text me a code instead" at the second factor ({@link sendSmsSecondFactor}): as {@link emailSecondFactor}. */
-  readonly smsSecondFactor = signal<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null>(null);
+  readonly smsSecondFactor = signal<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null>(null);
   /**
    * The MFA enrolment step (`needs_mfa_enrollment`): the authenticator app's
    * setup (QR code, setup key) or a texted code. Started and reset with the flow.
@@ -164,6 +165,11 @@ export class AtlasFlowController {
     const started = await startSignInWithAtlas(this.client, connectionId, window.location.href);
     if ('url' in started) window.location.assign(started.url);
     else this.signInWithAtlasError.set(started.error);
+  }
+
+  /** A flow of ours is under way (an attempt held, or a request in flight): a session appearing must not hide it. */
+  inProgress(): boolean {
+    return !!this.state().attempt || this.state().busy;
   }
 
   /** "Sign in with a passkey" is offered: the first step, the instance turned passkey sign-in on, and the browser can. */
@@ -412,7 +418,7 @@ export class AtlasFlowController {
 
   private async sendSecondFactorCode(
     strategy: 'sms' | 'email_code',
-    out: WritableSignal<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean } | null>,
+    out: WritableSignal<{ busy?: boolean; sentTo?: string; error?: string; wait?: number | null; ticking?: boolean; resent?: boolean } | null>,
   ): Promise<void> {
     const id = this.state().attempt?.id;
     if (!id) return;
@@ -421,7 +427,7 @@ export class AtlasFlowController {
     out.set({ sentTo: before, busy: true });
     try {
       const { sentTo } = await prepareSecondFactorCode(this.client, id, strategy);
-      out.set({ sentTo });
+      out.set({ sentTo, resent: before !== undefined });
       // A wrong code's message no longer applies once a new code has gone out.
       this.state.update((current) => ({ ...current, errors: [] }));
     } catch (error) {
@@ -528,9 +534,14 @@ export class AtlasFlowController {
     this.pollTimer = setInterval(() => {
       void (async () => {
         const polled = this.state();
+        if (!shouldKeepPolling(polled)) {
+          this.stopPolling();
+          return;
+        }
         const { state: next, ticket } = await pollAttempt(this.client, polled);
-        // A resend rotated the secret meanwhile: this answer is stale.
-        if (this.state().pollSecret === polled.pollSecret) this.setState(next);
+        if (pollAnswerStale(this.state(), polled)) return;
+        // Busy until the session is held: only a sign-in that finished with no ticket here says "other tab".
+        this.setState(ticket ? { ...next, busy: true } : next);
         // e.g. a passkey sign-up whose email was just proven: only this tab can go on.
         if (!ticket && !shouldKeepPolling(next)) this.stopPolling();
         if (!ticket || !next.attempt) return;
@@ -542,7 +553,7 @@ export class AtlasFlowController {
           ticket,
         });
         const kept = res.ok && (await this.reload());
-        this.setState({ ...this.state(), sessionKept: kept });
+        this.setState({ ...this.state(), busy: false, sessionKept: kept });
         this.stopPolling();
       })();
     }, 2_000);

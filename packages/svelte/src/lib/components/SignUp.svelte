@@ -30,6 +30,7 @@
   const t = (key: string) => translate(atlas.catalog, key);
   const flow = signUp({ holdExistingAccountNotice: true });
   const flowState = flow.state;
+  const authStatus = atlas.status;
   const settings = flow.settings;
   const enrollmentState = flow.enrollmentState;
   onDestroy(() => flow.destroy());
@@ -108,6 +109,8 @@
     onPolicyDecline={flow.declinePolicy}
     signInHref={signInAfterProofUrl({ url: signInUrl, frontendApi: atlas.frontendApi, redirectUrl: afterUrl })}
   />
+{:else if $authStatus === 'signed_in' && !$flowState.busy}
+  <!-- signed in with no attempt held: nothing to draw -->
 {:else}
   <SignUpForm
     settings={$settings}

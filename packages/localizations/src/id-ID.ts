@@ -109,6 +109,8 @@ export const idID: LocalizationResource = {
   'mfa.sendCode': 'Kirimkan kode melalui SMS',
   'mfa.codeTextedTo': 'Masukkan kode yang kami kirim melalui SMS ke {phone}.',
   'mfa.codeWait': 'Anda dapat meminta kode lain dalam {seconds} detik.',
+  'mfa.codeWaitOne': 'Anda dapat meminta kode lain dalam 1 detik.',
+  'mfa.codeResent': 'Kode terkirim.',
   'mfa.codeWaitMinutes': 'Anda dapat meminta kode lain dalam {minutes} menit.',
   'mfa.smsCodeOption': 'Kirimkan kode melalui SMS saja',
   'mfa.recoveryCodesTitle': 'Simpan kode pemulihan Anda',

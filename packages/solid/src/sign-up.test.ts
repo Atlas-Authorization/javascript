@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@solidjs/testing-library';
+import { useContext } from 'solid-js';
+import { AtlasContext } from './context';
+import type { AtlasClient } from './provider';
 import { h } from './h';
 import { AtlasProvider } from './provider';
 import { SIGN_UP_TEXT, SignIn, SignUp } from './widgets';
@@ -42,6 +45,9 @@ function fakeTurnstile() {
   };
 }
 
+const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+const JWT = `${b64({ alg: 'none' })}.${b64({ sid: 'sess_1', sub: 'user_1', exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`;
+let lastClient: AtlasClient | undefined;
 let calls: Call[] = [];
 beforeEach(() => {
   calls = [];
@@ -59,6 +65,7 @@ async function mountFlow(
     emailDelivery?: Record<string, unknown>;
     account?: Record<string, unknown>;
     signInWithAtlas?: Record<string, unknown>;
+    signedIn?: () => boolean;
     routes: Route[];
   },
 ) {
@@ -70,7 +77,8 @@ async function mountFlow(
       body: typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null,
     };
     calls.push(call);
-    if (call.path === '/v1/client') return json({ session: null, user: null });
+    if (call.path === '/v1/client')
+      return json(opts.signedIn?.() ? { session: { id: 'sess_1', status: 'active' }, user: { id: 'user_1' }, jwt: JWT } : { session: null, user: null });
     if (call.path === '/v1/appearance') {
       return json({
         object: 'appearance',
@@ -90,7 +98,10 @@ async function mountFlow(
   // The flow's FAPI client uses the global fetch; the provider takes fetchImpl.
   vi.stubGlobal('fetch', fetchImpl);
   const { container } = render(() =>
-    h(AtlasProvider, { publishableKey: 'pk_test_x', frontendApi: FAPI, fetchImpl }, h(component, {})),
+    h(AtlasProvider, { publishableKey: 'pk_test_x', frontendApi: FAPI, fetchImpl }, () => {
+      lastClient = useContext(AtlasContext);
+      return h(component, {});
+    }),
   );
   await vi.waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance' || c.path.endsWith('/verify'))).toBe(true));
   await new Promise((r) => setTimeout(r, 0));
@@ -614,5 +625,50 @@ describe('<SignIn> enrolment offers every factor the app offers', () => {
     submit(el);
     await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')).toHaveLength(1));
     expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ strategy: 'yubikey', otp: 'ccccccfjkbbb' });
+  });
+
+  it('<SignIn> draws nothing when someone is already signed in, and the form returns on sign-out', async () => {
+    let held = true;
+    const el = await mountFlow(SignIn, { signedIn: () => held, routes: [] });
+    await lastClient!.reload();
+    await vi.waitFor(() => expect(el.querySelector('form')).toBeNull());
+    held = false;
+    await lastClient!.reload();
+    await vi.waitFor(() => expect(el.querySelector('form')).not.toBeNull());
+  });
+
+  it('<SignUp> keeps the recovery codes on screen when the session appears mid-flow', async () => {
+    let held = false;
+    const el = await mountFlow(SignUp, {
+      signedIn: () => held,
+      routes: [
+        (c) => (c.path === '/v1/client/sign_ups' ? json({ id: 'sua_1', status: 'needs_email_verification' }, 201) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ups/sua_1/attempt_verification'
+            ? json({ id: 'sua_1', status: 'needs_mfa_enrollment', existing_account: true })
+            : undefined,
+        (c) => (c.path === '/v1/client/sign_ins/sua_1/prepare_mfa_enrollment' ? json({ factor_id: 'mfa_t', secret: 'ABCD', uri: 'otpauth://totp/x' }) : undefined),
+        (c) =>
+          c.path === '/v1/client/sign_ins/sua_1/attempt_mfa_enrollment'
+            ? json({ id: 'sua_1', status: 'complete', ticket: 'tkt_1', backup_codes: ['aaaa-1111'] })
+            : undefined,
+      ],
+    });
+    await vi.waitFor(() => expect(el.querySelector('input[name="password"]')).not.toBeNull());
+    setInput(el, 'email', 'held@example.com');
+    setInput(el, 'password', 'blue tangerine anvil 71!');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="code"]')).not.toBeNull());
+    setInput(el, 'code', '424242');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('input[name="secondCode"]')).not.toBeNull());
+    setInput(el, 'code', '111111');
+    setInput(el, 'secondCode', '222222');
+    submit(el);
+    await vi.waitFor(() => expect(el.querySelector('[data-atlas="recovery-codes"]')).not.toBeNull());
+    held = true;
+    await lastClient!.reload();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(el.querySelector('[data-atlas="recovery-codes"]')).not.toBeNull();
   });
 });
