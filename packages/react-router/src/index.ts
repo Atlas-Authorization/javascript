@@ -104,6 +104,8 @@ export interface AtlasAuth {
 export interface GetAuthOptions {
   jwksUrl: string;
   issuer: string;
+  /** Former issuers still accepted during a sign-in host change. Falls back to comma-separated `ATLAS_PREVIOUS_ISSUERS`. */
+  previousIssuers?: string[];
   authorizedParties?: readonly string[];
   publishableKey?: string;
   /** Injectable fetch, for tests and custom transports. */
@@ -266,9 +268,20 @@ export function configFromEnv(env: Env = readEnv()): GetAuthOptions {
         .filter(Boolean)
     : undefined;
 
+  const previousIssuers = pick(env, 'ATLAS_PREVIOUS_ISSUERS')
+    ?.split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
   const publishableKey = pick(env, 'ATLAS_PUBLISHABLE_KEY');
 
-  return { jwksUrl, issuer, authorizedParties, publishableKey };
+  return {
+    jwksUrl,
+    issuer,
+    previousIssuers: previousIssuers?.length ? previousIssuers : undefined,
+    authorizedParties,
+    publishableKey,
+  };
 }
 
 /**
@@ -299,6 +312,7 @@ function cacheKey(options: GetAuthOptions): string {
   return [
     options.jwksUrl,
     options.issuer,
+    (options.previousIssuers ?? []).join(','),
     (options.authorizedParties ?? []).join(','),
     fetchToken(options.fetchImpl),
   ].join('\n');
@@ -311,6 +325,7 @@ function backendFor(options: GetAuthOptions): AtlasBackend {
     backend = new AtlasBackend({
       jwksUrl: options.jwksUrl,
       issuer: options.issuer,
+      previousIssuers: options.previousIssuers,
       authorizedParties: options.authorizedParties,
       fetchImpl: options.fetchImpl,
     });

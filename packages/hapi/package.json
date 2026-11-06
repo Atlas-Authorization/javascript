@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/hapi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Hapi plugin and auth scheme for Atlas: verify the session locally.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

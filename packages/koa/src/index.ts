@@ -20,7 +20,7 @@ export type KoaNext = () => Promise<unknown>;
 export type KoaMiddleware = (ctx: KoaContextLike, next: KoaNext) => Promise<void>;
 
 /** Verification is local against the instance JWKS; `jwksUrl` + `issuer` are the whole contract. */
-export type AtlasKoaOptions = Pick<AtlasBackendOptions, 'jwksUrl' | 'issuer' | 'authorizedParties' | 'fetchImpl'>;
+export type AtlasKoaOptions = Pick<AtlasBackendOptions, 'jwksUrl' | 'issuer' | 'previousIssuers' | 'authorizedParties' | 'fetchImpl'>;
 
 /**
  * Authenticate every request and put the result on `ctx.state.atlas`. Never throws and never blocks:

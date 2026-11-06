@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/koa",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Koa middleware for Atlas: verify the session locally and read ctx.state.atlas.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

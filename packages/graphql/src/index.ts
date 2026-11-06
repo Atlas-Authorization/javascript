@@ -9,7 +9,7 @@ import {
 export { type ProtectCondition, type RequestAuth as AtlasAuth } from '@atlasauth/backend';
 
 /** Verification is local against the instance JWKS; `jwksUrl` + `issuer` are the whole contract. */
-export type AtlasGraphQLOptions = Pick<AtlasBackendOptions, 'jwksUrl' | 'issuer' | 'authorizedParties' | 'fetchImpl'>;
+export type AtlasGraphQLOptions = Pick<AtlasBackendOptions, 'jwksUrl' | 'issuer' | 'previousIssuers' | 'authorizedParties' | 'fetchImpl'>;
 
 /** The GraphQL context field holding the verified session. */
 export interface AtlasContext {

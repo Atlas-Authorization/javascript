@@ -78,6 +78,8 @@ export interface AtlasMiddlewareOptions {
   jwksUrl: string;
   /** Expected `iss`. Required: an unchecked issuer accepts any Atlas instance. */
   issuer: string;
+  /** Former issuers still accepted during a sign-in host change. Absent means only `issuer`. */
+  previousIssuers?: string[];
   /**
    * §7.3 optional `azp` allowlist. When set, a token minted for a different
    * origin is refused, so a token issued to one of the customer's apps cannot be
@@ -310,6 +312,7 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions): MiddlewareHand
   const backend = new AtlasBackend({
     jwksUrl: options.jwksUrl,
     issuer: options.issuer,
+    previousIssuers: options.previousIssuers,
     authorizedParties: options.authorizedParties,
     fetchImpl: options.fetchImpl,
     legacyIssuers: options.legacyIssuers,

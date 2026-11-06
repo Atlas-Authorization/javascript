@@ -90,7 +90,7 @@ const { userId, protect } = await auth();
 const user = await currentUser(); // from the verified session claims, no network call
 ```
 
-These read `ATLAS_JWKS_URL` and `ATLAS_ISSUER` (or their `NEXT_PUBLIC_` forms) from the environment.
+These read `ATLAS_JWKS_URL` and `ATLAS_ISSUER` (or their `NEXT_PUBLIC_` forms) from the environment. Set `ATLAS_PREVIOUS_ISSUERS` (comma-separated) to keep accepting a former issuer's tokens during a sign-in host change.
 
 ## Sign-in panel ready on first paint
 

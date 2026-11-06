@@ -34,6 +34,7 @@ declare module '#imports' {
     atlas: {
       jwksUrl: string;
       issuer: string;
+      previousIssuers?: string[];
       authorizedParties: string[];
     };
   };

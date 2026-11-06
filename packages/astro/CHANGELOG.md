@@ -1,5 +1,10 @@
 # @atlasauth/astro changelog
 
+## 0.1.1 — 2026-11-06
+
+### Added
+- `previousIssuers` option (or comma-separated `ATLAS_PREVIOUS_ISSUERS`) so the middleware keeps accepting tokens from a former issuer during a sign-in host change. Absent means only `issuer` is accepted.
+
 ## 0.1.0
 
 First published release.

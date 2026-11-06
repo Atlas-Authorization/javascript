@@ -8,7 +8,7 @@ import {
 export { ForbiddenError, type ProtectCondition, type RequestAuth as AtlasAuth, type SessionClaims } from '@atlasauth/backend';
 
 /** Verification is local against the instance JWKS; `jwksUrl` + `issuer` are the whole contract. */
-export type AtlasHapiOptions = Pick<AtlasBackendOptions, 'jwksUrl' | 'issuer' | 'authorizedParties' | 'fetchImpl'> & {
+export type AtlasHapiOptions = Pick<AtlasBackendOptions, 'jwksUrl' | 'issuer' | 'previousIssuers' | 'authorizedParties' | 'fetchImpl'> & {
   /** Name of the auth scheme/strategy registered by the plugin (default `atlas`). */
   name?: string;
   /** Make the strategy the server default so every route requires sign-in unless it opts out. Default false. */

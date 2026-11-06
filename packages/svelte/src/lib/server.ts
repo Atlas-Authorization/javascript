@@ -25,6 +25,8 @@ export interface AtlasServerOptions {
   jwksUrl: string;
   /** Expected `iss`. Required — an unchecked issuer accepts any Atlas instance. */
   issuer: string;
+  /** Former issuers still accepted during a sign-in host change. Absent means only `issuer`. */
+  previousIssuers?: string[];
   /** §7.3 optional azp allowlist: refuse a token minted for a different origin. */
   authorizedParties?: readonly string[];
   /** Cookie the session JWT rides in. Defaults to `__session`. */
@@ -129,6 +131,7 @@ export function handleAtlas(options: AtlasServerOptions): KitHandle {
   const backend = new AtlasBackend({
     jwksUrl: options.jwksUrl,
     issuer: options.issuer,
+    previousIssuers: options.previousIssuers,
     authorizedParties: options.authorizedParties,
     fetchImpl: options.fetchImpl,
   });

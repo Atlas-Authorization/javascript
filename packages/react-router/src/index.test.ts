@@ -135,6 +135,13 @@ describe('configFromEnv', () => {
     expect(options.publishableKey).toBe('pk_test');
   });
 
+  it('reads ATLAS_PREVIOUS_ISSUERS as a comma-separated list, and is absent by default', () => {
+    const base = { ATLAS_JWKS_URL: JWKS_URL, ATLAS_ISSUER: ISSUER };
+    expect(configFromEnv(base).previousIssuers).toBeUndefined();
+    const options = configFromEnv({ ...base, ATLAS_PREVIOUS_ISSUERS: 'https://a.test, https://b.test' });
+    expect(options.previousIssuers).toEqual(['https://a.test', 'https://b.test']);
+  });
+
   it('throws an actionable error when a required var is missing', () => {
     expect(() => configFromEnv({ ATLAS_ISSUER: ISSUER })).toThrow(/ATLAS_JWKS_URL/);
     expect(() => configFromEnv({ ATLAS_JWKS_URL: JWKS_URL })).toThrow(/ATLAS_ISSUER/);

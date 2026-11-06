@@ -2,6 +2,11 @@
 
 
 
+## 0.16.8 — 2026-11-06
+
+### Added
+- The server hook (`handleAtlas`) accepts `previousIssuers`, so a sign-in host change does not sign users out: tokens from a listed former issuer are accepted. Absent means only `issuer` is accepted.
+
 ## 0.16.7 — 2026-11-06
 
 - A limited code send counts down, in seconds or minutes, and the resend comes back at zero, at the second factor and at enrolment. Second-factor options stay hidden until the account's answer is in, so one it can't use never appears.

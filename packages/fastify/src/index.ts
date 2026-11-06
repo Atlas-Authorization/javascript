@@ -110,6 +110,8 @@ export interface AtlasAuth {
 export interface AtlasPluginOptions {
   jwksUrl: string;
   issuer: string;
+  /** Former issuers still accepted during a sign-in host change. Absent means only `issuer`. */
+  previousIssuers?: string[];
   authorizedParties?: readonly string[];
   publishableKey?: string;
   /** Which Fastify request hook to run on. Default `preHandler`. */
@@ -408,6 +410,7 @@ export function atlasPlugin(options: AtlasPluginOptions): FastifyPluginCallback 
   const backend = new AtlasBackend({
     jwksUrl: options.jwksUrl,
     issuer: options.issuer,
+    previousIssuers: options.previousIssuers,
     authorizedParties: options.authorizedParties,
     fetchImpl: options.fetchImpl,
     legacyIssuers: options.legacyIssuers,

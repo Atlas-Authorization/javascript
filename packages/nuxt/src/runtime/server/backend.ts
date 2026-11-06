@@ -26,6 +26,7 @@ export function atlasBackend(): AtlasBackend {
   cached = new AtlasBackend({
     jwksUrl: atlas.jwksUrl,
     issuer: atlas.issuer,
+    previousIssuers: atlas.previousIssuers?.length ? atlas.previousIssuers : undefined,
     authorizedParties: atlas.authorizedParties?.length ? atlas.authorizedParties : undefined,
   });
   return cached;

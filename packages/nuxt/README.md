@@ -41,6 +41,7 @@ export default defineNuxtConfig({
     atlas: {
       jwksUrl: '',   // NUXT_ATLAS_JWKS_URL
       issuer: '',    // NUXT_ATLAS_ISSUER
+      // previousIssuers: ['https://old-host.example.com'], // optional: still accept a former issuer
       // authorizedParties: ['https://app.example.com'], // optional azp allowlist
     },
     public: {

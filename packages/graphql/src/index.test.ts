@@ -4,25 +4,35 @@ import { AtlasGraphQLError, createAtlasContext, guard, requireUser } from './ind
 
 const ISSUER = 'https://t.fapi.atlas.test';
 
-async function setup() {
+async function setup(tokenIssuer = ISSUER) {
   const { privateKey, publicKey } = await generateKeyPair('RS256');
   const jwks = { keys: [{ ...(await exportJWK(publicKey)), kid: 'k', alg: 'RS256', use: 'sig' }] };
-  const make = createAtlasContext({
+  const options = {
     jwksUrl: `${ISSUER}/.well-known/jwks.json`,
     issuer: ISSUER,
     fetchImpl: (async () => new Response(JSON.stringify(jwks))) as unknown as typeof fetch,
-  });
+  };
+  const make = createAtlasContext(options);
   const token = await new SignJWT({ sid: 's1', org_id: 'org_1', org_role: 'member' })
     .setProtectedHeader({ alg: 'RS256', kid: 'k' })
     .setSubject('user_1')
-    .setIssuer(ISSUER)
+    .setIssuer(tokenIssuer)
     .setIssuedAt()
     .setExpirationTime('60s')
     .sign(privateKey);
-  return { make, token };
+  return { make, token, options };
 }
 
 describe('graphql helpers', () => {
+  it('accepts a previous issuer only when previousIssuers lists it', async () => {
+    const old = 'https://old.fapi.atlas.test';
+    const { make, token, options } = await setup(old);
+    const headers = { authorization: `Bearer ${token}` };
+    expect((await make(headers)).atlas.isSignedIn).toBe(false);
+    const overlap = await createAtlasContext({ ...options, previousIssuers: [old] })(headers);
+    expect(requireUser(overlap).userId).toBe('user_1');
+  });
+
   it('puts the verified session on the context', async () => {
     const { make, token } = await setup();
     const ctx = await make({ authorization: `Bearer ${token}` });

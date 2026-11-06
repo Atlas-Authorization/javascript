@@ -1,5 +1,10 @@
 # @atlasauth/nextjs changelog
 
+## 0.12.0 — 2026-11-06
+
+### Added
+- `previousIssuers` option on the middleware and server helpers (and comma-separated `ATLAS_PREVIOUS_ISSUERS`), so a sign-in host change does not sign users out: tokens from a listed former issuer are accepted. Absent means only `issuer` is accepted.
+
 ## Unreleased
 
 ## 0.11.0 — 2026-11-04

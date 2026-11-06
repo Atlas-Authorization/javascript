@@ -19,7 +19,7 @@ async function token(privateKey: unknown, claims: Record<string, unknown> = {}) 
   return new SignJWT({ sid: 'sess_1', ...claims })
     .setProtectedHeader({ alg: 'RS256', kid: 'kid-1' })
     .setSubject('user_1')
-    .setIssuer(ISSUER)
+    .setIssuer((claims.iss as string | undefined) ?? ISSUER)
     .setIssuedAt()
     .setExpirationTime('60s')
     .sign(privateKey as never);
@@ -92,6 +92,21 @@ describe('atlasMiddleware', () => {
     expect(auth.userId).toBe('user_1');
     expect(auth.sessionId).toBe('sess_1');
     expect(auth.isSignedIn).toBe(true);
+  });
+
+  it('accepts a previous issuer only when previousIssuers lists it', async () => {
+    const { privateKey, jwks } = await keyring();
+    const old = 'https://old.fapi.atlas.test';
+    const cookie = `__session=${await token(privateKey, { iss: old })}`;
+    const base = { jwksUrl: JWKS_URL, issuer: ISSUER, fetchImpl: serving(jwks) };
+
+    const strict = request({ cookie });
+    await run(atlasMiddleware(base), strict, responder().res);
+    expect(getAuth(strict).userId).toBeNull();
+
+    const overlap = request({ cookie });
+    await run(atlasMiddleware({ ...base, previousIssuers: [old] }), overlap, responder().res);
+    expect(getAuth(overlap).userId).toBe('user_1');
   });
 
   it('attaches signed-in auth for a valid Bearer token (header wins)', async () => {

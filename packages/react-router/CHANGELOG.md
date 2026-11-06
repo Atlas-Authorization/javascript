@@ -1,5 +1,10 @@
 # @atlasauth/react-router changelog
 
+## 0.1.3 — 2026-11-06
+
+### Added
+- `previousIssuers` option (and comma-separated `ATLAS_PREVIOUS_ISSUERS`), so a sign-in host change does not sign users out: tokens from a listed former issuer are accepted. Absent means only `issuer` is accepted.
+
 ## 0.1.2
 - **Fixed:** depends on `@atlasauth/react` `^0.9.0` instead of one exact version. With an exact pin, an app that also
   installed a newer `@atlasauth/react` got two copies, and hooks from one couldn't see the other's

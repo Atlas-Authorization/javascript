@@ -107,6 +107,8 @@ export interface AtlasAuth {
 export interface AtlasMiddlewareOptions {
   jwksUrl: string;
   issuer: string;
+  /** Former issuers still accepted during a sign-in host change. Absent means only `issuer`. */
+  previousIssuers?: string[];
   authorizedParties?: readonly string[];
   publishableKey?: string;
   /** Injectable fetch, for tests and custom transports. */
@@ -397,6 +399,7 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions): RequestHandler
   const backend = new AtlasBackend({
     jwksUrl: options.jwksUrl,
     issuer: options.issuer,
+    previousIssuers: options.previousIssuers,
     authorizedParties: options.authorizedParties,
     fetchImpl: options.fetchImpl,
     legacyIssuers: options.legacyIssuers,
@@ -461,6 +464,7 @@ export function requireAuth(options?: AtlasMiddlewareOptions): RequestHandler {
       ? new AtlasBackend({
           jwksUrl: options.jwksUrl,
           issuer: options.issuer,
+          previousIssuers: options.previousIssuers,
           authorizedParties: options.authorizedParties,
           fetchImpl: options.fetchImpl,
         })

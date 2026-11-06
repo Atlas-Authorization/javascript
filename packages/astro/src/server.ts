@@ -92,6 +92,8 @@ export interface AtlasAuth {
 export interface AtlasMiddlewareOptions {
   jwksUrl?: string;
   issuer?: string;
+  /** Former issuers still accepted during a sign-in host change. Falls back to comma-separated `ATLAS_PREVIOUS_ISSUERS`. */
+  previousIssuers?: string[];
   authorizedParties?: readonly string[];
   publishableKey?: string;
   /** Injectable fetch, for tests and custom transports. */
@@ -102,6 +104,7 @@ export interface AtlasMiddlewareOptions {
 interface ResolvedConfig {
   jwksUrl: string;
   issuer: string;
+  previousIssuers?: string[];
   authorizedParties?: readonly string[];
   fetchImpl?: typeof fetch;
 }
@@ -182,7 +185,19 @@ function resolveConfig(options: AtlasMiddlewareOptions): ResolvedConfig {
     authorizedParties = parsed.length > 0 ? parsed : undefined;
   }
 
-  return { jwksUrl, issuer, authorizedParties, fetchImpl: options.fetchImpl };
+  const previousIssuers =
+    options.previousIssuers ??
+    env.ATLAS_PREVIOUS_ISSUERS?.split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+  return {
+    jwksUrl,
+    issuer,
+    previousIssuers: previousIssuers?.length ? previousIssuers : undefined,
+    authorizedParties,
+    fetchImpl: options.fetchImpl,
+  };
 }
 
 /**
@@ -281,6 +296,7 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions = {}): AtlasMidd
   const backend = new AtlasBackend({
     jwksUrl: config.jwksUrl,
     issuer: config.issuer,
+    previousIssuers: config.previousIssuers,
     authorizedParties: config.authorizedParties,
     fetchImpl: config.fetchImpl,
   });

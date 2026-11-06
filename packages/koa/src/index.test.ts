@@ -4,7 +4,7 @@ import { atlasMiddleware, getAuth, requireAuth, type KoaContextLike } from './in
 
 const ISSUER = 'https://t.fapi.atlas.test';
 
-async function setup() {
+async function setup(tokenIssuer = ISSUER) {
   const { privateKey, publicKey } = await generateKeyPair('RS256');
   const jwks = { keys: [{ ...(await exportJWK(publicKey)), kid: 'k', alg: 'RS256', use: 'sig' }] };
   const options = {
@@ -15,7 +15,7 @@ async function setup() {
   const token = await new SignJWT({ sid: 's1', org_id: 'org_1', org_role: 'member' })
     .setProtectedHeader({ alg: 'RS256', kid: 'k' })
     .setSubject('user_1')
-    .setIssuer(ISSUER)
+    .setIssuer(tokenIssuer)
     .setIssuedAt()
     .setExpirationTime('60s')
     .sign(privateKey);
@@ -25,6 +25,17 @@ async function setup() {
 const ctx = (headers: Record<string, string> = {}): KoaContextLike => ({ headers, state: {}, status: 404, body: null });
 
 describe('koa adapter', () => {
+  it('accepts a previous issuer only when previousIssuers lists it', async () => {
+    const old = 'https://old.fapi.atlas.test';
+    const { options, token } = await setup(old);
+    const strict = ctx({ authorization: `Bearer ${token}` });
+    await atlasMiddleware(options)(strict, async () => {});
+    expect(getAuth(strict).userId).toBeNull();
+    const overlap = ctx({ authorization: `Bearer ${token}` });
+    await atlasMiddleware({ ...options, previousIssuers: [old] })(overlap, async () => {});
+    expect(getAuth(overlap).userId).toBe('user_1');
+  });
+
   it('attaches the verified user and lets the request through', async () => {
     const { options, token } = await setup();
     const c = ctx({ authorization: `Bearer ${token}` });

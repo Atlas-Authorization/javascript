@@ -75,9 +75,20 @@ export function configFromEnv(env: Env = readEnv()): AtlasMiddlewareOptions {
         .filter(Boolean)
     : undefined;
 
+  const previousIssuers = pick(env, 'ATLAS_PREVIOUS_ISSUERS', 'NEXT_PUBLIC_ATLAS_PREVIOUS_ISSUERS')
+    ?.split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
   const publishableKey = pick(env, 'ATLAS_PUBLISHABLE_KEY', 'NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY');
 
-  return { jwksUrl, issuer, authorizedParties, publishableKey };
+  return {
+    jwksUrl,
+    issuer,
+    previousIssuers: previousIssuers?.length ? previousIssuers : undefined,
+    authorizedParties,
+    publishableKey,
+  };
 }
 
 /**
@@ -176,7 +187,7 @@ async function edgeRequestFromContext(): Promise<EdgeRequest> {
  * every render, defeating the whole point of edge-local verification.
  */
 function cacheKey(options: AtlasMiddlewareOptions): string {
-  return [options.jwksUrl, options.issuer, (options.authorizedParties ?? []).join(',')].join('\n');
+  return [options.jwksUrl, options.issuer, (options.previousIssuers ?? []).join(','), (options.authorizedParties ?? []).join(',')].join('\n');
 }
 
 let authHelperCache: { key: string; fn: ReturnType<typeof createAuthHelper> } | undefined;

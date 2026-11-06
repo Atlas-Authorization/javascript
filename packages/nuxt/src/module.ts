@@ -51,6 +51,11 @@ export interface ModuleOptions {
    */
   issuer?: string;
   /**
+   * Former issuers still accepted during a sign-in host change. SERVER-ONLY.
+   * Absent means only `issuer` is accepted.
+   */
+  previousIssuers?: string[];
+  /**
    * Optional `azp` allowlist. When set, a token minted for another origin is
    * refused server-side (§7.3). SERVER-ONLY.
    */
@@ -70,6 +75,7 @@ export default defineNuxtModule<ModuleOptions>({
     frontendApi: '',
     jwksUrl: '',
     issuer: '',
+    previousIssuers: [],
     authorizedParties: [],
   },
   setup(options, nuxt) {
@@ -96,6 +102,9 @@ export default defineNuxtModule<ModuleOptions>({
     nuxt.options.runtimeConfig.atlas = {
       jwksUrl: options.jwksUrl || (privateConfig.jwksUrl as string) || '',
       issuer: options.issuer || (privateConfig.issuer as string) || '',
+      previousIssuers: options.previousIssuers?.length
+        ? options.previousIssuers
+        : (privateConfig.previousIssuers as string[]) || [],
       authorizedParties:
         options.authorizedParties?.length
           ? options.authorizedParties

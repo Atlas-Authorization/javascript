@@ -1,5 +1,10 @@
 # @atlasauth/nuxt changelog
 
+## 0.2.1 — 2026-11-06
+
+### Added
+- `previousIssuers` module option (server-only runtime config), so a sign-in host change does not sign users out: tokens from a listed former issuer are accepted. Absent means only `issuer` is accepted.
+
 ## 0.2.0 — 2026-10-24
 Requires `@atlasauth/vue` with policy acceptance.
 - **Policy acceptance** (terms of service, privacy, any policy the app defines). `usePolicies` and `usePolicyState` are

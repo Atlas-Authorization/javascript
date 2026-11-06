@@ -151,6 +151,28 @@ describe('atlasMiddleware', () => {
     expect(getAuth(ctx).userId).toBe('user_1');
   });
 
+  it('accepts a token from a previous issuer only when previousIssuers lists it', async () => {
+    const { privateKey, jwks } = await keyring();
+    const old = 'https://old.fapi.atlas.test';
+    const oldToken = await new SignJWT({ sid: 'sess_1' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'kid-1' })
+      .setSubject('user_1')
+      .setIssuer(old)
+      .setIssuedAt()
+      .setExpirationTime('60s')
+      .sign(privateKey);
+    const headers = { cookie: `__session=${oldToken}` };
+    const base = { jwksUrl: JWKS_URL, issuer: ISSUER, fetchImpl: serving(jwks) };
+
+    const strict = context(headers);
+    await atlasMiddleware(base)(strict, next);
+    expect(getAuth(strict).userId).toBeNull();
+
+    const overlap = context(headers);
+    await atlasMiddleware({ ...base, previousIssuers: [old] })(overlap, next);
+    expect(getAuth(overlap).userId).toBe('user_1');
+  });
+
   it('throws a clear error when neither options nor env supply config', () => {
     expect(() => atlasMiddleware()).toThrow(/ATLAS_JWKS_URL/);
   });

@@ -1,5 +1,10 @@
 # @atlasauth/hono changelog
 
+## 0.7.0 — 2026-11-06
+
+### Added
+- `previousIssuers` option, passed through to the verifier, so a sign-in host change does not sign users out: tokens from a listed former issuer are accepted alongside `issuer`. Absent means only `issuer` is accepted.
+
 ## Unreleased
 
 ## 0.6.0 — 2026-10-25

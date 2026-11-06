@@ -4,7 +4,7 @@ import { atlasPlugin } from './index';
 
 const ISSUER = 'https://t.fapi.atlas.test';
 
-async function setup() {
+async function setup(tokenIssuer = ISSUER) {
   const { privateKey, publicKey } = await generateKeyPair('RS256');
   const jwks = { keys: [{ ...(await exportJWK(publicKey)), kid: 'k', alg: 'RS256', use: 'sig' }] };
   const options = {
@@ -15,7 +15,7 @@ async function setup() {
   const token = await new SignJWT({ sid: 's1' })
     .setProtectedHeader({ alg: 'RS256', kid: 'k' })
     .setSubject('user_1')
-    .setIssuer(ISSUER)
+    .setIssuer(tokenIssuer)
     .setIssuedAt()
     .setExpirationTime('60s')
     .sign(privateKey);
@@ -41,6 +41,15 @@ function register(options: Parameters<typeof atlasPlugin.register>[1]) {
 }
 
 describe('hapi plugin', () => {
+  it('accepts a previous issuer only when previousIssuers lists it', async () => {
+    const old = 'https://old.fapi.atlas.test';
+    const { options, token } = await setup(old);
+    const headers = { authorization: `Bearer ${token}` };
+    expect((await register(options).run(headers)).unauthenticated.output.statusCode).toBe(401);
+    const out = await register({ ...options, previousIssuers: [old] }).run(headers);
+    expect(out.authenticated.credentials.userId).toBe('user_1');
+  });
+
   it('authenticates a valid bearer token into credentials', async () => {
     const { options, token } = await setup();
     const { run, calls } = register(options);

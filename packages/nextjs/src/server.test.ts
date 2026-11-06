@@ -26,6 +26,13 @@ describe('configFromEnv', () => {
     expect(options.issuer).toBe('https://fox.fapi.atlas.test');
   });
 
+  it('reads ATLAS_PREVIOUS_ISSUERS as a comma-separated list, and is absent by default', () => {
+    const base = { ATLAS_JWKS_URL: 'https://fox.fapi.atlas.test/jwks', ATLAS_ISSUER: 'https://fox.fapi.atlas.test' };
+    expect(configFromEnv(base).previousIssuers).toBeUndefined();
+    const options = configFromEnv({ ...base, ATLAS_PREVIOUS_ISSUERS: 'https://a.test, https://b.test' });
+    expect(options.previousIssuers).toEqual(['https://a.test', 'https://b.test']);
+  });
+
   it('falls back to the NEXT_PUBLIC_ names when the server-only ones are absent', () => {
     const options = configFromEnv({
       NEXT_PUBLIC_ATLAS_JWKS_URL: 'https://pub.fapi.atlas.test/jwks',

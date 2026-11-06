@@ -161,6 +161,7 @@ import { handleAtlas } from '@atlasauth/svelte/server';
 export const handle = handleAtlas({
   jwksUrl: 'https://your-instance-fapi.atlasauth.net/.well-known/jwks.json',
   issuer: 'https://your-instance-fapi.atlasauth.net',
+  // previousIssuers: ['https://old-host.example.com'], // optional: still accept a former issuer
   // authorizedParties: ['https://app.example.com'], // optional azp allowlist
 });
 ```
