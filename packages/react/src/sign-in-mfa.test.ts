@@ -45,7 +45,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function mount(opts: { routes: Route[]; locale?: string; emailDelivery?: Record<string, boolean>; account?: Record<string, unknown>; signedIn?: () => boolean }) {
+async function mount(opts: { routes: Route[]; locale?: string; emailDelivery?: Record<string, boolean>; account?: Record<string, unknown>; signedIn?: () => boolean; gate?: Promise<void> }) {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const call: Call = {
@@ -56,6 +56,7 @@ async function mount(opts: { routes: Route[]; locale?: string; emailDelivery?: R
       headers: Object.fromEntries(new Headers(init?.headers).entries()),
     };
     calls.push(call);
+    if (call.path === '/v1/client') await opts.gate;
     if (call.path === '/v1/client') return json(opts.signedIn?.() ? SIGNED_IN : { session: null, user: null });
     if (call.path === '/v1/appearance') {
       return json({
@@ -533,6 +534,15 @@ describe('<SignIn> enrolment offers every factor the app offers', () => {
 });
 
 describe('<SignIn> when someone is already signed in', () => {
+  it('draws nothing until the session check answers, then the form', async () => {
+    let release!: () => void;
+    const el = await mount({ routes: [], gate: new Promise<void>((r) => (release = r)) });
+    expect(el.querySelector('form')).toBeNull();
+    expect(el.querySelector('input[name="identifier"]')).toBeNull();
+    release();
+    await vi.waitFor(() => expect(el.querySelector('form')).not.toBeNull());
+  });
+
   it('draws nothing', async () => {
     const el = await mount({ routes: [], signedIn: () => true });
     await vi.waitFor(() => expect(el.querySelector('form')).toBeNull());

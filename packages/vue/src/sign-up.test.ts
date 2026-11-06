@@ -954,6 +954,15 @@ describe('<SignIn> enrolment offers every factor the app offers', () => {
     expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ strategy: 'yubikey', otp: 'ccccccfjkbbb' });
   });
 
+  it('draws nothing until the session check answers, then the form', async () => {
+    const w = await mountFlow(SignIn, { status: 'loading', routes: [] });
+    expect(w.find('form').exists()).toBe(false);
+    expect(w.find('input[name="identifier"]').exists()).toBe(false);
+    (lastClient!.status as { value: AuthStatus }).value = 'signed_out';
+    await flush();
+    expect(w.find('form').exists()).toBe(true);
+  });
+
   it('draws nothing when someone is already signed in, and the form returns on sign-out', async () => {
     const w = await mountFlow(SignIn, { status: 'signed_in', routes: [] });
     expect(w.find('form').exists()).toBe(false);

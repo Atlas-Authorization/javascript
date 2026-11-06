@@ -40,6 +40,7 @@ describe('<SignIn> password hold', () => {
     vi.stubGlobal('fetch', fetchImpl);
     const client = createAtlasClient({ publishableKey: 'pk_test_x', frontendApi: FAPI, fetchImpl, manualBoot: true });
     const el = render(SignIn, { context: new Map([[ATLAS_KEY, client]]) }).container as HTMLElement;
+    await client.reload(); // the session check answers (signed out) before the form draws
     const input = (name: string) => el.querySelector(`input[name="${name}"]`) as HTMLInputElement | null;
     const send = async (name: string, value: string) => {
       await fireEvent.input(input(name)!, { target: { value } });

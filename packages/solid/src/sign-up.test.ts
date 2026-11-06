@@ -66,6 +66,8 @@ async function mountFlow(
     account?: Record<string, unknown>;
     signInWithAtlas?: Record<string, unknown>;
     signedIn?: () => boolean;
+    /** Holds the session check (`/v1/client`) until it resolves. */
+    gate?: Promise<void>;
     routes: Route[];
   },
 ) {
@@ -77,6 +79,7 @@ async function mountFlow(
       body: typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null,
     };
     calls.push(call);
+    if (call.path === '/v1/client') await opts.gate;
     if (call.path === '/v1/client')
       return json(opts.signedIn?.() ? { session: { id: 'sess_1', status: 'active' }, user: { id: 'user_1' }, jwt: JWT } : { session: null, user: null });
     if (call.path === '/v1/appearance') {
@@ -625,6 +628,15 @@ describe('<SignIn> enrolment offers every factor the app offers', () => {
     submit(el);
     await vi.waitFor(() => expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')).toHaveLength(1));
     expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ strategy: 'yubikey', otp: 'ccccccfjkbbb' });
+  });
+
+  it('<SignIn> draws nothing until the session check answers, then the form', async () => {
+    let release!: () => void;
+    const el = await mountFlow(SignIn, { gate: new Promise<void>((r) => (release = r)), routes: [] });
+    expect(el.querySelector('form')).toBeNull();
+    expect(el.querySelector('input[name="identifier"]')).toBeNull();
+    release();
+    await vi.waitFor(() => expect(el.querySelector('form')).not.toBeNull());
   });
 
   it('<SignIn> draws nothing when someone is already signed in, and the form returns on sign-out', async () => {

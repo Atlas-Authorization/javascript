@@ -66,6 +66,8 @@ async function mountFlow(
     account?: Record<string, unknown>;
     signInWithAtlas?: Record<string, unknown>;
     signedIn?: () => boolean;
+    /** Leave the session check unanswered (status stays 'loading'). */
+    loading?: boolean;
     routes: Route[];
   },
 ) {
@@ -104,6 +106,7 @@ async function mountFlow(
   });
   lastClient = client;
   const view = render(component, { context: new Map([[ATLAS_KEY, client]]) });
+  if (!opts.loading) await client.reload(); // the session check answers (signed out) before the form draws
   await waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance')).toBe(true));
   return view.container as HTMLElement;
 }
@@ -790,6 +793,14 @@ describe('<SignIn> enrolment offers every factor the app offers', () => {
     await submit(el);
     await waitFor(() => expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')).toHaveLength(1));
     expect(posts('/v1/client/sign_ins/sia_1/attempt_mfa_enrollment')[0]!.body).toEqual({ strategy: 'yubikey', otp: 'ccccccfjkbbb' });
+  });
+
+  it('draws nothing until the session check answers, then the form', async () => {
+    const el = await mountFlow(SignIn, { loading: true, routes: [] });
+    expect(el.querySelector('form')).toBeNull();
+    expect(el.querySelector('input[name="identifier"]')).toBeNull();
+    await lastClient!.reload();
+    await waitFor(() => expect(el.querySelector('form')).not.toBeNull());
   });
 
   it('draws nothing when someone is already signed in, and the form returns on sign-out', async () => {

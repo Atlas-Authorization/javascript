@@ -131,7 +131,7 @@ export class SignUpComponent implements OnInit, OnDestroy {
   private readonly atlas = inject(AtlasService);
 
   // Already signed in with no attempt held (the steps above keep finishing): draw nothing.
-  protected readonly hidden = computed(() => this.atlas.isSignedIn() && !this.flow.inProgress());
+  protected readonly hidden = computed(() => (this.atlas.isSignedIn() || !this.atlas.isLoaded()) && !this.flow.inProgress());
 
   /** Opened from a mailed link: that page, not the flow. Read after the first render, so hydration matches. */
   protected readonly emailLink = signal<EmailLink | null>(null);

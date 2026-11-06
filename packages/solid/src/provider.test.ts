@@ -60,6 +60,22 @@ describe('AtlasProvider', () => {
     expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
   });
 
+  it('boots a development instance from the stored session token alone (the cookie is blocked cross-site)', async () => {
+    const pk = 'pk_test_solid_dev';
+    localStorage.setItem(`__atlas_dev_session:${pk}`, 'rt_stored');
+    const seen: Headers[] = [];
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers));
+      return json({ session: null, user: null });
+    });
+    const { client, boot, dispose } = createAtlasClient({ publishableKey: pk, frontendApi: 'https://fapi.example', fetchImpl });
+    await boot();
+    expect(seen[0]!.get('x-refresh-token')).toBe('rt_stored');
+    expect(client.publishableKey).toBe(pk);
+    dispose();
+    localStorage.removeItem(`__atlas_dev_session:${pk}`);
+  });
+
   it('provides the client through context', () => {
     const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ session: null, user: null }));
     const Probe = () => {

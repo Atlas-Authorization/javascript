@@ -204,6 +204,10 @@ export const SIGN_UP_TEXT: Record<string, string> = {
   'mfa.recoveryCodesDownload': 'Download as .txt',
   'mfa.recoveryCodesSaved': "I've saved my codes",
   'signIn.resendCode': 'Resend code',
+  'signIn.signedIn': "You're signed in.",
+  'signIn.sessionNotKept':
+    "You signed in, but this browser didn't keep the session. If it blocks third-party cookies, allow cookies for this site and try again.",
+  'signIn.checkOtherTab': 'You can close this tab — you are signed in where you started.',
 };
 
 const t = (key: string, vars: Record<string, string> = {}) =>
@@ -230,7 +234,7 @@ function captchaSlot(controller: CaptchaController, drawn: () => boolean): JSX.E
 
 /** The fields for the current server-driven step. The `unknown`/default branch
  * says so out loud rather than rendering a blank box the user cannot act on. */
-function renderFields(kind: string): JSX.Element {
+function renderFields(kind: string, kept?: boolean, busy?: boolean): JSX.Element {
   switch (kind) {
     case 'collect_identifier':
       // `webauthn`: saved passkeys appear in this field's autofill while <SignIn> holds a conditional request.
@@ -250,7 +254,11 @@ function renderFields(kind: string): JSX.Element {
     case 'await_oauth':
       return [h('p', 'Continue in the window that opened.')];
     case 'done':
-      return [h('p', 'Signed in — you can close this.')];
+      // As the other SDKs: signed in only when this browser kept the session; nothing while still redeeming.
+      if (kept === true) return [h('p', { class: 'atlas-text' }, t('signIn.signedIn'))];
+      if (kept === false) return [h('p', { class: 'atlas-error', role: 'alert' }, t('signIn.sessionNotKept'))];
+      if (busy) return [];
+      return [h('p', { class: 'atlas-text' }, t('signIn.checkOtherTab'))];
     default:
       return [h('p', { class: 'atlas-error' }, 'This step needs an updated app. Please reload.')];
   }
@@ -537,7 +545,8 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
   // app sees a signed-in user — and no session token ever rode in a URL.
   const finish = async (next: FlowState) => {
     const codes = pendingRecoveryCodes(next);
-    setState(codes ? { ...next, busy: true } : next);
+    // Busy until the session is held, so the done step never says "other tab" meanwhile.
+    setState(codes || next.attempt?.status === 'complete' ? { ...next, busy: true } : next);
     if (next.attempt?.status === 'complete') {
       let exchanged = true;
       if (next.ticket) {
@@ -556,10 +565,11 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
       }
       // Hold before the app learns of the session, so nothing unmounts this notice.
       if (exchanged && pendingExistingAccountNotice(next)) {
-        setState({ ...next, ticket: null });
+        setState({ ...next, ticket: null, busy: false });
         return;
       }
       await client.reload();
+      setState((s) => ({ ...s, busy: false, sessionKept: exchanged && client.state.status === 'signed_in' }));
     }
   };
 
@@ -647,13 +657,14 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
         const polled = state();
         const { state: next, ticket } = await pollAttempt(fapi, polled);
         if (pollAnswerStale(state(), polled)) return;
-        setState(next);
+        setState(ticket ? { ...next, busy: true } : next);
         if (!ticket || !next.attempt) return;
-        await fapi.post('/v1/client/tickets/exchange', {
+        const res = await fapi.post('/v1/client/tickets/exchange', {
           attempt_id: (next.attempt as { id?: string }).id,
           ticket,
         });
         await client.reload();
+        setState((s) => ({ ...s, busy: false, sessionKept: res.ok && client.state.status === 'signed_in' }));
       })();
     }, 2_000);
   });
@@ -676,7 +687,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
     cancelledMessage: () => t('signIn.passkeyCancelled'),
   });
   // Already signed in with no flow of ours in progress (a held attempt covers recovery codes and finishing): draw nothing.
-  const hidden = () => client.state.status === 'signed_in' && !state().attempt && !state().busy;
+  const hidden = () => (client.state.status === 'signed_in' || client.state.status === 'loading') && !state().attempt && !state().busy;
   const passkeyOffered = createMemo(
     () => props.mode === 'sign-in' && !hidden() && kind() === 'collect_identifier' && settings()?.passkeySignIn === true && passkeysSupported(),
   );
@@ -973,7 +984,7 @@ function Flow(props: { client: AtlasClient; title: string; mode: 'sign-in' | 'si
           const [listed, offered] = firstFactor().split(':') as [string, string];
           return renderFirstFactor(offered ? offered.split(',') : [], listed === 'listed', emailSent(), sendEmailFactor, passwordHoldReleased(), usePassword);
         }
-        return renderFields(kind());
+        return renderFields(kind(), state().sessionKept, state().busy);
       },
       () =>
         kind() === 'create_account' && !signUpBlocked() && hasPolicies()

@@ -32,6 +32,7 @@ import {
   type SignOutReason,
   configureReferralCapture,
   type ReferralConsent,
+  withDevBrowser,
 } from '@atlasauth/js';
 import { ATLAS_SOLID_SDK } from './version';
 import { AtlasContext } from './context';
@@ -204,7 +205,8 @@ export function createAtlasClient(options: {
   // Throws on a missing/invalid value rather than quietly sending every request
   // to a relative path on the app's origin.
   const baseUrl = resolveFrontendApi(options.frontendApi, { component: '<AtlasProvider>' });
-  const doFetch = options.fetchImpl ?? fetch;
+  // Development instances keep the session in a header where the browser blocks the cookie.
+  const doFetch = withDevBrowser(publishableKey, options.fetchImpl ?? fetch);
 
   const [state, setState] = createStore<AtlasState>({
     status: 'loading',

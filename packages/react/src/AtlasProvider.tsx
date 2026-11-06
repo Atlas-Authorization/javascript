@@ -96,6 +96,8 @@ interface AtlasContextValue {
   publishableKey: string;
   frontendApi: string;
   status: AuthStatus;
+  /** Seeded by a server-fetched `initialState`: the server drew the forms, so the first client render must match. */
+  serverRendered?: boolean;
   user: AtlasUser | null;
   session: AtlasSession | null;
   /**
@@ -992,6 +994,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
       frontendApi: baseUrl,
       oauthMode: props.oauthMode,
       status,
+      serverRendered: props.initialState !== undefined,
       user,
       session,
       sessions,
@@ -1044,6 +1047,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
       signOut,
       status,
       user,
+      props.initialState,
     ],
   );
 

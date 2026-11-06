@@ -109,7 +109,7 @@
     onPolicyDecline={flow.declinePolicy}
     signInHref={signInAfterProofUrl({ url: signInUrl, frontendApi: atlas.frontendApi, redirectUrl: afterUrl })}
   />
-{:else if $authStatus === 'signed_in' && !$flowState.busy}
+{:else if ($authStatus === 'signed_in' || $authStatus === 'loading') && !$flowState.busy}
   <!-- signed in with no attempt held: nothing to draw -->
 {:else}
   <SignUpForm

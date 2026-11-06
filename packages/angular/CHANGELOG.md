@@ -2,6 +2,10 @@
 
 
 
+## 0.16.9 — 2026-11-06
+
+- `<SignIn>` and `<SignUp>` draw nothing until the session check answers, so a signed-in reload no longer flashes the form.
+
 ## 0.16.8 — 2026-11-06
 
 - **Behaviour:** `<SignIn>` and `<SignUp>` render nothing for someone already signed in. A flow in progress, such as recovery codes, stays. `1 second`, `Code sent.` after a resend, and `Resend code` stays after a wait ends. A late poll answer can no longer overwrite what this tab found.

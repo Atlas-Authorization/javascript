@@ -66,6 +66,7 @@ async function mountFlow(component: typeof SignIn | typeof SignUp, routes: Route
   vi.stubGlobal('fetch', fetchImpl);
   const client = createAtlasClient({ publishableKey: 'pk_test_x', frontendApi: FAPI, fetchImpl, manualBoot: true });
   const view = render(component, { context: new Map([[ATLAS_KEY, client]]) });
+  await client.reload(); // the session check answers (signed out) before the form draws
   await waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance')).toBe(true));
   return view.container as HTMLElement;
 }

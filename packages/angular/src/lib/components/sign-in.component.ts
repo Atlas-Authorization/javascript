@@ -38,7 +38,7 @@ import { AtlasFlowController } from './flow-controller';
     @if (emailLink(); as link) {
       <atlas-email-link [link]="link"></atlas-email-link>
     } @else if (hidden()) {
-      <!-- signed in: nothing to draw -->
+      <!-- signed in or session unanswered: nothing to draw -->
     } @else {
     @if (lastUsedLabel(); as label) {
       <p class="atlas-text atlas-last-used-hint" data-atlas="last-used" [attr.data-atlas-method]="flow.lastMethod()">
@@ -162,7 +162,7 @@ export class SignInComponent implements OnInit, OnDestroy {
 
   // Passkey autofill runs while the first step offers passkeys (a computed, so it re-arms only when that changes).
   // Already signed in with no flow of ours in progress (a held attempt covers recovery codes and finishing): draw nothing.
-  protected readonly hidden = computed(() => this.atlas.isSignedIn() && !this.flow.inProgress());
+  protected readonly hidden = computed(() => (this.atlas.isSignedIn() || !this.atlas.isLoaded()) && !this.flow.inProgress());
   private readonly passkeyOffered = computed(() => !this.hidden() && this.flow.passkeyOffered());
   protected readonly passkeyAutofill = effect(() => (this.passkeyOffered() ? this.flow.passkey.armAutofill() : this.flow.passkey.stopAutofill()));
 

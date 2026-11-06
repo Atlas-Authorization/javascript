@@ -2,6 +2,10 @@
 
 
 
+## 0.14.9 — 2026-11-06
+
+- **Fix:** on a development instance the session survives a reload: the provider presents the stored session token, as the other SDKs do. The finished step says `You're signed in.` (or that the browser didn't keep the session). `<SignIn>`/`<SignUp>` draw nothing until the session check answers.
+
 ## 0.14.8 — 2026-11-06
 
 - **Behaviour:** `<SignIn>` and `<SignUp>` render nothing for someone already signed in. A flow in progress, such as recovery codes, stays. `1 second`, `Code sent.` after a resend, and `Resend code` stays after a wait ends. A late poll answer can no longer overwrite what this tab found.

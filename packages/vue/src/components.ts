@@ -986,8 +986,8 @@ export const SignIn = defineComponent({
     onMounted(() => {
       supported.value = passkeysSupported();
     });
-    // Already signed in with no flow of ours in progress (a held attempt covers recovery codes and finishing): draw nothing.
-    const hidden = () => atlas.status.value === 'signed_in' && !state.value.attempt && !state.value.busy;
+    // Already signed in with no flow of ours in progress (a held attempt covers recovery codes and finishing), or session check unanswered: draw nothing.
+    const hidden = () => (atlas.status.value === 'signed_in' || atlas.status.value === 'loading') && !state.value.attempt && !state.value.busy;
     const passkeyOffered = () => supported.value && !emailLink.value && !hidden() && !state.value.attempt && settings.value?.passkeySignIn === true;
     watch(passkeyOffered, (on) => (on ? passkey.armAutofill() : passkey.stopAutofill()));
     const submitIdentifier = (values: Record<string, string>) => {
@@ -1461,7 +1461,7 @@ export const SignUp = defineComponent({
         ]);
       }
       // Already signed in with no attempt held (those steps above keep finishing): draw nothing.
-      if (atlas.status.value === 'signed_in' && !state.value.attempt && !state.value.busy) return null;
+      if ((atlas.status.value === 'signed_in' || atlas.status.value === 'loading') && !state.value.attempt && !state.value.busy) return null;
       return state.value.attempt
         ? h(AttemptFlow, {
             attempt: state.value.attempt,

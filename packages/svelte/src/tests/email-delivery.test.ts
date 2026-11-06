@@ -67,6 +67,7 @@ async function mountFlow(
   vi.stubGlobal('fetch', fetchImpl);
   const client = createAtlasClient({ publishableKey: 'pk_test_x', frontendApi: FAPI, fetchImpl, manualBoot: true });
   const view = render(component, { context: new Map([[ATLAS_KEY, client]]) });
+  await client.reload(); // the session check answers (signed out) before the form draws
   await waitFor(() => expect(calls.some((c) => c.path === '/v1/appearance')).toBe(true));
   return view.container as HTMLElement;
 }
@@ -107,6 +108,7 @@ describe('<SignUp> when the app cannot send email', () => {
       localization: { 'signUp.emailUnavailable': 'Courriel indisponible.' },
     });
     const el = render(SignUp, { context: new Map([[ATLAS_KEY, client]]) }).container as HTMLElement;
+    await client.reload(); // the session check answers (signed out) before the form draws
     await waitFor(() => expect(el.querySelector('[role="alert"]')?.textContent).toBe('Courriel indisponible.'));
   });
 

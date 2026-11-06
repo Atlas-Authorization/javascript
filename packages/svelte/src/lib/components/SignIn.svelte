@@ -49,7 +49,7 @@
   const flowState = flow.state;
   const authStatus = atlas.status;
   // Already signed in with no flow of ours in progress (a held attempt covers recovery codes and finishing): draw nothing.
-  $: hidden = $authStatus === 'signed_in' && !$flowState.attempt && !$flowState.busy;
+  $: hidden = ($authStatus === 'signed_in' || $authStatus === 'loading') && !$flowState.attempt && !$flowState.busy;
   const settings = flow.settings;
   const lastMethod = flow.lastMethod;
   const enrollmentState = flow.enrollmentState;
@@ -96,7 +96,7 @@
 {#if emailLink}
   <EmailLinkPage link={emailLink} />
 {:else if hidden}
-  <!-- signed in: nothing to draw -->
+  <!-- signed in, or session check unanswered: nothing to draw -->
 {:else}
 {#if lastLabel}
   <p class={classFor('badge', atlas.appearance, 'atlas-text atlas-last-used-hint')} data-atlas="last-used" data-atlas-method={$lastMethod}>

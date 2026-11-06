@@ -63,7 +63,7 @@ export function SignUp(props: FlowProps = {}) {
 }
 
 function SignUpFlow(props: FlowProps) {
-  const { instanceSettings, frontendApi, status } = useAtlas();
+  const { instanceSettings, frontendApi, status, serverRendered } = useAtlas();
   const t = useText();
   // Plan selection: the chosen plan rides a ref so the post-sign-up hook sees the latest choice.
   const planRef = useRef<string | null>(null);
@@ -205,8 +205,9 @@ function SignUpFlow(props: FlowProps) {
     );
   }
 
-  // Already signed in and no attempt held (those steps above keep finishing): draw nothing.
-  if (status === 'signed_in' && !state.busy) return null;
+  // Signed in, or session check not answered yet, and no attempt held (those steps above keep finishing): draw nothing.
+  // Nothing until the session check answers, except where the server drew the form (hydration must match).
+  if ((status === 'signed_in' || (status === 'loading' && !serverRendered)) && !state.busy) return null;
 
   if (emailUnavailable) return <SignUpEmailUnavailable hideTitle={props.hideTitle} />;
 

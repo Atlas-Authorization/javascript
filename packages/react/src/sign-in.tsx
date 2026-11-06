@@ -45,10 +45,11 @@ function SignInFlow(props: FlowProps) {
     referral: props.referral,
     referralConsent: props.referralConsent,
   });
-  const { status } = useAtlas();
+  const { status, serverRendered } = useAtlas();
   // Already signed in and no flow of ours in progress (a held attempt covers the
-  // recovery-codes and finish steps): draw nothing. Loading keeps today's form.
-  const hidden = status === 'signed_in' && !state.attempt && !state.busy;
+  // recovery-codes and finish steps): draw nothing. Also nothing until the session check answers.
+  // Nothing until the session check answers, except where the server drew the form (hydration must match).
+  const hidden = (status === 'signed_in' || (status === 'loading' && !serverRendered)) && !state.attempt && !state.busy;
   const passkey = usePasskeySignIn({
     client,
     finish,

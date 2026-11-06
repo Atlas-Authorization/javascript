@@ -41,6 +41,7 @@ async function refusedSignIn(error: Record<string, unknown>, localization?: Cata
   vi.stubGlobal('fetch', fetchImpl);
   const client = createAtlasClient({ publishableKey: 'pk_test_x', frontendApi: FAPI, fetchImpl, manualBoot: true, localization });
   const view = render(SignIn, { context: new Map([[ATLAS_KEY, client]]) });
+  await client.reload(); // the session check answers (signed out) before the form draws
   const el = view.container as HTMLElement;
   const input = el.querySelector('input[name="identifier"]') as HTMLInputElement;
   await fireEvent.input(input, { target: { value: 'me@example.com' } });
