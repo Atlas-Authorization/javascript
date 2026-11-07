@@ -9034,8 +9034,8 @@ packages:
     resolution: {integrity: sha512-0VaGWHJourzh88otU5bVJ4Z/oIsD+R6yaeR0Q8t8dezsKQI/RLi5m3fNzkiLYLhJ+YwM3JRSKlOqGplOI5Yo3w==}
     engines: {node: '>=18'}
 
-  flow-estree@0.338.0:
-    resolution: {integrity: sha512-ol4C6cIEcL9nep6G0qa3BuJcO5cZCH07shxNpChJ/TotKQaz5OWtn4IqgpMNF0kHISdOnMApirDwp2LwWL+KhQ==}
+  flow-estree@0.339.0:
+    resolution: {integrity: sha512-uPUC/TsoXrHUklSF6qXke8rhHJZhdt/IUcPhN5SHk4V5YeJOQ+3DDoS8l2pOWx4CR6ZXIWS51OpDwpl74U3ZrQ==}
     engines: {node: '>=18'}
 
   flow-parser@0.327.0:
@@ -9050,8 +9050,8 @@ packages:
     resolution: {integrity: sha512-O8QvQf/B3rBF+eagcc9/WMAjfJoaKckdgSd8PT/qvMIIe4ZjVKrSqV5SDnRFAKY0VrE8r5C4ADYgvYhmwkWADA==}
     engines: {node: '>=0.4.0'}
 
-  flow-parser@0.338.0:
-    resolution: {integrity: sha512-GF+ohfrTVlvsNhxfRkON49QKG5j+5oqGb8qpGwE6mYlhIBaXDsss/JzfIxpSwVXgWtw8z8kabf/pNo1jXor5NA==}
+  flow-parser@0.339.0:
+    resolution: {integrity: sha512-v47E/2/ii6g+3QuPzQDohVq5MFqCO+mfLLFT0c2YJq2kjz2StZZ4e9qoqePINIj4W8vqexQ0G0RaefpunjdQAw==}
     engines: {node: '>=0.4.0'}
 
   fnv1a-64@0.1.2:
@@ -12932,8 +12932,8 @@ packages:
     resolution: {integrity: sha512-CqbIVfk/7GL3ITwZI55lcPbpQbjHZ2DD5cUj4iH7E9YsCfHNJV1mx7yNp86Z84w5IpmkZZS/2s5vPOWmVWSdQg==}
     engines: {node: '>=10'}
 
-  seroval@1.7.9:
-    resolution: {integrity: sha512-ocL7l8aqYWy/dXDHQF3Z8bt5R4Z9IBB4hASCkBDQhl3ZUclxVEzRMQNmRNshiEEIPF1g7uz+2nENDqg+9TU86A==}
+  seroval@1.7.10:
+    resolution: {integrity: sha512-6Ya73+E5T7ToU9AJQSAvEt+WsLYfc7jM9C93KVcUGM14REPU9/eLn6Ho6fqBb+QkpjSQMPewWBzxI80WiNl7Mg==}
     engines: {node: '>=20'}
 
   serve-placeholder@2.0.2:
@@ -18600,7 +18600,7 @@ snapshots:
       perfect-debounce: 2.1.0
       pkg-types: 2.4.0
       postcss: 8.5.32
-      seroval: 1.7.9
+      seroval: 1.7.10
       std-env: 4.3.0
       ufo: 1.6.4
       unenv: 2.0.0-rc.24
@@ -23887,7 +23887,7 @@ snapshots:
 
   flow-estree@0.336.0: {}
 
-  flow-estree@0.338.0: {}
+  flow-estree@0.339.0: {}
 
   flow-parser@0.327.0:
     dependencies:
@@ -23901,9 +23901,9 @@ snapshots:
     dependencies:
       flow-estree: 0.336.0
 
-  flow-parser@0.338.0:
+  flow-parser@0.339.0:
     dependencies:
-      flow-estree: 0.338.0
+      flow-estree: 0.339.0
 
   fnv1a-64@0.1.2: {}
 
@@ -25397,7 +25397,7 @@ snapshots:
       '@babel/preset-flow': 7.29.7(@babel/core@7.29.13)
       '@babel/preset-typescript': 7.29.7(@babel/core@7.29.13)
       '@babel/register': 7.29.13(@babel/core@7.29.13)
-      flow-parser: 0.338.0
+      flow-parser: 0.339.0
       graceful-fs: 4.2.11
       neo-async: 2.6.2
       picocolors: 1.1.1
@@ -29194,7 +29194,7 @@ snapshots:
 
   seroval@1.6.12: {}
 
-  seroval@1.7.9: {}
+  seroval@1.7.10: {}
 
   serve-placeholder@2.0.2:
     dependencies:
