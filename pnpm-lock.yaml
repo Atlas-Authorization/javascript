@@ -1223,7 +1223,7 @@ importers:
         version: link:../js
       '@sveltejs/kit':
         specifier: '>=1'
-        version: 3.1.1(@sveltejs/vite-plugin-svelte@3.1.2(svelte@4.2.20)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.1)(terser@5.51.2)))(svelte@4.2.20)(typescript@5.9.3)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.1)(terser@5.51.2))
+        version: 3.2.0(@sveltejs/vite-plugin-svelte@3.1.2(svelte@4.2.20)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.1)(terser@5.51.2)))(svelte@4.2.20)(typescript@5.9.3)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.1)(terser@5.51.2))
     devDependencies:
       '@sveltejs/package':
         specifier: ^2.3.7
@@ -5757,8 +5757,8 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@sveltejs/kit@3.1.1':
-    resolution: {integrity: sha512-BiEMvekYXE9Gu/YhWJ/yJ0WDLH1PX/dmjuAeFp5rrtdmgdzkjt7DvimlSP+/U4tgposl7pkE20luHpcnc6BgRw==}
+  '@sveltejs/kit@3.2.0':
+    resolution: {integrity: sha512-zhb8GTeFd/6BwfqaY4wKIF7eFACYOgn/KNppV6UHFBHk174B4d7xTtN7x0PxaPPlwnCTgbnpaYF6r9lirz0Biw==}
     engines: {node: '>=22.17'}
     hasBin: true
     peerDependencies:
@@ -19485,8 +19485,9 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@sveltejs/kit@3.1.1(@sveltejs/vite-plugin-svelte@3.1.2(svelte@4.2.20)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.1)(terser@5.51.2)))(svelte@4.2.20)(typescript@5.9.3)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.1)(terser@5.51.2))':
+  '@sveltejs/kit@3.2.0(@sveltejs/vite-plugin-svelte@3.1.2(svelte@4.2.20)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.1)(terser@5.51.2)))(svelte@4.2.20)(typescript@5.9.3)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.1)(terser@5.51.2))':
     dependencies:
+      '@jridgewell/trace-mapping': 0.3.31
       '@rolldown/pluginutils': 1.1.0
       '@standard-schema/spec': 1.1.0
       '@sveltejs/vite-plugin-svelte': 3.1.2(svelte@4.2.20)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.1)(terser@5.51.2))
