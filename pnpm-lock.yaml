@@ -34,7 +34,7 @@ importers:
         version: link:../backend
       ai:
         specifier: '>=4.0.0'
-        version: 7.0.166(zod@3.25.76)
+        version: 7.0.168(zod@3.25.76)
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -1376,14 +1376,14 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@ai-sdk/gateway@4.0.139':
-    resolution: {integrity: sha512-2YEIPm4n59nm4PBhMGjFWH0g+ztPgfybqoeMIjfJYNiB8zLHftUrONgb8P3Ho3Yy5cdoLCjiDE/Hv2Crol0JBw==}
+  '@ai-sdk/gateway@4.0.141':
+    resolution: {integrity: sha512-WWJgwE6+FPSp2y2wPmsaGYjoNqhsMI0PP8bfRcfuB70dPCCdEBDuH8yFXWxaqpv0C9jJ1UZJ5lYjXmt+ChVGmQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/provider-utils@5.0.76':
-    resolution: {integrity: sha512-76QcCmVtSunSAbQBJtgQTTE8e+Yaz4rJJe1MRWnJ3GAQYUvNPHJejKx4jZTbhGGTdSSLaYcMBT62SISNgnGq9w==}
+  '@ai-sdk/provider-utils@5.0.78':
+    resolution: {integrity: sha512-MTob5fTOCPUPCjOCMaarvpEaSqtDWqVZrKBYa3H0KIUtP/AyxoNvhLkf3LHCXagNlyld7qs4Z6IhgOr3L0y8Ag==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -6452,8 +6452,8 @@ packages:
     resolution: {integrity: sha512-4I7Td01quW/RpocfNayFdFVk1qSuoh0E7JrbRJ16nH01HhKFQ88INq9Sd+nd72zqRySlr9BmDA8xlEJ6vJMrYA==}
     engines: {node: '>=8'}
 
-  ai@7.0.166:
-    resolution: {integrity: sha512-bijt5WsdpQXQLB0SHYEoSuvpZ8KdUxl3Iz843uvHFcGpEBSrxlgwXXadR7EBVOHoByEf2PwgOxutWU5dcdjs9Q==}
+  ai@7.0.168:
+    resolution: {integrity: sha512-splDioC01ZxX9HjpPURppssRuMymmniVDfPihbzSPk1dj6E95cvIkjTl7VC5jojVKkd/6xscE1x0816KBmFA3w==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -14766,14 +14766,14 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@ai-sdk/gateway@4.0.139(zod@3.25.76)':
+  '@ai-sdk/gateway@4.0.141(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 4.0.37
-      '@ai-sdk/provider-utils': 5.0.76(zod@3.25.76)
+      '@ai-sdk/provider-utils': 5.0.78(zod@3.25.76)
       '@vercel/oidc': 3.2.0
       zod: 3.25.76
 
-  '@ai-sdk/provider-utils@5.0.76(zod@3.25.76)':
+  '@ai-sdk/provider-utils@5.0.78(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 4.0.37
       '@standard-schema/spec': 1.1.0
@@ -20370,11 +20370,11 @@ snapshots:
       clean-stack: 2.2.0
       indent-string: 4.0.0
 
-  ai@7.0.166(zod@3.25.76):
+  ai@7.0.168(zod@3.25.76):
     dependencies:
-      '@ai-sdk/gateway': 4.0.139(zod@3.25.76)
+      '@ai-sdk/gateway': 4.0.141(zod@3.25.76)
       '@ai-sdk/provider': 4.0.37
-      '@ai-sdk/provider-utils': 5.0.76(zod@3.25.76)
+      '@ai-sdk/provider-utils': 5.0.78(zod@3.25.76)
       zod: 3.25.76
 
   ajv-formats@3.0.1(ajv@8.20.0):
