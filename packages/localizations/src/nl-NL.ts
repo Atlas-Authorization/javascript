@@ -243,6 +243,7 @@ export const nlNL: Localization = {
   'error.captcha_failed': 'De beveiligingscontrole is mislukt. Probeer het opnieuw.',
   'error.captcha_unavailable': 'De beveiligingscontrole is op dit moment niet beschikbaar. Probeer het later opnieuw.',
   'error.email_delivery_unavailable': 'Deze app kan op dit moment geen e-mail versturen. Probeer een andere manier om in te loggen of neem contact op met de eigenaar van de app.',
+  'error.email_address_unreachable': 'We kunnen geen e-mail naar dit adres sturen. Gebruik een ander e-mailadres of neem contact op met de eigenaar van de app.',
   'error.strategy_disabled': 'Deze inlogmethode is niet beschikbaar voor deze app.',
   'error.sign_up_restricted': 'Registreren voor deze app kan alleen op uitnodiging.',
   'error.sign_up_denied': 'Registreren is niet mogelijk voor dit account.',

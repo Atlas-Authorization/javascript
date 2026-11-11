@@ -292,6 +292,7 @@ export const itIT: LocalizationResource = {
   'error.captcha_failed': 'Il controllo di sicurezza non è stato superato. Riprova.',
   'error.captcha_unavailable': 'Il controllo di sicurezza non è disponibile al momento. Riprova più tardi.',
   'error.email_delivery_unavailable': 'Al momento questa app non può inviare e-mail. Prova un altro metodo di accesso o contatta il proprietario dell’app.',
+  'error.email_address_unreachable': 'Non possiamo inviare e-mail a questo indirizzo. Usa un altro indirizzo e-mail o contatta il proprietario dell’app.',
   'error.strategy_disabled': 'Questo metodo di accesso non è disponibile per questa app.',
   'error.sign_up_restricted': 'La registrazione a questa app è possibile solo su invito.',
   'error.sign_up_denied': 'La registrazione non è disponibile per questo account.',

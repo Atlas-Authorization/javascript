@@ -244,6 +244,7 @@ export const esES: LocalizationResource = {
   'error.captcha_failed': 'No se ha superado la comprobación de seguridad. Vuelve a intentarlo.',
   'error.captcha_unavailable': 'La comprobación de seguridad no está disponible en este momento. Inténtalo de nuevo más tarde.',
   'error.email_delivery_unavailable': 'Esta aplicación no puede enviar correos ahora mismo. Prueba otro método de inicio de sesión o contacta con el responsable de la aplicación.',
+  'error.email_address_unreachable': 'No podemos enviar correos a esta dirección. Usa otra dirección de correo o contacta con el responsable de la aplicación.',
   'error.strategy_disabled': 'Este método de inicio de sesión no está disponible en esta aplicación.',
   'error.sign_up_restricted': 'El registro en esta aplicación es solo por invitación.',
   'error.sign_up_denied': 'El registro no está disponible para esta cuenta.',

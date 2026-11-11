@@ -117,6 +117,7 @@ describe('server error reasons', () => {
   'captcha_failed',
   'captcha_unavailable',
   'email_delivery_unavailable',
+  'email_address_unreachable',
   'strategy_disabled',
   'sign_up_restricted',
   'sign_up_denied',

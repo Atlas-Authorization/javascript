@@ -291,6 +291,7 @@ export const trTR: LocalizationResource = {
   'error.captcha_failed': 'Güvenlik kontrolü geçilemedi. Lütfen tekrar deneyin.',
   'error.captcha_unavailable': 'Güvenlik kontrolü şu anda kullanılamıyor. Lütfen daha sonra tekrar deneyin.',
   'error.email_delivery_unavailable': 'Bu uygulama şu anda e-posta gönderemiyor. Başka bir oturum açma yöntemi deneyin veya uygulama sahibiyle iletişime geçin.',
+  'error.email_address_unreachable': 'Bu adrese e-posta gönderemiyoruz. Başka bir e-posta adresi kullanın veya uygulama sahibiyle iletişime geçin.',
   'error.strategy_disabled': 'Bu oturum açma yöntemi bu uygulama için kullanılamıyor.',
   'error.sign_up_restricted': 'Bu uygulamaya kayıt yalnızca davetle yapılabilir.',
   'error.sign_up_denied': 'Bu hesap için kayıt kullanılamıyor.',

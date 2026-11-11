@@ -505,7 +505,7 @@ if (!mfaSatisfied(auth.claims)) return res.status(403).json({ error: 'mfa_requir
 
 `mfaSatisfied` is true when the token says `mfa_satisfied: true`, or else when `mfa` is true, `acr` is `urn:atlas:acr:mfa` or `amr` includes `mfa`, or the session came through enterprise SSO (`sso_connection_id`). `usedMultiFactor` and `authenticatedWithin` take `SessionClaims` too.
 
-An organization's MFA policy is a separate bar: `mfaOrgSatisfied(auth.claims, orgId)` is true when the organization does not require MFA, or the token says `org_mfa_ok`. The policy only withholds the organization's claims, so a request that never reads them is not stopped; an app that authorizes from its own tables must call `mfaOrgSatisfied` itself.
+An organization's MFA policy is a separate bar: `mfaOrgSatisfied(auth.claims, orgId)` is true when the organization does not require MFA, or the token says `org_mfa_ok`. The policy only withholds the organization's claims, so a request that never reads them is not stopped; an app that authorizes from its own tables must call `mfaOrgSatisfied` itself. It describes the token's active organization only; for any other organization the user belongs to, call `client.organizations.mfaStatus(orgId, { sessionId })`.
 
 ## CSRF tokens
 

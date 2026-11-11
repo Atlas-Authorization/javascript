@@ -291,6 +291,7 @@ export const zhTW: LocalizationResource = {
   'error.captcha_failed': '安全性檢查未通過，請再試一次。',
   'error.captcha_unavailable': '安全性檢查目前無法使用，請稍後再試。',
   'error.email_delivery_unavailable': '此應用程式目前無法寄送電子郵件。請嘗試其他登入方式，或聯絡應用程式擁有者。',
+  'error.email_address_unreachable': '我們無法寄送電子郵件至此地址。請使用其他電子郵件地址，或聯絡應用程式擁有者。',
   'error.strategy_disabled': '此應用程式不提供這種登入方式。',
   'error.sign_up_restricted': '此應用程式僅開放受邀者註冊。',
   'error.sign_up_denied': '此帳戶無法註冊。',

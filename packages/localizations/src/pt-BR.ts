@@ -244,6 +244,7 @@ export const ptBR: LocalizationResource = {
   'error.captcha_failed': 'A verificação de segurança não foi aprovada. Tente novamente.',
   'error.captcha_unavailable': 'A verificação de segurança está indisponível no momento. Tente novamente mais tarde.',
   'error.email_delivery_unavailable': 'Este app não consegue enviar e-mails no momento. Tente outro método de login ou entre em contato com o responsável pelo app.',
+  'error.email_address_unreachable': 'Não podemos enviar e-mails para este endereço. Use outro endereço de e-mail ou entre em contato com o responsável pelo app.',
   'error.strategy_disabled': 'Este método de login não está disponível para este app.',
   'error.sign_up_restricted': 'O cadastro neste app é feito somente por convite.',
   'error.sign_up_denied': 'O cadastro não está disponível para esta conta.',

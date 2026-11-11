@@ -244,6 +244,7 @@ export const deDE: LocalizationResource = {
   'error.captcha_failed': 'Die Sicherheitsprüfung ist fehlgeschlagen. Bitte versuchen Sie es erneut.',
   'error.captcha_unavailable': 'Die Sicherheitsprüfung ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut.',
   'error.email_delivery_unavailable': 'Diese App kann gerade keine E-Mails senden. Versuchen Sie eine andere Anmeldemethode oder wenden Sie sich an den Betreiber der App.',
+  'error.email_address_unreachable': 'Wir können an diese Adresse keine E-Mails senden. Verwenden Sie eine andere E-Mail-Adresse oder wenden Sie sich an den Betreiber der App.',
   'error.strategy_disabled': 'Diese Anmeldemethode ist für diese App nicht verfügbar.',
   'error.sign_up_restricted': 'Die Registrierung für diese App ist nur auf Einladung möglich.',
   'error.sign_up_denied': 'Die Registrierung ist für dieses Konto nicht möglich.',

@@ -351,6 +351,7 @@ export interface LocalizationResource {
   'error.captcha_failed': string;
   'error.captcha_unavailable': string;
   'error.email_delivery_unavailable': string;
+  'error.email_address_unreachable': string;
   'error.strategy_disabled': string;
   'error.sign_up_restricted': string;
   'error.sign_up_denied': string;

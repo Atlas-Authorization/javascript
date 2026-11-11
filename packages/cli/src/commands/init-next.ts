@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { str, type ParsedArgs } from '../args';
@@ -90,4 +91,29 @@ export function scaffoldNext(ctx: RunContext, args: ParsedArgs): string[] {
   }
   ctx.io.out(`Next: run 'atlas setup-guide' for the calls that claim ${base} and take it live.`);
   return Object.keys(files);
+}
+
+/** The create-atlas-app templates `atlas init <template>` (or `--template`) hands over to. */
+export const INIT_TEMPLATES = ['nextjs-local-users'] as const;
+
+/**
+ * `atlas init nextjs-local-users [--dir <app>]`: scaffold the starter app that keeps your own user
+ * table in step with Atlas, by running the published create-atlas-app generator. Offline files
+ * only; nothing here needs a key. Returns the generator's exit code.
+ */
+export async function scaffoldTemplate(ctx: RunContext, template: string, dir: string | undefined): Promise<number> {
+  const target = dir ?? 'my-atlas-app';
+  const args = ['--yes', '@atlasauth/create-atlas-app@latest', target, '--template', template, '--yes'];
+  ctx.io.out(`Scaffolding ${template} into ${target} with create-atlas-app...`);
+  const run =
+    ctx.exec ??
+    ((cmd: string, a: string[], o: { cwd: string }) =>
+      new Promise<number>((done) => {
+        const child = spawn(cmd, a, { cwd: o.cwd, stdio: 'inherit', shell: process.platform === 'win32' });
+        child.on('error', () => done(127));
+        child.on('exit', (code) => done(code ?? 1));
+      }));
+  const code = await run('npx', args, { cwd: process.cwd() });
+  if (code !== 0) ctx.io.err(`create-atlas-app exited ${code}. Run it yourself: npx @atlasauth/create-atlas-app ${target} --template ${template}`);
+  return code;
 }

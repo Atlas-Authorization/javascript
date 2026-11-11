@@ -243,6 +243,7 @@ export const koKR: LocalizationResource = {
   'error.captcha_failed': '보안 확인을 통과하지 못했습니다. 다시 시도해 주세요.',
   'error.captcha_unavailable': '지금은 보안 확인을 이용할 수 없습니다. 나중에 다시 시도해 주세요.',
   'error.email_delivery_unavailable': '이 앱에서 지금은 이메일을 보낼 수 없습니다. 다른 로그인 방법을 이용하거나 앱 운영자에게 문의해 주세요.',
+  'error.email_address_unreachable': '이 주소로는 이메일을 보낼 수 없습니다. 다른 이메일 주소를 사용하거나 앱 운영자에게 문의해 주세요.',
   'error.strategy_disabled': '이 로그인 방법은 이 앱에서 사용할 수 없습니다.',
   'error.sign_up_restricted': '이 앱은 초대를 통해서만 가입할 수 있습니다.',
   'error.sign_up_denied': '이 계정으로는 가입할 수 없습니다.',

@@ -117,6 +117,7 @@ const OPTIONS = {
   'no-env-files': { type: 'boolean' },
   'with-dev': { type: 'boolean' },
   next: { type: 'boolean' },
+  template: { type: 'string' },
   mount: { type: 'string' },
   // resource commands: a JSON request body (or --file).
   data: { type: 'string' },
@@ -143,6 +144,9 @@ const OPTIONS = {
   'base-path': { type: 'string' },
   connect: { type: 'string' },
   'keys-file': { type: 'string' },
+  // golive: a config file whose integrations / referrals / privacy_orchestrator sections --connect sends; revoke platform keys nobody uses.
+  config: { type: 'string' },
+  'revoke-unused-platform-keys': { type: 'boolean' },
   // referrals conformance: the platform under test.
   'connection-id': { type: 'string' },
   // referrals conformance: webhook (generic protocol) or connection (Referalli dialect).

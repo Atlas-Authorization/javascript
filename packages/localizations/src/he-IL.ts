@@ -292,6 +292,7 @@ export const heIL: LocalizationResource = {
   'error.captcha_failed': 'בדיקת האבטחה לא עברה בהצלחה. נסה שוב.',
   'error.captcha_unavailable': 'בדיקת האבטחה אינה זמינה כרגע. נסה שוב מאוחר יותר.',
   'error.email_delivery_unavailable': 'אפליקציה זו אינה יכולה לשלוח אימייל כרגע. נסה שיטת כניסה אחרת או פנה לבעלי האפליקציה.',
+  'error.email_address_unreachable': 'לא ניתן לשלוח אימייל לכתובת זו. נסה כתובת אימייל אחרת או פנה לבעלי האפליקציה.',
   'error.strategy_disabled': 'שיטת כניסה זו אינה זמינה באפליקציה זו.',
   'error.sign_up_restricted': 'ההרשמה לאפליקציה זו היא בהזמנה בלבד.',
   'error.sign_up_denied': 'ההרשמה אינה זמינה עבור חשבון זה.',

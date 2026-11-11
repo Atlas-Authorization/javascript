@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { sameEvents } from '../webhook-presets';
 import { tmpdir } from 'node:os';
 import { extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -70,6 +71,8 @@ interface CollectionSpec {
   writeOnly?: readonly string[];
   /** Ask the API whether the file's secret differs from the stored one; null when it cannot say. */
   secretChanged?(http: ConfigHttp, live: LiveEntry, config: Config): Promise<boolean | null>;
+  /** Return the live config with any field that is equivalent to the file's value set to the file's value, so it is not drift. */
+  align?(live: Config, desired: Config): Config;
   /** Advice about a desired entry, shown with the plan. */
   warnings?(config: Config, live: Config | undefined): string[];
   /** Local format errors in a desired entry, with `${VAR}` resolved. Never put a secret's value in one. */
@@ -529,6 +532,13 @@ function registry(): ResourceSpec[] {
       kind: 'collection',
       type: 'webhook_endpoints',
       fileKeys: [...WEBHOOK_KEYS, 'secret'],
+      // A row saved with an expanded list equals a file that names the preset.
+      align(live, desired) {
+        const l = obj(live).enabled_events;
+        const d = obj(desired).enabled_events;
+        const strs = (x: Json | undefined): x is string[] => Array.isArray(x) && x.every((e) => typeof e === 'string');
+        return strs(l) && strs(d) && sameEvents(l, d) ? { ...obj(live), enabled_events: d } : live;
+      },
       validate(config) {
         const { url, secret } = obj(config);
         if (secret === undefined || secret === null || hasPlaceholder(secret)) return [];
@@ -981,7 +991,7 @@ function domainKey(host: unknown, method: unknown, basePath: unknown): string {
   return method === 'path' || typeof basePath === 'string' ? `${String(host ?? '')}${typeof basePath === 'string' ? basePath : '/__atlas'}` : String(host ?? '');
 }
 
-const INTEGRATION_KEYS = ['id', 'enabled', 'audience', 'name', 'role', 'claims', 'ttl_seconds', 'events_url', 'backchannel_logout_url', 'oauth_client_id', 'external_ref'] as const;
+const INTEGRATION_KEYS = ['id', 'enabled', 'audience', 'name', 'role', 'claims', 'ttl_seconds', 'events_url', 'backchannel_logout_url', 'oauth_client_id', 'external_ref', 'principal_claim', 'ext_claim', 'verify_error_report_url', 'cmp', 'atlas_id_users', 'per_call_audience', 'audience_format', 'channel', 'org_id', 'spaces'] as const;
 const REFERRAL_KEYS = [
   'enabled', 'provider', 'endpoint_url', 'program_id', 'connection_id', 'url_params', 'context_cookies', 'consent_category', 'consent_fallback_category',
   'auto_enroll_users', 'link_template', 'partner_portal_url', 'timeout_ms', 'tracking_token', 'code_lookup_url', 'signup_code_field', 'browser_sources',
@@ -1542,7 +1552,7 @@ export async function planConfigImport(
         changes.push({ type: spec.type, action: 'create', key, after: reconcileSecrets(cfg, undefined, true).desired, raw: cfg, apply: () => spec.create(http, cfg) });
         continue;
       }
-      const seen = withoutUnstated(comparable(existing.config, cfg, prune), cfg, spec.defaulted);
+      const seen = spec.align ? spec.align(withoutUnstated(comparable(existing.config, cfg, prune), cfg, spec.defaulted), cfg) : withoutUnstated(comparable(existing.config, cfg, prune), cfg, spec.defaulted);
       const r = reconcileSecrets(cfg, seen, spec.reportsSecrets === true);
       const unverifiable = [...r.unverifiable];
       const liveSeen = obj(r.live as Json);
@@ -2068,7 +2078,10 @@ function sortChange(a: Change, b: Change): number {
 }
 
 function asArray(value: Json): Config[] {
-  return Array.isArray(value) ? value : [];
+  if (Array.isArray(value)) return value;
+  // A map keyed by id (`integrations: { forumulate: { … } }`) reads as the same list.
+  if (isObj(value)) return Object.entries(value).flatMap(([id, v]) => (isObj(v) ? [{ id, ...v }] : []));
+  return [];
 }
 
 /**

@@ -225,6 +225,7 @@ export const EN_US: Catalog = {
   'error.captcha_failed': "The security check didn't pass. Please try again.",
   'error.captcha_unavailable': 'The security check is unavailable right now. Please try again later.',
   'error.email_delivery_unavailable': "This app can't send email right now. Try another sign-in method or contact the app owner.",
+  'error.email_address_unreachable': "We can't send email to this address. Use a different email address or contact the app owner.",
   'error.strategy_disabled': 'This sign-in method is not available for this app.',
   'error.sign_up_restricted': 'Sign-up on this app is by invitation only.',
   'error.sign_up_denied': 'Sign-up is not available for this account.',

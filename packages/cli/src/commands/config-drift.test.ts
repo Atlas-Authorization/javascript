@@ -334,6 +334,17 @@ describe('webhook_endpoints[].active', () => {
   });
 });
 
+describe('webhook_endpoints[].enabled_events presets', () => {
+  it('a row that stores the expanded list equals a file that names the preset', async () => {
+    const api = new FakeApi();
+    api.webhooks = [{ id: 'we_1', url: 'https://app.example.com/hook', enabled_events: ['session.revoked', 'user.created', 'user.updated', 'user.deleted', 'user.merged', 'user.banned', 'user.unbanned', 'user.locked', 'user.suspended', 'user.unsuspended', 'user.deactivated', 'user.reactivated', 'user.graduated'], active: true }];
+    const path = file({ webhook_endpoints: [{ url: 'https://app.example.com/hook', enabled_events: ['preset:user_mirror', 'session.revoked'], active: true }] });
+    expect(await run(['plan', path, '--check'], ctx(captureIO(), api))).toBe(0);
+    const other = file({ webhook_endpoints: [{ url: 'https://app.example.com/hook', enabled_events: ['preset:user_mirror'], active: true }] }, 'other.json');
+    expect(await run(['plan', other, '--check'], ctx(captureIO(), api))).toBe(2);
+  });
+});
+
 describe('explicit null clears a nullable field; an absent key is unmanaged', () => {
   const withUrls = {
     oauth_clients: [{ name: 'Web', redirect_uris: ['https://app.example.com/cb'], login_url: 'https://app.example.com/login', logo_url: 'https://app.example.com/l.png' }],

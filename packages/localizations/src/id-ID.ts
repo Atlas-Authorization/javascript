@@ -291,6 +291,7 @@ export const idID: LocalizationResource = {
   'error.captcha_failed': 'Pemeriksaan keamanan tidak lolos. Silakan coba lagi.',
   'error.captcha_unavailable': 'Pemeriksaan keamanan sedang tidak tersedia. Silakan coba lagi nanti.',
   'error.email_delivery_unavailable': 'Aplikasi ini saat ini tidak dapat mengirim email. Coba metode masuk lain atau hubungi pemilik aplikasi.',
+  'error.email_address_unreachable': 'Kami tidak dapat mengirim email ke alamat ini. Gunakan alamat email lain atau hubungi pemilik aplikasi.',
   'error.strategy_disabled': 'Metode masuk ini tidak tersedia untuk aplikasi ini.',
   'error.sign_up_restricted': 'Pendaftaran di aplikasi ini hanya melalui undangan.',
   'error.sign_up_denied': 'Pendaftaran tidak tersedia untuk akun ini.',

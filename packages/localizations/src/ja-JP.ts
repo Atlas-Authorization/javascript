@@ -242,6 +242,7 @@ export const jaJP: Localization = {
   'error.captcha_failed': 'セキュリティチェックに合格しませんでした。もう一度お試しください。',
   'error.captcha_unavailable': '現在、セキュリティチェックを利用できません。しばらくしてからもう一度お試しください。',
   'error.email_delivery_unavailable': 'このアプリは現在メールを送信できません。別のサインイン方法をお試しいただくか、アプリの管理者にお問い合わせください。',
+  'error.email_address_unreachable': 'このアドレスにはメールを送信できません。別のメールアドレスを使用するか、アプリの管理者にお問い合わせください。',
   'error.strategy_disabled': 'このサインイン方法はこのアプリでは利用できません。',
   'error.sign_up_restricted': 'このアプリへの登録は招待制です。',
   'error.sign_up_denied': 'このアカウントでは登録できません。',

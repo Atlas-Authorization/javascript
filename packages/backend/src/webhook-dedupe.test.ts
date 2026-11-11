@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { memoryWebhookStore, verifyAndDedupe, verifyWebhookAndDedupe, WebhookVerificationError } from './webhook-dedupe';
+import { memoryWebhookStore, sqlWebhookDedupeStore, verifyAndDedupe, verifyWebhookAndDedupe, WebhookVerificationError } from './webhook-dedupe';
 
 const SECRET = 'whsec_test_secret';
 const now = new Date('2026-11-01T12:00:00Z');
@@ -79,5 +79,34 @@ describe('verifyWebhookAndDedupe (Node / raw body)', () => {
       WebhookVerificationError,
     );
     expect((await verifyWebhookAndDedupe({ ...input(), store })).duplicate).toBe(false);
+  });
+});
+
+describe('sqlWebhookDedupeStore dialects', () => {
+  const seen: Array<{ sql: string; params: unknown[] }> = [];
+  const q = (rows: any[], affectedRows?: number) => async (sql: string, params: unknown[]) => (seen.push({ sql, params }), { rows, affectedRows });
+
+  it('postgres is the default: $1 placeholders and an interval', async () => {
+    seen.length = 0;
+    expect(await sqlWebhookDedupeStore({ query: q([{ key: 'k' }]) }).setIfAbsent('k', 60)).toBe(true);
+    expect(seen[0]!.sql).toContain('$1');
+    expect(seen[0]!.sql).toContain('::interval');
+  });
+
+  it('sqlite uses ? and epoch milliseconds', async () => {
+    seen.length = 0;
+    const store = sqlWebhookDedupeStore({ query: q([]), dialect: 'sqlite' });
+    expect(await store.setIfAbsent('k', 60)).toBe(false);
+    expect(seen[0]!.sql).toContain('values (?, ?)');
+    expect(seen[0]!.sql).not.toContain('$1');
+    expect(typeof seen[0]!.params[1]).toBe('number');
+  });
+
+  it('mysql drops an expired row, inserts ignoring a duplicate, and claims on an affected row', async () => {
+    seen.length = 0;
+    expect(await sqlWebhookDedupeStore({ query: q([], 1), dialect: 'mysql' }).setIfAbsent('k', 60)).toBe(true);
+    expect(seen[0]!.sql).toMatch(/^delete .*`key` = \?/);
+    expect(seen[1]!.sql).toMatch(/^insert ignore/);
+    expect(await sqlWebhookDedupeStore({ query: q([], 0), dialect: 'mysql' }).setIfAbsent('k', 60)).toBe(false);
   });
 });

@@ -292,6 +292,7 @@ export const hiIN: LocalizationResource = {
   'error.captcha_failed': 'सुरक्षा जांच सफल नहीं हुई। कृपया फिर से प्रयास करें।',
   'error.captcha_unavailable': 'सुरक्षा जांच अभी उपलब्ध नहीं है। कृपया बाद में फिर से प्रयास करें।',
   'error.email_delivery_unavailable': 'यह ऐप अभी ईमेल नहीं भेज सकता। कोई दूसरी साइन इन विधि आज़माएं या ऐप के स्वामी से संपर्क करें।',
+  'error.email_address_unreachable': 'हम इस पते पर ईमेल नहीं भेज सकते। कोई दूसरा ईमेल पता इस्तेमाल करें या ऐप के स्वामी से संपर्क करें।',
   'error.strategy_disabled': 'यह साइन इन विधि इस ऐप के लिए उपलब्ध नहीं है।',
   'error.sign_up_restricted': 'इस ऐप पर साइन अप केवल आमंत्रण द्वारा किया जा सकता है।',
   'error.sign_up_denied': 'इस खाते के लिए साइन अप उपलब्ध नहीं है।',

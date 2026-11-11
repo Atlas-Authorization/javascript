@@ -160,7 +160,7 @@ export const POST = createBeforeUserCreateHandler({
 });
 ```
 
-The webhook handler answers 503 when `secret` is missing, 400 for a delivery that does not verify, skips an event id it has already seen, and answers Atlas's `webhook.test` delivery with 200 without calling `onEvent` (pass `handleTest: true` to receive it). If `onEvent` throws, the id is forgotten and the handler answers 500, so Atlas retries. `sqlDedupeStore` needs `create table atlas_webhook_seen (key text primary key, expires_at timestamptz not null)`.
+The webhook handler answers 503 when `secret` is missing, 400 for a delivery that does not verify, skips an event id it has already seen, and answers Atlas's `webhook.test` delivery with 200 without calling `onEvent` (pass `handleTest: true` to receive it). If `onEvent` throws, the id is forgotten and the handler answers 500, so Atlas retries. `sqlDedupeStore` needs `create table atlas_webhook_seen (key text primary key, expires_at timestamptz not null)` on PostgreSQL. For SQLite or MySQL pass `{ query, dialect: 'sqlite' | 'mysql' }` (`query(sql, params)` resolves `{ rows }`, plus `affectedRows` on MySQL); the table then uses `expires_at integer` (epoch ms) on SQLite and ``` `key` varchar(255) primary key, expires_at datetime ``` on MySQL. `onEvent` receives the typed event: narrow on `event.type` and `event.data` is typed.
 
 The hook handler verifies the signed call, answers `{ external_id }`, and answers Atlas's test call (`test: true`) without calling `externalId`.
 

@@ -48,11 +48,12 @@ atlas plan     [<file|dir>] [--check] [--json] [--secrets-file <dotenv>]
 atlas apply    [<file|dir>] [--yes] [--check] [--prune] [--secrets-file <dotenv>] [--out <dir>]
 atlas init     --product <name> [--domain <d>] [--instance-env development|production] [--with-dev] [--no-env-files --json] ...
 atlas init     --next [--mount /atlas] [--dir <app-root>]
+atlas init     nextjs-local-users [--dir <app-root>]
 atlas setup-guide [--json]
 atlas preflight [--instance <id> | --product <name>] [--fail-on error|warning] [--fix [--yes]]
 atlas doctor   [--origin <url>] [--only <sources>] [--no-probe]
 atlas doctor   --scan-dir <path> [--scan-image <ref>]
-atlas golive   --origin <url> [--dry-run] [--yes] [--connect cookiemunch,forumulate,chatly,referalli] [--keys-file <f>]
+atlas golive   --origin <url> [--dry-run] [--yes] [--connect cookiemunch,forumulate,chatly,referalli] [--keys-file <f>] [--config <file>] [--revoke-unused-platform-keys]
 atlas keys     create (--scopes "<scopes>" | --preset app-runtime) [--name n]
 atlas dev      proxy --app <url> --api <fapi url> [--base-path /atlas]
 atlas referrals connect ... [--dry-run]
@@ -259,7 +260,20 @@ integrations:
     enabled: true
     audience: forumulate:acme
     events_url: https://app.example.com/hooks/forumulate
+    org_id: acme-org-id                         # forumulate: the organization
+    spaces: [space-1, { id: space-2, redeem_url: https://app.example.com/redeem }]
     forumulate_api_key: ${FORUMULATE_API_KEY}   # used for the call only, never stored
+    replace_existing: false                     # forumulate: remove the org's other reader sign-ins (needs the key)
+  - id: chatly
+    channel: support                            # same as audience: chatly:support
+    chatly_api_key: ${CHATLY_API_KEY}           # used for the call only, never stored
+    claims: { org: true, org_role: true, public_metadata: [plan] }
+    ttl_seconds: 120
+    backchannel_logout_url: https://app.example.com/logout
+    oauth_client_id: my-sign-in-client
+    # Also accepted: principal_claim, ext_claim, verify_error_report_url, cmp, atlas_id_users,
+    # per_call_audience, external_ref, and for a custom id: name, role, audience_format.
+    # `integrations:` may also be a map keyed by id instead of a list.
 referrals:
   provider: referalli
   enabled: true
@@ -277,7 +291,7 @@ example, turns an integration off). A domain is only claimed, never deleted, unl
 `--prune`; a changed domain is refused (recreate it). `webhook_endpoints` also take `secret: ${ENV}`
 (Atlas then uses your secret and nothing is written to the dotenv file), `active: false`,
 `signature_versions` and `external_ref` (create only), and `enabled_events: ["preset:user_mirror"]`
-is passed through for the API to expand. `atlas golive` activates a paused endpoint after a
+is stored as written (a row that stores the expanded list plans as equal). `atlas golive` activates a paused endpoint after a
 successful test delivery.
 
 Ship it on push with the [`atlas-deploy` GitHub Action](../../actions/atlas-deploy).

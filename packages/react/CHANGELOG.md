@@ -2,6 +2,10 @@
 
 
 
+## 0.31.1 — 2026-11-11
+
+- `error.email_address_unreachable` ("We can't send email to this address. Use a different email address or contact the app owner."), shown for the new `EMAIL_ADDRESS_UNREACHABLE` error when the app's email provider refuses an address.
+
 ## 0.31.0 — 2026-11-11
 
 - `<OrganizationSwitcher>` and `<OrganizationList>`: when an organization's policy is `mfaEnforcement: "require_step_up"` and the session has no recent enough second factor, choosing it asks for an authenticator code, steps up, and retries. `setActiveOrganization` now throws an error with `reason: "org_mfa_step_up_required"` in that case (it still returns quietly for other refusals). The prompt also offers a passkey when the policy's `allowedMfaFactors` permits it and the browser supports passkeys, and drops the code field when totp is excluded.

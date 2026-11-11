@@ -244,6 +244,7 @@ export const plPL: LocalizationResource = {
   'error.captcha_failed': 'Kontrola bezpieczeństwa nie powiodła się. Spróbuj ponownie.',
   'error.captcha_unavailable': 'Kontrola bezpieczeństwa jest teraz niedostępna. Spróbuj ponownie później.',
   'error.email_delivery_unavailable': 'Ta aplikacja nie może teraz wysyłać wiadomości e-mail. Spróbuj innego sposobu logowania lub skontaktuj się z właścicielem aplikacji.',
+  'error.email_address_unreachable': 'Nie możemy wysłać wiadomości e-mail na ten adres. Użyj innego adresu e-mail lub skontaktuj się z właścicielem aplikacji.',
   'error.strategy_disabled': 'Ten sposób logowania nie jest dostępny w tej aplikacji.',
   'error.sign_up_restricted': 'Rejestracja w tej aplikacji jest możliwa tylko na zaproszenie.',
   'error.sign_up_denied': 'Rejestracja nie jest dostępna dla tego konta.',

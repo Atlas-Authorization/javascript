@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.17.4 — 2026-11-11
+
+- New key `error.email_address_unreachable`: shown when the app's email provider refuses the address (for example suppressed after a bounce).
+
 ## 0.17.3 — 2026-11-06
 
 - New keys `mfa.codeWaitOne` and `mfa.codeResent`.

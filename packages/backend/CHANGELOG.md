@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.41.0 — 2026-11-11
+
+- `organizations.mfaStatus(orgId, { sessionId })` answers the org MFA policy for any organization the user belongs to, not only the token's active one (`GET /v1/organizations/{id}/mfa_status`). Use it when your app acts in an org per request; `mfaOrgSatisfied` still covers the active org from the token alone.
+- `sqlWebhookDedupeStore({ query, dialect })` takes `dialect: "postgres" | "sqlite" | "mysql"` (default `postgres`, unchanged for existing callers).
+- `enabled_events` accepts `preset:org_mirror`.
+
 ## 0.40.0 — 2026-11-11
 
 - `mfaOrgSatisfied(claims, orgIdOrExternalId?)` next to `mfaSatisfied`, and the `org_mfa_required` / `org_mfa_ok` session claims. The org policy gains `mfaEnforcement`, `mfaMaxAgeSeconds`, `allowedMfaFactors` and `requireMfaReasons` (with `requireMfaReasonsAdd` / `requireMfaReasonsRemove`) in `OrganizationPolicyPatch`.

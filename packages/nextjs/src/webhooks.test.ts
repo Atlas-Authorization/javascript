@@ -78,3 +78,17 @@ describe('createBeforeUserCreateHandler', () => {
     expect((await boom(signed({ type: 'user.before_create' }))).status).toBe(500);
   });
 });
+
+describe('typed onEvent', () => {
+  it('narrows data on type with no cast', async () => {
+    let id: string | undefined;
+    const h = createWebhookHandler({
+      secret: SECRET,
+      onEvent: (event) => {
+        if (event.type === 'user.created') id = event.data.id;
+      },
+    });
+    await h(signed({ id: 'e1', type: 'user.created', timestamp: 1, instance_id: 'ins_1', data: { id: 'user_1' } }));
+    expect(id).toBe('user_1');
+  });
+});

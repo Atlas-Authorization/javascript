@@ -678,6 +678,7 @@ Usage:
              [--with-dev] [--no-env-files --json]
              [--yes] [--force] [--rotate-secret] [--json]
   atlas init --next [--mount /atlas] [--dir <app-root>] [--force]
+  atlas init nextjs-local-users [--dir <app>]    (a starter that keeps your own user table in step; runs create-atlas-app)
 
 Needs a platform key (ATLAS_PLATFORM_KEY, or a psk_ profile from atlas login).
 Finds the app by name and environment, or creates it, then sets strategies, the
@@ -754,7 +755,8 @@ Exits 1 on a finding. Only the publishable key belongs in a build arg.`,
   golive: `atlas golive — take an instance live for one app origin
 
 Usage: atlas golive --origin <https://app.example.com> [--dry-run] [--yes] [--json]
-                    [--connect cookiemunch,forumulate,chatly,referalli] [--keys-file <0600 dotenv>]
+                    [--connect cookiemunch,forumulate,chatly,referalli] [--keys-file <0600 dotenv>] [--config <file>]
+                    [--revoke-unused-platform-keys]
                     [--instance <id> | --product <name> [--instance-env <env>]]
 
 Runs, in order, and stops at the first failure with its fix:
@@ -770,8 +772,17 @@ Runs, in order, and stops at the first failure with its fix:
 --connect (any subset) connects those partners before the integrations step, with the keys
 from --keys-file (default ~/.config/atlas/partner-keys.env; refused unless only you can read
 it): FORUMULATE_API_KEY, COOKIEMUNCH_API_KEY, REFERALLI_API_KEY, and <PARTNER>_AUDIENCE for a
-first connect. It then prints, per integration, whether the events receiver is ok, a token has
+first connect. With --config <file> it also sends that file's integrations (org_id, spaces,
+channel, claims, urls, ...), referrals and privacy_orchestrator settings, so no curl is
+needed; <PARTNER>_ORG_ID, <PARTNER>_SPACES (comma list) and <PARTNER>_CHANNEL in the keys
+file work too. For cookiemunch with its key, golive also connects Atlas as the identity executor
+in Cookie Munch and sets the site's rights identity (needs the site id: COOKIEMUNCH_SITE_ID,
+privacy_orchestrator.site_id or the cookiemunch:<site> audience). It then prints, per integration, whether the events receiver is ok, a token has
 been minted and which host redeems it.
+
+golive also lists platform-owned secret keys unused for 14 days or more and asks whether to
+revoke them. --revoke-unused-platform-keys revokes without asking; with --yes, --json or --dry-run
+it only lists.
 
 When verifying the domain would move the issuer, golive prints both issuers and
 the previousIssuers value to add to your verifiers, then stops unless --yes.

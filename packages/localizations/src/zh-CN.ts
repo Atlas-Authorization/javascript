@@ -244,6 +244,7 @@ export const zhCN: LocalizationResource = {
   'error.captcha_failed': '安全检查未通过。请重试。',
   'error.captcha_unavailable': '安全检查目前不可用。请稍后再试。',
   'error.email_delivery_unavailable': '此应用目前无法发送电子邮件。请尝试其他登录方式，或联系应用所有者。',
+  'error.email_address_unreachable': '我们无法向此地址发送电子邮件。请使用其他电子邮件地址，或联系应用所有者。',
   'error.strategy_disabled': '此应用不支持该登录方式。',
   'error.sign_up_restricted': '此应用仅限受邀注册。',
   'error.sign_up_denied': '此账户无法注册。',

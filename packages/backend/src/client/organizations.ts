@@ -69,6 +69,26 @@ export interface OrganizationMembership {
   created_at: number;
 }
 
+/** `GET /v1/organizations/:id/mfa_status`: does a session meet one organization's MFA policy. */
+export interface OrganizationMfaStatus {
+  object: 'organization_mfa_status';
+  organization_id: string;
+  user_id: string;
+  session_id: string;
+  /** The session user belongs to the organization (an ancestor seat counts when role inheritance is on). */
+  member: boolean;
+  /** The organization requires MFA. */
+  required: boolean;
+  /** A member whose session meets the policy (true when MFA is not required). Gate on this. */
+  ok: boolean;
+  enforcement: 'withhold_claims' | 'require_step_up';
+  reasons?: string[];
+  max_age_seconds?: number;
+  /** Seconds since the session last passed a second factor; absent when it never has. */
+  mfa_age_seconds?: number;
+  allowed_factors?: string[];
+}
+
 export interface OrganizationInvitation {
   object: 'organization_invitation';
   id: string;
@@ -442,6 +462,15 @@ export function organizationsResource(request: RequestFn) {
      */
     entitlements(id: string): Promise<OrganizationEntitlements> {
       return request({ method: 'GET', path: `/v1/organizations/${enc(id)}/entitlements` });
+    },
+
+    /**
+     * `GET /v1/organizations/:id/mfa_status` — whether the session meets THIS
+     * organization's MFA policy, for any organization the user belongs to (not
+     * only the token's active one). `orgId` is the Atlas id or the external id.
+     */
+    mfaStatus(orgId: string, opts: { sessionId: string }): Promise<OrganizationMfaStatus> {
+      return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/mfa_status`, query: { session_id: opts.sessionId } });
     },
 
     memberships: {

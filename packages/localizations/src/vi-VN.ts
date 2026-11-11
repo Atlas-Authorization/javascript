@@ -244,6 +244,7 @@ export const viVN: LocalizationResource = {
   'error.captcha_failed': 'Kiểm tra bảo mật không thành công. Vui lòng thử lại.',
   'error.captcha_unavailable': 'Hiện không thể thực hiện kiểm tra bảo mật. Vui lòng thử lại sau.',
   'error.email_delivery_unavailable': 'Hiện ứng dụng này không thể gửi email. Vui lòng thử phương thức đăng nhập khác hoặc liên hệ chủ sở hữu ứng dụng.',
+  'error.email_address_unreachable': 'Chúng tôi không thể gửi email đến địa chỉ này. Vui lòng dùng địa chỉ email khác hoặc liên hệ chủ sở hữu ứng dụng.',
   'error.strategy_disabled': 'Phương thức đăng nhập này không khả dụng cho ứng dụng này.',
   'error.sign_up_restricted': 'Việc đăng ký vào ứng dụng này chỉ dành cho người được mời.',
   'error.sign_up_denied': 'Không thể đăng ký với tài khoản này.',

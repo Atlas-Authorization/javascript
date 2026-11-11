@@ -244,6 +244,7 @@ export const frFR: LocalizationResource = {
   'error.captcha_failed': 'La vérification de sécurité a échoué. Veuillez réessayer.',
   'error.captcha_unavailable': 'La vérification de sécurité est indisponible pour le moment. Veuillez réessayer plus tard.',
   'error.email_delivery_unavailable': "Cette application ne peut pas envoyer d'e-mails pour le moment. Veuillez essayer une autre méthode de connexion ou contacter le propriétaire de l'application.",
+  'error.email_address_unreachable': "Nous ne pouvons pas envoyer d'e-mails à cette adresse. Utilisez une autre adresse e-mail ou contactez le propriétaire de l'application.",
   'error.strategy_disabled': "Cette méthode de connexion n'est pas disponible pour cette application.",
   'error.sign_up_restricted': "L'inscription à cette application se fait uniquement sur invitation.",
   'error.sign_up_denied': 'L’inscription n’est pas disponible pour ce compte.',

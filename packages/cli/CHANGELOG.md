@@ -1,5 +1,14 @@
 # @atlasauth/cli changelog
 
+## 0.31.0 — 2026-11-11
+
+### Added
+- `atlas plan` compares webhook `enabled_events` preset-aware: a file using `preset:user_mirror` or `preset:org_mirror` matches an endpoint that stores the expanded list, so `plan --check` exits 0 after one apply.
+- `integrations` in config files accepts every field the integrations API takes (`org_id`, `spaces`, `channel`, `claims`, `principal_claim`, `ext_claim`, `per_call_audience`, `audience_format` and the rest), diffed by `plan`; it can also be a map keyed by integration id.
+- `atlas golive --connect … --config <file>` sends the file's `integrations`, `referrals` and `privacy_orchestrator` settings; keys files also take `<PARTNER>_ORG_ID`, `<PARTNER>_SPACES` and `<PARTNER>_CHANNEL`. `--connect cookiemunch` also registers the Atlas executor and the rights identity on your Cookie Munch site with your `COOKIEMUNCH_API_KEY`.
+- `atlas golive` lists platform-provisioned secret keys unused for 14 days and offers to revoke them (`--revoke-unused-platform-keys` without a prompt).
+- `atlas init nextjs-local-users [--dir <dir>]` creates the Next.js local users and organizations template.
+
 ## 0.30.0 — 2026-11-11
 
 ### Added

@@ -53,7 +53,9 @@ export function mfaSatisfied(claims: {
  * reads them, so an app that authorizes from its own tables must call this
  * itself. The claims describe the ACTIVE organization only: pass the
  * organization you are authorizing for (its Atlas id or external id) and a token
- * whose active organization is another one answers false.
+ * whose active organization is another one answers false. For an organization
+ * the user belongs to but has not made active, ask the Backend API instead:
+ * `client.organizations.mfaStatus(orgId, { sessionId })`.
  */
 export function mfaOrgSatisfied(
   claims: { org_id?: unknown; org_external_id?: unknown; org_mfa_required?: unknown; org_mfa_ok?: unknown },

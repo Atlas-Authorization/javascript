@@ -17,7 +17,7 @@ import {
 import { assertProductName, productDir, readEnvFile, writeSecretFile } from '../secrets';
 import { folderHoldsKey } from './doctor-scan';
 import { envApiUrl, wantsJson } from './shared';
-import { scaffoldNext } from './init-next';
+import { INIT_TEMPLATES, scaffoldNext, scaffoldTemplate } from './init-next';
 
 /**
  * `atlas init` — set up an Atlas app for a product in one idempotent command.
@@ -243,6 +243,13 @@ function assertFreeForNewSecret(path: string, force: boolean): void {
 }
 
 export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
+  const template = args.positionals[1] ?? str(args.values, 'template');
+  if (template !== undefined) {
+    if (!(INIT_TEMPLATES as readonly string[]).includes(template)) {
+      throw new CliError(`Unknown template '${template}'. Available: ${INIT_TEMPLATES.join(', ')}.`);
+    }
+    return scaffoldTemplate(ctx, template, str(args.values, 'dir'));
+  }
   if (args.values.next === true) {
     scaffoldNext(ctx, args);
     // The files need no instance; with --product the instance is set up as well.

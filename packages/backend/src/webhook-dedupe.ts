@@ -117,19 +117,45 @@ async function dedupeVerified<T>(
   };
 }
 
+export type WebhookDedupeDialect = 'postgres' | 'sqlite' | 'mysql';
+
 /**
- * A {@link WebhookDedupeStore} on PostgreSQL (any pg-compatible `query`). Create the table once:
+ * A {@link WebhookDedupeStore} on SQL (`dialect` defaults to `postgres`; any driver whose
+ * `query(sql, params)` resolves `{ rows }`, plus `affectedRows` or `rowCount` for mysql).
+ * Create the table once (key is `text primary key`; use `varchar(255)` on mysql):
  *
- *   create table atlas_webhook_seen (
- *     key text primary key,
- *     expires_at timestamptz not null
- *   );
+ *   postgres: create table atlas_webhook_seen (key text primary key, expires_at timestamptz not null);
+ *   sqlite:   create table atlas_webhook_seen (key text primary key, expires_at integer not null);  -- epoch ms
+ *   mysql:    create table atlas_webhook_seen (`key` varchar(255) primary key, expires_at datetime not null);
  *
  * A key whose row has expired counts as unseen and is claimed again.
  */
-export function sqlWebhookDedupeStore({ query }: { query(sql: string, params: unknown[]): Promise<{ rows: any[] }> }): WebhookDedupeStore {
+export function sqlWebhookDedupeStore({
+  query,
+  dialect = 'postgres',
+}: {
+  query(sql: string, params: unknown[]): Promise<{ rows: any[]; affectedRows?: number; rowCount?: number | null }>;
+  dialect?: WebhookDedupeDialect;
+}): WebhookDedupeStore {
   return {
     async setIfAbsent(key, ttlSeconds) {
+      if (dialect === 'sqlite') {
+        const now = Date.now();
+        const { rows } = await query(
+          'insert into atlas_webhook_seen (key, expires_at) values (?, ?) ' +
+            'on conflict (key) do update set expires_at = excluded.expires_at where atlas_webhook_seen.expires_at <= ? returning key',
+          [key, now + ttlSeconds * 1000, now],
+        );
+        return rows.length > 0;
+      }
+      if (dialect === 'mysql') {
+        await query('delete from atlas_webhook_seen where `key` = ? and expires_at <= now()', [key]);
+        const res = await query(
+          'insert ignore into atlas_webhook_seen (`key`, expires_at) values (?, now() + interval ? second)',
+          [key, Math.floor(ttlSeconds)],
+        );
+        return (res.affectedRows ?? res.rowCount ?? res.rows.length) > 0;
+      }
       const { rows } = await query(
         "insert into atlas_webhook_seen (key, expires_at) values ($1, now() + ($2 || ' seconds')::interval) " +
           'on conflict (key) do update set expires_at = excluded.expires_at where atlas_webhook_seen.expires_at <= now() ' +
@@ -139,7 +165,7 @@ export function sqlWebhookDedupeStore({ query }: { query(sql: string, params: un
       return rows.length > 0;
     },
     async delete(key) {
-      await query('delete from atlas_webhook_seen where key = $1', [key]);
+      await query(dialect === 'postgres' ? 'delete from atlas_webhook_seen where key = $1' : dialect === 'mysql' ? 'delete from atlas_webhook_seen where `key` = ?' : 'delete from atlas_webhook_seen where key = ?', [key]);
     },
   };
 }

@@ -24,6 +24,7 @@ import {
   sqlWebhookDedupeStore,
   verifyAndDedupe,
   verifyAtlasWebhookRequest,
+  type AtlasWebhookEvent,
   type WebhookDedupeStore,
 } from '@atlasauth/backend';
 
@@ -36,14 +37,8 @@ const json = (status: number, body: unknown) =>
 const missingSecret = (name: string) =>
   json(503, { error: 'webhook_secret_missing', message: `${name} has no signing secret configured; set \`secret\` (the endpoint's signing secret from Atlas).` });
 
-export interface WebhookEnvelope {
-  id: string;
-  type: string;
-  timestamp: number;
-  instance_id: string;
-  data: any;
-  [key: string]: unknown;
-}
+/** The signed delivery: narrow on `type` and `data` is typed (`event.type === 'user.created'` gives the user). */
+export type WebhookEnvelope = AtlasWebhookEvent;
 
 export interface WebhookHandlerOptions {
   /** The endpoint's signing secret. Missing or empty answers 503 (never accepts unsigned input). */

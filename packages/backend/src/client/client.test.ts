@@ -214,6 +214,13 @@ describe('namespace routing (method + path + payload per namespace)', () => {
     expect(last(calls).url).toBe(`${API_URL}/v1/organizations/o1/memberships?starting_after=m1`);
   });
 
+  it('organizations.mfaStatus asks for any org by session', async () => {
+    const { impl, calls } = mockFetch([{ body: { object: 'organization_mfa_status', ok: true } }]);
+    const r = await client(impl).organizations.mfaStatus('org/1', { sessionId: 'sess_1' });
+    expect(last(calls)).toMatchObject({ method: 'GET', url: `${API_URL}/v1/organizations/org%2F1/mfa_status?session_id=sess_1` });
+    expect(r.ok).toBe(true);
+  });
+
   it('organizations: nested memberships/invitations/domains/groupRoles', async () => {
     const { impl, calls } = mockFetch([{ body: {} }]);
     const c = client(impl);

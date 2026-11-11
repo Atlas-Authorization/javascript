@@ -8,7 +8,7 @@ import { redactDeep, scrubText } from '../redact';
 import { httpFor } from '../project';
 import { instanceCredential } from './project-commands';
 import { wantsJson } from './shared';
-import { connectPartners, parsePartners, readKeysFile } from './golive-connect';
+import { connectCookieMunchSide, connectPartners, parsePartners, readConnectFields, readKeysFile } from './golive-connect';
 
 /**
  * `atlas golive --origin <url>`: take an instance from "configured" to "live"
@@ -270,10 +270,24 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
     if (wanted !== undefined) {
       current = 'connect';
       const partners = parsePartners(wanted);
-      const { table, failures } = await connectPartners(api, partners, readKeysFile(ctx, str(v, 'keys-file')), q, () => undefined);
+      const keys = readKeysFile(ctx, str(v, 'keys-file'));
+      const configFile = str(v, 'config');
+      const fields = configFile ? readConnectFields(ctx, configFile) : {};
+      const { table, failures } = await connectPartners(api, partners, keys, q, () => undefined, fields);
       if (!json) ctx.io.out(table);
       if (failures.length) fail(failures.join('; '), 'Fix the key or audience named above, then run golive again.');
       pass('connect', would(partners.join(', '), `connect ${partners.join(', ')}`));
+      // Cookie Munch's half of the data-rights handshake, with the customer's own Cookie Munch key.
+      const cmKey = keys.COOKIEMUNCH_API_KEY;
+      if (partners.includes('cookiemunch') && cmKey) {
+        current = 'connect/cookiemunch';
+        const audience = (await api.get<{ audience?: string }>('/v1/instance/integrations/cookiemunch')).audience;
+        const cbid = keys.COOKIEMUNCH_SITE_ID ?? (fields.privacy?.site_id as string | undefined) ?? audience?.replace(/^cookiemunch:/, '');
+        if (!cbid) fail('no Cookie Munch site id for the data-rights handshake', 'Add COOKIEMUNCH_SITE_ID to the keys file, or privacy_orchestrator.site_id to --config.');
+        const issuer = instance.issuer ? trimSlash(instance.issuer) : expected!;
+        const steps = await connectCookieMunchSide({ fetch: fetchImpl, apiBase: ctx.env.COOKIEMUNCH_API_URL, key: cmKey, cbid: cbid!, issuer, origin: origin.origin, dry });
+        pass('connect/cookiemunch', steps.join('; '));
+      }
     }
 
     // (7) integrations: only those the instance declares.
@@ -303,6 +317,23 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
     }
     const identity = (await optional(() => api.get<{ data: Array<{ id: string; connected: boolean; enabled: boolean }> }>('/v1/instance/integrations')))?.data ?? [];
     for (const i of identity.filter((x) => x.connected)) pass(`integrations/${i.id}`, i.enabled ? 'on' : 'off');
+
+    // (8) platform-owned secret keys nobody uses: offer to revoke them.
+    current = 'platform_keys';
+    const stale = await staleSecretKeys(api);
+    if (!stale.length) pass('platform_keys', 'no unused platform-owned keys');
+    else {
+      const names = stale.map((k) => `${k.name ?? k.id} (${k.id}, ${k.last_used_at ? `last used ${new Date(k.last_used_at).toISOString().slice(0, 10)}` : 'never used'})`).join(', ');
+      let revoke = v['revoke-unused-platform-keys'] === true;
+      if (!revoke && !dry && !json && v.yes !== true) {
+        ctx.io.out(`Platform-owned keys unused for 14 days or more: ${names}`);
+        revoke = ['y', 'yes'].includes((await ctx.prompt.text(`Revoke ${stale.length} key(s)? [y/N]`, { default: 'n' })).trim().toLowerCase());
+      }
+      if (revoke) {
+        for (const k of stale) await api.post(q(`/v1/secret_keys/${encodeURIComponent(k.id)}/revoke`), {});
+        pass('platform_keys', would(`revoked ${stale.length}: ${names}`, `revoke ${stale.length}: ${names}`));
+      } else pass('platform_keys', `${stale.length} unused platform-owned key(s) left: ${names} (revoke with --revoke-unused-platform-keys)`);
+    }
   } catch (err) {
     const failed =
       err instanceof StepFailed
@@ -329,4 +360,25 @@ async function optional<T>(read: () => Promise<T>): Promise<T | undefined> {
     if (err instanceof AtlasApiError && err.status === 404) return undefined;
     throw err;
   }
+}
+
+interface ListedKey {
+  id: string;
+  name?: string | null;
+  owner?: unknown;
+  last_used_at?: number | null;
+  created_at?: number | null;
+  revoked_at?: number | null;
+}
+
+/** Live platform-owned secret keys not used for 14 days (or never, once older than that). Reads defensively: a response without owner or last_used_at lists nothing. */
+export async function staleSecretKeys(api: ConfigHttp, now = Date.now()): Promise<ListedKey[]> {
+  const cutoff = now - 14 * 86_400_000;
+  const res = await optional(() => api.get<{ data?: ListedKey[] }>('/v1/secret_keys'));
+  return (res?.data ?? []).filter(
+    (k) =>
+      k.owner === 'platform' &&
+      !k.revoked_at &&
+      (typeof k.last_used_at === 'number' ? k.last_used_at < cutoff : (k.last_used_at === null || k.last_used_at === undefined) && typeof k.created_at === 'number' && k.created_at < cutoff),
+  );
 }

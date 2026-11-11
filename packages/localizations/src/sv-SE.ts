@@ -290,6 +290,7 @@ export const svSE: LocalizationResource = {
   'error.captcha_failed': 'Säkerhetskontrollen godkändes inte. Försök igen.',
   'error.captcha_unavailable': 'Säkerhetskontrollen är inte tillgänglig just nu. Försök igen senare.',
   'error.email_delivery_unavailable': 'Den här appen kan inte skicka e-post just nu. Prova en annan inloggningsmetod eller kontakta appens ägare.',
+  'error.email_address_unreachable': 'Vi kan inte skicka e-post till den här adressen. Använd en annan e-postadress eller kontakta appens ägare.',
   'error.strategy_disabled': 'Den här inloggningsmetoden är inte tillgänglig för den här appen.',
   'error.sign_up_restricted': 'Registrering i den här appen sker endast via inbjudan.',
   'error.sign_up_denied': 'Registrering är inte tillgänglig för det här kontot.',
