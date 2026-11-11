@@ -44,4 +44,17 @@ describe('emulator', () => {
     expect(await (await fetch(`${p.url}/`)).text()).toBe('app');
     expect((await j(await fetch(`${p.url}/.well-known/openid-configuration`))).issuer).toBe(e.url);
   });
+
+  it('mounts the API under a base path and leaves the rest to the app', async () => {
+    const app = createServer((req, res) => res.end(`app:${req.url}`));
+    await new Promise<void>((ok) => app.listen(0, '127.0.0.1', ok));
+    const appUrl = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
+    open.push({ close: () => new Promise((ok) => (app.closeAllConnections(), app.close(() => ok()))) });
+    const e = await startEmulator();
+    open.push(e);
+    const p = await startProxy({ app: appUrl, api: e.url, basePath: '/atlas' });
+    open.push(p);
+    expect((await j(await fetch(`${p.url}/atlas/.well-known/openid-configuration`))).issuer).toBe(e.url);
+    expect(await (await fetch(`${p.url}/v1/x`)).text()).toBe('app:/v1/x');
+  });
 });

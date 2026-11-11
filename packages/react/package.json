@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/react",
-  "version": "0.30.9",
+  "version": "0.31.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

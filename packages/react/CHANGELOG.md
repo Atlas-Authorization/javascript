@@ -2,6 +2,10 @@
 
 
 
+## 0.31.0 — 2026-11-11
+
+- `<OrganizationSwitcher>` and `<OrganizationList>`: when an organization's policy is `mfaEnforcement: "require_step_up"` and the session has no recent enough second factor, choosing it asks for an authenticator code, steps up, and retries. `setActiveOrganization` now throws an error with `reason: "org_mfa_step_up_required"` in that case (it still returns quietly for other refusals). The prompt also offers a passkey when the policy's `allowedMfaFactors` permits it and the browser supports passkeys, and drops the code field when totp is excluded.
+
 ## 0.30.9 — 2026-11-06
 
 - `<SignIn>` and `<SignUp>` draw nothing until the session check answers, so a signed-in reload no longer flashes the form.

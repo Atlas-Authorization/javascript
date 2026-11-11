@@ -1,5 +1,9 @@
 # @atlasauth/create-atlas-app changelog
 
+## 0.4.0
+
+- New `nextjs-local-users` template: a Next.js app with its own users and organizations on a path mount (session check with CSRF, local user sync, webhooks, the `before_user_create` hook, organization mirror and policy, Admin Portal link, integration token). `create-atlas-app --template nextjs-local-users`.
+
 ## 0.3.0 — 2026-10-23
 
 - New apps start on the current SDKs: `@atlasauth/react` ^0.14.0 and `@atlasauth/nextjs` ^0.4.0 (the templates pinned 0.1.x).

@@ -1,3 +1,4 @@
+import { SidRevocationList, type SidListRevocation } from './sid-revocation';
 import { createLocalJWKSet, jwtVerify } from 'jose';
 import {
   ForbiddenError,
@@ -74,7 +75,7 @@ import { LegacyIssuerVerifier, peekIssuer, type LegacyIssuer } from './legacy-is
 /** §7.3: five seconds either side, matching the server's minting tolerance. */
 export const CLOCK_SKEW_SECONDS = 5;
 
-export interface SessionClaims {
+export interface SessionClaimsBase {
   iss: string;
   sub: string;
   sid: string;
@@ -96,6 +97,10 @@ export interface SessionClaims {
    * {@link mfaSatisfied}, which falls back to the older claims when absent.
    */
   mfa_satisfied?: boolean;
+  /** The active organization requires MFA (`requireMfa`, `mfaMaxAgeSeconds` or `allowedMfaFactors`). Present only then; read it through {@link mfaOrgSatisfied}. */
+  org_mfa_required?: true;
+  /** With `org_mfa_required`: this session currently meets the organization's MFA policy. */
+  org_mfa_ok?: boolean;
   /** The session's last activity when this token was minted, epoch seconds (for idle checks). */
   last_active_at?: number;
   /** When the user last authenticated (first factor or step-up), epoch seconds. */
@@ -151,7 +156,8 @@ export interface SessionClaims {
   email?: string;
   /**
    * Whether `email` was proven (a verification code, link or a trusted
-   * provider). An address held without proof carries `false`. Present with `email`.
+   * provider). An address held without proof carries `false`. Always present
+   * when `email` is (see {@link SessionClaims}).
    */
   email_verified?: boolean;
   /**
@@ -168,6 +174,14 @@ export interface SessionClaims {
   legacy?: { kind: string; issuer: string; sub: string };
   [claim: string]: unknown;
 }
+
+/**
+ * The verified session claims. `email_verified` is a boolean whenever `email`
+ * is a string (Atlas always emits the two together), so `if (claims.email)`
+ * narrows `claims.email_verified` to `boolean`.
+ */
+export type SessionClaims = SessionClaimsBase &
+  ({ email?: undefined; email_verified?: boolean } | { email: string; email_verified: boolean });
 
 /**
  * A verified session, carrying the ergonomic authorization helpers bound to its
@@ -196,7 +210,7 @@ export type VerifyResult =
   | AuthorizedSession
   | {
       ok: false;
-      reason: 'malformed' | 'invalid' | 'no_keys' | 'unauthorized_party';
+      reason: 'malformed' | 'invalid' | 'no_keys' | 'unauthorized_party' | 'revoked';
       /**
        * Set with `no_keys` when the key set could not be obtained — e.g. OIDC
        * discovery failed — saying why. A configuration diagnostic, never a
@@ -298,6 +312,7 @@ export interface AtlasBackendOptions {
 export class AtlasBackend {
   private readonly jwks: JwksCache;
   private readonly legacy?: LegacyIssuerVerifier;
+  private sidList?: SidRevocationList;
 
   /**
    * The server-side OIDC relying party (hosted-redirect sign-in) for this
@@ -536,9 +551,12 @@ export class AtlasBackend {
    * both carriers are legitimate. The header wins, because a caller that set it
    * deliberately should not be overridden by a stale cookie.
    */
-  async authenticateRequest(request: {
-    headers: { get(name: string): string | null } | Record<string, string | undefined>;
-  }): Promise<VerifyResult> {
+  async authenticateRequest(
+    request: {
+      headers: { get(name: string): string | null } | Record<string, string | undefined>;
+    },
+    options: { revocation?: SidListRevocation } = {},
+  ): Promise<VerifyResult> {
     const header = readHeader(request.headers, 'authorization');
     const cookie = readHeader(request.headers, 'cookie');
 
@@ -548,7 +566,18 @@ export class AtlasBackend {
     const token = bearer ?? fromCookie;
     if (!token) return { ok: false, reason: 'malformed' };
 
-    return this.verify(token);
+    const result = await this.verify(token);
+    if (!result.ok || !options.revocation) return result;
+    if (!this.options.secretKey) {
+      throw new Error('authenticateRequest with `revocation` needs `secretKey` (with sessions:read) on the AtlasBackend.');
+    }
+    this.sidList ??= new SidRevocationList(options.revocation, {
+      secretKey: this.options.secretKey,
+      baseUrl: this.options.bapiBaseUrl,
+      fetchImpl: this.options.fetchImpl,
+      now: this.options.now ?? Date.now,
+    });
+    return (await this.sidList.isRevoked(result.claims.sid)) ? { ok: false, reason: 'revoked' } : result;
   }
 
   /**

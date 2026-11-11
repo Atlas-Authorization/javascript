@@ -1,4 +1,5 @@
 import { enc, type RequestFn } from './request';
+import { paginate } from './paginate';
 import type { WebhookDelivery, WebhookEndpoint, WebhookEndpointWithSecret } from './webhooks';
 import type { CursorPage, CursorParams, DataList, DeletedObject, ListPage, Metadata } from './types';
 
@@ -132,6 +133,10 @@ export interface OrgPasswordPolicyOverride {
  */
 export interface OrganizationPolicySettings {
   requireMfa?: boolean;
+  requireMfaReasons?: string[];
+  mfaEnforcement?: 'withhold_claims' | 'require_step_up';
+  mfaMaxAgeSeconds?: number;
+  allowedMfaFactors?: Array<'totp' | 'sms' | 'passkey' | 'push'>;
   /** Factor classes every member must have used; implies an MFA session. */
   requiredFactors?: Array<'totp' | 'sms' | 'passkey' | 'push'>;
   /** Tighten-only password rules for members. */
@@ -326,6 +331,18 @@ export interface ReplaceOrganizationMetadataBody {
  */
 export interface OrganizationPolicyPatch {
   requireMfa?: boolean | null;
+  /** Replace the whole reason list; `null` clears it. MFA stays required while any tag remains. */
+  requireMfaReasons?: string[] | null;
+  /** Add reason tags without touching the others. */
+  requireMfaReasonsAdd?: string[];
+  /** Remove reason tags without touching the others. */
+  requireMfaReasonsRemove?: string[];
+  /** `withhold_claims` (default) or `require_step_up` (activating the org also needs a step-up). */
+  mfaEnforcement?: 'withhold_claims' | 'require_step_up' | null;
+  /** The last second factor must be at most this many seconds old (60 to 7776000). */
+  mfaMaxAgeSeconds?: number | null;
+  /** Accepted second-factor kinds. `totp`, `sms` and `push` are indistinguishable on the session. */
+  allowedMfaFactors?: Array<'totp' | 'sms' | 'passkey' | 'push'> | null;
   requiredFactors?: Array<'totp' | 'sms' | 'passkey' | 'push'> | null;
   passwordPolicyOverride?: OrgPasswordPolicyOverride | null;
   ssoRequired?: boolean | null;
@@ -428,8 +445,44 @@ export function organizationsResource(request: RequestFn) {
     },
 
     memberships: {
-      list(orgId: string): Promise<{ data: OrganizationMembership[]; has_more: boolean }> {
-        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/memberships` });
+      list(
+        orgId: string,
+        params: { limit?: number; starting_after?: string; user_id?: string } = {},
+      ): Promise<{ data: OrganizationMembership[]; has_more: boolean; next_cursor?: string | null }> {
+        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/memberships`, query: { ...params } });
+      },
+      /** Every membership of the organization, following the cursor. */
+      listAll(orgId: string, params: { limit?: number } = {}): AsyncGenerator<OrganizationMembership, void, void> {
+        return paginate<OrganizationMembership, { limit?: number; starting_after?: string }>(
+          (p) =>
+            request<CursorPage<OrganizationMembership>>({
+              method: 'GET',
+              path: `/v1/organizations/${enc(orgId)}/memberships`,
+              query: { ...p },
+            }),
+          params,
+        );
+      },
+      /** One membership (role, `role_source`); 404 when the user is not a member. */
+      get(orgId: string, userId: string): Promise<OrganizationMembership> {
+        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/memberships/${enc(userId)}` });
+      },
+      /**
+       * Create or update. A role managed by a directory (SCIM/SSO/LDAP) that
+       * `role_source` does not name is left alone: the answer has `unchanged: true`.
+       */
+      upsert(
+        orgId: string,
+        userId: string,
+        body: { role: string; role_source?: string },
+        idempotencyKey?: string,
+      ): Promise<OrganizationMembership & { unchanged: boolean }> {
+        return request({
+          method: 'PUT',
+          path: `/v1/organizations/${enc(orgId)}/memberships/${enc(userId)}`,
+          body,
+          idempotencyKey,
+        });
       },
       add(
         orgId: string,

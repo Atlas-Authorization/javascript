@@ -1,5 +1,13 @@
 # @atlasauth/nextjs changelog
 
+## 0.13.0 — 2026-11-11
+
+### Added
+- `createWebhookHandler({ secret, onEvent, store?, handleTest?, url? })`: a route handler that verifies the Atlas signature, skips repeated event ids, runs `onEvent`, and answers 500 (forgetting the id) when it throws so Atlas retries. Answers 503 without a secret and the test delivery with 200.
+- `createBeforeUserCreateHandler({ secret, externalId })` for the `before_user_create` hook, including the test call.
+- `memoryDedupeStore()`, `sqlDedupeStore({ query })` and the `WebhookDedupeStore` type.
+- The mount handler reports `@atlasauth/nextjs` and its version to Atlas (`X-Atlas-SDK`) when the browser sent no SDK header of its own. Set `telemetry: false` to turn that off.
+
 ## 0.12.0 — 2026-11-06
 
 ### Added

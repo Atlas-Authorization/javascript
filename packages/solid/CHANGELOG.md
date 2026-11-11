@@ -2,6 +2,10 @@
 
 
 
+## 0.15.0 — 2026-11-11
+
+- `setActiveOrganization` throws an error with `reason: "org_mfa_step_up_required"` (and `allowedFactors`) when an organization's policy is `mfaEnforcement: "require_step_up"` and the session needs a fresh second factor; pass it to `runOrgStepUp` from `@atlasauth/js`, then retry. It still returns quietly for other refusals.
+
 ## 0.14.9 — 2026-11-06
 
 - **Fix:** on a development instance the session survives a reload: the provider presents the stored session token, as the other SDKs do. The finished step says `You're signed in.` (or that the browser didn't keep the session). `<SignIn>`/`<SignUp>` draw nothing until the session check answers.

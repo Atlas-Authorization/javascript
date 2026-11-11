@@ -1140,6 +1140,17 @@ export type WebhookDataUserAppRoles = {
   [key: string]: unknown;
 };
 
+/** A user's first marketing touch was recorded. */
+export type WebhookDataUserAttributed = {
+  object: "user_attribution";
+  user_id: string;
+  /** The first touch: { params (utm tags, ad click ids), landing_url, referrer, captured_at }. */
+  first_touch: Record<string, unknown>;
+  /** The newest touch, same shape. */
+  last_touch: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
 /** A deprovisioning signal: revoke sessions and access now. */
 export type WebhookDataUserDeactivated = {
   object: "user";
@@ -1316,6 +1327,10 @@ export interface AtlasWebhookEnvelope<T extends string, D> {
   /** When it was emitted (epoch ms). */
   timestamp: number;
   instance_id: string;
+  /** Who caused the event; `system` when no request did. Absent on events recorded before it was added. */
+  actor?: { type: "api_key" | "user" | "scim" | "sso" | "system"; id: string | null };
+  /** The Idempotency-Key header of the request that caused the event, else null. */
+  idempotency_key?: string | null;
   data: D;
 }
 
@@ -1468,6 +1483,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"uma.request_submitted", WebhookDataUmaRequest>
   | AtlasWebhookEnvelope<"user.anonymous_linked", WebhookDataAnonymousLink>
   | AtlasWebhookEnvelope<"user.app_roles_updated", WebhookDataUserAppRoles>
+  | AtlasWebhookEnvelope<"user.attributed", WebhookDataUserAttributed>
   | AtlasWebhookEnvelope<"user.banned", WebhookDataUser>
   | AtlasWebhookEnvelope<"user.contained", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"user.created", WebhookDataUser>
@@ -1657,6 +1673,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "uma.request_submitted",
   "user.anonymous_linked",
   "user.app_roles_updated",
+  "user.attributed",
   "user.banned",
   "user.contained",
   "user.created",

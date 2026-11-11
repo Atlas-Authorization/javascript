@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   OrganizationProfileController,
+  activateOrgOrStepUp,
+  orgStepUpOptions,
+  runOrgStepUp,
+  type OrgStepUpError,
   deleteOrganization,
   type OrganizationMember,
   type OrganizationProfileState,
@@ -22,15 +26,74 @@ import {
   AppWebhookEndpoints,
 } from './organization-admin';
 
+/**
+ * Switch the active org, and when the org's policy needs a fresh second factor
+ * (`org_mfa_step_up_required`) ask for an authenticator code, step up, and retry.
+ */
+function useStepUpSetActive() {
+  const { setActive } = useOrganization();
+  const client = useMeClient();
+  const t = useText();
+  const [pending, setPending] = useState<{ id: string | null; err: OrgStepUpError } | null>(null);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const activate = async (id: string | null) => {
+    const err = await activateOrgOrStepUp(setActive, id);
+    if (err) setPending({ id, err });
+  };
+
+  const confirm = async (input: { code: string } | { passkey: true }) => {
+    if (!pending) return;
+    setError(null);
+    const res = await runOrgStepUp(client, input, t('error.generic'));
+    if (!res.ok) {
+      setError(res.message);
+      return;
+    }
+    const { id } = pending;
+    setPending(null);
+    setCode('');
+    await activate(id);
+  };
+
+  const options = pending ? orgStepUpOptions(pending.err) : null;
+  const prompt = pending && options ? (
+    <div data-atlas="organization-step-up" role="dialog" aria-label={t('mfa.title')}>
+      <p>{t('mfa.subtitle')}</p>
+      {options.totp ? (
+        <>
+          <input
+            aria-label={t('mfa.codeLabel')}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
+          <button type="button" onClick={() => void confirm({ code })}>{t('mfa.submit')}</button>
+        </>
+      ) : null}
+      {options.passkey ? (
+        <button type="button" onClick={() => void confirm({ passkey: true })}>{t('mfa.usePasskey')}</button>
+      ) : null}
+      {error ? <p role="alert">{error}</p> : null}
+      <button type="button" onClick={() => { setPending(null); setCode(''); setError(null); }}>{t('reverification.cancel')}</button>
+    </div>
+  ) : null;
+
+  return { activate, prompt };
+}
+
 export function OrganizationSwitcher() {
-  const { memberships, organization, setActive } = useOrganization();
+  const { memberships, organization } = useOrganization();
+  const { activate, prompt } = useStepUpSetActive();
   const t = useText();
   const menuClass = useClass('menu', 'atlas-menu');
   const itemClass = useClass('menuItem', 'atlas-menu-item');
 
   return (
     <div className={menuClass}>
-      <button className={itemClass} onClick={() => void setActive(null)}>
+      <button className={itemClass} onClick={() => void activate(null)}>
         {t('organization.personal')}
       </button>
       {memberships.map((membership) => (
@@ -38,11 +101,12 @@ export function OrganizationSwitcher() {
           key={membership.organization.id}
           className={itemClass}
           disabled={membership.organization.id === organization?.id}
-          onClick={() => void setActive(membership.organization.id)}
+          onClick={() => void activate(membership.organization.id)}
         >
           {membership.organization.name}
         </button>
       ))}
+      {prompt}
     </div>
   );
 }
@@ -158,7 +222,8 @@ export function CreateOrganization({
  * can make one without leaving the list.
  */
 export function OrganizationList() {
-  const { memberships, organization, setActive } = useOrganization();
+  const { memberships, organization } = useOrganization();
+  const { activate, prompt } = useStepUpSetActive();
   const t = useText();
   const menuClass = useClass('menu', 'atlas-menu');
   const itemClass = useClass('menuItem', 'atlas-menu-item');
@@ -170,11 +235,12 @@ export function OrganizationList() {
           key={membership.organization.id}
           className={itemClass}
           disabled={membership.organization.id === organization?.id}
-          onClick={() => void setActive(membership.organization.id)}
+          onClick={() => void activate(membership.organization.id)}
         >
           {membership.organization.name}
         </button>
       ))}
+      {prompt}
       <span className={itemClass} data-atlas="organization-list-divider">
         {t('organization.orCreate')}
       </span>

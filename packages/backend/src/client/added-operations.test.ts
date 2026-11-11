@@ -24,6 +24,7 @@ const MOVE = { from: 'https://old.example.com', to: 'https://new.example.com', d
 const BAPI: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
   ['DELETE', '/v1/instance/hooks/before_user_create', undefined, (c) => c.userHooks.deleteBeforeUserCreate()],
   ['DELETE', '/v1/users/user_1/password', { sign_out_of_other_sessions: false }, (c) => c.users.removePassword('user_1', { sign_out_of_other_sessions: false })],
+  ['GET', '/v1/instance/integrations/chatly/mints?limit=5', undefined, (c) => c.instance.integrations.mints('chatly', { limit: 5 })],
   ['POST', '/v1/instance/integrations/forumulate/deliveries/redeliver', { since: 1000 }, (c) => c.instance.integrations.redeliver('forumulate', { since: 1000 })],
   ['POST', '/v1/instance/move_origin', MOVE, (c) => c.instance.moveOrigin(MOVE)],
   ['GET', '/v1/instance/sign_in_with_atlas', undefined, (c) => c.instance.signInWithAtlas.get()],

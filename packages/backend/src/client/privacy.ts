@@ -7,6 +7,24 @@ import { enc, type RequestFn } from './request';
  * orchestrator, where Atlas opens a case when an account deletion is scheduled
  * (needs `instance:read` / `instance:write`).
  */
+export type OrchestratorCaseStatus = 'open' | 'pending' | 'failed' | 'cancelled' | 'cancel_pending' | 'abandoned';
+export interface OrchestratorCase {
+  object: 'orchestrator_case';
+  /** The Atlas data request id. */
+  id: string;
+  request_id: string;
+  provider: string | null;
+  case_id: string | null;
+  status: OrchestratorCaseStatus | null;
+  attempts: number;
+  last_error: string | null;
+  /** `email_unverified`: deliberately not filed, the primary email is not verified. */
+  reason_code: 'email_unverified' | null;
+  opened_at: number | null;
+  dismissed_at: number | null;
+  dismissed_reason: string | null;
+  updated_at: number;
+}
 export type PrivacyCanonicalType = 'access' | 'deletion' | 'closure' | 'restriction' | 'rectification';
 export type PrivacyRequestStatus =
   | 'pending'
@@ -186,6 +204,20 @@ export function privacyResource(request: RequestFn) {
       },
       delete(): Promise<PrivacyOrchestrator & { deleted: boolean }> {
         return request({ method: 'DELETE', path: '/v1/instance/privacy_orchestrator' });
+      },
+      /** The cases Atlas opened (or tried to) at the orchestrator; `id` is the data request id. */
+      cases: {
+        list(params: { status?: OrchestratorCaseStatus; dismissed?: boolean; limit?: number; starting_after?: string } = {}): Promise<{ object: 'list'; data: OrchestratorCase[]; has_more: boolean }> {
+          return request({ method: 'GET', path: '/v1/instance/privacy_orchestrator/cases', query: { ...params } });
+        },
+        /** Open a failed or abandoned case again now. */
+        retry(id: string): Promise<OrchestratorCase> {
+          return request({ method: 'POST', path: `/v1/instance/privacy_orchestrator/cases/${enc(id)}/retry` });
+        },
+        /** Settle a failed or abandoned case without filing it (audited). */
+        dismiss(id: string, body: { reason: string }): Promise<OrchestratorCase> {
+          return request({ method: 'POST', path: `/v1/instance/privacy_orchestrator/cases/${enc(id)}/dismiss`, body });
+        },
       },
     },
     integration: {

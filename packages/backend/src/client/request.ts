@@ -1,3 +1,4 @@
+import { ATLAS_BACKEND_VERSION } from '../version';
 import { AtlasApiError, type AtlasErrorItem } from './error';
 
 /**
@@ -55,6 +56,12 @@ export interface AtlasClientConfig {
    * instead of in plaintext. Open it with `openSealedSecret`.
    */
   secretRecipient?: string;
+  /**
+   * Report this package's name and version to Atlas (`X-Atlas-SDK: @atlasauth/backend/<version>`)
+   * so Atlas can show which SDK versions your instance runs and warn about a known bug.
+   * Nothing else is sent. Default true; `false` turns it off.
+   */
+  telemetry?: boolean;
 }
 
 /** One change a write would make (or made), in the config-changelog shape. */
@@ -177,6 +184,7 @@ export interface KeyedRequestConfig extends AtlasRequestSettings {
   apiUrl?: string;
   fetch?: typeof fetch;
   secretRecipient?: string;
+  telemetry?: boolean;
 }
 
 /**
@@ -202,6 +210,7 @@ export function createKeyedRequest(key: string, config: KeyedRequestConfig): Req
       accept: 'application/json',
     };
     if (config.secretRecipient) headers['x-secret-recipient'] = config.secretRecipient;
+    if (config.telemetry !== false) headers['x-atlas-sdk'] = `@atlasauth/backend/${ATLAS_BACKEND_VERSION}`;
     let body: RequestInit['body'];
     if (options.rawBody !== undefined) {
       const { data, contentType } = options.rawBody;

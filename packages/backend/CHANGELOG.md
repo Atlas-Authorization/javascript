@@ -1,5 +1,22 @@
 # @atlasauth/backend changelog
 
+## 0.40.0 — 2026-11-11
+
+- `mfaOrgSatisfied(claims, orgIdOrExternalId?)` next to `mfaSatisfied`, and the `org_mfa_required` / `org_mfa_ok` session claims. The org policy gains `mfaEnforcement`, `mfaMaxAgeSeconds`, `allowedMfaFactors` and `requireMfaReasons` (with `requireMfaReasonsAdd` / `requireMfaReasonsRemove`) in `OrganizationPolicyPatch`.
+- Webhook envelope types gain `actor` and `idempotency_key`; `enabled_events` accepts `preset:user_mirror`.
+- `organizations.memberships.get(orgId, userId)`, `.upsert(orgId, userId, { role, role_source? })` (a directory-managed role you do not own comes back `unchanged: true`), `.listAll(orgId)`, and `.list(orgId, { limit, starting_after, user_id })`.
+
+- `SessionClaims`: `email_verified` is a `boolean` (not optional) whenever `email` is a string; Atlas always emits the two together. Reading code is unchanged.
+- `sessions.listRevoked({ since?, limit?, cursor? })` (`GET /v1/sessions/revoked`, `sessions:read`): sessions revoked since a time, a banned user's included, at most 24 hours back.
+- `authenticateRequest(request, { revocation: { mode: 'sid_list', intervalMs?, maxTokenLifetimeSeconds?, onError? } })` polls that list (one poller per backend, in memory) and answers `{ ok: false, reason: 'revoked' }` for a listed `sid`. It needs `secretKey`.
+- The management client sends `X-Atlas-SDK: @atlasauth/backend/<version>` so Atlas can show the SDK versions in use and flag a known bug. Pass `telemetry: false` to `createAtlasClient` to turn it off.
+- `instance.integrations.mints(id, { limit })` (`GET /v1/instance/integrations/{id}/mints`): the mint log, with `outcome` and the refusal `reason`. The integration `health` type gains `refusals_24h`, `last_refused_at`, `last_refused_reason`, and `events.auto_redelivered` / `auto_redelivered_at` (events Atlas re-sent on its own after the receiver recovered).
+- `WebhookDestination` and `WebhookDestinationCredentials` cover the new event destinations: `lucida`, `heap`, `rudderstack`, `hermetica`, `hubspot`, `brevo`, `mailchimp`, `loops`, `klaviyo`, `intercom`, `seolyticize`.
+- `sqlWebhookDedupeStore({ query })`, a `WebhookDedupeStore` on PostgreSQL (table `atlas_webhook_seen`).
+
+- `privacy.orchestrator.cases.list / retry / dismiss` (`OrchestratorCase`): review, re-open or settle the cases Atlas could not file at your data-rights orchestrator. `instance.preflightAcks.create({ code, subject?, reason?, expires_at? })` acknowledges one subject of a finding.
+- `secretKeys.create` accepts `preset: 'app-runtime'` (`scopes` is now optional; send one of the two).
+
 ## 0.39.0 — 2026-11-05
 
 - `userHooks.deleteBeforeUserCreate`, `instance.integrations.redeliver`, `users.removePassword`, account claim.

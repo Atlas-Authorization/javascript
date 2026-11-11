@@ -16,7 +16,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 
-export const TEMPLATES = ['next', 'react-vite'] as const;
+export const TEMPLATES = ['next', 'react-vite', 'nextjs-local-users'] as const;
 export type Template = (typeof TEMPLATES)[number];
 
 export const DEFAULT_TEMPLATE: Template = 'next';

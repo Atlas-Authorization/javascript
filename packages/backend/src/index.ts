@@ -179,3 +179,4 @@ export type {
 } from './oauth-resource';
 export * from './legacy-verify';
 export * from './uma';
+export type { SidListRevocation } from './sid-revocation';

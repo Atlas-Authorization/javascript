@@ -66,6 +66,7 @@ export * from './email-code-check';
 // SRP-6a sign-in (RFC 5054, 3072-bit group, SHA-256): the password never leaves the browser.
 export * from './srp';
 export * from './step-up';
+export * from './org-step-up';
 export * from './telegram';
 export * from './siwe';
 export * from './telemetry';

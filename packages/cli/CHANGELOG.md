@@ -1,5 +1,19 @@
 # @atlasauth/cli changelog
 
+## 0.30.0 — 2026-11-11
+
+### Added
+
+- `atlas plan` / `apply` manage `domains`, `integrations`, `referrals`, `privacy_orchestrator` and `proxy_secret`, with a field diff and `--check` exit 2 on drift. A new proxy secret goes to a 0600 file, never the terminal.
+- `webhook_endpoints` take `signature_versions` and `external_ref`; a `secret: ${ENV}` is used as written.
+- `atlas golive --connect cookiemunch,forumulate,chatly,referalli --keys-file <0600 file>` connects the partners and prints events receiver, minted token and redeem host per integration.
+- `atlas keys create --preset app-runtime`.
+- `atlas dev proxy --base-path /atlas` mounts the API under a path.
+
+### Fixed
+
+- The README no longer says the email provider and the `before_user_create` hook are outside config files; they are managed types.
+
 ## 0.29.0 — 2026-11-05
 
 - `atlas users protect <id>`; `atlas init` writes each environment to its own folder; import names rows it refused.

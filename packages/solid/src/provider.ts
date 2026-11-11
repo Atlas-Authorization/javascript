@@ -4,6 +4,7 @@ import { isServer } from 'solid-js/web';
 import { h } from './h';
 import {
   FapiClient,
+  orgStepUpErrorFromResponse,
   catalogLocale,
   type ErrorStrings,
   SignOutGuard,
@@ -390,7 +391,12 @@ export function createAtlasClient(options: {
       method: 'POST',
       body: JSON.stringify({ active_organization_id: organizationId }),
     });
-    if (!response.ok) return;
+    if (!response.ok) {
+      // An org that needs a fresh second factor (policy `require_step_up`): let the caller step up and retry.
+      const needsStepUp = await orgStepUpErrorFromResponse(response);
+      if (needsStepUp) throw needsStepUp;
+      return;
+    }
 
     const body = (await response.json()) as { jwt: string };
     // The new token carries the new org claims; re-boot would work too but

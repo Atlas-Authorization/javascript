@@ -13,6 +13,7 @@ import { distinctUntilChanged, map } from 'rxjs/operators';
 import { AtlasOrganizationAuditLog } from './components/organization-audit-log';
 import {
   FapiClient,
+  orgStepUpErrorFromResponse,
   SignOutGuard,
   catalogLocale,
   localizedErrorMessage,
@@ -452,7 +453,12 @@ export class AtlasService implements OnDestroy {
       method: 'POST',
       body: JSON.stringify({ active_organization_id: organizationId }),
     });
-    if (!response.ok) return;
+    if (!response.ok) {
+      // An org that needs a fresh second factor (policy `require_step_up`): let the caller step up and retry.
+      const needsStepUp = await orgStepUpErrorFromResponse(response);
+      if (needsStepUp) throw needsStepUp;
+      return;
+    }
 
     const body = (await response.json()) as { jwt: string };
     this.applyToken(body.jwt, current.sessionId);

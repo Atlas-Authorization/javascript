@@ -139,6 +139,10 @@ const OPTIONS = {
   // referrals connect --oauth: one-click connect (no key to paste).
   oauth: { type: 'boolean' },
   preset: { type: 'string' },
+  // dev proxy: mount Atlas under a path; golive --connect: partner keys file.
+  'base-path': { type: 'string' },
+  connect: { type: 'string' },
+  'keys-file': { type: 'string' },
   // referrals conformance: the platform under test.
   'connection-id': { type: 'string' },
   // referrals conformance: webhook (generic protocol) or connection (Referalli dialect).

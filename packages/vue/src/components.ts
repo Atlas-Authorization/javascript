@@ -46,6 +46,10 @@ import {
   type EmailLink,
   type PublicSignUpField,
   type Step,
+  activateOrgOrStepUp,
+  orgStepUpOptions,
+  runOrgStepUp,
+  type OrgStepUpError,
 } from '@atlasauth/js';
 import { useAtlas } from './context';
 import { FapiClient, type FlowState } from './fapi';
@@ -1600,14 +1604,66 @@ export const OrganizationSwitcher = defineComponent({
   name: 'OrganizationSwitcher',
   setup() {
     const { memberships, organization, setActive } = useOrganization();
+    const atlas = useAtlas();
     const t = useText();
     const cls = useClass();
+    const client = new FapiClient({ publishableKey: atlas.publishableKey, baseUrl: atlas.frontendApi, locale: atlas.locale, sdk: ATLAS_VUE_SDK });
+    const pending = shallowRef<{ id: string | null; err: OrgStepUpError } | null>(null);
+    const code = ref('');
+    const error = ref<string | null>(null);
+
+    // An org whose policy needs a fresh second factor: show the prompt, step up, retry.
+    const activate = async (id: string | null) => {
+      const err = await activateOrgOrStepUp(setActive, id);
+      if (err) pending.value = { id, err };
+    };
+    const confirm = async (input: { code: string } | { passkey: true }) => {
+      if (!pending.value) return;
+      error.value = null;
+      const res = await runOrgStepUp(client, input, t('error.generic'));
+      if (!res.ok) {
+        error.value = res.message;
+        return;
+      }
+      const { id } = pending.value;
+      pending.value = null;
+      code.value = '';
+      await activate(id);
+    };
+    const prompt = () => {
+      if (!pending.value) return null;
+      const options = orgStepUpOptions(pending.value.err);
+      return h('div', { 'data-atlas': 'organization-step-up', role: 'dialog', 'aria-label': t('mfa.title') }, [
+        h('p', t('mfa.subtitle')),
+        ...(options.totp
+          ? [
+              h('input', {
+                'aria-label': t('mfa.codeLabel'),
+                inputmode: 'numeric',
+                autocomplete: 'one-time-code',
+                value: code.value,
+                onInput: (e: Event) => (code.value = (e.target as HTMLInputElement).value),
+              }),
+              h('button', { type: 'button', onClick: () => void confirm({ code: code.value }) }, t('mfa.submit')),
+            ]
+          : []),
+        ...(options.passkey
+          ? [h('button', { type: 'button', onClick: () => void confirm({ passkey: true }) }, t('mfa.usePasskey'))]
+          : []),
+        ...(error.value ? [h('p', { role: 'alert' }, error.value)] : []),
+        h(
+          'button',
+          { type: 'button', onClick: () => { pending.value = null; code.value = ''; error.value = null; } },
+          t('organization.cancel'),
+        ),
+      ]);
+    };
 
     return () =>
       h('div', { class: cls('menu', 'atlas-menu') }, [
         h(
           'button',
-          { class: cls('menuItem', 'atlas-menu-item'), onClick: () => void setActive(null) },
+          { class: cls('menuItem', 'atlas-menu-item'), onClick: () => void activate(null) },
           t('organization.personal'),
         ),
         ...memberships.value.map((membership) =>
@@ -1617,11 +1673,12 @@ export const OrganizationSwitcher = defineComponent({
               key: membership.organization.id,
               class: cls('menuItem', 'atlas-menu-item'),
               disabled: membership.organization.id === organization.value?.id,
-              onClick: () => void setActive(membership.organization.id),
+              onClick: () => void activate(membership.organization.id),
             },
             membership.organization.name,
           ),
         ),
+        prompt(),
       ]);
   },
 });

@@ -196,14 +196,17 @@ export async function keys(ctx: RunContext, args: ParsedArgs): Promise<number> {
     }
     case 'create': {
       const scopes = (str(values, 'scopes') || '').split(/[ ,]+/).filter(Boolean);
-      if (scopes.length === 0) throw new CliError('--scopes is required, e.g. --scopes "instance:read webhooks:read" or --scopes read_only.');
+      const preset = str(values, 'preset') || undefined;
+      if (scopes.length === 0 && !preset) throw new CliError('--scopes or --preset is required, e.g. --scopes "instance:read webhooks:read", --scopes read_only or --preset app-runtime.');
       const created = await atlas.secretKeys.create({
+        ...(preset ? { preset } : {}),
         scopes,
         name: str(values, 'name') || undefined,
         owner: str(values, 'owner') || undefined,
         expires_at: str(values, 'expires-at') || undefined,
         allowed_ips: str(values, 'allowed-ips') ? (str(values, 'allowed-ips') ?? '').split(',').map((s) => s.trim()) : undefined,
-      });
+        // `preset` (named scope set, e.g. app-runtime) is sent as-is; the API expands it.
+      } as Parameters<typeof atlas.secretKeys.create>[0]);
       ctx.io.out(`Created ${created.id} (${created.prefix}…) with ${created.scopes.join(' ')}.`);
       deliver(created.id, created.sealed_secret, created.secret);
       return 0;

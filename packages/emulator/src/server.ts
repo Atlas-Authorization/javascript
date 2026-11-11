@@ -151,6 +151,8 @@ export interface ProxyOptions {
   app: string;
   /** The Atlas Frontend API to forward `/v1/*` and `/.well-known/*` to. */
   api: string;
+  /** A path mount (e.g. `/atlas`): everything under it goes to the API with the prefix removed, the rest to the app. */
+  basePath?: string;
 }
 
 /** `atlas dev proxy`: one origin for the app and FAPI, so session cookies are first-party. */
@@ -160,7 +162,13 @@ export async function startProxy(options: ProxyOptions): Promise<{ url: string; 
     void (async () => {
       const request = await toRequest(req, `http://${host}`);
       const p = new URL(request.url).pathname;
-      const toApi = p.startsWith('/v1/') || p.startsWith('/.well-known/') || p.startsWith('/oauth2/');
+      const base = options.basePath?.replace(/\/+$/, '');
+      if (base && (p === base || p.startsWith(`${base}/`))) {
+        const u = new URL(request.url);
+        u.pathname = p.slice(base.length) || '/';
+        return void (await send(res, await proxy(options.api, new Request(u, request))));
+      }
+      const toApi = !base && (p.startsWith('/v1/') || p.startsWith('/.well-known/') || p.startsWith('/oauth2/'));
       await send(res, await proxy(toApi ? options.api : options.app, request));
     })().catch(() => {
       res.writeHead(502);

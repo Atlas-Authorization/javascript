@@ -105,6 +105,10 @@ export function renderWebhookEvents(dataSchemas: Record<string, Schema>, eventDa
     '  /** When it was emitted (epoch ms). */\n' +
     '  timestamp: number;\n' +
     '  instance_id: string;\n' +
+    '  /** Who caused the event; `system` when no request did. Absent on events recorded before it was added. */\n' +
+    '  actor?: { type: "api_key" | "user" | "scim" | "sso" | "system"; id: string | null };\n' +
+    '  /** The Idempotency-Key header of the request that caused the event, else null. */\n' +
+    '  idempotency_key?: string | null;\n' +
     '  data: D;\n' +
     '}\n\n' +
     '/** Every canonical Atlas webhook event; narrow on `type`. */\n' +

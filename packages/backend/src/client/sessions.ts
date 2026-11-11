@@ -29,6 +29,27 @@ export interface TouchedSession extends Session {
   extended: boolean;
 }
 
+/** One revoked session in {@link RevokedSessionsPage}. `sid` is the `sid` claim of the session token. */
+export interface RevokedSession {
+  sid: string;
+  user_id: string;
+  revoked_at: number;
+  reason: string | null;
+}
+
+/** `GET /v1/sessions/revoked`: revoked sessions (including a banned user's), oldest first, at most 24 hours back. */
+export interface RevokedSessionsPage {
+  object: 'list';
+  data: RevokedSession[];
+  has_more: boolean;
+  /** Pass as `cursor` for the next page; null on the last. */
+  next_cursor: string | null;
+  /** When Atlas computed this answer (epoch ms): poll again with `since` a little before it. */
+  server_time: number;
+  /** The earliest time this answer covers (`since`, raised to 24 hours ago when older). */
+  window_start: number;
+}
+
 export interface ListSessionsParams {
   /** Required by the BAPI: sessions are always scoped to one user. */
   user_id: string;
@@ -164,6 +185,10 @@ export function sessionsResource(request: RequestFn) {
     /** `GET /v1/sessions?user_id=` — requires a user_id. */
     list(params: ListSessionsParams): Promise<ListPage<Session>> {
       return request({ method: 'GET', path: '/v1/sessions', query: { ...params } });
+    },
+    /** `GET /v1/sessions/revoked?since=` (needs `sessions:read`): the sessions revoked since a time, for a verifier that polls. */
+    listRevoked(params: { since?: number; limit?: number; cursor?: string } = {}): Promise<RevokedSessionsPage> {
+      return request({ method: 'GET', path: '/v1/sessions/revoked', query: { ...params } });
     },
     get(id: string): Promise<Session> {
       return request({ method: 'GET', path: `/v1/sessions/${enc(id)}` });

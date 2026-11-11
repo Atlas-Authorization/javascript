@@ -52,7 +52,9 @@ atlas setup-guide [--json]
 atlas preflight [--instance <id> | --product <name>] [--fail-on error|warning] [--fix [--yes]]
 atlas doctor   [--origin <url>] [--only <sources>] [--no-probe]
 atlas doctor   --scan-dir <path> [--scan-image <ref>]
-atlas golive   --origin <url> [--dry-run] [--yes]
+atlas golive   --origin <url> [--dry-run] [--yes] [--connect cookiemunch,forumulate,chatly,referalli] [--keys-file <f>]
+atlas keys     create (--scopes "<scopes>" | --preset app-runtime) [--name n]
+atlas dev      proxy --app <url> --api <fapi url> [--base-path /atlas]
 atlas referrals connect ... [--dry-run]
 atlas env      --product <name> --format dotenv|coolify|vercel
 atlas client   rotate <client-id> [--now | --overlap <seconds>]
@@ -147,6 +149,11 @@ Runs these steps in order and stops at the first failure, with its fix:
 6. **preflight** (no error findings) and **login_readiness** for the origin, with a live JWKS round-trip.
 7. **integrations**: the referral connection, privacy integration and identity integrations the instance declares; a declared but untested referral connection is tested.
 
+`--connect` (any subset of the four partners) connects them before the integrations step, with the
+keys from `--keys-file` (default `~/.config/atlas/partner-keys.env`; refused unless only you can read
+it): `FORUMULATE_API_KEY`, `COOKIEMUNCH_API_KEY`, `REFERALLI_API_KEY`, and `<PARTNER>_AUDIENCE` for a
+first connect. It prints a table per integration: events receiver, minted token, redeem host.
+
 Each step prints `✓ step — detail` or `✗ step — problem` followed by `fix: …`. Exit 0 when
 all pass, 1 on the first failure. `--dry-run` sends every write with `?dry_run=true`, so
 nothing changes. `--json` prints `{ ok, dry_run, origin, steps: [{ id, ok, detail, fix? }] }`.
@@ -178,7 +185,8 @@ Managed resource types (the same set the Terraform provider manages):
 `instance` (auth config + allowed origins), `email_provider`, `hooks` (`before_user_create`), `branding`, `oauth_clients`, `oauth_providers`,
 `sso_connections`, `sso_onboarding_profiles`, `cookie_consent`, `resource_servers`, `jwt_templates`, `roles`,
 `webhook_endpoints`, `billing_plans`, `redirect_urls`, `org_settings_schema`,
-`notification_templates`, `email_templates`, `organization_policies`.
+`notification_templates`, `email_templates`, `organization_policies`, plus `domains`,
+`integrations`, `referrals`, `privacy_orchestrator` and `proxy_secret` (below).
 
 Rules that make it safe and repeatable:
 
@@ -234,9 +242,42 @@ atlas apply atlas.yaml --yes --secrets-file .atlas.secrets   # non-interactive
   `roles`, `webhook_endpoints`, `sso_connections`, `sso_onboarding_profiles`,
   `billing_plans`, `notification_templates`, `email_templates`,
   `organization_policies`, `cookie_consent`. The
-  ordering is done by the CLI, not by the server. The email provider and the
-  `before_user_create` hook are not part of config files: set up the email
-  provider (your own Resend or Brevo account) before you apply sign-in methods
-  that send email, or they stay listed as inactive until you do.
+  ordering is done by the CLI, not by the server. The email provider
+  (`email_provider`, any transport: Resend, Brevo, SES, SMTP, Mailgun, SMTP2GO or
+  `webhook`) and the `before_user_create` hook are config file sections; the email
+  provider applies first, so sign-in methods that send email find a provider.
+
+**Domains, integrations, referrals, privacy, proxy secret.**
+
+```yaml
+domains:
+  - host: app.example.com          # a path mount on your own host
+    method: path
+    base_path: /atlas
+integrations:
+  - id: forumulate
+    enabled: true
+    audience: forumulate:acme
+    events_url: https://app.example.com/hooks/forumulate
+    forumulate_api_key: ${FORUMULATE_API_KEY}   # used for the call only, never stored
+referrals:
+  provider: referalli
+  enabled: true
+  api_key: ${REFERALLI_API_KEY}
+privacy_orchestrator:
+  provider: cookiemunch
+  site_id: ${COOKIEMUNCH_SITE}
+  api_key: ${COOKIEMUNCH_API_KEY}
+proxy_secret:
+  set: true                        # created once; the value goes to a 0600 file
+```
+
+Each has a plan diff, and `plan --check` exits 2 when someone changes it in the dashboard (for
+example, turns an integration off). A domain is only claimed, never deleted, unless you pass
+`--prune`; a changed domain is refused (recreate it). `webhook_endpoints` also take `secret: ${ENV}`
+(Atlas then uses your secret and nothing is written to the dotenv file), `active: false`,
+`signature_versions` and `external_ref` (create only), and `enabled_events: ["preset:user_mirror"]`
+is passed through for the API to expand. `atlas golive` activates a paused endpoint after a
+successful test delivery.
 
 Ship it on push with the [`atlas-deploy` GitHub Action](../../actions/atlas-deploy).

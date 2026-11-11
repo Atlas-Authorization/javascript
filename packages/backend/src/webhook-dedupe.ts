@@ -116,3 +116,30 @@ async function dedupeVerified<T>(
     },
   };
 }
+
+/**
+ * A {@link WebhookDedupeStore} on PostgreSQL (any pg-compatible `query`). Create the table once:
+ *
+ *   create table atlas_webhook_seen (
+ *     key text primary key,
+ *     expires_at timestamptz not null
+ *   );
+ *
+ * A key whose row has expired counts as unseen and is claimed again.
+ */
+export function sqlWebhookDedupeStore({ query }: { query(sql: string, params: unknown[]): Promise<{ rows: any[] }> }): WebhookDedupeStore {
+  return {
+    async setIfAbsent(key, ttlSeconds) {
+      const { rows } = await query(
+        "insert into atlas_webhook_seen (key, expires_at) values ($1, now() + ($2 || ' seconds')::interval) " +
+          'on conflict (key) do update set expires_at = excluded.expires_at where atlas_webhook_seen.expires_at <= now() ' +
+          'returning key',
+        [key, String(ttlSeconds)],
+      );
+      return rows.length > 0;
+    },
+    async delete(key) {
+      await query('delete from atlas_webhook_seen where key = $1', [key]);
+    },
+  };
+}

@@ -19,6 +19,7 @@ export type WebhookEvent =
   | 'user.anonymous_linked'
   | 'user.referral_attributed'
   | 'user.referral_resolved'
+  | 'user.attributed'
   | 'user.deleted'
   | 'user.banned'
   | 'user.unbanned'

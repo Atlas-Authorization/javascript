@@ -4,6 +4,16 @@ import { extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { str, type ParsedArgs, type Values } from '../args';
 import { createConfigHttp, isNotFound, type ConfigHttp, type UnknownFieldsNotice } from '../config-http';
+
+/** A resource the target instance's API predates reads as absent, not as a failed export. */
+async function orNotFound<T, F>(p: Promise<T>, fallback: F): Promise<T | F> {
+  try {
+    return await p;
+  } catch (err) {
+    if (isNotFound(err)) return fallback;
+    throw err;
+  }
+}
 import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import {
@@ -552,11 +562,14 @@ function registry(): ResourceSpec[] {
           // Sent on create so a paused endpoint is never live, even briefly.
           ...(typeof c.active === 'boolean' ? { active: c.active } : {}),
           ...(typeof c.secret === 'string' ? { secret: c.secret } : {}),
+          ...(Array.isArray(c.signature_versions) ? { signature_versions: c.signature_versions } : {}),
+          ...(typeof c.external_ref === 'string' ? { external_ref: c.external_ref } : {}),
         });
       },
       async update(http, live, config) {
         // PATCH leaves the signing secret alone; only rotate_secret changes it.
-        const { secret, ...rest } = obj(config);
+        // external_ref is the idempotency key of the create: it is never re-sent.
+        const { secret, external_ref: _ref, ...rest } = obj(config);
         await http.patch(`/v1/webhook_endpoints/${enc(live.id)}`, compact(rest, true));
         if (typeof secret !== 'string' || !secret) return;
         try {
@@ -857,8 +870,131 @@ function registry(): ResourceSpec[] {
         await http.patch('/v1/instance/signing_key_policy', { prepublish_days: d || null });
       },
     },
+    // 16. Custom domains — key = host (a path mount: host + base_path). Created/claimed only;
+    //     a domain is deleted only under --prune. A changed domain is immutable: recreate it.
+    {
+      kind: 'collection',
+      type: 'domains',
+      fileKeys: ['host', 'method', 'base_path'],
+      keyOf: (c) => domainKey(obj(c).host, obj(c).method, obj(c).base_path),
+      async fetchLive(http) {
+        const rows = await orNotFound(listData<Record<string, unknown>>(http, '/v1/domains'), []);
+        return rows.map((r) => ({ key: domainKey(r.host, r.method, r.base_path), id: String(r.id ?? ''), config: pick(r, ['host', 'method', 'base_path']) }));
+      },
+      async create(http, config) {
+        const c = compact(config);
+        await http.post('/v1/domains', c.method === 'path' ? { ...c, hostname: c.host } : c);
+      },
+      async remove(http, live) {
+        await http.delete(`/v1/domains/${enc(live.id)}`);
+      },
+    },
+
+    // 17. Identity integrations (chatly, forumulate, cookiemunch, referalli, custom) — key = id.
+    //     PUT replaces the connection, so create and update are the same call. The partner API
+    //     keys (forumulate_api_key, chatly_api_key) is used for that call only and never stored.
+    {
+      kind: 'collection',
+      type: 'integrations',
+      fileKeys: [...INTEGRATION_KEYS, 'forumulate_api_key', 'chatly_api_key', 'replace_existing'],
+      writeOnly: ['forumulate_api_key', 'chatly_api_key', 'replace_existing'],
+      keyOf: (c) => String(obj(c).id ?? ''),
+      async fetchLive(http) {
+        const rows = await orNotFound(listData<Record<string, unknown>>(http, '/v1/instance/integrations'), []);
+        return rows.filter((r) => r.connected === true).map((r) => ({ key: String(r.id ?? ''), id: String(r.id ?? ''), config: pick(r, INTEGRATION_KEYS) }));
+      },
+      async create(http, config) {
+        await putIntegration(http, config);
+      },
+      async update(http, _live, config) {
+        await putIntegration(http, config);
+      },
+      async remove(http, live) {
+        await http.delete(`/v1/instance/integrations/${enc(live.id)}`);
+      },
+    },
+
+    // 18. Referral attribution settings — a singleton; signing_secret, api_key, inbound_secret are write-only.
+    {
+      kind: 'singleton',
+      type: 'referrals',
+      fileKeys: [...REFERRAL_KEYS, ...REFERRAL_SECRETS],
+      async fetchLive(http) {
+        const r = await orNotFound(http.get<Record<string, unknown>>('/v1/instance/referrals'), null);
+        if (!r || r.object !== 'referral_settings') return null;
+        const config = pick(r, REFERRAL_KEYS) as Record<string, Json>;
+        for (const k of REFERRAL_SECRETS) if (r[`${k}_set`] === true) config[k] = SECRET_SET;
+        return config;
+      },
+      async apply(http, config) {
+        await http.patch('/v1/instance/referrals', compact(withoutMarkers(config), true));
+      },
+      reportsSecrets: true,
+    },
+
+    // 19. Data-rights (privacy) orchestrator — a singleton; api_key is write-only.
+    {
+      kind: 'singleton',
+      type: 'privacy_orchestrator',
+      fileKeys: [...PRIVACY_KEYS, 'api_key'],
+      async fetchLive(http) {
+        const r = await orNotFound(http.get<Record<string, unknown>>('/v1/instance/privacy_orchestrator'), null);
+        if (!r || r.configured !== true) return null;
+        const config = pick(r, PRIVACY_KEYS) as Record<string, Json>;
+        if (r.api_key_set === true) config.api_key = SECRET_SET;
+        return config;
+      },
+      async apply(http, config) {
+        await http.put('/v1/instance/privacy_orchestrator', compact(withoutMarkers(config), true));
+      },
+      reportsSecrets: true,
+    },
+
+    // 20. The trusted reverse-proxy secret: `set: true` creates it when none exists. The secret
+    //     is shown once; apply writes it to a 0600 file and never prints it. Rotate with
+    //     `atlas api POST /v1/instance/proxy_secret` (apply still saves the new value).
+    {
+      kind: 'singleton',
+      type: 'proxy_secret',
+      fileKeys: ['set', 'overlap_seconds'],
+      async fetchLive(http) {
+        const r = await orNotFound(http.get<{ set?: boolean }>('/v1/instance/proxy_secret'), null);
+        if (!r) return null;
+        return { set: r?.set === true };
+      },
+      normalize: (c) => ({ set: obj(c).set !== false }),
+      async apply(http, config) {
+        if (obj(config).set === false) {
+          await http.delete('/v1/instance/proxy_secret');
+          return;
+        }
+        const overlap = obj(config).overlap_seconds;
+        await http.post('/v1/instance/proxy_secret', typeof overlap === 'number' ? { overlap_seconds: overlap } : {});
+      },
+    },
   ];
   return specs;
+}
+
+/** A domain's natural key: its host, plus the mount prefix for a path mount (default `/__atlas`). */
+function domainKey(host: unknown, method: unknown, basePath: unknown): string {
+  return method === 'path' || typeof basePath === 'string' ? `${String(host ?? '')}${typeof basePath === 'string' ? basePath : '/__atlas'}` : String(host ?? '');
+}
+
+const INTEGRATION_KEYS = ['id', 'enabled', 'audience', 'name', 'role', 'claims', 'ttl_seconds', 'events_url', 'backchannel_logout_url', 'oauth_client_id', 'external_ref'] as const;
+const REFERRAL_KEYS = [
+  'enabled', 'provider', 'endpoint_url', 'program_id', 'connection_id', 'url_params', 'context_cookies', 'consent_category', 'consent_fallback_category',
+  'auto_enroll_users', 'link_template', 'partner_portal_url', 'timeout_ms', 'tracking_token', 'code_lookup_url', 'signup_code_field', 'browser_sources',
+] as const;
+const REFERRAL_SECRETS = ['signing_secret', 'api_key', 'inbound_secret'] as const;
+const PRIVACY_KEYS = [
+  'provider', 'name', 'enabled', 'case_url', 'cancel_url', 'auth_header', 'auth_scheme', 'use_partner_link', 'partner_link_id', 'site_id',
+  'open_closure_cases', 'cancel_deletion_on_sign_in',
+] as const;
+
+async function putIntegration(http: ConfigHttp, config: Config): Promise<void> {
+  const { id, ...body } = compact(withoutMarkers(config), true);
+  await http.put(`/v1/instance/integrations/${enc(String(id))}`, body);
 }
 
 const OAUTH_CLIENT_KEYS = [
@@ -953,7 +1089,7 @@ const CUSTOM_PROVIDER_WRITE_KEYS = [
   'logout',
   'idp_initiated_login',
 ] as const;
-const WEBHOOK_KEYS = ['url', 'enabled_events', 'active'] as const;
+const WEBHOOK_KEYS = ['url', 'enabled_events', 'active', 'signature_versions', 'external_ref'] as const;
 const SSO_KEYS = [
   'type',
   'status',
@@ -1881,7 +2017,7 @@ function keepingSecrets(http: ConfigHttp, dir: string): { http: ConfigHttp; save
     async post<T>(path: string, body: unknown): Promise<T> {
       const res = await http.post<T>(path, body);
       const r = (res ?? {}) as Record<string, unknown>;
-      const id = String(r.id ?? r.client_id ?? 'new').replace(/[^A-Za-z0-9_-]/g, '_');
+      const id = String(path === '/v1/instance/proxy_secret' ? `${Date.now()}` : (r.id ?? r.client_id ?? 'new')).replace(/[^A-Za-z0-9_-]/g, '_');
       let entries: Record<string, string> | null = null;
       if (path === '/v1/oauth_clients' && typeof r.client_secret === 'string') {
         entries = { ATLAS_CLIENT_ID: String(r.client_id ?? ''), ATLAS_CLIENT_SECRET: r.client_secret };
@@ -1889,8 +2025,9 @@ function keepingSecrets(http: ConfigHttp, dir: string): { http: ConfigHttp; save
         // A secret the file chose is already the caller's; only a minted one needs keeping.
         entries = { ATLAS_WEBHOOK_SECRET: r.secret };
       }
+      if (path === '/v1/instance/proxy_secret' && typeof r.secret === 'string') entries = { ATLAS_PROXY_SECRET: r.secret };
       if (entries) {
-        const kind = path === '/v1/oauth_clients' ? 'oauth-client' : 'webhook';
+        const kind = path === '/v1/oauth_clients' ? 'oauth-client' : path === '/v1/instance/proxy_secret' ? 'proxy-secret' : 'webhook';
         saved.push(writeSecretFile(dir, `${kind}-${id}.env`, entries, { comment: `Written by atlas apply. ${kind} ${id}.` }).path);
       }
       return res;

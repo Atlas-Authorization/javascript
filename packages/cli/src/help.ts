@@ -431,7 +431,7 @@ token exchange). "read" = every read scope.`,
 Usage:
   atlas keys whoami                         What the current key is and can do
   atlas keys list                           Every credential on the instance
-  atlas keys create --scopes "<scopes>" [--name n] [--owner o] [--expires-at <ISO>] [--allowed-ips <cidr,…>] [--out <file>]
+  atlas keys create (--scopes "<scopes>" | --preset app-runtime) [--name n] [--owner o] [--expires-at <ISO>] [--allowed-ips <cidr,…>] [--out <file>]
   atlas keys rotate <id> [--overlap <seconds>] [--out <file>]
   atlas keys data status|enable|rotate|rewrap|check|shred   Customer-managed data key (shred needs the instance id typed or --confirm)
   atlas keys op list|rotate                           OpenID provider signing keys
@@ -525,7 +525,7 @@ Ctrl-C stops it. --count n exits after n events (exit 1 if any forward failed).`
 
 Usage:
   atlas dev [--port 4400] [--seed seed.json] [--app http://localhost:3000]
-  atlas dev proxy --app <url> --api <fapi url> [--port 4401]
+  atlas dev proxy --app <url> --api <fapi url> [--port 4401] [--base-path /atlas]
 
 The emulator serves the Frontend API, a minimal Backend API, OIDC discovery and
 a mail/SMS catcher at /__emulator/mail. Every code is 424242. With --app it also
@@ -754,6 +754,7 @@ Exits 1 on a finding. Only the publishable key belongs in a build arg.`,
   golive: `atlas golive — take an instance live for one app origin
 
 Usage: atlas golive --origin <https://app.example.com> [--dry-run] [--yes] [--json]
+                    [--connect cookiemunch,forumulate,chatly,referalli] [--keys-file <0600 dotenv>]
                     [--instance <id> | --product <name> [--instance-env <env>]]
 
 Runs, in order, and stops at the first failure with its fix:
@@ -765,6 +766,12 @@ Runs, in order, and stops at the first failure with its fix:
   preflight           no error findings
   login_readiness     ready for the origin (live JWKS round-trip)
   integrations        referrals, privacy and identity integrations the instance declares
+
+--connect (any subset) connects those partners before the integrations step, with the keys
+from --keys-file (default ~/.config/atlas/partner-keys.env; refused unless only you can read
+it): FORUMULATE_API_KEY, COOKIEMUNCH_API_KEY, REFERALLI_API_KEY, and <PARTNER>_AUDIENCE for a
+first connect. It then prints, per integration, whether the events receiver is ok, a token has
+been minted and which host redeems it.
 
 When verifying the domain would move the issuer, golive prints both issuers and
 the previousIssuers value to add to your verifiers, then stops unless --yes.

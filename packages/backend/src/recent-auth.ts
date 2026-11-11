@@ -44,3 +44,25 @@ export function mfaSatisfied(claims: {
   if (typeof claims.mfa_satisfied === 'boolean') return claims.mfa_satisfied;
   return claims.mfa === true || usedMultiFactor(claims) || typeof claims.sso_connection_id === 'string';
 }
+
+/**
+ * Whether the session meets the active organization's MFA policy (`requireMfa`,
+ * `mfaMaxAgeSeconds`, `allowedMfaFactors`): true when the organization does not
+ * require MFA, or the token says `org_mfa_ok`. The organization's policy only
+ * withholds org claims from the token; it does NOT stop a request that never
+ * reads them, so an app that authorizes from its own tables must call this
+ * itself. The claims describe the ACTIVE organization only: pass the
+ * organization you are authorizing for (its Atlas id or external id) and a token
+ * whose active organization is another one answers false.
+ */
+export function mfaOrgSatisfied(
+  claims: { org_id?: unknown; org_external_id?: unknown; org_mfa_required?: unknown; org_mfa_ok?: unknown },
+  orgIdOrExternalId?: string,
+): boolean {
+  const required = claims.org_mfa_required === true;
+  if (orgIdOrExternalId === undefined) return !required || claims.org_mfa_ok === true;
+  const matches = claims.org_id === orgIdOrExternalId || claims.org_external_id === orgIdOrExternalId;
+  // Withheld claims carry no org_id: the MFA fields are then all the token says.
+  if (required) return claims.org_mfa_ok === true && (matches || claims.org_id === undefined);
+  return matches;
+}

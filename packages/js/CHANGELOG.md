@@ -2,6 +2,10 @@
 
 
 
+## 0.35.0 — 2026-11-11
+
+- New `activateOrgOrStepUp`, `runOrgStepUp`, `orgStepUpOptions`, `orgStepUpErrorFromResponse`, `isOrgStepUpError`: the shared logic behind the org switchers' step-up prompt (detect `org_mfa_step_up_required`, step up by authenticator code or passkey, retry).
+
 ## 0.34.7 — 2026-11-06
 
 - `pollAnswerStale()`. `codeWaitText` says `1 second`. The enrolment controller exposes `resent`.

@@ -140,3 +140,26 @@ describe('AtlasProvider', () => {
     );
   });
 });
+
+describe('setActiveOrganization step-up', () => {
+  it('throws the step-up error when the org needs a fresh second factor', async () => {
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => {
+      if (String(url).endsWith('/touch')) {
+        return new Response(
+          JSON.stringify({ errors: [{ code: 'STEP_UP_REQUIRED', reason: 'org_mfa_step_up_required', message: 'Step up', meta: { allowed_factors: ['totp'] } }] }),
+          { status: 403, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      // A fresh session id: the sign-out test above marked sess_1 signed out for this origin.
+      return json({ ...SIGNED_IN, session: { ...SIGNED_IN.session, id: 'sess_2' }, jwt: makeJwt({ sub: 'user_1', sid: 'sess_2', exp: Math.floor(Date.now() / 1000) + 3600 }) });
+    });
+    const { client, boot, dispose } = createAtlasClient({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl });
+    await boot();
+    await expect(client.setActiveOrganization('org_1')).rejects.toMatchObject({
+      code: 'STEP_UP_REQUIRED',
+      reason: 'org_mfa_step_up_required',
+      allowedFactors: ['totp'],
+    });
+    dispose();
+  });
+});

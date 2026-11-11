@@ -168,13 +168,17 @@ export interface PreflightAckSummary {
 export interface PreflightAck extends PreflightAckSummary {
   object: 'preflight_ack';
   code: string;
+  /** The one subject the ack covers; null = every finding with the code. */
+  subject?: string | null;
   /** False once `expires_at` has passed: the finding counts again. */
   active: boolean;
 }
 
 export interface AcknowledgePreflightBody {
-  /** Why the finding is accepted (required, at most 500 characters). */
+  /** Why the finding is accepted (required, at most 500 characters; optional on `create`). */
   reason: string;
+  /** Acknowledge only the finding about this subject (an endpoint or app id). Omit for every finding with the code. */
+  subject?: string;
   /** When it lapses: epoch ms or ISO 8601, in the future. Omit or null for no expiry. */
   expires_at?: number | string | null;
 }
@@ -572,6 +576,9 @@ export interface IntegrationReceiverHealth {
   consecutive_failures: number;
   success_rate_24h: number | null;
   events?: string[];
+  /** Events receiver: events Atlas re-sent on its own after the receiver recovered, and when it last did. */
+  auto_redelivered?: number;
+  auto_redelivered_at?: number | null;
 }
 
 /**
@@ -631,6 +638,10 @@ export interface Integration {
   health?: {
     last_minted_at: number | null;
     mints_24h: number;
+    /** Mint attempts refused in the last 24 h, and the newest refusal (its reason code). */
+    refusals_24h?: number;
+    last_refused_at?: number | null;
+    last_refused_reason?: string | null;
     verify_errors_24h: number;
     last_verify_error: { error: string; audience: string | null; at: number; reported_at: number } | null;
     events: IntegrationReceiverHealth | null;
@@ -638,6 +649,19 @@ export interface Integration {
   };
   /** Preset fields (chatly: channel/template/identity_verification; forumulate: org_id/spaces/reader_auth_provider; cookiemunch: site_id; referalli: org_id). */
   [presetField: string]: unknown;
+}
+
+export interface IntegrationMint {
+  object: 'integration_mint';
+  integration: string;
+  id: string;
+  at: number;
+  route: 'browser' | 'server';
+  outcome: 'ok' | 'refused';
+  /** The refusal's reason code; null when ok. */
+  reason: string | null;
+  user_id: string | null;
+  session_id: string | null;
 }
 
 export interface SetIntegrationBody {
@@ -832,6 +856,10 @@ export function instanceResource(request: RequestFn) {
       list(): Promise<{ object: 'list'; data: PreflightAck[]; has_more: boolean }> {
         return request({ method: 'GET', path: '/v1/instance/preflight/acks' });
       },
+      /** Acknowledge by code in the body; `subject` narrows it to one subject, `reason` is optional. */
+      create(body: { code: string; subject?: string; reason?: string; expires_at?: number | string | null }): Promise<PreflightAck> {
+        return request({ method: 'POST', path: '/v1/instance/preflight/acks', body });
+      },
       set(code: string, body: AcknowledgePreflightBody): Promise<PreflightAck> {
         return request({ method: 'PUT', path: `/v1/instance/preflight/acks/${encodeURIComponent(code)}`, body });
       },
@@ -910,6 +938,10 @@ export function instanceResource(request: RequestFn) {
       },
       remove(id: string): Promise<Integration> {
         return request({ method: 'DELETE', path: `/v1/instance/integrations/${encodeURIComponent(id)}` });
+      },
+      /** The mint log: every getToken({ for }) attempt (browser and server), newest first, with its outcome and refusal reason. Kept 7 days. */
+      mints(id: string, query: { limit?: number } = {}): Promise<{ object: 'list'; data: IntegrationMint[] }> {
+        return request({ method: 'GET', path: `/v1/instance/integrations/${encodeURIComponent(id)}/mints`, query });
       },
       /** Event and back-channel logout deliveries, newest first; `trace` finds one operation. */
       deliveries(

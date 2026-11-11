@@ -8,6 +8,7 @@ import { redactDeep, scrubText } from '../redact';
 import { httpFor } from '../project';
 import { instanceCredential } from './project-commands';
 import { wantsJson } from './shared';
+import { connectPartners, parsePartners, readKeysFile } from './golive-connect';
 
 /**
  * `atlas golive --origin <url>`: take an instance from "configured" to "live"
@@ -263,6 +264,17 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
     check(await preflightCheck(api));
     current = 'login_readiness';
     check(await loginReadinessCheck(api, origin.origin));
+
+    // (7a) --connect: connect partners from the keys file, then read each one back.
+    const wanted = str(v, 'connect');
+    if (wanted !== undefined) {
+      current = 'connect';
+      const partners = parsePartners(wanted);
+      const { table, failures } = await connectPartners(api, partners, readKeysFile(ctx, str(v, 'keys-file')), q, () => undefined);
+      if (!json) ctx.io.out(table);
+      if (failures.length) fail(failures.join('; '), 'Fix the key or audience named above, then run golive again.');
+      pass('connect', would(partners.join(', '), `connect ${partners.join(', ')}`));
+    }
 
     // (7) integrations: only those the instance declares.
     current = 'integrations';

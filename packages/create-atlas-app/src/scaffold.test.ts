@@ -32,6 +32,7 @@ function readJson(path: string): Record<string, unknown> {
 const EXPECTED_DEP: Record<Template, string> = {
   next: '@atlasauth/nextjs',
   'react-vite': '@atlasauth/react',
+  'nextjs-local-users': '@atlasauth/nextjs',
 };
 
 describe.each(TEMPLATES)('scaffold(%s)', (template) => {

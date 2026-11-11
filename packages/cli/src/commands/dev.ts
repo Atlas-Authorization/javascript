@@ -7,7 +7,7 @@ import { CliError } from '../errors';
 /**
  * `atlas dev [--port 4400] [--seed file.json] [--app <url>]`: a local in-memory
  * Atlas (FAPI, minimal BAPI, OIDC discovery, mail catcher).
- * `atlas dev proxy --app <url> --api <fapi url>`: one origin for app + API.
+ * `atlas dev proxy --app <url> --api <fapi url> [--base-path /atlas]`: one origin for app + API.
  */
 export async function dev(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const v = args.values;
@@ -21,8 +21,10 @@ export async function dev(ctx: RunContext, args: ParsedArgs): Promise<number> {
   if (sub === 'proxy') {
     const api = str(v, 'api');
     if (!app || !api) throw new CliError('dev proxy needs --app <url> and --api <fapi url>.');
-    server = await startProxy({ port, app, api });
-    ctx.io.out(`Proxying ${app} + ${api} on one origin: ${server.url}`);
+    const basePath = str(v, 'base-path');
+    if (basePath !== undefined && !/^(\/[a-z0-9_~-][a-z0-9._~-]{0,63}){1,4}$/.test(basePath)) throw new CliError('--base-path must look like /atlas (lower-case, 1 to 4 segments).');
+    server = await startProxy({ port, app, api, basePath });
+    ctx.io.out(`Proxying ${app} + ${api} on one origin: ${server.url}${basePath ? ` (Atlas under ${server.url}${basePath})` : ''}`);
   } else {
     const seedFile = str(v, 'seed');
     let seed;

@@ -12,6 +12,7 @@ import {
 } from 'react';
 import {
   FapiClient,
+  orgStepUpErrorFromResponse,
   journeyRedirectFrom,
   captureMarketing,
   flushMarketing,
@@ -877,7 +878,12 @@ export function AtlasProvider(props: AtlasProviderProps) {
         method: 'POST',
         body: JSON.stringify({ active_organization_id: organizationId }),
       });
-      if (!response.ok) return;
+      if (!response.ok) {
+        // An org that needs a fresh second factor (policy `require_step_up`): let the caller step up and retry.
+        const needsStepUp = await orgStepUpErrorFromResponse(response);
+        if (needsStepUp) throw needsStepUp;
+        return;
+      }
 
       const body = (await response.json()) as { jwt: string };
       // The new token carries the new org claims; re-boot would work too but

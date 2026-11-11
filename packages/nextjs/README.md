@@ -141,6 +141,29 @@ Use a base path without a leading underscore, such as `/atlas`. The App Router t
 
 The handler forwards the method, path, query and body. By default only the cookies `__session`, `__client` and `__atlas_*` and an allowlist of headers reach Atlas, so your app's own cookies and internal headers don't; `forwardCookies(name)` and `forwardHeaders(name)` replace those lists. It always drops any incoming `X-Atlas-*` (except `X-Atlas-SDK`), `X-Forwarded-*`, `Forwarded` and `X-Real-IP` headers, sets `X-Atlas-Forwarded-Host` and `X-Atlas-Proxy-Secret` itself, and returns every `Set-Cookie` and redirect unchanged. The client IP (`X-Atlas-Client-IP` and `X-Forwarded-For`) is the incoming `X-Forwarded-For` entry `trustedProxyHops` places from the right (default `1`: the entry your nearest proxy appended; entries further left are browser-controlled and ignored; `0` forwards none), or whatever `clientIp(request)` returns when you pass it; values that are not IP addresses are dropped. Without `ATLAS_UPSTREAM` or `ATLAS_PROXY_SECRET` the mount answers 503 and logs the missing variable once. Both handlers are also exported from `@atlasauth/nextjs`.
 
+## Webhooks and the `before_user_create` hook
+
+```ts
+// app/api/atlas/webhooks/route.ts
+import { createWebhookHandler, sqlDedupeStore } from '@atlasauth/nextjs';
+export const POST = createWebhookHandler({
+  secret: process.env.ATLAS_WEBHOOK_SECRET,
+  store: sqlDedupeStore(pool), // or memoryDedupeStore() for one process; any { setIfAbsent, delete } works
+  onEvent: async (event) => { /* mirror the change */ },
+});
+
+// app/api/atlas/hooks/before-user-create/route.ts
+import { createBeforeUserCreateHandler } from '@atlasauth/nextjs';
+export const POST = createBeforeUserCreateHandler({
+  secret: process.env.ATLAS_HOOK_SECRET,
+  externalId: () => crypto.randomUUID(),
+});
+```
+
+The webhook handler answers 503 when `secret` is missing, 400 for a delivery that does not verify, skips an event id it has already seen, and answers Atlas's `webhook.test` delivery with 200 without calling `onEvent` (pass `handleTest: true` to receive it). If `onEvent` throws, the id is forgotten and the handler answers 500, so Atlas retries. `sqlDedupeStore` needs `create table atlas_webhook_seen (key text primary key, expires_at timestamptz not null)`.
+
+The hook handler verifies the signed call, answers `{ external_id }`, and answers Atlas's test call (`test: true`) without calling `externalId`.
+
 ## Routing rules
 
 - Routes are protected unless they match `publicRoutes`. `protectedRoutes` wins over `publicRoutes`.

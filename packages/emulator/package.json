@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/emulator",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A local, in-memory Atlas for development: FAPI, a minimal BAPI, OIDC discovery, a mail/SMS catcher and a one-origin dev proxy.",
   "bin": {
     "atlas-emulator": "dist/bin.js"

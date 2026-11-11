@@ -203,12 +203,33 @@ describe('namespace routing (method + path + payload per namespace)', () => {
     expect(out.ticket).toBe('t');
   });
 
+  it('organizations.memberships.listAll follows next_cursor', async () => {
+    const { impl, calls } = mockFetch([
+      { body: { data: [{ id: 'm1' }], has_more: true, next_cursor: 'm1' } },
+      { body: { data: [{ id: 'm2' }], has_more: false, next_cursor: null } },
+    ]);
+    const ids: string[] = [];
+    for await (const m of client(impl).organizations.memberships.listAll('o1')) ids.push(m.id);
+    expect(ids).toEqual(['m1', 'm2']);
+    expect(last(calls).url).toBe(`${API_URL}/v1/organizations/o1/memberships?starting_after=m1`);
+  });
+
   it('organizations: nested memberships/invitations/domains/groupRoles', async () => {
     const { impl, calls } = mockFetch([{ body: {} }]);
     const c = client(impl);
 
     await c.organizations.memberships.add('o1', { user_id: 'u1', role: 'admin' });
     expect(last(calls).url).toBe(`${API_URL}/v1/organizations/o1/memberships`);
+
+    await c.organizations.memberships.get('o1', 'u1');
+    expect(last(calls)).toMatchObject({ method: 'GET', url: `${API_URL}/v1/organizations/o1/memberships/u1` });
+
+    await c.organizations.memberships.list('o1', { limit: 5, user_id: 'u1' });
+    expect(last(calls).url).toBe(`${API_URL}/v1/organizations/o1/memberships?limit=5&user_id=u1`);
+
+    await c.organizations.memberships.upsert('o1', 'u1', { role: 'org:admin', role_source: 'scim' });
+    expect(last(calls)).toMatchObject({ method: 'PUT', url: `${API_URL}/v1/organizations/o1/memberships/u1` });
+    expect(JSON.parse(String(last(calls).body))).toEqual({ role: 'org:admin', role_source: 'scim' });
 
     await c.organizations.invitations.revoke('o1', 'inv1');
     expect(last(calls).url).toBe(`${API_URL}/v1/organizations/o1/invitations/inv1/revoke`);

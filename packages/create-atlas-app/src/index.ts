@@ -133,7 +133,7 @@ function printHelp(): void {
 
 /** The env file a given template reads at dev time. */
 function envFileFor(template: Template): string {
-  return template === 'next' ? '.env.local' : '.env';
+  return template.startsWith('next') ? '.env.local' : '.env';
 }
 
 function printNextSteps(result: ScaffoldResult, pm: PackageManager): void {

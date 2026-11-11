@@ -1,7 +1,8 @@
 import { metadataQuery, type ProvisioningFields, type ProvisioningInput, type ProvisioningMetadata } from './compliance';
 import { enc, type RequestFn } from './request';
 
-export type WebhookDestinationType = 'https' | 'aws_eventbridge' | 'gcp_pubsub' | 'cloudflare_queue' | 'segment' | 'ga4' | 'mixpanel' | 'posthog' | 'amplitude' | 'customerio' | 'slack';
+export type WebhookDestinationType = 'https' | 'aws_eventbridge' | 'gcp_pubsub' | 'cloudflare_queue' | 'segment' | 'ga4' | 'mixpanel' | 'posthog' | 'amplitude' | 'customerio' | 'slack'
+  | 'lucida' | 'heap' | 'rudderstack' | 'hermetica' | 'hubspot' | 'brevo' | 'mailchimp' | 'loops' | 'klaviyo' | 'intercom' | 'seolyticize';
 
 /** Where deliveries go. Credentials are never returned. */
 export type WebhookDestination =
@@ -11,7 +12,17 @@ export type WebhookDestination =
   | { type: 'cloudflare_queue'; account_id: string; queue_id: string }
   | ({ type: 'segment' | 'mixpanel' | 'posthog' | 'amplitude' | 'customerio'; region?: 'us' | 'eu' } & AnalyticsOptions)
   | ({ type: 'ga4'; measurement_id: string } & AnalyticsOptions)
-  | ({ type: 'slack' } & AnalyticsOptions);
+  | ({ type: 'slack' } & AnalyticsOptions)
+  | ({ type: 'lucida'; host?: string } & AnalyticsOptions)
+  | ({ type: 'heap'; region?: 'us' | 'eu' } & AnalyticsOptions)
+  | ({ type: 'rudderstack'; data_plane_url: string } & AnalyticsOptions)
+  | { type: 'hermetica'; host?: string }
+  | { type: 'hubspot'; external_id_property?: string }
+  | { type: 'brevo'; list_ids?: number[] | string }
+  | { type: 'mailchimp'; list_id: string; status_if_new?: 'subscribed' | 'pending' | 'transactional' | 'unsubscribed' }
+  | { type: 'loops' | 'klaviyo' }
+  | { type: 'intercom'; region?: 'us' | 'eu' | 'au' }
+  | ({ type: 'seolyticize'; conversion_event?: 'user.created' | 'user.attributed' } & AnalyticsOptions);
 
 /** Shared by the analytics and messaging destinations: person-identifying fields are dropped unless `include_pii`. */
 export interface AnalyticsOptions {
@@ -31,7 +42,11 @@ export type WebhookDestinationCredentials =
   | { project_api_key: string }
   | { api_key: string }
   | { site_id: string; api_key: string }
-  | { webhook_url: string };
+  | { webhook_url: string }
+  | { app_id: string }
+  | { access_token: string }
+  | { private_api_key: string }
+  | { site_key: string; server_key: string };
 
 export interface WebhookLastFailure {
   at: number;

@@ -20,7 +20,7 @@ export interface WebhookVerifyResult<T = unknown> {
   verified: boolean;
   /** Why verification failed, when it did. */
   reason?: WebhookVerifyFailure;
-  /** The parsed event envelope `{ id, type, timestamp, instance_id, data }` — present only when `verified`. */
+  /** The parsed event envelope `{ id, type, timestamp, instance_id, actor, idempotency_key, data }` — present only when `verified`. */
   event?: T;
   /**
    * The signed `atlas-id` header — present only when `verified`. It is the same

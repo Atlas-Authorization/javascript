@@ -20,6 +20,8 @@
  * and Edge runtimes.
  */
 
+import { ATLAS_NEXTJS_VERSION } from './version';
+
 type Env = Record<string, string | undefined>;
 
 function readEnv(): Env {
@@ -61,6 +63,8 @@ export interface AtlasMountOptions {
    */
   forwardHeaders?: (name: string) => boolean;
   fetchImpl?: typeof fetch;
+  /** Report this package's name and version to Atlas (`X-Atlas-SDK`) when the browser sent none. Default true; `false` opts out. */
+  telemetry?: boolean;
 }
 
 type Handler = (request: Request) => Promise<Response>;
@@ -204,6 +208,7 @@ export function createMountHandler(options: AtlasMountOptions = {}): AtlasMountH
       const kept = name === 'cookie' ? filterCookies(value, options.forwardCookies ?? forwardCookieByDefault) : value;
       if (kept !== undefined) headers.set(key, kept);
     });
+    if (options.telemetry !== false && !headers.has('x-atlas-sdk')) headers.set('x-atlas-sdk', `@atlasauth/nextjs/${ATLAS_NEXTJS_VERSION}`);
     headers.set('x-atlas-forwarded-host', request.headers.get('host') ?? url.host);
     headers.set('x-atlas-proxy-secret', proxySecret);
     const ip = clientIp(request, options);

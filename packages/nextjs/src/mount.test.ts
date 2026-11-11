@@ -236,8 +236,14 @@ describe('createMountHandler', () => {
     });
 
     it('a hook can drop X-Atlas-SDK', async () => {
-      const h = await upstreamHeaders({ 'x-atlas-sdk': '@atlasauth/js/1.0.0' }, { forwardHeaders: () => false });
+      const h = await upstreamHeaders({ 'x-atlas-sdk': '@atlasauth/js/1.0.0' }, { forwardHeaders: () => false, telemetry: false });
       expect(h.get('x-atlas-sdk')).toBeNull();
+    });
+
+    it('names itself when the browser sent no SDK header, keeps the browser SDK otherwise', async () => {
+      expect((await upstreamHeaders({}, {})).get('x-atlas-sdk')).toMatch(/^@atlasauth\/nextjs\/\d+\.\d+\.\d+/);
+      expect((await upstreamHeaders({ 'x-atlas-sdk': '@atlasauth/react/1.0.0' }, {})).get('x-atlas-sdk')).toBe('@atlasauth/react/1.0.0');
+      expect((await upstreamHeaders({}, { telemetry: false })).get('x-atlas-sdk')).toBeNull();
     });
 
     it('the client IP does not depend on the header hooks', async () => {

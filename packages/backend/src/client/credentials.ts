@@ -60,8 +60,10 @@ export interface SecretKeyWithSecret extends SecretKey {
 
 export interface CreateSecretKeyBody {
   name?: string;
-  /** Instance scopes, or presets `read_only`, `privacy:execute`, `privacy:grants:revoke`. */
-  scopes: string[];
+  /** Instance scopes, or presets `read_only`, `privacy:execute`, `privacy:grants:revoke`. Send this or `preset`. */
+  scopes?: string[];
+  /** A named scope set instead of `scopes`: `app-runtime` (what an app server needs; no webhook secret reveal, instance writes or key management). */
+  preset?: 'app-runtime';
   /** Unix ms or ISO 8601; at most one year away. Default: one year. Every new key expires. */
   expires_at?: number | string;
   /** CIDRs the key may be used from. */
