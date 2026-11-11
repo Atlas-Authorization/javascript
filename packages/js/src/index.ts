@@ -83,6 +83,7 @@ export * from './organizations';
 export * from './organization-admin';
 export * from './pricing';
 export * from './marketing';
+export { configureAttribution, type AttributionOptions, type AttributionSource } from './attribution-fields';
 export * from './phone-numbers';
 export * from './email-addresses';
 // Username availability + the "Last used" sign-in method hint.

@@ -334,6 +334,14 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
         pass('platform_keys', would(`revoked ${stale.length}: ${names}`, `revoke ${stale.length}: ${names}`));
       } else pass('platform_keys', `${stale.length} unused platform-owned key(s) left: ${names} (revoke with --revoke-unused-platform-keys)`);
     }
+    // (9) an all-scope key still in use: say how to move it to the app-runtime preset without downtime.
+    current = 'unscoped_keys';
+    const wide = await unscopedKeysInUse(api);
+    if (!wide.length) pass('unscoped_keys', 'no all-scope keys in use');
+    else {
+      const cmds = wide.map((k) => `atlas keys rotate ${k.id} --preset app-runtime --overlap 72h --out <the file your app reads>`).join('; ');
+      pass('unscoped_keys', `${wide.length} in-use key(s) hold every scope (*). Move each to the app-runtime preset, then redeploy within the overlap: ${cmds}`);
+    }
   } catch (err) {
     const failed =
       err instanceof StepFailed
@@ -369,6 +377,13 @@ interface ListedKey {
   last_used_at?: number | null;
   created_at?: number | null;
   revoked_at?: number | null;
+  scopes?: string[];
+}
+
+/** Live secret keys with the `*` scope that have been used. */
+export async function unscopedKeysInUse(api: ConfigHttp): Promise<ListedKey[]> {
+  const res = await optional(() => api.get<{ data?: ListedKey[] }>('/v1/secret_keys'));
+  return (res?.data ?? []).filter((k) => !k.revoked_at && typeof k.last_used_at === 'number' && Array.isArray(k.scopes) && k.scopes.includes('*'));
 }
 
 /** Live platform-owned secret keys not used for 14 days (or never, once older than that). Reads defensively: a response without owner or last_used_at lists nothing. */

@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.42.0 — 2026-11-11
+
+- `secretKeys.rotate()` takes `preset`. Integration health types carry `events.reason` (`secret_missing`, `signature_rejected`, `backlog_pending`) and `events.hint`.
+
 ## 0.41.0 — 2026-11-11
 
 - `organizations.mfaStatus(orgId, { sessionId })` answers the org MFA policy for any organization the user belongs to, not only the token's active one (`GET /v1/organizations/{id}/mfa_status`). Use it when your app acts in an org per request; `mfaOrgSatisfied` still covers the active org from the token alone.

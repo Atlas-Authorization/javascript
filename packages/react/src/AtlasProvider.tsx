@@ -12,6 +12,8 @@ import {
 } from 'react';
 import {
   FapiClient,
+  configureAttribution,
+  type AttributionOptions,
   orgStepUpErrorFromResponse,
   journeyRedirectFrom,
   captureMarketing,
@@ -324,6 +326,12 @@ export interface AtlasProviderProps {
    * it) lets the forms read the cookie. Default: the cookie is not read.
    */
   referralConsent?: ReferralConsent;
+  /**
+   * Page values to copy into every sign-up's `unsafe_metadata` (and so onto `user.created`), e.g.
+   * `{ seolyticize_visit: { global: 'seolyticize', globalArg: 'visit' } }`. Each key reads a
+   * `cookie`, URL parameter (`query`), `window` `global` or your own `read()`.
+   */
+  attribution?: AttributionOptions;
 }
 
 export function AtlasProvider(props: AtlasProviderProps) {
@@ -347,6 +355,7 @@ export function AtlasProvider(props: AtlasProviderProps) {
     () => configureReferralCapture({ referral: props.referral, referralConsent }),
     [props.referral, referralConsent],
   );
+  useMemo(() => configureAttribution(props.attribution), [props.attribution]);
   const referralKey = referralCacheKeyFor(baseUrl, publishableKey);
 
   const [status, setStatus] = useState<AuthStatus>('loading');

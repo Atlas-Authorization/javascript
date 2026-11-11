@@ -579,6 +579,9 @@ export interface IntegrationReceiverHealth {
   /** Events receiver: events Atlas re-sent on its own after the receiver recovered, and when it last did. */
   auto_redelivered?: number;
   auto_redelivered_at?: number | null;
+  /** Events receiver: why it needs attention (`signature_rejected`: the receiver answers 401/403 although the secret was handed off), with `hint` naming the call. */
+  reason?: 'secret_missing' | 'signature_rejected' | 'backlog_pending' | null;
+  hint?: string | null;
 }
 
 /**

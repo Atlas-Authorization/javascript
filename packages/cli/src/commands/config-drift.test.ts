@@ -28,6 +28,7 @@ class FakeApi implements ConfigHttp {
   hookTestFails = false;
   cookie: Record<string, unknown> = { object: 'cookie_consent', enabled: false };
   profiles: Array<Record<string, unknown>> = [];
+  integrations: Array<Record<string, unknown>> = [];
 
   async get<T>(path: string): Promise<T> {
     if (path === '/v1/instance') {
@@ -45,6 +46,7 @@ class FakeApi implements ConfigHttp {
     if (path === '/v1/instance/hooks/before_user_create') return { object: 'before_user_create_hook', last_call: null, ...this.hook } as T;
     if (path === '/v1/branding') return { object: 'branding', ...this.branding, resolved: { applicationName: 'x', theme: 'auto' } } as T;
     if (path === '/v1/instance/cookie_consent') return this.cookie as T;
+    if (path === '/v1/instance/integrations') return { data: this.integrations } as T;
     if (path === '/v1/sso_onboarding_profiles') return { data: this.profiles } as T;
     if (path.startsWith('/v1/')) return { data: [] } as T;
     throw new AtlasApiError(404, [{ code: 'NOT_FOUND', message: path }]);
@@ -342,6 +344,19 @@ describe('webhook_endpoints[].enabled_events presets', () => {
     expect(await run(['plan', path, '--check'], ctx(captureIO(), api))).toBe(0);
     const other = file({ webhook_endpoints: [{ url: 'https://app.example.com/hook', enabled_events: ['preset:user_mirror'], active: true }] }, 'other.json');
     expect(await run(['plan', other, '--check'], ctx(captureIO(), api))).toBe(2);
+  });
+});
+
+describe('integrations forumulate spaces', () => {
+  const live = { id: 'forumulate', connected: true, enabled: true, org_id: 'org1', spaces: ['a', 'b'].map((id) => ({ id, redeem_url: `https://x.example.com/${id}`, redeem_urls: [`https://x.example.com/${id}`] })) };
+  it('bare ids equal the stored objects; a different set or url is drift', async () => {
+    const api = new FakeApi();
+    api.integrations = [live];
+    const f = (spaces: unknown[], n: string) => file({ integrations: [{ id: 'forumulate', org_id: 'org1', spaces }] }, n);
+    expect(await run(['plan', f(['b', 'a'], 'a.json'), '--check'], ctx(captureIO(), api))).toBe(0);
+    expect(await run(['plan', f([{ id: 'a', redeem_url: 'https://x.example.com/a' }, 'b'], 'b.json'), '--check'], ctx(captureIO(), api))).toBe(0);
+    expect(await run(['plan', f(['a'], 'c.json'), '--check'], ctx(captureIO(), api))).toBe(2);
+    expect(await run(['plan', f([{ id: 'a', redeem_url: 'https://y.example.com/a' }, 'b'], 'd.json'), '--check'], ctx(captureIO(), api))).toBe(2);
   });
 });
 

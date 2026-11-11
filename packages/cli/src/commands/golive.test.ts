@@ -192,3 +192,16 @@ describe('atlas doctor --origin', () => {
     expect(out).toContain('1 failing, 3 passing');
   });
 });
+
+describe('unscopedKeysInUse', () => {
+  it('lists used, live keys that hold the * scope', async () => {
+    const { unscopedKeysInUse } = await import('./golive');
+    const api = { get: async () => ({ data: [
+      { id: 'a', scopes: ['*'], last_used_at: 1 },
+      { id: 'b', scopes: ['*'], last_used_at: null },
+      { id: 'c', scopes: ['users:read'], last_used_at: 1 },
+      { id: 'd', scopes: ['*'], last_used_at: 1, revoked_at: 2 },
+    ] }) } as never;
+    expect((await unscopedKeysInUse(api)).map((k) => k.id)).toEqual(['a']);
+  });
+});

@@ -15,6 +15,7 @@ import {
   type ReferralConsent,
   type ReferralSourceReader,
 } from './referral';
+import { captureAttributionFields, pageAttribution, type AttributionOptions } from './attribution-fields';
 import { deviceId } from './telemetry';
 import { attestationHeaderFor, isAttestationGuarded, type AttestationProvider } from './attestation';
 import { parsePolicyAcceptances } from './policy-acceptance';
@@ -90,6 +91,12 @@ export interface FapiClientOptions {
   referralConsent?: ReferralConsent;
   /** Your own reader for a referral program the SDK doesn't know: `() => ({code, clickId, anonId}) | null`. */
   referralSource?: ReferralSourceReader;
+  /**
+   * Copy page values into the sign-up's `unsafe_metadata` (so they land on the new
+   * user and on `user.created`): `{ seolyticize_visit: { global: 'seolyticize', globalArg: 'visit' } }`.
+   * Your own `unsafe_metadata` on the call wins. See `./attribution-fields`.
+   */
+  attribution?: AttributionOptions;
 }
 
 /**
@@ -116,6 +123,27 @@ export interface FapiResponse<T> {
  * id for the accounts-per-device abuse limit. Password and passwordless
  * sign-ins never create one and do not send it.
  */
+/** The starts that can end in a new account: they carry the configured `attribution` as `unsafe_metadata`. */
+const ATTRIBUTION_ROUTES: ReadonlySet<string> = new Set([
+  '/v1/client/sign_ups',
+  '/v1/client/sign_ups/passkey',
+  '/v1/client/sign_ins',
+  '/v1/client/sign_ins/oauth',
+  '/v1/client/sign_ins/sso',
+  '/v1/client/sign_ins/saml',
+  '/v1/client/sign_ins/wsfed',
+  '/v1/client/sign_ins/discourse',
+  '/v1/client/sign_ins/id_token',
+  '/v1/client/sign_ins/external_jwt',
+  '/v1/client/sign_ins/ldap',
+  '/v1/oauth/telegram',
+  '/v1/oauth/game_platform',
+  '/v1/oauth/siwe/verify',
+  '/v1/oauth/siws/verify',
+  '/v1/oauth/siwb/verify',
+  '/v1/oauth/siwf/verify',
+]);
+
 export const DEVICE_ID_ROUTES: ReadonlySet<string> = new Set([
   '/v1/client/sign_ups',
   '/v1/client/sign_ins/oauth',
@@ -279,6 +307,11 @@ export class FapiClient {
     ) {
       const id = deviceId();
       if (id) payload = { ...(payload as Record<string, unknown>), device_id: id };
+    }
+    if (bare !== undefined && ATTRIBUTION_ROUTES.has(bare) && (this.options.attribution ?? pageAttribution()) && payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const p = payload as { unsafe_metadata?: Record<string, unknown> };
+      const captured = captureAttributionFields(this.options.attribution ?? pageAttribution());
+      if (Object.keys(captured).length) payload = { ...p, unsafe_metadata: { ...captured, ...p.unsafe_metadata } };
     }
     return this.request<T>(path, {
       method: 'POST',
@@ -855,6 +888,21 @@ export async function advance(
 }
 
 /**
+ * Set `unsafe_metadata` on a sign-up whose account is not created yet; it is copied to the
+ * user at creation. A passkey sign-up also needs its `pollSecret`.
+ */
+export function updateSignUp(
+  client: FapiClient,
+  attemptId: string,
+  input: { unsafeMetadata: Record<string, unknown>; pollSecret?: string },
+): Promise<FapiResponse<AttemptView>> {
+  return client.request<AttemptView>(`/v1/client/sign_ups/${encodeURIComponent(attemptId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ unsafe_metadata: input.unsafeMetadata, ...(input.pollSecret ? { poll_secret: input.pollSecret } : {}) }),
+  });
+}
+
+/**
  * §5 Begin a password sign-up. POSTs email + password + the tenant's configured
  * extra fields (name, company, phone, custom…) to `/v1/client/sign_ups` and
  * returns a flow. Usually `needs_email_verification` — the shared `advance` then
@@ -867,6 +915,8 @@ export async function startSignUp(
     email: string;
     password: string;
     fields?: Record<string, string>;
+    /** Browser-writable metadata, copied to the user's `unsafe_metadata` when the account is created. */
+    unsafeMetadata?: Record<string, unknown>;
     consent?: boolean;
     captchaToken?: string;
     /** The username to claim, when the instance offers usernames. */
@@ -880,6 +930,7 @@ export async function startSignUp(
     email: input.email,
     password: input.password,
     ...(hasFields ? { fields: input.fields } : {}),
+    ...(input.unsafeMetadata ? { unsafe_metadata: input.unsafeMetadata } : {}),
     // §5.1 forward the legal-consent tick so the server can enforce a REQUIRED
     // agreement (the disabled submit is only a client-side courtesy).
     ...(input.consent ? { consent: true } : {}),

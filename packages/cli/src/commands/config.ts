@@ -908,6 +908,24 @@ function registry(): ResourceSpec[] {
       type: 'integrations',
       fileKeys: [...INTEGRATION_KEYS, 'forumulate_api_key', 'chatly_api_key', 'replace_existing'],
       writeOnly: ['forumulate_api_key', 'chatly_api_key', 'replace_existing'],
+      // Live spaces are `{ id, redeem_url, redeem_urls }`; a bare id (or partial object) in the file equals the stored one with that id.
+      align(live, desired) {
+        const l = obj(live).spaces;
+        const d = obj(desired).spaces;
+        if (!Array.isArray(l) || !Array.isArray(d)) return live;
+        const want = new Map<string, Json>();
+        for (const e of d) want.set(typeof e === 'string' ? e : String(obj(e).id ?? ''), e);
+        const order = [...want.keys()];
+        const rank = (e: Json) => { const i = order.indexOf(typeof e === 'string' ? e : String(obj(e).id ?? '')); return i < 0 ? order.length : i; };
+        const aligned = l.map((e) => {
+          const w = want.get(String(obj(e).id ?? ''));
+          if (w === undefined) return e;
+          if (typeof w === 'string') return w;
+          const lo = obj(e);
+          return Object.fromEntries(Object.keys(obj(w)).filter((k) => k in lo).map((k) => [k, lo[k] as Json]));
+        });
+        return { ...obj(live), spaces: aligned.map((e, i) => [e, i] as const).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map((x) => x[0]) };
+      },
       keyOf: (c) => String(obj(c).id ?? ''),
       async fetchLive(http) {
         const rows = await orNotFound(listData<Record<string, unknown>>(http, '/v1/instance/integrations'), []);

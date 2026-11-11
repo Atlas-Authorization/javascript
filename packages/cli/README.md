@@ -54,6 +54,7 @@ atlas preflight [--instance <id> | --product <name>] [--fail-on error|warning] [
 atlas doctor   [--origin <url>] [--only <sources>] [--no-probe]
 atlas doctor   --scan-dir <path> [--scan-image <ref>]
 atlas golive   --origin <url> [--dry-run] [--yes] [--connect cookiemunch,forumulate,chatly,referalli] [--keys-file <f>] [--config <file>] [--revoke-unused-platform-keys]
+atlas keys     rotate <id> [--preset app-runtime] [--overlap 72h] [--out <file>]   # new secret goes to a 0600 file, the old key works for the overlap
 atlas keys     create (--scopes "<scopes>" | --preset app-runtime) [--name n]
 atlas dev      proxy --app <url> --api <fapi url> [--base-path /atlas]
 atlas referrals connect ... [--dry-run]
@@ -149,6 +150,7 @@ Runs these steps in order and stops at the first failure, with its fix:
 5. **hooks**: a configured but disabled `before_user_create` hook gets a test call, and is enabled only if it succeeds.
 6. **preflight** (no error findings) and **login_readiness** for the origin, with a live JWKS round-trip.
 7. **integrations**: the referral connection, privacy integration and identity integrations the instance declares; a declared but untested referral connection is tested.
+8. **unscoped_keys**: an all-scope (`*`) secret key still in use is named with the exact `atlas keys rotate <id> --preset app-runtime --overlap 72h --out <file>` command that replaces it without downtime.
 
 `--connect` (any subset of the four partners) connects them before the integrations step, with the
 keys from `--keys-file` (default `~/.config/atlas/partner-keys.env`; refused unless only you can read
@@ -261,7 +263,7 @@ integrations:
     audience: forumulate:acme
     events_url: https://app.example.com/hooks/forumulate
     org_id: acme-org-id                         # forumulate: the organization
-    spaces: [space-1, { id: space-2, redeem_url: https://app.example.com/redeem }]
+    spaces: [space-1, { id: space-2, redeem_url: https://app.example.com/redeem }]   # bare ids are expanded like stored spaces and keep their redeem URLs; plan compares by id
     forumulate_api_key: ${FORUMULATE_API_KEY}   # used for the call only, never stored
     replace_existing: false                     # forumulate: remove the org's other reader sign-ins (needs the key)
   - id: chatly

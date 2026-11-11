@@ -144,3 +144,23 @@ describe('atlas keys create', () => {
     expect(m.out.join('\n')).not.toContain('secretvalue');
   });
 });
+
+describe('atlas keys rotate', () => {
+  it('sends --preset and a duration overlap, writes the new secret to --out and says when the old key stops', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'atlas-cli-'));
+    let body: Record<string, unknown> = {};
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      expect(url).toBe('https://api.test/v1/secret_keys/key_1/rotate');
+      body = JSON.parse(String(init?.body));
+      return json({ object: 'secret_key', id: 'key_2', prefix: 'atlas_live_sk_abcd', scopes: ['users:read'], secret: 'atlas_live_sk_newvalue', replaces: 'key_1', previous_key_expires_at: 1_900_000_000_000 }, 201);
+    }) as unknown as typeof fetch;
+    const m = memIO();
+    const out = join(dir, 'k.env');
+    const ctx = defaultContext({ io: m.io, config: new FileConfigStore(join(dir, 'c.json')), fetch: fetchImpl, env: { ATLAS_SECRET_KEY: 'sk_live_x', ATLAS_API_URL: 'https://api.test' } });
+    expect(await run(['keys', 'rotate', 'key_1', '--preset', 'app-runtime', '--overlap', '72h', '--out', out], ctx)).toBe(0);
+    expect(body).toMatchObject({ preset: 'app-runtime', overlap_seconds: 259200 });
+    expect(readFileSync(out, 'utf8')).toBe('ATLAS_SECRET_KEY=atlas_live_sk_newvalue\n');
+    expect(m.out.join('\n')).toContain('The old key works until');
+    expect(m.out.join('\n')).not.toContain('newvalue');
+  });
+});

@@ -1,5 +1,10 @@
 # @atlasauth/cli changelog
 
+## 0.32.0 — 2026-11-11
+
+- New `atlas keys rotate <id> --preset app-runtime --overlap 72h`: writes the new key to a 0600 file and says when the old one stops. `golive` prints that command for every in-use all-scope key.
+- `plan` compares integration `spaces` by id: bare ids match the stored spaces, so they plan as unchanged.
+
 ## 0.31.0 — 2026-11-11
 
 ### Added

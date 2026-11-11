@@ -280,7 +280,7 @@ export function secretKeysResource(request: RequestFn) {
       return request({ method: 'PATCH', path: `/v1/secret_keys/${enc(id)}`, body });
     },
     /** New key with the same scopes; the old one works for `overlap_seconds` (default 72 h, 0 = now). */
-    rotate(id: string, body: { overlap_seconds?: number; key_format?: 'atlas' | 'legacy' } = {}): Promise<SecretKeyWithSecret & { replaces: string; previous_key_expires_at: number | null }> {
+    rotate(id: string, body: { overlap_seconds?: number; key_format?: 'atlas' | 'legacy'; /** `app-runtime`: the replacement gets the preset's scopes (only ever narrower than the old key). */ preset?: 'app-runtime' } = {}): Promise<SecretKeyWithSecret & { replaces: string; previous_key_expires_at: number | null }> {
       return request({ method: 'POST', path: `/v1/secret_keys/${enc(id)}/rotate`, body });
     },
     revoke(id: string): Promise<SecretKey & { revoked: true }> {

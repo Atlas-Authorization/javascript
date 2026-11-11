@@ -18,6 +18,7 @@ import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { printJson } from '../output';
 import { envApiUrl, requireArg, resolveAuth, wantsJson } from './shared';
+import { parseDuration } from './webhooks';
 import { KEYS_DATA, KEYS_OP, resourceCommand, shift } from './resources';
 
 /**
@@ -214,7 +215,12 @@ export async function keys(ctx: RunContext, args: ParsedArgs): Promise<number> {
     case 'rotate': {
       const id = requireArg(positionals, 2, 'key id');
       const overlap = str(values, 'overlap');
-      const rotated = await atlas.secretKeys.rotate(id, overlap ? { overlap_seconds: Number(overlap) } : {});
+      const preset = str(values, 'preset');
+      if (preset && preset !== 'app-runtime') throw new CliError("--preset must be 'app-runtime'.");
+      const rotated = await atlas.secretKeys.rotate(id, {
+        ...(overlap ? { overlap_seconds: Math.round(parseDuration(overlap, '--overlap') / 1000) } : {}),
+        ...(preset ? { preset: 'app-runtime' as const } : {}),
+      });
       ctx.io.out(
         `Rotated ${id} → ${rotated.id}.` +
           (rotated.previous_key_expires_at ? ` The old key works until ${new Date(rotated.previous_key_expires_at).toISOString()}.` : ' The old key was revoked.'),

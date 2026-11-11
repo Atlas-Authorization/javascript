@@ -1,4 +1,4 @@
-import type { ReferralConsent, SignOutEvent } from '@atlasauth/js';
+import type { AttributionOptions, ReferralConsent, SignOutEvent } from '@atlasauth/js';
 import { InjectionToken } from '@angular/core';
 import type { Appearance } from './appearance';
 import type { Catalog } from './i18n';
@@ -22,6 +22,8 @@ export interface AtlasOptions {
    * it) lets the forms read the cookie. Default: the cookie is not read.
    */
   referralConsent?: ReferralConsent;
+  /** Page values copied into every sign-up's `unsafe_metadata`, e.g. `{ seolyticize_visit: { global: 'seolyticize', globalArg: 'visit' } }`. */
+  attribution?: AttributionOptions;
   /**
    * The instance's Frontend API: an absolute URL such as
    * `"https://auth.example.com"`, or `"same-origin"` / a path such as `"/atlas"`

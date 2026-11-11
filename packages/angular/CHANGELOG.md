@@ -2,6 +2,10 @@
 
 
 
+## 0.18.0 — 2026-11-11
+
+- The config takes `attribution`, passed to the sign-up client (see `@atlasauth/js` 0.36.0).
+
 ## 0.17.1 — 2026-11-11
 
 - `error.email_address_unreachable` ("We can't send email to this address. Use a different email address or contact the app owner."), shown for the new `EMAIL_ADDRESS_UNREACHABLE` error when the app's email provider refuses an address.

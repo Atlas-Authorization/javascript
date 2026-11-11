@@ -29,6 +29,8 @@ import {
   type SignOutEvent,
   type SignOutListener,
   type SignOutReason,
+  configureAttribution,
+  type AttributionOptions,
   configureReferralCapture,
   type ReferralConsent,
   withDevBrowser,
@@ -78,6 +80,8 @@ export interface AtlasInitOptions {
    * it) lets the forms read the cookie. Default: the cookie is not read.
    */
   referralConsent?: ReferralConsent;
+  /** Page values copied into every sign-up's `unsafe_metadata`, e.g. `{ seolyticize_visit: { global: 'seolyticize', globalArg: 'visit' } }`. */
+  attribution?: AttributionOptions;
   /**
    * The instance's Frontend API: an absolute URL such as
    * `"https://auth.example.com"`, or `"same-origin"` / a path such as `"/atlas"`
@@ -393,6 +397,7 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
 
   // Referral attribution: app-wide options every FAPI client on the page falls back to.
   configureReferralCapture({ referral: options.referral, referralConsent: options.referralConsent });
+  configureAttribution(options.attribution);
   const fapiClient = new FapiClient({ publishableKey, baseUrl, fetchImpl: doFetch, locale, sdk: ATLAS_SVELTE_SDK });
 
   function getProviderToken(provider: string): Promise<ProviderToken | null> {

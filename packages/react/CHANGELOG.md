@@ -2,6 +2,10 @@
 
 
 
+## 0.32.0 — 2026-11-11
+
+- `<AtlasProvider attribution={…}>`: sign-up forms copy the configured browser values into `unsafe_metadata` (see `@atlasauth/js` 0.36.0).
+
 ## 0.31.1 — 2026-11-11
 
 - `error.email_address_unreachable` ("We can't send email to this address. Use a different email address or contact the app owner."), shown for the new `EMAIL_ADDRESS_UNREACHABLE` error when the app's email provider refuses an address.

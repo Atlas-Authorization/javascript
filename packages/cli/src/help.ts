@@ -432,7 +432,7 @@ Usage:
   atlas keys whoami                         What the current key is and can do
   atlas keys list                           Every credential on the instance
   atlas keys create (--scopes "<scopes>" | --preset app-runtime) [--name n] [--owner o] [--expires-at <ISO>] [--allowed-ips <cidr,…>] [--out <file>]
-  atlas keys rotate <id> [--overlap <seconds>] [--out <file>]
+  atlas keys rotate <id> [--preset app-runtime] [--overlap <dur, e.g. 72h or seconds>] [--out <file>]   --preset narrows an all-scope key; the old key keeps working for the overlap
   atlas keys data status|enable|rotate|rewrap|check|shred   Customer-managed data key (shred needs the instance id typed or --confirm)
   atlas keys op list|rotate                           OpenID provider signing keys
   atlas keys revoke <id>

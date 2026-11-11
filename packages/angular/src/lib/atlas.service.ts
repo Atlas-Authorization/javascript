@@ -43,6 +43,7 @@ import {
   type SignOutEvent,
   type SignOutListener,
   type SignOutReason,
+  configureAttribution,
   configureReferralCapture,
   withDevBrowser,
   reauthenticate,
@@ -211,6 +212,7 @@ export class AtlasService implements OnDestroy {
 
     // Referral attribution: app-wide options every FAPI client on the page falls back to.
     configureReferralCapture({ referral: options.referral, referralConsent: options.referralConsent });
+    configureAttribution(options.attribution);
     this.fapiClient = new FapiClient({
       publishableKey: this.publishableKey,
       baseUrl: this.baseUrl,

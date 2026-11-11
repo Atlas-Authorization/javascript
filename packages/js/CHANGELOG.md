@@ -2,6 +2,10 @@
 
 
 
+## 0.36.0 — 2026-11-11
+
+- New `attribution` client option and `configureAttribution()`: copy browser values (a cookie, a query parameter, a `window` global or a function) into `unsafe_metadata` on sign-up, so they arrive on `user.created`. `startSignUp` takes `unsafeMetadata`; new `updateSignUp()`.
+
 ## 0.35.1 — 2026-11-11
 
 - `error.email_address_unreachable` ("We can't send email to this address. Use a different email address or contact the app owner."), shown for the new `EMAIL_ADDRESS_UNREACHABLE` error when the app's email provider refuses an address.
