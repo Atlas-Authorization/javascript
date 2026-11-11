@@ -19820,7 +19820,7 @@ snapshots:
 
   '@types/set-cookie-parser@2.4.10':
     dependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.5
 
   '@types/sinonjs__fake-timers@8.1.1': {}
 
