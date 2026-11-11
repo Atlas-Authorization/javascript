@@ -1193,13 +1193,13 @@ importers:
     devDependencies:
       '@solidjs/testing-library':
         specifier: ^0.8.10
-        version: 0.8.10(solid-js@1.9.18)
+        version: 0.8.10(solid-js@1.9.19)
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
       solid-js:
         specifier: ^1.8.0
-        version: 1.9.18
+        version: 1.9.19
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -13013,8 +13013,8 @@ packages:
     resolution: {integrity: sha512-9ZV9zg8vN8hO3Y25DhR7nUkJ1VDnBhq5O/JrXhFT9s6+F0gqytSASTHVfCFc2mJXaTfARroErplXlzFWwETZqQ==}
     engines: {node: '>=10.2.0'}
 
-  solid-js@1.9.18:
-    resolution: {integrity: sha512-CHGO5YFk6Y9m/1YSxVtKnXfrW7JD3Tmof8HmR4z6TmCPsS8efo8LnzIR8CQh3cUvffqYm6DWyBFfk8dQw1CNQQ==}
+  solid-js@1.9.19:
+    resolution: {integrity: sha512-NIrV/6o1FtmrA9iuAAYvnQJZaHrGcaH3LKSVj4kCiZfwqjCtJNDgIgR9XcqYl6KR/Lb3oRx1HrlyswPWR8SRvw==}
 
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
@@ -19502,10 +19502,10 @@ snapshots:
 
   '@socket.io/component-emitter@3.1.2': {}
 
-  '@solidjs/testing-library@0.8.10(solid-js@1.9.18)':
+  '@solidjs/testing-library@0.8.10(solid-js@1.9.19)':
     dependencies:
       '@testing-library/dom': 10.4.2
-      solid-js: 1.9.18
+      solid-js: 1.9.19
 
   '@speed-highlight/core@1.2.24': {}
 
@@ -29318,7 +29318,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  solid-js@1.9.18:
+  solid-js@1.9.19:
     dependencies:
       csstype: 3.2.3
       seroval: 1.6.12
