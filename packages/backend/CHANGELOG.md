@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.46.1 — 2026-11-12
+
+- Types: security advisories carry `subjects` (and `GET /v1/security_advisories/{id}`); the Forumulate integration view types `reader_auth_providers` and the `source`/`note` labels.
+
 ## 0.46.0 — 2026-11-12
 
 - API key types: `apiKeys.create` / import take `type`, keys and verify results carry `type`, list filters by `type`.

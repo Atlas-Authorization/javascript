@@ -548,12 +548,23 @@ export interface ForumulateIntegration {
   issuer?: string;
   jwks_url?: string;
   token_ttl_seconds?: number;
-  /** The external_jwt provider to store on each space. */
+  /** Atlas's recommended primary reader provider (atlas_byo, keyed by instance id). `source` is always "recommended": Atlas cannot read what Forumulate holds. */
   reader_auth_provider?: {
-    method?: 'external_jwt';
+    source?: 'recommended';
+    note?: string;
+    method?: string;
     order?: number;
-    config?: { jwksUrl?: string; issuer?: string; clientId?: string };
+    config?: Record<string, unknown>;
+    backchannel_logout_url?: string;
   };
+  /** Atlas's recommended providers in order: atlas_byo, then external_jwt. */
+  reader_auth_providers?: Array<{
+    source?: 'recommended';
+    method?: string;
+    order?: number;
+    config?: Record<string, unknown>;
+    backchannel_logout_url?: string;
+  }>;
 }
 
 export interface SetForumulateIntegrationBody {
