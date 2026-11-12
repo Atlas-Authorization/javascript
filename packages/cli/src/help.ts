@@ -935,7 +935,7 @@ Usage:
 Shows the plan, asks before applying (--yes skips the question; needed without a
 terminal), then applies creates and updates in a fixed order: email_provider, instance,
 org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers,
-custom_oauth_providers, resource_servers, jwt_templates, permissions, roles,
+custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles,
 webhook_endpoints, sso_connections, billing_plans, notification_templates,
 email_templates, organization_policies, branding. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.

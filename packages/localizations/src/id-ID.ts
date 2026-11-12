@@ -306,6 +306,8 @@ export const idID: LocalizationResource = {
   'error.high_risk_blocked': 'Proses masuk ini diblokir karena terlihat tidak biasa.',
   'error.sms_region_blocked': 'Pesan teks tidak tersedia untuk nomor telepon ini.',
   'error.github_team_required': 'Akun GitHub Anda bukan anggota organisasi atau tim GitHub yang diizinkan masuk di sini.',
+  'error.app_approval_denied': 'Proses masuk ditolak di aplikasi.',
+  'error.app_approval_expired': 'Proses masuk tidak disetujui tepat waktu. Coba lagi.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'Saya menyetujui {policies}',

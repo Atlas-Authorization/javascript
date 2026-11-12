@@ -59,6 +59,8 @@ export const ERROR_REASONS = Object.freeze([
   'high_risk_blocked',
   'sms_region_blocked',
   'github_team_required',
+  'app_approval_denied',
+  'app_approval_expired',
 ] as const);
 
 /** A reason with a string in every shipped catalog. */

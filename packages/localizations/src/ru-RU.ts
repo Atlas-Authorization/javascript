@@ -259,6 +259,8 @@ export const ruRU: LocalizationResource = {
   'error.high_risk_blocked': 'Этот вход заблокирован, так как показался подозрительным.',
   'error.sms_region_blocked': 'SMS недоступны для этого номера телефона.',
   'error.github_team_required': 'Ваш аккаунт GitHub не состоит в организации или команде GitHub, которой разрешён вход здесь.',
+  'error.app_approval_denied': 'Вход был отклонён в приложении.',
+  'error.app_approval_expired': 'Вход не был подтверждён вовремя. Попробуйте ещё раз.',
   'apiKeys.title': 'Ключи API',
   'apiKeys.subtitle': 'Ключи позволяют скриптам и интеграциям действовать от вашего имени. Относитесь к ним как к паролям.',
   'apiKeys.organizationSubtitle': 'Ключи позволяют скриптам и интеграциям действовать от имени этой организации. Относитесь к ним как к паролям.',

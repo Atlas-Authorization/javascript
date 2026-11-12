@@ -23,6 +23,8 @@ export interface SessionGlobalTokenOptions {
   audience?: string;
   cbid?: string;
   audienceParams?: Record<string, string>;
+  /** With `for`: per-mint claims signed into the token (must be on the integration's allow-list). */
+  context?: Record<string, string>;
 }
 
 /** The slice of a user the global exposes. */

@@ -257,6 +257,8 @@ export const jaJP: Localization = {
   'error.high_risk_blocked': '通常と異なるサインインと判断されたため、ブロックされました。',
   'error.sms_region_blocked': 'この電話番号ではSMSを利用できません。',
   'error.github_team_required': 'この GitHub アカウントは、ここへのサインインが許可された GitHub の組織またはチームのメンバーではありません。',
+  'error.app_approval_denied': 'アプリでサインインが拒否されました。',
+  'error.app_approval_expired': '時間内にサインインが承認されませんでした。もう一度お試しください。',
   'apiKeys.title': 'APIキー',
   'apiKeys.subtitle': 'キーを使うと、スクリプトや連携サービスがあなたとして操作できます。パスワードと同様に扱ってください。',
   'apiKeys.organizationSubtitle': 'キーを使うと、スクリプトや連携サービスがこの組織として操作できます。パスワードと同様に扱ってください。',

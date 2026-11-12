@@ -366,6 +366,8 @@ export interface LocalizationResource {
   'error.high_risk_blocked': string;
   'error.sms_region_blocked': string;
   'error.github_team_required': string;
+  'error.app_approval_denied': string;
+  'error.app_approval_expired': string;
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': string;

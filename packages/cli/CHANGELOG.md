@@ -1,5 +1,10 @@
 # @atlasauth/cli changelog
 
+## 0.33.0 — 2026-11-11
+
+- `scopes` in config files (the instance scope catalogue: labels per locale, `sensitive`, `requires_verified_client`).
+- `atlas migrate` takes `--password-policy` to hold imported passwords.
+
 ## 0.32.0 — 2026-11-11
 
 - New `atlas keys rotate <id> --preset app-runtime --overlap 72h`: writes the new key to a 0600 file and says when the old one stops. `golive` prints that command for every in-use all-scope key.

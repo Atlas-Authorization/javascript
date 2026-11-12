@@ -259,6 +259,8 @@ export const zhCN: LocalizationResource = {
   'error.high_risk_blocked': '此次登录因看起来异常而被拦截。',
   'error.sms_region_blocked': '该手机号码不支持接收短信。',
   'error.github_team_required': '你的 GitHub 账号不属于允许在此登录的 GitHub 组织或团队。',
+  'error.app_approval_denied': '应用中已拒绝此次登录。',
+  'error.app_approval_expired': '登录未在规定时间内获批准，请重试。',
   'apiKeys.title': 'API 密钥',
   'apiKeys.subtitle': '密钥可让脚本和集成代表您执行操作。请像对待密码一样妥善保管。',
   'apiKeys.organizationSubtitle': '密钥可让脚本和集成代表此组织执行操作。请像对待密码一样妥善保管。',

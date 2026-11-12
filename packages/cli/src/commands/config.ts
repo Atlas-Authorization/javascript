@@ -443,6 +443,21 @@ function registry(): ResourceSpec[] {
       },
     },
 
+    // 6b. Scope catalogue — the whole list is replaced on write (PUT /v1/instance/scopes).
+    {
+      kind: 'singleton',
+      type: 'scopes',
+      fileKeys: ['scopes'],
+      async fetchLive(http) {
+        const rows = await orNotFound(listData<Record<string, unknown>>(http, '/v1/instance/scopes'), []);
+        if (rows.length === 0) return null;
+        return { scopes: rows.map((r) => pick(r, ['name', 'label', 'description', 'sensitive', 'requires_verified_client'])) };
+      },
+      async apply(http, config) {
+        await http.put('/v1/instance/scopes', { scopes: obj(config).scopes ?? [] });
+      },
+    },
+
     // 7. JWT templates — key = name; claims is a flat template map.
     {
       kind: 'collection',

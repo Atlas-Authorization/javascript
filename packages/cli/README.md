@@ -241,7 +241,7 @@ atlas apply atlas.yaml --yes --secrets-file .atlas.secrets   # non-interactive
   (`~/.config/atlas`, or `--out <dir>`) and the CLI prints the path.
 - **Order.** The CLI applies resource types in a fixed order: `instance`,
   `org_settings_schema`, `redirect_urls`, `oauth_clients`, `oauth_providers`,
-  `custom_oauth_providers`, `resource_servers`, `jwt_templates`, `permissions`,
+  `custom_oauth_providers`, `resource_servers`, `scopes`, `jwt_templates`, `permissions`,
   `roles`, `webhook_endpoints`, `sso_connections`, `sso_onboarding_profiles`,
   `billing_plans`, `notification_templates`, `email_templates`,
   `organization_policies`, `cookie_consent`. The

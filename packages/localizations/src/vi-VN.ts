@@ -259,6 +259,8 @@ export const viVN: LocalizationResource = {
   'error.high_risk_blocked': 'Lượt đăng nhập này đã bị chặn vì có dấu hiệu bất thường.',
   'error.sms_region_blocked': 'Tin nhắn SMS không khả dụng cho số điện thoại này.',
   'error.github_team_required': 'Tài khoản GitHub của bạn không thuộc tổ chức hoặc nhóm GitHub nào được phép đăng nhập tại đây.',
+  'error.app_approval_denied': 'Yêu cầu đăng nhập đã bị từ chối trong ứng dụng.',
+  'error.app_approval_expired': 'Yêu cầu đăng nhập không được duyệt kịp thời. Hãy thử lại.',
   'apiKeys.title': 'Khóa API',
   'apiKeys.subtitle': 'Khóa cho phép tập lệnh và các tích hợp thay mặt bạn thực hiện thao tác. Hãy bảo mật chúng như mật khẩu.',
   'apiKeys.organizationSubtitle': 'Khóa cho phép tập lệnh và các tích hợp thay mặt tổ chức này thực hiện thao tác. Hãy bảo mật chúng như mật khẩu.',

@@ -259,6 +259,8 @@ export const esES: LocalizationResource = {
   'error.high_risk_blocked': 'Se ha bloqueado este inicio de sesión porque parecía inusual.',
   'error.sms_region_blocked': 'Los mensajes de texto no están disponibles para este número de teléfono.',
   'error.github_team_required': 'Tu cuenta de GitHub no pertenece a ninguna organización o equipo de GitHub autorizado para iniciar sesión aquí.',
+  'error.app_approval_denied': 'El inicio de sesión se denegó en la aplicación.',
+  'error.app_approval_expired': 'El inicio de sesión no se aprobó a tiempo. Inténtalo de nuevo.',
   'apiKeys.title': 'Claves de API',
   'apiKeys.subtitle': 'Las claves permiten que scripts e integraciones actúen en tu nombre. Trátalas como contraseñas.',
   'apiKeys.organizationSubtitle': 'Las claves permiten que scripts e integraciones actúen en nombre de esta organización. Trátalas como contraseñas.',

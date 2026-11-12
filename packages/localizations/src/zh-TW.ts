@@ -306,6 +306,8 @@ export const zhTW: LocalizationResource = {
   'error.high_risk_blocked': '由於此次登入看起來異常，已被封鎖。',
   'error.sms_region_blocked': '此電話號碼無法使用簡訊。',
   'error.github_team_required': '你的 GitHub 帳號不屬於允許在此登入的 GitHub 組織或團隊。',
+  'error.app_approval_denied': '應用程式中已拒絕此次登入。',
+  'error.app_approval_expired': '登入未在時限內獲得核准，請重試。',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': '我同意{policies}',

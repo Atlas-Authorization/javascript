@@ -258,6 +258,8 @@ export const nlNL: Localization = {
   'error.high_risk_blocked': 'Deze inlogpoging is geblokkeerd omdat die ongebruikelijk leek.',
   'error.sms_region_blocked': 'Sms-berichten zijn niet beschikbaar voor dit telefoonnummer.',
   'error.github_team_required': 'Je GitHub-account is geen lid van een GitHub-organisatie of -team dat hier mag inloggen.',
+  'error.app_approval_denied': 'De aanmelding is geweigerd in de app.',
+  'error.app_approval_expired': 'De aanmelding is niet op tijd goedgekeurd. Probeer het opnieuw.',
   'apiKeys.title': 'API-sleutels',
   'apiKeys.subtitle': 'Met sleutels kunnen scripts en integraties namens jou handelen. Behandel ze als wachtwoorden.',
   'apiKeys.organizationSubtitle': 'Met sleutels kunnen scripts en integraties namens deze organisatie handelen. Behandel ze als wachtwoorden.',

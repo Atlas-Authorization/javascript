@@ -240,6 +240,8 @@ export const EN_US: Catalog = {
   'error.high_risk_blocked': 'This sign-in was blocked because it looked unusual.',
   'error.sms_region_blocked': 'Text messages are not available for this phone number.',
   'error.github_team_required': 'Your GitHub account is not a member of a GitHub organization or team allowed to sign in here.',
+  'error.app_approval_denied': 'The sign-in was denied in the app.',
+  'error.app_approval_expired': 'The sign-in was not approved in time. Try again.',
 };
 
 /**

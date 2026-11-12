@@ -98,6 +98,8 @@ export interface AccountUx {
   emailSecondFactor: boolean;
   /** The instance offers the custom challenge second factor (set only when true). */
   customSecondFactor?: boolean;
+  /** "Approve in your app" is on, as a first factor and/or a step-up (set only when on). */
+  appApproval?: { firstFactor: boolean; stepUp: boolean };
   /**
    * Passkey-only sign-up ({@link startPasskeySignUp}), when the instance offers
    * it: whether the form collects an email address. Null when not offered.
@@ -163,6 +165,9 @@ export function accountUxFrom(body: unknown): AccountUx {
     passwordReset: proof(raw.password_reset),
     emailSecondFactor: raw.email_second_factor === true,
     ...(raw.custom_second_factor === true ? { customSecondFactor: true } : {}),
+    ...(isRecord(raw.app_approval) && (raw.app_approval.first_factor === true || raw.app_approval.step_up === true)
+      ? { appApproval: { firstFactor: raw.app_approval.first_factor === true, stepUp: raw.app_approval.step_up === true } }
+      : {}),
     ...(isRecord(raw.mfa)
       ? {
           mfa: {

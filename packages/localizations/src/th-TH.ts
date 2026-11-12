@@ -306,6 +306,8 @@ export const thTH: LocalizationResource = {
   'error.high_risk_blocked': 'การเข้าสู่ระบบนี้ถูกบล็อกเนื่องจากดูผิดปกติ',
   'error.sms_region_blocked': 'ไม่สามารถส่งข้อความ SMS ไปยังหมายเลขโทรศัพท์นี้ได้',
   'error.github_team_required': 'บัญชี GitHub ของคุณไม่ได้เป็นสมาชิกขององค์กรหรือทีม GitHub ที่ได้รับอนุญาตให้ลงชื่อเข้าใช้ที่นี่',
+  'error.app_approval_denied': 'การเข้าสู่ระบบถูกปฏิเสธในแอป',
+  'error.app_approval_expired': 'การเข้าสู่ระบบไม่ได้รับการอนุมัติทันเวลา โปรดลองอีกครั้ง',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'ฉันยอมรับ{policies}',

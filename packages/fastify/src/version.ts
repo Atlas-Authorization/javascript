@@ -1,0 +1,2 @@
+/** This package's version, sent as `X-Atlas-SDK`. Kept in step with package.json by version.test.ts. */
+export const ATLAS_FASTIFY_VERSION = '0.8.0';

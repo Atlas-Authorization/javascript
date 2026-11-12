@@ -306,6 +306,8 @@ export const faIR: LocalizationResource = {
   'error.high_risk_blocked': 'این ورود مسدود شد، زیرا غیرعادی به نظر می‌رسید.',
   'error.sms_region_blocked': 'پیامک برای این شماره تلفن در دسترس نیست.',
   'error.github_team_required': 'حساب GitHub شما عضو هیچ سازمان یا تیم GitHub مجاز برای ورود در اینجا نیست.',
+  'error.app_approval_denied': 'ورود در برنامه رد شد.',
+  'error.app_approval_expired': 'ورود به‌موقع تأیید نشد. دوباره تلاش کنید.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'من {policies} را می‌پذیرم',

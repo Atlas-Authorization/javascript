@@ -29,6 +29,7 @@ import {
   nextStep,
   offeredFirstFactors,
   planFirstFactor,
+  prepareAppApproval,
   prepareFactor,
   preparePasswordHoldProof,
   resendSignUpVerification,
@@ -57,6 +58,7 @@ import { useClass, useClasses, useErrorText, useFapiClient, useText } from './co
 import { localizeCaptchaErrors, useCaptcha } from './captcha';
 import { forceCaptchaFlow, useReferralChallenge, useStableReferralConsent } from './referral';
 import {
+  AppApprovalSecondFactorOption,
   DuoSecondFactorOption,
   MfaEnrollmentFields,
   RecoveryCodes,
@@ -269,8 +271,8 @@ export function AttemptFlow({
    * §5.3 the emailed factor this attempt was sent (`FlowState.prepared`): the
    * first-factor step then collects the code, or says to open the link.
    */
-  prepared?: EmailFactor | null;
-  /** `FlowState.matchCode`: shown while a mailed link waits, to type if it's opened on another device. */
+  prepared?: EmailFactor | 'app_approval' | null;
+  /** `FlowState.matchCode`: shown while a mailed link waits, to type if it's opened on another device; for `app_approval`, the number to tap in the app. */
   matchCode?: string | null;
   /** A sign-up's link was re-sent: its new code and poll secret replace the old ones. */
   onLinkResent?(next: FlowState): void;
@@ -278,7 +280,7 @@ export function AttemptFlow({
    * Send (or resend) an emailed factor (`useFlow().prepare`). Without it the
    * first-factor step offers the password only.
    */
-  onPrepare?(strategy: EmailFactor): void;
+  onPrepare?(strategy: EmailFactor | 'app_approval'): void;
   /** Back from the emailed factor to the password field. */
   onUsePassword?(): void;
   /** `FlowState.sessionKept`: whether this browser kept the session the sign-in created. */
@@ -424,6 +426,18 @@ export function AttemptFlow({
             matchCode ? <MatchCodeHint key="match-code" code={matchCode} /> : null,
           ];
         }
+        if (sent === 'app_approval') {
+          return [
+            <p key="approval-sent" className={cls('text', 'atlas-text')} data-atlas-approval-sent="">
+              Open your app and tap this number to sign in:
+            </p>,
+            matchCode ? (
+              <p key="approval-number" className={cls('text', 'atlas-text')} data-atlas="approval-number">
+                <strong><code>{matchCode}</code></strong>
+              </p>
+            ) : null,
+          ];
+        }
         if (sending) {
           return [
             <p key="sending" className={cls('text', 'atlas-text')} aria-live="polite">
@@ -450,6 +464,16 @@ export function AttemptFlow({
             : []),
           ...(mfaChoices.emailCode && attempt?.id
             ? [<SecondFactorCodeOption key="email-2fa" attemptId={attempt.id} strategy="email_code" onSent={clearShownErrors} />]
+            : []),
+          ...(instanceSettings?.account?.appApproval?.stepUp && attempt?.id
+            ? [
+                <AppApprovalSecondFactorOption
+                  key="app-approval-2fa"
+                  attemptId={attempt.id}
+                  onSubmit={onSubmit}
+                  stopped={errors.some((e) => e.reason === 'app_approval_denied' || e.reason === 'app_approval_expired')}
+                />,
+              ]
             : []),
           ...(mfaChoices.duo && attempt?.id
             ? [<DuoSecondFactorOption key="duo-2fa" attemptId={attempt.id} onSubmit={onSubmit} />]
@@ -711,6 +735,7 @@ export function AttemptFlow({
         !(step.kind === 'complete_required_action' && step.actions[0]?.action === 'custom') &&
         !noFirstFactor &&
         sent !== 'email_link' &&
+        sent !== 'app_approval' &&
         !sending &&
         !linkOnlySignUp &&
         (step.kind !== 'enroll_second_factor' || enrolSubmitKey) ? (
@@ -720,7 +745,7 @@ export function AttemptFlow({
         ) : null}
         {step.kind === 'collect_first_factor' && !noFirstFactor ? (
           <div className="atlas-alternatives">
-            {sent
+            {sent && sent !== 'app_approval'
               ? (
                   <button
                     type="button"
@@ -754,6 +779,20 @@ export function AttemptFlow({
                   {t(strategy === 'email_code' ? 'signIn.emailCodeOption' : 'signIn.emailLinkOption')}
                 </button>
               ))}
+            {onPrepare && instanceSettings?.account?.appApproval?.firstFactor && sent !== 'app_approval' && !(sending && busy) ? (
+              <button
+                type="button"
+                className={cls('link', 'atlas-link')}
+                data-strategy="app_approval"
+                disabled={busy || cooldown > 0}
+                onClick={() => {
+                  setValues({});
+                  onPrepare('app_approval');
+                }}
+              >
+                Approve in your app
+              </button>
+            ) : null}
             {sent && plan.password && onUsePassword ? (
               <button
                 type="button"
@@ -1011,9 +1050,14 @@ export function useFlow({
    * on its way when none is.
    */
   const prepare = useCallback(
-    (strategy: EmailFactor) => {
+    (strategy: EmailFactor | 'app_approval') => {
       void (async () => {
         setState((current) => ({ ...current, busy: true, errors: [] }));
+        if (strategy === 'app_approval') {
+          const asked = await prepareAppApproval(client, { ...state, busy: true });
+          setState(asked.errors.length > 0 ? { ...asked, prepared: state.prepared ?? null } : asked);
+          return;
+        }
         const holdProof = passwordHoldProof(instanceSettings?.account?.emailVerification);
         const next =
           state.passwordHold && !state.passwordHold.released && strategy === holdProof

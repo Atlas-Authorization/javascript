@@ -259,6 +259,8 @@ export const frFR: LocalizationResource = {
   'error.high_risk_blocked': 'Cette connexion a été bloquée, car elle semblait inhabituelle.',
   'error.sms_region_blocked': 'Les SMS ne sont pas disponibles pour ce numéro de téléphone.',
   'error.github_team_required': 'Votre compte GitHub n’appartient à aucune organisation ou équipe GitHub autorisée à se connecter ici.',
+  'error.app_approval_denied': 'La connexion a été refusée dans l’application.',
+  'error.app_approval_expired': 'La connexion n’a pas été approuvée à temps. Réessayez.',
   'apiKeys.title': 'Clés d’API',
   'apiKeys.subtitle': 'Les clés permettent à des scripts et intégrations d’agir en votre nom. Traitez-les comme des mots de passe.',
   'apiKeys.organizationSubtitle': 'Les clés permettent à des scripts et intégrations d’agir au nom de cette organisation. Traitez-les comme des mots de passe.',

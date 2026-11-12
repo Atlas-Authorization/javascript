@@ -1,5 +1,9 @@
 # @atlasauth/fastify changelog
 
+## 0.8.0 — 2026-11-11
+
+- New `atlasMountPlugin`: mounts the Frontend API under a path with one `register` call, serves the domain-verify route, and optional webhook and before-user-create routes.
+
 ## 0.7.0 — 2026-11-06
 
 ### Added

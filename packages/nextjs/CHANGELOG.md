@@ -1,5 +1,9 @@
 # @atlasauth/nextjs changelog
 
+## 0.15.0 — 2026-11-11
+
+- The mount, verify, webhook and hook handlers now come from `@atlasauth/backend`; behaviour and API unchanged.
+
 ## 0.14.0 — 2026-11-11
 
 - `createWebhookHandler`'s `onEvent` receives the typed `AtlasWebhookEvent` union, narrowed by `event.type`, so handlers need no cast. A handler that read `event.data.x` without checking `event.type` first now needs the check.

@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.18.0 — 2026-11-11
+
+- New `error.app_approval_denied` and `error.app_approval_expired`.
+
 ## 0.17.4 — 2026-11-11
 
 - New key `error.email_address_unreachable`: shown when the app's email provider refuses the address (for example suppressed after a bounce).

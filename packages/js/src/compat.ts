@@ -99,6 +99,7 @@ const audienceOf = (o: IntegrationAudienceOptions): IntegrationAudienceOptions =
   ...(o.audience ? { audience: o.audience } : {}),
   ...(o.cbid ? { cbid: o.cbid } : {}),
   ...(o.audienceParams ? { audienceParams: o.audienceParams } : {}),
+  ...(o.context ? { context: o.context } : {}),
 });
 
 /** auth0-spa-js-style errors: `error` carries the OAuth-ish code apps branch on. */

@@ -307,6 +307,8 @@ export const itIT: LocalizationResource = {
   'error.high_risk_blocked': 'Questo accesso è stato bloccato perché sembrava insolito.',
   'error.sms_region_blocked': 'I messaggi di testo non sono disponibili per questo numero di telefono.',
   'error.github_team_required': 'Il tuo account GitHub non fa parte di un’organizzazione o di un team GitHub autorizzato ad accedere qui.',
+  'error.app_approval_denied': 'L’accesso è stato rifiutato nell’app.',
+  'error.app_approval_expired': 'L’accesso non è stato approvato in tempo. Riprova.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'Accetto: {policies}',

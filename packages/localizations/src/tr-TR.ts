@@ -306,6 +306,8 @@ export const trTR: LocalizationResource = {
   'error.high_risk_blocked': 'Bu oturum açma, olağandışı göründüğü için engellendi.',
   'error.sms_region_blocked': 'Bu telefon numarası için kısa mesaj kullanılamıyor.',
   'error.github_team_required': 'GitHub hesabınız, burada oturum açmasına izin verilen bir GitHub kuruluşunun veya ekibinin üyesi değil.',
+  'error.app_approval_denied': 'Oturum açma uygulamada reddedildi.',
+  'error.app_approval_expired': 'Oturum açma zamanında onaylanmadı. Tekrar deneyin.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'Şunları kabul ediyorum: {policies}',

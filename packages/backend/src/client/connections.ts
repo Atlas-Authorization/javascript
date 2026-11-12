@@ -1,7 +1,7 @@
 import { enc, type RequestFn } from './request';
 import type { CursorParams, ListPage } from './types';
 
-export type ConnectionOwnerType = 'organization' | 'user';
+export type ConnectionOwnerType = 'organization' | 'user' | 'external';
 export type ConnectionEnvironment = 'production' | 'sandbox';
 export type ConnectionRelayMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 export type ConnectionStatus = 'connected' | 'needs_reauth' | 'revoked' | 'error' | 'not_connected';
@@ -33,6 +33,8 @@ export interface Connection {
   scopes: string[];
   /** Epoch ms. */
   expires_at: number | null;
+  /** When the provider retires the refresh token (epoch ms); `connection.expiring` goes out 14, 3 and 1 days before. */
+  refresh_expires_at: number | null;
   metadata: Record<string, string>;
   authorized_by_user_id: string | null;
   connected_at: number | null;
@@ -86,6 +88,8 @@ export interface ListConnectionsParams extends CursorParams {
   owner_type?: ConnectionOwnerType;
   owner_id?: string;
   provider?: string;
+  /** The provider-side account, across every owner of the instance. */
+  external_id?: string;
   environment?: ConnectionEnvironment;
   status?: ConnectionStatus;
 }
@@ -168,6 +172,9 @@ export interface ImportConnectionRow {
   host_params?: Record<string, string>;
   name?: string;
   allowed_hosts?: string[];
+  /** When the provider retires the refresh token: epoch ms or ISO 8601. */
+  refresh_token_expires_at?: number | string;
+  config?: { scopes?: string[] };
 }
 
 export interface ImportConnectionsBody {
@@ -175,13 +182,17 @@ export interface ImportConnectionsBody {
   connections: ImportConnectionRow[];
   /** Spend each refresh token against the provider and store what it issues (default true). */
   validate?: boolean;
-  /** Check shapes only; never calls the provider. */
+  /** Validate each row and store nothing. A provider that rotates refresh tokens is only shape-checked (`ok_unverified`) unless `verify` is set. */
   dry_run?: boolean;
+  /** With `dry_run`: also refresh rotating providers' rows, accepting that the token you sent is replaced at the provider. */
+  verify?: boolean;
 }
 
 export interface ImportConnectionResult {
   index: number;
   status: 'created' | 'updated' | 'would_create' | 'would_update' | 'failed';
+  /** Dry run only. */
+  check?: 'ok' | 'ok_unverified' | 'refresh_refused' | 'provider_unavailable' | 'invalid_row';
   connection_id: string | null;
   validated: boolean;
   refreshed: boolean;

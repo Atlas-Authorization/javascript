@@ -258,6 +258,8 @@ export const koKR: LocalizationResource = {
   'error.high_risk_blocked': '평소와 다른 로그인으로 판단되어 차단되었습니다.',
   'error.sms_region_blocked': '이 전화번호로는 문자 메시지를 이용할 수 없습니다.',
   'error.github_team_required': '이 GitHub 계정은 여기에 로그인할 수 있는 GitHub 조직이나 팀의 구성원이 아닙니다.',
+  'error.app_approval_denied': '앱에서 로그인이 거부되었습니다.',
+  'error.app_approval_expired': '제때 로그인이 승인되지 않았습니다. 다시 시도하세요.',
   'apiKeys.title': 'API 키',
   'apiKeys.subtitle': '키를 사용하면 스크립트와 연동 서비스가 사용자를 대신하여 작업할 수 있습니다. 비밀번호처럼 취급해 주세요.',
   'apiKeys.organizationSubtitle': '키를 사용하면 스크립트와 연동 서비스가 이 조직을 대신하여 작업할 수 있습니다. 비밀번호처럼 취급해 주세요.',

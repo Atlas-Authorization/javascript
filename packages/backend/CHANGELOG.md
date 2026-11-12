@@ -1,5 +1,12 @@
 # @atlasauth/backend changelog
 
+## 0.43.0 — 2026-11-11
+
+- Framework-neutral `createMountHandler`, `createVerifyHandler`, `createWebhookHandler` and `createBeforeUserCreateHandler` (Fetch `Request` → `Response`), the same code `@atlasauth/nextjs` uses.
+- `createKeyMirror` imports bcrypt and argon2id hashes (verified at Atlas on first use).
+- Integration tokens take per-call `context` claims.
+- Types for the new connection, OAuth client and impersonation fields and events.
+
 ## 0.42.0 — 2026-11-11
 
 - `secretKeys.rotate()` takes `preset`. Integration health types carry `events.reason` (`secret_missing`, `signature_rejected`, `backlog_pending`) and `events.hint`.

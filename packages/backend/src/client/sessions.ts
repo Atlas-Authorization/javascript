@@ -137,6 +137,8 @@ export interface IntegrationTokenRequest {
   /** Cookie Munch: the site id (`aud` = `cookiemunch:<cbid>`). */
   cbid?: string;
   audienceParams?: Record<string, string>;
+  /** Per-mint claims signed into the token; each name and value must be on the integration's `claims.context` allow-list. */
+  context?: Record<string, string>;
 }
 
 export function sessionsResource(request: RequestFn) {
@@ -161,6 +163,7 @@ export function sessionsResource(request: RequestFn) {
         method: 'POST',
         path: `/v1/sessions/${enc(id)}/integration_tokens/${enc(what.for)}`,
         ...(Object.keys(query).length ? { query } : {}),
+        ...(what.context ? { body: { context: what.context } } : {}),
       });
     }
     return request({ method: 'POST', path: `/v1/sessions/${enc(id)}/tokens/${enc(what)}` });

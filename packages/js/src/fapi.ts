@@ -399,6 +399,8 @@ export interface IntegrationAudienceOptions {
   audience?: string;
   cbid?: string;
   audienceParams?: Record<string, string>;
+  /** Per-mint claims signed into the token, e.g. `{ audience: 'seller' }`. The integration must allow each name and value (its `claims.context`); otherwise no token is minted. */
+  context?: Record<string, string>;
 }
 
 /** The query string for a per-call audience (and any extra parameters). */
@@ -448,7 +450,10 @@ export async function getIntegrationToken(
     org_id?: string;
     space_id?: string;
     redeem_url?: string;
-  }>(`/v1/client/sessions/${encodeURIComponent(sessionId)}/integration_tokens/${encodeURIComponent(integration)}${q}`);
+  }>(
+    `/v1/client/sessions/${encodeURIComponent(sessionId)}/integration_tokens/${encodeURIComponent(integration)}${q}`,
+    options.context && Object.keys(options.context).length ? { context: options.context } : undefined,
+  );
   if (!response.ok || !response.data?.jwt) return null;
   const d = response.data;
   return {
@@ -569,7 +574,7 @@ export interface FlowState {
    * form draws the code field or the "check your email" step. Cleared when the
    * server returns a new attempt.
    */
-  prepared?: 'email_code' | 'email_link' | null;
+  prepared?: 'email_code' | 'email_link' | 'app_approval' | null;
   /** A mailed link: the code to show on this device, which a person opening the link on another device must type there. */
   matchCode?: string | null;
   /**
@@ -670,6 +675,10 @@ export function requestForStep(
           };
 
     case 'collect_second_factor':
+      // App approval has nothing to type either: the client polls once the app was asked (`prepareAppApprovalSecondFactor`).
+      if (values.strategy === 'app_approval') {
+        return { path: `/v1/client/sign_ins/${id}/attempt_second_factor`, body: { strategy: 'app_approval' } };
+      }
       // Duo has no code to type: the client polls once the user has been sent to Duo (`prepareDuo`).
       if (values.strategy === 'duo') {
         return {
@@ -1077,7 +1086,11 @@ export async function pollAttempt(
     `/v1/client/${resource}/${id}?poll_secret=${encodeURIComponent(state.pollSecret)}`,
   );
 
-  if (!response.ok || !response.data) return { state, ticket: null };
+  if (!response.ok || !response.data) {
+    // The app denied the sign-in, or nobody approved it in time: stop waiting and say so.
+    const refused = response.errors.some((e) => e.reason === 'app_approval_denied' || e.reason === 'app_approval_expired');
+    return refused ? { state: { ...state, errors: response.errors, pollSecret: null, prepared: null, matchCode: null }, ticket: null } : { state, ticket: null };
+  }
 
   // The link proved the address of an account whose password was on hold and made
   // no session: the password signs in now, so stop polling and ask for it.

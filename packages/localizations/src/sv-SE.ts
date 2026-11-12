@@ -305,6 +305,8 @@ export const svSE: LocalizationResource = {
   'error.high_risk_blocked': 'Den här inloggningen blockerades eftersom den verkade ovanlig.',
   'error.sms_region_blocked': 'Textmeddelanden är inte tillgängliga för det här telefonnumret.',
   'error.github_team_required': 'Ditt GitHub-konto är inte medlem i en GitHub-organisation eller ett team som får logga in här.',
+  'error.app_approval_denied': 'Inloggningen nekades i appen.',
+  'error.app_approval_expired': 'Inloggningen godkändes inte i tid. Försök igen.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'Jag godkänner {policies}',

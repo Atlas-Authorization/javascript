@@ -562,3 +562,5 @@ export function requireAccessToken(options: AccessTokenVerifierOptions): Request
     }
   };
 }
+
+export { atlasMountMiddleware } from './mount';

@@ -307,6 +307,8 @@ export const hiIN: LocalizationResource = {
   'error.high_risk_blocked': 'यह साइन इन असामान्य लगने के कारण रोक दिया गया।',
   'error.sms_region_blocked': 'इस फ़ोन नंबर के लिए टेक्स्ट संदेश उपलब्ध नहीं हैं।',
   'error.github_team_required': 'आपका GitHub खाता किसी ऐसे GitHub संगठन या टीम का सदस्य नहीं है जिसे यहाँ साइन इन करने की अनुमति है।',
+  'error.app_approval_denied': 'ऐप में साइन-इन अस्वीकार कर दिया गया।',
+  'error.app_approval_expired': 'साइन-इन को समय पर मंज़ूरी नहीं मिली। फिर से कोशिश करें।',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'मैं {policies} से सहमत हूँ',

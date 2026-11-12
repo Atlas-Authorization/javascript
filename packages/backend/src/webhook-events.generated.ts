@@ -326,7 +326,7 @@ export type WebhookDataConnection = {
   object: "connection";
   id: string;
   owner: {
-    type: "organization" | "user";
+    type: "organization" | "user" | "external";
     id: string;
     [key: string]: unknown;
   };
@@ -347,6 +347,9 @@ export type WebhookDataConnection = {
   scopes?: string[];
   scopes_added?: string[];
   scopes_removed?: string[];
+  /** Refresh token expires (epoch ms), or null. */
+  refresh_expires_at?: number | null;
+  days_left?: number;
   /** Occurred (epoch ms). */
   occurred_at?: number;
   [key: string]: unknown;
@@ -618,6 +621,18 @@ export type WebhookDataMinorStatus = {
   user_id: string;
   status: "consent_required" | "consented" | "declined";
   consent_age?: number;
+  [key: string]: unknown;
+};
+
+/** An OAuth client changed review status. */
+export type WebhookDataOAuthClientStatus = {
+  id: string;
+  client_id: string;
+  owner?: string | null;
+  status: "development" | "in_review" | "approved" | "suspended";
+  previous: "development" | "in_review" | "approved" | "suspended";
+  /** At (epoch ms). */
+  at?: number;
   [key: string]: unknown;
 };
 
@@ -926,6 +941,22 @@ export type WebhookDataSession = {
   strategy?: string;
   /** session.expired: idle_expired = no activity for the idle window; expired = the absolute lifetime ran out. */
   reason?: "idle_expired" | "expired";
+  [key: string]: unknown;
+};
+
+/** A sign-in waiting for approval in the integrator's app. No secret: the right number is never named. */
+export type WebhookDataSignInApproval = {
+  object: "sign_in_approval";
+  /** The approval id the app answers (POST /v1/client/app_approvals/{id}/respond). */
+  id: string;
+  user_id: string;
+  purpose: "first_factor" | "step_up";
+  choices: string[];
+  /** Expires (epoch ms). */
+  expires_at: number;
+  ip?: string | null;
+  location?: string | null;
+  user_agent?: string | null;
   [key: string]: unknown;
 };
 
@@ -1362,6 +1393,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"billing_trial.ended", WebhookDataBillingSubscription>
   | AtlasWebhookEnvelope<"billing_trial.started", WebhookDataBillingSubscription>
   | AtlasWebhookEnvelope<"billing_trial.will_end", WebhookDataBillingTrialWillEnd>
+  | AtlasWebhookEnvelope<"connection.expiring", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.reauthorization_required", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.recovered", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.refresh_failed", WebhookDataConnection>
@@ -1416,6 +1448,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"mcp_gateway.tool_changed", WebhookDataMcpToolChange>
   | AtlasWebhookEnvelope<"message.rate_limited", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"mfa_factor.quarantined", WebhookDataSecuritySignal>
+  | AtlasWebhookEnvelope<"oauth_client.status_changed", WebhookDataOAuthClientStatus>
   | AtlasWebhookEnvelope<"organization.created", WebhookDataOrganization>
   | AtlasWebhookEnvelope<"organization.deleted", WebhookDataOrganization>
   | AtlasWebhookEnvelope<"organization.it_alert", WebhookDataOrgItAlert>
@@ -1454,10 +1487,12 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"secret_key.revoked", WebhookDataSecretKeyExpiring>
   | AtlasWebhookEnvelope<"session.created", WebhookDataSession>
   | AtlasWebhookEnvelope<"session.expired", WebhookDataSession>
+  | AtlasWebhookEnvelope<"session.impersonation_ended", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"session.impersonation_started", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"session.pending", WebhookDataSession>
   | AtlasWebhookEnvelope<"session.revoked", WebhookDataSession>
   | AtlasWebhookEnvelope<"session.updated", WebhookDataSession>
+  | AtlasWebhookEnvelope<"sign_in.approval_requested", WebhookDataSignInApproval>
   | AtlasWebhookEnvelope<"signing_key.activated", WebhookDataSigningKey>
   | AtlasWebhookEnvelope<"signing_key.staged", WebhookDataSigningKey>
   | AtlasWebhookEnvelope<"sms.created", WebhookDataSmsMessage>
@@ -1552,6 +1587,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "billing_trial.ended",
   "billing_trial.started",
   "billing_trial.will_end",
+  "connection.expiring",
   "connection.reauthorization_required",
   "connection.recovered",
   "connection.refresh_failed",
@@ -1606,6 +1642,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "mcp_gateway.tool_changed",
   "message.rate_limited",
   "mfa_factor.quarantined",
+  "oauth_client.status_changed",
   "organization.created",
   "organization.deleted",
   "organization.it_alert",
@@ -1644,10 +1681,12 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "secret_key.revoked",
   "session.created",
   "session.expired",
+  "session.impersonation_ended",
   "session.impersonation_started",
   "session.pending",
   "session.revoked",
   "session.updated",
+  "sign_in.approval_requested",
   "signing_key.activated",
   "signing_key.staged",
   "sms.created",

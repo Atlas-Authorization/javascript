@@ -307,6 +307,8 @@ export const heIL: LocalizationResource = {
   'error.high_risk_blocked': 'הכניסה נחסמה משום שנראתה חריגה.',
   'error.sms_region_blocked': 'הודעות טקסט אינן זמינות למספר טלפון זה.',
   'error.github_team_required': 'חשבון ה-GitHub שלך אינו חבר בארגון או בצוות GitHub שמורשים להתחבר כאן.',
+  'error.app_approval_denied': 'הכניסה נדחתה באפליקציה.',
+  'error.app_approval_expired': 'הכניסה לא אושרה בזמן. נסו שוב.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'אני מסכים/ה ל{policies}',

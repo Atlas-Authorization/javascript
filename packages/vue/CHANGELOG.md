@@ -2,6 +2,10 @@
 
 
 
+## 0.21.0 — 2026-11-11
+
+- Localized `app_approval_denied` and `app_approval_expired` messages.
+
 ## 0.20.0 — 2026-11-11
 
 - The plugin takes `attribution`, passed to the sign-up client (see `@atlasauth/js` 0.36.0).

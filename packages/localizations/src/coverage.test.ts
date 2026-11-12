@@ -132,6 +132,8 @@ describe('server error reasons', () => {
   'high_risk_blocked',
   'sms_region_blocked',
   'github_team_required',
+  'app_approval_denied',
+  'app_approval_expired',
   ];
 
   it.each(Object.entries(LOCALES))('%s translates every reason', (tag, bundle) => {

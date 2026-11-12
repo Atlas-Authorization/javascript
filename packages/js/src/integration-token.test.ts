@@ -25,6 +25,12 @@ describe('getIntegrationToken (getToken({ for }))', () => {
     expect(calls[0]!.init?.method).toBe('POST');
   });
 
+  it('sends per-mint context in the body', async () => {
+    const { client: c, calls } = client(() => new Response(JSON.stringify({ jwt: 'x', expires_in: 120, integration: 'chatly', audience: 'chatly:c' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await getIntegrationToken(c, 'sess_1', 'chatly', { context: { audience: 'seller' } });
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ context: { audience: 'seller' } });
+  });
+
   it('passes the forumulate space and returns the redeem URL', async () => {
     const { client: c, calls } = client(
       () =>

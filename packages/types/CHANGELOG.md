@@ -1,5 +1,9 @@
 # @atlasauth/types changelog
 
+## 0.14.0 — 2026-11-11
+
+- New events `oauth_client.status_changed`, `sign_in.approval_requested`, `session.impersonation_ended`, `connection.expiring`; connection `refresh_expires_at` and external owners.
+
 ## 0.13.0 — 2026-11-05
 
 ### Added

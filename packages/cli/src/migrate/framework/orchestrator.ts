@@ -396,7 +396,9 @@ export const VENDOR_HANDLERS: Record<VendorStepId, (m: VendorMigration) => Promi
         const text = readFileSync(join(m.dir, segment), 'utf8');
         const parts = splitBundleParts(text);
         if (!parts.length) throw new CliError(`${segment} is empty. Run the export again with --force.`);
-        job = await http.post<MigrationImport>(base, {});
+        const policy = m.args.values['password-policy'];
+        if (policy !== undefined && policy !== 'active' && policy !== 'until_email_verified') throw new CliError('--password-policy must be active or until_email_verified.');
+        job = await http.post<MigrationImport>(base, policy ? { options: { password_policy: policy } } : {});
         m.state.import.current = { segment, id: job.id };
         m.state.import.ids.push(job.id);
         m.saveState();

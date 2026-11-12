@@ -259,6 +259,8 @@ export const deDE: LocalizationResource = {
   'error.high_risk_blocked': 'Diese Anmeldung wurde blockiert, weil sie ungewöhnlich erschien.',
   'error.sms_region_blocked': 'SMS sind für diese Telefonnummer nicht verfügbar.',
   'error.github_team_required': 'Ihr GitHub-Konto ist kein Mitglied einer GitHub-Organisation oder eines Teams, das sich hier anmelden darf.',
+  'error.app_approval_denied': 'Die Anmeldung wurde in der App abgelehnt.',
+  'error.app_approval_expired': 'Die Anmeldung wurde nicht rechtzeitig bestätigt. Versuchen Sie es erneut.',
   'apiKeys.title': 'API-Schlüssel',
   'apiKeys.subtitle': 'Mit Schlüsseln können Skripte und Integrationen in deinem Namen handeln. Behandle sie wie Passwörter.',
   'apiKeys.organizationSubtitle': 'Mit Schlüsseln können Skripte und Integrationen im Namen dieser Organisation handeln. Behandle sie wie Passwörter.',

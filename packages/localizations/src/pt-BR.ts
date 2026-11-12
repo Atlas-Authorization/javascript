@@ -259,6 +259,8 @@ export const ptBR: LocalizationResource = {
   'error.high_risk_blocked': 'Este login foi bloqueado porque parecia incomum.',
   'error.sms_region_blocked': 'Mensagens de texto não estão disponíveis para este número de telefone.',
   'error.github_team_required': 'Sua conta do GitHub não é membro de uma organização ou equipe do GitHub autorizada a entrar aqui.',
+  'error.app_approval_denied': 'O login foi negado no aplicativo.',
+  'error.app_approval_expired': 'O login não foi aprovado a tempo. Tente novamente.',
   'apiKeys.title': 'Chaves de API',
   'apiKeys.subtitle': 'As chaves permitem que scripts e integrações ajam em seu nome. Trate-as como senhas.',
   'apiKeys.organizationSubtitle': 'As chaves permitem que scripts e integrações ajam em nome desta organização. Trate-as como senhas.',

@@ -75,7 +75,8 @@ export function memoryKeyMirrorStore(): KeyMirrorStore & { keys: Map<string, Mir
   };
 }
 
-type ApiKeysApi = Pick<ReturnType<typeof apiKeysResource>, 'create' | 'delete' | 'listRevoked'>;
+type ApiKeysResource = ReturnType<typeof apiKeysResource>;
+type ApiKeysApi = Pick<ApiKeysResource, 'create' | 'delete' | 'listRevoked'> & Partial<Pick<ApiKeysResource, 'verify' | 'get'>>;
 
 export interface KeyMirrorOptions {
   store: KeyMirrorStore;
@@ -88,6 +89,13 @@ export interface KeyMirrorOptions {
    */
   scopeImplications?: Record<string, string[]>;
   allowedScopes?: string[];
+  /**
+   * On a local miss, ask Atlas to verify the secret (needs `apiKeys.verify` and
+   * `apiKeys.get`). Required for keys imported with `bcryptHash` / `argon2idHash`,
+   * which cannot be checked locally; once Atlas accepts one, the mirror stores its
+   * sha256 and verifies it locally from then on. Default false.
+   */
+  verifyAtAtlas?: boolean;
   /** Clock, for tests. */
   now?: () => number;
 }
@@ -101,6 +109,10 @@ export type MirrorImportInput = Omit<CreateApiKeyBody, 'import' | 'prefix'> & {
   secret?: string;
   /** sha256 hex of the full secret. */
   secretHash?: string;
+  /** An existing bcrypt hash of the full secret (kept as-is; verified at Atlas on first use). */
+  bcryptHash?: string;
+  /** An existing Argon2id hash of the full secret (same). */
+  argon2idHash?: string;
   /** The public head shown in listings, e.g. the first 16 characters. */
   prefix: string;
 };
@@ -166,7 +178,17 @@ export function createKeyMirror(options: KeyMirrorOptions) {
      * Atlas stores the hash, the mirror stores the same hash.
      */
     async import(input: MirrorImportInput, idempotencyKey?: string): Promise<ApiKey> {
-      const { secret, secretHash, prefix, ...rest } = input;
+      const { secret, secretHash, bcryptHash, argon2idHash, prefix, ...rest } = input;
+      const legacy = bcryptHash ?? argon2idHash;
+      if (legacy !== undefined) {
+        const imported = await apiKeys.create(
+          { ...rest, import: { secret_hash: legacy, hash_algorithm: bcryptHash !== undefined ? 'bcrypt' : 'argon2id', prefix } },
+          idempotencyKey,
+        );
+        // No local sha256 yet: `verify` (with verifyAtAtlas) fills it in on first use.
+        await store.put(toMirrored(imported, `legacy:${imported.id}`));
+        return imported;
+      }
       const hash = secretHash?.toLowerCase() ?? (secret !== undefined ? hashApiKeySecret(secret) : undefined);
       if (!hash || !HEX64.test(hash)) {
         throw new TypeError('import needs the full `secret` or its `secretHash` (64 lowercase hex characters of sha256).');
@@ -200,7 +222,15 @@ export function createKeyMirror(options: KeyMirrorOptions) {
      */
     async verify(secret: string, opts: { requiredScopes?: string[] } = {}): Promise<MirrorVerification> {
       if (typeof secret !== 'string' || !secret) return { valid: false };
-      const key = await store.getByHash(hashApiKeySecret(secret));
+      const hash = hashApiKeySecret(secret);
+      let key = await store.getByHash(hash);
+      if (!key && options.verifyAtAtlas && apiKeys.verify && apiKeys.get) {
+        const remote = await apiKeys.verify(secret);
+        if (remote.valid) {
+          key = toMirrored(await apiKeys.get(remote.id), hash);
+          await store.put(key);
+        }
+      }
       if (!key || key.revoked_at !== null) return { valid: false };
       if (key.expires_at !== null && key.expires_at <= now()) return { valid: false };
       const effective = expand(key.scopes ?? [], implications, allowed);

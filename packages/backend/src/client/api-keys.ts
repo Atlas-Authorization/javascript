@@ -161,7 +161,12 @@ export interface CreateApiKeyBody extends ApiKeyControls {
    * Import an existing key by its hash instead of minting one: the response has
    * no `secret`, and the original secret verifies from then on.
    */
-  import?: { secret_hash: string; hash_algorithm?: 'sha256' | 'sha256_hex'; prefix: string };
+  import?: {
+    secret_hash: string;
+    /** `bcrypt` / `argon2id`: `secret_hash` is the full hash string; verified on first use, then re-hashed to sha256. */
+    hash_algorithm?: 'sha256' | 'sha256_hex' | 'bcrypt' | 'argon2id';
+    prefix: string;
+  };
 }
 
 export interface UpdateApiKeyBody extends ApiKeyControls {

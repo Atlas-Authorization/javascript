@@ -306,6 +306,8 @@ export const arSA: LocalizationResource = {
   'error.high_risk_blocked': 'تم حظر تسجيل الدخول هذا لأنه بدا غير معتاد.',
   'error.sms_region_blocked': 'الرسائل النصية غير متاحة لرقم الهاتف هذا.',
   'error.github_team_required': 'حسابك على GitHub ليس عضوًا في مؤسسة أو فريق على GitHub مسموح له بتسجيل الدخول هنا.',
+  'error.app_approval_denied': 'تم رفض تسجيل الدخول في التطبيق.',
+  'error.app_approval_expired': 'لم تتم الموافقة على تسجيل الدخول في الوقت المناسب. حاول مرة أخرى.',
 
   // Policy acceptance (terms, privacy, any policy).
   'policy.agreeCombined': 'أوافق على {policies}',

@@ -530,3 +530,7 @@ export function requireAccessToken(options: AccessTokenVerifierOptions) {
     };
   };
 }
+
+// ── Path mount: Atlas's Frontend API under a path of your app ───────────────
+export { atlasMountPlugin, type AtlasMountPluginOptions } from './mount';
+export { createMountHandler, createVerifyHandler, createWebhookHandler, createBeforeUserCreateHandler, memoryDedupeStore, sqlDedupeStore } from '@atlasauth/backend';

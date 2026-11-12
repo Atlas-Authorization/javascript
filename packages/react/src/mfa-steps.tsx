@@ -9,6 +9,7 @@ import {
   enrollmentOptionKey,
   groupSetupKey,
   mfaChoicesFrom,
+  prepareAppApprovalSecondFactor,
   prepareDuo,
   prepareSecondFactorCode,
   type MfaChoices,
@@ -463,6 +464,63 @@ export function DuoSecondFactorOption({ attemptId, onSubmit }: { attemptId: stri
     <>
       <button type="button" className={cls('link', 'atlas-link')} data-atlas="duo-second-factor" disabled={state.busy} onClick={() => void start()}>
         Use Duo instead
+      </button>
+      {state.error ? (
+        <div className={cls('alert', 'atlas-alert')} role="alert">
+          {state.error}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * "Approve in your app" at the second-factor step: asks the app, shows the number to
+ * tap there, then polls the attempt. A denial or a timeout comes back as the flow's
+ * own (localized) error, and the polling stops.
+ */
+export function AppApprovalSecondFactorOption({ attemptId, onSubmit, stopped }: { attemptId: string; onSubmit(values: Record<string, string>): void; stopped?: boolean }) {
+  const client = useFapiClient();
+  const cls = useClasses();
+  const [state, setState] = useState<{ number?: string; busy?: boolean; error?: string }>({});
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stop = () => {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => stop, []);
+  // The flow reported a denial or a timeout: stop asking.
+  useEffect(() => {
+    if (stopped) {
+      stop();
+      setState({});
+    }
+  }, [stopped]);
+  const start = async () => {
+    setState({ busy: true });
+    const { request, response } = await prepareAppApprovalSecondFactor(client, attemptId);
+    if (!request) {
+      setState({ error: response.errors[0]?.message ?? 'Approving in the app is not available right now.' });
+      return;
+    }
+    setState({ number: request.number });
+    stop();
+    timer.current = setInterval(() => {
+      if (Date.now() > request.expiresAt + 5_000) stop();
+      else onSubmit({ strategy: 'app_approval' });
+    }, 2_000);
+  };
+  if (state.number) {
+    return (
+      <p className={cls('text', 'atlas-text')} data-atlas="app-approval-waiting" aria-live="polite">
+        Open your app and tap this number to sign in: <strong><code>{state.number}</code></strong>
+      </p>
+    );
+  }
+  return (
+    <>
+      <button type="button" className={cls('link', 'atlas-link')} data-atlas="app-approval-second-factor" disabled={state.busy} onClick={() => void start()}>
+        Approve in your app instead
       </button>
       {state.error ? (
         <div className={cls('alert', 'atlas-alert')} role="alert">

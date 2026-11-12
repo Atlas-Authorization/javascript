@@ -10,6 +10,7 @@ export * from './session-global';
 export * from './tab-election';
 export * from './attempt';
 export * from './first-factor';
+export * from './app-approval';
 export * from './initial-state';
 // Server errors in the app's language (`error.<reason>` catalog keys).
 export * from './errors';

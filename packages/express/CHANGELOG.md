@@ -1,5 +1,9 @@
 # @atlasauth/express changelog
 
+## 0.8.0 — 2026-11-11
+
+- New `atlasMountMiddleware`: the Frontend API path mount for Express.
+
 ## 0.7.0 — 2026-11-06
 
 ### Added

@@ -2,6 +2,10 @@
 
 
 
+## 0.33.0 — 2026-11-11
+
+- `<SignIn>` offers "Approve in your app" (number matching) when the instance enables app approval, as a first factor and as a second factor.
+
 ## 0.32.0 — 2026-11-11
 
 - `<AtlasProvider attribution={…}>`: sign-up forms copy the configured browser values into `unsafe_metadata` (see `@atlasauth/js` 0.36.0).

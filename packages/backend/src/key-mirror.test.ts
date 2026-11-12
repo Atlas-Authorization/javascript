@@ -80,6 +80,20 @@ describe('createKeyMirror', () => {
     await expect(mirror.import({ subject_type: 'user', subject_id: 'u', secretHash: 'xyz', prefix: 'p' })).rejects.toThrow(TypeError);
   });
 
+  it('imports a bcrypt hash, then verifies at Atlas once and locally after', async () => {
+    const { api } = fakeAtlas();
+    const store = memoryKeyMirrorStore();
+    const verify = vi.fn(async () => ({ object: 'api_key_verification' as const, valid: true as const, id: 'eak_imp', subject_type: 'organization' as const, subject_id: 'org_1', claims: {}, last_used_at: null }));
+    const get = vi.fn(async () => ({ ...KEY, id: 'eak_imp' }));
+    const mirror = createKeyMirror({ store, apiKeys: { ...api, verify, get } as never, verifyAtAtlas: true });
+    const bcryptHash = `$2b$10$${'a'.repeat(53)}`;
+    await mirror.import({ subject_type: 'organization', subject_id: 'org_1', bcryptHash, prefix: 'pat_live_ab' });
+    expect((api.create.mock.calls[0]![0] as { import: unknown }).import).toEqual({ secret_hash: bcryptHash, hash_algorithm: 'bcrypt', prefix: 'pat_live_ab' });
+    expect((await mirror.verify('pat_live_ab_secret')).valid).toBe(true);
+    expect((await mirror.verify('pat_live_ab_secret')).valid).toBe(true);
+    expect(verify).toHaveBeenCalledTimes(1);
+  });
+
   it('revokes locally first, even when the Atlas call fails', async () => {
     const { api } = fakeAtlas();
     const store = memoryKeyMirrorStore();

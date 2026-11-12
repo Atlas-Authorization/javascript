@@ -93,6 +93,9 @@ export type {
 export * from './webhooks';
 export * from './webhook-dedupe';
 export * from './webhook-events';
+// Framework-neutral Request -> Response handlers: path mount proxy, domain verify, webhook + hook routes.
+export * from './mount';
+export * from './fetch-handlers';
 
 // Session helpers: mirror the Atlas user into your own table; CSRF tokens bound to the session.
 export * from './sync-local-user';

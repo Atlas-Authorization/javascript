@@ -259,6 +259,8 @@ export const plPL: LocalizationResource = {
   'error.high_risk_blocked': 'Ta próba logowania została zablokowana, ponieważ wyglądała nietypowo.',
   'error.sms_region_blocked': 'Wiadomości SMS nie są dostępne dla tego numeru telefonu.',
   'error.github_team_required': 'Twoje konto GitHub nie należy do organizacji ani zespołu GitHub, któremu wolno się tu logować.',
+  'error.app_approval_denied': 'Logowanie zostało odrzucone w aplikacji.',
+  'error.app_approval_expired': 'Logowanie nie zostało zatwierdzone na czas. Spróbuj ponownie.',
   'apiKeys.title': 'Klucze API',
   'apiKeys.subtitle': 'Klucze pozwalają skryptom i integracjom działać w Twoim imieniu. Traktuj je jak hasła.',
   'apiKeys.organizationSubtitle': 'Klucze pozwalają skryptom i integracjom działać w imieniu tej organizacji. Traktuj je jak hasła.',
