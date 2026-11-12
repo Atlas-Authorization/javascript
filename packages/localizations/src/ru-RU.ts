@@ -261,6 +261,7 @@ export const ruRU: LocalizationResource = {
   'error.github_team_required': 'Ваш аккаунт GitHub не состоит в организации или команде GitHub, которой разрешён вход здесь.',
   'error.app_approval_denied': 'Вход был отклонён в приложении.',
   'error.app_approval_expired': 'Вход не был подтверждён вовремя. Попробуйте ещё раз.',
+  'error.captcha_wrong_flow': 'Эта проверка безопасности выдана для другого шага. Пройдите её ещё раз.',
   'signIn.appApprovalTapNumber': 'Откройте приложение и нажмите это число, чтобы войти:',
   'signIn.appApprovalStart': 'Подтвердить в приложении',
   'mfa.appApprovalUseInstead': 'Вместо этого подтвердить в приложении',

@@ -487,6 +487,28 @@ describe('JWKS caching and kid-miss refetch', () => {
     expect(calls(dead)).toBe(1);
   });
 
+  it('by default serves the last good keys through an outage for 24 hours, throttled, then fails closed', async () => {
+    const { jwks, kid } = await keyring();
+    let failing = false;
+    const fetchImpl = vi.fn(async () => {
+      if (failing) throw new Error('ECONNREFUSED');
+      return new Response(JSON.stringify(jwks), { status: 200 });
+    }) as unknown as typeof fetch;
+    let clock = 1_000_000;
+    const cache = new JwksCache({ url: JWKS_URL, fetchImpl, now: () => clock, ttlMs: 600_000 });
+    await cache.get(kid);
+    failing = true;
+    clock += 700_000;
+    expect(await cache.get(kid)).not.toBeNull();
+    const after = calls(fetchImpl);
+    for (let i = 0; i < 20; i++) await cache.get(kid);
+    expect(calls(fetchImpl)).toBe(after);
+    clock += 23 * 3_600_000;
+    expect(await cache.get(kid)).not.toBeNull();
+    clock += 2 * 3_600_000;
+    expect(await cache.get(kid)).toBeNull();
+  });
+
   it('reads the kid from a token header', async () => {
     const { privateKey, kid } = await keyring('kid-abc');
     expect(readKid(await mint(privateKey, kid))).toBe('kid-abc');

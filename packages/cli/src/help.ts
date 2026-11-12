@@ -13,6 +13,7 @@ Commands:
   login                      Authenticate and store a profile credential
                              (--device: operator sign-in in the browser, no key stored)
   token --resource <id>      A one-hour token for one instance/app from your operator sign-in
+        --audience <id>      A token for another tool from the same sign-in (no browser)
   keys whoami|list|create|rotate|revoke|revoke-leaked|data|op
                              Scoped secret keys; new secrets go sealed into 0600 files
   logout                     Remove a stored profile credential
@@ -425,9 +426,15 @@ that product's own token exchange), never stored, and Atlas refuses it.`,
   token: `atlas token — a one-hour token bound to one instance or app
 
 Usage: atlas token --resource <ins_…|app_…|acct_…> [--scope "<scopes>"] [--json]
+       atlas token --audience <id> [--json]
 
 Swaps your operator sign-in (atlas login --device) for an Atlas token (RFC 8693
-token exchange). "read" = every read scope.`,
+token exchange). "read" = every read scope.
+
+--audience hands the same sign-in to another tool, no browser: <id> is one of the
+audiences GET /v1/operator lists. The token is for that tool, lasts at most an hour
+(never past your sign-in) and Atlas refuses it. --json prints
+{access_token, expires_in, audience, issuer}.`,
 
   keys: `atlas keys — the instance's secret keys
 
@@ -967,7 +974,8 @@ org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers,
 custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles,
 webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans,
 notification_templates, email_templates, organization_policies, branding, cookie_consent,
-sign_in_with_atlas, signing_key_policy. Re-running is a no-op.
+sign_in_with_atlas, signing_key_policy, hosted_pages, connection_oauth_clients, migration_bridges,
+impersonation_policy, connection_token_limits, connection_relay_limits. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --prune         also delete live resources missing from the config, and compare every live key

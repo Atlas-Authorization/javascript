@@ -13,6 +13,11 @@ import {
   hasFromClaims,
   type ProtectCondition,
   type SessionClaims,
+  createServerCsrfGate,
+  fetchPublicInitialState,
+  type ServerCsrfOptions,
+  type ServerInitialStateOptions,
+  type SidListRevocation,
 } from '@atlasauth/backend';
 // Real Fastify types, type-only so `fastify` is a peer dependency and is NEVER
 // bundled or pinned — a handler then wires `getAuth`/`requireAuth`/the plugin
@@ -142,6 +147,19 @@ export interface AtlasPluginOptions {
    */
   secretKey?: string;
   bapiBaseUrl?: string;
+  /**
+   * Also reject a token whose session Atlas has revoked (sign-out everywhere, admin revoke),
+   * within `intervalMs` instead of the token lifetime. Needs `secretKey` with `sessions:read`.
+   * `true` uses the defaults (poll every 15 s).
+   */
+  revocation?: boolean | Omit<SidListRevocation, 'mode'>;
+  /**
+   * CSRF protection for cookie-authenticated browsers (same rules as the Next.js proxy):
+   * a session-bound token lives in the `__atlas_csrf` cookie and unsafe methods must echo it
+   * in `x-atlas-csrf`, else 403 `CSRF_TOKEN_INVALID`. Bearer, signed-out and mount-path
+   * requests are skipped. Read the token with {@link getCsrfToken}. Needs `secretKey` or `ATLAS_CSRF_SECRET`.
+   */
+  csrf?: boolean | ServerCsrfOptions;
 }
 
 /** Options for {@link AtlasPluginOptions.betterAuthBridge}. */
@@ -289,6 +307,8 @@ declare module 'fastify' {
   interface FastifyRequest {
     /** Decorated by {@link atlasPlugin}; read it via {@link getAuth}. */
     atlas?: AtlasAuth | null;
+    /** Set by {@link atlasPlugin} with `csrf`: the token valid for this session. */
+    atlasCsrfToken?: string | null;
   }
 }
 
@@ -359,6 +379,7 @@ function signedIn(claims: SessionClaims): AtlasAuth {
 export async function resolveAuth(
   backend: AtlasBackend,
   request: FastifyRequest,
+  revocation?: Omit<SidListRevocation, 'mode'>,
 ): Promise<AtlasAuth> {
   try {
     const header = firstHeader(request.headers.authorization ?? request.headers.Authorization);
@@ -368,7 +389,13 @@ export async function resolveAuth(
     const token = bearer ?? cookie;
     if (!token) return signedOut();
 
-    const result = await backend.verify(token);
+    // With `revocation`, the session-revocation list is consulted too (fails closed without a secret key).
+    const result = revocation
+      ? await backend.authenticateRequest(
+          { headers: { authorization: bearer ? `Bearer ${bearer}` : undefined, cookie: bearer ? undefined : `__session=${cookie}` } },
+          { revocation: { mode: 'sid_list', ...revocation } },
+        )
+      : await backend.verify(token);
     if (!result.ok) return signedOut();
 
     return signedIn(result.claims);
@@ -420,6 +447,8 @@ export function atlasPlugin(options: AtlasPluginOptions): FastifyPluginCallback 
   const bridge = options.betterAuthBridge
     ? betterAuthBridgeHook({ ...options, config: options.betterAuthBridge === true ? {} : options.betterAuthBridge })
     : null;
+  const revocation = options.revocation ? (options.revocation === true ? {} : options.revocation) : undefined;
+  const csrfGate = options.csrf ? createServerCsrfGate(options.csrf, options.secretKey) : null;
   const vendorBridge = options.migrationBridge ? migrationBridgeHook({ ...options, config: options.migrationBridge }) : null;
 
   return function plugin(instance: FastifyInstance, _opts, done) {
@@ -432,12 +461,25 @@ export function atlasPlugin(options: AtlasPluginOptions): FastifyPluginCallback 
 
     // resolveAuth already fails closed, but guard the attach step too: a
     // signed-out decoration is always safe, a thrown hook is not.
-    const hook = async (request: FastifyRequest): Promise<void> => {
+    const hook = async (request: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
       try {
-        request.atlas = await resolveAuth(backend, request);
+        request.atlas = await resolveAuth(backend, request, revocation);
       } catch {
         request.atlas = signedOut();
       }
+      if (!csrfGate) return undefined;
+      const decision = await csrfGate({
+        method: request.method,
+        path: request.url.split('?')[0] ?? '/',
+        headers: { get: (name) => firstHeader(request.headers[name.toLowerCase()]) ?? null },
+        sessionId: request.atlas.sessionId,
+        https: request.protocol === 'https',
+      });
+      if (decision.action === 'skip') return undefined;
+      request.atlasCsrfToken = decision.token;
+      if (decision.setCookie) reply.header('set-cookie', decision.setCookie);
+      if (decision.action === 'refuse') return reply.code(403).send({ errors: [{ code: 'CSRF_TOKEN_INVALID' }] });
+      return undefined;
     };
 
     // Branch on the literal so `addHook`'s per-hook overloads resolve cleanly
@@ -457,6 +499,27 @@ export function atlasPlugin(options: AtlasPluginOptions): FastifyPluginCallback 
  */
 export function getAuth(request: FastifyRequest): AtlasAuth {
   return request.atlas ?? signedOut();
+}
+
+/** The CSRF token for this session (with `csrf`), to render into a page or send to your JS; else `null`. */
+export function getCsrfToken(request: FastifyRequest): string | null {
+  return request.atlasCsrfToken ?? null;
+}
+
+/**
+ * Everything the React / JS client needs to hydrate without a flash, for server-rendered
+ * (non-Next) pages: the instance's appearance and sign-in environment (cached in process),
+ * the signed-in state of this request, and the CSRF token. Serialize it into the page and pass it
+ * as `initialState` to `<AtlasProvider>`. Never throws. `publishableKey` / `frontendApi` default to
+ * `ATLAS_PUBLISHABLE_KEY` / `ATLAS_FRONTEND_API`.
+ */
+export async function getInitialState(request: FastifyRequest, options: ServerInitialStateOptions = {}) {
+  const auth = getAuth(request);
+  return {
+    ...(await fetchPublicInitialState(options)),
+    auth: { userId: auth.userId, sessionId: auth.sessionId, orgId: auth.orgId, orgRole: auth.orgRole },
+    csrfToken: getCsrfToken(request),
+  };
 }
 
 /**

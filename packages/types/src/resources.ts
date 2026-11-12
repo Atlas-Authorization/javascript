@@ -55,6 +55,8 @@ export interface User {
   image_url: string | null;
   public_metadata: Metadata;
   mfa_enabled: boolean;
+  /** Whether the user holds at least one passkey. */
+  has_passkey?: boolean;
   banned: boolean;
   locked: boolean;
   /** Epoch milliseconds, or null if never signed in. */

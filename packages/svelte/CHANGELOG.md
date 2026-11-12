@@ -2,6 +2,10 @@
 
 
 
+## 0.20.0 — 2026-11-12
+
+- `captcha_wrong_flow` error reason string.
+
 ## 0.19.0 — 2026-11-11
 
 - Localized `app_approval_denied` and `app_approval_expired` messages.

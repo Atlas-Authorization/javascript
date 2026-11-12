@@ -1,5 +1,9 @@
 # @atlasauth/hono changelog
 
+## 0.8.0 — 2026-11-12
+
+- `revocation` and `csrf` options, `getCsrfToken`, `getInitialState`; `requireFeature` / `requirePlan` pass-through.
+
 ## 0.7.0 — 2026-11-06
 
 ### Added

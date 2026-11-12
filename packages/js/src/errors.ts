@@ -61,6 +61,7 @@ export const ERROR_REASONS = Object.freeze([
   'github_team_required',
   'app_approval_denied',
   'app_approval_expired',
+  'captcha_wrong_flow',
 ] as const);
 
 /** A reason with a string in every shipped catalog. */
@@ -167,4 +168,14 @@ export function catalogLocale(catalog: object | null | undefined): string | unde
   if (!catalog || typeof catalog !== 'object') return undefined;
   const tag = (catalog as { locale?: unknown }).locale;
   return typeof tag === 'string' && tag.trim() !== '' ? tag : undefined;
+}
+
+/**
+ * The sentence for a stable `reason` in the app's language: the catalog string
+ * `error.<reason>` from `localization` (a `@atlasauth/localizations` bundle or a
+ * lookup function), else `fallback`, else a generic sentence. Never empty.
+ * For headless sign-in: `reasonMessage(flow.getSnapshot().reason, esES)`.
+ */
+export function reasonMessage(reason: string | null | undefined, localization?: ErrorStrings | null, fallback?: string): string {
+  return localizedErrorMessage({ reason, message: fallback }, localization);
 }

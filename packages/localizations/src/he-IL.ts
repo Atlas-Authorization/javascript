@@ -309,6 +309,7 @@ export const heIL: LocalizationResource = {
   'error.github_team_required': 'חשבון ה-GitHub שלך אינו חבר בארגון או בצוות GitHub שמורשים להתחבר כאן.',
   'error.app_approval_denied': 'הכניסה נדחתה באפליקציה.',
   'error.app_approval_expired': 'הכניסה לא אושרה בזמן. נסו שוב.',
+  'error.captcha_wrong_flow': 'בדיקת האבטחה הזו הונפקה לשלב אחר. השלם אותה שוב.',
   'signIn.appApprovalTapNumber': 'פתחו את האפליקציה והקישו על המספר הזה כדי להיכנס:',
   'signIn.appApprovalStart': 'אישור באפליקציה שלכם',
   'mfa.appApprovalUseInstead': 'אשרו באפליקציה במקום',

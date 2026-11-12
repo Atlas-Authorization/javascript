@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.45.0 — 2026-11-12
+
+- Mount failover across an ordered upstream list (502 with Retry-After when none answers); JWKS stale keys bounded to 24 h with throttled refetch; opt-in fail-closed `sid_list` (`onStale: 'reject'`); `requireFeature` / `requirePlan` on the access-token verifier; shared CSRF gate and `getInitialState` for server adapters; `exchangeOperatorTokenForAudience`; connections `transfer()` and the instance connections client.
+
 ## 0.44.0 — 2026-11-11
 
 - `createCliLogin` and `openInBrowser` from `@atlasauth/backend/cli` (a Node-only subpath, so the main entry stays edge-safe): browser sign-in for a command-line tool of your own. `login()` runs the device flow, `getAccessToken()` refreshes and rotates the stored session, `logout()` revokes it, `status()` reads it without a network call. The session is a 0600 file by default, or your own keychain store.

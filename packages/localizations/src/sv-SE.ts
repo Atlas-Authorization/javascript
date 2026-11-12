@@ -307,6 +307,7 @@ export const svSE: LocalizationResource = {
   'error.github_team_required': 'Ditt GitHub-konto är inte medlem i en GitHub-organisation eller ett team som får logga in här.',
   'error.app_approval_denied': 'Inloggningen nekades i appen.',
   'error.app_approval_expired': 'Inloggningen godkändes inte i tid. Försök igen.',
+  'error.captcha_wrong_flow': 'Den här säkerhetskontrollen utfärdades för ett annat steg. Slutför den igen.',
   'signIn.appApprovalTapNumber': 'Öppna din app och tryck på det här numret för att logga in:',
   'signIn.appApprovalStart': 'Godkänn i din app',
   'mfa.appApprovalUseInstead': 'Godkänn i din app i stället',

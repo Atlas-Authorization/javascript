@@ -261,6 +261,7 @@ export const zhCN: LocalizationResource = {
   'error.github_team_required': '你的 GitHub 账号不属于允许在此登录的 GitHub 组织或团队。',
   'error.app_approval_denied': '应用中已拒绝此次登录。',
   'error.app_approval_expired': '登录未在规定时间内获批准，请重试。',
+  'error.captcha_wrong_flow': '此安全检查是为另一个步骤签发的。请重新完成。',
   'signIn.appApprovalTapNumber': '打开你的应用，点按此数字以登录：',
   'signIn.appApprovalStart': '在应用中批准',
   'mfa.appApprovalUseInstead': '改为在应用中批准',

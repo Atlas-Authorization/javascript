@@ -5,6 +5,7 @@ import {
   OAuthFlowError,
   createAtlasClient,
   exchangeOperatorToken,
+  exchangeOperatorTokenForAudience,
   generateSealKeyPair,
   openSealedSecret,
   pollOperatorLogin,
@@ -107,8 +108,22 @@ export async function token(ctx: RunContext, args: ParsedArgs): Promise<number> 
   if (!profile?.operator || profile.operator.expires_at <= Date.now()) {
     throw new CliError("No current operator sign-in. Run 'atlas login --device' first.");
   }
+  // --audience <id>: hand the sign-in to another product's CLI, no browser.
+  const audience = str(values, 'audience');
+  if (audience) {
+    try {
+      const handed = await exchangeOperatorTokenForAudience(profile.operator.access_token, { audience }, { apiUrl: profile.api_url, fetch: ctx.fetch });
+      if (wantsJson(values)) {
+        printJson(ctx.io, { access_token: handed.access_token, expires_in: handed.expires_in, audience: handed.audience, issuer: handed.issuer });
+      } else ctx.io.out(handed.access_token);
+      return 0;
+    } catch (err) {
+      if (err instanceof OAuthFlowError) throw new CliError(`Token exchange refused (${err.error}): ${err.message}`);
+      throw err;
+    }
+  }
   const resource = str(values, 'resource');
-  if (!resource) throw new CliError('--resource is required (an ins_…, app_… or acct_… id).');
+  if (!resource) throw new CliError('--resource is required (an ins_…, app_… or acct_… id), or --audience <id> for another tool.');
   const scope = str(values, 'scope') || 'read';
   const bound = await exchangeOrExplain(profile.operator.access_token, resource, scope, { apiUrl: profile.api_url, fetch: ctx.fetch });
   if (wantsJson(values)) {

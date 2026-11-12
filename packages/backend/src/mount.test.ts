@@ -273,3 +273,49 @@ describe('createVerifyHandler', () => {
     expect((await createVerifyHandler({}).GET(new Request('https://app.example.com/.well-known/atlas-verify/x'))).status).toBe(404);
   });
 });
+
+describe('createMountHandler failover', () => {
+  const two = ['https://a.atlas.test', 'https://b.atlas.test'];
+  const fetchBy = (answers: Record<string, () => Response>) => {
+    const hosts: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      const host = new URL(url).origin;
+      hosts.push(host);
+      return answers[host]!();
+    }) as unknown as typeof fetch;
+    return { hosts, fetchImpl };
+  };
+
+  it('moves an idempotent request to the next origin on a connection error or 5xx', async () => {
+    const { hosts, fetchImpl } = fetchBy({
+      'https://a.atlas.test': () => {
+        throw new TypeError('fetch failed');
+      },
+      'https://b.atlas.test': () => new Response('ok'),
+    });
+    const { GET } = createMountHandler({ ...opts, upstream: two, fetchImpl });
+    expect(await (await GET(new Request('https://app.example.com/atlas/v1/environment'))).text()).toBe('ok');
+    expect(hosts).toEqual(two);
+
+    const five = fetchBy({ 'https://a.atlas.test': () => new Response('x', { status: 503 }), 'https://b.atlas.test': () => new Response('ok') });
+    const h = createMountHandler({ ...opts, upstream: 'a.atlas.test,b.atlas.test', fetchImpl: five.fetchImpl });
+    expect((await h.GET(new Request('https://app.example.com/atlas/v1/environment'))).status).toBe(200);
+  });
+
+  it('never replays a write, and answers 502 when every origin is down', async () => {
+    const { hosts, fetchImpl } = fetchBy({
+      'https://a.atlas.test': () => {
+        throw new TypeError('fetch failed');
+      },
+      'https://b.atlas.test': () => new Response('ok'),
+    });
+    const { POST, GET } = createMountHandler({ ...opts, upstream: two, fetchImpl });
+    const res = await POST(new Request('https://app.example.com/atlas/v1/client/sign_ins', { method: 'POST', body: 'x' }));
+    expect(res.status).toBe(502);
+    expect(hosts).toEqual(['https://a.atlas.test']);
+
+    const dead = createMountHandler({ ...opts, upstream: ['https://a.atlas.test'], fetchImpl });
+    expect((await dead.GET(new Request('https://app.example.com/atlas/v1/environment'))).status).toBe(502);
+    expect(GET).toBeTypeOf('function');
+  });
+});

@@ -103,6 +103,36 @@ describe('atlas login --device --audience', () => {
   });
 });
 
+describe('atlas token --audience', () => {
+  const seed = (operator?: { access_token: string; expires_at: number; issuer: string }) => {
+    const config = new FileConfigStore(join(mkdtempSync(join(tmpdir(), 'atlas-cli-')), 'config.json'));
+    config.save({ active_profile: 'default', profiles: { default: { api_url: 'https://api.test', ...(operator ? { operator } : {}) } } } as never);
+    return config;
+  };
+
+  it('hands the stored sign-in to another tool without a browser, as JSON', async () => {
+    const config = seed({ access_token: 'op-token', expires_at: Date.now() + 600_000, issuer: 'https://atlasauth.test' });
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      const p = new URLSearchParams(String(init?.body));
+      expect(p.get('subject_token')).toBe('op-token');
+      expect(p.get('audience')).toBe('partner-console');
+      return json({ access_token: 'for-partner', token_type: 'Bearer', expires_in: 600, audience: 'partner-console', issuer: 'https://atlasauth.test', scope: 'x' });
+    }) as unknown as typeof fetch;
+    const m = memIO();
+    const ctx = defaultContext({ io: m.io, config, fetch: fetchImpl, env: {} });
+    expect(await run(['token', '--audience', 'partner-console', '--json'], ctx)).toBe(0);
+    expect(JSON.parse(m.out.join(''))).toEqual({ access_token: 'for-partner', expires_in: 600, audience: 'partner-console', issuer: 'https://atlasauth.test' });
+  });
+
+  it('says to sign in first when there is no current sign-in', async () => {
+    const config = seed({ access_token: 'old', expires_at: Date.now() - 1000, issuer: 'https://atlasauth.test' });
+    const m = memIO();
+    const ctx = defaultContext({ io: m.io, config, fetch: (async () => json({}, 500)) as unknown as typeof fetch, env: {} });
+    expect(await run(['token', '--audience', 'partner-console'], ctx)).not.toBe(0);
+    expect(m.err.join('\n')).toContain("Run 'atlas login --device' first");
+  });
+});
+
 describe('API base from the environment (operator commands)', () => {
   it('ATLAS_API_BASE is used, and wins over ATLAS_API_URL; the URL name still works alone', async () => {
     const seen: string[] = [];

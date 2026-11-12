@@ -1,5 +1,9 @@
 # @atlasauth/express changelog
 
+## 0.9.0 — 2026-11-12
+
+- `revocation` and `csrf` options, `getCsrfToken`, `getInitialState`; `requireFeature` / `requirePlan` pass-through.
+
 ## 0.8.0 — 2026-11-11
 
 - New `atlasMountMiddleware`: the Frontend API path mount for Express.

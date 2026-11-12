@@ -67,6 +67,7 @@ export * from './email-code-check';
 // SRP-6a sign-in (RFC 5054, 3072-bit group, SHA-256): the password never leaves the browser.
 export * from './srp';
 export * from './step-up';
+export * from './sign-in-flow';
 export * from './org-step-up';
 export * from './telegram';
 export * from './siwe';
@@ -76,6 +77,8 @@ export * from './reauth';
 export * from './api-keys';
 // The apps a user authorized, with the OpenID Grant Management grants each holds.
 export * from './authorized-apps';
+// Headless developer portal: register an app, rotate its secret, manage redirect URIs, request scopes, read usage.
+export * from './developer-portal';
 export * from './ciba';
 export * from './device-authorization';
 export * from './app-launcher';
@@ -123,6 +126,8 @@ export * from './captcha-controller';
 export * from './instance-settings';
 // `GET /v1/client/environment`, typed, and the `email_delivery` facts.
 export * from './environment';
+export * from './dpop';
+export { hasToken } from './has-token';
 // Framework-agnostic authorization primitive — `has()`/`evaluate` for any
 // non-React/Next consumer reading org_role/org_permissions off its session.
 export {

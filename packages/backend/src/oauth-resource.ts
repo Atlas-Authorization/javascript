@@ -187,6 +187,10 @@ export interface AccessTokenVerifierOptions {
   audience: string | readonly string[] | false;
   /** Scopes every request must carry (all of them). */
   requiredScopes?: readonly string[];
+  /** Billing features (the `fea` claim) every request's token must carry (all of them). */
+  requireFeature?: string | readonly string[];
+  /** Billing plan slug (the `pla` claim) the token must carry; any one of these. */
+  requirePlan?: string | readonly string[];
   /** The JWKS URL; default `${issuer}/.well-known/jwks.json`. */
   jwksUrl?: string;
   /** A static key set (tests / offline). Mutually exclusive with `jwksUrl`. */
@@ -305,7 +309,8 @@ export type AccessTokenErrorCode =
   | 'insufficient_scope'
   | 'invalid_dpop_proof'
   | 'use_dpop_nonce'
-  | 'insufficient_user_authentication';
+  | 'insufficient_user_authentication'
+  | 'insufficient_entitlement';
 
 export type AccessTokenResult =
   | {
@@ -392,6 +397,10 @@ function htuOf(url: string): string | null {
 /** Per-call extras for the verifier: scopes plus the RFC 9470 step-up requirements. */
 export interface AccessTokenCallOptions {
   requiredScopes?: readonly string[];
+  /** Billing features the token must carry (`fea`), on top of the verifier's. Missing: 403 `insufficient_entitlement`. */
+  requireFeature?: string | readonly string[];
+  /** Billing plan slug(s) the token must carry (`pla`; any one), on top of the verifier's. */
+  requirePlan?: string | readonly string[];
   /** Accept only these `acr` values; otherwise answer `insufficient_user_authentication`. */
   requireAcr?: readonly string[];
   /** Require `auth_time` within this many seconds; otherwise answer `insufficient_user_authentication`. */
@@ -557,6 +566,21 @@ export function createAccessTokenVerifier(
     const missing = required.filter((s) => !granted.has(s));
     if (missing.length > 0) {
       return fail(403, 'insufficient_scope', `The access token is missing the required scope(s): ${missing.join(' ')}.`);
+    }
+    const features = [options.requireFeature, extra?.requireFeature].flat().filter((f): f is string => !!f);
+    const plans = [extra?.requirePlan ?? options.requirePlan].flat().filter((p): p is string => !!p);
+    if (features.length > 0 || plans.length > 0) {
+      const held = Array.isArray(claims.fea) ? (claims.fea as unknown[]) : [];
+      const missingFeature = features.filter((f) => !held.includes(f));
+      if (missingFeature.length > 0 || (plans.length > 0 && !plans.includes(claims.pla as string))) {
+        return fail(
+          403,
+          'insufficient_entitlement',
+          missingFeature.length > 0
+            ? `The access token's plan lacks the required feature(s): ${missingFeature.join(' ')}.`
+            : 'The access token is not on a required plan.',
+        );
+      }
     }
     if (extra?.requireAcr?.length || extra?.maxAge !== undefined) {
       const step = requireAcr(claims, {

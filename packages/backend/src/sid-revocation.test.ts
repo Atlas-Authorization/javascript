@@ -46,4 +46,21 @@ describe('SidRevocationList', () => {
     expect(await bad.isRevoked('x')).toBe(false);
     expect(onError).toHaveBeenCalled();
   });
+
+  it('fails closed only when asked to, after the list has been stale too long', async () => {
+    let t = 1_000_000;
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('down');
+    }) as unknown as typeof fetch;
+    const io = { secretKey: 'sk_x', baseUrl: 'https://api.test', fetchImpl, now: () => t };
+    const open = new SidRevocationList({ mode: 'sid_list', intervalMs: 1000 }, io);
+    const closed = new SidRevocationList({ mode: 'sid_list', intervalMs: 1000, onStale: 'reject', staleAfterMs: 60_000 }, io);
+    await open.isRevoked('s');
+    await closed.isRevoked('s');
+    expect(closed.unavailable()).toBe(false); // not stale yet
+    t += 61_000;
+    await closed.isRevoked('s');
+    expect(closed.unavailable()).toBe(true);
+    expect(open.unavailable()).toBe(false); // default keeps trusting the last list
+  });
 });

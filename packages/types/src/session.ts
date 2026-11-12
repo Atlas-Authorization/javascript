@@ -47,6 +47,11 @@ export interface SessionClaims {
   amr?: string[];
   acr?: string;
   /**
+   * (opt-in, `session.includeRiskClaim`) the session's advisory risk
+   * assessment. Informs the app's own decisions; never a verdict from Atlas.
+   */
+  risk?: { score: number; level: 'low' | 'medium' | 'high'; reasons: string[] };
+  /**
    * §P0-3 (opt-in, `session.includeOrgsClaim`) — the user's organization
    * memberships, size-bounded so the token stays small: at most N orgs, `pub`
    * (a small public-metadata subset) dropped when it would bloat the claim.

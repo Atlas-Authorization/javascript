@@ -210,7 +210,7 @@ export type VerifyResult =
   | AuthorizedSession
   | {
       ok: false;
-      reason: 'malformed' | 'invalid' | 'no_keys' | 'unauthorized_party' | 'revoked';
+      reason: 'malformed' | 'invalid' | 'no_keys' | 'unauthorized_party' | 'revoked' | 'revocation_unavailable';
       /**
        * Set with `no_keys` when the key set could not be obtained — e.g. OIDC
        * discovery failed — saying why. A configuration diagnostic, never a
@@ -577,7 +577,8 @@ export class AtlasBackend {
       fetchImpl: this.options.fetchImpl,
       now: this.options.now ?? Date.now,
     });
-    return (await this.sidList.isRevoked(result.claims.sid)) ? { ok: false, reason: 'revoked' } : result;
+    if (await this.sidList.isRevoked(result.claims.sid)) return { ok: false, reason: 'revoked' };
+    return this.sidList.unavailable() ? { ok: false, reason: 'revocation_unavailable' } : result;
   }
 
   /**

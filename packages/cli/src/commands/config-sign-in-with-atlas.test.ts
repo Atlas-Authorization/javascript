@@ -60,6 +60,6 @@ describe('sign_in_with_atlas in atlas.yaml', () => {
     const io = captureIO();
     await run(['apply', '--help'], ctx(io, new Api()));
     expect(io.stdout()).toContain('sign_in_with_atlas');
-    expect(io.stdout()).toMatch(/signing_key_policy\. Re-running/);
+    expect(io.stdout()).toMatch(/sign_in_with_atlas, signing_key_policy,/);
   });
 });

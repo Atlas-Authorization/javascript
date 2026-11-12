@@ -21,6 +21,13 @@ export const REFETCH_INTERVAL_MS = 60_000;
 /** §7.3 serves `Cache-Control: max-age=3600`; honoured rather than ignored. */
 export const DEFAULT_TTL_MS = 3_600_000;
 
+/**
+ * How long past its TTL a cached key set is still served when refetching fails
+ * (an Atlas incident). Bounded so a key Atlas has rotated out for compromise is
+ * not trusted forever; pass `maxStaleMs: Infinity` to never expire it.
+ */
+export const DEFAULT_MAX_STALE_MS = 24 * 3_600_000;
+
 export interface Jwks {
   keys: Array<{ kid?: string; [claim: string]: unknown }>;
 }
@@ -55,8 +62,8 @@ export interface JwksCacheDeps {
    * Bound stale-on-error: when a refetch fails, keep serving the cached keys
    * only until they are this much past their TTL, then return null (verify
    * fails closed). A failed attempt is also not retried inside
-   * `refetchIntervalMs`, so an outage cannot become a fetch storm. Omitted =
-   * serve the cached keys indefinitely (the historical behaviour).
+   * `refetchIntervalMs`, so an outage cannot become a fetch storm. Defaults to
+   * {@link DEFAULT_MAX_STALE_MS} (24 hours); `Infinity` serves them indefinitely.
    */
   maxStaleMs?: number;
 }
@@ -144,7 +151,7 @@ export class JwksCache {
      * outage must not turn every request into an outbound fetch), and stale
      * keys are served only up to maxStaleMs past their TTL.
      */
-    if (this.deps.maxStaleMs !== undefined && this.lastAttemptFailed && now - this.lastAttemptAt < interval) {
+    if (this.lastAttemptFailed && now - this.lastAttemptAt < interval) {
       this.lastOutcome = 'throttled';
       return this.staleOrNull(now, ttl);
     }
@@ -206,7 +213,7 @@ export class JwksCache {
   /** The cached set on a failure: always, unless maxStaleMs bounds how stale it may be. */
   private staleOrNull(now: number, ttl: number): Jwks | null {
     if (!this.cached) return null;
-    if (this.deps.maxStaleMs !== undefined && now - this.fetchedAt >= ttl + this.deps.maxStaleMs) return null;
+    if (now - this.fetchedAt >= ttl + (this.deps.maxStaleMs ?? DEFAULT_MAX_STALE_MS)) return null;
     return this.cached;
   }
 

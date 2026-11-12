@@ -94,4 +94,4 @@ export interface AuthorizedSession {
 
 export type VerifyResult =
   | AuthorizedSession
-  | { ok: false; reason: 'malformed' | 'invalid' | 'no_keys' | 'unauthorized_party' };
+  | { ok: false; reason: 'malformed' | 'invalid' | 'no_keys' | 'unauthorized_party' | 'revoked' | 'revocation_unavailable' };

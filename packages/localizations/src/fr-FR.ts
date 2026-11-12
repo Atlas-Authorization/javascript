@@ -261,6 +261,7 @@ export const frFR: LocalizationResource = {
   'error.github_team_required': 'Votre compte GitHub n’appartient à aucune organisation ou équipe GitHub autorisée à se connecter ici.',
   'error.app_approval_denied': 'La connexion a été refusée dans l’application.',
   'error.app_approval_expired': 'La connexion n’a pas été approuvée à temps. Réessayez.',
+  'error.captcha_wrong_flow': 'Cette vérification de sécurité a été émise pour une autre étape. Effectuez-la à nouveau.',
   'signIn.appApprovalTapNumber': 'Ouvrez votre application et touchez ce numéro pour vous connecter :',
   'signIn.appApprovalStart': 'Approuver dans votre application',
   'mfa.appApprovalUseInstead': 'Approuver plutôt dans votre application',

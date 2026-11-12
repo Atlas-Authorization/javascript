@@ -2,6 +2,10 @@
 
 
 
+## 0.38.0 — 2026-11-12
+
+- `createSignInFlow` / `createSignUpFlow` (headless typed steps with captcha wired to the right flow), `requireStepUp` / `retryWithStepUp`, `reasonMessage`, `createDpopClient`, `hasToken`, `createDeveloperPortal`, `revokeAllAgentAccess`.
+
 ## 0.37.0 — 2026-11-11
 
 - New app-approval sign-in: `prepareAppApproval`, `prepareAppApprovalSecondFactor`, `pollAppApprovalSecondFactor`, and for the approving app `getAppApproval`, `approveSignIn`, `denySignIn`.

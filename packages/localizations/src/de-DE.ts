@@ -261,6 +261,7 @@ export const deDE: LocalizationResource = {
   'error.github_team_required': 'Ihr GitHub-Konto ist kein Mitglied einer GitHub-Organisation oder eines Teams, das sich hier anmelden darf.',
   'error.app_approval_denied': 'Die Anmeldung wurde in der App abgelehnt.',
   'error.app_approval_expired': 'Die Anmeldung wurde nicht rechtzeitig bestätigt. Versuchen Sie es erneut.',
+  'error.captcha_wrong_flow': 'Diese Sicherheitsprüfung wurde für einen anderen Schritt ausgestellt. Bitte führen Sie sie erneut durch.',
   'signIn.appApprovalTapNumber': 'Öffnen Sie Ihre App und tippen Sie zur Anmeldung auf diese Zahl:',
   'signIn.appApprovalStart': 'In Ihrer App bestätigen',
   'mfa.appApprovalUseInstead': 'Stattdessen in Ihrer App bestätigen',

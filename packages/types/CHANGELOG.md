@@ -1,5 +1,9 @@
 # @atlasauth/types changelog
 
+## 0.15.0 — 2026-11-12
+
+- New webhook events (connection.provider_event, connection.owner_changed, impersonation.started/ended, risk.elevated), session device fields, has_passkey.
+
 ## 0.14.0 — 2026-11-11
 
 - New events `oauth_client.status_changed`, `sign_in.approval_requested`, `session.impersonation_ended`, `connection.expiring`; connection `refresh_expires_at` and external owners.

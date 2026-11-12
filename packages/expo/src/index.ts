@@ -33,3 +33,8 @@ export {
 
 // Policy acceptance (terms, privacy, any policy): native components + hooks bound to this provider.
 export * from './policies';
+
+// Native social sign-in, the upgrade bridge for apps with existing users, and approve-in-your-app.
+export * from './social';
+export * from './bridge';
+export * from './app-approval';

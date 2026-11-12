@@ -261,6 +261,7 @@ export const esES: LocalizationResource = {
   'error.github_team_required': 'Tu cuenta de GitHub no pertenece a ninguna organización o equipo de GitHub autorizado para iniciar sesión aquí.',
   'error.app_approval_denied': 'El inicio de sesión se denegó en la aplicación.',
   'error.app_approval_expired': 'El inicio de sesión no se aprobó a tiempo. Inténtalo de nuevo.',
+  'error.captcha_wrong_flow': 'Esta comprobación de seguridad se emitió para otro paso. Complétala de nuevo.',
   'signIn.appApprovalTapNumber': 'Abre tu aplicación y toca este número para iniciar sesión:',
   'signIn.appApprovalStart': 'Aprobar en tu aplicación',
   'mfa.appApprovalUseInstead': 'Aprobar en tu aplicación en su lugar',

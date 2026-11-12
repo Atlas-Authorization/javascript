@@ -1,6 +1,16 @@
 # @atlasauth/expo changelog
 
+## 0.5.0 — 2026-11-12
+
+- `useAppApproval`, `exchangeLegacyToken` (upgrade bridge), `signInWithApple` / `signInWithGoogle` / `signInWithIdToken`.
+
 ## Unreleased
+
+### Added
+
+- `useAppApproval(id)`: approve-in-your-app for the signed-in app. Reads the pending request, polls while it is pending, and offers `approve(number)` and `deny()` with the shuffled number choices.
+- `exchangeLegacyToken(client, { source, token, clear, storage })`: the upgrade bridge. Trades the legacy session token an existing app still holds for an Atlas session, with no sign-in screen.
+- `signInWithApple`, `signInWithGoogle` and `signInWithIdToken`: native system-sheet sign-in over the provider's client.
 
 ## 0.4.0 — 2026-10-26
 

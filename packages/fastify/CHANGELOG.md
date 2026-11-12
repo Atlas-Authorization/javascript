@@ -1,5 +1,9 @@
 # @atlasauth/fastify changelog
 
+## 0.9.0 — 2026-11-12
+
+- `revocation` and `csrf` options, `getCsrfToken`, `getInitialState`; `requireFeature` / `requirePlan` pass-through.
+
 ## 0.8.0 — 2026-11-11
 
 - New `atlasMountPlugin`: mounts the Frontend API under a path with one `register` call, serves the domain-verify route, and optional webhook and before-user-create routes.

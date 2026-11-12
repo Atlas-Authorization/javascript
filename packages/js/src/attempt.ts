@@ -124,6 +124,8 @@ export interface AttemptView {
   /** The resource type the server stamps on every attempt view. */
   object?: 'sign_in_attempt' | 'sign_up_attempt';
   status: string;
+  /** On the `needs_captcha` marker: why the token you sent was refused (`captcha_failed`, `captcha_wrong_flow`); absent when none was sent. */
+  reason?: string;
   /** The identifier the attempt was started with; `null` before one is collected. */
   identifier?: string | null;
   supported_first_factors?: string[];

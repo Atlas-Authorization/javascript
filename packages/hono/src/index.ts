@@ -73,6 +73,14 @@ export const ATLAS_CONTEXT_KEY = 'atlas' as const;
  */
 export const SESSION_COOKIE = '__session' as const;
 
+import {
+  createServerCsrfGate,
+  fetchPublicInitialState,
+  type ServerCsrfOptions,
+  type ServerInitialStateOptions,
+  type SidListRevocation,
+} from '@atlasauth/backend';
+
 export interface AtlasMiddlewareOptions {
   /** The instance's JWKS URL — where the signing keys are fetched and cached. */
   jwksUrl: string;
@@ -118,6 +126,19 @@ export interface AtlasMiddlewareOptions {
    */
   secretKey?: string;
   bapiBaseUrl?: string;
+  /**
+   * Also reject a token whose session Atlas has revoked (sign-out everywhere, admin revoke),
+   * within `intervalMs` instead of the token lifetime. Needs `secretKey` with `sessions:read`.
+   * `true` uses the defaults (poll every 15 s).
+   */
+  revocation?: boolean | Omit<SidListRevocation, 'mode'>;
+  /**
+   * CSRF protection for cookie-authenticated browsers (same rules as the Next.js proxy):
+   * a session-bound token lives in the `__atlas_csrf` cookie and unsafe methods must echo it
+   * in `x-atlas-csrf`, else 403 `CSRF_TOKEN_INVALID`. Bearer, signed-out and mount-path
+   * requests are skipped. Read the token with {@link getCsrfToken}. Needs `secretKey` or `ATLAS_CSRF_SECRET`.
+   */
+  csrf?: boolean | ServerCsrfOptions;
 }
 
 /** Options for {@link AtlasMiddlewareOptions.betterAuthBridge}. */
@@ -225,6 +246,8 @@ export interface HonoRequestLike {
 }
 export interface HonoContextLike {
   req: HonoRequestLike;
+  /** Hono's `c.header(name, value, { append })`; needed only for `csrf` to set its cookie. */
+  header?(name: string, value: string, options?: { append?: boolean }): void;
   get(key: string): unknown;
   set(key: string, value: unknown): void;
 }
@@ -279,6 +302,7 @@ export const SIGNED_OUT: AtlasAuth = buildAuth({
 export async function resolveAuth(
   backend: AtlasBackend,
   c: HonoContextLike,
+  revocation?: Omit<SidListRevocation, 'mode'>,
 ): Promise<AtlasAuth> {
   const header = c.req.header('authorization') ?? c.req.header('Authorization');
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
@@ -287,7 +311,13 @@ export async function resolveAuth(
   const token = bearer ?? cookie;
   if (!token) return SIGNED_OUT;
 
-  const result = await backend.verify(token);
+  // With `revocation`, the session-revocation list is consulted too (fails closed without a secret key).
+  const result = revocation
+    ? await backend.authenticateRequest(
+        { headers: { authorization: bearer ? `Bearer ${bearer}` : undefined, cookie: bearer ? undefined : `${SESSION_COOKIE}=${cookie}` } },
+        { revocation: { mode: 'sid_list', ...revocation } },
+      )
+    : await backend.verify(token);
   if (!result.ok) return SIGNED_OUT;
 
   return buildAuth({
@@ -319,6 +349,8 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions): MiddlewareHand
     secretKey: options.secretKey,
     bapiBaseUrl: options.bapiBaseUrl,
   });
+  const revocation = options.revocation ? (options.revocation === true ? {} : options.revocation) : undefined;
+  const csrfGate = options.csrf ? createServerCsrfGate(options.csrf, options.secretKey) : null;
   const bridges: Array<(c: HonoContextLike) => Promise<Response | undefined>> = [];
   if (options.betterAuthBridge) bridges.push(betterAuthBridge({ ...options, config: options.betterAuthBridge === true ? {} : options.betterAuthBridge }));
   if (options.migrationBridge) bridges.push(migrationBridge({ ...options, config: options.migrationBridge }));
@@ -328,8 +360,31 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions): MiddlewareHand
       const redirect = await bridge(c);
       if (redirect) return redirect;
     }
-    const auth = await resolveAuth(backend, c);
+    let auth: AtlasAuth;
+    try {
+      auth = await resolveAuth(backend, c, revocation);
+    } catch {
+      auth = SIGNED_OUT;
+    }
     c.set(ATLAS_CONTEXT_KEY, auth);
+    if (csrfGate) {
+      const decision = await csrfGate({
+        method: c.req.method ?? 'GET',
+        path: new URL(c.req.url ?? '/', 'http://x').pathname,
+        headers: { get: (name) => c.req.header(name) ?? null },
+        sessionId: auth.sessionId,
+        https: (c.req.url ?? '').startsWith('https:'),
+      });
+      if (decision.action !== 'skip') {
+        c.set('atlasCsrfToken', decision.token);
+        if (decision.setCookie) c.header?.('set-cookie', decision.setCookie, { append: true });
+        if (decision.action === 'refuse') {
+          const headers = new Headers({ 'content-type': 'application/json' });
+          if (decision.setCookie) headers.append('set-cookie', decision.setCookie);
+          return new Response(JSON.stringify({ errors: [{ code: 'CSRF_TOKEN_INVALID' }] }), { status: 403, headers });
+        }
+      }
+    }
     await next();
   };
 }
@@ -427,6 +482,27 @@ function bridgeResponder(
 export function getAuth(c: HonoContextLike): AtlasAuth {
   const auth = c.get(ATLAS_CONTEXT_KEY);
   return (auth as AtlasAuth | undefined) ?? SIGNED_OUT;
+}
+
+/** The CSRF token for this session (with `csrf`), to render into a page or send to your JS; else `null`. */
+export function getCsrfToken(c: HonoContextLike): string | null {
+  return (c.get('atlasCsrfToken') as string | undefined) ?? null;
+}
+
+/**
+ * Everything the React / JS client needs to hydrate without a flash, for server-rendered
+ * pages: the instance's appearance and sign-in environment (cached in process), the signed-in
+ * state of this request, and the CSRF token. Serialize it into the page and pass it as
+ * `initialState` to `<AtlasProvider>`. Never throws. `publishableKey` / `frontendApi` default to
+ * `ATLAS_PUBLISHABLE_KEY` / `ATLAS_FRONTEND_API`.
+ */
+export async function getInitialState(c: HonoContextLike, options: ServerInitialStateOptions = {}) {
+  const auth = getAuth(c);
+  return {
+    ...(await fetchPublicInitialState(options)),
+    auth: { userId: auth.userId, sessionId: auth.sessionId, orgId: auth.orgId, orgRole: auth.orgRole },
+    csrfToken: getCsrfToken(c),
+  };
 }
 
 // ── Protecting an API / MCP server with Atlas-issued OAuth access tokens ────

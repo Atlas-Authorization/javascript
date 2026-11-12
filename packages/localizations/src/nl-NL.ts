@@ -260,6 +260,7 @@ export const nlNL: Localization = {
   'error.github_team_required': 'Je GitHub-account is geen lid van een GitHub-organisatie of -team dat hier mag inloggen.',
   'error.app_approval_denied': 'De aanmelding is geweigerd in de app.',
   'error.app_approval_expired': 'De aanmelding is niet op tijd goedgekeurd. Probeer het opnieuw.',
+  'error.captcha_wrong_flow': 'Deze beveiligingscontrole is voor een andere stap uitgegeven. Voer hem opnieuw uit.',
   'signIn.appApprovalTapNumber': 'Open je app en tik op dit nummer om je aan te melden:',
   'signIn.appApprovalStart': 'Goedkeuren in je app',
   'mfa.appApprovalUseInstead': 'In plaats daarvan goedkeuren in je app',

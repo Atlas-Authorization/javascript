@@ -134,6 +134,7 @@ describe('server error reasons', () => {
   'github_team_required',
   'app_approval_denied',
   'app_approval_expired',
+  'captcha_wrong_flow',
   ];
 
   it.each(Object.entries(LOCALES))('%s translates every reason', (tag, bundle) => {

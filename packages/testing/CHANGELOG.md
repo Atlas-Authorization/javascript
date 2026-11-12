@@ -1,5 +1,15 @@
 # @atlasauth/testing changelog
 
+## 0.5.0 — 2026-11-12
+
+- `@atlasauth/testing/e2e`: Playwright fixtures for throwaway users, testing-token sign-in through your own pages, TOTP codes, a virtual passkey device and cleanup.
+
+## Unreleased
+
+### Added
+
+- `@atlasauth/testing/e2e`: Playwright fixtures. `base.extend<AtlasFixtures>(atlasFixtures({ secretKey }))` adds `newUser` (throwaway users on a development instance, deleted when the test ends), `atlasPage` (testing token installed, so the captcha is waived) and `passkeyDevice` (WebAuthn virtual authenticator). Also `createTestUser` (optionally with a known TOTP secret), `deleteTestUser`, `totpCode`, `signInViaPage` and `addVirtualAuthenticator`. A production key is refused.
+
 ## 0.4.0 — 2026-11-02
 
 ### Added

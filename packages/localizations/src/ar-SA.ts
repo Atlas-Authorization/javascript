@@ -308,6 +308,7 @@ export const arSA: LocalizationResource = {
   'error.github_team_required': 'حسابك على GitHub ليس عضوًا في مؤسسة أو فريق على GitHub مسموح له بتسجيل الدخول هنا.',
   'error.app_approval_denied': 'تم رفض تسجيل الدخول في التطبيق.',
   'error.app_approval_expired': 'لم تتم الموافقة على تسجيل الدخول في الوقت المناسب. حاول مرة أخرى.',
+  'error.captcha_wrong_flow': 'صدر هذا الفحص الأمني لخطوة مختلفة. يُرجى إكماله مرة أخرى.',
   'signIn.appApprovalTapNumber': 'افتح تطبيقك واضغط على هذا الرقم لتسجيل الدخول:',
   'signIn.appApprovalStart': 'الموافقة في تطبيقك',
   'mfa.appApprovalUseInstead': 'الموافقة في تطبيقك بدلاً من ذلك',

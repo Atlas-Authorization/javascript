@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.19.0 — 2026-11-12
+
+- `captcha_wrong_flow` error reason in every locale.
+
 ## 0.18.1 — 2026-11-11
 
 - New keys `signIn.appApprovalTapNumber`, `signIn.appApprovalStart`, `mfa.appApprovalUseInstead`, `mfa.appApprovalUnavailable`, `mfa.duoUseInstead`, `mfa.duoWaiting`, `mfa.duoTimeout`, `mfa.duoUnavailable`, `mfa.manageDuoHelp`, 31 more `mfa.manage*` and `securityQuestions.*` keys for the extra-factor and security-question account panels, translated in every locale.

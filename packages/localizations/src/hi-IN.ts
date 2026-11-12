@@ -309,6 +309,7 @@ export const hiIN: LocalizationResource = {
   'error.github_team_required': 'आपका GitHub खाता किसी ऐसे GitHub संगठन या टीम का सदस्य नहीं है जिसे यहाँ साइन इन करने की अनुमति है।',
   'error.app_approval_denied': 'ऐप में साइन-इन अस्वीकार कर दिया गया।',
   'error.app_approval_expired': 'साइन-इन को समय पर मंज़ूरी नहीं मिली। फिर से कोशिश करें।',
+  'error.captcha_wrong_flow': 'यह सुरक्षा जांच किसी दूसरे चरण के लिए जारी की गई थी। कृपया इसे फिर से पूरा करें।',
   'signIn.appApprovalTapNumber': 'अपना ऐप खोलें और साइन इन करने के लिए इस नंबर पर टैप करें:',
   'signIn.appApprovalStart': 'अपने ऐप में मंज़ूरी दें',
   'mfa.appApprovalUseInstead': 'इसके बजाय अपने ऐप में मंज़ूरी दें',

@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.36.0 — 2026-11-12
+
+- `atlas token --audience <id>` hands your sign-in to another tool with no browser; atlas.yaml sections hosted_pages, connection_oauth_clients (instance and per owner), migration_bridges, impersonation_policy, connection_token_limits (incl. per_app) and connection_relay_limits.
+
 ## 0.35.0 — 2026-11-11
 
 - `${instance.fapi_host}`, `${instance.frontend_api_url}` and `${instance.id}` in atlas.yaml, filled in from the instance the key targets, so a config can name the instance's own sign-in host before it is known.

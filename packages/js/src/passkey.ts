@@ -368,6 +368,8 @@ export interface PasskeyPromptDecision {
   eligible: boolean;
   variant: string;
   cooldown_days: number;
+  /** Set when a running passkey campaign is why the prompt is due. */
+  campaign_id?: string;
 }
 
 const PROMPT_KEY = 'atlas.passkeyPromptDismissedAt';

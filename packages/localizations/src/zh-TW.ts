@@ -308,6 +308,7 @@ export const zhTW: LocalizationResource = {
   'error.github_team_required': '你的 GitHub 帳號不屬於允許在此登入的 GitHub 組織或團隊。',
   'error.app_approval_denied': '應用程式中已拒絕此次登入。',
   'error.app_approval_expired': '登入未在時限內獲得核准，請重試。',
+  'error.captcha_wrong_flow': '此安全性檢查是為另一個步驟簽發的，請重新完成。',
   'signIn.appApprovalTapNumber': '開啟你的應用程式，點按此數字以登入：',
   'signIn.appApprovalStart': '在應用程式中核准',
   'mfa.appApprovalUseInstead': '改為在應用程式中核准',

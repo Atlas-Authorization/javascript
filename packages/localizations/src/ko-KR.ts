@@ -260,6 +260,7 @@ export const koKR: LocalizationResource = {
   'error.github_team_required': '이 GitHub 계정은 여기에 로그인할 수 있는 GitHub 조직이나 팀의 구성원이 아닙니다.',
   'error.app_approval_denied': '앱에서 로그인이 거부되었습니다.',
   'error.app_approval_expired': '제때 로그인이 승인되지 않았습니다. 다시 시도하세요.',
+  'error.captcha_wrong_flow': '이 보안 확인은 다른 단계용으로 발급되었습니다. 다시 완료해 주세요.',
   'signIn.appApprovalTapNumber': '앱을 열고 로그인하려면 이 번호를 탭하세요:',
   'signIn.appApprovalStart': '앱에서 승인',
   'mfa.appApprovalUseInstead': '대신 앱에서 승인',

@@ -321,6 +321,7 @@ export const EN_US: Catalog = {
   'error.github_team_required': 'Your GitHub account is not a member of a GitHub organization or team allowed to sign in here.',
   'error.app_approval_denied': 'The sign-in was denied in the app.',
   'error.app_approval_expired': 'The sign-in was not approved in time. Try again.',
+  'error.captcha_wrong_flow': 'This security check was issued for a different step. Please complete it again.',
   'signIn.appApprovalTapNumber': 'Open your app and tap this number to sign in:',
   'signIn.appApprovalStart': 'Approve in your app',
   'mfa.appApprovalUseInstead': 'Approve in your app instead',

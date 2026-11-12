@@ -308,6 +308,7 @@ export const thTH: LocalizationResource = {
   'error.github_team_required': 'บัญชี GitHub ของคุณไม่ได้เป็นสมาชิกขององค์กรหรือทีม GitHub ที่ได้รับอนุญาตให้ลงชื่อเข้าใช้ที่นี่',
   'error.app_approval_denied': 'การเข้าสู่ระบบถูกปฏิเสธในแอป',
   'error.app_approval_expired': 'การเข้าสู่ระบบไม่ได้รับการอนุมัติทันเวลา โปรดลองอีกครั้ง',
+  'error.captcha_wrong_flow': 'การตรวจสอบความปลอดภัยนี้ออกให้สำหรับขั้นตอนอื่น โปรดทำใหม่อีกครั้ง',
   'signIn.appApprovalTapNumber': 'เปิดแอปของคุณแล้วแตะตัวเลขนี้เพื่อเข้าสู่ระบบ:',
   'signIn.appApprovalStart': 'อนุมัติในแอปของคุณ',
   'mfa.appApprovalUseInstead': 'อนุมัติในแอปของคุณแทน',

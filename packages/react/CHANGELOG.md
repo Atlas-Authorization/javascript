@@ -2,6 +2,10 @@
 
 
 
+## 0.34.0 — 2026-11-12
+
+- `useSignInFlow` / `useSignUpFlow` (no UI), `<SignIn passkeyPrompt>`, `captcha_wrong_flow` strings.
+
 ## 0.33.1 — 2026-11-11
 
 - The "Approve in your app" and "Use Duo instead" sign-in panels are localized (no more hard-coded English), as are the Duo-unavailable message and the Duo step in `<ManageMoreFactors>`; every other string in `<ManageMoreFactors>` and `<ManageSecurityQuestions>` is localized too; new keys listed in `@atlasauth/localizations` 0.18.1.

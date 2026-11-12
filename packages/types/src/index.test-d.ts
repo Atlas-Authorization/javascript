@@ -71,7 +71,7 @@ if (result.ok) {
   expectType<VerifiedSessionClaims>(result.protect());
   expectType<{ sub: string } | null>(result.actor);
 } else {
-  expectType<'malformed' | 'invalid' | 'no_keys' | 'unauthorized_party'>(result.reason);
+  expectType<'malformed' | 'invalid' | 'no_keys' | 'unauthorized_party' | 'revoked' | 'revocation_unavailable'>(result.reason);
 }
 
 // --- resources -------------------------------------------------------------

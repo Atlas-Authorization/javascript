@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/testing",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -11,6 +11,10 @@
     "./playwright": {
       "types": "./dist/playwright.d.ts",
       "default": "./dist/playwright.js"
+    },
+    "./e2e": {
+      "types": "./dist/e2e.d.ts",
+      "default": "./dist/e2e.js"
     },
     "./cypress": {
       "types": "./dist/cypress.d.ts",

@@ -261,6 +261,7 @@ export const ptBR: LocalizationResource = {
   'error.github_team_required': 'Sua conta do GitHub não é membro de uma organização ou equipe do GitHub autorizada a entrar aqui.',
   'error.app_approval_denied': 'O login foi negado no aplicativo.',
   'error.app_approval_expired': 'O login não foi aprovado a tempo. Tente novamente.',
+  'error.captcha_wrong_flow': 'Esta verificação de segurança foi emitida para outra etapa. Conclua-a novamente.',
   'signIn.appApprovalTapNumber': 'Abra o seu app e toque neste número para entrar:',
   'signIn.appApprovalStart': 'Aprovar no seu app',
   'mfa.appApprovalUseInstead': 'Aprovar no seu app em vez disso',

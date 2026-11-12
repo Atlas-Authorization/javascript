@@ -101,6 +101,7 @@ export * from './fetch-handlers';
 // Session helpers: mirror the Atlas user into your own table; CSRF tokens bound to the session.
 export * from './sync-local-user';
 export * from './csrf';
+export * from './server-auth';
 
 // The Atlas referral protocol, for a referral platform receiving Atlas's signed calls.
 export * from './referrals';

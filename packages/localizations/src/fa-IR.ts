@@ -308,6 +308,7 @@ export const faIR: LocalizationResource = {
   'error.github_team_required': 'حساب GitHub شما عضو هیچ سازمان یا تیم GitHub مجاز برای ورود در اینجا نیست.',
   'error.app_approval_denied': 'ورود در برنامه رد شد.',
   'error.app_approval_expired': 'ورود به‌موقع تأیید نشد. دوباره تلاش کنید.',
+  'error.captcha_wrong_flow': 'این بررسی امنیتی برای مرحله‌ای دیگر صادر شده است. لطفاً دوباره آن را انجام دهید.',
   'signIn.appApprovalTapNumber': 'برنامه خود را باز کنید و برای ورود روی این عدد بزنید:',
   'signIn.appApprovalStart': 'تأیید در برنامه شما',
   'mfa.appApprovalUseInstead': 'به‌جای آن در برنامه تأیید کنید',

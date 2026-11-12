@@ -368,6 +368,7 @@ export interface LocalizationResource {
   'error.github_team_required': string;
   'error.app_approval_denied': string;
   'error.app_approval_expired': string;
+  'error.captcha_wrong_flow': string;
   'signIn.appApprovalTapNumber': string;
   'signIn.appApprovalStart': string;
   'mfa.appApprovalUseInstead': string;

@@ -352,6 +352,21 @@ export type WebhookDataConnection = {
   days_left?: number;
   /** Occurred (epoch ms). */
   occurred_at?: number;
+  /** `connection.provider_event`: what the provider reported. */
+  provider_event?: {
+    topic?: string;
+    code?: string;
+    summary?: string;
+    /** Received (epoch ms). */
+    received_at?: number;
+    [key: string]: unknown;
+  };
+  /** `connection.owner_changed`: the owner before the transfer. */
+  previous_owner?: {
+    type: "organization" | "user" | "external";
+    id: string;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 };
 
@@ -894,6 +909,8 @@ export type WebhookDataSecuritySignal = {
   would?: string | null;
   provider?: string | null;
   reason?: string | null;
+  reason_code?: string | null;
+  read_only?: boolean;
   actor?: string | null;
   channel?: string | null;
   recipient?: string | null;
@@ -936,11 +953,43 @@ export type WebhookDataSession = {
   /** Created (epoch ms). */
   created_at?: number;
   custom_data?: Record<string, unknown> | null;
+  user_agent?: string | null;
+  ip_address?: string | null;
+  /** Coarse location of the sign-in; null when no geo source resolved one. */
+  location?: {
+    country?: string;
+    region?: string;
+    city?: string;
+    [key: string]: unknown;
+  } | null;
+  /** Advisory risk assessment of the session; null when not assessed. */
+  risk?: {
+    score?: number;
+    level?: "low" | "medium" | "high";
+    reasons?: string[];
+    /** Computed (epoch ms). */
+    computed_at?: number;
+    [key: string]: unknown;
+  } | null;
   /** session.pending: the stage the sign-in waits on. */
   pending_status?: string;
   strategy?: string;
   /** session.expired: idle_expired = no activity for the idle window; expired = the absolute lifetime ran out. */
   reason?: "idle_expired" | "expired";
+  [key: string]: unknown;
+};
+
+/** A session whose advisory risk level became high. */
+export type WebhookDataSessionRisk = {
+  object: "session_risk";
+  session_id: string;
+  user_id: string;
+  /** The risk score, 0 (none) to 100. */
+  score: number;
+  level: "low" | "medium" | "high";
+  reasons: string[];
+  /** Computed (epoch ms). */
+  computed_at?: number;
   [key: string]: unknown;
 };
 
@@ -1133,6 +1182,8 @@ export type WebhookDataUser = {
   public_metadata: Record<string, unknown> | null;
   unsafe_metadata: Record<string, unknown> | null;
   mfa_enabled: boolean;
+  /** Whether the user holds at least one passkey. */
+  has_passkey?: boolean;
   is_anonymous: boolean;
   banned: boolean;
   /** When the ban lifts (epoch ms), or null. */
@@ -1210,6 +1261,8 @@ export type WebhookDataUserDeleted = {
   public_metadata: Record<string, unknown> | null;
   unsafe_metadata: Record<string, unknown> | null;
   mfa_enabled: boolean;
+  /** Whether the user holds at least one passkey. */
+  has_passkey?: boolean;
   is_anonymous: boolean;
   banned: boolean;
   /** When the ban lifts (epoch ms), or null. */
@@ -1398,6 +1451,8 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"billing_trial.started", WebhookDataBillingSubscription>
   | AtlasWebhookEnvelope<"billing_trial.will_end", WebhookDataBillingTrialWillEnd>
   | AtlasWebhookEnvelope<"connection.expiring", WebhookDataConnection>
+  | AtlasWebhookEnvelope<"connection.owner_changed", WebhookDataConnection>
+  | AtlasWebhookEnvelope<"connection.provider_event", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.reauthorization_required", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.recovered", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.refresh_failed", WebhookDataConnection>
@@ -1440,6 +1495,8 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"iga_user.offboarded", WebhookDataIga>
   | AtlasWebhookEnvelope<"iga_user.reconciled", WebhookDataIga>
   | AtlasWebhookEnvelope<"iga_violation.detected", WebhookDataIga>
+  | AtlasWebhookEnvelope<"impersonation.ended", WebhookDataSecuritySignal>
+  | AtlasWebhookEnvelope<"impersonation.started", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"invitation.accepted", WebhookDataInstanceInvitation>
   | AtlasWebhookEnvelope<"invitation.created", WebhookDataInstanceInvitation>
   | AtlasWebhookEnvelope<"invitation.revoked", WebhookDataInstanceInvitation>
@@ -1476,6 +1533,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"policy.version_published", WebhookDataPolicyVersionPublished>
   | AtlasWebhookEnvelope<"privacy_request.completed", WebhookDataPrivacyRequest>
   | AtlasWebhookEnvelope<"privacy_request.updated", WebhookDataPrivacyRequest>
+  | AtlasWebhookEnvelope<"risk.elevated", WebhookDataSessionRisk>
   | AtlasWebhookEnvelope<"risky_user.updated", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"role.created", WebhookDataRole>
   | AtlasWebhookEnvelope<"role.deleted", WebhookDataRole>
@@ -1592,6 +1650,8 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "billing_trial.started",
   "billing_trial.will_end",
   "connection.expiring",
+  "connection.owner_changed",
+  "connection.provider_event",
   "connection.reauthorization_required",
   "connection.recovered",
   "connection.refresh_failed",
@@ -1634,6 +1694,8 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "iga_user.offboarded",
   "iga_user.reconciled",
   "iga_violation.detected",
+  "impersonation.ended",
+  "impersonation.started",
   "invitation.accepted",
   "invitation.created",
   "invitation.revoked",
@@ -1670,6 +1732,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "policy.version_published",
   "privacy_request.completed",
   "privacy_request.updated",
+  "risk.elevated",
   "risky_user.updated",
   "role.created",
   "role.deleted",

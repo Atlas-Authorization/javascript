@@ -126,6 +126,13 @@ export interface FlowProps {
    */
   hideTitle?: boolean;
   /**
+   * `<SignIn>`: once the user is signed in, show the dismissible "add a passkey" prompt in place of
+   * the form. It appears only when the instance's rollout or a running passkey campaign says so, and
+   * respects the cooldown. Leave `afterUrl` unset (or navigate yourself from `onAdded`) so the page is
+   * still there to show it.
+   */
+  passkeyPrompt?: boolean;
+  /**
    * §oauth popup mode — `"popup"` completes social/OIDC sign-in in a popup
    * (GSI-style: click, approve, it closes, you're signed in, the page never
    * navigates), falling back to a full redirect when the popup is blocked.

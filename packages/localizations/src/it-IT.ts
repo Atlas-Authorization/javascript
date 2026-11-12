@@ -309,6 +309,7 @@ export const itIT: LocalizationResource = {
   'error.github_team_required': 'Il tuo account GitHub non fa parte di un’organizzazione o di un team GitHub autorizzato ad accedere qui.',
   'error.app_approval_denied': 'L’accesso è stato rifiutato nell’app.',
   'error.app_approval_expired': 'L’accesso non è stato approvato in tempo. Riprova.',
+  'error.captcha_wrong_flow': 'Questo controllo di sicurezza è stato emesso per un altro passaggio. Completalo di nuovo.',
   'signIn.appApprovalTapNumber': 'Apri la tua app e tocca questo numero per accedere:',
   'signIn.appApprovalStart': 'Approva nella tua app',
   'mfa.appApprovalUseInstead': 'Approva invece nella tua app',

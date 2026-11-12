@@ -169,6 +169,18 @@ describe('createAccessTokenVerifier', () => {
     expect(r.wwwAuthenticate).toContain(`resource_metadata="${META}"`);
   });
 
+  it('gates on billing features and plans with 403 insufficient_entitlement', async () => {
+    const { opts, mint } = await setup();
+    const verify = createAccessTokenVerifier(opts({ requireFeature: 'exports' }));
+    expect((await verify(req(`Bearer ${await mint({ pla: 'pro', fea: ['exports', 'sso'] })}`))).ok).toBe(true);
+    const r = await verify(req(`Bearer ${await mint({ pla: 'free' })}`));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect([r.status, r.error]).toEqual([403, 'insufficient_entitlement']);
+    const plan = await verify(req(`Bearer ${await mint({ pla: 'free', fea: ['exports'] })}`), { requirePlan: ['pro', 'team'] });
+    expect(plan.ok).toBe(false);
+  });
+
   it('counts RBAC permissions toward required scopes', async () => {
     const { opts, mint } = await setup();
     const verify = createAccessTokenVerifier(opts({ requiredScopes: ['billing:read'] }));

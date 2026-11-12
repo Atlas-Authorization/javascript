@@ -26,6 +26,8 @@ export type { UseAccessResult } from './access';
 export { AccessRequestButton, PendingApprovals, RoleMatrix, ShareDialog, useShareableResources } from './authz-widgets';
 // Your own login / consent pages (delegated login and consent).
 export { useDelegatedChallenge, useDelegatedFlow } from './delegated-ui';
+// Headless sign-in / sign-up: typed steps, no UI.
+export { useSignInFlow, useSignUpFlow } from './sign-in-flow';
 export { ATLAS_REACT_SDK, ATLAS_REACT_VERSION } from './version';
 // `onSignOut({ reason })`: the event type, and the `atlas:signout` window event for
 // scripts outside the React tree.

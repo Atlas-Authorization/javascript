@@ -1031,8 +1031,170 @@ function registry(): ResourceSpec[] {
         await http.post('/v1/instance/proxy_secret', typeof overlap === 'number' ? { overlap_seconds: overlap } : {});
       },
     },
+
+    // 21. Hosted-page redirects: send /hosted/sign-in, /hosted/sign-up and /hosted/user to the
+    //     app's own pages. A null clears one. Validated against the allowed origins (see `instance`).
+    {
+      kind: 'singleton',
+      type: 'hosted_pages',
+      fileKeys: HOSTED_PAGES_KEYS,
+      async fetchLive(http) {
+        const live = await orNotFound(http.get<Record<string, unknown>>('/v1/instance/hosted_pages'), null);
+        const c = live ? obj(pick(live as Record<string, Json>, HOSTED_PAGES_KEYS) as Config) : {};
+        return Object.keys(c).length ? c : null;
+      },
+      async apply(http, config) {
+        await http.patch('/v1/instance/hosted_pages', compact(config, true));
+      },
+    },
+
+    // 22. Connection OAuth clients (bring-your-own app credentials), instance-wide (no `owner`)
+    //     and per owner. Key = owner/provider/environment. The client secret is write-only.
+    {
+      kind: 'collection',
+      type: 'connection_oauth_clients',
+      fileKeys: CONNECTION_CLIENT_KEYS,
+      defaulted: ['environment', 'scopes', 'host_params', 'enabled'],
+      keyOf: (c) => connectionClientKey(obj(c).owner, obj(c).provider, obj(c).environment),
+      async fetchLive(http) {
+        const rows = await orNotFound(listData<Record<string, unknown>>(http, '/v1/connections/oauth_clients'), []);
+        return rows.map((r) => {
+          const o = obj((r.owner ?? null) as Json);
+          const owner = o.type && o.type !== 'instance' ? { type: o.type, id: o.id ?? null } : undefined;
+          return { key: connectionClientKey(o, r.provider, r.environment), id: String(r.id ?? ''), config: { ...obj(pick(r as Record<string, Json>, CONNECTION_CLIENT_KEYS.filter((k) => k !== 'owner' && k !== 'client_secret')) as Config), ...(owner ? { owner } : {}) } as Config };
+        });
+      },
+      validate: (c) => (typeof obj(c).provider === 'string' && obj(c).provider ? [] : ['connection_oauth_clients: every client needs a provider.']),
+      create: putConnectionClient,
+      update: (http, _live, config) => putConnectionClient(http, config),
+      async remove(http, live) {
+        await http.delete(`/v1/connections/oauth_clients/${enc(live.id)}`);
+      },
+    },
+
+    // 23. Migration bridge sources — key = source. Configured sources only; the shared secret is write-only.
+    {
+      kind: 'collection',
+      type: 'migration_bridges',
+      fileKeys: ['source', ...BRIDGE_KEYS, 'shared_secret'],
+      keyOf: (c) => String(obj(c).source ?? ''),
+      async fetchLive(http) {
+        const sources = await orNotFound(listData<Record<string, unknown>>(http, '/v1/migrations/sources'), []);
+        const out: LiveEntry[] = [];
+        for (const s of sources) {
+          const source = String(s.source ?? '');
+          const b = await orNotFound(http.get<Record<string, unknown>>(`/v1/migrations/${enc(source)}/bridge`), null);
+          if (!b || b.created_at === null || b.created_at === undefined) continue;
+          out.push({ key: source, id: source, config: { source, ...obj(pick(b as Record<string, Json>, BRIDGE_KEYS) as Config) } as Config });
+        }
+        return out;
+      },
+      // The API reads `ends_at` as epoch milliseconds and takes an ISO date or milliseconds.
+      align(live, desired) {
+        const e = obj(desired).ends_at;
+        const l = obj(live);
+        if (typeof e === 'string' && typeof l.ends_at === 'number' && new Date(e).getTime() === l.ends_at) return { ...l, ends_at: e };
+        return live;
+      },
+      create: putBridge,
+      update: (http, _live, config) => putBridge(http, config),
+      async remove(http, live) {
+        await http.delete(`/v1/migrations/${enc(live.id)}/bridge`);
+      },
+    },
+
+    // 24. Staff impersonation policy: reason codes, time limit, second-staff approval, notice, read-only default.
+    {
+      kind: 'singleton',
+      type: 'impersonation_policy',
+      fileKeys: IMPERSONATION_KEYS,
+      async fetchLive(http) {
+        const live = await orNotFound(http.get<Record<string, unknown>>('/v1/instance/impersonation_policy'), null);
+        return live ? pick(live, IMPERSONATION_KEYS) : null;
+      },
+      async apply(http, config) {
+        await http.put('/v1/instance/impersonation_policy', compact(config));
+      },
+    },
+
+    // 25. Connection token rate limits (requests per minute): per key, per connection, per app
+    //     client and per provider. A provider missing from the file is removed on apply.
+    {
+      kind: 'singleton',
+      type: 'connection_token_limits',
+      fileKeys: TOKEN_LIMIT_KEYS,
+      async fetchLive(http) {
+        const v = await orNotFound(http.get<Record<string, unknown>>('/v1/connections/token_limits'), null);
+        if (!v) return null;
+        const out: Record<string, Json> = {};
+        for (const k of ['per_key', 'per_connection', 'per_app'] as const) {
+          const n = limitOf(v[k]);
+          if (n !== undefined) out[k] = n;
+        }
+        const providers: Record<string, Json> = {};
+        for (const [p, x] of Object.entries(obj((v.providers ?? null) as Json))) {
+          const n = limitOf(x);
+          if (n !== undefined) providers[p] = n;
+        }
+        if (Object.keys(providers).length) out.providers = providers;
+        return out;
+      },
+      async apply(http, config) {
+        const c = compact(config, true);
+        if (isObj(c.providers)) {
+          const live = obj(((await orNotFound(http.get<Record<string, unknown>>('/v1/connections/token_limits'), null))?.providers ?? null) as Json);
+          const providers: Record<string, Json> = { ...c.providers };
+          for (const p of Object.keys(live)) if (!(p in providers)) providers[p] = null;
+          c.providers = providers;
+        }
+        await http.put('/v1/connections/token_limits', c);
+      },
+    },
+
+    // 26. Connection relay size limits (bytes; defaults 256 KiB request, 1 MiB response, up to 25 MiB).
+    {
+      kind: 'singleton',
+      type: 'connection_relay_limits',
+      fileKeys: ['request_bytes', 'response_bytes'],
+      async fetchLive(http) {
+        const v = await orNotFound(http.get<Record<string, unknown>>('/v1/connections/relay_limits'), null);
+        return v ? pick(v, ['request_bytes', 'response_bytes']) : null;
+      },
+      async apply(http, config) {
+        await http.put('/v1/connections/relay_limits', compact(config));
+      },
+    },
   ];
   return specs;
+}
+
+const HOSTED_PAGES_KEYS = ['sign_in_url', 'sign_up_url', 'user_url'] as const;
+const CONNECTION_CLIENT_KEYS = ['owner', 'provider', 'environment', 'client_id', 'client_secret', 'scopes', 'host_params', 'enabled'] as const;
+const BRIDGE_KEYS = ['enabled', 'ends_at', 'mode', 'preset', 'preset_vars', 'issuer', 'jwks_url', 'audience', 'algorithms', 'claim_map', 'expired_grace_seconds', 'cookie_names', 'create_users'] as const;
+const IMPERSONATION_KEYS = ['require_reason', 'reason_codes', 'max_duration_seconds', 'require_approval', 'read_only_default', 'notify_user'] as const;
+const TOKEN_LIMIT_KEYS = ['per_key', 'per_connection', 'per_app', 'providers'] as const;
+
+/** A limit the API reports either as a number or as `{ limit, ... }`. */
+const limitOf = (x: unknown): number | undefined => (typeof x === 'number' ? x : typeof (x as { limit?: unknown } | null)?.limit === 'number' ? (x as { limit: number }).limit : undefined);
+
+/** A connection client's natural key; no owner (or type "instance") is the instance's own client. */
+function connectionClientKey(owner: unknown, provider: unknown, environment: unknown): string {
+  const o = obj((owner ?? null) as Json);
+  const who = o.type && o.type !== 'instance' ? `${String(o.type)}:${String(o.id ?? '')}` : 'instance';
+  return `${who}/${String(provider ?? '')}/${typeof environment === 'string' && environment ? environment : 'production'}`;
+}
+
+/** PUT is an upsert, so create and update are the same call. An instance client is sent without `owner`. */
+async function putConnectionClient(http: ConfigHttp, config: Config): Promise<void> {
+  const c = compact(config);
+  const o = obj((c.owner ?? null) as Json);
+  if (!o.type || o.type === 'instance') delete c.owner;
+  await http.put('/v1/connections/oauth_clients', c);
+}
+
+async function putBridge(http: ConfigHttp, config: Config): Promise<void> {
+  const { source, ...body } = compact(config);
+  await http.put(`/v1/migrations/${enc(String(source ?? ''))}/bridge`, body);
 }
 
 /** A domain's natural key: its host, plus the mount prefix for a path mount (default `/__atlas`). */

@@ -16,6 +16,7 @@ import { useAtlas } from './AtlasProvider';
 import { FapiClient, initialFlow, type FlowState } from './fapi';
 import { usePolicyText } from './policies';
 import { CaptchaSlot } from './captcha';
+import { PasskeyPrompt } from './account';
 import {
   AttemptFlow,
   LastUsedHint,
@@ -80,7 +81,7 @@ function SignInFlow(props: FlowProps) {
     </>
   );
 
-  if (hidden) return null;
+  if (hidden) return props.passkeyPrompt && status === 'signed_in' ? <PasskeyPrompt /> : null;
   return (
     <>
       {!state.attempt ? <LastUsedHint client={client} /> : null}

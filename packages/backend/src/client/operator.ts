@@ -214,6 +214,27 @@ export async function exchangeOperatorToken(
   return out as unknown as OAuthTokenResponse & { resource: string };
 }
 
+/**
+ * RFC 8693: hand an operator sign-in to another product. Swaps the stored
+ * operator token for one minted for `audience` (a product listed in the
+ * operator configuration's `audiences`): same operator, no browser, never
+ * longer than the sign-in it came from (one hour at most).
+ */
+export async function exchangeOperatorTokenForAudience(
+  subjectToken: string,
+  params: { audience: string },
+  opts: Opts = {},
+): Promise<OAuthTokenResponse & { audience: string; issuer: string }> {
+  const out = await form(opts.fetch ?? globalThis.fetch, `${(opts.apiUrl ?? DEFAULT_API).replace(/\/+$/, '')}/v1/oauth/token`, {
+    grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+    subject_token: subjectToken,
+    subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+    audience: params.audience,
+  });
+  if (out._status !== 200) throw new OAuthFlowError(String(out.error ?? 'error'), String(out.error_description ?? 'Token exchange failed.'), out._status);
+  return out as unknown as OAuthTokenResponse & { audience: string; issuer: string };
+}
+
 /** client_credentials with a partner link's credentials (a partner calling an instance). */
 export async function partnerLinkToken(
   clientId: string,

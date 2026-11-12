@@ -16,8 +16,16 @@ function readEnv(): Env {
 }
 
 export interface AtlasMountOptions {
-  /** Your instance's Frontend API host (`instructions.upstream` of the domain). Default `ATLAS_UPSTREAM`. */
-  upstream?: string;
+  /**
+   * Your instance's Frontend API host (`instructions.upstream` of the domain).
+   * Default `ATLAS_UPSTREAM`. Give an ordered list (an array, or comma-separated in
+   * `ATLAS_UPSTREAM`) to fail over: GET, HEAD and OPTIONS requests move to the next
+   * origin on a connection error, a timeout before the response headers, or a 5xx
+   * answer. Requests that change data go to the first origin only, never replayed.
+   */
+  upstream?: string | string[];
+  /** With several upstreams: how long an origin may take to start answering before the next is tried. Default 10000. */
+  upstreamTimeoutMs?: number;
   /** The instance proxy secret. Default `ATLAS_PROXY_SECRET`. */
   proxySecret?: string;
   /** The domain verification token (for {@link createVerifyHandler}). Default `ATLAS_VERIFY_TOKEN`. */
@@ -187,8 +195,10 @@ export function createMountHandler(options: AtlasMountOptions = {}): AtlasMountH
     if (url.pathname !== base && !url.pathname.startsWith(`${base}/`)) {
       return new Response('Not found', { status: 404 });
     }
-    const origin = new URL(/^https?:\/\//i.test(upstream) ? upstream : `https://${upstream}`).origin;
-    const target = `${origin}${url.pathname}${url.search}`;
+    const origins = (Array.isArray(upstream) ? upstream : upstream.split(','))
+      .map((u) => u.trim())
+      .filter(Boolean)
+      .map((u) => new URL(/^https?:\/\//i.test(u) ? u : `https://${u}`).origin);
 
     const headers = new Headers();
     const forwardHeader = options.forwardHeaders ?? forwardHeaderByDefault;
@@ -212,14 +222,42 @@ export function createMountHandler(options: AtlasMountOptions = {}): AtlasMountH
 
     const method = request.method.toUpperCase();
     const hasBody = method !== 'GET' && method !== 'HEAD' && request.body !== null;
-    const res = await (options.fetchImpl ?? fetch)(target, {
-      method,
-      headers,
-      body: hasBody ? request.body : undefined,
-      redirect: 'manual',
-      // Required by fetch to stream a request body.
-      ...(hasBody ? { duplex: 'half' } : {}),
-    } as RequestInit);
+    const doFetch = options.fetchImpl ?? fetch;
+    const idempotent = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+    const candidates = idempotent ? origins : origins.slice(0, 1);
+    const timeoutMs = options.upstreamTimeoutMs ?? 10_000;
+    let res: Response | undefined;
+    for (let i = 0; i < candidates.length; i++) {
+      const last = i === candidates.length - 1;
+      // The timer covers only the wait for response headers, so a long-lived stream is never cut.
+      const abort = new AbortController();
+      const timer = candidates.length > 1 && idempotent && !last ? setTimeout(() => abort.abort(), timeoutMs) : undefined;
+      try {
+        const attempt = await doFetch(`${candidates[i]}${url.pathname}${url.search}`, {
+          method,
+          headers,
+          body: hasBody ? request.body : undefined,
+          redirect: 'manual',
+          signal: abort.signal,
+          // Required by fetch to stream a request body.
+          ...(hasBody ? { duplex: 'half' } : {}),
+        } as RequestInit);
+        if (attempt.status >= 500 && !last) {
+          await attempt.body?.cancel().catch(() => undefined);
+          continue;
+        }
+        res = attempt;
+        break;
+      } catch (error) {
+        if (!last) continue;
+        console.error(`${sdk.name} createMountHandler: Atlas is unreachable (${error instanceof Error ? error.message : String(error)}).`);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    if (!res) {
+      return new Response('Atlas is unreachable', { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'retry-after': '5' } });
+    }
 
     const out = new Headers();
     res.headers.forEach((value, key) => {

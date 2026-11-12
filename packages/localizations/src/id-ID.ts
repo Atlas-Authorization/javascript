@@ -308,6 +308,7 @@ export const idID: LocalizationResource = {
   'error.github_team_required': 'Akun GitHub Anda bukan anggota organisasi atau tim GitHub yang diizinkan masuk di sini.',
   'error.app_approval_denied': 'Proses masuk ditolak di aplikasi.',
   'error.app_approval_expired': 'Proses masuk tidak disetujui tepat waktu. Coba lagi.',
+  'error.captcha_wrong_flow': 'Pemeriksaan keamanan ini diterbitkan untuk langkah lain. Selesaikan lagi.',
   'signIn.appApprovalTapNumber': 'Buka aplikasi Anda dan ketuk angka ini untuk masuk:',
   'signIn.appApprovalStart': 'Setujui di aplikasi Anda',
   'mfa.appApprovalUseInstead': 'Setujui di aplikasi Anda saja',

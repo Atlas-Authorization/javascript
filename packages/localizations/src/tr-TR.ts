@@ -308,6 +308,7 @@ export const trTR: LocalizationResource = {
   'error.github_team_required': 'GitHub hesabınız, burada oturum açmasına izin verilen bir GitHub kuruluşunun veya ekibinin üyesi değil.',
   'error.app_approval_denied': 'Oturum açma uygulamada reddedildi.',
   'error.app_approval_expired': 'Oturum açma zamanında onaylanmadı. Tekrar deneyin.',
+  'error.captcha_wrong_flow': 'Bu güvenlik kontrolü farklı bir adım için verildi. Lütfen yeniden tamamlayın.',
   'signIn.appApprovalTapNumber': 'Uygulamanızı açın ve oturum açmak için bu numaraya dokunun:',
   'signIn.appApprovalStart': 'Uygulamanızda onaylayın',
   'mfa.appApprovalUseInstead': 'Bunun yerine uygulamanızda onaylayın',

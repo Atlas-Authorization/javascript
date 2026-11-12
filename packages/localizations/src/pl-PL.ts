@@ -261,6 +261,7 @@ export const plPL: LocalizationResource = {
   'error.github_team_required': 'Twoje konto GitHub nie należy do organizacji ani zespołu GitHub, któremu wolno się tu logować.',
   'error.app_approval_denied': 'Logowanie zostało odrzucone w aplikacji.',
   'error.app_approval_expired': 'Logowanie nie zostało zatwierdzone na czas. Spróbuj ponownie.',
+  'error.captcha_wrong_flow': 'Ta kontrola bezpieczeństwa została wydana dla innego kroku. Wykonaj ją ponownie.',
   'signIn.appApprovalTapNumber': 'Otwórz aplikację i dotknij tego numeru, aby się zalogować:',
   'signIn.appApprovalStart': 'Zatwierdź w aplikacji',
   'mfa.appApprovalUseInstead': 'Zamiast tego zatwierdź w aplikacji',

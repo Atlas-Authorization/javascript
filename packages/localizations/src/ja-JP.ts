@@ -259,6 +259,7 @@ export const jaJP: Localization = {
   'error.github_team_required': 'この GitHub アカウントは、ここへのサインインが許可された GitHub の組織またはチームのメンバーではありません。',
   'error.app_approval_denied': 'アプリでサインインが拒否されました。',
   'error.app_approval_expired': '時間内にサインインが承認されませんでした。もう一度お試しください。',
+  'error.captcha_wrong_flow': 'このセキュリティチェックは別の手順用に発行されたものです。もう一度実行してください。',
   'signIn.appApprovalTapNumber': 'アプリを開き、サインインするにはこの番号をタップしてください:',
   'signIn.appApprovalStart': 'アプリで承認',
   'mfa.appApprovalUseInstead': '代わりにアプリで承認',

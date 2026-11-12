@@ -261,6 +261,7 @@ export const viVN: LocalizationResource = {
   'error.github_team_required': 'Tài khoản GitHub của bạn không thuộc tổ chức hoặc nhóm GitHub nào được phép đăng nhập tại đây.',
   'error.app_approval_denied': 'Yêu cầu đăng nhập đã bị từ chối trong ứng dụng.',
   'error.app_approval_expired': 'Yêu cầu đăng nhập không được duyệt kịp thời. Hãy thử lại.',
+  'error.captcha_wrong_flow': 'Kiểm tra bảo mật này được cấp cho một bước khác. Vui lòng hoàn tất lại.',
   'signIn.appApprovalTapNumber': 'Mở ứng dụng của bạn và chạm vào số này để đăng nhập:',
   'signIn.appApprovalStart': 'Phê duyệt trong ứng dụng của bạn',
   'mfa.appApprovalUseInstead': 'Phê duyệt trong ứng dụng của bạn thay thế',

@@ -17,6 +17,13 @@ import {
 // Real Express types, type-only so `express` is a peer dependency and is NEVER
 // bundled or pinned — the middleware/handlers then type against genuine Express
 // types, so a consumer passes the `req`/`res` it already has with no cast.
+import {
+  createServerCsrfGate,
+  fetchPublicInitialState,
+  type ServerCsrfOptions,
+  type ServerInitialStateOptions,
+  type SidListRevocation,
+} from '@atlasauth/backend';
 import type { Request, RequestHandler } from 'express';
 
 // Re-export the real Express types so an integrator can name them from
@@ -137,6 +144,19 @@ export interface AtlasMiddlewareOptions {
    */
   secretKey?: string;
   bapiBaseUrl?: string;
+  /**
+   * Also reject a token whose session Atlas has revoked (sign-out everywhere, admin revoke),
+   * within `intervalMs` instead of the token lifetime. Needs `secretKey` with `sessions:read`.
+   * `true` uses the defaults (poll every 15 s).
+   */
+  revocation?: boolean | Omit<SidListRevocation, 'mode'>;
+  /**
+   * CSRF protection for cookie-authenticated browsers (same rules as the Next.js proxy):
+   * a session-bound token lives in the `__atlas_csrf` cookie and unsafe methods must echo it
+   * in `x-atlas-csrf`, else 403 `CSRF_TOKEN_INVALID`. Bearer, signed-out and mount-path
+   * requests are skipped. Read the token with {@link getCsrfToken}. Needs `secretKey` or `ATLAS_CSRF_SECRET`.
+   */
+  csrf?: boolean | ServerCsrfOptions;
 }
 
 /** Options for {@link AtlasMiddlewareOptions.betterAuthBridge}. */
@@ -287,6 +307,8 @@ declare global {
     interface Request {
       /** Decorated by {@link atlasMiddleware}; read it via {@link getAuth}. */
       atlas?: AtlasAuth;
+      /** Set by {@link atlasMiddleware} with `csrf`: the token valid for this session. */
+      atlasCsrfToken?: string | null;
     }
   }
 }
@@ -358,6 +380,7 @@ function signedIn(claims: SessionClaims): AtlasAuth {
 export async function resolveAuth(
   backend: AtlasBackend,
   req: Request,
+  revocation?: Omit<SidListRevocation, 'mode'>,
 ): Promise<AtlasAuth> {
   try {
     const header = firstHeader(req.headers.authorization ?? req.headers.Authorization);
@@ -367,7 +390,13 @@ export async function resolveAuth(
     const token = bearer ?? cookie;
     if (!token) return signedOut();
 
-    const result = await backend.verify(token);
+    // With `revocation`, the session-revocation list is consulted too (fails closed without a secret key).
+    const result = revocation
+      ? await backend.authenticateRequest(
+          { headers: { authorization: bearer ? `Bearer ${bearer}` : undefined, cookie: bearer ? undefined : `__session=${cookie}` } },
+          { revocation: { mode: 'sid_list', ...revocation } },
+        )
+      : await backend.verify(token);
     if (!result.ok) return signedOut();
 
     return signedIn(result.claims);
@@ -406,6 +435,8 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions): RequestHandler
     secretKey: options.secretKey,
     bapiBaseUrl: options.bapiBaseUrl,
   });
+  const revocation = options.revocation ? (options.revocation === true ? {} : options.revocation) : undefined;
+  const csrfGate = options.csrf ? createServerCsrfGate(options.csrf, options.secretKey) : null;
   const bridges: RequestHandler[] = [];
   if (options.betterAuthBridge) bridges.push(betterAuthBridge({ ...options, config: options.betterAuthBridge === true ? {} : options.betterAuthBridge }));
   if (options.migrationBridge) bridges.push(migrationBridge({ ...options, config: options.migrationBridge }));
@@ -415,16 +446,31 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions): RequestHandler
     // on to the next one, and finally to the normal verification below.
     const run = (i: number): void => {
       const bridge = bridges[i];
-      if (!bridge) return authenticate(req, next);
+      if (!bridge) return authenticate(req, res, next);
       bridge(req, res, () => run(i + 1));
     };
     run(0);
   };
 
-  function authenticate(req: Request, next: (err?: unknown) => void): void {
-    resolveAuth(backend, req)
-      .then((auth) => {
+  function authenticate(req: Request, res: Parameters<RequestHandler>[1], next: (err?: unknown) => void): void {
+    resolveAuth(backend, req, revocation)
+      .then(async (auth) => {
         req.atlas = auth;
+        if (!csrfGate) return next();
+        const decision = await csrfGate({
+          method: req.method,
+          path: req.originalUrl.split('?')[0] ?? '/',
+          headers: { get: (name) => firstHeader(req.headers[name.toLowerCase()]) ?? null },
+          sessionId: auth.sessionId,
+          https: req.protocol === 'https',
+        });
+        if (decision.action === 'skip') return next();
+        req.atlasCsrfToken = decision.token;
+        if (decision.setCookie) res.append('set-cookie', decision.setCookie);
+        if (decision.action === 'refuse') {
+          res.status(403).json({ errors: [{ code: 'CSRF_TOKEN_INVALID' }] });
+          return;
+        }
         next();
       })
       .catch(() => {
@@ -444,6 +490,27 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions): RequestHandler
  */
 export function getAuth(req: Request): AtlasAuth {
   return req.atlas ?? signedOut();
+}
+
+/** The CSRF token for this session (with `csrf`), to render into a page or send to your JS; else `null`. */
+export function getCsrfToken(req: Request): string | null {
+  return req.atlasCsrfToken ?? null;
+}
+
+/**
+ * Everything the React / JS client needs to hydrate without a flash, for server-rendered
+ * pages: the instance's appearance and sign-in environment (cached in process), the signed-in
+ * state of this request, and the CSRF token. Serialize it into the page and pass it as
+ * `initialState` to `<AtlasProvider>`. Never throws. `publishableKey` / `frontendApi` default to
+ * `ATLAS_PUBLISHABLE_KEY` / `ATLAS_FRONTEND_API`.
+ */
+export async function getInitialState(req: Request, options: ServerInitialStateOptions = {}) {
+  const auth = getAuth(req);
+  return {
+    ...(await fetchPublicInitialState(options)),
+    auth: { userId: auth.userId, sessionId: auth.sessionId, orgId: auth.orgId, orgRole: auth.orgRole },
+    csrfToken: getCsrfToken(req),
+  };
 }
 
 /**

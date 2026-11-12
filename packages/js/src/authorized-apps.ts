@@ -67,3 +67,12 @@ export async function revokeAppGrant(client: FapiClient, grantId: string): Promi
   const body = await call<{ tokens_ended?: number }>(client, `/v1/client/me/managed_grants/${encodeURIComponent(grantId)}`, { method: 'DELETE' });
   return { tokensEnded: body.tokens_ended ?? 0 };
 }
+
+/**
+ * Revoke all agent access in one step: disconnects every app connected through dynamic registration (MCP clients and
+ * AI assistants) and switches off every agent registered to the user. Needs a signed-in session.
+ */
+export async function revokeAllAgentAccess(client: FapiClient): Promise<{ appsDisconnected: number; agentsDisabled: number }> {
+  const body = await call<{ apps_disconnected?: number; agents_disabled?: number }>(client, '/v1/client/me/agent_access/revoke_all', { method: 'POST' });
+  return { appsDisconnected: body.apps_disconnected ?? 0, agentsDisabled: body.agents_disabled ?? 0 };
+}

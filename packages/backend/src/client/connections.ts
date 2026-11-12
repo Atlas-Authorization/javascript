@@ -261,7 +261,8 @@ export interface TokenReadOptions {
 export interface ConnectionOAuthClient {
   object: 'connection_oauth_client';
   id: string;
-  owner: { type: ConnectionOwnerType; id: string };
+  /** `{type: 'instance'}` (no id) for the instance-wide client. */
+  owner: { type: ConnectionOwnerType | 'instance'; id?: string };
   provider: string;
   environment: ConnectionEnvironment;
   client_id: string;
@@ -276,7 +277,8 @@ export interface ConnectionOAuthClient {
 }
 
 export interface SetConnectionOAuthClientBody {
-  owner: { type: ConnectionOwnerType; id: string };
+  /** Omit, or `{type: 'instance'}`, for the instance-wide client. */
+  owner?: { type: ConnectionOwnerType; id: string } | { type: 'instance' };
   provider: string;
   environment?: ConnectionEnvironment;
   client_id: string;
@@ -427,6 +429,10 @@ export function connectionsResource(request: RequestFn) {
     update(id: string, body: UpdateConnectionBody): Promise<Connection> {
       return request({ method: 'PATCH', path: `/v1/connections/${enc(id)}`, body });
     },
+    /** Move a connection to another owner without reconnecting; the stored tokens go with it. Audited and announced as `connection.owner_changed`. */
+    transfer(id: string, owner: { type: ConnectionOwnerType; id: string }): Promise<Connection> {
+      return request({ method: 'POST', path: `/v1/connections/${enc(id)}/transfer`, body: { owner } });
+    },
     /** Delete a connection. Pass `{ revoke: true }` to revoke at the provider first and learn what it said. */
     delete<R extends boolean = false>(id: string, options: { revoke?: R } = {}): Promise<R extends true ? ConnectionDeletion : void> {
       cache.delete(id);
@@ -548,7 +554,7 @@ export function connectionsResource(request: RequestFn) {
       set(body: SetConnectionOAuthClientBody): Promise<ConnectionOAuthClient> {
         return request({ method: 'PUT', path: '/v1/connections/oauth_clients', body });
       },
-      list(params: { owner_type?: ConnectionOwnerType; owner_id?: string; provider?: string } = {}): Promise<ListPage<ConnectionOAuthClient>> {
+      list(params: { owner_type?: ConnectionOwnerType | 'instance'; owner_id?: string; provider?: string } = {}): Promise<ListPage<ConnectionOAuthClient>> {
         return request({ method: 'GET', path: '/v1/connections/oauth_clients', query: { ...params } });
       },
       get(id: string): Promise<ConnectionOAuthClient> {
