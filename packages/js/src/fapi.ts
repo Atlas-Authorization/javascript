@@ -1209,8 +1209,10 @@ export function completeRequiredAction(
     first_name?: string;
     last_name?: string;
     username?: string;
-    step?: 'send' | 'verify';
+    step?: 'send' | 'verify' | 'start';
     code?: string;
+    /** `identity_verification` with `step: 'start'`: where the person returns to. */
+    redirect_url?: string;
     /** `complete_profile`: values by field key. */
     fields?: Record<string, string>;
     /** `complete_profile`: ask again later (optional fields only). */

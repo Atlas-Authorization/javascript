@@ -68,6 +68,81 @@ describe('createSignInFlow', () => {
   });
 });
 
+describe('createSignInFlow: second-factor enrolment and required actions', () => {
+  const appearance = { account: { mfa: { totp: true, sms: true, totp_codes: 2 } } };
+
+  it('enrols an authenticator app, shows the recovery codes once, then completes', async () => {
+    const { client, calls } = clientWith({
+      '/v1/client/sign_ins': [json(201, { object: 'sign_in_attempt', id: 'sia_m', status: 'needs_mfa_enrollment' })],
+      '/v1/appearance': [json(200, appearance)],
+      '/v1/client/sign_ins/sia_m/prepare_mfa_enrollment': [json(200, { factor_id: 'fac_1', secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/x' })],
+      '/v1/client/sign_ins/sia_m/attempt_mfa_enrollment': [json(200, { id: 'sia_m', status: 'complete', created_session_id: 'sess_m', ticket: 't', backup_codes: ['aaaa-bbbb', 'cccc-dddd'] })],
+      '/v1/client/tickets/exchange': [json(200, {})],
+    });
+    const flow = createSignInFlow({ client });
+    let snap = await flow.submitIdentifier('a@b.co');
+    expect(snap.step).toMatchObject({ type: 'needs_mfa_enrollment', methods: ['totp', 'phone_code'], totpCodes: 2, enrollment: null });
+
+    snap = await flow.startTotpEnrollment();
+    expect(calls.find((c) => c.path.endsWith('prepare_mfa_enrollment'))!.body).toEqual({ strategy: 'totp' });
+    expect(snap.step).toMatchObject({ type: 'needs_mfa_enrollment', enrollment: { factorId: 'fac_1', secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/x' } });
+
+    snap = await flow.submitEnrollmentCode('111111', '222222');
+    expect(calls.find((c) => c.path.endsWith('attempt_mfa_enrollment'))!.body).toEqual({ factor_id: 'fac_1', codes: ['111111', '222222'] });
+    expect(snap.step).toEqual({ type: 'show_recovery_codes', codes: ['aaaa-bbbb', 'cccc-dddd'] });
+
+    snap = await flow.acknowledgeRecoveryCodes();
+    expect(snap.step).toEqual({ type: 'complete', sessionId: 'sess_m' });
+  });
+
+  it('enrols texted codes: phone, then the code', async () => {
+    const { client, calls } = clientWith({
+      '/v1/client/sign_ins': [json(201, { object: 'sign_in_attempt', id: 'sia_p', status: 'needs_mfa_enrollment' })],
+      '/v1/appearance': [json(200, appearance)],
+      '/v1/client/sign_ins/sia_p/prepare_mfa_enrollment': [json(200, { factor_id: 'fac_2', phone: '+1***99' })],
+      '/v1/client/sign_ins/sia_p/attempt_mfa_enrollment': [json(200, { id: 'sia_p', status: 'complete', created_session_id: 's', ticket: 't' })],
+      '/v1/client/tickets/exchange': [json(200, {})],
+    });
+    const flow = createSignInFlow({ client });
+    await flow.submitIdentifier('a@b.co');
+    let snap = await flow.sendEnrollmentPhone(' +15555550199 ');
+    expect(calls.find((c) => c.path.endsWith('prepare_mfa_enrollment'))!.body).toEqual({ strategy: 'phone_code', phone: '+15555550199' });
+    expect(snap.step).toMatchObject({ type: 'needs_mfa_enrollment', enrollment: { phone: '+1***99' } });
+    snap = await flow.submitEnrollmentCode('424242');
+    expect(calls.find((c) => c.path.endsWith('attempt_mfa_enrollment'))!.body).toEqual({ factor_id: 'fac_2', code: '424242' });
+    expect(snap.step).toEqual({ type: 'complete', sessionId: 's' });
+  });
+
+  it('a required action is typed by kind and submitted with the held token', async () => {
+    const { client, calls } = clientWith({
+      '/v1/client/sign_ins': [
+        json(201, { object: 'sign_in_attempt', id: 'sia_r', status: 'needs_required_action', required_action_token: 'rat', pending_required_actions: [{ id: 'ra1', action: 'update_password', url: null, reason: null }, { id: 'ra2', action: 'verify_email', url: null, reason: null }] }),
+      ],
+      '/v1/client/sign_ins/sia_r/required_actions': [
+        json(200, { id: 'sia_r', status: 'needs_required_action', pending_required_actions: [{ id: 'ra2', action: 'verify_email', url: null, reason: null }] }),
+        json(200, { id: 'sia_r', status: 'complete', created_session_id: 's2', ticket: 't' }),
+      ],
+      '/v1/client/tickets/exchange': [json(200, {})],
+    });
+    const flow = createSignInFlow({ client });
+    let snap = await flow.submitIdentifier('a@b.co');
+    expect(snap.step).toEqual({ type: 'needs_required_action', action: { kind: 'update_password' }, remaining: 1 });
+    snap = await flow.updatePassword('new password 9!');
+    expect(calls.find((c) => c.path.endsWith('required_actions'))!.body).toMatchObject({ action: 'update_password', password: 'new password 9!', required_action_token: 'rat' });
+    expect(snap.step).toEqual({ type: 'needs_required_action', action: { kind: 'verify_email' }, remaining: 0 });
+    snap = await flow.submitEmailVerificationCode('123456');
+    expect(snap.step).toEqual({ type: 'complete', sessionId: 's2' });
+  });
+
+  it('an action kind it does not know still hands over as needs_other', async () => {
+    const { client } = clientWith({
+      '/v1/client/sign_ins': [json(201, { object: 'sign_in_attempt', id: 'sia_u', status: 'needs_required_action', pending_required_actions: [{ id: 'x', action: 'brand_new', url: null, reason: null }] })],
+    });
+    const snap = await createSignInFlow({ client }).submitIdentifier('a@b.co');
+    expect(snap.step).toEqual({ type: 'needs_other', status: 'needs_required_action' });
+  });
+});
+
 describe('createSignUpFlow', () => {
   it('a CAPTCHA_REQUIRED refusal becomes the captcha step, and the token resubmits the same details', async () => {
     const { client, calls } = clientWith({

@@ -17,6 +17,8 @@ export interface ApiKey {
   name: string | null;
   /** Enough to tell two keys apart in a listing; not enough to use one. */
   prefix: string;
+  /** The key type segment (`ak_<type>_<id>_<secret>`), or null for an untyped key. */
+  type?: string | null;
   claims: Record<string, unknown>;
   /** Delegated-token / verify scopes on the key; null when none are set. */
   scopes?: string[] | null;
@@ -153,6 +155,8 @@ export interface CreateApiKeyBody extends ApiKeyControls {
   expires_in_seconds?: number;
   /** Custom secret prefix (e.g. `acme` gives `acme_<id>_<secret>`). */
   prefix?: string;
+  /** Key type (e.g. `sk` gives `ak_sk_<id>_<secret>`); required when the instance sets `keyTypes`. Also valid with `import`. */
+  type?: string;
   /** Scopes the key carries (checked by verify's `required_scopes`). */
   scopes?: string[];
   /** Per-key spend caps, metered with `recordUsage`. */
@@ -273,6 +277,7 @@ export function apiKeysResource(request: RequestFn) {
     list(query?: {
       subject_type?: ApiKeySubjectType;
       subject_id?: string;
+      type?: string;
     }): Promise<ListPage<ApiKey>> {
       return request({ method: 'GET', path: '/v1/api_keys', query });
     },

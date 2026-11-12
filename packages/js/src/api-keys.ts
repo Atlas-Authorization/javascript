@@ -20,6 +20,8 @@ export interface UserApiKey {
   name: string | null;
   /** The public `ak_…` head — recognises a key, cannot be used as one. */
   prefix: string;
+  /** The key type segment (e.g. `sk`), or null for an untyped key. */
+  type?: string | null;
   claims: Record<string, unknown>;
   scopes: string[] | null;
   /** Usage limits on the key, when the application sets them. */
@@ -66,6 +68,8 @@ export interface CreateUserApiKeyInput {
   claims?: Record<string, unknown>;
   /** Create the key for this (active) organization instead of the user. */
   organizationId?: string;
+  /** Key type (e.g. `sk`); required when the application sets `keyTypes`. */
+  type?: string;
 }
 
 /** A refused request. `code` is the server's stable error code. */
@@ -126,11 +130,12 @@ async function call<T>(client: FapiClient, path: string, init: RequestInit = {})
 /** List the user's keys (or the active organization's, with `organizationId`). */
 export async function listApiKeys(
   client: FapiClient,
-  options: { organizationId?: string } = {},
+  options: { organizationId?: string; type?: string } = {},
 ): Promise<UserApiKeyList> {
-  const query = options.organizationId
-    ? `?organization_id=${encodeURIComponent(options.organizationId)}`
-    : '';
+  const params = new URLSearchParams();
+  if (options.organizationId) params.set('organization_id', options.organizationId);
+  if (options.type) params.set('type', options.type);
+  const query = params.size ? `?${params}` : '';
   const body = await call<{
     data: UserApiKey[];
     allowed_scopes?: string[];
@@ -161,6 +166,7 @@ export async function createApiKey(
   if (input.scopes !== undefined) body.scopes = input.scopes;
   if (input.claims !== undefined) body.claims = input.claims;
   if (input.organizationId !== undefined) body.organization_id = input.organizationId;
+  if (input.type !== undefined) body.type = input.type;
   return call<CreatedUserApiKey>(client, BASE, { method: 'POST', body: JSON.stringify(body) });
 }
 

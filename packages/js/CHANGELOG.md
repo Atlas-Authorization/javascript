@@ -2,6 +2,11 @@
 
 
 
+## 0.39.0 — 2026-11-12
+
+- API key types: `createApiKey` takes `type`, keys carry `type`, `listApiKeys({ type })` filters.
+- Headless flow: typed `needs_mfa_enrollment` (`startTotpEnrollment`, `sendEnrollmentPhone`, `submitEnrollmentCode`), `show_recovery_codes` (`acknowledgeRecoveryCodes`) and `needs_required_action` steps (`updatePassword`, `sendEmailVerification`, `submitEmailVerificationCode`, `updateProfile`, `submitRequiredFields`, `startIdentityVerification`, `checkIdentityVerification`); `completeRequiredAction` takes `redirect_url` and `step: 'start'`.
+
 ## 0.38.0 — 2026-11-12
 
 - `createSignInFlow` / `createSignUpFlow` (headless typed steps with captcha wired to the right flow), `requireStepUp` / `retryWithStepUp`, `reasonMessage`, `createDpopClient`, `hasToken`, `createDeveloperPortal`, `revokeAllAgentAccess`.

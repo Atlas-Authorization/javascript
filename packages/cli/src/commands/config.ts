@@ -1151,6 +1151,20 @@ function registry(): ResourceSpec[] {
       },
     },
 
+    // 26a. Business topics per provider (Shopify orders/create, eBay ItemSold, ...). The file's map replaces the live one.
+    {
+      kind: 'singleton',
+      type: 'connection_provider_topics',
+      fileKeys: ['topics'],
+      async fetchLive(http) {
+        const v = await orNotFound(http.get<Record<string, unknown>>('/v1/connection_provider_topics'), null);
+        return v ? { topics: (v.topics ?? {}) as Json } : null;
+      },
+      async apply(http, config) {
+        await http.put('/v1/connection_provider_topics', { topics: compact(config).topics ?? {} });
+      },
+    },
+
     // 26. Connection relay size limits (bytes; defaults 256 KiB request, 1 MiB response, up to 25 MiB).
     {
       kind: 'singleton',

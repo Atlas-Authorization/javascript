@@ -53,9 +53,11 @@ describe('config as code: everything', () => {
       migration_bridges: [{ source: 'auth0', enabled: true, preset: 'auth0', shared_secret: 'x' }],
       impersonation_policy: { require_reason: true, reason_codes: ['support'], max_duration_seconds: 900, read_only_default: true },
       connection_token_limits: { per_key: 1000, per_app: 200, providers: { ebay: 50 } },
+      connection_provider_topics: { topics: { shopify: ['orders/create'], ebay: ['ItemSold'] } },
       connection_relay_limits: { request_bytes: 524288, response_bytes: 2097152 },
     });
     expect(await run(['apply', p, '--yes'], ctx(api, { EBAY_SECRET: 'es' }))).toBe(0);
+    expect(write(api, '/v1/connection_provider_topics')).toMatchObject({ method: 'PUT', body: { topics: { shopify: ['orders/create'], ebay: ['ItemSold'] } } });
     expect(write(api, '/v1/instance/hosted_pages')).toMatchObject({ method: 'PATCH', body: { sign_in_url: 'https://app.example.com/login', user_url: null } });
     const clients = api.writes.filter((w) => w.path === '/v1/connections/oauth_clients');
     expect(clients).toHaveLength(2);

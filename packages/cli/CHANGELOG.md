@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.37.0 — 2026-11-12
+
+- `atlas.yaml` section `connection_provider_topics` (Shopify topics and eBay notifications to subscribe each connection to), with plan/apply drift.
+
 ## 0.36.0 — 2026-11-12
 
 - `atlas token --audience <id>` hands your sign-in to another tool with no browser; atlas.yaml sections hosted_pages, connection_oauth_clients (instance and per owner), migration_bridges, impersonation_policy, connection_token_limits (incl. per_app) and connection_relay_limits.

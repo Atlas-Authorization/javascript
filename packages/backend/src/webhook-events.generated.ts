@@ -354,11 +354,26 @@ export type WebhookDataConnection = {
   occurred_at?: number;
   /** `connection.provider_event`: what the provider reported. */
   provider_event?: {
+    /** Lifecycle: `<provider>.<code>`. Business: the provider's own topic name (`orders/create`, `ItemSold`). */
     topic?: string;
     code?: string;
     summary?: string;
     /** Received (epoch ms). */
     received_at?: number;
+    kind?: "lifecycle" | "business";
+    /** Business: the provider's delivery id; a retry of it is not delivered twice. */
+    delivery_id?: string;
+    /** Business: the provider's payload as parsed JSON (SOAP notifications parsed to a plain object). Omitted when over 256 KB. */
+    payload?: Record<string, unknown>;
+    /** Business: true when the payload was over 256 KB and left out. */
+    payload_truncated?: boolean;
+    /** Business: ids lifted from the payload when derivable. */
+    normalized?: {
+      order_id?: string;
+      item_id?: string;
+      listing_id?: string;
+      product_id?: string;
+    };
     [key: string]: unknown;
   };
   /** `connection.owner_changed`: the owner before the transfer. */

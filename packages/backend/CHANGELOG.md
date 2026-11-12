@@ -1,5 +1,10 @@
 # @atlasauth/backend changelog
 
+## 0.46.0 — 2026-11-12
+
+- API key types: `apiKeys.create` / import take `type`, keys and verify results carry `type`, list filters by `type`.
+- `connection.provider_event` payload types gain `kind` (`lifecycle` / `business`), `delivery_id`, `payload`, `payload_truncated` and `normalized` (order, item, listing and product ids) for marketplace business events.
+
 ## 0.45.0 — 2026-11-12
 
 - Mount failover across an ordered upstream list (502 with Retry-After when none answers); JWKS stale keys bounded to 24 h with throttled refetch; opt-in fail-closed `sid_list` (`onStale: 'reject'`); `requireFeature` / `requirePlan` on the access-token verifier; shared CSRF gate and `getInitialState` for server adapters; `exchangeOperatorTokenForAudience`; connections `transfer()` and the instance connections client.

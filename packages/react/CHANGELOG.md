@@ -2,6 +2,10 @@
 
 
 
+## 0.34.2 — 2026-11-12
+
+- Picks up `@atlasauth/js` 0.39.0 (typed MFA-enrolment and required-action steps in the headless flow).
+
 ## 0.34.1 — 2026-11-12
 
 - Picks up `@atlasauth/design` 0.4.0 (zod 4, fixes a zod 3 memory-exhaustion advisory). No API change.

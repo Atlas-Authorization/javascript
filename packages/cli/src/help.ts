@@ -975,7 +975,7 @@ custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, ro
 webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans,
 notification_templates, email_templates, organization_policies, branding, cookie_consent,
 sign_in_with_atlas, signing_key_policy, hosted_pages, connection_oauth_clients, migration_bridges,
-impersonation_policy, connection_token_limits, connection_relay_limits. Re-running is a no-op.
+impersonation_policy, connection_token_limits, connection_provider_topics, connection_relay_limits. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --prune         also delete live resources missing from the config, and compare every live key

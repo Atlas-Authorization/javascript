@@ -11,8 +11,9 @@
  * Errors carry a stable `reason` (`form_password_incorrect`, `captcha_wrong_flow`,
  * …). Turn it into a sentence in the app's language with `reasonMessage`.
  */
-import { nextStep, type AttemptView, type FieldError, type PendingPolicy } from './attempt';
-import { fetchInstanceSettings } from './instance-settings';
+import { nextStep, type AttemptView, type FieldError, type PendingPolicy, type PendingRequiredAction, type ProfileCompletionField } from './attempt';
+import { fetchInstanceSettings, type InstanceSettings } from './instance-settings';
+import { acknowledgeRecoveryCodes, mfaChoicesFrom, pendingRecoveryCodes, prepareMfaEnrollment, type MfaEnrollment } from './mfa-enrollment';
 import { acceptAttemptPolicies, type PolicyAcceptance } from './policies';
 import { signInWithPasskey } from './passkey-sign-in';
 import { startOauthRedirect } from './redirect';
@@ -20,12 +21,33 @@ import { renderCaptchaWidget, type CaptchaFlowKey, type FlowCaptcha } from './ca
 import {
   advance,
   prepareFactor,
+  completeRequiredAction,
   startSignUp,
   resendSignUpVerification,
   initialFlow,
   type FapiClient,
   type FlowState,
 } from './fapi';
+
+/** The second factors a headless flow can set up mid-sign-in: an authenticator app, or texted codes. */
+export type EnrollableMethod = 'totp' | 'phone_code';
+
+/** What a `needs_required_action` step asks for, by kind. Submit it with the method named on each. */
+export type RequiredActionStep =
+  /** `updatePassword(password)`. */
+  | { kind: 'update_password' }
+  /** `sendEmailVerification()`, then `submitEmailVerificationCode(code)`. */
+  | { kind: 'verify_email' }
+  /** `updateProfile({ firstName, lastName, username })`. */
+  | { kind: 'update_profile' }
+  /** Progressive profiling: `submitRequiredFields(values)`, or `submitRequiredFields({}, { skip: true })` when every field is optional. */
+  | { kind: 'complete_profile'; fields: ProfileCompletionField[] }
+  /** A server-driven form: `submitRequiredFields(values)`. */
+  | { kind: 'journey_form'; title: string | null; intro: string | null; fields: ProfileCompletionField[] }
+  /** `startIdentityVerification()`, send the person to `url`, then `checkIdentityVerification()`. */
+  | { kind: 'identity_verification'; url: string | null; status: string | null }
+  /** The application closes it: send the person to `url`; nothing to submit here. */
+  | { kind: 'custom'; url: string | null };
 
 /** Second-factor strategies the server accepts. Not narrowed per account: that would reveal what the account has. */
 export const SECOND_FACTOR_STRATEGIES = ['totp', 'backup_code', 'sms', 'email_code'] as const;
@@ -37,9 +59,18 @@ export type FlowStep =
   | { type: 'needs_second_factor'; factors: string[] }
   | { type: 'needs_policy_acceptance'; policies: PendingPolicy[] }
   | { type: 'needs_email_verification' }
+  /**
+   * The account must set up a second factor to finish signing in. Call `startTotpEnrollment()` (then show `enrollment.secret` /
+   * `enrollment.uri` as a QR code) or `sendEnrollmentPhone(phone)`, then `submitEnrollmentCode(code)`.
+   */
+  | { type: 'needs_mfa_enrollment'; methods: EnrollableMethod[]; /** Authenticator codes to ask for (1 or 2). */ totpCodes: 1 | 2; enrollment: MfaEnrollment | null }
+  /** Enrolment finished: show these recovery codes once, then call `acknowledgeRecoveryCodes()`. The session already exists. */
+  | { type: 'show_recovery_codes'; codes: string[] }
+  /** The user owes one action before the session is issued; `remaining` counts the others behind it. */
+  | { type: 'needs_required_action'; action: RequiredActionStep; remaining: number }
   /** Send the browser to `url` (OAuth); it comes back signed in. */
   | { type: 'redirect'; url: string }
-  /** A step this flow does not drive (MFA enrolment, a required action, an unknown status): hand over to the prebuilt component. */
+  /** A step this flow does not drive (an unknown status, a second factor other than an authenticator app or texts, an action kind this SDK does not know): hand over to the prebuilt component. */
   | { type: 'needs_other'; status: string }
   | { type: 'complete'; sessionId: string | null };
 
@@ -72,6 +103,26 @@ interface Core {
   reset(): FlowSnapshot;
 }
 
+/** The typed step for the first owed action, or null for a kind this SDK does not know. */
+function requiredActionStep(a: PendingRequiredAction, iv: AttemptView['identity_verification']): RequiredActionStep | null {
+  switch (a.action) {
+    case 'update_password':
+    case 'verify_email':
+    case 'update_profile':
+      return { kind: a.action };
+    case 'complete_profile':
+      return { kind: 'complete_profile', fields: a.fields ?? [] };
+    case 'journey_form':
+      return { kind: 'journey_form', title: a.title ?? null, intro: a.intro ?? null, fields: a.fields ?? [] };
+    case 'identity_verification':
+      return { kind: 'identity_verification', url: iv?.url ?? a.url, status: iv?.status ?? null };
+    case 'custom':
+      return { kind: 'custom', url: a.url };
+    default:
+      return null;
+  }
+}
+
 const CAPTCHA_CODES = ['CAPTCHA_REQUIRED', 'CAPTCHA_FAILED'];
 
 function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
@@ -83,6 +134,8 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
   let reason: string | null = null;
   let captchaToken: string | null = null;
   let captchaSettings: FlowCaptcha | null | undefined;
+  let settings: InstanceSettings | null | undefined;
+  let enrollment: MfaEnrollment | null = null;
   let redirect: string | null = null;
   const listeners = new Set<(s: FlowSnapshot) => void>();
 
@@ -93,10 +146,14 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
     return s;
   };
 
+  const loadSettings = async () => {
+    if (settings === undefined) settings = await fetchInstanceSettings(client);
+    return settings;
+  };
+
   const loadCaptcha = async (): Promise<FlowCaptcha | null> => {
     if (captchaSettings === undefined) {
-      const settings = await fetchInstanceSettings(client);
-      captchaSettings = settings?.captchaFlows[captchaFlow] ?? null;
+      captchaSettings = (await loadSettings())?.captchaFlows[captchaFlow] ?? null;
     }
     return captchaSettings;
   };
@@ -119,12 +176,23 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
         return { type: 'needs_policy_acceptance', policies: next.policies };
       case 'collect_email_code':
         return { type: 'needs_email_verification' };
-      case 'done':
-        return { type: 'complete', sessionId: next.sessionId };
+      case 'done': {
+        const codes = pendingRecoveryCodes(flow);
+        return codes ? { type: 'show_recovery_codes', codes } : { type: 'complete', sessionId: next.sessionId };
+      }
+      case 'enroll_second_factor': {
+        const choices = mfaChoicesFrom((await loadSettings())?.account);
+        const methods: EnrollableMethod[] = [...(choices.totp ? (['totp'] as const) : []), ...(choices.sms ? (['phone_code'] as const) : [])];
+        if (!methods.length) return { type: 'needs_other', status: attempt.status };
+        return { type: 'needs_mfa_enrollment', methods, totpCodes: choices.totpCodes, enrollment };
+      }
+      case 'complete_required_action': {
+        const [owed, ...rest] = next.actions;
+        const action = owed && requiredActionStep(owed, attempt.identity_verification);
+        return action ? { type: 'needs_required_action', action, remaining: rest.length } : { type: 'needs_other', status: attempt.status };
+      }
       case 'await_oauth':
-      case 'enroll_second_factor':
       case 'collect_new_password':
-      case 'complete_required_action':
       case 'unknown':
         return { type: 'needs_other', status: attempt.status };
     }
@@ -157,6 +225,12 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
 
   return {
     get flow() { return flow; },
+    get enrollment() { return enrollment; },
+    set enrollment(e: MfaEnrollment | null) { enrollment = e; },
+    acknowledgeCodes() {
+      flow = acknowledgeRecoveryCodes(flow);
+      return stepFor(flow.attempt).then((s) => { step = s; return emit(); });
+    },
     get captchaToken() { return captchaToken; },
     takeCaptchaToken() { const t = captchaToken; captchaToken = null; return t; },
     setCaptchaToken(t: string) { captchaToken = t; },
@@ -199,7 +273,7 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
         },
         acceptPolicies: (acceptances) => run(() => acceptAttemptPolicies(client, flow, acceptances)),
         reset() {
-          flow = initialFlow; step = { type: 'needs_identifier' }; errors = []; reason = null; captchaToken = null; redirect = null;
+          flow = initialFlow; step = { type: 'needs_identifier' }; errors = []; reason = null; captchaToken = null; redirect = null; enrollment = null;
           return emit();
         },
       };
@@ -222,6 +296,28 @@ export interface SignInFlow extends Core {
   submitSecondFactor(code: string, strategy?: (typeof SECOND_FACTOR_STRATEGIES)[number], options?: { rememberDevice?: boolean }): Promise<FlowSnapshot>;
   /** `needs_second_factor`: send a text or emailed code, then `submitSecondFactor(code, 'sms' | 'email_code')`. */
   sendSecondFactorCode(strategy: 'sms' | 'email_code'): Promise<FlowSnapshot>;
+  /** `needs_mfa_enrollment`: begin the authenticator app. The step's `enrollment` then holds `secret` and `uri` (and `qrCode` when sent). */
+  startTotpEnrollment(): Promise<FlowSnapshot>;
+  /** `needs_mfa_enrollment`: text a code to `phone` (E.164). The step's `enrollment.phone` is the masked number. */
+  sendEnrollmentPhone(phone: string): Promise<FlowSnapshot>;
+  /** `needs_mfa_enrollment`: confirm with the code the app shows (and `secondCode`, the next one, when the step's `totpCodes` is 2) or the texted code. */
+  submitEnrollmentCode(code: string, secondCode?: string): Promise<FlowSnapshot>;
+  /** `show_recovery_codes`: the person saved the codes; the step becomes `complete`. */
+  acknowledgeRecoveryCodes(): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `update_password`. */
+  updatePassword(password: string): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `verify_email`: mail a code. */
+  sendEmailVerification(): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `verify_email`: the mailed code. */
+  submitEmailVerificationCode(code: string): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `update_profile`. */
+  updateProfile(input: { firstName?: string; lastName?: string; username?: string }): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `complete_profile` or `journey_form`: values by field key. */
+  submitRequiredFields(values: Record<string, string>, options?: { skip?: boolean }): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `identity_verification`: open the check; the step's `url` is where the person goes. */
+  startIdentityVerification(redirectUrl?: string): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `identity_verification`: read the verdict after the person came back. */
+  checkIdentityVerification(): Promise<FlowSnapshot>;
 }
 
 export function createSignInFlow(opts: FlowOptions): SignInFlow {
@@ -250,6 +346,13 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
   };
   const api = core.api({ submitCaptcha });
 
+  const prepareEnrollment = (input: Parameters<typeof prepareMfaEnrollment>[2]) =>
+    core.run(async () => {
+      const out = await prepareMfaEnrollment(client, attemptId(), input);
+      if (out.enrollment) core.enrollment = out.enrollment;
+      return { ...core.flow, errors: out.errors };
+    });
+
   return {
     ...api,
     submitIdentifier: (id) => {
@@ -272,6 +375,33 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
       const res = await client.post(`/v1/client/sign_ins/${encodeURIComponent(attemptId())}/prepare_second_factor`, { strategy });
       return core.run(async () => ({ ...core.flow, errors: res.ok ? [] : res.errors }));
     },
+    startTotpEnrollment: () => prepareEnrollment({ strategy: 'totp' }),
+    sendEnrollmentPhone: (phone) => prepareEnrollment({ strategy: 'phone_code', phone: phone.trim() }),
+    submitEnrollmentCode: (code, secondCode = '') => {
+      const e = core.enrollment;
+      if (!e) return Promise.resolve(api.getSnapshot());
+      return core.run(() =>
+        advance(client, core.flow, e.strategy === 'phone_code' ? { factorId: e.factorId, enrollStrategy: 'phone_code', code } : { factorId: e.factorId, code, secondCode }),
+      );
+    },
+    acknowledgeRecoveryCodes: () => core.acknowledgeCodes(),
+    updatePassword: (password) => core.run(() => completeRequiredAction(client, core.flow, { action: 'update_password', password })),
+    sendEmailVerification: () => core.run(() => completeRequiredAction(client, core.flow, { action: 'verify_email', step: 'send' })),
+    submitEmailVerificationCode: (code) => core.run(() => completeRequiredAction(client, core.flow, { action: 'verify_email', step: 'verify', code })),
+    updateProfile: ({ firstName, lastName, username }) =>
+      core.run(() =>
+        completeRequiredAction(client, core.flow, {
+          action: 'update_profile',
+          ...(firstName !== undefined ? { first_name: firstName } : {}),
+          ...(lastName !== undefined ? { last_name: lastName } : {}),
+          ...(username !== undefined ? { username } : {}),
+        }),
+      ),
+    submitRequiredFields: (values, options = {}) =>
+      core.run(() => completeRequiredAction(client, core.flow, { fields: values, ...(options.skip ? { skip: true } : {}) })),
+    startIdentityVerification: (redirectUrl) =>
+      core.run(() => completeRequiredAction(client, core.flow, { action: 'identity_verification', step: 'start', ...(redirectUrl ? { redirect_url: redirectUrl } : {}) })),
+    checkIdentityVerification: () => core.run(() => completeRequiredAction(client, core.flow, { action: 'identity_verification' })),
   };
 }
 
