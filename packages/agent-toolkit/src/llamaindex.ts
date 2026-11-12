@@ -6,7 +6,7 @@ import type { z } from 'zod';
 import type { AgentTool } from './types';
 import { asText, loadPeer, toToolList } from './adapters-shared';
 
-export type LlamaIndexToolFactory = (fn: (input: unknown) => Promise<string>, config: { name: string; description: string; parameters: z.ZodTypeAny }) => unknown;
+export type LlamaIndexToolFactory = (fn: (input: unknown) => Promise<string>, config: { name: string; description: string; parameters: z.ZodType }) => unknown;
 
 export interface ToLlamaIndexToolsOptions {
   /** `tool` from `llamaindex`. Loaded lazily when omitted. */

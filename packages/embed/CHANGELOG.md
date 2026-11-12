@@ -2,6 +2,10 @@
 
 
 
+## 0.19.9 — 2026-11-12
+
+- Picks up `@atlasauth/design` 0.4.0 (zod 4, fixes a zod 3 memory-exhaustion advisory). No API change.
+
 ## 0.19.8 — 2026-11-06
 
 - **Behaviour:** `<SignIn>` and `<SignUp>` render nothing for someone already signed in. A flow in progress, such as recovery codes, stays. `1 second`, `Code sent.` after a resend, and `Resend code` stays after a wait ends. A late poll answer can no longer overwrite what this tab found.

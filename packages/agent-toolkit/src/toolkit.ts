@@ -17,7 +17,7 @@ export interface BoundTool {
   /** `true` for a pure read. */
   readOnly: boolean;
   /** The Zod schema for this tool's arguments — used for both docs and validation. */
-  schema: z.ZodTypeAny;
+  schema: z.ZodType;
   /** Run the tool. Returns a sanitized, JSON-serializable result. */
   execute(args: unknown): Promise<unknown>;
 }

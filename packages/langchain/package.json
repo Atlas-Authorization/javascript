@@ -15,7 +15,7 @@
   "keywords": ["atlas", "atlasauth", "langchain", "rag", "authorization", "fga"],
   "devDependencies": {
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^3.2.7"
   },
   "publishConfig": {
     "access": "public"

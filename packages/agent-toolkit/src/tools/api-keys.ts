@@ -51,7 +51,7 @@ export function apiKeyTools(): ToolDefinition[] {
         subject_id: z.string().describe('The owning user or organization id.'),
         name: z.string().optional().describe('A human label for the key.'),
         claims: z
-          .record(z.unknown())
+          .record(z.string(), z.unknown())
           .optional()
           .describe('Custom claims embedded in the key\'s verification result.'),
         expires_at: z

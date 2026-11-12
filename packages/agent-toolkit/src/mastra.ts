@@ -6,7 +6,7 @@ import type { z } from 'zod';
 import type { AgentTool } from './types';
 import { loadPeer, toToolList } from './adapters-shared';
 
-export type MastraCreateTool = (def: { id: string; description: string; inputSchema: z.ZodTypeAny; execute: (input: unknown) => Promise<unknown> }) => unknown;
+export type MastraCreateTool = (def: { id: string; description: string; inputSchema: z.ZodType; execute: (input: unknown) => Promise<unknown> }) => unknown;
 
 export interface ToMastraToolsOptions {
   /** `createTool` from `@mastra/core/tools`. Loaded lazily when omitted. */

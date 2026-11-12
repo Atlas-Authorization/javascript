@@ -7,7 +7,7 @@ import { dirname, resolve } from 'node:path';
 import { chmodSync } from 'node:fs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const common = { bundle: true, platform: 'node', target: ['node18'], format: 'cjs', sourcemap: true, legalComments: 'none', external: [] };
+const common = { bundle: true, platform: 'node', target: ['node18'], format: 'cjs', sourcemap: true, legalComments: 'none', packages: 'bundle', external: [] };
 
 await build({ ...common, entryPoints: [resolve(here, 'src/index.ts')], outfile: resolve(here, 'dist/index.js') });
 await build({ ...common, entryPoints: [resolve(here, 'src/cli.ts')], outfile: resolve(here, 'dist/cli.js'), banner: { js: '#!/usr/bin/env node' } });

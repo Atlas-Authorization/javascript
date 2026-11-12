@@ -8,10 +8,10 @@
     "start": "next start"
   },
   "dependencies": {
-    "@atlasauth/backend": "^0.40.0",
-    "@atlasauth/nextjs": "^0.13.0",
-    "@atlasauth/react": "^0.31.0",
-    "next": "^15.0.0",
+    "@atlasauth/backend": "^0.45.0",
+    "@atlasauth/nextjs": "^0.15.0",
+    "@atlasauth/react": "^0.34.0",
+    "next": "^15.5.29",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

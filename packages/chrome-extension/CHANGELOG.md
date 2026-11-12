@@ -1,5 +1,9 @@
 # @atlasauth/chrome-extension changelog
 
+## 0.5.1 — 2026-11-12
+
+- Picks up `@atlasauth/design` 0.4.0 (zod 4, fixes a zod 3 memory-exhaustion advisory). No API change.
+
 ## 0.5.0 — 2026-10-30
 
 - `signInWithWebAuthFlow()`: sign in through `chrome.identity.launchWebAuthFlow` (or Firefox `browser.identity`) against the instance, with PKCE and `state`, and get back a refreshing session in `chrome.storage` whose JWT your backend verifies with the instance JWKS.

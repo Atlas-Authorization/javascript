@@ -2,6 +2,10 @@
 
 
 
+## 0.20.1 — 2026-11-12
+
+- Picks up `@atlasauth/design` 0.4.0 (zod 4, fixes a zod 3 memory-exhaustion advisory). No API change.
+
 ## 0.20.0 — 2026-11-12
 
 - `captcha_wrong_flow` error reason string.

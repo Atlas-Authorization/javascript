@@ -1,5 +1,9 @@
 # @atlasauth/create-atlas-app changelog
 
+## 0.4.1 — 2026-11-12
+
+- The templates pin the current SDKs (`@atlasauth/react` ^0.34.0, `@atlasauth/nextjs` ^0.15.0, `@atlasauth/backend` ^0.45.0) and Vite 6.4; new projects no longer start on months-old SDKs.
+
 ## 0.4.0
 
 - New `nextjs-local-users` template: a Next.js app with its own users and organizations on a path mount (session check with CSRF, local user sync, webhooks, the `before_user_create` hook, organization mirror and policy, Admin Portal link, integration token). `create-atlas-app --template nextjs-local-users`.

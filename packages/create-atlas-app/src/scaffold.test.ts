@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -166,5 +166,20 @@ describe('CLI argument resolution', () => {
   it('a TTY with no template signals a prompt', () => {
     const args = parseCliArgs([]);
     expect(chooseTemplate(args, true)).toBeNull();
+  });
+});
+
+describe('template SDK pins', () => {
+  // A 0.x caret range never reaches the next minor, so a stale pin scaffolds an old SDK.
+  it('every @atlasauth dependency of every template admits the current release', () => {
+    for (const name of readdirSync(TEMPLATES_DIR)) {
+      const deps = (readJson(join(TEMPLATES_DIR, name, 'package.json')).dependencies ?? {}) as Record<string, string>;
+      for (const [dep, range] of Object.entries(deps)) {
+        if (!dep.startsWith('@atlasauth/')) continue;
+        const current = readJson(join(process.cwd(), '..', dep.slice('@atlasauth/'.length), 'package.json')).version as string;
+        const [maj, min] = current.split('.');
+        expect(`${name}: ${dep} ${range}`).toBe(`${name}: ${dep} ^${maj}.${min}.0`);
+      }
+    }
   });
 });

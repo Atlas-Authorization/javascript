@@ -31,7 +31,7 @@ export interface ToolContext {
  * framework adapters ({@link ./ai-sdk} and {@link ./langchain}) are thin maps
  * over this shape, which is why adding a third framework is a few lines.
  *
- * The specific input schema is intentionally erased to `z.ZodTypeAny` at the
+ * The specific input schema is intentionally erased to `z.ZodType` at the
  * registry boundary so a heterogeneous set of tools lives in one record;
  * per-tool argument inference is preserved where it matters — at each tool's
  * definition site — by {@link defineTool}.
@@ -43,7 +43,7 @@ export interface ToolDefinition {
   verb: ToolVerb;
   /** `true` for a pure read; `false` for any state change. Derived from `verb`. */
   readOnly: boolean;
-  schema: z.ZodTypeAny;
+  schema: z.ZodType;
   execute(args: unknown, ctx: ToolContext): Promise<unknown>;
 }
 
@@ -54,7 +54,7 @@ export interface ToolDefinition {
  * registry. `readOnly` is computed here, never hand-passed, so it can never
  * drift from `verb`.
  */
-export function defineTool<S extends z.ZodTypeAny>(def: {
+export function defineTool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   resource: ToolResource;
@@ -85,7 +85,7 @@ export interface AgentTool {
   name: string;
   description: string;
   /** The Zod schema of the arguments: documents them and validates them. */
-  schema: z.ZodTypeAny;
+  schema: z.ZodType;
   /** True for a pure read. */
   readOnly?: boolean;
   /** Run the tool with already-validated arguments. */

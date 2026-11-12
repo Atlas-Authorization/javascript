@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/vue",
-  "version": "0.22.0",
+  "version": "0.22.1",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -18,9 +18,9 @@
   },
   "devDependencies": {
     "@vue/test-utils": "^2.4.6",
-    "happy-dom": "^15.11.0",
+    "happy-dom": "^21.0.4",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4",
+    "vitest": "^3.2.7",
     "vue": "^3.4.0"
   },
   "publishConfig": {

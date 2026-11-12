@@ -22,10 +22,10 @@
   "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.9.0",
-    "esbuild": "^0.21.5",
+    "esbuild": "^0.25.12",
     "jose": "^5.9.6",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^3.2.7"
   },
   "keywords": ["atlas", "atlasauth", "authorization", "pdp", "cedar", "fga", "openfga", "authzen", "policy"],
   "publishConfig": {

@@ -7,7 +7,7 @@ import type { z } from 'zod';
 import type { AgentTool } from './types';
 import { toToolList } from './adapters-shared';
 
-export type AdkFunctionToolCtor = new (def: { name: string; description: string; parameters: z.ZodTypeAny; execute: (input: unknown) => Promise<Record<string, unknown>> }) => unknown;
+export type AdkFunctionToolCtor = new (def: { name: string; description: string; parameters: z.ZodType; execute: (input: unknown) => Promise<Record<string, unknown>> }) => unknown;
 
 export interface ToAdkToolsOptions {
   /** `FunctionTool` from `@google/adk`. Loaded lazily when omitted. */

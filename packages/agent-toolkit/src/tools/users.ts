@@ -18,7 +18,7 @@ const pagination = {
 
 /** A free-form, model-supplied public-metadata bag (never private/unsafe). */
 const publicMetadata = z
-  .record(z.unknown())
+  .record(z.string(), z.unknown())
   .optional()
   .describe('Public, non-sensitive metadata. Never put secrets or PII you would not log here.');
 

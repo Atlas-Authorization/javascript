@@ -76,7 +76,7 @@ export function organizationTools(): ToolDefinition[] {
         slug: z.string().optional(),
         image_url: z.string().url().optional(),
         max_allowed_memberships: z.number().int().positive().optional(),
-        public_metadata: z.record(z.unknown()).optional().describe('Public, non-sensitive metadata.'),
+        public_metadata: z.record(z.string(), z.unknown()).optional().describe('Public, non-sensitive metadata.'),
       }),
       execute: (args, { backend }) => {
         const { organization_id, ...body } = args;

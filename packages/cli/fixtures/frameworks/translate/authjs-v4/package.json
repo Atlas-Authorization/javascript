@@ -1,1 +1,1 @@
-{ "name": "legacy", "dependencies": { "next": "13.5.0", "next-auth": "^4.24.7" } }
+{ "name": "legacy", "dependencies": { "next": "15.5.29", "next-auth": "^4.24.7" } }

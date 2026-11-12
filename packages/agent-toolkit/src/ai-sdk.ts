@@ -21,7 +21,7 @@ import type { AtlasToolkit, BoundTool } from './toolkit';
  */
 export interface AiSdkTool {
   description: string;
-  parameters: z.ZodTypeAny;
+  parameters: z.ZodType;
   execute: (args: unknown) => Promise<unknown>;
 }
 

@@ -20,9 +20,9 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "happy-dom": "^15.11.0",
+    "happy-dom": "^21.0.4",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^3.2.7"
   },
   "dependencies": {
     "@atlasauth/authz": "workspace:*"

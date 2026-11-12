@@ -1,5 +1,9 @@
 # gatsby-plugin-atlasauth changelog
 
+## 0.1.4 — 2026-11-12
+
+- Picks up `@atlasauth/design` 0.4.0 (zod 4, fixes a zod 3 memory-exhaustion advisory). No API change.
+
 ## 0.1.3
 - **Fixed:** depends on `@atlasauth/react` `^0.9.0` instead of one exact version. With an exact pin, an app that also
   installed a newer `@atlasauth/react` got two copies, and hooks from one couldn't see the other's

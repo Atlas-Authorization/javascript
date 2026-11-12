@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/agent-toolkit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -45,7 +45,7 @@
   },
   "dependencies": {
     "@atlasauth/backend": "workspace:*",
-    "zod": "^3.23.8"
+    "zod": "^4.6.6"
   },
   "peerDependencies": {
     "@langchain/core": ">=0.3.0",
@@ -62,7 +62,7 @@
   "devDependencies": {
     "@langchain/core": "^0.3.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^3.2.7"
   },
   "publishConfig": {
     "access": "public"

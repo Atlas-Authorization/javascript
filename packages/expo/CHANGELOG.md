@@ -1,5 +1,9 @@
 # @atlasauth/expo changelog
 
+## 0.5.1 — 2026-11-12
+
+- Picks up `@atlasauth/design` 0.4.0 (zod 4, fixes a zod 3 memory-exhaustion advisory). No API change.
+
 ## 0.5.0 — 2026-11-12
 
 - `useAppApproval`, `exchangeLegacyToken` (upgrade bridge), `signInWithApple` / `signInWithGoogle` / `signInWithIdToken`.

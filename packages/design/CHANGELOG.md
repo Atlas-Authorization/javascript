@@ -1,5 +1,9 @@
 # @atlasauth/design
 
+## 0.4.0 — 2026-11-12
+
+- Uses zod 4 (4.6.6 or later), which fixes a memory-exhaustion advisory in zod 3. Schemas are zod 4 objects; code that inspects them should use zod 4.
+
 ## 0.3.0 — 2026-10-24
 
 ### Added

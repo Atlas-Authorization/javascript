@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/lit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Atlas for web components: Lit elements (provider, signed-in/out gates, permission gate, sign-in and sign-up widgets) over @atlasauth/js. Works in any framework or none.",
   "license": "MIT",
   "type": "module",
@@ -30,10 +30,10 @@
     "lit": ">=3"
   },
   "devDependencies": {
-    "happy-dom": "^15.11.0",
+    "happy-dom": "^21.0.4",
     "lit": "^3.2.1",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^3.2.7"
   },
   "publishConfig": {
     "access": "public"

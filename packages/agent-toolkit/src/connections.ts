@@ -91,7 +91,7 @@ export function createConnectionsToolkit(options: ConnectionsToolkitOptions): Ag
       schema: z.object({
         connection,
         action: z.string().min(1).describe('The action name, for example create_issue.'),
-        input: z.record(z.unknown()).default({}).describe('The action input.'),
+        input: z.record(z.string(), z.unknown()).default({}).describe('The action input.'),
         dry_run: z.boolean().optional().describe('Return the request that would be sent, without sending it.'),
       }),
       execute: (a) => {
@@ -108,7 +108,7 @@ export function createConnectionsToolkit(options: ConnectionsToolkitOptions): Ag
         connection,
         method: z.enum(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
         url: z.string().url().describe('The absolute https URL on one of the connection\'s allowed hosts.'),
-        headers: z.record(z.string()).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
         body: z.unknown().optional().describe('A string, or JSON for POST, PUT, PATCH and DELETE.'),
       }),
       execute: (a) => {

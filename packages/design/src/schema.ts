@@ -213,12 +213,12 @@ export type DesignBackgroundImage = z.infer<typeof backgroundImageSchema>;
  * patch's "delete this key"; arrays (gradient stops) are left as-is because
  * they replace wholesale. Strictness is preserved at every level.
  */
-function toPatch(schema: z.ZodTypeAny): z.ZodTypeAny {
+function toPatch(schema: z.ZodType): z.ZodType {
   let inner = schema;
-  while (inner instanceof z.ZodOptional || inner instanceof z.ZodNullable) inner = inner.unwrap();
+  while (inner instanceof z.ZodOptional || inner instanceof z.ZodNullable) inner = inner.unwrap() as z.ZodType;
   if (inner instanceof z.ZodObject) {
-    const shape = inner.shape as Record<string, z.ZodTypeAny>;
-    const next: Record<string, z.ZodTypeAny> = {};
+    const shape = inner.shape as Record<string, z.ZodType>;
+    const next: Record<string, z.ZodType> = {};
     for (const [k, v] of Object.entries(shape)) next[k] = toPatch(v).nullable().optional();
     return z.object(next).strict();
   }
@@ -245,7 +245,7 @@ type DeepPatch<T> = {
 /** Zod issues → one problem per offending key, unknown keys named with their full path. */
 export function zodProblems(error: z.ZodError, prefix = ''): DesignProblem[] {
   const out: DesignProblem[] = [];
-  const join = (parts: (string | number)[]) =>
+  const join = (parts: PropertyKey[]) =>
     [prefix, ...parts.map(String)].filter((p) => p !== '').join('.');
   for (const issue of error.issues) {
     if (issue.code === 'unrecognized_keys') {

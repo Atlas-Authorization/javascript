@@ -43,7 +43,7 @@ describe('catalogue', () => {
 
   it("every tool's schema parses its representative input", () => {
     for (const tool of allTools()) {
-      const result = (tool.schema as z.ZodTypeAny).safeParse(REPRESENTATIVE_INPUT[tool.name]);
+      const result = (tool.schema as z.ZodType).safeParse(REPRESENTATIVE_INPUT[tool.name]);
       expect(result.success, `${tool.name} failed to parse`).toBe(true);
     }
   });

@@ -35,7 +35,7 @@ export function invitationTools(): ToolDefinition[] {
       schema: z.object({
         email_address: z.string().email().describe('The email address to invite.'),
         public_metadata: z
-          .record(z.unknown())
+          .record(z.string(), z.unknown())
           .optional()
           .describe('Public, non-sensitive metadata carried onto the created user.'),
       }),

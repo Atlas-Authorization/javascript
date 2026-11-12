@@ -7,7 +7,7 @@ import type { z } from 'zod';
 import type { AgentTool } from './types';
 import { asText, loadPeer, toToolList } from './adapters-shared';
 
-export type OpenAiToolFactory = (def: { name: string; description: string; parameters: z.ZodTypeAny; strict?: boolean; execute: (input: unknown) => Promise<string> }) => unknown;
+export type OpenAiToolFactory = (def: { name: string; description: string; parameters: z.ZodType; strict?: boolean; execute: (input: unknown) => Promise<string> }) => unknown;
 
 export interface ToOpenAiAgentsToolsOptions {
   /** `tool` from `@openai/agents`. Loaded lazily when omitted. */

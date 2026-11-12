@@ -1,5 +1,9 @@
 # @atlasauth/react-router changelog
 
+## 0.1.4 — 2026-11-12
+
+- Picks up `@atlasauth/design` 0.4.0 (zod 4, fixes a zod 3 memory-exhaustion advisory). No API change.
+
 ## 0.1.3 — 2026-11-06
 
 ### Added

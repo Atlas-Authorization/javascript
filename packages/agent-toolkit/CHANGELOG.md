@@ -1,5 +1,9 @@
 # @atlasauth/agent-toolkit changelog
 
+## 0.3.0 — 2026-11-12
+
+- Uses zod 4 (4.6.6 or later), which fixes a memory-exhaustion advisory in zod 3. Tool input schemas are zod 4; pass them to framework adapters that accept zod 4.
+
 ## 0.2.0 — 2026-10-28
 
 - Connection tools toolkit and adapters for OpenAI Agents, Mastra, LlamaIndex and Google ADK

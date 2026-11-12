@@ -22,7 +22,7 @@ export interface LangChainStructuredTool {
   name: string;
   description: string;
   /** The Zod argument schema. */
-  schema: z.ZodTypeAny;
+  schema: z.ZodType;
   /** The executor LangChain invokes with validated args; returns a string. */
   func: (input: Record<string, unknown>) => Promise<string>;
 }
@@ -30,7 +30,7 @@ export interface LangChainStructuredTool {
 interface DynamicStructuredToolFields {
   name: string;
   description: string;
-  schema: z.ZodTypeAny;
+  schema: z.ZodType;
   func: (input: Record<string, unknown>) => Promise<string>;
 }
 

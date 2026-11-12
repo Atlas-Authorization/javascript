@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { publishActiveAtlas, type ActiveAtlas } from './active-atlas';
 import { mountReferralElement, referralFromUser, referralWidgetSrc } from './referral-panel';
 
@@ -17,6 +17,7 @@ afterEach(() => {
   publishActiveAtlas(null);
   delete (window as { Atlas?: unknown }).Atlas;
   document.head.innerHTML = '';
+  vi.restoreAllMocks();
 });
 
 describe('referralFromUser', () => {
@@ -55,6 +56,15 @@ describe('window.Atlas.session via the provider registry', () => {
     publishActiveAtlas(atlas({ status: 'signed_out', user: null }));
     publishActiveAtlas(atlas());
     expect(seen.at(-1)).toEqual({ signedIn: true, userId: 'user_1' });
+  });
+});
+
+// happy-dom disables script loading and answers every <script src> with an
+// immediate load/error event; these tests fire onload/onerror themselves.
+const realDispatch = HTMLScriptElement.prototype.dispatchEvent;
+beforeEach(() => {
+  vi.spyOn(HTMLScriptElement.prototype, 'dispatchEvent').mockImplementation(function (this: HTMLScriptElement, e: Event) {
+    return e.type === 'load' || e.type === 'error' ? true : realDispatch.call(this, e);
   });
 });
 

@@ -19,7 +19,7 @@ export interface McpToolSpec {
    * object schema and both advertises it as the tool's JSON-Schema and validates
    * the model's arguments against it before the handler runs.
    */
-  shape: z.ZodRawShape;
+  shape: z.core.$ZodShape;
   handler: (args: Record<string, unknown>) => Promise<CallToolResult>;
 }
 
@@ -27,22 +27,22 @@ export interface McpToolSpec {
  * The agent-toolkit hands us each tool's arguments as a single `z.object({…})`.
  * MCP's `tool()` wants the inner raw shape, so we unwrap it here.
  *
- * Detection is STRUCTURAL (`_def.typeName`), never `instanceof z.ZodObject`:
+ * Detection is STRUCTURAL (`_zod.def.type`), never `instanceof z.ZodObject`:
  * agent-toolkit's schema may be built by a different physical copy of zod than
  * the one imported here (a real possibility under bundlers/test runners that
  * resolve a dependency's zod separately), across which `instanceof` is false —
  * which would silently return the empty shape below and strip EVERY tool
- * argument. The `.shape` getter and `_def` exist on any zod-v3 object schema
+ * argument. The `.shape` getter and `_zod.def` exist on any zod-v4 object schema
  * regardless of which copy created it.
  *
  * Every toolkit tool uses an object schema today; the empty-shape fallback keeps
  * a future non-object tool from throwing at registration (it would simply take
  * no declared arguments) rather than crashing the whole server.
  */
-function rawShapeOf(schema: z.ZodTypeAny): z.ZodRawShape {
-  const typeName = (schema as { _def?: { typeName?: string } })._def?.typeName;
-  if (typeName === 'ZodObject') {
-    return (schema as unknown as z.ZodObject<z.ZodRawShape>).shape;
+function rawShapeOf(schema: z.ZodType): z.core.$ZodShape {
+  const type = (schema as { _zod?: { def?: { type?: string } } })._zod?.def?.type;
+  if (type === 'object') {
+    return (schema as unknown as z.ZodObject).shape;
   }
   return {};
 }

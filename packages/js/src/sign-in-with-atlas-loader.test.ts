@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   cspBlockedMessage,
   loadSignInWithAtlas,
@@ -15,6 +15,15 @@ afterEach(() => {
 });
 
 const lastScript = () => document.head.querySelector('script') as HTMLScriptElement;
+
+// happy-dom disables script loading and answers every <script src> with an
+// immediate load/error event; these tests fire onload/onerror themselves.
+const realDispatch = HTMLScriptElement.prototype.dispatchEvent;
+beforeEach(() => {
+  vi.spyOn(HTMLScriptElement.prototype, 'dispatchEvent').mockImplementation(function (this: HTMLScriptElement, e: Event) {
+    return e.type === 'load' || e.type === 'error' ? true : realDispatch.call(this, e);
+  });
+});
 
 describe('loadSignInWithAtlas', () => {
   it('builds evergreen, major and exact URLs', () => {
@@ -44,7 +53,8 @@ describe('loadSignInWithAtlas', () => {
     document.dispatchEvent(ev);
     await expect(p).rejects.toThrow('csp_blocked');
     expect(log).toHaveBeenCalledWith(cspBlockedMessage('https://atlasauth.net', 'script-src-elem'));
-    expect(log.mock.calls[0]![0]).toBe(
+    // happy-dom also logs its own "script loading is disabled" line to the console.
+    expect(log.mock.calls.map((c) => c[0])).toContain(
       '[Atlas] blocked by CSP: add https://atlasauth.net to script-src-elem (see https://atlasauth.net/.well-known/atlas-embed.json)',
     );
   });

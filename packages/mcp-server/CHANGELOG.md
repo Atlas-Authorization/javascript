@@ -1,5 +1,9 @@
 # @atlasauth/mcp changelog
 
+## 0.4.0 — 2026-11-12
+
+- Uses zod 4 (4.6.6 or later), which fixes a memory-exhaustion advisory in zod 3. Tool schemas are zod 4.
+
 ## 0.3.1 — 2026-10-28
 
 - The server reports its own version correctly in the MCP handshake.
