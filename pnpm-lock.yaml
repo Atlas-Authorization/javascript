@@ -8949,8 +8949,8 @@ packages:
     resolution: {integrity: sha512-0VaGWHJourzh88otU5bVJ4Z/oIsD+R6yaeR0Q8t8dezsKQI/RLi5m3fNzkiLYLhJ+YwM3JRSKlOqGplOI5Yo3w==}
     engines: {node: '>=18'}
 
-  flow-estree@0.339.0:
-    resolution: {integrity: sha512-uPUC/TsoXrHUklSF6qXke8rhHJZhdt/IUcPhN5SHk4V5YeJOQ+3DDoS8l2pOWx4CR6ZXIWS51OpDwpl74U3ZrQ==}
+  flow-estree@0.340.0:
+    resolution: {integrity: sha512-LpYdzPWHsfDAc5nNmVrUPLo8UedFkJqogIxNyVO19tG7qBhvNwjs+Oo4TfWB+2Qa4arFevu3vdbxR5tfWps53g==}
     engines: {node: '>=18'}
 
   flow-parser@0.327.0:
@@ -8965,8 +8965,8 @@ packages:
     resolution: {integrity: sha512-O8QvQf/B3rBF+eagcc9/WMAjfJoaKckdgSd8PT/qvMIIe4ZjVKrSqV5SDnRFAKY0VrE8r5C4ADYgvYhmwkWADA==}
     engines: {node: '>=0.4.0'}
 
-  flow-parser@0.339.0:
-    resolution: {integrity: sha512-v47E/2/ii6g+3QuPzQDohVq5MFqCO+mfLLFT0c2YJq2kjz2StZZ4e9qoqePINIj4W8vqexQ0G0RaefpunjdQAw==}
+  flow-parser@0.340.0:
+    resolution: {integrity: sha512-zB1DgZcBVes/hHj/upWKLhukHAIkj+6g2o0yVnxCxS1Wyi/YLX513w8XpFLJ7/LUrbSE7CIHJAEZ94smHujt9Q==}
     engines: {node: '>=0.4.0'}
 
   fnv1a-64@0.1.2:
@@ -23762,7 +23762,7 @@ snapshots:
 
   flow-estree@0.336.0: {}
 
-  flow-estree@0.339.0: {}
+  flow-estree@0.340.0: {}
 
   flow-parser@0.327.0:
     dependencies:
@@ -23776,9 +23776,9 @@ snapshots:
     dependencies:
       flow-estree: 0.336.0
 
-  flow-parser@0.339.0:
+  flow-parser@0.340.0:
     dependencies:
-      flow-estree: 0.339.0
+      flow-estree: 0.340.0
 
   fnv1a-64@0.1.2: {}
 
@@ -25270,7 +25270,7 @@ snapshots:
       '@babel/preset-flow': 7.29.7(@babel/core@7.29.13)
       '@babel/preset-typescript': 7.29.7(@babel/core@7.29.13)
       '@babel/register': 7.29.13(@babel/core@7.29.13)
-      flow-parser: 0.339.0
+      flow-parser: 0.340.0
       graceful-fs: 4.2.11
       neo-async: 2.6.2
       picocolors: 1.1.1
