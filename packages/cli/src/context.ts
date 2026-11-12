@@ -61,6 +61,8 @@ export interface RunContext {
    * missing. Optional; defaults to node's execFile.
    */
   execFile?: (cmd: string, args: string[]) => Promise<string>;
+  /** Open a URL in the browser (`atlas login --device`). Optional; defaults to the system opener. */
+  openBrowser?: (url: string) => void;
   /** Whether stdin / stdout are terminals. Optional; defaults to the real streams. */
   tty?: { stdin: boolean; stdout: boolean };
   /**

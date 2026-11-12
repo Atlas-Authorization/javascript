@@ -407,8 +407,9 @@ call, then stores it (0600) under the profile. --url / --secret-key skip the
 prompts for non-interactive setup.
 
 Operator sign-in (no key on disk):
-  atlas login --device [--resource <ins_…|app_…>] [--scope "<scopes>"]
-Opens Atlas's sign-in (passkey, multi-factor) with a device code. Only
+  atlas login --device [--resource <ins_…|app_…>] [--scope "<scopes>"] [--no-browser]
+Opens Atlas's sign-in (passkey, multi-factor) with a device code, in your
+browser when this is a terminal outside CI (--no-browser only prints the link). Only
 short-lived tokens are stored: the operator token, and with --resource a
 one-hour token bound to that instance or app (scope "read" by default).
 Creating apps or instances and minting keys need a multi-factor sign-in

@@ -20,6 +20,7 @@ const OPTIONS = {
   'secret-key': { type: 'string' },
   // login --device / token: the operator device flow and token exchange.
   device: { type: 'boolean' },
+  'no-browser': { type: 'boolean' },
   resource: { type: 'string' },
   scope: { type: 'string' },
   // keys create / rotate.

@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.44.0 — 2026-11-11
+
+- `createCliLogin` and `openInBrowser` from `@atlasauth/backend/cli` (a Node-only subpath, so the main entry stays edge-safe): browser sign-in for a command-line tool of your own. `login()` runs the device flow, `getAccessToken()` refreshes and rotates the stored session, `logout()` revokes it, `status()` reads it without a network call. The session is a 0600 file by default, or your own keychain store.
+
 ## 0.43.1 — 2026-11-11
 
 - The batch token read's per-id error can be `rate_limited` / `provider_limit` (an instance per-provider limit set with `PUT /v1/connections/token_limits`).

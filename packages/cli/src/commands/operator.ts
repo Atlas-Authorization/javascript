@@ -11,10 +11,11 @@ import {
   revokeLeakedKeys,
   startOperatorLogin,
 } from '@atlasauth/backend';
+import { openInBrowser } from '@atlasauth/backend/cli';
 import { timingSafeEqual } from 'node:crypto';
 import { str, type ParsedArgs } from '../args';
 import { httpFor } from '../project';
-import type { RunContext } from '../context';
+import { ttyOf, type RunContext } from '../context';
 import { CliError } from '../errors';
 import { printJson } from '../output';
 import { envApiUrl, requireArg, resolveAuth, wantsJson } from './shared';
@@ -45,6 +46,8 @@ export async function deviceLogin(ctx: RunContext, args: ParsedArgs): Promise<nu
   }
   ctx.io.out(`Open ${start.verification_uri_complete}`);
   ctx.io.out(`and confirm the code ${start.user_code} (it expires in ${Math.round(start.expires_in / 60)} minutes).`);
+  // The seam: a test sets ctx.openBrowser; production opens only on a terminal outside CI.
+  if (!values['no-browser'] && !ctx.env.CI && ttyOf(ctx).stdout) (ctx.openBrowser ?? openInBrowser)(start.verification_uri_complete);
   let token;
   try {
     token = await pollOperatorLogin(start, { fetch: ctx.fetch, sleep: ctx.sleep });

@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.34.0 — 2026-11-11
+
+- `atlas login --device` opens the sign-in page in your browser (not in CI or without a terminal). `--no-browser` only prints the link.
+
 ## 0.33.1 — 2026-11-11
 
 - `atlas connection-limits get|set|relay-get|relay-set`: read and set the connection-token rate limits (per key, per connection, per provider, with current usage) and the relay size limits.

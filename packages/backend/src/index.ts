@@ -96,6 +96,7 @@ export * from './webhook-events';
 // Framework-neutral Request -> Response handlers: path mount proxy, domain verify, webhook + hook routes.
 export * from './mount';
 export * from './fetch-handlers';
+// Browser sign-in for your own CLI: device flow, stored session, refresh.
 
 // Session helpers: mirror the Atlas user into your own table; CSRF tokens bound to the session.
 export * from './sync-local-user';
