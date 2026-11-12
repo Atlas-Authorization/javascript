@@ -1123,6 +1123,8 @@ export type WebhookDataUmaRequest = {
 export type WebhookDataUser = {
   object: "user";
   id: string;
+  /** Your own id for the user, or null. */
+  external_id?: string | null;
   first_name: string | null;
   last_name: string | null;
   username: string | null;
@@ -1198,6 +1200,8 @@ export type WebhookDataUserDeactivated = {
 export type WebhookDataUserDeleted = {
   object: "user";
   id: string;
+  /** Your own id for the user, or null. */
+  external_id?: string | null;
   first_name: string | null;
   last_name: string | null;
   username: string | null;

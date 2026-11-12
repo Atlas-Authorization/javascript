@@ -1,5 +1,14 @@
 # @atlasauth/cli changelog
 
+## 0.35.0 — 2026-11-11
+
+- `${instance.fapi_host}`, `${instance.frontend_api_url}` and `${instance.id}` in atlas.yaml, filled in from the instance the key targets, so a config can name the instance's own sign-in host before it is known.
+- `atlas apply --secrets-out <file>`: every secret apply generates goes into one 0600 dotenv file, merged with what is there. An existing webhook endpoint's secret is read back once if the file lacks it (never rotated).
+- `atlas suite plan|apply <suite.yaml>`: run several config-as-code tools in dependency order, with one exit code (2 on drift).
+- `hooks.before_user_create.enabled: pending`: declare the hook before the app is deployed; Atlas turns it on when its test passes, and `plan --check` stays clean after.
+- `cookie_consent.site: { provider, host }` instead of a copied `site_id`.
+- `atlas apply --help` lists every section in apply order, including `sign_in_with_atlas`.
+
 ## 0.34.0 — 2026-11-11
 
 - `atlas login --device` opens the sign-in page in your browser (not in CI or without a terminal). `--no-browser` only prints the link.

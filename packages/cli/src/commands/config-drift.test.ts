@@ -287,6 +287,22 @@ describe('email_provider, hooks.before_user_create, branding', () => {
     expect(api.writes).toEqual([]);
   });
 
+  it('enabled: pending applies without --force-hook and is satisfied by a pending or an activated hook', async () => {
+    const api = new FakeApi();
+    api.hookTestFails = true;
+    const pendingDoc = { hooks: { before_user_create: { url: 'https://app.example.com/hook', enabled: 'pending', signing_secret: '${HOOK_SECRET}' } } };
+    expect(await run(['apply', file(pendingDoc), '--yes', '--secrets-file', secretsFile()], ctx(captureIO(), api))).toBe(0);
+    expect(api.writes[0]!.path).toBe('/v1/instance/hooks/before_user_create');
+    expect(api.writes[0]!.body).toMatchObject({ enabled: 'pending' });
+    const check = () => run(['plan', file(pendingDoc), '--check', '--secrets-file', secretsFile()], ctx(captureIO(), api));
+    api.hook = { ...api.hook, enabled: false, pending: true };
+    expect(await check()).toBe(0);
+    api.hook = { ...api.hook, enabled: true, pending: false };
+    expect(await check()).toBe(0);
+    api.hook = { ...api.hook, enabled: false, pending: false };
+    expect(await check()).toBe(2);
+  });
+
   it('shows drift when the live hook differs and planning branding compares only the keys set', async () => {
     const api = new FakeApi();
     await run(['apply', file(sections), '--yes', '--secrets-file', secretsFile()], ctx(captureIO(), api));
@@ -431,6 +447,18 @@ describe('cookie_consent and sso_onboarding_profiles', () => {
     const changed = file({ sso_onboarding_profiles: [{ name: 'acme-setup', allow_scim: true }] }, 'c.json');
     expect(await run(['apply', changed, '--yes'], ctx(captureIO(), api))).toBe(0);
     expect(api.writes.at(-1)).toMatchObject({ method: 'PATCH', path: '/v1/sso_onboarding_profiles/sop_0', body: { name: 'acme-setup', allow_scim: true } });
+  });
+
+  it('a site named by reference compares by the reference and sends no site_id', async () => {
+    const api = new FakeApi();
+    api.cookie = { object: 'cookie_consent', enabled: true, script_url: 'https://cmp.example.com/c.js', site_id: 'cb_1', site: { provider: 'cookiemunch', host: 'example.com' } };
+    const ref = file({ cookie_consent: { site: { provider: 'cookiemunch', host: 'example.com' } } }, 'ref.json');
+    expect(await run(['plan', ref, '--check'], ctx(captureIO(), api))).toBe(0);
+    const moved = file({ cookie_consent: { site: { provider: 'cookiemunch', host: 'other.example.com' } } }, 'moved.json');
+    expect(await run(['apply', moved, '--yes'], ctx(captureIO(), api))).toBe(0);
+    const put = api.writes.find((w) => w.path === '/v1/instance/cookie_consent')!;
+    expect(put.body).toMatchObject({ site: { host: 'other.example.com' } });
+    expect(put.body).not.toHaveProperty('site_id');
   });
 
   it('enabling a banner with no script_url anywhere is refused with a clear message', async () => {

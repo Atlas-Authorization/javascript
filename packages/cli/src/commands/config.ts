@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { sameEvents } from '../webhook-presets';
 import { tmpdir } from 'node:os';
-import { extname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { str, type ParsedArgs, type Values } from '../args';
 import { createConfigHttp, isNotFound, type ConfigHttp, type UnknownFieldsNotice } from '../config-http';
@@ -27,7 +27,7 @@ import {
 } from '../serialize';
 import { AtlasApiError, DEFAULT_API_URL } from '@atlasauth/backend';
 import { envApiUrl, resolveAuth } from './shared';
-import { parseDotenv, productDir, writeSecretFile } from '../secrets';
+import { parseDotenv, productDir, renderDotenv, writeSecretFile } from '../secrets';
 import { REDACTED, isPlaceholder, isSecretKey, redactDeep, rememberResolved, revealingSecrets } from '../redact';
 
 // ───────────────────────────── resource model ─────────────────────────────
@@ -92,6 +92,8 @@ interface SingletonSpec {
    * the comparison and the plan output use it; apply always sends the file as written.
    */
   normalize?(config: Config): Config;
+  /** Adjust the live document (already trimmed to the keys the file sets) before comparing, given the desired one. */
+  align?(live: Config, desired: Config): Config;
   /** Every top-level key a file may set; omit for a document the server validates itself. */
   fileKeys?: readonly string[];
   /** Allowed keys inside a top-level object key. */
@@ -313,6 +315,7 @@ function registry(): ResourceSpec[] {
         }
         if (!h || (h.url == null && h.enabled !== true)) return null;
         const bu = pick(h, ['url', 'timeout_ms', 'fail_closed', 'enabled']) as Record<string, Json>;
+        if (h.pending === true) bu.enabled = 'pending';
         if (h.signing_secret_set === true) bu.signing_secret = SECRET_SET;
         return { before_user_create: bu };
       },
@@ -331,6 +334,12 @@ function registry(): ResourceSpec[] {
           }
           throw err;
         }
+      },
+      // `enabled: pending` is satisfied by a hook that is pending OR already live (the check passed since).
+      align(live, desired) {
+        const want = obj((obj(desired).before_user_create ?? {}) as Config);
+        const have = obj((obj(live).before_user_create ?? {}) as Config);
+        return want.enabled === 'pending' && have.enabled === true ? { ...obj(live), before_user_create: { ...have, enabled: 'pending' } } : live;
       },
       fileKeys: ['before_user_create'],
       nestedKeys: { before_user_create: ['url', 'timeout_ms', 'fail_closed', 'enabled', 'signing_secret'] },
@@ -829,11 +838,18 @@ function registry(): ResourceSpec[] {
           throw err;
         }
         const out = pick(cc ?? {}, COOKIE_CONSENT_KEYS) as Record<string, Json>;
+        // A site named by reference compares by the reference, not the id it resolved to.
+        if (out.site) delete out.site_id;
         return Object.keys(out).length ? out : null;
       },
       async apply(http, config) {
         const live = await http.get<Record<string, Json>>('/v1/instance/cookie_consent');
         const body: Record<string, Json> = { ...(pick(live ?? {}, COOKIE_CONSENT_KEYS) as Record<string, Json>), ...compact(config, true) };
+        // `site` and `site_id` are exclusive: the file's choice wins, else the live reference.
+        const c = obj(config);
+        if (c.site !== undefined && c.site !== null) delete body.site_id;
+        else if (c.site_id !== undefined && c.site_id !== null) delete body.site;
+        else if (body.site) delete body.site_id;
         if (body.script_url === undefined || body.script_url === null) {
           throw new CliError('cookie_consent needs a script_url (the consent manager script) when none is set on the instance.');
         }
@@ -1174,7 +1190,7 @@ const SSO_WRITE_KEYS = [
   'idp_initiated_login',
 ] as const;
 const SSO_PROFILE_KEYS = ['name', 'allowed_connection_types', 'organization_id', 'company_name', 'allow_scim', 'intents', 'return_url'] as const;
-const COOKIE_CONSENT_KEYS = ['enabled', 'script_url', 'script_id', 'site_id', 'blocking_mode', 'extra_origins', 'settings_link', 'culture', 'host_aliases'] as const;
+const COOKIE_CONSENT_KEYS = ['enabled', 'script_url', 'script_id', 'site_id', 'site', 'blocking_mode', 'extra_origins', 'settings_link', 'culture', 'host_aliases'] as const;
 const BILLING_KEYS = [
   'name',
   'slug',
@@ -1502,6 +1518,27 @@ export interface ConfigPlan {
   unverifiableSecrets: Array<{ type: string; key: string; path: string }>;
 }
 
+const INSTANCE_PLACEHOLDERS = ['fapi_host', 'frontend_api_url', 'id'] as const;
+
+/**
+ * Values for `${instance.fapi_host}`, `${instance.frontend_api_url}` and `${instance.id}`, read
+ * from the instance the key targets. One GET, and only when the config text uses one.
+ */
+async function instancePlaceholderValues(http: ConfigHttp, text: string): Promise<Record<string, string>> {
+  const used = [...text.matchAll(/\$\{instance\.([A-Za-z0-9_]*)\}/g)].map((m) => m[1]!);
+  if (used.length === 0) return {};
+  const bad = used.filter((n) => !(INSTANCE_PLACEHOLDERS as readonly string[]).includes(n));
+  if (bad.length) {
+    throw new CliError(
+      `Unknown placeholder(s): ${[...new Set(bad)].map((n) => `\${instance.${n}}`).join(', ')}. Allowed: ${INSTANCE_PLACEHOLDERS.map((n) => `\${instance.${n}}`).join(', ')}.`,
+    );
+  }
+  const inst = await http.get<{ id?: string; frontend_api_host?: string | null }>('/v1/instance');
+  const host = inst.frontend_api_host ?? '';
+  if (!host && used.some((n) => n !== 'id')) throw new CliError('This instance has no Frontend API host yet, so ${instance.fapi_host} and ${instance.frontend_api_url} cannot be filled in.');
+  return { 'instance.fapi_host': host, 'instance.frontend_api_url': `https://${host}`, 'instance.id': inst.id ?? '' };
+}
+
 /**
  * Diff a config directory against the live instance. Nothing is written: the
  * returned changes carry their own `apply`. Used by `atlas config import` and by
@@ -1511,7 +1548,8 @@ export async function planConfigImport(
   http: ConfigHttp,
   opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; forceHook?: boolean; rotateSecrets?: boolean },
 ): Promise<ConfigPlan> {
-  const { dir, format, env, prune } = opts;
+  const { dir, format, prune } = opts;
+  let env = opts.env;
   const applyOpts: ApplyOpts = { forceHook: opts.forceHook === true };
   const ext = format === 'json' ? 'json' : 'yaml';
   if (!existsSync(dir)) {
@@ -1522,6 +1560,7 @@ export async function planConfigImport(
   const files = registry().flatMap((spec) =>
     present.has(`${spec.type}.${ext}`) ? [{ spec, doc: deserialize(readFileSync(join(dir, `${spec.type}.${ext}`), 'utf8'), format) }] : [],
   );
+  env = { ...env, ...(await instancePlaceholderValues(http, JSON.stringify(files.map((f) => f.doc)))) };
   const unknown = files.flatMap(({ spec, doc }) => unknownFileKeys(spec, doc));
   if (unknown.length) throw new CliError(`Unknown key(s) in the config:\n  ${unknown.join('\n  ')}`);
   const invalid = files.flatMap(({ spec, doc }) => invalidFileValues(spec, interpolate(doc, env)));
@@ -1557,7 +1596,8 @@ export async function planConfigImport(
         changes.push({ type: spec.type, action: 'create', key: '', after: masked, raw: desiredN, apply: () => spec.apply(http, desired, applyOpts) });
         continue;
       }
-      const seen = withoutUnstated(comparable(norm(liveRaw), desiredN, prune), desiredN);
+      const trimmed = withoutUnstated(comparable(norm(liveRaw), desiredN, prune), desiredN);
+      const seen = spec.align ? spec.align(trimmed as Config, desiredN) : trimmed;
       const r = reconcileSecrets(desiredN, seen, spec.reportsSecrets === true);
       const forced = rotate ? r.unverifiable : [];
       if (!rotate) unverifiableSecrets.push(...r.unverifiable.map((path) => ({ type: spec.type, key: '', path })));
@@ -2009,7 +2049,9 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
   try {
     const onUnknownFields = (n: UnknownFieldsNotice) =>
       ctx.io.err(`atlas: warning: ${n.method} ${n.path} ignored field(s) ${n.fields}${n.suggestions ? ` (did you mean: ${n.suggestions})` : ''}. This instance is lenient; set auth_config.strictRequestBodies to refuse them.`);
-    const kept = keepingSecrets(requireHttp(ctx, values, onUnknownFields), str(values, 'out') || productDir(ctx.env, 'atlas'));
+    const secretsOut = str(values, 'secrets-out');
+    const collected: Record<string, string> = {};
+    const kept = keepingSecrets(requireHttp(ctx, values, onUnknownFields), str(values, 'out') || productDir(ctx.env, 'atlas'), secretsOut ? collected : undefined);
     const prune = values.prune === true;
     const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
     printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun: false, prune });
@@ -2022,6 +2064,7 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
     printPlanNotes(ctx, plan);
     if (plan.changes.length === 0) {
       ctx.io.out('No changes to apply.');
+      if (secretsOut) await writeSecretsOut(ctx, kept.http, source, plan, collected, secretsOut);
       return 0;
     }
     const missing = unresolvedPlaceholders(plan.changes);
@@ -2038,6 +2081,7 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
     for (const change of plan.changes) await change.apply();
     ctx.io.out(`Applied ${plan.changes.length} change(s).`);
     for (const path of kept.saved) ctx.io.out(`A new secret was written to ${path} (mode 0600). It is shown only once.`);
+    if (secretsOut) await writeSecretsOut(ctx, kept.http, source, plan, collected, secretsOut);
     return 0;
   } finally {
     source.cleanup();
@@ -2050,7 +2094,7 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
  * 0600 dotenv file in `dir` (default `~/.config/atlas`, or `--out`) instead of
  * dropping it. The file names are the hosted-redirect env names.
  */
-function keepingSecrets(http: ConfigHttp, dir: string): { http: ConfigHttp; saved: string[] } {
+function keepingSecrets(http: ConfigHttp, dir: string, into?: Record<string, string>): { http: ConfigHttp; saved: string[] } {
   const saved: string[] = [];
   const wrapped: ConfigHttp = {
     get: <T>(path: string) => http.get<T>(path),
@@ -2069,7 +2113,8 @@ function keepingSecrets(http: ConfigHttp, dir: string): { http: ConfigHttp; save
         entries = { ATLAS_WEBHOOK_SECRET: r.secret };
       }
       if (path === '/v1/instance/proxy_secret' && typeof r.secret === 'string') entries = { ATLAS_PROXY_SECRET: r.secret };
-      if (entries) {
+      if (entries && into) Object.assign(into, entries);
+      else if (entries) {
         const kind = path === '/v1/oauth_clients' ? 'oauth-client' : path === '/v1/instance/proxy_secret' ? 'proxy-secret' : 'webhook';
         saved.push(writeSecretFile(dir, `${kind}-${id}.env`, entries, { comment: `Written by atlas apply. ${kind} ${id}.` }).path);
       }
@@ -2077,6 +2122,86 @@ function keepingSecrets(http: ConfigHttp, dir: string): { http: ConfigHttp; save
     },
   };
   return { http: wrapped, saved };
+}
+
+/** Merge `entries` into a dotenv file: other lines stay, a re-generated key is replaced, a new one appended. */
+function mergeDotenv(path: string, existing: string, entries: Record<string, string>): void {
+  const left = { ...entries };
+  const lines = existing === '' ? [] : existing.replace(/\n$/, '').split('\n');
+  const out = lines.map((line) => {
+    const key = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line)?.[1];
+    if (key === undefined || !(key in left)) return line;
+    const rendered = renderDotenv({ [key]: left[key]! }).trimEnd();
+    delete left[key];
+    return rendered;
+  });
+  for (const [k, v] of Object.entries(left)) out.push(renderDotenv({ [k]: v }).trimEnd());
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const tmp = join(dir, `.${Date.now()}-${process.pid}.tmp`);
+  writeFileSync(tmp, out.join('\n') + '\n', { mode: 0o600 });
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, path);
+}
+
+/**
+ * `--secrets-out <file>`: put every secret this apply generated into ONE dotenv file, and (without
+ * rotating anything) re-read a webhook secret the file does not hold yet. Prints the path and key names only.
+ */
+async function writeSecretsOut(
+  ctx: RunContext,
+  http: ConfigHttp,
+  source: ConfigSource,
+  plan: ConfigPlan,
+  collected: Record<string, string>,
+  path: string,
+): Promise<void> {
+  let existing = '';
+  try {
+    existing = ctx.readFile(path);
+  } catch {
+    /* new file */
+  }
+  const have = parseDotenv(existing);
+  const entries = { ...collected };
+  const ext = source.format === 'json' ? 'json' : 'yaml';
+  // Same ${instance.*} values as the plan, so a url written with one matches the live endpoint.
+  const fileEntries = async (type: string): Promise<Config[]> => {
+    const f = join(source.dir, `${type}.${ext}`);
+    if (!existsSync(f)) return [];
+    let text = readFileSync(f, 'utf8');
+    const values = await instancePlaceholderValues(http, text);
+    for (const [k, v] of Object.entries(values)) text = text.split(`\${${k}}`).join(v);
+    return asArray(deserialize(text, source.format));
+  };
+  const created = (type: string, key: string) => plan.changes.some((c) => c.type === type && c.action === 'create' && c.key === key);
+
+  if (!('ATLAS_WEBHOOK_SECRET' in entries) && !have.ATLAS_WEBHOOK_SECRET) {
+    // A secret the file chose belongs to the caller; only an endpoint Atlas minted one for needs reading back.
+    const wanted = (await fileEntries('webhook_endpoints')).filter((e) => obj(e).secret === undefined && !created('webhook_endpoints', String(obj(e).url ?? '')));
+    if (wanted.length) {
+      const rows = await listData<Record<string, unknown>>(http, '/v1/webhook_endpoints');
+      const row = rows.find((r) => r.url === obj(wanted[0]!).url && !r.managed_by);
+      if (row) {
+        const res = await http.post<{ secret?: string }>(`/v1/webhook_endpoints/${enc(String(row.id))}/reveal_secret`, {});
+        if (typeof res?.secret === 'string') entries.ATLAS_WEBHOOK_SECRET = res.secret;
+      }
+    }
+  }
+  if (!('ATLAS_CLIENT_SECRET' in entries) && !have.ATLAS_CLIENT_SECRET) {
+    const old = (await fileEntries('oauth_clients')).filter((e) => !created('oauth_clients', String(obj(e).name ?? '')));
+    if (old.length) {
+      const rows = await listData<Record<string, unknown>>(http, '/v1/oauth_clients');
+      for (const e of old) {
+        const row = rows.find((r) => r.name === obj(e).name);
+        if (row) ctx.io.out(`OAuth client "${String(row.name)}": its secret can no longer be shown and was not changed. To issue a new one (the old one stops working unless you keep an overlap), run: atlas client rotate ${String(row.client_id)}`);
+      }
+    }
+  }
+  const names = Object.keys(entries);
+  if (names.length === 0) return;
+  mergeDotenv(path, existing, entries);
+  ctx.io.out(`Secrets written to ${path} (mode 0600): ${names.join(', ')}.`);
 }
 
 export function printPlan(
@@ -2125,7 +2250,7 @@ function asArray(value: Json): Config[] {
  */
 export function interpolate(value: Json, env: NodeJS.ProcessEnv, key?: string): Json {
   if (typeof value === 'string') {
-    return value.replace(/\$\{([A-Z0-9_]+)\}/g, (match, name: string) => {
+    return value.replace(/\$\{([A-Z0-9_]+|instance\.[a-z_]+)\}/g, (match, name: string) => {
       const resolved = env[name];
       if (resolved === undefined) return match;
       rememberResolved(key, resolved);

@@ -49,6 +49,8 @@ const OPTIONS = {
   trigger: { type: 'string' },
   // actions install / update: secret values from a dotenv file, never argv.
   'secrets-file': { type: 'string' },
+  // apply: one dotenv file for every secret the run generates.
+  'secrets-out': { type: 'string' },
   // actions publish: keep the new version a draft instead of submitting it.
   draft: { type: 'boolean' },
   // pages push / preview / promote / pull / discard.

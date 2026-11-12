@@ -58,6 +58,7 @@ Commands:
                              promote = copy one environment's config to another
   plan [<file|dir>]          Drift diff of a config file or directory; --check exits 2 on drift
   apply [<file|dir>]         Plan, confirm (--yes to skip), then apply; --check = plan only, exit 2 on drift
+  suite plan|apply <file>    Run several config-as-code tools in dependency order
   actions list|deploy|test|logs|gallery|show|install|installs|update|publish
   pages list|push|preview|promote|pull|discard
                              Code-defined hosted-page templates: draft, signed preview link, promote
@@ -918,10 +919,35 @@ data needs --yes. --json prints raw JSON. Secrets the API returns once are shown
 right away.`;
 }
 Object.assign(COMMAND_HELP, {
+  suite: `atlas suite — run several config-as-code tools in dependency order
+
+Usage:
+  atlas suite plan <suite.yaml>  [--only <step>] [--json]
+  atlas suite apply <suite.yaml> [--only <step>] [--json]
+
+<suite.yaml>
+        steps:
+          - name: atlas
+            plan: atlas plan --check
+            apply: atlas apply --yes
+          - name: billing
+            cwd: ./billing        # relative to the suite file
+            plan: ./tool plan
+            apply: ./tool apply
+            depends_on: [atlas]
+            env: { TARGET: production }
+
+plan   runs every step's plan command, each output under a header. Exit 2 when any step
+       exited 2 (drift), 1 when any failed otherwise, 0 when all are clean.
+apply  runs the apply commands in dependency order and stops at the first failure;
+       later steps are reported as skipped.
+--only <name>  that step and the steps it depends on.   --json  a summary instead of the output.
+Commands run through the shell with your environment plus the step's env. A duplicate name,
+an unknown depends_on or a cycle is an error before anything runs.`,
   apply: `atlas apply — make the instance match a config file (plan, confirm, apply)
 
 Usage:
-  atlas apply [<file|dir>] [--yes] [--prune] [--force-hook] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--out <dir>] [--format json|yaml]
+  atlas apply [<file|dir>] [--yes] [--prune] [--force-hook] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--out <dir>] [--secrets-out <dotenv>] [--format json|yaml]
   atlas apply [<file|dir>] --check
 
 <file>  One JSON or YAML document keyed by resource type, for example:
@@ -932,14 +958,16 @@ Usage:
           email_provider:      { transport: brevo, from_address: ..., config: { api_key: "\${BREVO_KEY}" } }
           hooks:               { before_user_create: { url: ..., timeout_ms, fail_closed, enabled } }
           branding:            { applicationName: ..., logoUrl: ... }
+          sign_in_with_atlas:  { enabled: true }
         or a directory from 'atlas config export' (default ./atlas-config).
 
 Shows the plan, asks before applying (--yes skips the question; needed without a
 terminal), then applies creates and updates in a fixed order: email_provider, instance,
 org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers,
 custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles,
-webhook_endpoints, sso_connections, billing_plans, notification_templates,
-email_templates, organization_policies, branding. Re-running is a no-op.
+webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans,
+notification_templates, email_templates, organization_policies, branding, cookie_consent,
+sign_in_with_atlas, signing_key_policy. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --prune         also delete live resources missing from the config, and compare every live key
@@ -949,6 +977,13 @@ Without --prune the plan compares only the keys the file sets.
   --secrets-file  dotenv file for \${VAR} placeholders; refused unless mode 0600
   --out <dir>     where a new client or webhook secret is saved (mode 0600;
                   default ~/.config/atlas). It is shown only once.
+  --secrets-out <file>  put every secret this run generates into ONE dotenv file (mode 0600,
+                  merged: other lines stay, re-generated keys are replaced). If a webhook
+                  endpoint already exists and the file has no ATLAS_WEBHOOK_SECRET, it is read
+                  back (no rotation). An existing OAuth client's secret is never rotated: the
+                  'atlas client rotate' command to run is printed. Only key names are printed.
+Placeholders: \${VAR} comes from the environment or --secrets-file; \${instance.fapi_host},
+\${instance.frontend_api_url} and \${instance.id} come from the instance the key targets.
 Applying stops if any \${VAR} is unresolved. A key the resource does not have is an
 error, with the nearest real key. So is a provider mode other than native or redirect,
 and a webhook secret that is not whsec_ plus 32 to 256 characters, checked whether or

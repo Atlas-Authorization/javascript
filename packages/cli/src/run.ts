@@ -22,6 +22,7 @@ import { orgs } from './commands/orgs';
 import { referrals } from './commands/referrals';
 import { sessions } from './commands/sessions';
 import { status } from './commands/status';
+import { suite } from './commands/suite';
 import { users } from './commands/users';
 import { webhooks } from './commands/webhooks';
 import { integrations } from './commands/integrations';
@@ -61,6 +62,7 @@ const COMMANDS: Record<string, Handler> = {
   config,
   plan: planCommand,
   apply: applyCommand,
+  suite,
   actions,
   pages,
   init,
