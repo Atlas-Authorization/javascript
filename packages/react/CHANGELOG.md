@@ -2,6 +2,10 @@
 
 
 
+## 0.33.1 — 2026-11-11
+
+- The "Approve in your app" and "Use Duo instead" sign-in panels are localized (no more hard-coded English), as are the Duo-unavailable message and the Duo step in `<ManageMoreFactors>`; every other string in `<ManageMoreFactors>` and `<ManageSecurityQuestions>` is localized too; new keys listed in `@atlasauth/localizations` 0.18.1.
+
 ## 0.33.0 — 2026-11-11
 
 - `<SignIn>` offers "Approve in your app" (number matching) when the instance enables app approval, as a first factor and as a second factor.

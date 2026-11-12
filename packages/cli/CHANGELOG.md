@@ -1,5 +1,10 @@
 # @atlasauth/cli changelog
 
+## 0.33.1 — 2026-11-11
+
+- `atlas connection-limits get|set|relay-get|relay-set`: read and set the connection-token rate limits (per key, per connection, per provider, with current usage) and the relay size limits.
+- `appApproval` in the instance `auth_config` plans and applies like any other setting.
+
 ## 0.33.0 — 2026-11-11
 
 - `scopes` in config files (the instance scope catalogue: labels per locale, `sensitive`, `requires_verified_client`).

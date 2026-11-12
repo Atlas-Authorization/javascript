@@ -29,7 +29,7 @@ import { idAccounts } from './commands/id-accounts';
 import { admin } from './commands/admin';
 import { partnerPlatforms } from './commands/partner-platforms';
 import {
-  AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS,
+  AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS,
   resourceCommand,
 } from './commands/resources';
 import { ttyOf, type RunContext } from './context';
@@ -90,6 +90,7 @@ const COMMANDS: Record<string, Handler> = {
   'device-sso': resourceCommand('device-sso', DEVICE_SSO),
   'connection-actions': resourceCommand('connection-actions', CONNECTION_ACTIONS),
   triggers: resourceCommand('triggers', TRIGGERS),
+  'connection-limits': resourceCommand('connection-limits', CONNECTION_LIMITS),
   agents: resourceCommand('agents', AGENTS),
   telemetry: resourceCommand('telemetry', TELEMETRY),
   pdp: resourceCommand('pdp', PDP),

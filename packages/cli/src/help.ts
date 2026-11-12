@@ -1,4 +1,4 @@
-import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, type Ops } from './commands/resources';
+import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, type Ops } from './commands/resources';
 /**
  * All help text lives here as plain strings — the CLI's "docs" surface. Kept
  * out of the handlers so the dispatch code stays about control flow and the
@@ -30,6 +30,7 @@ Commands:
   device-sso list|show|revoke|delete  Native OS single sign-on registrations
   connection-actions catalog|list|run|define|remove
   triggers list|get|create|set|delete Connection triggers
+  connection-limits get|set|relay-get|relay-set  Connection rate limits + usage, relay size limits
   agents list|lifecycle|renew|activity|reviews|review-decide ...
   telemetry show|set|test             OTLP export of gateway and relay calls
   pdp list|remove                     Local decision points
@@ -970,6 +971,7 @@ apply --help'). --check exits 2 when there is drift; nothing is ever written.`,
   'device-sso': resHelp('device-sso', 'native OS SSO device registrations', DEVICE_SSO),
   'connection-actions': resHelp('connection-actions', 'actions on a connected provider account', CONNECTION_ACTIONS),
   triggers: resHelp('triggers', 'connection triggers', TRIGGERS),
+  'connection-limits': resHelp('connection-limits', 'connection-token rate limits (per key, per connection, per provider) with current usage, and relay size limits; set takes --data \'{"per_key":12000,"providers":{"ebay":600}}\'', CONNECTION_LIMITS),
   agents: resHelp('agents', 'agent lifecycle, activity and access reviews', AGENTS),
   telemetry: resHelp('telemetry', 'OTLP export of gateway and relay calls', TELEMETRY),
   pdp: resHelp('pdp', 'local decision points', PDP),

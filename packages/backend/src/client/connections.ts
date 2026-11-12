@@ -154,7 +154,7 @@ export interface ConnectionTokenBatchItem {
   id: string;
   status: 'ok' | 'error';
   token?: ConnectionToken;
-  error?: { code: 'connection_required' | 'not_found'; reason?: 'not_connected' | 'needs_reauth' | 'revoked' | 'refresh_failed' | 'unknown_connection' };
+  error?: { code: 'connection_required' | 'not_found' | 'rate_limited'; reason?: 'not_connected' | 'needs_reauth' | 'revoked' | 'refresh_failed' | 'unknown_connection' | 'provider_limit' };
 }
 
 /** One row of a bulk import. `external_id` is the provider-side account; a re-import of it updates the same connection. */

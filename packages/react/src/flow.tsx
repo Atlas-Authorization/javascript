@@ -429,7 +429,7 @@ export function AttemptFlow({
         if (sent === 'app_approval') {
           return [
             <p key="approval-sent" className={cls('text', 'atlas-text')} data-atlas-approval-sent="">
-              Open your app and tap this number to sign in:
+              {t('signIn.appApprovalTapNumber')}
             </p>,
             matchCode ? (
               <p key="approval-number" className={cls('text', 'atlas-text')} data-atlas="approval-number">
@@ -790,7 +790,7 @@ export function AttemptFlow({
                   onPrepare('app_approval');
                 }}
               >
-                Approve in your app
+                {t('signIn.appApprovalStart')}
               </button>
             ) : null}
             {sent && plan.password && onUsePassword ? (

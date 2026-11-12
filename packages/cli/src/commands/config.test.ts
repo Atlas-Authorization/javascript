@@ -238,6 +238,19 @@ describe('config import', () => {
     expect(api.writes).toEqual([]); // dry run touched nothing
   });
 
+  it('turns "approve in your app" on from the instance file (auth_config.appApproval)', async () => {
+    await run(['config', 'export', '--dir', dir], ctx(captureIO(), new MockApi(seedState())));
+    const inst = JSON.parse(readFileSync(join(dir, 'instance.json'), 'utf8')) as { auth_config: Record<string, unknown> };
+    inst.auth_config.appApproval = { firstFactor: true, stepUp: true, ttlSeconds: 90 };
+    writeFileSync(join(dir, 'instance.json'), JSON.stringify(inst, null, 2) + '\n');
+
+    const api = new MockApi(seedState());
+    const code = await run(['config', 'import', '--dir', dir], ctx(captureIO(), api));
+    expect(code).toBe(0);
+    const patch = api.writes.find((w) => w.method === 'PATCH' && w.path === '/v1/instance');
+    expect((patch?.body as { auth_config?: Record<string, unknown> }).auth_config?.appApproval).toEqual({ firstFactor: true, stepUp: true, ttlSeconds: 90 });
+  });
+
   it('applies a create for a new resource (no --dry-run)', async () => {
     await run(['config', 'export', '--dir', dir], ctx(captureIO(), new MockApi(seedState())));
     writeFileSync(

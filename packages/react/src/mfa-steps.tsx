@@ -416,9 +416,10 @@ const DUO_POLL_LIMIT = 120;
 /**
  * "Use Duo instead" at the second-factor step. Opens Duo's prompt in a window and polls the
  * sign-in (`onSubmit({ strategy: "duo" })`) until Duo's callback has approved this attempt,
- * which completes the sign-in. The strings are English; wrap the component to localise.
+ * which completes the sign-in. Strings come from the localization catalogue.
  */
 export function DuoSecondFactorOption({ attemptId, onSubmit }: { attemptId: string; onSubmit(values: Record<string, string>): void }) {
+  const t = useText();
   const client = useFapiClient();
   const cls = useClasses();
   const [state, setState] = useState<{ waiting?: boolean; busy?: boolean; error?: string }>({});
@@ -435,7 +436,7 @@ export function DuoSecondFactorOption({ attemptId, onSubmit }: { attemptId: stri
     const { prompt, response } = await prepareDuo(client, attemptId);
     if (!prompt) {
       popup?.close();
-      setState({ error: response.errors[0]?.message ?? 'Duo is not available right now.' });
+      setState({ error: response.errors[0]?.message ?? t('mfa.duoUnavailable') });
       return;
     }
     if (popup) popup.location.href = prompt.authorizationUrl;
@@ -447,7 +448,7 @@ export function DuoSecondFactorOption({ attemptId, onSubmit }: { attemptId: stri
       polls += 1;
       if (polls > DUO_POLL_LIMIT) {
         stop();
-        setState({ error: 'Duo did not confirm in time. Try again.' });
+        setState({ error: t('mfa.duoTimeout') });
         return;
       }
       onSubmit({ strategy: 'duo' });
@@ -456,14 +457,14 @@ export function DuoSecondFactorOption({ attemptId, onSubmit }: { attemptId: stri
   if (state.waiting) {
     return (
       <p className={cls('text', 'atlas-text')} data-atlas="duo-waiting" aria-live="polite">
-        Approve the request in the Duo window. You will be signed in here when it is confirmed.
+        {t('mfa.duoWaiting')}
       </p>
     );
   }
   return (
     <>
       <button type="button" className={cls('link', 'atlas-link')} data-atlas="duo-second-factor" disabled={state.busy} onClick={() => void start()}>
-        Use Duo instead
+        {t('mfa.duoUseInstead')}
       </button>
       {state.error ? (
         <div className={cls('alert', 'atlas-alert')} role="alert">
@@ -480,6 +481,7 @@ export function DuoSecondFactorOption({ attemptId, onSubmit }: { attemptId: stri
  * own (localized) error, and the polling stops.
  */
 export function AppApprovalSecondFactorOption({ attemptId, onSubmit, stopped }: { attemptId: string; onSubmit(values: Record<string, string>): void; stopped?: boolean }) {
+  const t = useText();
   const client = useFapiClient();
   const cls = useClasses();
   const [state, setState] = useState<{ number?: string; busy?: boolean; error?: string }>({});
@@ -500,7 +502,7 @@ export function AppApprovalSecondFactorOption({ attemptId, onSubmit, stopped }: 
     setState({ busy: true });
     const { request, response } = await prepareAppApprovalSecondFactor(client, attemptId);
     if (!request) {
-      setState({ error: response.errors[0]?.message ?? 'Approving in the app is not available right now.' });
+      setState({ error: response.errors[0]?.message ?? t('mfa.appApprovalUnavailable') });
       return;
     }
     setState({ number: request.number });
@@ -513,14 +515,14 @@ export function AppApprovalSecondFactorOption({ attemptId, onSubmit, stopped }: 
   if (state.number) {
     return (
       <p className={cls('text', 'atlas-text')} data-atlas="app-approval-waiting" aria-live="polite">
-        Open your app and tap this number to sign in: <strong><code>{state.number}</code></strong>
+        {t('signIn.appApprovalTapNumber')} <strong><code>{state.number}</code></strong>
       </p>
     );
   }
   return (
     <>
       <button type="button" className={cls('link', 'atlas-link')} data-atlas="app-approval-second-factor" disabled={state.busy} onClick={() => void start()}>
-        Approve in your app instead
+        {t('mfa.appApprovalUseInstead')}
       </button>
       {state.error ? (
         <div className={cls('alert', 'atlas-alert')} role="alert">

@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.43.1 — 2026-11-11
+
+- The batch token read's per-id error can be `rate_limited` / `provider_limit` (an instance per-provider limit set with `PUT /v1/connections/token_limits`).
+
 ## 0.43.0 — 2026-11-11
 
 - Framework-neutral `createMountHandler`, `createVerifyHandler`, `createWebhookHandler` and `createBeforeUserCreateHandler` (Fetch `Request` → `Response`), the same code `@atlasauth/nextjs` uses.

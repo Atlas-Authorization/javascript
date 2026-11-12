@@ -14,7 +14,7 @@ import {
   type SecurityQuestions,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
-import { useClass, useClasses, useErrorText, useMeClient } from './components-shared';
+import { useClass, useClasses, useErrorText, useMeClient, useText } from './components-shared';
 import { ReverificationPrompt, isReverificationCancelled, useReverification } from './reverification';
 
 interface Factor {
@@ -24,7 +24,7 @@ interface Factor {
   public_id?: string;
 }
 
-const LABEL: Record<string, string> = { hotp: 'Counter-based token', yubikey: 'YubiKey', duo: 'Duo' };
+const LABEL_TYPES = ['hotp', 'yubikey', 'duo'];
 
 type Pending =
   | { kind: 'hotp'; id: string; secret: string; uri: string; digits: number }
@@ -34,9 +34,10 @@ type Pending =
 /**
  * More second factors for the signed-in user: a counter-based token (HOTP), a YubiKey (Yubico
  * OTP) and Duo, each shown only when the application turned it on. Rendered inside
- * `<ManageMfa/>`; it can also be used on its own. The strings are English.
+ * `<ManageMfa/>`; it can also be used on its own.
  */
 export function ManageMoreFactors({ onChanged }: { onChanged?: () => void } = {}) {
+  const t = useText();
   const client = useMeClient();
   const errorText = useErrorText();
   const cls = useClasses();
@@ -53,7 +54,7 @@ export function ManageMoreFactors({ onChanged }: { onChanged?: () => void } = {}
 
   const load = useCallback(async () => {
     const res = await client.get<{ data?: Factor[] }>('/v1/client/me/mfa');
-    setFactors((res.data?.data ?? []).filter((f) => f.verified && f.type in LABEL));
+    setFactors((res.data?.data ?? []).filter((f) => f.verified && LABEL_TYPES.includes(f.type)));
   }, [client]);
   useEffect(() => {
     void load();
@@ -79,7 +80,7 @@ export function ManageMoreFactors({ onChanged }: { onChanged?: () => void } = {}
     try {
       return await reverification.withReverification(step);
     } catch (err) {
-      if (!isReverificationCancelled(err)) setError('Something went wrong. Try again.');
+      if (!isReverificationCancelled(err)) setError(t('mfa.manageErrorGeneric'));
       return null;
     } finally {
       setBusy(false);
@@ -89,20 +90,20 @@ export function ManageMoreFactors({ onChanged }: { onChanged?: () => void } = {}
   const beginHotp = async () => {
     const res = await run(() => startHotp(client));
     if (!res) return;
-    if (!res.ok || !res.data) return fail(res, 'Could not start setup.');
+    if (!res.ok || !res.data) return fail(res, t('mfa.manageErrorStart'));
     setPending({ kind: 'hotp', id: res.data.id, secret: res.data.secret, uri: res.data.uri, digits: res.data.digits });
   };
   const confirmHotp = async () => {
     if (pending?.kind !== 'hotp') return;
     const res = await run(() => verifyHotp(client, pending.id, input.trim()));
     if (!res) return;
-    if (!res.ok) return fail(res, 'That code was not accepted.');
+    if (!res.ok) return fail(res, t('mfa.manageErrorCode'));
     await finished(res.data?.backup_codes);
   };
   const addYubikey = async () => {
     const res = await run(() => enrollYubikey(client, input.trim()));
     if (!res) return;
-    if (!res.ok) return fail(res, 'That YubiKey code was not accepted.');
+    if (!res.ok) return fail(res, t('mfa.manageErrorYubikey'));
     await finished(res.data?.backup_codes);
   };
   const beginDuo = async () => {
@@ -111,7 +112,7 @@ export function ManageMoreFactors({ onChanged }: { onChanged?: () => void } = {}
     const res = await run(() => startDuoEnrollment(client));
     if (!res || !res.ok || !res.data) {
       popup?.close();
-      if (res) fail(res, 'Could not start Duo.');
+      if (res) fail(res, t('mfa.manageErrorDuoStart'));
       return;
     }
     if (popup) popup.location.href = res.data.authorization_url;
@@ -122,12 +123,12 @@ export function ManageMoreFactors({ onChanged }: { onChanged?: () => void } = {}
     if (pending?.kind !== 'duo') return;
     const res = await run(() => finishDuoEnrollment(client, pending.id));
     if (!res) return;
-    if (!res.ok) return fail(res, 'Duo has not confirmed this yet. Finish the Duo prompt and try again.');
+    if (!res.ok) return fail(res, t('mfa.manageErrorDuoPending'));
     await finished(res.data?.backup_codes);
   };
   const remove = async (id: string) => {
     const res = await run(() => client.request(`/v1/client/me/mfa/${id}`, { method: 'DELETE' }));
-    if (res && !res.ok) fail(res, 'Could not remove it.');
+    if (res && !res.ok) fail(res, t('mfa.manageErrorRemove'));
     await finished();
   };
 
@@ -136,35 +137,35 @@ export function ManageMoreFactors({ onChanged }: { onChanged?: () => void } = {}
       {label}
     </button>
   );
+  const labelFor = (type: string) => (type === 'hotp' ? t('mfa.manageHotpLabel') : type === 'yubikey' ? 'YubiKey' : 'Duo');
   const have = (type: string) => factors.some((f) => f.type === type);
 
   return (
     <div data-atlas="manage-more-factors">
       {factors.map((f) => (
         <p key={f.id} className={cls('text', 'atlas-text')}>
-          {LABEL[f.type]}
-          {f.public_id ? ` (${f.public_id})` : ''} is on. {button('Remove', () => void remove(f.id))}
+          {t('mfa.manageIsOn', { name: `${labelFor(f.type)}${f.public_id ? ` (${f.public_id})` : ''}` })} {button(t('mfa.manageRemove'), () => void remove(f.id))}
         </p>
       ))}
       {pending?.kind === 'hotp' ? (
         <div data-atlas="hotp-setup">
-          <p className={cls('text', 'atlas-text')}>Add this to your token or app, then enter the next code it shows:</p>
+          <p className={cls('text', 'atlas-text')}>{t('mfa.manageHotpHelp')}</p>
           <code data-atlas="hotp-secret">{pending.secret}</code>
           <p className={cls('text', 'atlas-text')}>
-            <a className={cls('link', 'atlas-link')} href={pending.uri}>Open in an authenticator app</a>
+            <a className={cls('link', 'atlas-link')} href={pending.uri}>{t('mfa.manageHotpOpenApp')}</a>
           </p>
-          <input className={inputClass} inputMode="numeric" autoComplete="one-time-code" value={input} placeholder={`Enter the ${pending.digits}-digit code`} onChange={(e) => setInput(e.target.value)} />
-          {button('Verify & enable', () => void confirmHotp())}
+          <input className={inputClass} inputMode="numeric" autoComplete="one-time-code" value={input} placeholder={t('mfa.manageHotpPlaceholder', { digits: String(pending.digits) })} onChange={(e) => setInput(e.target.value)} />
+          {button(t('mfa.manageVerifyEnable'), () => void confirmHotp())}
         </div>
       ) : pending?.kind === 'yubikey' ? (
         <div data-atlas="yubikey-setup">
-          <p className={cls('text', 'atlas-text')}>Click the field, then touch your YubiKey.</p>
+          <p className={cls('text', 'atlas-text')}>{t('mfa.manageYubikeyHelp')}</p>
           <input
             className={inputClass}
             autoFocus
             autoComplete="off"
             value={input}
-            placeholder="YubiKey code"
+            placeholder={t('mfa.manageYubikeyPlaceholder')}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -173,23 +174,23 @@ export function ManageMoreFactors({ onChanged }: { onChanged?: () => void } = {}
               }
             }}
           />
-          {button('Add YubiKey', () => void addYubikey())}
+          {button(t('mfa.manageYubikeyAdd'), () => void addYubikey())}
         </div>
       ) : pending?.kind === 'duo' ? (
         <div data-atlas="duo-setup">
-          <p className={cls('text', 'atlas-text')}>Approve the request in the Duo window, then confirm here.</p>
-          {button('I approved it in Duo', () => void confirmDuo())}
+          <p className={cls('text', 'atlas-text')}>{t('mfa.manageDuoHelp')}</p>
+          {button(t('mfa.manageDuoApproved'), () => void confirmDuo())}
         </div>
       ) : (
         <>
-          {offered?.hotp && !have('hotp') ? button('Add a counter-based token', () => void beginHotp()) : null}
-          {offered?.yubikey && !have('yubikey') ? button('Add a YubiKey', () => setPending({ kind: 'yubikey' })) : null}
-          {offered?.duo && !have('duo') ? button('Add Duo', () => void beginDuo()) : null}
+          {offered?.hotp && !have('hotp') ? button(t('mfa.manageAddHotp'), () => void beginHotp()) : null}
+          {offered?.yubikey && !have('yubikey') ? button(t('mfa.manageAddYubikey'), () => setPending({ kind: 'yubikey' })) : null}
+          {offered?.duo && !have('duo') ? button(t('mfa.manageAddDuo'), () => void beginDuo()) : null}
         </>
       )}
       {backupCodes ? (
         <div>
-          <p className={cls('text', 'atlas-text')}>Save these backup codes now — they are shown only once:</p>
+          <p className={cls('text', 'atlas-text')}>{t('mfa.manageBackupCodes')}</p>
           <ul className={cls('list', 'atlas-list')} data-atlas="backup-codes">
             {backupCodes.map((c) => (
               <li className={cls('listItem', 'atlas-list-item')} key={c}>
@@ -215,6 +216,7 @@ export function ManageMoreFactors({ onChanged }: { onChanged?: () => void } = {}
  * factor. Renders nothing unless the application offers them.
  */
 export function ManageSecurityQuestions() {
+  const t = useText();
   const client = useMeClient();
   const errorText = useErrorText();
   const cardClass = useClass('card', 'atlas-card');
@@ -247,11 +249,11 @@ export function ManageSecurityQuestions() {
       const { questions, response } = await reverification.withReverification(() =>
         setSecurityQuestions(client, chosen.map((question, i) => ({ question, answer: answers[i] ?? '' }))),
       );
-      if (!questions) return setError(response.errors[0] ? errorText(response.errors[0]) : 'Could not save your answers.');
+      if (!questions) return setError(response.errors[0] ? errorText(response.errors[0]) : t('securityQuestions.errorSave'));
       setView(questions);
       setEditing(false);
     } catch (err) {
-      if (!isReverificationCancelled(err)) setError('Could not save your answers.');
+      if (!isReverificationCancelled(err)) setError(t('securityQuestions.errorSave'));
     } finally {
       setBusy(false);
     }
@@ -262,7 +264,7 @@ export function ManageSecurityQuestions() {
     try {
       await reverification.withReverification(() => removeSecurityQuestions(client));
     } catch (err) {
-      if (!isReverificationCancelled(err)) setError('Could not remove your answers.');
+      if (!isReverificationCancelled(err)) setError(t('securityQuestions.errorRemove'));
     }
     await load();
     setBusy(false);
@@ -270,15 +272,15 @@ export function ManageSecurityQuestions() {
 
   return (
     <section className={cardClass} data-atlas="manage-security-questions">
-      <h2 className={cls('sectionTitle', 'atlas-section-title')}>Security questions</h2>
-      <p className={cls('text', 'atlas-text')}>Used only to recover your password. They are not a second factor.</p>
+      <h2 className={cls('sectionTitle', 'atlas-section-title')}>{t('securityQuestions.title')}</h2>
+      <p className={cls('text', 'atlas-text')}>{t('securityQuestions.help')}</p>
       {editing ? (
         <div>
           {chosen.map((q, i) => (
             <div key={i}>
               <select
                 className={inputClass}
-                aria-label={`Question ${i + 1}`}
+                aria-label={t('securityQuestions.question', { n: String(i + 1) })}
                 value={q}
                 onChange={(e) => setChosen((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))}
               >
@@ -291,27 +293,27 @@ export function ManageSecurityQuestions() {
               <input
                 className={inputClass}
                 autoComplete="off"
-                aria-label={`Answer ${i + 1}`}
+                aria-label={t('securityQuestions.answer', { n: String(i + 1) })}
                 value={answers[i] ?? ''}
                 onChange={(e) => setAnswers((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))}
               />
             </div>
           ))}
           <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void save()}>
-            Save answers
+            {t('securityQuestions.save')}
           </button>
         </div>
       ) : (
         <>
           <p className={cls('text', 'atlas-text')}>
-            {view.answeredQuestions.length > 0 ? `You answered: ${view.answeredQuestions.join('; ')}` : 'You have not set any yet.'}
+            {view.answeredQuestions.length > 0 ? t('securityQuestions.answered', { list: view.answeredQuestions.join('; ') }) : t('securityQuestions.none')}
           </p>
           <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={startEdit}>
-            {view.answeredQuestions.length > 0 ? 'Change answers' : 'Set answers'}
+            {view.answeredQuestions.length > 0 ? t('securityQuestions.change') : t('securityQuestions.set')}
           </button>
           {view.answeredQuestions.length > 0 ? (
             <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={busy} onClick={() => void clear()}>
-              Remove
+              {t('mfa.manageRemove')}
             </button>
           ) : null}
         </>

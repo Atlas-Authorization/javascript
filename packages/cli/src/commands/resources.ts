@@ -165,6 +165,12 @@ export const CONNECTION_ACTIONS: Ops = {
   define: { m: 'PUT', p: '/v1/connection_actions/{}/{}', f: 'b' },
   remove: { m: 'DELETE', p: '/v1/connection_actions/{}/{}', f: 'y' },
 };
+export const CONNECTION_LIMITS: Ops = {
+  get: { m: 'GET', p: '/v1/connections/token_limits' },
+  set: { m: 'PUT', p: '/v1/connections/token_limits', f: 'b' },
+  'relay-get': { m: 'GET', p: '/v1/connections/relay_limits' },
+  'relay-set': { m: 'PUT', p: '/v1/connections/relay_limits', f: 'b' },
+};
 export const TRIGGERS: Ops = {
   list: { m: 'GET', p: '/v1/connections/{}/triggers' },
   get: { m: 'GET', p: '/v1/connections/{}/triggers/{}' },
