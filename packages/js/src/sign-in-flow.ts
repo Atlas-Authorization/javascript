@@ -16,7 +16,8 @@ import { fetchInstanceSettings, type InstanceSettings } from './instance-setting
 import { acknowledgeRecoveryCodes, mfaChoicesFrom, pendingRecoveryCodes, prepareMfaEnrollment, type MfaEnrollment } from './mfa-enrollment';
 import { acceptAttemptPolicies, type PolicyAcceptance } from './policies';
 import { signInWithPasskey } from './passkey-sign-in';
-import { getPasskeyAssertion, passkeysSupported, type WebAuthnHost } from './passkey';
+import { passkeysSupported, type WebAuthnHost } from './passkey';
+import { passkeySecondFactorAssertion, passkeySecondFactorBody, type PasskeyAssertionProvider, type PasskeySecondFactorAssertion } from './passkey-second-factor';
 import { canRecoverWithIdentityCheck, startIdentityCheckRecovery, type RecoveryChallenge } from './mfa-recovery';
 import { startOauthRedirect } from './redirect';
 import { getHeadlessCaptchaSolver, renderCaptchaWidget, type CaptchaFlowKey, type FlowCaptcha, type HeadlessCaptchaSolver } from './captcha-widget';
@@ -96,6 +97,13 @@ export interface FlowOptions {
   captchaSolver?: HeadlessCaptchaSolver | null;
   /** Cancels an automatic captcha solve in progress. */
   signal?: AbortSignal;
+  /**
+   * Runs the passkey prompt for the passkey second factor where there is no
+   * WebAuthn (React Native: `nativePasskeyAssertion(Passkey)` from
+   * `@atlasauth/expo-passkeys`). With it, `needs_second_factor` offers `passkey`
+   * when the account holds one.
+   */
+  passkeyAssertion?: PasskeyAssertionProvider;
 }
 
 interface Core {
@@ -173,7 +181,7 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
   // Whether this attempt's account holds a passkey this browser can use, asked once per attempt.
   const passkeyChecks = new Map<string, boolean>();
   const passkeyOffered = async (attemptId: string): Promise<boolean> => {
-    if (!passkeysSupported()) return false;
+    if (!opts.passkeyAssertion && !passkeysSupported()) return false;
     const known = passkeyChecks.get(attemptId);
     if (known !== undefined) return known;
     const res = await client.get<{ factors?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/second_factors`);
@@ -435,21 +443,16 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
       core.run(async () => {
         const prepared = await client.post<Record<string, unknown>>(`/v1/client/sign_ins/${encodeURIComponent(attemptId())}/prepare_second_factor`, { strategy: 'passkey' });
         if (!prepared.ok || !prepared.data) return { ...core.flow, errors: prepared.errors };
-        let assertion;
+        let assertion: PasskeySecondFactorAssertion;
         try {
-          assertion = await getPasskeyAssertion(prepared.data, { ...(options.host ? { host: options.host } : {}) });
+          assertion = await passkeySecondFactorAssertion(prepared.data, {
+            ...(opts.passkeyAssertion ? { passkeyAssertion: opts.passkeyAssertion } : {}),
+            ...(options.host ? { host: options.host } : {}),
+          });
         } catch (e) {
           return { ...core.flow, errors: [{ code: 'passkey_cancelled', message: e instanceof Error ? e.message : 'The passkey prompt was cancelled.', reason: 'passkey_cancelled' }] };
         }
-        return advance(client, core.flow, {
-          strategy: 'passkey',
-          challenge: assertion.challenge,
-          credential_id: assertion.credential_id,
-          authenticator_data: assertion.authenticator_data,
-          client_data_json: assertion.client_data_json,
-          signature: assertion.signature,
-          ...(options.rememberDevice ? { remember_device: 'true' } : {}),
-        });
+        return advance(client, core.flow, passkeySecondFactorBody(assertion, options.rememberDevice));
       }),
     async sendSecondFactorCode(strategy) {
       const res = await client.post(`/v1/client/sign_ins/${encodeURIComponent(attemptId())}/prepare_second_factor`, { strategy });

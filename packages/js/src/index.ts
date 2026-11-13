@@ -99,6 +99,7 @@ export * from './mfa-recovery';
 export * from './identity-verification';
 export * from './avatar';
 export * from './account-security';
+export * from './passkey-second-factor';
 // Identity governance: request access, approve, review, delegate.
 export * from './iga';
 export * from './resource-sharing';

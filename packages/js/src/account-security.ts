@@ -88,3 +88,11 @@ export async function revokeTrustedDevice(client: FapiClient, id: string): Promi
   const res = await client.request<unknown>(`/v1/client/me/trusted_devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
   return res.ok ? { ok: true } : { ok: false, errors: res.errors, status: res.status };
 }
+
+export type RevokeAllTrustedDevicesResult = { ok: true; count: number } | { ok: false; errors: FieldError[]; status: number };
+
+/** Forget every device this user trusted: each must pass two-factor again on its next sign-in. `count` is how many were forgotten. */
+export async function revokeAllTrustedDevices(client: FapiClient): Promise<RevokeAllTrustedDevicesResult> {
+  const res = await client.request<{ count?: number }>('/v1/client/me/trusted_devices', { method: 'DELETE' });
+  return res.ok ? { ok: true, count: typeof res.data?.count === 'number' ? res.data.count : 0 } : { ok: false, errors: res.errors, status: res.status };
+}

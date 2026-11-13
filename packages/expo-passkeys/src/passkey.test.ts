@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createFapiClient } from './client';
 import {
+  authenticatePasskeySecondFactor,
   authenticateWithPasskey,
+  nativePasskeyAssertion,
   registerPasskey,
   toAssertionFinishBody,
   toRegistrationFinishBody,
@@ -209,5 +211,54 @@ describe('createFapiClient config', () => {
     }
     expect((caught as { name?: string }).name).toBe('AtlasConfigError');
     expect((caught as { code?: string }).code).toBe('FRONTEND_API_REQUIRED');
+  });
+});
+
+describe('passkey second factor on a phone', () => {
+  it('prepares, runs the native prompt with the challenge, and posts the assertion to attempt_second_factor', async () => {
+    const seen: Record<string, unknown>[] = [];
+    const passkey: ReactNativePasskey = { ...fakePasskey, get: async (req) => (seen.push(req), fakePasskey.get(req)) };
+    const { fetchImpl, calls } = router({
+      '/v1/client/sign_ins/sia_1/prepare_second_factor': { object: 'second_factor_challenge', challenge: 'chal_2fa', rpId: 'example.test', allowCredentials: [] },
+      '/v1/client/sign_ins/sia_1/attempt_second_factor': { id: 'sia_1', status: 'complete', ticket: 'tkt_2fa' },
+    });
+
+    const result = await authenticatePasskeySecondFactor({ config: { ...config, fetchImpl }, passkey, attemptId: 'sia_1', rememberDevice: true });
+
+    expect(result).toEqual({ status: 'complete', ticket: 'tkt_2fa', attemptId: 'sia_1', attemptStatus: 'complete', errors: [] });
+    expect(seen[0]).toMatchObject({ challenge: 'chal_2fa', rpId: 'example.test' });
+    expect(calls.map((c) => c.path)).toEqual(['/v1/client/sign_ins/sia_1/prepare_second_factor', '/v1/client/sign_ins/sia_1/attempt_second_factor']);
+    expect(calls[0]!.body).toEqual({ strategy: 'passkey' });
+    expect(calls[1]!.body).toEqual({
+      strategy: 'passkey',
+      challenge: 'chal_2fa',
+      credential_id: 'raw_Y',
+      authenticator_data: 'AD',
+      client_data_json: 'CDJ',
+      signature: 'SIG',
+      remember_device: 'true',
+    });
+  });
+
+  it('a cancelled prompt is an error and nothing is posted', async () => {
+    const passkey: ReactNativePasskey = { ...fakePasskey, get: async () => { throw new Error('UserCancelled'); } };
+    const { fetchImpl, calls } = router({
+      '/v1/client/sign_ins/sia_2/prepare_second_factor': { challenge: 'chal_x' },
+    });
+    const result = await authenticatePasskeySecondFactor({ config: { ...config, fetchImpl }, passkey, attemptId: 'sia_2' });
+    expect(result.status).toBe('error');
+    expect(result.errors[0]!.code).toBe('passkey_cancelled');
+    expect(calls.map((c) => c.path)).toEqual(['/v1/client/sign_ins/sia_2/prepare_second_factor']);
+  });
+
+  it('a refused prepare (no passkey on the account) comes back as the error', async () => {
+    const { fetchImpl } = router({});
+    const result = await authenticatePasskeySecondFactor({ config: { ...config, fetchImpl }, passkey: fakePasskey, attemptId: 'sia_3' });
+    expect(result.status).toBe('error');
+  });
+
+  it('nativePasskeyAssertion maps the native result for createSignInFlow', async () => {
+    const a = await nativePasskeyAssertion(fakePasskey)({ challenge: 'chal_f' });
+    expect(a).toEqual({ challenge: 'chal_f', credential_id: 'raw_Y', authenticator_data: 'AD', client_data_json: 'CDJ', signature: 'SIG' });
   });
 });

@@ -1,5 +1,10 @@
 # @atlasauth/expo-passkeys changelog
 
+## 0.4.0 — 2026-11-13
+
+- `authenticatePasskeySecondFactor` finishes a sign-in at `needs_second_factor` with a passkey on the phone; `nativePasskeyAssertion(Passkey)` plugs the native prompt into `createSignInFlow`.
+- Needs `@atlasauth/js` 0.41.0 or later.
+
 ## 0.3.0 — 2026-11-13
 
 - Passkey sign-in uses the headless captcha solver when no `getCaptchaToken` is passed.

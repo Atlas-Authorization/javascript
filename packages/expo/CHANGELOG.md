@@ -1,5 +1,10 @@
 # @atlasauth/expo changelog
 
+## 0.7.0 — 2026-11-13
+
+- `useAccountSecurity` / `createAccountSecurityActions` add `revokeAllTrustedDevices`.
+- Needs `@atlasauth/js` 0.41.0 or later.
+
 ## 0.6.0 — 2026-11-13
 
 - `useAccountSecurity` and `createAccountSecurityActions`; `linkWithIdToken`; captcha solved automatically on Hermes/JSC.

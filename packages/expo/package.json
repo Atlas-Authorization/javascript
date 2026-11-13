@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/expo",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -13,7 +13,7 @@
     "@atlasauth/react-native": "workspace:^"
   },
   "peerDependencies": {
-    "@atlasauth/js": ">=0.40.0 <1.0.0",
+    "@atlasauth/js": ">=0.41.0 <1.0.0",
     "react": ">=18",
     "react-native": ">=0.73",
     "expo-secure-store": ">=12",

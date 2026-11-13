@@ -2,6 +2,12 @@
 
 
 
+## 0.41.0 — 2026-11-13
+
+- `completePasskeySecondFactor(client, attemptId, opts)` finishes the passkey second factor of an attempt your own code started.
+- `createSignInFlow({ passkeyAssertion })` offers and runs the passkey second factor where there is no WebAuthn (React Native).
+- `revokeAllTrustedDevices` forgets every trusted device.
+
 ## 0.40.0 — 2026-11-13
 
 - `changePassword`, `setPassword`, `listTrustedDevices`, `revokeTrustedDevice`; TOTP enrolment returns `qr_svg`.

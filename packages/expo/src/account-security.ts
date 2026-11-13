@@ -4,10 +4,10 @@
  * token as a bearer, so these work without a cookie.
  */
 import { useMemo } from 'react';
-import { changePassword, listTrustedDevices, revokeTrustedDevice, setPassword, type FapiClient } from '@atlasauth/js';
+import { changePassword, listTrustedDevices, revokeAllTrustedDevices, revokeTrustedDevice, setPassword, type FapiClient } from '@atlasauth/js';
 import { useExpoFapiClient } from './policies';
 
-export { changePassword, setPassword, listTrustedDevices, revokeTrustedDevice };
+export { changePassword, setPassword, listTrustedDevices, revokeTrustedDevice, revokeAllTrustedDevices };
 
 /** The calls bound to a client; separated from React so it is testable with a fake one. */
 export function createAccountSecurityActions(client: FapiClient) {
@@ -16,6 +16,7 @@ export function createAccountSecurityActions(client: FapiClient) {
     setPassword: (password: string) => setPassword(client, password),
     listTrustedDevices: () => listTrustedDevices(client),
     revokeTrustedDevice: (id: string) => revokeTrustedDevice(client, id),
+    revokeAllTrustedDevices: () => revokeAllTrustedDevices(client),
   };
 }
 

@@ -78,6 +78,40 @@ describe('createSignInFlow', () => {
     }
   });
 
+  it('with a passkeyAssertion provider and no WebAuthn (a phone), offers and completes the passkey second factor', async () => {
+    const { client, calls } = clientWith({
+      '/v1/client/sign_ins': [json(201, { id: 'sia_n', status: 'needs_first_factor', supported_first_factors: ['password'] })],
+      '/v1/client/sign_ins/sia_n/attempt_first_factor': [json(200, { id: 'sia_n', status: 'needs_second_factor' })],
+      '/v1/client/sign_ins/sia_n/second_factors': [json(200, { object: 'second_factors', factors: ['totp', 'passkey'] })],
+      '/v1/client/sign_ins/sia_n/prepare_second_factor': [json(201, { object: 'second_factor_challenge', challenge: 'chal_n', rpId: 'example.com' })],
+      '/v1/client/sign_ins/sia_n/attempt_second_factor': [json(200, { id: 'sia_n', status: 'complete', created_session_id: 'sess_n', ticket: 't' })],
+      '/v1/client/tickets/exchange': [json(200, {})],
+    });
+    const passkeyAssertion = vi.fn(async (c: Record<string, unknown>) => ({ challenge: c.challenge as string, credential_id: 'cid', authenticator_data: 'ad', client_data_json: 'cdj', signature: 'sig' }));
+    const flow = createSignInFlow({ client, passkeyAssertion });
+    await flow.submitIdentifier('a@b.co');
+    const snap = await flow.submitPassword('pw');
+    expect((snap.step as { factors: string[] }).factors).toContain('passkey');
+    const done = await flow.submitPasskeySecondFactor();
+    expect(done.step).toEqual({ type: 'complete', sessionId: 'sess_n' });
+    expect(passkeyAssertion).toHaveBeenCalledWith(expect.objectContaining({ challenge: 'chal_n' }));
+    expect(calls.find((c) => c.path.endsWith('/attempt_second_factor'))!.body).toEqual({
+      strategy: 'passkey', challenge: 'chal_n', credential_id: 'cid', authenticator_data: 'ad', client_data_json: 'cdj', signature: 'sig',
+    });
+  });
+
+  it('without WebAuthn or a provider, passkey is not offered', async () => {
+    const { client } = clientWith({
+      '/v1/client/sign_ins': [json(201, { id: 'sia_w', status: 'needs_first_factor', supported_first_factors: ['password'] })],
+      '/v1/client/sign_ins/sia_w/attempt_first_factor': [json(200, { id: 'sia_w', status: 'needs_second_factor' })],
+      '/v1/client/sign_ins/sia_w/second_factors': [json(200, { object: 'second_factors', factors: ['totp', 'passkey'] })],
+    });
+    const flow = createSignInFlow({ client });
+    await flow.submitIdentifier('a@b.co');
+    const snap = await flow.submitPassword('pw');
+    expect((snap.step as { factors: string[] }).factors).not.toContain('passkey');
+  });
+
   it('a cancelled passkey prompt keeps the step with reason passkey_cancelled', async () => {
     const { client } = clientWith({
       '/v1/client/sign_ins': [json(201, { id: 'sia_c', status: 'needs_second_factor' })],

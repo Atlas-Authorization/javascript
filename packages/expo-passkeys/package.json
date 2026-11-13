@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/expo-passkeys",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@atlasauth/js": ">=0.40.0 <1.0.0",
+    "@atlasauth/js": ">=0.41.0 <1.0.0",
     "react-native": ">=0.73",
     "react-native-passkey": ">=3"
   },

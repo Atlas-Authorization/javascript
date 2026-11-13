@@ -15,11 +15,13 @@
 
 import {
   beginPasskeySignIn,
+  completePasskeySecondFactor,
   fetchInstanceSettings,
   getHeadlessCaptchaSolver,
   type FieldError,
   type FlowCaptcha,
   type PasskeyAssertionBody,
+  type PasskeyAssertionProvider,
   type PasskeyRegistrationBody,
 } from '@atlasauth/js';
 import { createFapiClient, type AtlasFapiConfig } from './client';
@@ -179,6 +181,53 @@ export async function authenticateWithPasskey(opts: {
     ...(finish.data.ticket ? { ticket: finish.data.ticket } : {}),
     ...(finish.data.id ? { attemptId: finish.data.id } : {}),
     ...(finish.data.status ? { attemptStatus: finish.data.status } : {}),
+    errors: [],
+  };
+}
+
+/* ── passkey as the second factor ──────────────────────────────────────────── */
+
+/**
+ * A passkey prompt for the second-factor step, run by `react-native-passkey`.
+ * Hand it to `createSignInFlow({ passkeyAssertion })` so the headless flow offers
+ * and completes `passkey` in `needs_second_factor` on a phone.
+ */
+export function nativePasskeyAssertion(passkey: ReactNativePasskey): PasskeyAssertionProvider {
+  return async (challenge) => {
+    const body = toAssertionFinishBody(challenge, await passkey.get(challenge));
+    return {
+      challenge: body.challenge,
+      credential_id: body.credential_id,
+      authenticator_data: body.authenticator_data,
+      client_data_json: body.client_data_json,
+      signature: body.signature,
+    };
+  };
+}
+
+/**
+ * Finish a sign-in waiting at `needs_second_factor` with a passkey on the phone,
+ * given the attempt id (from your own password or code sign-in, or a
+ * `needs_more` result of {@link authenticateWithPasskey}). `complete` carries
+ * the one-time `ticket` to exchange for a session, as with a passkey sign-in.
+ */
+export async function authenticatePasskeySecondFactor(opts: {
+  config: AtlasFapiConfig;
+  passkey: ReactNativePasskey;
+  attemptId: string;
+  /** Skip two-factor on this device next time (when the instance allows it). */
+  rememberDevice?: boolean;
+}): Promise<PasskeySignInResult> {
+  const result = await completePasskeySecondFactor(createFapiClient(opts.config), opts.attemptId, {
+    passkeyAssertion: nativePasskeyAssertion(opts.passkey),
+    ...(opts.rememberDevice ? { rememberDevice: true } : {}),
+  });
+  if (!result.ok) return { status: 'error', errors: result.errors };
+  return {
+    status: result.ticket ? 'complete' : 'needs_more',
+    ...(result.ticket ? { ticket: result.ticket } : {}),
+    attemptId: result.attemptId,
+    attemptStatus: result.status,
     errors: [],
   };
 }
