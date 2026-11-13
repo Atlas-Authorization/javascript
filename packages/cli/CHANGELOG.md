@@ -1,5 +1,8 @@
 # @atlasauth/cli changelog
 
+## 0.37.2 — 2026-11-13
+- `branding.favicon` (and `favicon_url`, `account_portal`) in atlas.yaml plans and applies: compared under the names the API reads back, so `plan --check` stays clean after apply.
+
 ## 0.37.1 — 2026-11-13
 - `atlas token --audience` help: the audience can be a Sign in with Atlas app that accepts CLI sign-ins.
 

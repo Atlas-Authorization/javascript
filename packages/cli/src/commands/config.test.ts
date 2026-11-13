@@ -706,3 +706,14 @@ describe('config: signing_key_policy', () => {
     expect(off.writes.find((w) => w.path === '/v1/instance/signing_key_policy')).toBeUndefined();
   });
 });
+
+describe('branding aliases', () => {
+  it('compares favicon / favicon_url / account_portal under the names the API reads back', async () => {
+    const { brandingAliases } = await import('./config');
+    expect(brandingAliases({ favicon: 'https://x.test/f.png', colorText: '#111111' })).toEqual({ faviconUrl: 'https://x.test/f.png', colorText: '#111111' });
+    expect(brandingAliases({ favicon_url: '' })).toEqual({ faviconUrl: null });
+    expect(brandingAliases({ account_portal: { enabled: true } })).toEqual({ accountPortal: { enabled: true } });
+    // The canonical name wins when both are set.
+    expect(brandingAliases({ favicon: 'https://x.test/a.png', faviconUrl: 'https://x.test/b.png' })).toEqual({ faviconUrl: 'https://x.test/b.png' });
+  });
+});

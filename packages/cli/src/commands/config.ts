@@ -35,6 +35,19 @@ import { REDACTED, isPlaceholder, isSecretKey, redactDeep, rememberResolved, rev
 /** A config document ready for disk / comparison: a plain, redacted JSON value. */
 type Config = Json;
 
+const BRANDING_ALIASES: Record<string, string> = { favicon: 'faviconUrl', favicon_url: 'faviconUrl', account_portal: 'accountPortal' };
+/** Rename branding aliases to the names the API reads back (the canonical name wins when both are set). */
+export function brandingAliases(c: Config): Config {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return c;
+  const out: Record<string, Json> = { ...(c as Record<string, Json>) };
+  for (const [alias, name] of Object.entries(BRANDING_ALIASES)) {
+    if (!(alias in out)) continue;
+    if (!(name in out)) out[name] = out[alias] === '' ? null : out[alias]!;
+    delete out[alias];
+  }
+  return out;
+}
+
 /** One live resource: its natural key, its redacted projection, and its API id. */
 interface LiveEntry {
   key: string;
@@ -818,6 +831,9 @@ function registry(): ResourceSpec[] {
         }
         return Object.keys(out).length ? out : null;
       },
+      // The API takes `favicon` / `favicon_url` / `account_portal` as aliases but reads back only the
+      // canonical names: compare under those, or a file using an alias would show drift forever.
+      normalize: brandingAliases,
       async apply(http, config) {
         await http.patch('/v1/branding', compact(config, true));
       },
