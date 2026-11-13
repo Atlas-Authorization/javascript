@@ -1,5 +1,8 @@
 # @atlasauth/cli changelog
 
+## 0.37.1 — 2026-11-13
+- `atlas token --audience` help: the audience can be a Sign in with Atlas app that accepts CLI sign-ins.
+
 ## 0.37.0 — 2026-11-12
 
 - `atlas.yaml` section `connection_provider_topics` (Shopify topics and eBay notifications to subscribe each connection to), with plan/apply drift.

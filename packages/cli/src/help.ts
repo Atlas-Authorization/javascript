@@ -432,7 +432,8 @@ Swaps your operator sign-in (atlas login --device) for an Atlas token (RFC 8693
 token exchange). "read" = every read scope.
 
 --audience hands the same sign-in to another tool, no browser: <id> is one of the
-audiences GET /v1/operator lists. The token is for that tool, lasts at most an hour
+audiences GET /v1/operator lists, or the client_id of a Sign in with Atlas app whose
+owner turned on cli_handoff (you must have signed in to that app once). The token is for that tool, lasts at most an hour
 (never past your sign-in) and Atlas refuses it. --json prints
 {access_token, expires_in, audience, issuer}.`,
 

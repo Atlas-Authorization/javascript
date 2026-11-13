@@ -1,5 +1,8 @@
 # @atlasauth/backend changelog
 
+## 0.46.2 — 2026-11-13
+- Types: `cli_handoff` on Sign in with Atlas apps (read and `PATCH`).
+
 ## 0.46.1 — 2026-11-12
 
 - Types: security advisories carry `subjects` (and `GET /v1/security_advisories/{id}`); the Forumulate integration view types `reader_auth_providers` and the `source`/`note` labels.

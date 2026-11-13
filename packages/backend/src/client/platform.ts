@@ -397,6 +397,8 @@ export interface AtlasIdApp extends ProvisioningFields {
   test_mode?: boolean;
   /** Test and review accounts must use an address on a domain you verified. */
   provisioned_verified_domains_only?: boolean;
+  /** The app's CLI can take an `atlas login` sign-in from people who already signed in to the app. */
+  cli_handoff?: boolean;
 }
 
 /** A Sign in with Atlas test or review account: confined to the app(s) it was made for. */
@@ -580,6 +582,8 @@ export interface UpdateAtlasIdAppBody extends AtlasIdAppFields {
   test_mode?: boolean;
   /** Require test and review accounts to use an address on a domain you verified. */
   provisioned_verified_domains_only?: boolean;
+  /** Let the app's CLI take an `atlas login` sign-in (`atlas token --audience <client_id>`) from people who already signed in to the app. Off by default. */
+  cli_handoff?: boolean;
 }
 
 // ---- account audit ----------------------------------------------------------------
