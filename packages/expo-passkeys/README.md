@@ -14,7 +14,7 @@ mapping between them.
 ## Native dependency
 
 ```sh
-npx expo install react-native-passkey
+npx expo install @atlasauth/js react-native-passkey
 ```
 
 `react-native-passkey` is a native module: it needs a config plugin and a

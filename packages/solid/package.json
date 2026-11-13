@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/solid",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,13 +15,12 @@
     "typecheck": "tsgo -p tsconfig.json --noEmit --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@atlasauth/js": "workspace:*"
-  },
   "peerDependencies": {
+    "@atlasauth/js": ">=0.39.0 <1.0.0",
     "solid-js": ">=1.8"
   },
   "devDependencies": {
+    "@atlasauth/js": "workspace:*",
     "@solidjs/testing-library": "^0.8.10",
     "jsdom": "^25.0.1",
     "solid-js": "^1.8.0",

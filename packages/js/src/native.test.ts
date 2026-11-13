@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   diagnoseProvider,
+  linkExternalAccountWithIdToken,
   loadGoogleIdentityServices,
   nativeSignInBody,
   parseNativeSignInResponse,
@@ -468,5 +469,38 @@ describe('diagnoseProvider', () => {
     const client = envClient([{ provider: 'github', native: true, client_id: 'x' }]);
     const out = await diagnoseProvider(client, 'google');
     expect(out).toMatchObject({ mode: null, clientId: null, native: false });
+  });
+});
+
+describe('linkExternalAccountWithIdToken', () => {
+  it('POSTs {provider,id_token,nonce} to /me/external_accounts and returns the account', async () => {
+    let captured: { url: string; body: unknown } | undefined;
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      captured = { url, body: JSON.parse(String(init?.body)) };
+      return new Response(
+        JSON.stringify({ object: 'external_account', id: 'eac_1', provider: 'google', provider_email: 'a@example.com', connected_at: 1 }),
+        { status: 201, headers: { 'content-type': 'application/json' } },
+      );
+    }) as unknown as typeof fetch;
+    const client = new FapiClient({ publishableKey: 'pk_test_1', baseUrl: 'https://accounts.acme.com', fetchImpl });
+    const res = await linkExternalAccountWithIdToken(client, { provider: 'google', idToken: 't', nonce: 'n' });
+    expect(captured!.url).toBe('https://accounts.acme.com/v1/client/me/external_accounts');
+    expect(captured!.body).toEqual({ provider: 'google', id_token: 't', nonce: 'n' });
+    expect(res.ok).toBe(true);
+    expect(res.account?.id).toBe('eac_1');
+  });
+
+  it('surfaces a conflict as errors with no account', async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ errors: [{ code: 'IDENTITY_ALREADY_LINKED', message: 'already linked' }] }), {
+        status: 409,
+        headers: { 'content-type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch;
+    const client = new FapiClient({ publishableKey: 'pk_test_1', fetchImpl });
+    const res = await linkExternalAccountWithIdToken(client, { provider: 'google', idToken: 't' });
+    expect(res.ok).toBe(false);
+    expect(res.account).toBeNull();
+    expect(res.errors[0]?.code).toBe('IDENTITY_ALREADY_LINKED');
   });
 });

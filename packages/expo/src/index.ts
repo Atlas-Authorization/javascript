@@ -38,3 +38,16 @@ export * from './policies';
 export * from './social';
 export * from './bridge';
 export * from './app-approval';
+export * from './account-security';
+
+// Captcha with no browser: the proof-of-work solver for Hermes/JSC. Importing this
+// package installs it as the headless solver, so the sign-in / sign-up / reset
+// flows from `@atlasauth/js` answer a captcha on their own.
+export {
+  getCaptchaToken,
+  solveAtlasChallengeNative,
+  atlasHeadlessCaptchaSolver,
+  installAtlasCaptchaSolver,
+  type SolveCaptchaOptions,
+  type GetCaptchaTokenOptions,
+} from '@atlasauth/react-native';

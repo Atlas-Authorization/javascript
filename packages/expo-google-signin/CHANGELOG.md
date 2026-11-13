@@ -1,5 +1,9 @@
 # @atlasauth/expo-google-signin changelog
 
+## 0.2.0 — 2026-11-13
+
+- `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.
+
 ## 0.1.1
 - **`frontendApi` is validated at client creation.** A missing, empty or malformed value now throws an
   `AtlasConfigError` (from `@atlasauth/js`; `code: 'FRONTEND_API_REQUIRED'` or `'FRONTEND_API_INVALID'`)

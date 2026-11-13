@@ -429,6 +429,21 @@ describe('config dispatch', () => {
   });
 });
 
+describe('config plan scope text limits', () => {
+  it('flags an over-length scope description before apply and writes nothing', async () => {
+    writeFileSync(
+      join(dir, 'scopes.json'),
+      JSON.stringify({ scopes: [{ name: 'tools:a', description: { en: 'ok', es: 'x'.repeat(501) } }, { name: 'tools:b', description: 'y'.repeat(500) }] }),
+    );
+    const api = new MockApi(seedState());
+    const io = captureIO();
+    expect(await run(['config', 'plan', '--dir', dir], ctx(io, api))).toBe(1);
+    expect(io.stderr()).toContain("scopes 'tools:a': description.es is 501 characters; the limit is 500.");
+    expect(io.stderr()).not.toContain('tools:b');
+    expect(api.writes).toEqual([]);
+  });
+});
+
 describe('config plan', () => {
   it('reports no drift right after an export, and writes nothing', async () => {
     const api = new MockApi(seedState());

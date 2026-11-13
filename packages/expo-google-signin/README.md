@@ -12,7 +12,7 @@ web's One-Tap button uses.
 ## Install
 
 ```sh
-npx expo install @react-native-google-signin/google-signin
+npx expo install @atlasauth/js @react-native-google-signin/google-signin
 ```
 
 It is a native module: configure it with your Google OAuth client ids and build a

@@ -460,3 +460,31 @@ export async function getCaptchaToken(
 ): Promise<string> {
   return renderCaptchaWidget(flow, container, options).token;
 }
+
+/**
+ * A solver for platforms with no DOM (React Native on Hermes/JSC, workers,
+ * Node). Given the flow's public captcha settings it returns the token, or
+ * `null` when it cannot answer this provider (the flow then stops at
+ * `needs_captcha` as before). It must honour `signal`.
+ */
+export type HeadlessCaptchaSolver = (
+  captcha: FlowCaptcha,
+  ctx: { flow: CaptchaFlowKey; signal?: AbortSignal },
+) => Promise<string | null>;
+
+let headlessSolver: HeadlessCaptchaSolver | null = null;
+
+/**
+ * Install (or, with `null`, remove) the process-wide headless solver. The
+ * headless flows (`createSignInFlow`, `createSignUpFlow`, the password reset)
+ * call it by themselves when the server asks for a captcha. `@atlasauth/expo`
+ * and `@atlasauth/react-native` install theirs on import.
+ */
+export function setHeadlessCaptchaSolver(solver: HeadlessCaptchaSolver | null): void {
+  headlessSolver = solver;
+}
+
+/** The installed headless solver, if any. */
+export function getHeadlessCaptchaSolver(): HeadlessCaptchaSolver | null {
+  return headlessSolver;
+}

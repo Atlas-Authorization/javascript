@@ -10,6 +10,14 @@ session in a cookie; a browser extension has no cookie jar to the Atlas FAPI
 origin.** So the session token is cached in `chrome.storage.local` and attached
 to every request by hand, as a bearer.
 
+## Install
+
+```sh
+npm install @atlasauth/chrome-extension @atlasauth/js
+```
+
+`@atlasauth/js` is a peer, so the extension, your app and the other Atlas packages share one copy.
+
 ## Entry points
 
 | Import from | Pulls in React? | Use in |

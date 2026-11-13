@@ -5,7 +5,7 @@ Qwik and Qwik City bindings for [Atlas](https://atlasauth.net). Same shape as
 and mountable sign-in widgets — expressed idiomatically in Qwik.
 
 ```bash
-pnpm add @atlasauth/qwik
+pnpm add @atlasauth/qwik @atlasauth/js
 ```
 
 Peer: `@builder.io/qwik` (>=1.5). Optional peer: `@builder.io/qwik-city` (>=1.5),

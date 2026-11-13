@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/svelte",
-  "version": "0.20.1",
+  "version": "0.21.0",
   "type": "module",
   "svelte": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,11 +28,11 @@
   },
   "dependencies": {
     "@atlasauth/design": "workspace:*",
-    "@atlasauth/js": "workspace:*",
     "@atlasauth/authz": "workspace:*",
     "@atlasauth/backend": "workspace:*"
   },
   "peerDependencies": {
+    "@atlasauth/js": ">=0.39.0 <1.0.0",
     "svelte": ">=4",
     "@sveltejs/kit": ">=1"
   },
@@ -42,6 +42,7 @@
     }
   },
   "devDependencies": {
+    "@atlasauth/js": "workspace:*",
     "@sveltejs/package": "^2.3.7",
     "@sveltejs/vite-plugin-svelte": "^3.1.2",
     "@testing-library/jest-dom": "^6.6.3",

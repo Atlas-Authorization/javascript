@@ -4,7 +4,7 @@
  * /v1/client/sign_ins/id_token`) and traded for a session. The provider's token
  * cache stores the returned session JWT.
  */
-import { mintNativeNonce, nativeSignIn, type FapiClient, type FieldError } from '@atlasauth/js';
+import { linkExternalAccountWithIdToken, mintNativeNonce, nativeSignIn, type FapiClient, type FieldError, type LinkExternalAccountResult } from '@atlasauth/js';
 
 export interface NativeSocialResult {
   status: 'complete' | 'needs_more' | 'error' | 'cancelled';
@@ -22,6 +22,14 @@ export async function signInWithIdToken(client: FapiClient, input: { provider: s
   const ex = await client.post<{ jwt?: string }>('/v1/client/tickets/exchange', { attempt_id: attempt?.id ?? '', ticket: flow.ticket });
   if (!ex.ok || !ex.data?.jwt) return { status: 'error', errors: ex.errors.length ? ex.errors : [{ code: 'EXCHANGE_FAILED', message: 'Could not complete sign-in.' }] };
   return { status: 'complete', jwt: ex.data.jwt, ...(attempt?.id ? { attemptId: attempt.id } : {}), errors: [] };
+}
+
+/**
+ * Link a provider ID token (Google or Apple system sheet) to the signed-in user instead of signing in. Mint the nonce
+ * with `mintNativeNonce` first. Needs a recent re-authentication (`STEP_UP_REQUIRED` otherwise).
+ */
+export function linkWithIdToken(client: FapiClient, input: { provider: string; idToken: string; nonce?: string }): Promise<LinkExternalAccountResult> {
+  return linkExternalAccountWithIdToken(client, input);
 }
 
 /** The slice of `expo-apple-authentication` used here. */

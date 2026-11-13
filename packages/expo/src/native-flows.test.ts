@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { FapiClient } from '@atlasauth/js';
 import { exchangeLegacyToken } from './bridge';
 import { createAppApprovalActions } from './app-approval';
-import { signInWithApple } from './social';
+import { createAccountSecurityActions } from './account-security';
+import { linkWithIdToken, signInWithApple } from './social';
 import { createInMemoryStorage } from './token-cache';
 
 // app-approval's hook module imports the React Native views; the actions under test need none of it.
@@ -65,5 +66,28 @@ describe('signInWithApple', () => {
     const client = clientFor(() => reply({ nonce: 'n1' }));
     const apple = { AppleAuthenticationScope: { EMAIL: 1, FULL_NAME: 0 }, signInAsync: vi.fn(async () => { throw new Error('cancel'); }) };
     expect((await signInWithApple(client, apple)).status).toBe('cancelled');
+  });
+});
+
+describe('createAccountSecurityActions', () => {
+  it('changes the password through the bearer client', async () => {
+    const calls: Array<[string, any]> = [];
+    const client = clientFor((u, init) => { calls.push([u, JSON.parse(init.body as string)]); return reply({ object: 'user', id: 'user_1', sessions_revoked: 0, session_token: 'n.e.w', expires_in: 60 }); });
+    const out = await createAccountSecurityActions(client).changePassword({ currentPassword: 'old', newPassword: 'new' });
+    expect(out).toMatchObject({ ok: true, sessionToken: 'n.e.w' });
+    expect(calls[0]).toEqual(['https://fapi.test/v1/client/me/change_password', { current_password: 'old', new_password: 'new' }]);
+  });
+});
+
+describe('linkWithIdToken', () => {
+  it('links the token to the signed-in user through /me/external_accounts', async () => {
+    let seen: { url: string; body: any } | undefined;
+    const client = clientFor((url, init) => {
+      seen = { url, body: JSON.parse(init.body as string) };
+      return reply({ object: 'external_account', id: 'eac_1', provider: 'apple', provider_email: null, connected_at: 5 }, 201);
+    });
+    const res = await linkWithIdToken(client, { provider: 'apple', idToken: 'tok', nonce: 'n1' });
+    expect(seen).toEqual({ url: 'https://fapi.test/v1/client/me/external_accounts', body: { provider: 'apple', id_token: 'tok', nonce: 'n1' } });
+    expect(res).toMatchObject({ ok: true, account: { id: 'eac_1', provider: 'apple' } });
   });
 });

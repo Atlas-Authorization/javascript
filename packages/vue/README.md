@@ -15,7 +15,7 @@ life of the tab. Nothing is written to `localStorage`.
 ## Install
 
 ```sh
-npm install @atlasauth/vue
+npm install @atlasauth/vue @atlasauth/js
 # peer you already have in a Vue 3 app:
 #   vue >= 3.3
 ```

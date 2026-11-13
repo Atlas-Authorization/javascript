@@ -3,6 +3,7 @@ import { FapiClient } from './fapi';
 import { createSignInFlow, createSignUpFlow } from './sign-in-flow';
 import { requireStepUp, retryWithStepUp, stepUpRequirement, StepUpCancelledError } from './step-up';
 import { reasonMessage } from './errors';
+import { startPasswordReset } from './password-reset';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -47,6 +48,47 @@ describe('createSignInFlow', () => {
     snap = await flow.submitSecondFactor('123456');
     expect(snap.step).toEqual({ type: 'complete', sessionId: 'sess_1' });
     expect(calls.at(-1)!.path).toBe('/v1/client/tickets/exchange');
+  });
+
+  it('offers a passkey second factor and completes with the assertion', async () => {
+    vi.stubGlobal('PublicKeyCredential', class {});
+    try {
+      const { client, calls } = clientWith({
+        '/v1/client/sign_ins': [json(201, { id: 'sia_p', status: 'needs_first_factor', supported_first_factors: ['password'] })],
+        '/v1/client/sign_ins/sia_p/attempt_first_factor': [json(200, { id: 'sia_p', status: 'needs_second_factor' })],
+        '/v1/client/sign_ins/sia_p/second_factors': [json(200, { object: 'second_factors', factors: ['totp', 'passkey'] })],
+        '/v1/client/sign_ins/sia_p/prepare_second_factor': [json(201, { object: 'second_factor_challenge', challenge: 'Y2hhbA', rpId: 'example.com', allowCredentials: [], userVerification: 'required' })],
+        '/v1/client/sign_ins/sia_p/attempt_second_factor': [json(200, { id: 'sia_p', status: 'complete', created_session_id: 'sess_p', ticket: 't' })],
+        '/v1/client/tickets/exchange': [json(200, {})],
+      });
+      const flow = createSignInFlow({ client });
+      await flow.submitIdentifier('a@b.co');
+      const snap = await flow.submitPassword('pw');
+      expect(snap.step).toMatchObject({ type: 'needs_second_factor' });
+      expect((snap.step as { factors: string[] }).factors).toContain('passkey');
+
+      const bytes = (n: number) => new Uint8Array([n]).buffer;
+      const host = { credentials: { create: vi.fn(), get: vi.fn(async () => ({ rawId: bytes(1), response: { authenticatorData: bytes(2), clientDataJSON: bytes(3), signature: bytes(4) } })) } };
+      const done = await flow.submitPasskeySecondFactor({ host: host as never });
+      expect(done.step).toEqual({ type: 'complete', sessionId: 'sess_p' });
+      expect(calls.find((c) => c.path.endsWith('/prepare_second_factor'))!.body).toEqual({ strategy: 'passkey' });
+      expect(calls.find((c) => c.path.endsWith('/attempt_second_factor'))!.body).toMatchObject({ strategy: 'passkey', challenge: 'Y2hhbA', credential_id: 'AQ' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a cancelled passkey prompt keeps the step with reason passkey_cancelled', async () => {
+    const { client } = clientWith({
+      '/v1/client/sign_ins': [json(201, { id: 'sia_c', status: 'needs_second_factor' })],
+      '/v1/client/sign_ins/sia_c/prepare_second_factor': [json(201, { object: 'second_factor_challenge', challenge: 'Y2hhbA', rpId: 'example.com' })],
+    });
+    const flow = createSignInFlow({ client });
+    await flow.submitIdentifier('a@b.co');
+    const host = { credentials: { create: vi.fn(), get: vi.fn(async () => null) } };
+    const snap = await flow.submitPasskeySecondFactor({ host: host as never });
+    expect(snap.step.type).toBe('needs_second_factor');
+    expect(snap.reason).toBe('passkey_cancelled');
   });
 
   it('a wrong password keeps the step and exposes the stable reason', async () => {
@@ -198,5 +240,61 @@ describe('reasonMessage', () => {
   it('uses the catalog, then the fallback', () => {
     expect(reasonMessage('captcha_wrong_flow', { 'error.captcha_wrong_flow': 'Otro paso.' })).toBe('Otro paso.');
     expect(reasonMessage('unknown_reason', {}, 'Server text')).toBe('Server text');
+  });
+});
+
+describe('headless captcha solver', () => {
+  it('sign-in solves the captcha itself and resends the identifier once', async () => {
+    const appearance = { captchaFlows: { signIn: { enabled: true, provider: 'atlas', challengeUrl: 'https://fapi.example/c' } } };
+    const { client, calls } = clientWith({
+      '/v1/client/sign_ins': [
+        json(201, { id: null, status: 'needs_captcha', identifier: 'a@b.co', supported_first_factors: ['password'] }),
+        json(201, { id: 'sia_1', status: 'needs_first_factor', supported_first_factors: ['password'] }),
+      ],
+      '/v1/appearance': [json(200, appearance)],
+    });
+    const solver = vi.fn(async () => 'atlas1.solved');
+    const flow = createSignInFlow({ client, captchaSolver: solver });
+    const snap = await flow.submitIdentifier('a@b.co');
+    expect(solver).toHaveBeenCalledWith(expect.objectContaining({ provider: 'atlas' }), expect.objectContaining({ flow: 'signIn' }));
+    expect(calls.filter((c) => c.path === '/v1/client/sign_ins')[1]!.body).toMatchObject({ identifier: 'a@b.co', captcha_token: 'atlas1.solved' });
+    expect(snap.step.type).toBe('needs_first_factor');
+  });
+
+  it('does not loop when the solved token is refused, and stops at the step when the solver gives nothing', async () => {
+    const needs = () => json(201, { id: null, status: 'needs_captcha', identifier: 'a@b.co', supported_first_factors: ['password'] });
+    const appearance = { captchaFlows: { signIn: { enabled: true, provider: 'atlas' } } };
+    const refused = clientWith({ '/v1/client/sign_ins': [needs(), needs(), needs()], '/v1/appearance': [json(200, appearance)] });
+    const solver = vi.fn(async () => 'atlas1.bad');
+    expect((await createSignInFlow({ client: refused.client, captchaSolver: solver }).submitIdentifier('a@b.co')).step.type).toBe('needs_captcha');
+    expect(solver).toHaveBeenCalledTimes(1);
+    const none = clientWith({ '/v1/client/sign_ins': [needs()], '/v1/appearance': [json(200, appearance)] });
+    expect((await createSignInFlow({ client: none.client, captchaSolver: async () => null }).submitIdentifier('a@b.co')).step.type).toBe('needs_captcha');
+  });
+
+  it('sign-up solves a CAPTCHA_REQUIRED refusal and resubmits the same details', async () => {
+    const { client, calls } = clientWith({
+      '/v1/client/sign_ups': [
+        json(400, { errors: [{ code: 'CAPTCHA_REQUIRED', reason: 'captcha_required', message: 'x' }] }),
+        json(201, { id: 'sua_1', status: 'needs_email_verification' }),
+      ],
+      '/v1/appearance': [json(200, { captchaFlows: { signUp: { enabled: true, provider: 'atlas' } } })],
+    });
+    const flow = createSignUpFlow({ client, captchaSolver: async () => 'atlas1.t' });
+    await flow.submit({ email: 'a@b.co', password: 'pw-123456' });
+    expect(calls.filter((c) => c.path === '/v1/client/sign_ups')[1]!.body).toMatchObject({ email: 'a@b.co', captcha_token: 'atlas1.t' });
+  });
+
+  it('password reset solves a captcha refusal with the installed solver', async () => {
+    const { client, calls } = clientWith({
+      '/v1/client/password_resets': [
+        json(400, { errors: [{ code: 'CAPTCHA_REQUIRED', message: 'x' }] }),
+        json(201, { id: 'pr_1', status: 'needs_email_verification' }),
+      ],
+      '/v1/appearance': [json(200, { captchaFlows: { passwordReset: { enabled: true, provider: 'atlas' } } })],
+    });
+    const state = await startPasswordReset(client, 'a@b.co', undefined, { solver: async () => 'atlas1.r' });
+    expect(calls.filter((c) => c.path === '/v1/client/password_resets')[1]!.body).toMatchObject({ captcha_token: 'atlas1.r' });
+    expect(state.attempt?.id).toBe('pr_1');
   });
 });

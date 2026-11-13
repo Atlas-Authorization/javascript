@@ -32,6 +32,8 @@ export interface ApiKey {
   rate_limit?: ApiKeyRateLimit | null;
   /** Uses left (each successful verify spends one); null = unlimited. */
   remaining?: number | null;
+  /** CIDR allowlist; verify refuses a caller outside it. null = any caller. */
+  allowed_ips?: string[] | null;
   last_used_at: number | null;
   expires_at: number | null;
   revoked_at: number | null;
@@ -52,6 +54,12 @@ export interface ApiKeyControls {
   rate_limit?: ApiKeyRateLimit | null;
   /** Uses left; null = unlimited. */
   remaining?: number | null;
+  /**
+   * IPv4/IPv6 addresses or CIDR ranges (at most 100) the key may be used from;
+   * null or [] removes the limit. A key with an allowlist verifies only when the
+   * request names the end caller's `client_ip`.
+   */
+  allowed_ips?: string[] | null;
 }
 
 /**
@@ -192,11 +200,13 @@ export type ApiKeyVerification =
       /**
        * A live key refused by its own policy: `insufficient_scope` (see
        * `missing_scopes`), `rate_limited` (retry after `retry_after_ms`) or
-       * `usage_exhausted` (no uses left).
+       * `usage_exhausted` (no uses left), `ip_not_allowed` (the caller is outside
+       * the key's `allowed_ips`) or `client_ip_required` (the key has `allowed_ips`
+       * and the request sent no `client_ip`).
        */
       object: 'api_key_verification';
       valid: false;
-      code: 'insufficient_scope' | 'rate_limited' | 'usage_exhausted';
+      code: 'insufficient_scope' | 'rate_limited' | 'usage_exhausted' | 'ip_not_allowed' | 'client_ip_required';
       id: string;
       missing_scopes?: string[];
       retry_after_ms?: number;
@@ -255,6 +265,8 @@ export interface MintApiKeyTokenBody {
   /** Requested lifetime; clamped to the key's ceiling, its expiry, and the global cap. */
   ttl_seconds?: number;
   audience?: string | string[];
+  /** The end caller's address; required when minting for a key with `allowed_ips` using an `sk_` key. */
+  client_ip?: string;
 }
 
 /** One entry in the revocation feed: an id and when it was revoked. */
@@ -290,7 +302,7 @@ export function apiKeysResource(request: RequestFn) {
      * Verify a presented key. `required_scopes`: every one must be on the key,
      * else `{ valid: false, code: 'insufficient_scope' }`.
      */
-    verify(secret: string, options: { required_scopes?: string[] } = {}): Promise<ApiKeyVerification> {
+    verify(secret: string, options: { required_scopes?: string[]; client_ip?: string } = {}): Promise<ApiKeyVerification> {
       return request({ method: 'POST', path: '/v1/api_keys/verify', body: { secret, ...options } });
     },
     get(id: string): Promise<ApiKey> {

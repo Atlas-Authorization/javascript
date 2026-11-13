@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/elements",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -28,14 +28,15 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@atlasauth/js": "workspace:*",
     "@atlasauth/react": "workspace:^"
   },
   "peerDependencies": {
+    "@atlasauth/js": ">=0.39.0 <1.0.0",
     "react": ">=18",
     "react-dom": ">=18"
   },
   "devDependencies": {
+    "@atlasauth/js": "workspace:*",
     "@testing-library/react": "^16.0.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

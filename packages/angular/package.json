@@ -1,7 +1,7 @@
 {
   "name": "@atlasauth/angular",
-  "version": "0.20.1",
-  "description": "Official Angular SDK for Atlas \u2014 the Angular peer of @atlasauth/react.",
+  "version": "0.21.0",
+  "description": "Official Angular SDK for Atlas — the Angular peer of @atlasauth/react.",
   "license": "MIT",
   "module": "./dist/fesm2022/atlasauth-angular.mjs",
   "typings": "./dist/index.d.ts",
@@ -24,11 +24,11 @@
   },
   "dependencies": {
     "@atlasauth/design": "workspace:*",
-    "@atlasauth/js": "workspace:*",
     "@atlasauth/authz": "workspace:*",
     "tslib": "^2.6.3"
   },
   "peerDependencies": {
+    "@atlasauth/js": ">=0.39.0 <1.0.0",
     "@angular/core": ">=17",
     "@angular/common": ">=17",
     "@angular/router": ">=17",
@@ -45,6 +45,7 @@
     "@angular/compiler-cli": "^17.3.0",
     "@angular/core": "^17.3.0",
     "@angular/router": "^17.3.0",
+    "@atlasauth/js": "workspace:*",
     "ng-packagr": "^17.3.0",
     "rxjs": "^7.8.1",
     "typescript": "~5.4.5",

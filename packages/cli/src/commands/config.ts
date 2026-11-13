@@ -107,6 +107,8 @@ interface SingletonSpec {
   normalize?(config: Config): Config;
   /** Adjust the live document (already trimmed to the keys the file sets) before comparing, given the desired one. */
   align?(live: Config, desired: Config): Config;
+  /** Local format errors in the desired document, with `${VAR}` resolved. */
+  validate?(config: Config): string[];
   /** Every top-level key a file may set; omit for a document the server validates itself. */
   fileKeys?: readonly string[];
   /** Allowed keys inside a top-level object key. */
@@ -470,6 +472,24 @@ function registry(): ResourceSpec[] {
       kind: 'singleton',
       type: 'scopes',
       fileKeys: ['scopes'],
+      validate(config) {
+        // The API refuses over-length text (it never cuts it); say so before apply.
+        const limits: Array<[string, number]> = [['description', SCOPE_DESCRIPTION_MAX], ['label', SCOPE_LABEL_MAX]];
+        const out: string[] = [];
+        asArray(obj(config).scopes ?? []).forEach((entry, i) => {
+          const scope = obj(entry);
+          const name = String(scope.name ?? `#${i + 1}`);
+          for (const [field, max] of limits) {
+            const value = scope[field];
+            const texts: Array<[string, unknown]> =
+              typeof value === 'string' ? [[field, value]] : Object.entries(obj(value as Json)).map(([locale, v]) => [`${field}.${locale}`, v]);
+            for (const [path, text] of texts) {
+              if (typeof text === 'string' && text.length > max) out.push(`scopes '${name}': ${path} is ${text.length} characters; the limit is ${max}.`);
+            }
+          }
+        });
+        return out;
+      },
       async fetchLive(http) {
         const rows = await orNotFound(listData<Record<string, unknown>>(http, '/v1/instance/scopes'), []);
         if (rows.length === 0) return null;
@@ -1198,7 +1218,7 @@ function registry(): ResourceSpec[] {
   return specs;
 }
 
-const HOSTED_PAGES_KEYS = ['sign_in_url', 'sign_up_url', 'user_url'] as const;
+const HOSTED_PAGES_KEYS = ['sign_in_url', 'sign_up_url', 'user_url', 'device_url'] as const;
 const CONNECTION_CLIENT_KEYS = ['owner', 'provider', 'environment', 'client_id', 'client_secret', 'scopes', 'host_params', 'enabled'] as const;
 const BRIDGE_KEYS = ['enabled', 'ends_at', 'mode', 'preset', 'preset_vars', 'issuer', 'jwks_url', 'audience', 'algorithms', 'claim_map', 'expired_grace_seconds', 'cookie_names', 'create_users'] as const;
 const IMPERSONATION_KEYS = ['require_reason', 'reason_codes', 'max_duration_seconds', 'require_approval', 'read_only_default', 'notify_user'] as const;
@@ -1514,9 +1534,14 @@ const WEBHOOK_SECRET = /^(?:atlas_(?:live|test)_)?whsec_[A-Za-z0-9+/=_-]{32,256}
 /** A `${VAR}` still in a value: there is nothing to check yet, and apply refuses it on its own. */
 const hasPlaceholder = (v: Json | undefined): boolean => typeof v === 'string' && /\$\{[A-Z0-9_]+\}/.test(v);
 
+/** Longest consent-screen text of a scope (a description, per locale) and its label. */
+const SCOPE_DESCRIPTION_MAX = 500;
+const SCOPE_LABEL_MAX = 200;
+
 /** What one resource file's values break, from each spec's own rules. */
 function invalidFileValues(spec: ResourceSpec, doc: Json): string[] {
-  if (spec.kind !== 'collection' || !spec.validate) return [];
+  if (spec.kind === 'singleton') return spec.validate?.(doc as Config) ?? [];
+  if (!spec.validate) return [];
   const out: string[] = [];
   for (const entry of asArray(doc)) out.push(...spec.validate(entry));
   return out;

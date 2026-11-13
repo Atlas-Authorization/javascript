@@ -16,7 +16,7 @@ helper to your server routes.
 ## Install
 
 ```bash
-pnpm add @atlasauth/nuxt
+pnpm add @atlasauth/nuxt @atlasauth/js
 ```
 
 ## Configure

@@ -29,6 +29,8 @@ export interface MirroredApiKey {
   subject_id: string;
   name: string | null;
   scopes: string[] | null;
+  /** CIDR allowlist; null/absent = any caller. */
+  allowed_ips?: string[] | null;
   /** Epoch ms; null = never. */
   expires_at: number | null;
   /** Epoch ms; null = live. */
@@ -102,7 +104,7 @@ export interface KeyMirrorOptions {
 
 export type MirrorVerification =
   | { valid: true; key: MirroredApiKey; effective_scopes: string[] }
-  | { valid: false; code?: 'insufficient_scope'; missing_scopes?: string[] };
+  | { valid: false; code?: 'insufficient_scope' | 'ip_not_allowed' | 'client_ip_required'; missing_scopes?: string[] };
 
 export type MirrorImportInput = Omit<CreateApiKeyBody, 'import' | 'prefix'> & {
   /** The full existing secret (hashed here, never sent) — or its `secretHash`. */
@@ -143,6 +145,55 @@ function expand(held: string[], implications: Record<string, string[]>, allowed:
   return [...out].sort();
 }
 
+function parseIpBytes(text: string): number[] | null {
+  const t = text.trim();
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(t)) {
+    const parts = t.split('.').map(Number);
+    return parts.every((n) => n <= 255) ? parts : null;
+  }
+  if (!t.includes(':') || !/^[0-9a-fA-F:.]+$/.test(t)) return null;
+  let head = t;
+  let tail: number[] = [];
+  const v4 = /(\d{1,3}(?:\.\d{1,3}){3})$/.exec(t);
+  if (v4) {
+    const b = parseIpBytes(v4[1]!);
+    if (!b) return null;
+    tail = b;
+    head = t.slice(0, t.length - v4[1]!.length) + '0:0';
+  }
+  const halves = head.split('::');
+  if (halves.length > 2) return null;
+  const groups = (h: string) => (h === '' ? [] : h.split(':'));
+  const left = groups(halves[0]!);
+  const right = halves.length === 2 ? groups(halves[1]!) : [];
+  const fill = 8 - left.length - right.length;
+  if (halves.length === 2 ? fill < 1 : fill !== 0) return null;
+  const all = [...left, ...Array<string>(halves.length === 2 ? fill : 0).fill('0'), ...right];
+  if (all.length !== 8 || all.some((g) => !/^[0-9a-fA-F]{1,4}$/.test(g))) return null;
+  const out = all.flatMap((g) => [parseInt(g, 16) >> 8, parseInt(g, 16) & 255]);
+  if (tail.length) out.splice(12, 4, ...tail);
+  return out;
+}
+
+/** Whether `ip` is inside one of the addresses / CIDR ranges. Unparseable input is never inside. */
+export function ipInAllowlist(ip: string, cidrs: readonly string[]): boolean {
+  const addr = parseIpBytes(ip);
+  if (!addr) return false;
+  return cidrs.some((entry) => {
+    const [base, bitsText] = entry.trim().split('/');
+    const net = parseIpBytes(base ?? '');
+    if (!net || net.length !== addr.length) return false;
+    const bits = bitsText === undefined ? net.length * 8 : Number(bitsText);
+    if (!Number.isInteger(bits) || bits < 0 || bits > net.length * 8) return false;
+    for (let i = 0; i < net.length; i++) {
+      const n = Math.min(8, Math.max(0, bits - i * 8));
+      const mask = (0xff << (8 - n)) & 0xff;
+      if ((addr[i]! & mask) !== (net[i]! & mask)) return false;
+    }
+    return true;
+  });
+}
+
 const HEX64 = /^[0-9a-f]{64}$/;
 
 function toMirrored(key: ApiKey, hash: string): MirroredApiKey {
@@ -154,6 +205,7 @@ function toMirrored(key: ApiKey, hash: string): MirroredApiKey {
     subject_id: key.subject_id,
     name: key.name ?? null,
     scopes: key.scopes ?? null,
+    allowed_ips: key.allowed_ips ?? null,
     expires_at: key.expires_at ?? null,
     revoked_at: key.revoked_at ?? null,
   };
@@ -220,12 +272,12 @@ export function createKeyMirror(options: KeyMirrorOptions) {
      * Verify a presented secret against the mirror — no network call. Unknown,
      * revoked and expired keys all answer `{ valid: false }`.
      */
-    async verify(secret: string, opts: { requiredScopes?: string[] } = {}): Promise<MirrorVerification> {
+    async verify(secret: string, opts: { requiredScopes?: string[]; clientIp?: string } = {}): Promise<MirrorVerification> {
       if (typeof secret !== 'string' || !secret) return { valid: false };
       const hash = hashApiKeySecret(secret);
       let key = await store.getByHash(hash);
       if (!key && options.verifyAtAtlas && apiKeys.verify && apiKeys.get) {
-        const remote = await apiKeys.verify(secret);
+        const remote = await apiKeys.verify(secret, opts.clientIp ? { client_ip: opts.clientIp } : {});
         if (remote.valid) {
           key = toMirrored(await apiKeys.get(remote.id), hash);
           await store.put(key);
@@ -233,6 +285,11 @@ export function createKeyMirror(options: KeyMirrorOptions) {
       }
       if (!key || key.revoked_at !== null) return { valid: false };
       if (key.expires_at !== null && key.expires_at <= now()) return { valid: false };
+      // A key with allowed_ips needs the end caller's address; no address fails closed.
+      if (key.allowed_ips && key.allowed_ips.length > 0) {
+        if (!opts.clientIp) return { valid: false, code: 'client_ip_required' };
+        if (!ipInAllowlist(opts.clientIp, key.allowed_ips)) return { valid: false, code: 'ip_not_allowed' };
+      }
       const effective = expand(key.scopes ?? [], implications, allowed);
       const missing = (opts.requiredScopes ?? []).filter((s) => !effective.includes(s));
       if (missing.length > 0) return { valid: false, code: 'insufficient_scope', missing_scopes: missing };
@@ -283,6 +340,7 @@ export function createKeyMirror(options: KeyMirrorOptions) {
           ...held,
           name: data.name !== undefined ? data.name ?? null : held.name,
           scopes: data.scopes !== undefined ? data.scopes ?? null : held.scopes,
+          allowed_ips: data.allowed_ips !== undefined ? data.allowed_ips ?? null : held.allowed_ips ?? null,
           expires_at: data.expires_at !== undefined ? data.expires_at ?? null : held.expires_at,
         });
         return true;

@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/react-native",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -9,9 +9,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@atlasauth/js": "workspace:*"
+    "@noble/hashes": "^1.8.0"
   },
   "peerDependencies": {
+    "@atlasauth/js": ">=0.40.0 <1.0.0",
     "react": ">=18",
     "react-native": ">=0.73"
   },
@@ -21,6 +22,7 @@
     }
   },
   "devDependencies": {
+    "@atlasauth/js": "workspace:*",
     "@types/react": "^18.3.12",
     "react": "^18.3.1",
     "typescript": "^5.6.3",

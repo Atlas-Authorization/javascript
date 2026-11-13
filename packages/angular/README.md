@@ -9,7 +9,7 @@ Requires **Angular 17+**.
 ## Install
 
 ```bash
-pnpm add @atlasauth/angular
+pnpm add @atlasauth/angular @atlasauth/js
 # peers: @angular/core, @angular/common (>=17), rxjs (>=7); @angular/router if you use the guards
 ```
 

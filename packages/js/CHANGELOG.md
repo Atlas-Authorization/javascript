@@ -2,6 +2,13 @@
 
 
 
+## 0.40.0 — 2026-11-13
+
+- `changePassword`, `setPassword`, `listTrustedDevices`, `revokeTrustedDevice`; TOTP enrolment returns `qr_svg`.
+- Headless sign-in offers a passkey second factor (`submitPasskeySecondFactor`) and identity-verified MFA recovery (`canRecover`, `startRecovery`, `checkRecovery`).
+- `linkExternalAccountWithIdToken` links a Google or Apple id_token to the signed-in user.
+- `setHeadlessCaptchaSolver` / `getHeadlessCaptchaSolver` let native runtimes answer captcha with no app code.
+
 ## 0.39.0 — 2026-11-12
 
 - API key types: `createApiKey` takes `type`, keys carry `type`, `listApiKeys({ type })` filters.

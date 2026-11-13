@@ -1,5 +1,10 @@
 # @atlasauth/react-native changelog
 
+## 0.8.0 — 2026-11-13
+
+- Sign-in, sign-up and password reset solve Atlas captcha on Hermes/JSC with no app code.
+- `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.
+
 ## Unreleased
 
 ## 0.7.0 — 2026-10-26

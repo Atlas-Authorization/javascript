@@ -816,6 +816,8 @@ export interface HostedPagesSettings {
   sign_in_url: string | null;
   sign_up_url: string | null;
   user_url: string | null;
+  /** Your own device-flow page: returned as `verification_uri` by `POST /oauth2/device_authorization`. */
+  device_url: string | null;
   /** The hosted pages these settings apply to. */
   hosted: { sign_in: string; sign_up: string; user: string };
 }
@@ -825,6 +827,7 @@ export interface UpdateHostedPagesBody {
   sign_in_url?: string | null;
   sign_up_url?: string | null;
   user_url?: string | null;
+  device_url?: string | null;
 }
 
 export function instanceResource(request: RequestFn) {

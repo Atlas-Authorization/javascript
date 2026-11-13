@@ -8,7 +8,7 @@
  * the result exactly like any other attempt (nextStep / a returned ticket).
  */
 
-import type { AttemptView } from './attempt';
+import type { AttemptView, FieldError } from './attempt';
 import { initialFlow, type FapiClient, type FlowState } from './fapi';
 
 export interface NativeSignInBody {
@@ -99,6 +99,38 @@ export async function nativeSignIn(
     pollSecret: initialFlow.pollSecret,
     ticket: response.data.ticket ?? null,
   };
+}
+
+/** The identity a native id_token link added (`POST /v1/client/me/external_accounts`). */
+export interface LinkedExternalAccount {
+  object: 'external_account';
+  id: string | null;
+  provider: string;
+  provider_email: string | null;
+  /** Epoch milliseconds. */
+  connected_at: number;
+}
+
+export interface LinkExternalAccountResult {
+  ok: boolean;
+  account: LinkedExternalAccount | null;
+  /** `IDENTITY_ALREADY_LINKED` (409) when it belongs to another user or you already have that provider; `STEP_UP_REQUIRED` (403) when a fresh sign-in is needed. */
+  errors: FieldError[];
+}
+
+/**
+ * Link a Google (GSI) or Apple id_token to the SIGNED-IN user, with no redirect
+ * and no client secret. Mint the nonce with {@link mintNativeNonce}, hand it to
+ * the provider SDK, then post the resulting token with the same nonce. Needs a
+ * recent re-authentication; the new identity then shows in `external_accounts`
+ * on `GET /v1/client`.
+ */
+export async function linkExternalAccountWithIdToken(
+  client: FapiClient,
+  input: { provider: string; idToken: string; nonce?: string },
+): Promise<LinkExternalAccountResult> {
+  const response = await client.post<LinkedExternalAccount>('/v1/client/me/external_accounts', nativeSignInBody(input));
+  return { ok: response.ok && !!response.data, account: response.ok ? response.data : null, errors: response.errors };
 }
 
 /* ---- provider-health telemetry ------------------------------------------- */

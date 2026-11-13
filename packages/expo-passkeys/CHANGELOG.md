@@ -1,5 +1,10 @@
 # @atlasauth/expo-passkeys changelog
 
+## 0.3.0 — 2026-11-13
+
+- Passkey sign-in uses the headless captcha solver when no `getCaptchaToken` is passed.
+- `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.
+
 ## 0.2.0 — 2026-10-23
 - **Passkey sign-in takes the sign-in captcha.** `authenticateWithPasskey()` accepts `captchaToken` (sent on the start) and `getCaptchaToken` (asked for a fresh token after a `CAPTCHA_REQUIRED` / `CAPTCHA_FAILED` refusal; the start is retried once). Needed when the app challenges every sign-in.
 - Built on `@atlasauth/js` 0.16.0.

@@ -93,9 +93,12 @@ export * from './email-addresses';
 // Username availability + the "Last used" sign-in method hint.
 export * from './account-hints';
 export * from './custom-challenge';
+// Recovery for a person who lost every second factor, through an identity check.
+export * from './mfa-recovery';
 // Identity verification (document and selfie) through the app's verification service.
 export * from './identity-verification';
 export * from './avatar';
+export * from './account-security';
 // Identity governance: request access, approve, review, delegate.
 export * from './iga';
 export * from './resource-sharing';

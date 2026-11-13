@@ -1,8 +1,8 @@
 {
   "name": "@atlasauth/nuxt",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "type": "module",
-  "description": "Official Nuxt 3 module for Atlas \u2014 SSR session verification (Nitro) built on the @atlasauth/vue client.",
+  "description": "Official Nuxt 3 module for Atlas — SSR session verification (Nitro) built on the @atlasauth/vue client.",
   "license": "MIT",
   "main": "./dist/module.mjs",
   "types": "./dist/types.d.mts",
@@ -30,15 +30,16 @@
   },
   "dependencies": {
     "@atlasauth/vue": "workspace:*",
-    "@atlasauth/js": "workspace:*",
     "@atlasauth/backend": "workspace:*",
     "@atlasauth/authz": "workspace:*",
     "@nuxt/kit": "^3.13.0"
   },
   "peerDependencies": {
+    "@atlasauth/js": ">=0.39.0 <1.0.0",
     "nuxt": "^3"
   },
   "devDependencies": {
+    "@atlasauth/js": "workspace:*",
     "@nuxt/module-builder": "^0.8.4",
     "@nuxt/schema": "^3.13.0",
     "h3": "^1.12.0",

@@ -17,6 +17,12 @@
  *   4. The session goes into a {@link NativeSessionManager} persisted in
  *      `chrome.storage`, which refreshes it on demand.
  *
+ * Silent sign-in (`interactive: false`): the authorize request adds `prompt=none`. If the browser already holds a session on the
+ * instance's Frontend API host, Atlas skips every page (a first-party client has no consent screen) and redirects with a code, so
+ * the flow completes with no window. If it does not, Atlas redirects to the extension with `error=login_required`, which
+ * becomes an {@link AtlasWebAuthFlowError} with code `login_required`. With `interactive: true` the same session also lets the
+ * authorize step finish without asking for anything; Chrome only shows the window when a page has to be displayed.
+ *
  * Firefox's `browser.identity` has the same two calls; its redirect URL is
  * `https://<hash>.extensions.allizom.org/`.
  */
@@ -35,8 +41,12 @@ export interface ChromeIdentity {
 export type WebAuthFlowErrorCode =
   /** No `chrome.identity` (missing `"identity"` permission, or not an extension). */
   | 'identity_unavailable'
-  /** The user closed the window, or `interactive: false` needed a prompt. */
+  /** The user closed the window. */
   | 'cancelled'
+  /** `interactive: false` and the browser has no usable instance session (Atlas answered `login_required`), or the window could not open silently. Sign in with `interactive: true`. */
+  | 'login_required'
+  /** `interactive: false` and the sign-in needs the user (`interaction_required`, `consent_required`, `account_selection_required`). Sign in with `interactive: true`. */
+  | 'interaction_required'
   /** The returned URL was not the answer to this request (wrong redirect or `state`). */
   | 'state_mismatch'
   /** The instance answered with an OAuth error (`error` from the redirect, e.g. `access_denied`). */
@@ -66,7 +76,11 @@ export interface WebAuthFlowOptions {
   scope?: string;
   /** @default `identity.getRedirectURL()` — register exactly this on the client. */
   redirectUri?: string;
-  /** `false` signs in silently when the instance session allows it, else fails with `cancelled`. @default true */
+  /**
+   * `false` is a silent sign-in: the request carries `prompt=none`, so Atlas never shows a page. With an instance session in
+   * the browser it returns the code straight away; without one it fails fast with `login_required` (or `interaction_required`).
+   * @default true
+   */
   interactive?: boolean;
   /** Extra authorize parameters, e.g. `{ prompt: 'login', login_hint: 'a@example.com' }`. */
   authorizeParams?: Record<string, string>;
@@ -121,14 +135,18 @@ export async function signInWithWebAuthFlow(options: WebAuthFlowOptions): Promis
   authorize.searchParams.set('state', state);
   authorize.searchParams.set('code_challenge', challenge);
   authorize.searchParams.set('code_challenge_method', 'S256');
+  // Silent sign-in: Atlas answers login_required / interaction_required to the redirect URI instead of showing a page.
+  const interactive = options.interactive ?? true;
+  if (!interactive) authorize.searchParams.set('prompt', 'none');
 
   let returned: string | undefined;
   try {
-    returned = await identity.launchWebAuthFlow({ url: authorize.toString(), interactive: options.interactive ?? true });
+    returned = await identity.launchWebAuthFlow({ url: authorize.toString(), interactive });
   } catch (error) {
-    throw new AtlasWebAuthFlowError('cancelled', error instanceof Error && error.message ? error.message : 'The sign-in window was closed.');
+    // A silent flow the browser could not complete without a window is "no session", not a closed window.
+    throw new AtlasWebAuthFlowError(interactive ? 'cancelled' : 'login_required', error instanceof Error && error.message ? error.message : 'The sign-in window was closed.');
   }
-  if (!returned) throw new AtlasWebAuthFlowError('cancelled', 'The sign-in window was closed.');
+  if (!returned) throw new AtlasWebAuthFlowError(interactive ? 'cancelled' : 'login_required', interactive ? 'The sign-in window was closed.' : 'There is no instance session in this browser.');
 
   // Only the answer to THIS request counts: our redirect URI, our state.
   let callback: URL;
@@ -143,6 +161,12 @@ export async function signInWithWebAuthFlow(options: WebAuthFlowOptions): Promis
   }
   const oauthError = callback.searchParams.get('error');
   if (oauthError) {
+    if (!interactive && oauthError === 'login_required') {
+      throw new AtlasWebAuthFlowError('login_required', 'There is no instance session in this browser. Sign in with interactive: true.');
+    }
+    if (!interactive && (oauthError === 'interaction_required' || oauthError === 'consent_required' || oauthError === 'account_selection_required')) {
+      throw new AtlasWebAuthFlowError('interaction_required', `${oauthError}: the sign-in needs the user. Sign in with interactive: true.`);
+    }
     const description = callback.searchParams.get('error_description');
     throw new AtlasWebAuthFlowError('authorization_error', description ? `${oauthError}: ${description}` : oauthError);
   }

@@ -144,3 +144,33 @@ describe('createKeyMirror', () => {
     expect((await mirror.verify('ak_exp')).valid).toBe(false);
   });
 });
+
+describe('allowed_ips on the mirror', () => {
+  it('ipInAllowlist matches IPv4 and IPv6 ranges and rejects garbage', async () => {
+    const { ipInAllowlist } = await import('./key-mirror');
+    expect(ipInAllowlist('203.0.113.9', ['203.0.113.0/24'])).toBe(true);
+    expect(ipInAllowlist('203.0.114.9', ['203.0.113.0/24'])).toBe(false);
+    expect(ipInAllowlist('198.51.100.1', ['198.51.100.1'])).toBe(true);
+    expect(ipInAllowlist('2001:db8::5', ['2001:db8::/32'])).toBe(true);
+    expect(ipInAllowlist('2001:db9::5', ['2001:db8::/32'])).toBe(false);
+    expect(ipInAllowlist('203.0.113.9', ['2001:db8::/32'])).toBe(false);
+    expect(ipInAllowlist('nope', ['0.0.0.0/0'])).toBe(false);
+  });
+
+  it('refuses a key with allowed_ips without a client IP, and outside the range', async () => {
+    const { createKeyMirror, memoryKeyMirrorStore } = await import('./key-mirror');
+    const store = memoryKeyMirrorStore();
+    const mirror = createKeyMirror({
+      store,
+      apiKeys: {
+        create: async () => ({ id: 'eak_1', prefix: 'ak_x', subject_type: 'user', subject_id: 'u', allowed_ips: ['203.0.113.0/24'], secret: 'ak_x_secret' }) as never,
+        delete: async () => ({}) as never,
+        listRevoked: async () => ({ data: [], has_more: false, next_cursor: null }) as never,
+      },
+    });
+    await mirror.mint({ subject_type: 'user', subject_id: 'u', allowed_ips: ['203.0.113.0/24'] });
+    expect(await mirror.verify('ak_x_secret')).toEqual({ valid: false, code: 'client_ip_required' });
+    expect(await mirror.verify('ak_x_secret', { clientIp: '198.51.100.1' })).toEqual({ valid: false, code: 'ip_not_allowed' });
+    expect((await mirror.verify('ak_x_secret', { clientIp: '203.0.113.5' })).valid).toBe(true);
+  });
+});

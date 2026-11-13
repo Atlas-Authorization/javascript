@@ -17,7 +17,7 @@ the same `@atlasauth/js` `NativeSessionManager` / `exchangeForSession` /
 ## Install
 
 ```sh
-npm install @atlasauth/capacitor
+npm install @atlasauth/capacitor @atlasauth/js
 npx cap sync
 # the Capacitor plugins it drives (all optional peers — install what you use):
 npm install @capacitor/browser @capacitor/app @capacitor/preferences

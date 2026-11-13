@@ -9,7 +9,7 @@ primitive renders a bare DOM element (or merges onto your own element via
 `asChild`), with **no styles and no class names**.
 
 ```bash
-pnpm add @atlasauth/elements @atlasauth/react
+pnpm add @atlasauth/elements @atlasauth/react @atlasauth/js
 ```
 
 It is driven by `<AtlasProvider>` from `@atlasauth/react`, which must wrap your

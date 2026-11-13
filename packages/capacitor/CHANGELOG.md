@@ -1,5 +1,9 @@
 # @atlasauth/capacitor changelog
 
+## 0.4.0 — 2026-11-13
+
+- `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.
+
 ## 0.3.0 — 2026-10-24
 Requires `@atlasauth/js` with policy acceptance.
 - **Policy acceptance** (terms of service, privacy, any policy the app defines). The system-browser sign-in runs on Atlas's

@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.38.0 — 2026-11-13
+
+- Plans read `hosted_pages.device_url` and flag scope descriptions over 500 characters before apply.
+
 ## 0.37.2 — 2026-11-13
 - `branding.favicon` (and `favicon_url`, `account_portal`) in atlas.yaml plans and applies: compared under the names the API reads back, so `plan --check` stays clean after apply.
 

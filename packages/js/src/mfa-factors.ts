@@ -21,6 +21,8 @@ export interface HotpEnrollment extends EnrolledFactor {
   secret: string;
   /** The `otpauth://hotp/` URI (for a QR code). */
   uri: string;
+  /** The URI as an inline SVG QR code. */
+  qr_svg?: string;
   digits: number;
 }
 

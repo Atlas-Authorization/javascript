@@ -21,7 +21,7 @@ implementation and cannot diverge in what the server sees.
 ## Install
 
 ```bash
-pnpm add @atlasauth/svelte
+pnpm add @atlasauth/svelte @atlasauth/js
 ```
 
 Peer dependencies: `svelte >= 4`. `@sveltejs/kit` is an **optional** peer, needed

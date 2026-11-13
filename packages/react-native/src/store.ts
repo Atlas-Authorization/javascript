@@ -7,6 +7,7 @@ import {
   controllerForPending,
   loadPolicies,
   fetchInstanceSettings,
+  getHeadlessCaptchaSolver,
   getProviderToken as fetchProviderToken,
   initialFlow,
   isCaptchaError,
@@ -359,10 +360,14 @@ export class AtlasStore {
 
   /** Ask the app for a captcha token (see {@link AtlasStoreConfig.getCaptchaToken}). */
   private async captchaTokenFor(flow: CaptchaTokenRequest['flow']): Promise<string | null> {
-    if (!this.getCaptchaToken) return null;
+    // The app's callback first; with none, the headless solver this package installs.
+    const solver = this.getCaptchaToken ?? getHeadlessCaptchaSolver();
+    if (!solver) return null;
     const settings = await fetchInstanceSettings(this.client);
+    const captcha = settings?.captchaFlows[flow] ?? null;
     try {
-      return (await this.getCaptchaToken({ flow, captcha: settings?.captchaFlows[flow] ?? null })) || null;
+      if (this.getCaptchaToken) return (await this.getCaptchaToken({ flow, captcha })) || null;
+      return captcha ? (await getHeadlessCaptchaSolver()!(captcha, { flow })) || null : null;
     } catch {
       return null;
     }

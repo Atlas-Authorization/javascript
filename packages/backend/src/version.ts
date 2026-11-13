@@ -1,2 +1,2 @@
 /** This package's version, sent as `X-Atlas-SDK`. Kept in step with package.json by version.test.ts. */
-export const ATLAS_BACKEND_VERSION = '0.46.2';
+export const ATLAS_BACKEND_VERSION = '0.47.0';

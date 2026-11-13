@@ -2,6 +2,10 @@
 
 
 
+## 0.16.0 — 2026-11-13
+
+- `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.
+
 ## 0.15.0 — 2026-11-11
 
 - `setActiveOrganization` throws an error with `reason: "org_mfa_step_up_required"` (and `allowedFactors`) when an organization's policy is `mfaEnforcement: "require_step_up"` and the session needs a fresh second factor; pass it to `runOrgStepUp` from `@atlasauth/js`, then retry. It still returns quietly for other refusals.

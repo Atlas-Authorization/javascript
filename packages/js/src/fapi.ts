@@ -686,6 +686,28 @@ export function requestForStep(
           body: { strategy: 'duo', ...(values.remember_device === 'true' ? { remember_device: true } : {}) },
         };
       }
+      // A passkey assertion (WebAuthn ceremony already run): the server tells it apart by the credential id.
+      if (values.strategy === 'passkey') {
+        return {
+          path: `/v1/client/sign_ins/${id}/attempt_second_factor`,
+          body: {
+            strategy: 'passkey',
+            challenge: values.challenge ?? '',
+            credential_id: values.credential_id ?? '',
+            authenticator_data: values.authenticator_data ?? '',
+            client_data_json: values.client_data_json ?? '',
+            signature: values.signature ?? '',
+            ...(values.remember_device === 'true' ? { remember_device: true } : {}),
+          },
+        };
+      }
+      // Recovery through an identity check has no code either: the client polls once the person did the check; `new_password` when the app asks for one.
+      if (values.strategy === 'identity_verification') {
+        return {
+          path: `/v1/client/sign_ins/${id}/attempt_second_factor`,
+          body: { strategy: 'identity_verification', ...(values.new_password ? { new_password: values.new_password } : {}) },
+        };
+      }
       // Only ever the code (+ the §5.3 "remember this device" opt-in). Sending
       // `password` here would be posting a credential to an endpoint that has no
       // business seeing one.

@@ -88,6 +88,28 @@ describe('signInWithWebAuthFlow', () => {
     expect(seen.authorize!.searchParams.get('state')).not.toBe('attacker');
   });
 
+  it('interactive: false adds prompt=none; interactive (the default) does not', async () => {
+    const seen: Seen = {};
+    const store = () => new StorageCache({ area: createMemoryStorageArea() });
+    await signInWithWebAuthFlow({ ...base, interactive: false, identity: identity(seen, ok), fetchImpl: server(seen), store: store() });
+    expect(seen.authorize!.searchParams.get('prompt')).toBe('none');
+    await signInWithWebAuthFlow({ ...base, identity: identity(seen, ok), fetchImpl: server(seen), store: store() });
+    expect(seen.authorize!.searchParams.get('prompt')).toBeNull();
+  });
+
+  it('interactive: false cannot be talked out of prompt=none by authorizeParams', async () => {
+    const seen: Seen = {};
+    await signInWithWebAuthFlow({
+      ...base,
+      interactive: false,
+      authorizeParams: { prompt: 'login' },
+      identity: identity(seen, ok),
+      fetchImpl: server(seen),
+      store: new StorageCache({ area: createMemoryStorageArea() }),
+    });
+    expect(seen.authorize!.searchParams.get('prompt')).toBe('none');
+  });
+
   const failure = async (opts: Partial<Parameters<typeof signInWithWebAuthFlow>[0]>) => {
     const store = new StorageCache({ area: createMemoryStorageArea() });
     const err = await signInWithWebAuthFlow({ ...base, store, ...opts }).catch((e: unknown) => e);
@@ -136,6 +158,30 @@ describe('signInWithWebAuthFlow', () => {
         fetchImpl: server(seen, { exchange: Response.json({ error: 'unauthorized_client' }, { status: 403 }) }),
       }),
     ).toBe('session_exchange_failed');
+  });
+
+  it('a silent sign-in with no session fails fast with login_required (and nothing is redeemed or stored)', async () => {
+    const seen: Seen = {};
+    const answer = (a: URL) => `${REDIRECT}?error=login_required&state=${a.searchParams.get('state')}`;
+    expect(await failure({ interactive: false, identity: identity(seen, answer), fetchImpl: server(seen) })).toBe('login_required');
+    expect(seen.authorize!.searchParams.get('prompt')).toBe('none');
+    expect(seen.token).toBeUndefined();
+    // A browser that cannot finish the flow without a window is also "no session".
+    expect(
+      await failure({
+        interactive: false,
+        identity: { getRedirectURL: () => REDIRECT, launchWebAuthFlow: async () => { throw new Error('User interaction required.'); } },
+      }),
+    ).toBe('login_required');
+    // Needing the user for something else is its own code.
+    expect(
+      await failure({
+        interactive: false,
+        identity: identity(seen, (a) => `${REDIRECT}?error=consent_required&state=${a.searchParams.get('state')}`),
+      }),
+    ).toBe('interaction_required');
+    // Interactively, the same answer stays an authorization_error.
+    expect(await failure({ identity: identity(seen, answer) })).toBe('authorization_error');
   });
 
   it('needs chrome.identity', async () => {

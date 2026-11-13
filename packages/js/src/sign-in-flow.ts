@@ -16,8 +16,10 @@ import { fetchInstanceSettings, type InstanceSettings } from './instance-setting
 import { acknowledgeRecoveryCodes, mfaChoicesFrom, pendingRecoveryCodes, prepareMfaEnrollment, type MfaEnrollment } from './mfa-enrollment';
 import { acceptAttemptPolicies, type PolicyAcceptance } from './policies';
 import { signInWithPasskey } from './passkey-sign-in';
+import { getPasskeyAssertion, passkeysSupported, type WebAuthnHost } from './passkey';
+import { canRecoverWithIdentityCheck, startIdentityCheckRecovery, type RecoveryChallenge } from './mfa-recovery';
 import { startOauthRedirect } from './redirect';
-import { renderCaptchaWidget, type CaptchaFlowKey, type FlowCaptcha } from './captcha-widget';
+import { getHeadlessCaptchaSolver, renderCaptchaWidget, type CaptchaFlowKey, type FlowCaptcha, type HeadlessCaptchaSolver } from './captcha-widget';
 import {
   advance,
   prepareFactor,
@@ -56,7 +58,8 @@ export type FlowStep =
   | { type: 'needs_identifier' }
   | { type: 'needs_captcha'; flow: CaptchaFlowKey; captcha: FlowCaptcha | null }
   | { type: 'needs_first_factor'; factors: string[] }
-  | { type: 'needs_second_factor'; factors: string[] }
+  /** `recovery` is set after `startRecovery()`: the identity check the person is doing to recover an account that lost every second factor. */
+  | { type: 'needs_second_factor'; factors: string[]; recovery?: RecoveryChallenge }
   | { type: 'needs_policy_acceptance'; policies: PendingPolicy[] }
   | { type: 'needs_email_verification' }
   /**
@@ -85,6 +88,14 @@ export interface FlowSnapshot {
 
 export interface FlowOptions {
   client: FapiClient;
+  /**
+   * Answers a captcha with no DOM (React Native). Defaults to the solver
+   * installed with `setHeadlessCaptchaSolver`; when there is none the flow stops
+   * at `needs_captcha` for `solveCaptcha(container)` / `submitCaptcha(token)`.
+   */
+  captchaSolver?: HeadlessCaptchaSolver | null;
+  /** Cancels an automatic captcha solve in progress. */
+  signal?: AbortSignal;
 }
 
 interface Core {
@@ -136,6 +147,7 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
   let captchaSettings: FlowCaptcha | null | undefined;
   let settings: InstanceSettings | null | undefined;
   let enrollment: MfaEnrollment | null = null;
+  let recovery: RecoveryChallenge | null = null;
   let redirect: string | null = null;
   const listeners = new Set<(s: FlowSnapshot) => void>();
 
@@ -158,6 +170,18 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
     return captchaSettings;
   };
 
+  // Whether this attempt's account holds a passkey this browser can use, asked once per attempt.
+  const passkeyChecks = new Map<string, boolean>();
+  const passkeyOffered = async (attemptId: string): Promise<boolean> => {
+    if (!passkeysSupported()) return false;
+    const known = passkeyChecks.get(attemptId);
+    if (known !== undefined) return known;
+    const res = await client.get<{ factors?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/second_factors`);
+    const offered = res.ok && Array.isArray(res.data?.factors) && res.data.factors.includes('passkey');
+    passkeyChecks.set(attemptId, offered);
+    return offered;
+  };
+
   const stepFor = async (attempt: AttemptView | null): Promise<FlowStep> => {
     if (redirect) return { type: 'redirect', url: redirect };
     if (!attempt) return { type: 'needs_identifier' };
@@ -171,7 +195,7 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
       case 'collect_first_factor':
         return { type: 'needs_first_factor', factors: next.strategies };
       case 'collect_second_factor':
-        return { type: 'needs_second_factor', factors: [...SECOND_FACTOR_STRATEGIES] };
+        return { type: 'needs_second_factor', factors: [...SECOND_FACTOR_STRATEGIES, ...(attempt.id && (await passkeyOffered(attempt.id)) ? ['passkey'] : [])], ...(recovery ? { recovery } : {}) };
       case 'accept_policies':
         return { type: 'needs_policy_acceptance', policies: next.policies };
       case 'collect_email_code':
@@ -215,6 +239,18 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
     return emit();
   };
 
+  /** The token the headless solver gives for the current captcha step, or null (no solver, other provider, failure, cancelled). */
+  const solveHeadless = async (): Promise<string | null> => {
+    const solver = opts.captchaSolver === undefined ? getHeadlessCaptchaSolver() : opts.captchaSolver;
+    const cur = step;
+    if (!solver || cur.type !== 'needs_captcha' || !cur.captcha || opts.signal?.aborted) return null;
+    try {
+      return (await solver(cur.captcha, { flow: captchaFlow, signal: opts.signal })) || null;
+    } catch {
+      return null;
+    }
+  };
+
   /** A captcha error on a call that has no attempt yet becomes the captcha step. */
   const captchaStepFromErrors = async (): Promise<boolean> => {
     if (!errors.some((e) => CAPTCHA_CODES.includes(e.code))) return false;
@@ -227,6 +263,8 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
     get flow() { return flow; },
     get enrollment() { return enrollment; },
     set enrollment(e: MfaEnrollment | null) { enrollment = e; },
+    get recovery() { return recovery; },
+    set recovery(r: RecoveryChallenge | null) { recovery = r; },
     acknowledgeCodes() {
       flow = acknowledgeRecoveryCodes(flow);
       return stepFor(flow.attempt).then((s) => { step = s; return emit(); });
@@ -237,6 +275,7 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
     get errors() { return errors; },
     run,
     captchaStepFromErrors,
+    solveHeadless,
     setRedirect(url: string) { redirect = url; },
     api(extra: { submitCaptcha(token: string): Promise<FlowSnapshot> }): Core {
       return {
@@ -273,7 +312,7 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
         },
         acceptPolicies: (acceptances) => run(() => acceptAttemptPolicies(client, flow, acceptances)),
         reset() {
-          flow = initialFlow; step = { type: 'needs_identifier' }; errors = []; reason = null; captchaToken = null; redirect = null; enrollment = null;
+          flow = initialFlow; step = { type: 'needs_identifier' }; errors = []; reason = null; captchaToken = null; redirect = null; enrollment = null; recovery = null;
           return emit();
         },
       };
@@ -294,8 +333,19 @@ export interface SignInFlow extends Core {
   signInWithPasskey(): Promise<FlowSnapshot>;
   /** `needs_second_factor`: a code for `strategy` (default: authenticator app). */
   submitSecondFactor(code: string, strategy?: (typeof SECOND_FACTOR_STRATEGIES)[number], options?: { rememberDevice?: boolean }): Promise<FlowSnapshot>;
+  /**
+   * `needs_second_factor` with `'passkey'` among the factors: run the WebAuthn ceremony (the browser prompts)
+   * and submit the assertion. A cancelled prompt leaves the step as it was, with an error whose reason is `passkey_cancelled`.
+   */
+  submitPasskeySecondFactor(options?: { rememberDevice?: boolean; host?: WebAuthnHost }): Promise<FlowSnapshot>;
   /** `needs_second_factor`: send a text or emailed code, then `submitSecondFactor(code, 'sms' | 'email_code')`. */
   sendSecondFactorCode(strategy: 'sms' | 'email_code'): Promise<FlowSnapshot>;
+  /** `needs_second_factor`: whether the person can recover through an identity check (the app turned it on and the account can use it). */
+  canRecover(): Promise<boolean>;
+  /** `needs_second_factor`: start the identity check for a person who lost every second factor. The step's `recovery.url` is where they go. */
+  startRecovery(redirectUrl?: string): Promise<FlowSnapshot>;
+  /** `needs_second_factor` after `startRecovery()`: read the verdict. Pass `newPassword` when the app asks for one (error reason `new_password_required`); the step becomes `complete` once the factors were reset. */
+  checkRecovery(newPassword?: string): Promise<FlowSnapshot>;
   /** `needs_mfa_enrollment`: begin the authenticator app. The step's `enrollment` then holds `secret` and `uri` (and `qrCode` when sent). */
   startTotpEnrollment(): Promise<FlowSnapshot>;
   /** `needs_mfa_enrollment`: text a code to `phone` (E.164). The step's `enrollment.phone` is the masked number. */
@@ -326,23 +376,33 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
   let identifier = '';
   const attemptId = () => core.flow.attempt?.id ?? '';
 
-  const start = (id: string) => {
+  const start = async (id: string, solved = false): Promise<FlowSnapshot> => {
     identifier = id;
-    return core.run(() => advance(client, { ...initialFlow }, { identifier: id, ...(core.captchaToken ? { captcha_token: core.takeCaptchaToken()! } : {}) }));
+    const snap = await core.run(() => advance(client, { ...initialFlow }, { identifier: id, ...(core.captchaToken ? { captcha_token: core.takeCaptchaToken()! } : {}) }));
+    // No DOM to draw in: let the installed solver answer, once, and resend.
+    if (solved || snap.step.type !== 'needs_captcha') return snap;
+    const token = await core.solveHeadless();
+    if (!token) return snap;
+    core.setCaptchaToken(token);
+    return start(id, true);
   };
   // A captcha asked for by the passkey button is answered by trying the passkey again, not by an identifier.
   let viaPasskey = false;
-  const passkey = async () => {
+  const passkey = async (solved = false): Promise<FlowSnapshot> => {
     viaPasskey = true;
     const snap = await core.run(() =>
       signInWithPasskey(client, { captcha: core.captchaToken ? async () => core.takeCaptchaToken() : null }),
     );
     viaPasskey = await core.captchaStepFromErrors();
-    return viaPasskey ? api.getSnapshot() : snap;
+    if (!viaPasskey) return snap;
+    const token = solved ? null : await core.solveHeadless();
+    if (!token) return api.getSnapshot();
+    core.setCaptchaToken(token);
+    return passkey(true);
   };
   const submitCaptcha = async (token: string) => {
     core.setCaptchaToken(token);
-    return viaPasskey ? passkey() : start(core.flow.attempt?.identifier ?? identifier);
+    return viaPasskey ? passkey(true) : start(core.flow.attempt?.identifier ?? identifier, true);
   };
   const api = core.api({ submitCaptcha });
 
@@ -362,7 +422,7 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
     submitPassword: (password) => core.run(() => advance(client, core.flow, { password })),
     sendEmailCode: () => core.run(() => prepareFactor(client, core.flow, 'email_code')),
     submitEmailCode: (code) => core.run(() => advance(client, core.flow, { code })),
-    signInWithPasskey: passkey,
+    signInWithPasskey: () => passkey(),
     submitSecondFactor: (code, strategy = 'totp', options = {}) =>
       core.run(() =>
         advance(client, core.flow, {
@@ -371,10 +431,41 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
           ...(options.rememberDevice ? { remember_device: 'true' } : {}),
         }),
       ),
+    submitPasskeySecondFactor: (options = {}) =>
+      core.run(async () => {
+        const prepared = await client.post<Record<string, unknown>>(`/v1/client/sign_ins/${encodeURIComponent(attemptId())}/prepare_second_factor`, { strategy: 'passkey' });
+        if (!prepared.ok || !prepared.data) return { ...core.flow, errors: prepared.errors };
+        let assertion;
+        try {
+          assertion = await getPasskeyAssertion(prepared.data, { ...(options.host ? { host: options.host } : {}) });
+        } catch (e) {
+          return { ...core.flow, errors: [{ code: 'passkey_cancelled', message: e instanceof Error ? e.message : 'The passkey prompt was cancelled.', reason: 'passkey_cancelled' }] };
+        }
+        return advance(client, core.flow, {
+          strategy: 'passkey',
+          challenge: assertion.challenge,
+          credential_id: assertion.credential_id,
+          authenticator_data: assertion.authenticator_data,
+          client_data_json: assertion.client_data_json,
+          signature: assertion.signature,
+          ...(options.rememberDevice ? { remember_device: 'true' } : {}),
+        });
+      }),
     async sendSecondFactorCode(strategy) {
       const res = await client.post(`/v1/client/sign_ins/${encodeURIComponent(attemptId())}/prepare_second_factor`, { strategy });
       return core.run(async () => ({ ...core.flow, errors: res.ok ? [] : res.errors }));
     },
+    canRecover: () => canRecoverWithIdentityCheck(client, attemptId()),
+    async startRecovery(redirectUrl) {
+      try {
+        core.recovery = await startIdentityCheckRecovery(client, attemptId(), redirectUrl);
+        return core.run(async () => ({ ...core.flow, errors: [] }));
+      } catch (error) {
+        const e = error as Error & { code?: string; reason?: string };
+        return core.run(async () => ({ ...core.flow, errors: [{ code: e.code ?? 'RECOVERY_FAILED', reason: e.reason, message: e.message }] }));
+      }
+    },
+    checkRecovery: (newPassword) => core.run(() => advance(client, core.flow, { strategy: 'identity_verification', ...(newPassword ? { new_password: newPassword } : {}) })),
     startTotpEnrollment: () => prepareEnrollment({ strategy: 'totp' }),
     sendEnrollmentPhone: (phone) => prepareEnrollment({ strategy: 'phone_code', phone: phone.trim() }),
     submitEnrollmentCode: (code, secondCode = '') => {
@@ -431,16 +522,19 @@ export function createSignUpFlow(opts: FlowOptions): SignUpFlow {
   const { client } = opts;
   let last: SignUpInput | null = null;
 
-  const submit = async (input: SignUpInput) => {
+  const submit = async (input: SignUpInput, solved = false): Promise<FlowSnapshot> => {
     last = input;
     const token = core.takeCaptchaToken();
     const snap = await core.run(() => startSignUp(client, { ...input, ...(token ? { captchaToken: token } : {}) }));
     if (!(await core.captchaStepFromErrors())) return snap;
-    return api.getSnapshot();
+    const solvedToken = solved ? null : await core.solveHeadless();
+    if (!solvedToken) return api.getSnapshot();
+    core.setCaptchaToken(solvedToken);
+    return submit(input, true);
   };
   const submitCaptcha = async (token: string) => {
     core.setCaptchaToken(token);
-    return last ? submit(last) : api.getSnapshot();
+    return last ? submit(last, true) : api.getSnapshot();
   };
   const api = core.api({ submitCaptcha });
   return {

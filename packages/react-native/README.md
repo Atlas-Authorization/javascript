@@ -13,9 +13,9 @@ where it lives — the Keychain / Keystore (recommended) or AsyncStorage.
 ## Install
 
 ```sh
-npm install @atlasauth/react-native
-# peers you already have in an Expo / RN app:
-#   react, react-native
+npm install @atlasauth/react-native @atlasauth/js
+# peers (one shared copy of @atlasauth/js across every Atlas package):
+#   @atlasauth/js, react, react-native
 # plus whichever secure store you wire the adapter to (see below)
 ```
 

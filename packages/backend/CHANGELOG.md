@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.47.0 — 2026-11-13
+
+- Types for end-user API key `allowed_ips` (`verify({ clientIp })`), dev email sink and identity-verified MFA recovery settings.
+
 ## 0.46.2 — 2026-11-13
 - Types: `cli_handoff` on Sign in with Atlas apps (read and `PATCH`).
 

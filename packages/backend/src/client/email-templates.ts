@@ -25,6 +25,7 @@ export type EmailTemplateName =
   | 'passkey_removed'
   | 'recovery_codes_regenerated'
   | 'factor_removed'
+  | 'mfa_reset'
   | 'device_key_added'
   | 'device_key_removed'
   | 'uma_request_submitted'

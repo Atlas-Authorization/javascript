@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/capacitor",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,10 +15,8 @@
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@atlasauth/js": "workspace:*"
-  },
   "peerDependencies": {
+    "@atlasauth/js": ">=0.39.0 <1.0.0",
     "@capacitor/core": ">=6",
     "@capacitor/browser": ">=6",
     "@capacitor/app": ">=6",
@@ -39,6 +37,7 @@
     }
   },
   "devDependencies": {
+    "@atlasauth/js": "workspace:*",
     "@capacitor/app": "^6.0.2",
     "@capacitor/browser": "^6.0.5",
     "@capacitor/core": "^6.2.1",

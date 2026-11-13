@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/vue",
-  "version": "0.22.1",
+  "version": "0.23.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -10,13 +10,14 @@
   },
   "dependencies": {
     "@atlasauth/design": "workspace:*",
-    "@atlasauth/js": "workspace:*",
     "@atlasauth/authz": "workspace:*"
   },
   "peerDependencies": {
+    "@atlasauth/js": ">=0.39.0 <1.0.0",
     "vue": ">=3.3"
   },
   "devDependencies": {
+    "@atlasauth/js": "workspace:*",
     "@vue/test-utils": "^2.4.6",
     "happy-dom": "^21.0.4",
     "typescript": "^5.6.3",

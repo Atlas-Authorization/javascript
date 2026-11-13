@@ -149,6 +149,8 @@ export interface MfaEnrollment {
   uri?: string;
   /** totp: the URI as a QR image (a data: URL), when the server sends one. */
   qrCode?: string;
+  /** totp, hotp: the URI as an inline SVG QR code (`<svg ...>` markup), when the server sends one. The SDK only passes through a bare `<svg>` with no script or event handlers. */
+  qrSvg?: string;
   /** phone_code: the number the code was texted to, masked. */
   phone?: string;
   /** duo: where the person approves the request. */
@@ -189,6 +191,9 @@ export async function prepareMfaEnrollment(
     // Only an image URL a page can show safely.
     const qr = str(d.qr_code);
     if (qr && /^data:image\//.test(qr)) enrollment.qrCode = qr;
+    // Markup, not a URL: accepted only as a bare <svg> document (no script, no handlers).
+    const svg = str(d.qr_svg);
+    if (svg && /^<svg[\s>]/.test(svg) && !/<script|\son\w+\s*=|javascript:/i.test(svg)) enrollment.qrSvg = svg;
   } else if (str(d.phone)) {
     enrollment.phone = str(d.phone);
   }

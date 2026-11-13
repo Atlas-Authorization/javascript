@@ -16,14 +16,25 @@ backed by [`expo-secure-store`](https://docs.expo.dev/versions/latest/sdk/secure
 ## Install
 
 ```sh
-npx expo install @atlasauth/expo expo-secure-store
+npx expo install @atlasauth/expo @atlasauth/js expo-secure-store
 # plus, as you use them:
 #   expo-web-browser expo-auth-session   (OAuth)
 ```
 
-`react` and `react-native` come from your Expo app. `expo-secure-store`,
+`@atlasauth/js` is a **peer**, so your app, `@atlasauth/expo` and the other Atlas packages share one copy. `react` and `react-native` come from your Expo app. `expo-secure-store`,
 `expo-web-browser` and `expo-auth-session` are all **optional peers** — install
 only what you use.
+
+## Captcha without a browser
+
+When the instance turns on Atlas's own captcha for sign-in, sign-up or password reset, `createSignInFlow`, `createSignUpFlow` and the password reset solve it themselves: importing `@atlasauth/expo` installs a solver that runs on Hermes and JavaScriptCore (plain JavaScript, no Web Workers, no `crypto.subtle`). It works in short slices so the interface stays responsive, and a captcha you did not ask for never reaches your screens.
+
+```ts
+import { createSignInFlow } from '@atlasauth/js';
+const flow = createSignInFlow({ client }); // a captcha-gated attempt completes with no captcha code
+```
+
+To solve one yourself, or to cancel it, call `getCaptchaToken(flow.step.captcha, { signal })` and pass the result to `submitCaptcha(token)`. Pass your own solver for another provider with `createSignInFlow({ client, captchaSolver })`, or install one for every flow with `setHeadlessCaptchaSolver` from `@atlasauth/js`. When the server asks for the picture check, the solver takes the no-picture alternative (more work instead); other providers (Turnstile, hCaptcha) still need your own solver, since they draw in a browser.
 
 ## Token cache
 

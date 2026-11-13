@@ -15,6 +15,8 @@ import type { AttemptView, FieldError, PendingRequiredAction } from './attempt';
 import { forgetLinkSecret, rememberLinkProof } from './email-link';
 import { initialFlow, type FapiClient, type FlowState } from './fapi';
 import { getResetSecurityQuestions } from './mfa-factors';
+import { fetchInstanceSettings } from './instance-settings';
+import { getHeadlessCaptchaSolver, isCaptchaError, type HeadlessCaptchaSolver } from './captcha-widget';
 
 export interface ResetAttempt {
   id: string;
@@ -59,12 +61,23 @@ export async function startPasswordReset(
   client: FapiClient,
   email: string,
   captchaToken?: string,
+  /** Where the installed headless solver answers a captcha the server asks for; `signal` cancels it. */
+  opts: { signal?: AbortSignal; solver?: HeadlessCaptchaSolver | null } = {},
 ): Promise<ResetFlowState> {
   const res = await client.post<ResetAttempt>('/v1/client/password_resets', {
     email_address: email,
     captcha_token: captchaToken,
   });
-  if (!res.ok || !res.data) return { ...initialResetFlow, errors: res.errors };
+  if (!res.ok || !res.data) {
+    // No DOM to draw in (React Native): solve with the installed solver and resend, once.
+    const solver = opts.solver === undefined ? getHeadlessCaptchaSolver() : opts.solver;
+    if (solver && !captchaToken && !opts.signal?.aborted && res.errors.some(isCaptchaError)) {
+      const captcha = (await fetchInstanceSettings(client))?.captchaFlows.passwordReset;
+      const token = captcha ? await solver(captcha, { flow: 'passwordReset', signal: opts.signal }).catch(() => null) : null;
+      if (token) return startPasswordReset(client, email, token, { ...opts, solver: null });
+    }
+    return { ...initialResetFlow, errors: res.errors };
+  }
   rememberLinkProof(res.data.id, res.data);
   return { attempt: res.data, errors: [], busy: false, ticket: null };
 }

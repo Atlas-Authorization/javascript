@@ -16,6 +16,7 @@
 import {
   beginPasskeySignIn,
   fetchInstanceSettings,
+  getHeadlessCaptchaSolver,
   type FieldError,
   type FlowCaptcha,
   type PasskeyAssertionBody,
@@ -137,7 +138,15 @@ export async function authenticateWithPasskey(opts: {
   getCaptchaToken?: (request: PasskeyCaptchaTokenRequest) => Promise<string | null>;
 }): Promise<PasskeySignInResult> {
   const client = createFapiClient(opts.config);
-  const { captchaToken, getCaptchaToken } = opts;
+  const { captchaToken } = opts;
+  // With no callback, the headless solver `@atlasauth/expo` installs answers the captcha.
+  const headless = getHeadlessCaptchaSolver();
+  const getCaptchaToken =
+    opts.getCaptchaToken ??
+    (headless
+      ? async (request: PasskeyCaptchaTokenRequest) =>
+          request.captcha ? headless(request.captcha, { flow: 'signIn' }).catch(() => null) : null
+      : undefined);
 
   const begin = await beginPasskeySignIn(client, {
     captcha:

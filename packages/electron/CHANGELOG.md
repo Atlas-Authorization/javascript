@@ -1,5 +1,9 @@
 # @atlasauth/electron changelog
 
+## 0.4.0 — 2026-11-13
+
+- `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.
+
 ## 0.3.0
 - **Added sign-out that revokes the session.** Until now the bridge could only clear the token, so the
   session stayed alive server-side. New:

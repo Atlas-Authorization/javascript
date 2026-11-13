@@ -2,6 +2,10 @@
 
 
 
+## 0.35.0 — 2026-11-13
+
+- `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.
+
 ## 0.34.2 — 2026-11-12
 
 - Picks up `@atlasauth/js` 0.39.0 (typed MFA-enrolment and required-action steps in the headless flow).
