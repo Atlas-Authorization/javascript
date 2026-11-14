@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/backend",
-  "version": "0.50.0",
+  "version": "0.51.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -28,6 +28,26 @@
       "types": "./dist/machine-client.d.ts",
       "default": "./dist/machine-client.js"
     },
+    "./rate-limit": {
+      "types": "./dist/rate-limit.d.ts",
+      "default": "./dist/rate-limit.js"
+    },
+    "./usage-gate": {
+      "types": "./dist/usage-gate.d.ts",
+      "default": "./dist/usage-gate.js"
+    },
+    "./mirror": {
+      "types": "./dist/mirror/index.d.ts",
+      "default": "./dist/mirror/index.js"
+    },
+    "./mirror/drizzle": {
+      "types": "./dist/mirror/drizzle.d.ts",
+      "default": "./dist/mirror/drizzle.js"
+    },
+    "./mirror/prisma": {
+      "types": "./dist/mirror/prisma.d.ts",
+      "default": "./dist/mirror/prisma.js"
+    },
     "./package.json": "./package.json"
   },
   "typesVersions": {
@@ -43,6 +63,21 @@
       ],
       "machine": [
         "./dist/machine-client.d.ts"
+      ],
+      "rate-limit": [
+        "./dist/rate-limit.d.ts"
+      ],
+      "usage-gate": [
+        "./dist/usage-gate.d.ts"
+      ],
+      "mirror": [
+        "./dist/mirror/index.d.ts"
+      ],
+      "mirror/drizzle": [
+        "./dist/mirror/drizzle.d.ts"
+      ],
+      "mirror/prisma": [
+        "./dist/mirror/prisma.d.ts"
       ]
     }
   },

@@ -154,3 +154,16 @@ expectType<Localization>(partial);
 type MaybePartial = DeepPartial<{ a: { b: string } }>;
 const dp: MaybePartial = { a: {} };
 expectType<MaybePartial>(dp);
+
+// --- Register: with no generated file every key stays loose ------------------
+import type { PermissionKey, FeatureKey, UserPublicMetadata, RegisteredSessionClaims } from './index';
+declare const anyPermission: PermissionKey;
+expectType<string>(anyPermission);
+declare const anyFeature: FeatureKey;
+expectType<string>(anyFeature);
+declare const publicMeta: UserPublicMetadata;
+expectType<Record<string, unknown>>(publicMeta);
+declare const extraClaims: RegisteredSessionClaims;
+expectType<unknown>(extraClaims);
+const looseCondition: ProtectCondition = { permission: 'anything:goes', feature: 'x' };
+expectType<ProtectCondition>(looseCondition);

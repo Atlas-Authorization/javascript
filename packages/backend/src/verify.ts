@@ -4,7 +4,12 @@ import {
   ForbiddenError,
   evaluate,
   hasFromClaims,
+  type AppPermissionKey,
+  type AppRoleKey,
+  type OrgRoleKey,
+  type PermissionKey,
   type ProtectCondition,
+  type RegisteredSessionClaims,
 } from '@atlasauth/authz';
 import { JwksCache, readKid, type Jwks } from './jwks-cache';
 import { JwksDiscovery, instanceIdFromPublishableKey } from './discovery';
@@ -181,7 +186,9 @@ export interface SessionClaimsBase {
  * narrows `claims.email_verified` to `boolean`.
  */
 export type SessionClaims = SessionClaimsBase &
-  ({ email?: undefined; email_verified?: boolean } | { email: string; email_verified: boolean });
+  ({ email?: undefined; email_verified?: boolean } | { email: string; email_verified: boolean }) &
+  // `unknown` (a no-op) until `atlas types generate` registers your template and opt-in claims.
+  RegisteredSessionClaims;
 
 /**
  * A verified session, carrying the ergonomic authorization helpers bound to its
@@ -672,11 +679,11 @@ function readCookie(header: string, name: string): string | undefined {
  * whole point of putting them in the claims — and it means a permission change
  * takes effect within one token lifetime, the same bound as revocation.
  */
-export function hasPermission(claims: SessionClaims, permission: string): boolean {
+export function hasPermission(claims: SessionClaims, permission: PermissionKey): boolean {
   return hasFromClaims(claims, { permission });
 }
 
-export function hasRole(claims: SessionClaims, role: string): boolean {
+export function hasRole(claims: SessionClaims, role: OrgRoleKey): boolean {
   return hasFromClaims(claims, { role });
 }
 
@@ -684,12 +691,12 @@ export function hasRole(claims: SessionClaims, role: string): boolean {
  * App-level permission check: reads `app_permissions` off the token (the union
  * of the user's instance-wide app roles). Needs no active organization.
  */
-export function hasAppPermission(claims: SessionClaims, permission: string): boolean {
+export function hasAppPermission(claims: SessionClaims, permission: AppPermissionKey): boolean {
   return hasFromClaims(claims, { appPermission: permission });
 }
 
 /** App-level role check: reads `app_roles` off the token. Needs no active organization. */
-export function hasAppRole(claims: SessionClaims, role: string): boolean {
+export function hasAppRole(claims: SessionClaims, role: AppRoleKey): boolean {
   return hasFromClaims(claims, { appRole: role });
 }
 

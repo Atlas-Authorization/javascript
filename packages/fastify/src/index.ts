@@ -597,3 +597,6 @@ export function requireAccessToken(options: AccessTokenVerifierOptions) {
 // ── Path mount: Atlas's Frontend API under a path of your app ───────────────
 export { atlasMountPlugin, type AtlasMountPluginOptions } from './mount';
 export { createMountHandler, createVerifyHandler, createWebhookHandler, createBeforeUserCreateHandler, memoryDedupeStore, sqlDedupeStore } from '@atlasauth/backend';
+
+// Rate limiting and grant usage (see ./limits).
+export { atlasRateLimit, atlasGrantUsage, type AtlasLimitOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter, type LimitClaims, type LimitVerdict } from './limits';

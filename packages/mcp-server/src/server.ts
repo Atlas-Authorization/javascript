@@ -1,4 +1,4 @@
-import { createAtlasToolkit } from '@atlasauth/agent-toolkit';
+import { createAtlasToolkit, type CreateAtlasToolkitOptions } from '@atlasauth/agent-toolkit';
 import type { AtlasClient } from '@atlasauth/backend';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toMcpToolSpecs, type McpToolSpec } from './tools';
@@ -6,7 +6,7 @@ import { DOCS_TOOL_NAMES, createDocsSource, docsToolSpecs, type DocsSourceOption
 
 /** This package's own identity, surfaced to MCP clients during the handshake. */
 export const SERVER_NAME = '@atlasauth/mcp';
-export const SERVER_VERSION = '0.4.1';
+export const SERVER_VERSION = '0.5.0';
 
 /**
  * Options for {@link createAtlasMcpServer}. The tool-selection fields
@@ -45,6 +45,8 @@ export interface AtlasMcpServerOptions {
    * are fetched from. Like every tool they obey `allowedTools` when it is set.
    */
   docs?: boolean | DocsSourceOptions;
+  /** Meter the instance tools against a grant counter (spend before acting, refund on error). Same contract as the toolkit's `grantUsage`. */
+  grantUsage?: CreateAtlasToolkitOptions['grantUsage'];
 }
 
 /** An {@link McpServer} plus the specs it was built from, for embedding/testing. */
@@ -85,6 +87,7 @@ export function createAtlasMcpServer(options: AtlasMcpServerOptions): AtlasMcpSe
       fetch: options.fetch,
       allowedTools: options.allowedTools,
       scopes: options.scopes,
+      grantUsage: options.grantUsage,
     });
     specs.push(...toMcpToolSpecs(toolkit));
   }

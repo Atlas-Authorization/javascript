@@ -1,5 +1,9 @@
 # @atlasauth/msw changelog
 
+## 0.4.0
+
+- `coreHandlers` re-exports the full-API emulator engine as MSW handlers.
+
 ## 0.3.0 — 2026-11-06
 
 - Emailed link confirmation and enrolment factor strings and shapes.

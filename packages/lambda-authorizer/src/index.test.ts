@@ -142,3 +142,28 @@ describe('access tokens', () => {
     expect(() => createLambdaAuthorizer({})).toThrow();
   });
 });
+
+describe('createLambdaAuthorizer limits', () => {
+  const allow = async () => ({ allowed: true as const });
+  const deny = async () => ({ allowed: false as const, status: 429 });
+
+  it('allows when the rate limit and usage checks allow, passing the token claims', async () => {
+    const seen: unknown[] = [];
+    const { issuer, handler } = await setup({ rateLimit: async (req: unknown) => (seen.push(req), { allowed: true as const }), grantUsage: allow });
+    const r = await handler(rest(await issuer.mintSession({ sub: 'user_1' })));
+    expect(effect(r)).toBe('Allow');
+    expect(seen[0]).toMatchObject({ claims: expect.objectContaining({ sub: 'user_1' }) });
+  });
+
+  it('denies (policy Deny) when the rate limit refuses', async () => {
+    const { issuer, handler } = await setup({ rateLimit: deny });
+    expect(effect(await handler(rest(await issuer.mintSession({ sub: 'user_1' }))))).toBe('Deny');
+  });
+
+  it('answers isAuthorized false on a simple HTTP API response, and fails closed when a check throws', async () => {
+    const a = await setup({ grantUsage: deny, httpApiResponse: 'simple' });
+    expect((await a.handler(v2({ authorization: `Bearer ${await a.issuer.mintSession({ sub: 'user_1' })}` }))) as SimpleResponse).toEqual({ isAuthorized: false });
+    const b = await setup({ grantUsage: async () => { throw new Error('down'); } });
+    expect(effect(await b.handler(rest(await b.issuer.mintSession({ sub: 'user_1' }))))).toBe('Deny');
+  });
+});

@@ -288,6 +288,17 @@ await atlas.apiKeys.update(key.id, { limits: null }); // remove the caps
 
 `apiKeys.verify(secret)` also returns the key's `name`, `scopes`, `effective_scopes` (expanded through the instance scope implications), `constraints`, `limits` and current `usage`.
 
+### Mirror Atlas data into your database
+
+`createMirror` follows the change feed (snapshot first, then ordered changes, automatic re-snapshot when your position was trimmed) and writes into memory, Redis, Postgres or your own Drizzle or Prisma tables (`@atlasauth/backend/mirror/drizzle`, `@atlasauth/backend/mirror/prisma`).
+
+```ts
+import { createMirror, memoryMirrorStore } from '@atlasauth/backend';
+
+const mirror = createMirror({ client: atlas, resources: ['user', 'organization'], store: memoryMirrorStore() });
+await mirror.sync(); // or mirror.start() to poll
+```
+
 ### A local API key mirror
 
 `createKeyMirror` keeps your own table authoritative: mint and import at Atlas, verify locally against the sha256 with no network call, revoke locally first, and pull revokes made elsewhere from the revocation feed.

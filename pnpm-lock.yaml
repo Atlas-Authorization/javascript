@@ -127,6 +127,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@22.20.5)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/authz:
+    dependencies:
+      '@atlasauth/types':
+        specifier: workspace:*
+        version: link:../types
     devDependencies:
       typescript:
         specifier: ^5.6.3
@@ -398,6 +402,9 @@ importers:
 
   packages/emulator:
     dependencies:
+      '@atlasauth/emulator-core':
+        specifier: workspace:*
+        version: link:../emulator-core
       '@atlasauth/msw':
         specifier: workspace:*
         version: link:../msw
@@ -408,6 +415,25 @@ importers:
       '@types/node':
         specifier: ^22.9.0
         version: 22.20.5
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@22.20.5)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
+
+  packages/emulator-core:
+    dependencies:
+      '@atlasauth/backend':
+        specifier: workspace:*
+        version: link:../backend
+    devDependencies:
+      '@types/node':
+        specifier: ^22.9.0
+        version: 22.20.5
+      msw:
+        specifier: ^2.4.9
+        version: 2.15.0(@types/node@22.20.5)(typescript@5.9.3)
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -851,6 +877,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@22.20.5)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/msw:
+    dependencies:
+      '@atlasauth/emulator-core':
+        specifier: workspace:*
+        version: link:../emulator-core
     devDependencies:
       msw:
         specifier: ^2.4.9
@@ -10405,8 +10435,8 @@ packages:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
 
-  light-my-request@6.8.0:
-    resolution: {integrity: sha512-5Q8PjoSEdtGIB8fikZsTem5vgRo4F2mR6vUKTDW/H1g6MtAt8e3duQbg/QxL5yzg6BZhor2KOUm3hhWMWLTZwg==}
+  light-my-request@6.8.1:
+    resolution: {integrity: sha512-20biUK0HAIPG9BZOK3/4s8uVAkAoi1+qW55lciHZCR0puTWipBgyMPEUjqXDWLjsZeqfO6DGsuwW5eyfsTGtyg==}
 
   lightningcss-android-arm64@1.33.0:
     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
@@ -23887,7 +23917,7 @@ snapshots:
       avvio: 9.3.1
       fast-json-stringify: 7.3.6
       find-my-way: 9.10.0
-      light-my-request: 6.8.0
+      light-my-request: 6.8.1
       pino: 10.4.0
       process-warning: 5.1.1
       rfdc: 1.4.1
@@ -25781,7 +25811,7 @@ snapshots:
       prelude-ls: 1.2.1
       type-check: 0.4.0
 
-  light-my-request@6.8.0:
+  light-my-request@6.8.1:
     dependencies:
       '@fastify/deepmerge': 3.2.4
       cookie: 2.0.2

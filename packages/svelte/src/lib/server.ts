@@ -159,3 +159,6 @@ export function getServerAuth(event: { locals: { auth?: ServerAuth } }): ServerA
 }
 
 export { ForbiddenError, type ProtectCondition, type SessionClaims };
+
+// Rate limiting and grant usage (see ./limits).
+export { atlasRateLimit, atlasGrantUsage, type LimitEvent, type AtlasLimitOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter, type LimitClaims, type LimitVerdict } from './limits';

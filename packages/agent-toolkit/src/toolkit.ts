@@ -2,6 +2,7 @@ import { createAtlasClient, type AtlasClient } from '@atlasauth/backend';
 import type { z } from 'zod';
 import type { ToolDefinition, ToolResource } from './types';
 import { selectTools, type ToolSelection } from './registry';
+import { withGrantUsage, type GrantUsageToolOptions } from './grant-usage';
 
 /**
  * A tool with its Atlas client already bound in, so callers (and the framework
@@ -36,6 +37,11 @@ export interface CreateAtlasToolkitOptions extends ToolSelection {
   apiUrl?: string;
   /** Injectable `fetch`, forwarded to the built client. Ignored when `backend` is passed. */
   fetch?: typeof fetch;
+  /**
+   * Meter tools against a grant counter: each metered tool spends from the counter before it acts
+   * (and is refunded if it throws). See {@link withGrantUsage}.
+   */
+  grantUsage?: GrantUsageToolOptions;
 }
 
 /** Group-accessor names, keyed off {@link ToolResource}. `api_keys` → `apiKeys`. */
@@ -100,7 +106,7 @@ export function createAtlasToolkit(options: CreateAtlasToolkitOptions): AtlasToo
   const backend = resolveBackend(options);
   const ctx = { backend };
 
-  const bound: BoundTool[] = selectTools(options).map((def) => ({
+  const unmetered: BoundTool[] = selectTools(options).map((def) => ({
     name: def.name,
     description: def.description,
     resource: def.resource,
@@ -109,6 +115,7 @@ export function createAtlasToolkit(options: CreateAtlasToolkitOptions): AtlasToo
     schema: def.schema,
     execute: (args: unknown) => def.execute(args, ctx),
   }));
+  const bound = options.grantUsage ? withGrantUsage(unmetered, options.grantUsage) : unmetered;
 
   const tools: Record<string, BoundTool> = {};
   const groups = {

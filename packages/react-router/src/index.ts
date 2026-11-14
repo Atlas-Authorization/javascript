@@ -471,3 +471,6 @@ export async function rootAuthLoader<Args extends LoaderFunctionArgsLike>(
   // namespaced key, so hydration finds it without the handler's keys colliding.
   return { ...((result as Record<string, unknown> | null | undefined) ?? {}), [ATLAS_AUTH_STATE_KEY]: state };
 }
+
+// Rate limiting and grant usage (see ./limits).
+export { atlasRateLimit, atlasGrantUsage, type AtlasLimitOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter, type LimitClaims, type LimitVerdict } from './limits';

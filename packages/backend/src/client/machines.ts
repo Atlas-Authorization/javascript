@@ -192,6 +192,16 @@ export interface MachineGrant {
   updated_at: number;
 }
 
+export interface UpdateMachineGrantBody {
+  scopes?: string[];
+  scope_presets?: string[];
+  /** Replaces the constraints; null clears them. */
+  constraints?: Record<string, unknown> | null;
+  expires_in_seconds?: number;
+  /** Epoch ms or ISO 8601; null removes the expiry. */
+  expires_at?: number | string | null;
+}
+
 export interface CreateMachineGrantBody {
   resource_server_id: string;
   /** Scopes the machine may request. Each must be defined on the resource server. */
@@ -276,6 +286,13 @@ export function machinesResource(request: RequestFn) {
     /** Authorize the machine for a resource server and its scopes. Takes effect from its next token. */
     createGrant(id: string, body: CreateMachineGrantBody): Promise<MachineGrant> {
       return request({ method: 'POST', path: `/v1/machines/${enc(id)}/grants`, body });
+    },
+    /**
+     * Change a grant in place. Tokens minted earlier keep the constraints they carry until they expire;
+     * counter limits in `constraints.counters` apply at once.
+     */
+    updateGrant(id: string, grantId: string, body: UpdateMachineGrantBody): Promise<MachineGrant> {
+      return request({ method: 'PATCH', path: `/v1/machines/${enc(id)}/grants/${enc(grantId)}`, body });
     },
     /** Revoke a grant. A token already issued lasts until it expires. */
     deleteGrant(id: string, grantId: string): Promise<{ object: 'machine_grant'; id: string; deleted: true }> {

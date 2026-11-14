@@ -5,6 +5,16 @@
  * edge middleware, and a Node server.
  */
 export type { AuthzClaims } from './claims';
+// Registered key types: `atlas types generate` narrows these (see `Register` in @atlasauth/types).
+export type {
+  AppPermissionKey,
+  AppRoleKey,
+  FeatureKey,
+  OrgRoleKey,
+  PermissionKey,
+  PlanKey,
+  RegisteredSessionClaims,
+} from '@atlasauth/types';
 export {
   type ProtectCondition,
   type ProtectOutcome,

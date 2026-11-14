@@ -136,6 +136,8 @@ export interface RequestOptions {
   idempotencyKey?: string;
   /** When true, the raw text body is returned instead of parsed JSON (SAML XML). */
   raw?: boolean;
+  /** When true, the response body is returned as bytes (a `Uint8Array`) instead of parsed JSON (gzip downloads). */
+  binary?: boolean;
   /** Per-request override of {@link AtlasClientConfig.strict}. */
   strict?: boolean;
   /** Extra request headers. */
@@ -254,6 +256,10 @@ export function createKeyedRequest(key: string, config: KeyedRequestConfig): Req
 
     // 204 and other empty bodies: nothing to parse.
     if (response.status === 204) return undefined as T;
+
+    if (options.binary) {
+      return new Uint8Array(await response.arrayBuffer()) as unknown as T;
+    }
 
     if (options.raw) {
       return (await response.text()) as unknown as T;

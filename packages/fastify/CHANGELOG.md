@@ -1,5 +1,9 @@
 # @atlasauth/fastify changelog
 
+## 0.10.0
+
+- New `atlasRateLimit` and `atlasGrantUsage` helpers: enforce Atlas rate-limit policies and metered grant usage (consume/refund with idempotency) in your routes. Requires `@atlasauth/backend` 0.51.0 or later.
+
 ## 0.9.0 — 2026-11-12
 
 - `revocation` and `csrf` options, `getCsrfToken`, `getInitialState`; `requireFeature` / `requirePlan` pass-through.

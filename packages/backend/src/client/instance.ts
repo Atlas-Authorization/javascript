@@ -830,6 +830,34 @@ export interface UpdateHostedPagesBody {
   device_url?: string | null;
 }
 
+/** The user traits schema (`GET/PUT /v1/instance/user_traits_schema`). */
+export type UserTraitsTarget =
+  | 'public_metadata'
+  | 'unsafe_metadata'
+  | 'private_metadata'
+  | 'organization_public_metadata'
+  | 'organization_private_metadata';
+
+export interface UserTraitsSchemaSettings {
+  object: 'user_traits_schema';
+  /** 0 until a schema is stored; counts up on every change. */
+  version: number;
+  /** `off` checks nothing (default); `warn` audits violations; `enforce` answers 422. */
+  enforcement: 'off' | 'warn' | 'enforce';
+  /** A JSON Schema (type, properties, required, enum, default, items, maxLength, pattern, description, additionalProperties) per target. */
+  schemas: Partial<Record<UserTraitsTarget, Record<string, unknown>>>;
+  updated_at: number | null;
+}
+
+export interface UpdateUserTraitsSchemaBody {
+  /** Omit to keep the stored schemas. */
+  schemas?: Partial<Record<UserTraitsTarget, Record<string, unknown>>>;
+  /** Omit to keep the stored mode. */
+  enforcement?: 'off' | 'warn' | 'enforce';
+  /** The version you last read; a changed one answers 409. */
+  version?: number;
+}
+
 export function instanceResource(request: RequestFn) {
   return {
     get(): Promise<Instance> {
@@ -858,6 +886,15 @@ export function instanceResource(request: RequestFn) {
       },
       update(body: UpdateHostedPagesBody): Promise<HostedPagesSettings> {
         return request({ method: 'PATCH', path: '/v1/instance/hosted_pages', body });
+      },
+    },
+    /** The metadata schema and how strictly it is enforced (off, warn, enforce). Imports and SCIM are never checked. */
+    userTraitsSchema: {
+      get(): Promise<UserTraitsSchemaSettings> {
+        return request({ method: 'GET', path: '/v1/instance/user_traits_schema' });
+      },
+      update(body: UpdateUserTraitsSchemaBody): Promise<UserTraitsSchemaSettings> {
+        return request({ method: 'PUT', path: '/v1/instance/user_traits_schema', body });
       },
     },
     /** Check your setup in one call: configuration the server can see is broken or risky. */

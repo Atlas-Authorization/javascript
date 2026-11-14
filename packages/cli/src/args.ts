@@ -23,6 +23,11 @@ const OPTIONS = {
   'no-browser': { type: 'boolean' },
   resource: { type: 'string' },
   scope: { type: 'string' },
+  // changes tail / mirror init.
+  types: { type: 'string', multiple: true },
+  after: { type: 'string' },
+  adapter: { type: 'string' },
+  once: { type: 'boolean' },
   // keys create / rotate.
   scopes: { type: 'string' },
   owner: { type: 'string' },
@@ -43,6 +48,8 @@ const OPTIONS = {
   format: { type: 'string' },
   'dry-run': { type: 'boolean' },
   prune: { type: 'boolean' },
+  // config import / apply / plan: delete live resources of just these `prune: false` types.
+  'prune-type': { type: 'string', multiple: true },
   // apply / config import: enable a before_user_create hook even if its test call fails.
   'force-hook': { type: 'boolean' },
   // actions.
@@ -128,6 +135,9 @@ const OPTIONS = {
   framework: { type: 'string' },
   manifest: { type: 'string', multiple: true },
   'no-atlas': { type: 'boolean' },
+  // types generate.
+  lang: { type: 'string' },
+  'from-config': { type: 'string' },
   // config plan / plan / apply: exit 2 on drift (`--check` is the CI spelling).
   'exit-code': { type: 'boolean' },
   check: { type: 'boolean' },
@@ -145,6 +155,8 @@ const OPTIONS = {
   preset: { type: 'string' },
   // dev proxy: mount Atlas under a path; golive --connect: partner keys file.
   'base-path': { type: 'string' },
+  // dev: the OpenAPI document (path or URL) that turns on the full Backend API engine.
+  openapi: { type: 'string' },
   connect: { type: 'string' },
   'keys-file': { type: 'string' },
   // golive: a config file whose integrations / referrals / privacy_orchestrator sections --connect sends; revoke platform keys nobody uses.

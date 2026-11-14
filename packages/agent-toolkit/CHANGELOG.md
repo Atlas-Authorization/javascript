@@ -1,5 +1,9 @@
 # @atlasauth/agent-toolkit changelog
 
+## 0.4.0
+
+- Grant usage metering through `@atlasauth/backend/usage-gate` (consume and refund per tool call). Requires `@atlasauth/backend` 0.51.0 or later.
+
 ## 0.3.1 — 2026-11-14
 
 - Takes `@atlasauth/backend` as a peer dependency (`>=0.49.0 <1.0.0`) instead of pinning one exact version, so an app has a single copy of it.

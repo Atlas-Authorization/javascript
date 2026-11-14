@@ -3,12 +3,13 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { startEmulator } from './server';
 
-const { values } = parseArgs({ options: { port: { type: 'string' }, host: { type: 'string' }, seed: { type: 'string' }, app: { type: 'string' } } });
+const { values } = parseArgs({ options: { port: { type: 'string' }, host: { type: 'string' }, seed: { type: 'string' }, app: { type: 'string' }, openapi: { type: 'string' } } });
 async function main(): Promise<void> {
   const emulator = await startEmulator({
     port: values.port ? Number(values.port) : 4400,
     host: values.host,
     app: values.app,
+    openapi: values.openapi ?? process.env.ATLAS_OPENAPI,
     seed: values.seed ? JSON.parse(readFileSync(values.seed, 'utf8')) : undefined,
   });
   console.log(`Atlas emulator on ${emulator.url}  (mail catcher: ${emulator.url}/__emulator/mail)`);

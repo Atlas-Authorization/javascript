@@ -1,0 +1,156 @@
+/**
+ * The pure half of `atlas types generate`: turn what an instance defines (keys, a metadata
+ * schema, JWT templates) into one TypeScript declaration file. No I/O, so the output is a
+ * function of the input and `--check` can compare it byte for byte.
+ */
+
+type Schema = Record<string, unknown>;
+
+export interface TypesInput {
+  /** Organization permission keys (`org:billing:manage`). */
+  permissions: string[];
+  /** Organization role keys (`org:admin`). */
+  orgRoles: string[];
+  appRoles: string[];
+  appPermissions: string[];
+  /** Billing plan slugs. */
+  plans: string[];
+  /** Billing feature keys. */
+  features: string[];
+  scopes: string[];
+  webhookEvents: string[];
+  appEvents: string[];
+  auditEvents: string[];
+  fgaTypes: string[];
+  fgaRelations: string[];
+  /** JWT templates: name and the claim names each mints. */
+  jwtTemplates: Array<{ name: string; claims: string[] }>;
+  /** The metadata schema: a JSON Schema per bag (public_metadata, unsafe_metadata, ...). */
+  traits: Record<string, Schema>;
+}
+
+export function emptyInput(): TypesInput {
+  return {
+    permissions: [], orgRoles: [], appRoles: [], appPermissions: [], plans: [], features: [], scopes: [],
+    webhookEvents: [], appEvents: [], auditEvents: [], fgaTypes: [], fgaRelations: [], jwtTemplates: [], traits: {},
+  };
+}
+
+const IDENT = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const key = (k: string) => (IDENT.test(k) ? k : JSON.stringify(k));
+const uniqSorted = (xs: readonly string[]) => [...new Set(xs.filter((x) => typeof x === 'string' && x.length > 0))].sort();
+/** A comment body that cannot close the comment or break the line. */
+const comment = (s: string) => s.replace(/\*\//g, '* /').replace(/\s+/g, ' ').trim();
+
+/** A string-literal union, or `string` when the instance defines none (so nothing narrows by accident). */
+function union(values: readonly string[]): string {
+  const v = uniqSorted(values);
+  return v.length === 0 ? 'string' : v.map((x) => JSON.stringify(x)).join(' | ');
+}
+
+/** The JSON Schema subset the traits schema allows (type, properties, required, enum, items, additionalProperties), as a TS type. */
+export function schemaToTs(schema: unknown, indent = 0): string {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return 'unknown';
+  const s = schema as Schema;
+  const pad = '  '.repeat(indent);
+  if (Array.isArray(s.enum) && s.enum.length > 0) {
+    return s.enum.map((v) => (v === null || ['string', 'number', 'boolean'].includes(typeof v) ? JSON.stringify(v) : 'unknown')).join(' | ');
+  }
+  const types = Array.isArray(s.type) ? (s.type as unknown[]) : s.type === undefined ? [] : [s.type];
+  if (types.length === 0) return 'unknown';
+  const one = (t: unknown): string => {
+    switch (t) {
+      case 'string':
+        return 'string';
+      case 'number':
+      case 'integer':
+        return 'number';
+      case 'boolean':
+        return 'boolean';
+      case 'null':
+        return 'null';
+      case 'array':
+        return `Array<${schemaToTs(s.items, indent)}>`;
+      case 'object': {
+        const props = s.properties && typeof s.properties === 'object' ? Object.entries(s.properties as Schema) : [];
+        const required = new Set(Array.isArray(s.required) ? (s.required as string[]) : []);
+        const open = s.additionalProperties !== false;
+        if (props.length === 0) return open ? 'Record<string, unknown>' : 'Record<string, never>';
+        const lines = props.map(([name, sub]) => {
+          const desc = sub && typeof sub === 'object' && typeof (sub as Schema).description === 'string' ? `${pad}  /** ${comment((sub as Schema).description as string)} */\n` : '';
+          return `${desc}${pad}  ${key(name)}${required.has(name) ? '' : '?'}: ${schemaToTs(sub, indent + 1)};`;
+        });
+        if (open) lines.push(`${pad}  [key: string]: unknown;`);
+        return `{\n${lines.join('\n')}\n${pad}}`;
+      }
+      default:
+        return 'unknown';
+    }
+  };
+  return types.map(one).join(' | ');
+}
+
+const TRAIT_TARGETS: Array<{ target: string; name: string; register: string }> = [
+  { target: 'public_metadata', name: 'AtlasUserPublicMetadata', register: 'publicMetadata' },
+  { target: 'unsafe_metadata', name: 'AtlasUserUnsafeMetadata', register: 'unsafeMetadata' },
+  { target: 'private_metadata', name: 'AtlasUserPrivateMetadata', register: 'privateMetadata' },
+  { target: 'organization_public_metadata', name: 'AtlasOrganizationPublicMetadata', register: 'organizationPublicMetadata' },
+  { target: 'organization_private_metadata', name: 'AtlasOrganizationPrivateMetadata', register: 'organizationPrivateMetadata' },
+];
+
+/** The whole `atlas-types.d.ts`. `source` names where the data came from (never a timestamp, so `--check` is stable). */
+export function renderTypes(input: TypesInput, source: string): string {
+  const out: string[] = [
+    '/* eslint-disable */',
+    '// Generated by `atlas types generate`. Do not edit: regenerate when your roles, plans, schema or events change.',
+    `// Source: ${comment(source)}`,
+    '',
+  ];
+  const register: string[] = [];
+  const alias = (name: string, doc: string, values: readonly string[], registerAs?: string) => {
+    out.push(`/** ${doc} */`, `export type ${name} = ${union(values)};`, '');
+    if (registerAs && uniqSorted(values).length > 0) register.push(`    ${registerAs}: ${name};`);
+  };
+  alias('AtlasPermission', 'An organization permission key.', [...input.permissions], 'permission');
+  alias('AtlasOrgRole', 'An organization role key.', input.orgRoles, 'orgRole');
+  alias('AtlasAppRole', 'An app-level role key.', input.appRoles, 'appRole');
+  alias('AtlasAppPermission', 'An app-level permission key.', input.appPermissions, 'appPermission');
+  alias('AtlasPlan', 'A billing plan slug.', input.plans, 'plan');
+  alias('AtlasFeature', 'A billing feature key.', input.features, 'feature');
+  alias('AtlasScope', 'An OAuth scope name.', input.scopes, 'scope');
+  alias('AtlasWebhookEvent', 'A webhook event type from the instance catalog.', input.webhookEvents, 'webhookEvent');
+  alias('AtlasAppEvent', 'A third-party app event type the instance declares.', input.appEvents, 'appEvent');
+  alias('AtlasAuditEvent', 'An audit event action.', input.auditEvents, 'auditEvent');
+  alias('AtlasFgaType', 'A fine-grained authorization object type.', input.fgaTypes, 'fgaType');
+  alias('AtlasFgaRelation', 'A fine-grained authorization relation.', input.fgaRelations, 'fgaRelation');
+
+  for (const t of TRAIT_TARGETS) {
+    const schema = input.traits[t.target];
+    if (!schema) continue;
+    out.push(`/** The shape of \`${t.target}\`, from the instance's metadata schema. */`, `export type ${t.name} = ${schemaToTs(schema)};`, '');
+    register.push(`    ${t.register}: ${t.name};`);
+  }
+
+  // Claims a session token can carry: the keys above plus whatever each JWT template adds.
+  const claims: string[] = [];
+  if (uniqSorted(input.orgRoles).length) claims.push('  org_role?: AtlasOrgRole | null;');
+  if (uniqSorted(input.permissions).length) claims.push('  org_permissions?: readonly AtlasPermission[] | null;');
+  if (uniqSorted(input.plans).length) claims.push('  pla?: AtlasPlan | null;');
+  if (uniqSorted(input.features).length) claims.push('  fea?: readonly AtlasFeature[] | null;');
+  if (uniqSorted(input.appRoles).length) claims.push('  app_roles?: readonly AtlasAppRole[];');
+  if (uniqSorted(input.appPermissions).length) claims.push('  app_permissions?: readonly AtlasAppPermission[];');
+  out.push('/** The authorization claims of a session token, narrowed to your keys. */', 'export interface AtlasSessionClaims {', ...claims, '}', '');
+  register.push('    sessionClaims: AtlasSessionClaims;');
+
+  const templates = [...input.jwtTemplates].sort((a, b) => a.name.localeCompare(b.name));
+  out.push('/** The claims each JWT template mints, by template name. The values are template expressions, so their type is unknown. */', 'export interface AtlasJwtTemplates {');
+  for (const t of templates) {
+    const names = uniqSorted(t.claims);
+    out.push(names.length ? `  ${key(t.name)}: {\n${names.map((c) => `    ${key(c)}?: unknown;`).join('\n')}\n  };` : `  ${key(t.name)}: Record<string, never>;`);
+  }
+  out.push('}', '');
+  out.push('/** A JWT template name. */', `export type AtlasJwtTemplateName = ${union(templates.map((t) => t.name))};`, '');
+
+  out.push("declare module '@atlasauth/types' {", '  interface Register {', ...register, '  }', '}', '');
+  return out.join('\n');
+}

@@ -3,7 +3,7 @@ import { sameEvents } from '../webhook-presets';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { str, type ParsedArgs, type Values } from '../args';
+import { list, str, type ParsedArgs, type Values } from '../args';
 import { createConfigHttp, isNotFound, type ConfigHttp, type UnknownFieldsNotice } from '../config-http';
 
 /** A resource the target instance's API predates reads as absent, not as a failed export. */
@@ -26,6 +26,8 @@ import {
   type Json,
 } from '../serialize';
 import { AtlasApiError, DEFAULT_API_URL } from '@atlasauth/backend';
+import { registeredConfigTypes } from './config-types';
+import { configJsonSchema } from './config-types/schema';
 import { envApiUrl, resolveAuth } from './shared';
 import { parseDotenv, productDir, renderDotenv, writeSecretFile } from '../secrets';
 import { REDACTED, isPlaceholder, isSecretKey, redactDeep, rememberResolved, revealingSecrets } from '../redact';
@@ -49,7 +51,7 @@ export function brandingAliases(c: Config): Config {
 }
 
 /** One live resource: its natural key, its redacted projection, and its API id. */
-interface LiveEntry {
+export interface LiveEntry {
   key: string;
   config: Config;
   /** The server id/name used to address an update or delete. */
@@ -63,7 +65,7 @@ interface LiveEntry {
  * slug, a url). The engine lists live entries, matches them to the desired file
  * by key, and applies the create / update / delete the diff implies.
  */
-interface CollectionSpec {
+export interface CollectionSpec {
   kind: 'collection';
   type: string;
   /** Natural key of a desired config read from a file (must match LiveEntry.key). */
@@ -82,6 +84,8 @@ interface CollectionSpec {
   defaulted?: readonly string[];
   /** Keys the API takes but never returns: a file value cannot be compared. */
   writeOnly?: readonly string[];
+  /** `false`: live entries missing from the file are deleted only when named with `--prune-type <type>`, never by a bare `--prune`. */
+  prune?: false;
   /** Ask the API whether the file's secret differs from the stored one; null when it cannot say. */
   secretChanged?(http: ConfigHttp, live: LiveEntry, config: Config): Promise<boolean | null>;
   /** Return the live config with any field that is equivalent to the file's value set to the file's value, so it is not drift. */
@@ -93,7 +97,7 @@ interface CollectionSpec {
 }
 
 /** A singleton resource — exactly one document per instance (the instance config, a schema). */
-interface SingletonSpec {
+export interface SingletonSpec {
   kind: 'singleton';
   type: string;
   /** The current document, or null when none is set (a 404). */
@@ -126,7 +130,7 @@ interface ApplyOpts {
 /** The refusal `rotate_secret` answers when the secret is the one already stored. */
 const isSameSecretRefusal = (err: unknown) => err instanceof AtlasApiError && err.status === 422 && /must differ/.test(err.message);
 
-type ResourceSpec = CollectionSpec | SingletonSpec;
+export type ResourceSpec = CollectionSpec | SingletonSpec;
 
 // ───────────────────────────── small helpers ─────────────────────────────
 
@@ -542,26 +546,33 @@ function registry(): ResourceSpec[] {
       },
     },
 
-    // 7. JWT templates — key = name; claims is a flat template map.
+    // 7. JWT templates — key = name; claims is a flat template map, settings the lifetime/audience/algorithm.
+    //    settings.signing_secret (HS256) is write-only: live shows "(secret set)", never a value.
     {
       kind: 'collection',
       type: 'jwt_templates',
-      fileKeys: ['name', 'claims'],
+      fileKeys: ['name', 'claims', 'settings'],
+      reportsSecrets: true,
       keyOf: (c) => String(obj(c).name ?? ''),
       async fetchLive(http) {
-        const rows = await listData<{ name: string; claims: Json }>(http, '/v1/jwt_templates');
-        return rows.map((r) => ({
-          key: r.name,
-          id: r.name,
-          config: { name: r.name, claims: r.claims ?? {} },
-        }));
+        const rows = await listData<{ name: string; claims: Json; settings?: Record<string, Json> }>(http, '/v1/jwt_templates');
+        return rows.map((r) => {
+          const settings: Record<string, Json> = pick(r.settings ?? {}, ['lifetime_seconds', 'audience', 'algorithm']) as Record<string, Json>;
+          if (r.settings?.has_signing_secret) settings.signing_secret = SECRET_SET;
+          return {
+            key: r.name,
+            id: r.name,
+            config: { name: r.name, claims: r.claims ?? {}, ...(Object.keys(settings).length ? { settings } : {}) },
+          };
+        });
       },
       async create(http, config) {
         const c = obj(config);
-        await http.post('/v1/jwt_templates', { name: c.name, claims: c.claims ?? {} });
+        await http.post('/v1/jwt_templates', { name: c.name, claims: c.claims ?? {}, ...(c.settings ? { settings: jwtSettingsBody(c.settings) } : {}) });
       },
       async update(http, live, config) {
-        await http.patch(`/v1/jwt_templates/${enc(live.id)}`, { claims: obj(config).claims ?? {} });
+        const c = obj(config);
+        await http.patch(`/v1/jwt_templates/${enc(live.id)}`, { claims: c.claims ?? {}, ...(c.settings ? { settings: jwtSettingsBody(c.settings) } : {}) });
       },
       async remove(http, live) {
         await http.delete(`/v1/jwt_templates/${enc(live.id)}`);
@@ -1275,6 +1286,8 @@ function registry(): ResourceSpec[] {
       },
     },
   ];
+  // Types added through config-types/: after every spec above, so today's order is unchanged.
+  specs.push(...registeredConfigTypes());
   return specs;
 }
 
@@ -1495,6 +1508,14 @@ const ORG_POLICY_KEYS = [
 ] as const;
 
 /** Narrow a Config to a plain string-keyed record for field access. */
+/** The writable settings of a JWT template (null clears one); anything else in the file is left out. */
+function jwtSettingsBody(settings: Json): Record<string, Json> {
+  const src = obj(settings);
+  const out: Record<string, Json> = {};
+  for (const k of ['lifetime_seconds', 'audience', 'algorithm', 'signing_secret']) if (src[k] !== undefined) out[k] = src[k]!;
+  return out;
+}
+
 function obj(config: Config): Record<string, Json> {
   return config && typeof config === 'object' && !Array.isArray(config)
     ? (config as Record<string, Json>)
@@ -1700,6 +1721,17 @@ async function patchOrgPolicy(http: ConfigHttp, config: Config): Promise<void> {
 // ───────────────────────────── the command ─────────────────────────────
 
 /** `atlas config export|import` — Auth0 `deploy-cli`-style config-as-code. */
+/** `atlas config schema [--out <file>]`: the JSON Schema of atlas.yaml, built from the registry (no login needed). */
+async function schemaConfig(ctx: RunContext, values: Values): Promise<number> {
+  const text = `${JSON.stringify(configJsonSchema(registry()), null, 2)}\n`;
+  const out = str(values, 'out');
+  if (out) {
+    writeFileSync(out, text);
+    ctx.io.out(`Wrote the atlas.yaml JSON Schema to ${out}.`);
+  } else ctx.io.out(text.trimEnd());
+  return 0;
+}
+
 export async function config(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const sub = args.positionals[1];
   switch (sub) {
@@ -1711,11 +1743,13 @@ export async function config(ctx: RunContext, args: ParsedArgs): Promise<number>
       return planConfig(ctx, args.values, { dir: resolveDir(args.values), format: resolveFormat(args.values), env: readSecretsEnv(ctx, args.values) });
     case 'promote':
       return promoteConfig(ctx, args.values);
+    case 'schema':
+      return schemaConfig(ctx, args.values);
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'config ${sub}'. Try: export, import, plan, promote.`
-          : 'config needs a subcommand: export, import, plan, promote.',
+          ? `Unknown subcommand 'config ${sub}'. Try: export, import, plan, promote, schema.`
+          : 'config needs a subcommand: export, import, plan, promote, schema.',
       );
   }
 }
@@ -1835,9 +1869,9 @@ async function instancePlaceholderValues(http: ConfigHttp, text: string): Promis
  */
 export async function planConfigImport(
   http: ConfigHttp,
-  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; forceHook?: boolean; rotateSecrets?: boolean },
+  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; pruneTypes?: readonly string[]; forceHook?: boolean; rotateSecrets?: boolean },
 ): Promise<ConfigPlan> {
-  const { dir, format, prune } = opts;
+  const { dir, format } = opts;
   let env = opts.env;
   const applyOpts: ApplyOpts = { forceHook: opts.forceHook === true };
   const ext = format === 'json' ? 'json' : 'yaml';
@@ -1864,6 +1898,8 @@ export async function planConfigImport(
   const managed: ConfigPlan['managed'] = [];
 
   for (const spec of registry()) {
+    // A `prune: false` type is deleted only when named in --prune-type, never by a bare --prune.
+    const prune = spec.kind === 'collection' && spec.prune === false ? (opts.pruneTypes ?? []).includes(spec.type) : opts.prune;
     const file = `${spec.type}.${ext}`;
     // A type with no file is simply NOT MANAGED — leave live untouched.
     if (!present.has(file)) continue;
@@ -2037,7 +2073,7 @@ async function promoteConfig(ctx: RunContext, values: Values): Promise<number> {
   const dir = mkdtempSync(join(tmpdir(), 'atlas-promote-'));
   try {
     await writeExport(source.http, dir, format);
-    const plan = await planConfigImport(target.http, { dir, format, env: ctx.env, prune });
+    const plan = await planConfigImport(target.http, { dir, format, env: ctx.env, prune, pruneTypes: list(values, 'prune-type') });
     ctx.io.out(`Promoting ${from} -> ${to}`);
     printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
     printPlanNotes(ctx, plan);
@@ -2057,7 +2093,7 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
   const dryRun = values['dry-run'] === true;
   const prune = values.prune === true;
 
-  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
+  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune, pruneTypes: list(values, 'prune-type'), forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
   printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
   printPlanNotes(ctx, plan);
 
@@ -2133,7 +2169,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
   const { dir, format, env } = source;
   const where = source.label ?? dir;
   const prune = values.prune === true;
-  const plan = await planConfigImport(http, { dir, format, env, prune, rotateSecrets: values['rotate-secret'] === true });
+  const plan = await planConfigImport(http, { dir, format, env, prune, pruneTypes: list(values, 'prune-type'), rotateSecrets: values['rotate-secret'] === true });
   const deletes: Change[] = prune ? [] : plan.skippedDeletes;
   const all: Change[] = plan.changes;
   const rows = all.map((c) => ({
@@ -2174,7 +2210,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
     }
     if (deletes.length) {
       ctx.io.out('');
-      ctx.io.out(`Live but not in ${where} (kept; pass --prune to plan their deletion):`);
+      ctx.io.out(`Live but not in ${where} (kept; pass --prune to plan their deletion, or --prune-type <type> for a type that needs it named):`);
       for (const d of deletes) ctx.io.out(`    ${d.type}${d.key ? ` ${d.key}` : ''}`);
     }
     if (plan.managed.length) {
@@ -2342,7 +2378,7 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
     const collected: Record<string, string> = {};
     const kept = keepingSecrets(requireHttp(ctx, values, onUnknownFields), str(values, 'out') || productDir(ctx.env, 'atlas'), secretsOut ? collected : undefined);
     const prune = values.prune === true;
-    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
+    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, pruneTypes: list(values, 'prune-type'), forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
     printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun: false, prune });
     for (const c of plan.changes) {
       if (c.action !== 'update') continue;
@@ -2512,7 +2548,7 @@ export function printPlan(
   }
   if (!opts.prune && skippedDeletes.length) {
     ctx.io.out(
-      `  ${skippedDeletes.length} resource(s) exist live but not in config — pass --prune to delete.`,
+      `  ${skippedDeletes.length} resource(s) exist live but not in config — pass --prune to delete (--prune-type <type> for the types that need to be named).`,
     );
   }
   ctx.io.out(`  ${unchanged} unchanged.`);

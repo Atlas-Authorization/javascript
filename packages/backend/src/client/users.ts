@@ -700,6 +700,17 @@ export function usersResource(request: RequestFn) {
       query(body: UserSearchBody): Promise<CursorPage<User> & { total_count?: number }> {
         return request({ method: 'POST', path: '/v1/users/search', body });
       },
+      /**
+       * `GET /v1/users/search/fields` — what a filter can name: the built-in fields plus every
+       * metadata path the instance's metadata schema declares (with type, allowed values, required).
+       */
+      fields(): Promise<{
+        object: 'list';
+        data: Array<{ field: string; source: 'builtin' | 'schema'; type?: string | string[]; enum?: unknown[]; description?: string; required?: boolean }>;
+        has_more: boolean;
+      }> {
+        return request({ method: 'GET', path: '/v1/users/search/fields' });
+      },
       /** `POST /v1/users/search/export` — the matching users (up to 10,000) as CSV or NDJSON text. */
       export(body: UserSearchExportBody): Promise<string> {
         return request({ method: 'POST', path: '/v1/users/search/export', body, raw: true });
@@ -885,6 +896,13 @@ export function usersResource(request: RequestFn) {
         return request({
           method: 'GET',
           path: `/v1/users/${enc(id)}/approval_requests/${enc(approvalId)}`,
+        });
+      },
+      /** `POST /v1/users/:id/approval_requests/:approvalId/cancel` — withdraw a pending request (409 once final). */
+      cancel(id: string, approvalId: string): Promise<UserApprovalRequest> {
+        return request({
+          method: 'POST',
+          path: `/v1/users/${enc(id)}/approval_requests/${enc(approvalId)}/cancel`,
         });
       },
     },
@@ -1136,7 +1154,7 @@ export interface UserApprovalRequestCreated {
 export interface UserApprovalRequest {
   object: 'approval_request';
   id: string;
-  status: 'pending' | 'approved' | 'denied' | 'expired';
+  status: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
   description: string;
   context?: Record<string, string>;
   approved_by_device_id: string | null;

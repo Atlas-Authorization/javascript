@@ -1,5 +1,9 @@
 # @atlasauth/nextjs changelog
 
+## 0.16.0
+
+- New `atlasRateLimit` and `atlasGrantUsage` helpers: enforce Atlas rate-limit policies and metered grant usage (consume/refund with idempotency) in your routes. Requires `@atlasauth/backend` 0.51.0 or later.
+
 ## 0.15.0 — 2026-11-11
 
 - The mount, verify, webhook and hook handlers now come from `@atlasauth/backend`; behaviour and API unchanged.

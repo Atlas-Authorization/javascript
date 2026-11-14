@@ -26,3 +26,28 @@ Your backend receives `userId`, `sessionId`, `orgId`, `orgRole`, `clientId`, `sc
 - `policyScope`: `method` (default) allows the exact method ARN; use `stage` when API Gateway caches the authorizer result across several routes.
 - `cacheTtlSeconds` (default 30) reuses a verified result inside the warm container, never past the token's expiry. Refusals are not cached. Set `0` to verify every request.
 - DPoP-bound tokens are not supported here (an authorizer does not see the request proof); they are refused.
+
+
+## Rate limits and grant usage
+
+Two gates sit behind your auth, both built on `@atlasauth/backend`: a rate limiter (`createRateLimiter`, fixed window, 429 with `Retry-After` and `RateLimit-*` headers) and a grant usage gate (`createUsageGate`, which consumes a named counter on a machine or agent grant: 429 when the counter is spent, 403 when the grant is missing or expired). Each wrapper takes the limiter or options, or a check you already built with `rateLimitRequest` / `requireGrantUsage`. A limit store or usage call that throws is an error, never an allow.
+
+Build the limiter and the gate once at startup:
+
+```ts
+import { createAtlasClient, createRateLimiter, createUsageGate } from '@atlasauth/backend';
+
+const atlas = createAtlasClient({ secretKey: process.env.ATLAS_SECRET_KEY! });
+const limiter = createRateLimiter({ policies: [{ name: 'per-user', subject: 'user', limit: 100, windowSeconds: 60 }] });
+const gate = createUsageGate({ client: atlas }); // or { mode: 'lease', leaseSize: 20 }
+// atlasGrantUsage({ gate, counter: 'orders', amount: 1 }) spends the grant named by the token's grant_id claim.
+```
+
+```ts
+export const handler = createLambdaAuthorizer({
+  session: { issuer },
+  rateLimit: limiter,
+  grantUsage: { gate, counter: 'orders' },
+});
+```
+A refused check answers like a refused policy (Deny, or `isAuthorized: false`). API Gateway caches an authorizer result for its TTL: set the authorizer cache TTL to 0 for exact counts.

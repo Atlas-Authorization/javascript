@@ -22,6 +22,8 @@ Commands:
   orgs list|get|members
   api-keys list|create|revoke
   webhooks list|create|upsert|update|test|deliveries|redeliver|replay|rotate|reveal
+  changes tail               Watch the change feed (users, orgs, memberships, keys, machines)
+  mirror init                Print a starter schema + code to mirror Atlas data into your database
   listen --forward-to <url>  Forward live events to your local server, signed (no tunnel)
   dev [proxy]                Local in-memory Atlas (emulator) / one-origin dev proxy
   move-origin --from --to    Move an app to a new domain in one step (--dry-run first)
@@ -41,6 +43,8 @@ Commands:
   vc deferred|approve|deny            Deferred credential issuance
   csp --framework next|express|nginx
                              Print the Content Security Policy sources Atlas needs
+  types generate [--out atlas-types.d.ts] [--check] [--from-config <atlas.yaml>]
+                             Generate TypeScript types for your roles, permissions, plans, metadata and events
   fga test|validate|transform <file>
   fga export|import|watch|materialize <store>
                              Run .fga.yaml test suites, validate and convert authorization models
@@ -54,7 +58,9 @@ Commands:
                              Atlas staff: accounts for other platforms' integration teams
                              (operator sign-in with a recent second factor; passwords to 0600 files)
   sessions revoke
-  config export|import|plan|promote
+  grants usage <machine|agent> <grant-id>
+                             Live usage counters and open leases of a machine or agent grant
+  config export|import|plan|promote|schema
                              Config-as-code: round-trip the instance's config; plan = drift diff;
                              promote = copy one environment's config to another
   plan [<file|dir>]          Drift diff of a config file or directory; --check exits 2 on drift
@@ -498,6 +504,23 @@ Usage:
                         [--product <name>] [--force] [--print-secret] [--json]
   atlas api-keys revoke <api-key-id> [--json]`,
 
+  changes: `atlas changes — watch the change feed
+
+Usage:
+  atlas changes tail [--types user,organization] [--after <seq>] [--once] [--json]
+
+Prints one line per change: seq, time, op, resource type, resource id. Without
+--after it starts at the current head (only new changes); --after 0 replays
+everything still retained. --once prints what is there and exits.`,
+
+  mirror: `atlas mirror — keep a copy of Atlas data in your database
+
+Usage:
+  atlas mirror init --adapter drizzle|prisma [--types user,organization,membership]
+
+Prints a starter table/model definition and the createMirror wiring for your ORM.
+Nothing is written to disk.`,
+
   webhooks: `atlas webhooks — manage webhook endpoints
 
 Usage:
@@ -535,11 +558,14 @@ Ctrl-C stops it. --count n exits after n events (exit 1 if any forward failed).`
   dev: `atlas dev — a local, in-memory Atlas
 
 Usage:
-  atlas dev [--port 4400] [--seed seed.json] [--app http://localhost:3000]
+  atlas dev [--port 4400] [--seed seed.json] [--app http://localhost:3000] [--openapi <path or URL>]
   atlas dev proxy --app <url> --api <fapi url> [--port 4401] [--base-path /atlas]
 
 The emulator serves the Frontend API, a minimal Backend API, OIDC discovery and
-a mail/SMS catcher at /__emulator/mail. Every code is 424242. With --app it also
+a mail/SMS catcher at /__emulator/mail. Every code is 424242. With --openapi (the
+API document: a file or https://atlasauth.net/v1/openapi.json?surface=BAPI) it also serves the full
+Backend API from memory: roles, API keys, machines and grants, signed webhooks, the change feed.
+With --app it also
 forwards everything it does not own to your app, so both share one origin.
 'dev proxy' does the same against a real instance. No account, no network.`,
   'move-origin': `atlas move-origin — move an app to a new domain
@@ -584,6 +610,31 @@ Any provider that publishes the open embed-manifest format ({surfaces:{name:{csp
 usually at /.well-known/atlas-embed.json) can be merged in with --manifest <url|file>
 (repeatable): a consent platform, chat widget, captcha or analytics vendor. --no-atlas
 skips the Atlas instance and uses only the manifests you list.`,
+
+  types: `atlas types generate — TypeScript types for your instance
+
+Usage: atlas types generate [--out <file>] [--lang ts] [--check] [--from-config <atlas.yaml|dir>] [--json]
+
+Writes atlas-types.d.ts (or --out) with the permission, role, plan, feature, scope, event, FGA and
+metadata types your instance really has, and registers them with the SDKs:
+
+  declare module '@atlasauth/types' { interface Register { permission: AtlasPermission; ... } }
+
+After that, has({ permission }), <Protect permission>, the backend's has() and verified session
+claims reject a key your instance does not define. With no generated file everything stays a plain
+string, so nothing changes for existing code. Add the file to your tsconfig "include".
+
+Reads the live instance (secret key from your login or ATLAS_SECRET_KEY): roles, permissions, app
+roles, billing plans, scopes, JWT templates, the metadata schema, the webhook event catalog, app and
+audit event types, and the types and relations of your fine-grained authorization models. A source
+the key cannot read is warned about and left as string.
+
+--from-config reads atlas.yaml (or an atlas config directory) instead, with no network. It knows only
+what the file declares: system permissions appear only when a role in the file grants them, and
+events, app roles and fine-grained models stay string.
+
+--check writes nothing: exit 1 when the file on disk differs from what would be generated (use it in
+CI after a role or plan change). Only TypeScript is supported (--lang ts).`,
 
   'partner-platforms': `atlas partner-platforms — this instance as a partner platform of another product
 
@@ -828,12 +879,21 @@ many seconds. Prints when the old secret stops working.`,
 Usage:
   atlas sessions revoke <session-id> [--json]`,
 
+  grants: `atlas grants — inspect grants
+
+Usage:
+  atlas grants usage <machine|agent> <grant-id> [--json]
+
+Shows each counter the grant defines (used, limit, remaining, window, when it resets)
+and any lease still holding an amount.`,
+
   config: `atlas config — config-as-code for an Atlas instance (the Auth0 deploy-cli peer)
 
 Usage:
   atlas config export [--dir <path>] [--format json|yaml]
   atlas config import [--dir <path>] [--format json|yaml] [--dry-run] [--prune] [--force-hook]
   atlas config plan   [--dir <path>] [--format json|yaml] [--prune] [--check|--exit-code] [--json]
+  atlas config schema [--out <file>]
   atlas config promote --from <profile> --to <profile> [--dry-run] [--prune] [--yes] [--format json|yaml]
 
 export  Read the instance's current config (instance/auth config, OAuth clients
@@ -847,6 +907,7 @@ import  Diff the directory against live config and apply creates/updates
         idempotently. A resource type with no file is left untouched.
           --dry-run   print the plan and apply nothing
           --prune     also delete live resources absent from the config
+          --prune-type <type>  also delete live resources of one opt-in type (repeatable); a bare --prune skips those
           --force-hook  enable a before_user_create hook even if its test call fails
           --dir       config directory (default: ./atlas-config)
           --format    json (default) or yaml
@@ -979,7 +1040,9 @@ webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans,
 notification_templates, email_templates, organization_policies, branding, cookie_consent,
 sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator,
 proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges,
-impersonation_policy, connection_token_limits, connection_provider_topics, connection_relay_limits, web_bot_auth. Re-running is a no-op.
+impersonation_policy, connection_token_limits, connection_provider_topics, connection_relay_limits, web_bot_auth,
+notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules,
+abac_policies, abac_schema, access_policies, fga_stores, fga_settings, groups, group_rules, app_roles, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --prune         also delete live resources missing from the config, and compare every live key

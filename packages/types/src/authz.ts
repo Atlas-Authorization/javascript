@@ -5,6 +5,7 @@
  * That package ships the runtime `evaluate()` / `ForbiddenError`; only the pure
  * types are mirrored here so `@atlasauth/types` stays runtime-free.
  */
+import type { FeatureKey, OrgRoleKey, PermissionKey, PlanKey } from './register';
 
 /**
  * The minimal, structural view of session claims the authorization primitive
@@ -47,18 +48,18 @@ export interface AuthzClaims {
  */
 export interface ProtectCondition {
   /** A single permission the ACTIVE organization role must hold. */
-  permission?: string;
+  permission?: PermissionKey;
   /** An exact role in the active organization. */
-  role?: string;
+  role?: OrgRoleKey;
   /** Any of these permissions (OR). */
-  anyPermission?: readonly string[];
+  anyPermission?: readonly PermissionKey[];
   /** All of these permissions (AND). */
-  allPermissions?: readonly string[];
+  allPermissions?: readonly PermissionKey[];
   /** The active billing plan (Clerk `has({ plan })`) — matches the `pla` claim.
    *  Needs NO active organization: it is the subject's entitlement. */
-  plan?: string;
+  plan?: PlanKey;
   /** A granted feature (Clerk `has({ feature })`) — an entry in the `fea` claim. */
-  feature?: string;
+  feature?: FeatureKey;
 }
 
 export type ProtectReason =

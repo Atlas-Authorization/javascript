@@ -1,5 +1,11 @@
 # @atlasauth/cli changelog
 
+## 0.41.0
+
+- `atlas types generate` writes typed permissions, roles, plans, features, scopes, events and metadata schemas for your instance (`--check` for CI).
+- `atlas config` manages 40 more resource types, including notification categories, SMS templates, localizations, actions, journeys, log streams, ABAC, FGA, groups, IGA, billing coupons, rate-limit policies and the user traits schema. Deletes stay opt-in per type with `--prune-type`.
+- `atlas dev --openapi` runs the full-API emulator.
+
 ## 0.40.1 — 2026-11-14
 
 - `atlas apply --help` lists the full apply order (adds `domains`, `integrations`, `referrals`, `privacy_orchestrator` and `proxy_secret`).

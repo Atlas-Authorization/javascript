@@ -1,5 +1,9 @@
 # @atlasauth/types changelog
 
+## 0.18.0
+
+- New `Register` interface: a generated `atlas-types.d.ts` narrows permission, role, plan, feature and metadata types. Without it everything stays `string`.
+
 ## 0.17.1 — 2026-11-14
 
 - The published package now carries the release notes for every version.

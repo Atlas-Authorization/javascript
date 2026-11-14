@@ -8,6 +8,8 @@
  * invent a second dialect a reader would then have to reconcile against the docs.
  */
 
+import type { OrganizationPublicMetadata, UserPublicMetadata } from './register';
+
 // --- Envelopes (client/types.ts) -------------------------------------------
 
 /** A free-form metadata bag. The BAPI stores arbitrary JSON objects here. */
@@ -53,7 +55,7 @@ export interface User {
   first_name: string | null;
   last_name: string | null;
   image_url: string | null;
-  public_metadata: Metadata;
+  public_metadata: UserPublicMetadata;
   mfa_enabled: boolean;
   /** Whether the user holds at least one passkey. */
   has_passkey?: boolean;
@@ -149,7 +151,7 @@ export interface Organization {
   name: string;
   slug: string;
   image_url: string | null;
-  public_metadata: Metadata;
+  public_metadata: OrganizationPublicMetadata;
   max_allowed_memberships: number;
   created_by: string;
   created_at: number;

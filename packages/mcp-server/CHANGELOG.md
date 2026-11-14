@@ -1,5 +1,9 @@
 # @atlasauth/mcp changelog
 
+## 0.5.0
+
+- Tool calls can be metered against grant counters through `@atlasauth/backend/usage-gate`. Requires `@atlasauth/backend` 0.51.0 or later.
+
 ## 0.4.1 — 2026-11-14
 
 - Takes `@atlasauth/backend` as a peer dependency (`>=0.49.0 <1.0.0`) instead of pinning one exact version, so an app has a single copy of it.

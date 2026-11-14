@@ -2,6 +2,10 @@
 
 
 
+## 0.21.1
+
+- Permission checks are typed from a generated `atlas-types.d.ts` when present (via `@atlasauth/authz`).
+
 ## 0.21.0 — 2026-11-13
 
 - `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.

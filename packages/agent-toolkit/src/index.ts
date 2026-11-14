@@ -29,3 +29,6 @@ export { sanitize } from './sanitize';
 export { createConnectionsToolkit } from './connections';
 export type { ConnectionsToolkitOptions } from './connections';
 export type { AgentTool } from './types';
+
+export { withGrantUsage, GrantUsageDeniedError } from './grant-usage';
+export type { GrantUsageToolOptions } from './grant-usage';

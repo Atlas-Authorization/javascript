@@ -47,3 +47,6 @@ export {
   type VerifyResult,
   type AtlasBackendOptions,
 } from '@atlasauth/backend';
+
+// Rate limiting and grant usage (see ./limits).
+export { ATLAS_RATE_LIMIT, ATLAS_GRANT_USAGE, AtlasRateLimitGuard, AtlasGrantUsageGuard, AtlasLimitsModule, type AtlasLimitsModuleOptions } from './limits';

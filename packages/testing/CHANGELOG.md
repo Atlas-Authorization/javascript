@@ -1,5 +1,9 @@
 # @atlasauth/testing changelog
 
+## 0.6.0
+
+- New `createTestUser`, `createTestOrg`, `createTestMembership`, `createTestRole`, `seedScenario`, `waitForMessage` and `signWebhook` helpers for the emulator.
+
 ## 0.5.0 — 2026-11-12
 
 - `@atlasauth/testing/e2e`: Playwright fixtures for throwaway users, testing-token sign-in through your own pages, TOTP codes, a virtual passkey device and cleanup.

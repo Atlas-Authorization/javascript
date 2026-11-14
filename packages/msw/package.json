@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/msw",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -14,6 +14,9 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@atlasauth/emulator-core": "workspace:*"
   },
   "peerDependencies": {
     "msw": "^2"

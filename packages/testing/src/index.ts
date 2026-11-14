@@ -34,6 +34,9 @@ export type {
   TestTokenTamper,
 } from '@atlasauth/backend';
 
+// Emulator helpers: fixtures over plain HTTP, the message sink, webhook signing.
+export * from './emulator';
+
 // Framework adapters — re-exported so a consumer can reach everything from the
 // root, while the dedicated subpaths (`@atlasauth/testing/playwright`,
 // `@atlasauth/testing/cypress`) stay available for a tighter import.

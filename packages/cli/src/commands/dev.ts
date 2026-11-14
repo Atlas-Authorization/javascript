@@ -5,7 +5,7 @@ import type { RunContext } from '../context';
 import { CliError } from '../errors';
 
 /**
- * `atlas dev [--port 4400] [--seed file.json] [--app <url>]`: a local in-memory
+ * `atlas dev [--port 4400] [--seed file.json] [--app <url>] [--openapi <path or URL>]`: a local in-memory
  * Atlas (FAPI, minimal BAPI, OIDC discovery, mail catcher).
  * `atlas dev proxy --app <url> --api <fapi url> [--base-path /atlas]`: one origin for app + API.
  */
@@ -33,7 +33,7 @@ export async function dev(ctx: RunContext, args: ParsedArgs): Promise<number> {
     } catch (err) {
       throw new CliError(`Could not read --seed ${seedFile}: ${(err as Error).message}`);
     }
-    server = await startEmulator({ port, app, seed });
+    server = await startEmulator({ port, app, seed, openapi: str(v, 'openapi') });
     ctx.io.out(`Atlas emulator on ${server.url} (mail catcher: ${server.url}/__emulator/mail, codes: 424242)`);
   }
   await new Promise<void>((done) => {

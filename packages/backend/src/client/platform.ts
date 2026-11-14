@@ -121,6 +121,23 @@ export interface CreatedPlatformApp extends PlatformAppWithSecret {
   sibling_instance?: PlatformAppWithSecret;
 }
 
+/** `POST /v1/platform/apps/{id}/initial_secret/reveal`: the app's secret keys once more (or, on a dry run, whether the reveal is still available). */
+export interface PlatformAppInitialSecret {
+  object: 'initial_secret';
+  app_id: string;
+  instance_id?: string;
+  key_id?: string;
+  /** The secret key created with the app; null if it was rotated or revoked since. */
+  secret?: string | null;
+  /** The development sibling created with the app (absent when there is none). */
+  sibling_instance?: { instance_id?: string; key_id?: string; secret?: string | null; note?: string };
+  /** Dry run only: whether the reveal can still be used. */
+  available?: boolean;
+  /** Dry run only: when the window closes (epoch ms). */
+  expires_at?: number | null;
+  note?: string;
+}
+
 export interface CreatePlatformAppBody {
   name?: string;
   environment?: 'production' | 'development';
@@ -686,6 +703,10 @@ function platformNamespaces(request: RequestFn) {
       },
       get(id: string): Promise<PlatformApp> {
         return request({ method: 'GET', path: `/v1/platform/apps/${enc(id)}` });
+      },
+      /** Show a newly created app's secret keys once more: works once, within 10 minutes of create, for the platform that created the app (a second call is 410; rotate instead). */
+      revealInitialSecret(id: string): Promise<PlatformAppInitialSecret> {
+        return request({ method: 'POST', path: `/v1/platform/apps/${enc(id)}/initial_secret/reveal` });
       },
       update(id: string, body: UpdatePlatformAppBody): Promise<PlatformApp> {
         return request({ method: 'PATCH', path: `/v1/platform/apps/${enc(id)}`, body });

@@ -65,3 +65,6 @@ export const atlasPlugin = {
     if (options.mode && server.auth.default) server.auth.default({ strategy: name, mode: options.mode });
   },
 };
+
+// Rate limiting and grant usage (see ./limits).
+export { atlasLimitsPlugin, type AtlasLimitsPluginOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter } from './limits';

@@ -1,0 +1,73 @@
+{
+  "name": "@atlasauth/emulator-core",
+  "version": "0.1.0",
+  "description": "An in-memory Atlas engine driven by the OpenAPI document: stateful users, organizations, roles, API keys, machines and grants, real signed tokens, signed webhooks, the change feed and a message sink. Used by the emulator, the msw handlers and in-process tests.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "atlas-parity": "dist/parity-bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./msw": {
+      "types": "./dist/msw.d.ts",
+      "default": "./dist/msw.js"
+    },
+    "./parity": {
+      "types": "./dist/parity.d.ts",
+      "default": "./dist/parity.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
+    "test": "vitest run",
+    "sync-error-catalog": "node scripts/sync-error-catalog.mjs"
+  },
+  "dependencies": {
+    "@atlasauth/backend": "workspace:*"
+  },
+  "peerDependencies": {
+    "msw": "^2"
+  },
+  "peerDependenciesMeta": {
+    "msw": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "msw": "^2.4.9",
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.7"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "!dist/*.tsbuildinfo",
+    "README.md"
+  ],
+  "typesVersions": {
+    "*": {
+      "server": [
+        "./dist/server.d.ts"
+      ],
+      "msw": [
+        "./dist/msw.d.ts"
+      ],
+      "parity": [
+        "./dist/parity.d.ts"
+      ]
+    }
+  }
+}

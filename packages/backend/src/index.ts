@@ -231,3 +231,21 @@ export type {
   WebBotAuthVerifierOptions,
   WebBotAuthVerifyOptions,
 } from './web-bot-auth';
+export { createRateLimiter, rateLimitRequest, createMemoryRateLimitStore, createRedisRateLimitStore } from './rate-limit';
+export type {
+  CreateRateLimiterOptions,
+  RateLimitDecision,
+  RateLimitPolicy,
+  RateLimiter,
+  RateLimitResult,
+  RateLimitStore,
+  RateLimitSubject,
+  RateLimitSubjectKind,
+  RedisEvalClient,
+} from './rate-limit';
+
+export * from './usage-gate';
+
+// Keep a local copy of Atlas resources in sync from the change feed (stores: memory, Redis, Postgres).
+// The Drizzle and Prisma adapters are subpath exports: `@atlasauth/backend/mirror/drizzle`, `.../prisma`.
+export * from './mirror';

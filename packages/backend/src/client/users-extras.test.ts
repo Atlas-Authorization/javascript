@@ -194,6 +194,10 @@ describe('users: writes', () => {
     expect(last().url).toBe(`${API_URL}/v1/users/search`);
     expect(json(last().body)).toEqual({ filter, limit: 5 });
 
+    await atlas.users.search.fields();
+    expect(last().method).toBe('GET');
+    expect(last().url).toBe(`${API_URL}/v1/users/search/fields`);
+
     await atlas.users.search.views.create({ name: 'Pros', filter });
     expect(last().url).toBe(`${API_URL}/v1/users/search/views`);
     await atlas.users.search.views.update('usv_1', { name: 'P' });
@@ -312,6 +316,10 @@ describe('users: writes', () => {
     await atlas.users.approvalRequests.get('user_1', 'apr_1');
     expect(last().method).toBe('GET');
     expect(last().url).toBe(`${API_URL}/v1/users/user_1/approval_requests/apr_1`);
+
+    await atlas.users.approvalRequests.cancel('user_1', 'apr_1');
+    expect(last().method).toBe('POST');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/approval_requests/apr_1/cancel`);
   });
 
   it('notificationPreferences get / update', async () => {

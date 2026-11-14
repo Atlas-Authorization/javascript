@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/hapi",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Hapi plugin and auth scheme for Atlas: verify the session locally.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -26,6 +26,6 @@
     "CHANGELOG.md"
   ],
   "peerDependencies": {
-    "@atlasauth/backend": ">=0.49.0 <1.0.0"
+    "@atlasauth/backend": ">=0.51.0 <1.0.0"
   }
 }

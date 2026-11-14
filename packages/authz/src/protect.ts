@@ -1,3 +1,4 @@
+import type { AppPermissionKey, AppRoleKey, FeatureKey, OrgRoleKey, PermissionKey, PlanKey } from '@atlasauth/types';
 import type { AuthzClaims } from './claims';
 
 /**
@@ -11,26 +12,26 @@ import type { AuthzClaims } from './claims';
  */
 export interface ProtectCondition {
   /** A single permission the ACTIVE organization role must hold. */
-  permission?: string;
+  permission?: PermissionKey;
   /** An exact role in the active organization. */
-  role?: string;
+  role?: OrgRoleKey;
   /** Any of these permissions (OR). */
-  anyPermission?: readonly string[];
+  anyPermission?: readonly PermissionKey[];
   /** All of these permissions (AND). */
-  allPermissions?: readonly string[];
+  allPermissions?: readonly PermissionKey[];
   /** The active billing plan (Clerk `has({ plan })`) — matches the `pla` claim.
    *  Needs NO active organization: it is the subject's entitlement. */
-  plan?: string;
+  plan?: PlanKey;
   /** A granted feature (Clerk `has({ feature })`) — an entry in the `fea` claim. */
-  feature?: string;
+  feature?: FeatureKey;
   /** An app-level (instance-wide) role key the user must hold. Needs no organization. */
-  appRole?: string;
+  appRole?: AppRoleKey;
   /** An app-level permission the user's app roles must grant. Needs no organization. */
-  appPermission?: string;
+  appPermission?: AppPermissionKey;
   /** Any of these app-level permissions (OR). */
-  anyAppPermission?: readonly string[];
+  anyAppPermission?: readonly AppPermissionKey[];
   /** All of these app-level permissions (AND). */
-  allAppPermissions?: readonly string[];
+  allAppPermissions?: readonly AppPermissionKey[];
 }
 
 export type ProtectReason =

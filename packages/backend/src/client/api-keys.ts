@@ -1,5 +1,6 @@
 import { enc, type RequestFn } from './request';
 import type { CursorPage, ListPage } from './types';
+import type { ResolvedRateLimit } from './rate-limit-policies';
 
 export type ApiKeySubjectType = 'user' | 'organization';
 
@@ -267,6 +268,8 @@ export type ApiKeyVerification =
       expires_at?: number | null;
       /** Uses left after this verify (null = unlimited). */
       remaining?: number | null;
+      /** The limit your own API should apply to this key: override, the key's own rate_limit, plan policy or default policy. null when none applies. */
+      rate_limit?: ResolvedRateLimit | null;
     };
 
 /**

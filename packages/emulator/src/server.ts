@@ -6,6 +6,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { getResponse } from 'msw';
 import { atlasHandlers, createAtlasMock, type AtlasMock, type AtlasMockSeed } from '@atlasauth/msw';
+import { createEmulatorEngine, type Engine, type EmulatorOptions as CoreOptions } from '@atlasauth/emulator-core';
+import { loadOpenApi } from '@atlasauth/emulator-core/server';
 
 export interface CaughtMessage {
   id: number;
@@ -22,11 +24,20 @@ export interface EmulatorOptions {
   seed?: AtlasMockSeed;
   /** Proxy every path the emulator does not own to this app URL (one origin). */
   app?: string;
+  /**
+   * The Atlas OpenAPI document (parsed, or a path / URL). When set, the full Backend API engine
+   * (`@atlasauth/emulator-core`) answers every `/v1/*`, `/__emulator/*` and JWKS route the FAPI mock does not.
+   */
+  openapi?: string | Record<string, unknown>;
+  /** Extra engine options (secret keys, strict mode, webhook retry delays). */
+  core?: Omit<CoreOptions, 'openapi' | 'issuer'>;
 }
 
 export interface Emulator {
   url: string;
   mock: AtlasMock;
+  /** The Backend API engine, when `openapi` was given. */
+  core?: Engine;
   mail: CaughtMessage[];
   close(): Promise<void>;
 }
@@ -78,6 +89,7 @@ export async function startEmulator(options: EmulatorOptions = {}): Promise<Emul
   // eslint-disable-next-line prefer-const -- assigned once below, but `harvest` closes over it before that point
   let mock!: AtlasMock;
   let handlers: ReturnType<typeof atlasHandlers> = [];
+  let core: Engine | undefined;
 
   // The handlers mount on absolute URLs, so they are built once the port is known.
   const harvest = () => {
@@ -115,13 +127,18 @@ export async function startEmulator(options: EmulatorOptions = {}): Promise<Emul
     }
     if (pathname === '/__emulator/reset' && request.method === 'POST') {
       mock.reset();
+      core?.reset();
       mail.length = 0;
       seen.clear();
       return Response.json({ ok: true });
     }
     const res = await getResponse(handlers, request);
-    if (res) harvest();
-    return res ?? null;
+    if (res) {
+      harvest();
+      return res;
+    }
+    if (core && (pathname.startsWith('/v1/') || pathname.startsWith('/__emulator/') || pathname.startsWith('/.well-known/'))) return core.handle(request);
+    return null;
   };
 
   const server: Server = createServer((req, res) => {
@@ -141,7 +158,11 @@ export async function startEmulator(options: EmulatorOptions = {}): Promise<Emul
   const seed = options.seed ?? {};
   mock = createAtlasMock({ ...seed, instance: { ...seed.instance, fapiBaseUrl: origin, bapiBaseUrl: origin } });
   handlers = atlasHandlers(mock);
-  return { url: origin, mock, mail, close: () => new Promise((ok) => (server.closeAllConnections(), server.close(() => ok()))) };
+  if (options.openapi) core = createEmulatorEngine({ ...options.core, openapi: await loadOpenApi(options.openapi as string), issuer: origin });
+  return { url: origin, mock, core, mail, close: async () => {
+      await core?.close();
+      await new Promise<void>((ok) => (server.closeAllConnections(), server.close(() => ok())));
+    } };
 }
 
 export interface ProxyOptions {

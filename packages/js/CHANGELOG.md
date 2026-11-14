@@ -2,6 +2,10 @@
 
 
 
+## 0.44.1
+
+- Permission checks are typed from a generated `atlas-types.d.ts` when present (via `@atlasauth/authz`).
+
 ## 0.44.0 — 2026-11-14
 
 - `listSessions` returns each session's `signInMethod`, `provider` and `amr`.

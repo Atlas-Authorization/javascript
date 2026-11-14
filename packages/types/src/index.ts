@@ -39,6 +39,29 @@ export type {
   ApiKeyVerification,
 } from './resources';
 
+// Type registration: `atlas types generate` augments `Register`; with no generated file every alias stays loose.
+export type {
+  Register,
+  PermissionKey,
+  OrgRoleKey,
+  AppRoleKey,
+  AppPermissionKey,
+  PlanKey,
+  FeatureKey,
+  ScopeKey,
+  WebhookEventKey,
+  AppEventKey,
+  AuditEventKey,
+  FgaTypeKey,
+  FgaRelationKey,
+  RegisteredSessionClaims,
+  UserPublicMetadata,
+  UserUnsafeMetadata,
+  UserPrivateMetadata,
+  OrganizationPublicMetadata,
+  OrganizationPrivateMetadata,
+} from './register';
+
 // Webhook event + payload + verification (← @atlasauth/core + @atlasauth/backend).
 export type {
   WebhookEvent,

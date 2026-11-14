@@ -5,6 +5,14 @@ import {
   type AtlasBackendOptions,
   type ProtectCondition,
 } from '@atlasauth/backend';
+import {
+  grantUsageGate,
+  rateLimitGate,
+  type GrantUsageCheck,
+  type GrantUsageOptions,
+  type RateLimitCheck,
+  type RateLimiter,
+} from './limits';
 
 /**
  * `@atlasauth/lambda-authorizer` — an API Gateway Lambda authorizer that checks
@@ -18,9 +26,18 @@ import {
  * on HTTP APIs it answers a Deny / `isAuthorized: false` (HTTP 403).
  */
 
+export type { GrantUsageCheck, GrantUsageOptions, RateLimitCheck, RateLimiter } from './limits';
 export type { AccessTokenVerifierOptions, AtlasBackendOptions, ProtectCondition } from '@atlasauth/backend';
 
 export interface LambdaAuthorizerOptions {
+  /**
+   * Rate limit after a token verifies (a `createRateLimiter` limiter or a `rateLimitRequest` check):
+   * a request over the limit is answered like a refused policy (Deny / `isAuthorized: false`).
+   * API Gateway caches an authorizer result for its TTL, so set the authorizer TTL to 0 for exact counts.
+   */
+  rateLimit?: RateLimiter | RateLimitCheck;
+  /** Consume a grant counter after a token verifies; a spent counter or missing grant answers Deny. Same TTL note as `rateLimit`. */
+  grantUsage?: GrantUsageOptions | GrantUsageCheck;
   /** Verify Atlas session tokens (the `__session` cookie / Bearer session JWT). Options as for `AtlasBackend`, or an instance. */
   session?: AtlasBackendOptions | AtlasBackend;
   /** Verify OAuth access tokens (audience, requiredScopes ...). DPoP is not available through an authorizer. */
@@ -171,6 +188,10 @@ export function createLambdaAuthorizer(options: LambdaAuthorizerOptions) {
   const ttl = (options.cacheTtlSeconds ?? 30) * 1000;
   const max = options.cacheMax ?? 1000;
   const cache = new Map<string, { outcome: Outcome; until: number }>();
+  const gates = [
+    ...(options.rateLimit ? [rateLimitGate(options.rateLimit)] : []),
+    ...(options.grantUsage ? [grantUsageGate(options.grantUsage)] : []),
+  ];
 
   async function resolve(token: string): Promise<Outcome> {
     let denied = false;
@@ -269,6 +290,16 @@ export function createLambdaAuthorizer(options: LambdaAuthorizerOptions) {
     if (outcome.kind === 'deny') {
       if (simple) return { isAuthorized: false };
       return policy('anonymous', 'Deny', arn);
+    }
+    for (const gate of gates) {
+      // A throwing gate (usage call failed) refuses: never allow on an error.
+      const verdict = await gate({
+        claims: outcome.principal.claims,
+        headers: event.headers ?? {},
+        ip: (event.requestContext as { http?: { sourceIp?: string }; identity?: { sourceIp?: string } } | undefined)?.http?.sourceIp ??
+          (event.requestContext as { identity?: { sourceIp?: string } } | undefined)?.identity?.sourceIp,
+      }).catch(() => ({ allowed: false as const }));
+      if (!verdict.allowed) return simple ? { isAuthorized: false } : policy('anonymous', 'Deny', arn);
     }
     const ctx = context(outcome.principal);
     if (simple) return { isAuthorized: true, context: ctx };

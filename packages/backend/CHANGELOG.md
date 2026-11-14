@@ -1,5 +1,13 @@
 # @atlasauth/backend changelog
 
+## 0.51.0
+
+- `@atlasauth/backend/rate-limit`: `createRateLimiter` and `rateLimitRequest` enforce Atlas rate-limit policies locally (memory or Redis, fixed window, `RateLimit-*` headers, 429 with `Retry-After`).
+- `@atlasauth/backend/usage-gate`: `createUsageGate` and `requireGrantUsage` meter machine and agent grant counters with leases and idempotent consume/refund.
+- `@atlasauth/backend/mirror`: `createMirror` keeps a local copy of users, organizations and memberships from the change feed, with Drizzle and Prisma stores.
+- Client: change feed (`changes`), grant usage, rate-limit policies and overrides, user traits schema, search fields, approval request cancel, and 170+ further endpoints now have typed methods.
+- Permission helpers are typed from a generated `atlas-types.d.ts` when present (`atlas types generate`).
+
 ## 0.49.0 — 2026-11-14
 
 - `createAccessTokenVerifier({ revocation: true })` polls the revoked-token feed and rejects tokens whose family or `jti` was revoked, with no per-request call.

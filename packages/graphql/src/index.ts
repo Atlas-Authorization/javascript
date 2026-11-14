@@ -20,11 +20,11 @@ type Headers = Record<string, string | string[] | undefined>;
 
 /** An error graphql-js and Apollo surface to the client with a stable `extensions.code`. */
 export class AtlasGraphQLError extends Error {
-  readonly extensions: { code: 'UNAUTHENTICATED' | 'FORBIDDEN'; http: { status: number } };
-  constructor(code: 'UNAUTHENTICATED' | 'FORBIDDEN', message: string) {
+  readonly extensions: { code: 'UNAUTHENTICATED' | 'FORBIDDEN' | 'RATE_LIMITED'; http: { status: number; headers?: Record<string, string> } };
+  constructor(code: 'UNAUTHENTICATED' | 'FORBIDDEN' | 'RATE_LIMITED', message: string, status?: number, headers?: Record<string, string>) {
     super(message);
     this.name = 'AtlasGraphQLError';
-    this.extensions = { code, http: { status: code === 'UNAUTHENTICATED' ? 401 : 403 } };
+    this.extensions = { code, http: { status: status ?? (code === 'UNAUTHENTICATED' ? 401 : code === 'RATE_LIMITED' ? 429 : 403), ...(headers ? { headers } : {}) } };
   }
 }
 
@@ -61,3 +61,6 @@ export function guard<P, A, C extends AtlasContext, R>(
     return resolver(parent, args, context, info);
   };
 }
+
+// Rate limiting and grant usage (see ./limits).
+export { withRateLimit, withGrantUsage, type AtlasLimitOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter, type LimitClaims, type LimitVerdict } from './limits';

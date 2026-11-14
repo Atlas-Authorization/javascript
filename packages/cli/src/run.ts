@@ -21,10 +21,13 @@ import { client, doctor, envCommand, preflight } from './commands/project-comman
 import { orgs } from './commands/orgs';
 import { referrals } from './commands/referrals';
 import { sessions } from './commands/sessions';
+import { grants } from './commands/grants';
 import { status } from './commands/status';
 import { suite } from './commands/suite';
+import { types } from './commands/types';
 import { users } from './commands/users';
 import { webhooks } from './commands/webhooks';
+import { changes, mirrorCommand } from './commands/changes';
 import { integrations } from './commands/integrations';
 import { idAccounts } from './commands/id-accounts';
 import { admin } from './commands/admin';
@@ -54,11 +57,14 @@ const COMMANDS: Record<string, Handler> = {
   orgs,
   'api-keys': apiKeys,
   webhooks,
+  changes,
+  mirror: mirrorCommand,
   integrations,
   'partner-platforms': partnerPlatforms,
   'id-accounts': idAccounts,
   admin,
   sessions,
+  grants,
   config,
   plan: planCommand,
   apply: applyCommand,
@@ -82,6 +88,7 @@ const COMMANDS: Record<string, Handler> = {
   dev,
   'move-origin': moveOrigin,
   csp,
+  types,
   fga,
   workflows: resourceCommand('workflows', WORKFLOWS),
   chat: resourceCommand('chat', CHAT),

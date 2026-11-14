@@ -173,3 +173,32 @@ The hook handler verifies the signed call, answers `{ external_id }`, and answer
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md).
+
+
+## Rate limits and grant usage
+
+Two gates sit behind your auth, both built on `@atlasauth/backend`: a rate limiter (`createRateLimiter`, fixed window, 429 with `Retry-After` and `RateLimit-*` headers) and a grant usage gate (`createUsageGate`, which consumes a named counter on a machine or agent grant: 429 when the counter is spent, 403 when the grant is missing or expired). Each wrapper takes the limiter or options, or a check you already built with `rateLimitRequest` / `requireGrantUsage`. A limit store or usage call that throws is an error, never an allow.
+
+Build the limiter and the gate once at startup:
+
+```ts
+import { createAtlasClient, createRateLimiter, createUsageGate } from '@atlasauth/backend';
+
+const atlas = createAtlasClient({ secretKey: process.env.ATLAS_SECRET_KEY! });
+const limiter = createRateLimiter({ policies: [{ name: 'per-user', subject: 'user', limit: 100, windowSeconds: 60 }] });
+const gate = createUsageGate({ client: atlas }); // or { mode: 'lease', leaseSize: 20 }
+// atlasGrantUsage({ gate, counter: 'orders', amount: 1 }) spends the grant named by the token's grant_id claim.
+```
+
+```ts
+import { withRateLimit, withGrantUsage, atlasRateLimitMiddleware } from '@atlasauth/nextjs';
+
+// app/api/orders/route.ts
+export const POST = withGrantUsage({ gate, counter: 'orders' }, async (req) => Response.json({ ok: true }), { claims: (req) => verifiedClaims(req) });
+export const GET = withRateLimit(limiter, async () => Response.json({}));
+
+// middleware.ts
+const limit = atlasRateLimitMiddleware(limiter);
+export async function middleware(req: NextRequest) { return (await limit(req)) ?? NextResponse.next(); }
+```
+`claims` returns the verified token claims; without it the rate limit falls back to the address.

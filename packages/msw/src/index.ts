@@ -42,3 +42,9 @@ export {
   presentSignInAttempt,
   presentSignUpAttempt,
 } from './serializers';
+
+// The full Backend API engine as msw handlers (users, organizations, roles, API keys, machines and grants,
+// webhooks, the change feed, signed tokens), for code that needs more than the in-memory client model above.
+export { coreHandlers } from '@atlasauth/emulator-core/msw';
+export type { CoreHandlersOptions } from '@atlasauth/emulator-core/msw';
+export { createEmulatorEngine } from '@atlasauth/emulator-core';
