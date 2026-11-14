@@ -27,6 +27,7 @@ export type ActionTrigger =
   | 'post_token_exchange'
   | 'custom_token_exchange'
   | 'pre_user_update'
+  | 'pre_user_deletion'
   | 'mfa_verification_attempt'
   | 'password_verification_attempt'
   | 'account_link_decision'
@@ -56,6 +57,7 @@ export const ACTION_TRIGGERS: readonly ActionTrigger[] = [
   'post_token_exchange',
   'custom_token_exchange',
   'pre_user_update',
+  'pre_user_deletion',
   'mfa_verification_attempt',
   'password_verification_attempt',
   'account_link_decision',
@@ -212,6 +214,21 @@ export interface AccessApi {
  */
 export interface AttemptAccessApi extends AccessApi {
   lock(reason?: string): void;
+}
+
+/**
+ * `pre_user_deletion`: besides `deny` (refuse the deletion), `pause` holds it
+ * until the person re-confirms with a fresh sign-in check. Neither: the deletion
+ * goes ahead. `deny` wins over `pause` when both are called.
+ */
+export interface DeletionAccessApi extends AccessApi {
+  pause(reason?: string): void;
+}
+
+/** api for `pre_user_deletion`: allow (do nothing), `access.deny(reason)` or `access.pause(reason)`. */
+export interface DeletionApi {
+  access: DeletionAccessApi;
+  console: ConsoleApi;
 }
 
 /**
@@ -436,9 +453,33 @@ export interface UserEvent extends BaseActionEvent {
 
 /** The organization an organization trigger is about (`id` is null for `pre_organization_create`). */
 export interface OrganizationEvent extends BaseActionEvent {
-  organization: { id: string | null; name: string; slug: string };
-  membership?: { role: string; source: string };
-  invitation?: { email: string; role: string };
+  organization: {
+    id: string | null;
+    name: string;
+    slug: string;
+    /** The organization's public metadata (on `pre_organization_create`, the metadata about to be set). */
+    publicMetadata?: Record<string, unknown>;
+    privateMetadata?: Record<string, unknown>;
+    /** Plan, features and limits the organization holds now; null with none (always null on `pre_organization_create`). */
+    entitlements?: { plan: string; features: string[]; limits: Record<string, unknown> } | null;
+  };
+  membership?: {
+    role: string;
+    source: string;
+    publicMetadata?: Record<string, unknown>;
+    privateMetadata?: Record<string, unknown>;
+    permissions?: string[];
+    allowedSignInMethods?: string[] | null;
+  };
+  invitation?: {
+    email: string;
+    role: string;
+    delivery?: 'email' | 'link';
+    publicMetadata?: Record<string, unknown>;
+    privateMetadata?: Record<string, unknown>;
+    permissions?: string[];
+    allowedSignInMethods?: string[] | null;
+  };
 }
 
 /** custom_token_exchange — the user is not known yet: `user.id` is null and `context` holds the subject token. */
@@ -464,6 +505,8 @@ export type ApiForTrigger<T extends ActionTrigger> = T extends 'post_login'
   ? PostLoginApi
   : T extends 'custom_token_exchange'
     ? CustomTokenExchangeApi
+    : T extends 'pre_user_deletion'
+    ? DeletionApi
     : T extends 'pre_user_registration'
     ? PreUserRegistrationApi
     : T extends 'post_user_registration'

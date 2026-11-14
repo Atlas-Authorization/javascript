@@ -66,7 +66,7 @@ import { dataSubjectRequestsResource } from './data-subject-requests';
 import { privacyResource } from './privacy';
 import { radiusClientsResource } from './radius-clients';
 import { mcpGatewaysResource } from './mcp-gateways';
-import { agentGovernanceResource, connectionActionsResource, mcpRegistryResource, telemetryExportResource } from './agent-platform';
+import { agentGovernanceResource, connectionActionsResource, mcpRegistryResource, telemetryExportResource, webBotAuthResource } from './agent-platform';
 import { ltiPlatformsResource } from './lti-platforms';
 import { instanceResource } from './instance';
 import { integrationsResource } from './integrations';
@@ -237,6 +237,7 @@ function buildNamespaces(request: RequestFn) {
     connectionActions: connectionActionsResource(request),
     /** Agent sponsors, expiry and renewal, activity log, access reviews. */
     agentGovernance: agentGovernanceResource(request),
+    webBotAuth: webBotAuthResource(request),
     /** Approved upstream MCP servers and admin-MCP write elevations. */
     mcpRegistry: mcpRegistryResource(request),
     /** OTLP export of gateway and relay calls. */

@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/backend",
-  "version": "0.48.0",
+  "version": "0.49.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -24,6 +24,10 @@
       "types": "./dist/cli-login.d.ts",
       "default": "./dist/cli-login.js"
     },
+    "./machine": {
+      "types": "./dist/machine-client.d.ts",
+      "default": "./dist/machine-client.js"
+    },
     "./package.json": "./package.json"
   },
   "typesVersions": {
@@ -36,6 +40,9 @@
       ],
       "cli": [
         "./dist/cli-login.d.ts"
+      ],
+      "machine": [
+        "./dist/machine-client.d.ts"
       ]
     }
   },

@@ -362,6 +362,8 @@ export interface MessagingProviders {
   object: 'messaging_providers';
   email: EmailProvider | null;
   sms: SmsProvider | null;
+  /** The push sender (APNS/FCM or Expo), or null. */
+  push?: MessagingProvider | null;
   /** The Atlas-managed sending domain, when one is set up (summary). */
   managed_email?: {
     object: 'managed_email';
@@ -549,8 +551,24 @@ export function messagingResource(request: RequestFn) {
     return request({ method: 'PUT', path: '/v1/messaging_providers/sms', body });
   }
 
+  /** Body for `messaging.setPush`: APNS and/or FCM in one row (`apns_fcm`), or an Expo access token (`expo`). Secrets are write-only. */
+  type PushProviderInput =
+    | { transport: 'expo'; config: { access_token?: string } }
+    | {
+        transport: 'apns_fcm';
+        config: {
+          apns_auth_key?: string;
+          apns_key_id?: string;
+          apns_team_id?: string;
+          apns_topic?: string;
+          apns_host?: string;
+          fcm_service_account?: string;
+          fcm_project_id?: string;
+        };
+      };
+
   return {
-    /** The instance's configured email and SMS providers, secrets omitted. */
+    /** The instance's configured email, SMS and push providers, secrets omitted. */
     get(): Promise<MessagingProviders> {
       return request({ method: 'GET', path: '/v1/messaging_providers' });
     },
@@ -572,6 +590,10 @@ export function messagingResource(request: RequestFn) {
      * secrets — keep their stored values.
      */
     setSms,
+    /** Configure (or update) the push sender used for push MFA and in-app approval. Omitted secrets keep their stored values. */
+    setPush(body: PushProviderInput): Promise<MessagingProvider> {
+      return request({ method: 'PUT', path: '/v1/messaging_providers/push', body });
+    },
     /**
      * Remove a channel's provider. Removing the email provider is refused with
      * `409 EMAIL_PROVIDER_IN_USE` (`meta.features` names them) while
@@ -580,7 +602,7 @@ export function messagingResource(request: RequestFn) {
      * stop being offered until a provider is configured again.
      */
     deleteChannel(
-      channel: 'email' | 'sms',
+      channel: 'email' | 'sms' | 'push',
       options: { force?: boolean } = {},
     ): Promise<DeletedMessagingProvider> {
       return request({

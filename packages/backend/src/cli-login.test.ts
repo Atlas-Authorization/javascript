@@ -123,3 +123,60 @@ describe('createCliLogin', () => {
     expect(() => createCliLogin({ issuer: ISSUER, clientId: 'c', appName: '../evil' })).toThrow(/Invalid appName/);
   });
 });
+
+describe('createCliLogin resource and loopback', () => {
+  it('sends resource on device authorization and on every refresh', async () => {
+    const { calls, fetch } = server((c) => (c.url.endsWith('/device_authorization') ? [200, DEVICE] : c.body.get('grant_type') === 'refresh_token' ? [200, tokens(2)] : [200, tokens(1)]));
+    const { cli, t } = make(fetch, undefined, { resource: 'https://api.example.com', mode: 'device' });
+    await cli.login();
+    expect(calls[0]!.body.get('resource')).toBe('https://api.example.com');
+    t.now += 3_550_000;
+    await cli.getAccessToken();
+    expect(calls.find((c) => c.body.get('grant_type') === 'refresh_token')!.body.get('resource')).toBe('https://api.example.com');
+  });
+
+  it('refuses two different resources: a sign-in is bound to one API', () => {
+    expect(() => createCliLogin({ issuer: ISSUER, clientId: 'c', appName: 'acme', resource: ['https://a.example.com', 'https://b.example.com'] })).toThrow(/one resource/);
+    expect(() => createCliLogin({ issuer: ISSUER, clientId: 'c', appName: 'acme', resource: ['https://a.example.com', 'https://a.example.com'] })).not.toThrow();
+  });
+
+  it('loopback: PKCE + state on 127.0.0.1, exchanges the code with the verifier and resource', async () => {
+    const { calls, fetch } = server(() => [200, tokens(7)]);
+    let authorize: URL | undefined;
+    const open = (u: string) => {
+      authorize = new URL(u);
+      const redirect = new URL(authorize.searchParams.get('redirect_uri')!);
+      redirect.searchParams.set('code', 'code_1');
+      redirect.searchParams.set('state', authorize.searchParams.get('state')!);
+      // The browser comes back on the loopback redirect.
+      void globalThis.fetch(redirect.toString()).catch(() => {});
+    };
+    const { cli } = make(fetch, undefined, { mode: 'loopback', openBrowser: true, open, resource: 'https://api.example.com', extraAuthorizeParams: { prompt: 'login', state: 'attacker' } });
+    const s = await cli.login();
+    expect(s.access_token).toBe('at_7');
+    expect(authorize!.pathname).toBe('/oauth2/authorize');
+    expect(authorize!.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(authorize!.searchParams.get('prompt')).toBe('login');
+    expect(authorize!.searchParams.get('state')).not.toBe('attacker');
+    expect(authorize!.searchParams.get('resource')).toBe('https://api.example.com');
+    expect(authorize!.searchParams.get('redirect_uri')).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/callback$/);
+    const exchange = calls[0]!.body;
+    expect(exchange.get('grant_type')).toBe('authorization_code');
+    expect(exchange.get('code_verifier')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(exchange.get('redirect_uri')).toBe(authorize!.searchParams.get('redirect_uri'));
+    expect(exchange.get('resource')).toBe('https://api.example.com');
+  });
+
+  it('loopback: a callback with the wrong state is ignored, then the wait times out', async () => {
+    const { calls, fetch } = server(() => [200, tokens(7)]);
+    const open = (u: string) => {
+      const redirect = new URL(new URL(u).searchParams.get('redirect_uri')!);
+      redirect.searchParams.set('code', 'forged');
+      redirect.searchParams.set('state', 'wrong');
+      void globalThis.fetch(redirect.toString()).catch(() => {});
+    };
+    const { cli } = make(fetch, undefined, { mode: 'loopback', openBrowser: true, open, loopbackTimeoutMs: 300 });
+    await expect(cli.login()).rejects.toThrow(/Timed out/);
+    expect(calls).toHaveLength(0);
+  });
+});

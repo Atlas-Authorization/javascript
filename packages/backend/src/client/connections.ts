@@ -159,6 +159,10 @@ export interface ConnectionTokenBatchItem {
 
 /** One row of a bulk import. `external_id` is the provider-side account; a re-import of it updates the same connection. */
 export interface ImportConnectionRow {
+  /** `oauth` (default) takes tokens; another credential kind (`api_key`, `bearer`, `basic`, `custom_header`, `hmac_secret`, `client_credentials`, `oauth1`...) takes `credentials` and `allowed_hosts`. */
+  kind?: string;
+  /** Credential kinds only: the kind's secret fields (oauth1: `consumer_key`, `consumer_secret`, `token`, `token_secret`). Write-only. */
+  credentials?: Record<string, string>;
   provider: string;
   owner: { type: ConnectionOwnerType; id: string };
   external_id: string;
@@ -174,7 +178,8 @@ export interface ImportConnectionRow {
   allowed_hosts?: string[];
   /** When the provider retires the refresh token: epoch ms or ISO 8601. */
   refresh_token_expires_at?: number | string;
-  config?: { scopes?: string[] };
+  /** OAuth rows: `scopes`. Credential kinds: the kind's non-secret config (placement, name, signing, preset...). */
+  config?: { scopes?: string[] } & Record<string, unknown>;
 }
 
 export interface ImportConnectionsBody {

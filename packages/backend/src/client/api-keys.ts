@@ -37,7 +37,22 @@ export interface ApiKey {
   last_used_at: number | null;
   expires_at: number | null;
   revoked_at: number | null;
+  /** Why it was revoked when a person did not: `membership_ended`, `creator_departed` or `organization_deleted`. */
+  revoked_reason?: string | null;
+  /** The organization a user key is bound to; null = unbound. */
+  organization_id?: string | null;
+  /** The member who created an organization key, when recorded. */
+  created_by_user_id?: string | null;
   created_at: number;
+}
+
+/** The current membership a key bound to an organization stands for. */
+export interface ApiKeyOrganization {
+  id: string;
+  /** The member's role key in the organization. */
+  role: string;
+  /** The permissions the role (and the member's groups) grant. */
+  permissions: string[];
 }
 
 /** What an import answered: a new row (`created`) or the same key already stored (`already_present`). */
@@ -158,6 +173,15 @@ export interface ApiKeyWithSecret extends ApiKey {
 export interface CreateApiKeyBody extends ApiKeyControls {
   subject_type: ApiKeySubjectType;
   subject_id: string;
+  /**
+   * Bind a USER key (`subject_type: 'user'`) to an organization the user belongs to:
+   * verify and token mints resolve the current membership, `effective_scopes` is the
+   * key's scopes the membership's permissions cover, and the key is revoked with
+   * reason `membership_ended` when the membership ends.
+   */
+  organization_id?: string;
+  /** An ORGANIZATION key: the member who created it (must belong to the organization). */
+  created_by_user_id?: string;
   name?: string;
   claims?: Record<string, unknown>;
   /** Epoch ms; null never expires (omitted: the instance default lifetime, if any). */
@@ -230,6 +254,10 @@ export type ApiKeyVerification =
        * against this set; equals the held scopes when none are configured.
        */
       effective_scopes?: string[];
+      /** A key bound to an organization: the user's CURRENT membership there. Absent for an unbound key. */
+      organization?: ApiKeyOrganization;
+      /** The member who created an organization key, when recorded. */
+      created_by_user_id?: string;
       constraints?: Record<string, unknown>;
       /** The key's spend caps (null when none). */
       limits?: ApiKeyLimit[] | null;
@@ -256,6 +284,8 @@ export interface ApiKeyToken {
   subject_id: string;
   scopes: string[];
   constraints: Record<string, unknown>;
+  /** A key bound to an organization: the membership at mint time (`scopes` is then the effective scopes). */
+  organization?: ApiKeyOrganization;
   expires_in: number;
   expires_at: number;
   /** Which JWKS/issuer a verifier should check, so it needn't parse the JWT first. */
@@ -277,6 +307,12 @@ export interface RevokedApiKeyRef {
   object: 'api_key';
   id: string;
   revoked_at: number | null;
+  /** Why, when a person did not revoke it: `membership_ended`, `creator_departed` or `organization_deleted`. */
+  revoked_reason?: string | null;
+  subject_type?: ApiKeySubjectType;
+  subject_id?: string;
+  /** The organization the key was bound to, if any. */
+  organization_id?: string | null;
 }
 
 export interface ListRevokedApiKeysQuery {

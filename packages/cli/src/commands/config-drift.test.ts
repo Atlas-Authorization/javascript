@@ -24,6 +24,7 @@ class FakeApi implements ConfigHttp {
   webhooks: Array<Record<string, unknown>> = [];
   email: Record<string, unknown> | null = null;
   sms: Record<string, unknown> | null = null;
+  push: Record<string, unknown> | null = null;
   oauthProviders: Array<Record<string, unknown>> = [];
   hook: Record<string, unknown> = { url: null, enabled: false, timeout_ms: 3000, fail_closed: false, signing_secret_set: false };
   branding: Record<string, unknown> = {};
@@ -47,6 +48,9 @@ class FakeApi implements ConfigHttp {
     }
     if (path === '/v1/messaging_providers/sms') {
       return (this.sms ?? { object: 'messaging_provider', configured: false, channel: 'sms' }) as T;
+    }
+    if (path === '/v1/messaging_providers/push') {
+      return (this.push ?? { object: 'messaging_provider', configured: false, channel: 'push' }) as T;
     }
     if (path === '/v1/oauth_providers') return { data: this.oauthProviders } as T;
     if (path === '/v1/instance/hooks/before_user_create') return { object: 'before_user_create_hook', last_call: null, ...this.hook } as T;
@@ -80,8 +84,8 @@ class FakeApi implements ConfigHttp {
   async put<T>(path: string, body: unknown): Promise<T> {
     this.writes.push({ method: 'PUT', path, body });
     if (path === '/v1/instance/cookie_consent') this.cookie = { object: 'cookie_consent', script_id: null, site_id: null, blocking_mode: null, extra_origins: [], settings_link: null, culture: 'page', ...(body as object) };
-    if (path === '/v1/messaging_providers/email' || path === '/v1/messaging_providers/sms') {
-      const channel = path.endsWith('/sms') ? 'sms' : 'email';
+    if (path === '/v1/messaging_providers/email' || path === '/v1/messaging_providers/sms' || path === '/v1/messaging_providers/push') {
+      const channel = path.endsWith('/sms') ? 'sms' : path.endsWith('/push') ? 'push' : 'email';
       const { config = {}, ...rest } = body as { config?: Record<string, string> };
       const secrets = Object.keys(config).filter((k) => /key|secret|token/.test(k));
       const row = {
@@ -90,6 +94,7 @@ class FakeApi implements ConfigHttp {
         secrets_set: Object.fromEntries(secrets.map((k) => [k, true])),
       };
       if (channel === 'sms') this.sms = row;
+      else if (channel === 'push') this.push = row;
       else this.email = row;
     }
     if (path.startsWith('/v1/oauth_providers/')) {
@@ -598,6 +603,33 @@ describe('sms_provider', () => {
     expect(api.writes.length).toBe(before + 1);
     const bad = file({ sms_provider: { transport: 'twilio', config: { account_sid: 'AC123', messaging_service_sid: 'MGnope' } } }, 'bad-sms.json');
     expect(await run(['plan', bad], ctx(captureIO(), api))).toBe(1);
+  });
+});
+
+describe('push_provider', () => {
+  const doc = { push_provider: { transport: 'expo', config: { access_token: '${EXPO_TOKEN}' } } };
+  const secrets = () => {
+    const p = join(dir, 'push-secrets.env');
+    writeFileSync(p, 'EXPO_TOKEN=expo-tok-123\n');
+    chmodSync(p, 0o600);
+    return p;
+  };
+
+  it('applies the expo sender, plans clean, and never prints the token', async () => {
+    const api = new FakeApi();
+    const io = captureIO();
+    expect(await run(['apply', file(doc), '--yes', '--secrets-file', secrets()], ctx(io, api))).toBe(0);
+    expect(api.writes.map((w) => w.path)).toEqual(['/v1/messaging_providers/push']);
+    expect(api.writes[0]!.body).toMatchObject({ transport: 'expo', config: { access_token: 'expo-tok-123' } });
+    expect(io.stdout()).not.toContain('expo-tok-123');
+    expect(await run(['plan', file(doc), '--check', '--secrets-file', secrets()], ctx(captureIO(), api))).toBe(0);
+  });
+
+  it('plan --check exits 2 when the transport drifts', async () => {
+    const api = new FakeApi();
+    await run(['apply', file(doc), '--yes', '--secrets-file', secrets()], ctx(captureIO(), api));
+    api.push = { ...api.push!, transport: 'apns_fcm' };
+    expect(await run(['plan', file(doc), '--check', '--secrets-file', secrets()], ctx(captureIO(), api))).toBe(2);
   });
 });
 

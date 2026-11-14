@@ -162,6 +162,14 @@ export interface OrganizationMembership {
   organization_id: string;
   user_id: string;
   role: string;
+  /** Readable by the application; also `{{org.membership.public_metadata.*}}` in JWT templates. */
+  public_metadata?: Metadata;
+  /** Backend only. */
+  private_metadata?: Metadata;
+  /** Permission keys held on top of the role; they join `org_permissions` in the session token. */
+  permissions?: string[];
+  /** Sign-in methods whose sessions mint with the organization's claims; null = any. */
+  allowed_sign_in_methods?: string[] | null;
   created_at: number;
 }
 

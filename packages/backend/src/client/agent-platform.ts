@@ -160,6 +160,40 @@ export interface AgentAccessReviewItem {
 }
 
 /** Agent governance: sponsors, expiry and renewal, the activity log, and access reviews of agents' grants. */
+export interface WebBotAuthLists {
+  object: 'web_bot_auth';
+  allow: Array<{ directory: string; name: string | null }>;
+  block: Array<{ directory: string; name: string | null }>;
+}
+
+export interface WebBotAuthVerification {
+  object: 'web_bot_auth_verification';
+  verified: boolean;
+  agent: { directory: string; key_id: string; name: string } | null;
+  tier: 'allowed' | 'blocked' | 'verified' | 'unverified';
+  decision: 'allow' | 'block' | 'unknown';
+  reason: string | null;
+}
+
+/** Signed bots (Web Bot Auth): check a request, and manage the allow and block lists. */
+export function webBotAuthResource(request: RequestFn) {
+  return {
+    /** Forward the method, absolute URL and headers of a request you received; get the decision. */
+    verifyRequest(body: { method: string; url: string; headers: Record<string, string | string[]>; reject_replays?: boolean }): Promise<WebBotAuthVerification> {
+      return request({ method: 'POST', path: '/v1/agents/verify_request', body });
+    },
+    lists: {
+      get(): Promise<WebBotAuthLists> {
+        return request({ method: 'GET', path: '/v1/web_bot_auth' });
+      },
+      /** Each list you pass replaces it; omit one to keep it. Entries are `https://host` or `{ directory, name }`. */
+      set(body: { allow?: Array<string | { directory: string; name?: string }>; block?: Array<string | { directory: string; name?: string }> }): Promise<WebBotAuthLists> {
+        return request({ method: 'PUT', path: '/v1/web_bot_auth', body });
+      },
+    },
+  };
+}
+
 export function agentGovernanceResource(request: RequestFn) {
   return {
     lifecycle: {

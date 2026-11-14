@@ -172,7 +172,7 @@ function enc(segment: string): string {
  * The email / SMS provider singleton (`/v1/messaging_providers/<channel>`). Secrets
  * (api_key, auth_token, …) are write-only: the live side shows "(secret set)".
  */
-function messagingProviderSpec(channel: 'email' | 'sms'): SingletonSpec {
+function messagingProviderSpec(channel: 'email' | 'sms' | 'push'): SingletonSpec {
   const path = `/v1/messaging_providers/${channel}`;
   return {
     kind: 'singleton',
@@ -190,12 +190,12 @@ function messagingProviderSpec(channel: 'email' | 'sms'): SingletonSpec {
       const set = obj((p.secrets_set ?? null) as Json);
       const names = Array.isArray(p.secrets_set) ? (p.secrets_set as string[]) : Object.keys(set).filter((k) => set[k] === true);
       for (const k of names) config[k] = SECRET_SET;
-      return pick({ ...p, config }, ['transport', 'from_address', 'config']);
+      return pick({ ...p, config }, channel === 'push' ? ['transport', 'config'] : ['transport', 'from_address', 'config']);
     },
     async apply(http, config) {
       await http.put(path, compact(withoutMarkers(config)));
     },
-    fileKeys: channel === 'email' ? ['transport', 'from_address', 'mode', 'config'] : ['transport', 'from_address', 'config'],
+    fileKeys: channel === 'email' ? ['transport', 'from_address', 'mode', 'config'] : channel === 'push' ? ['transport', 'config'] : ['transport', 'from_address', 'config'],
     validate(config) {
       const sid = obj(obj(config).config ?? null).messaging_service_sid;
       return channel === 'sms' && typeof sid === 'string' && sid !== '' && !/^MG[0-9a-fA-F]{32}$/.test(sid)
@@ -222,6 +222,8 @@ function registry(): ResourceSpec[] {
     messagingProviderSpec('email'),
     // 0b. SMS provider — same shape as the email provider, minus `mode`.
     messagingProviderSpec('sms'),
+    // 0c. Push provider (apns_fcm | expo) — APNS/FCM/Expo credentials are write-only secrets.
+    messagingProviderSpec('push'),
 
     // 1. Instance config (auth_config + allowed origins) — the §9.3 singleton.
     {
@@ -1252,6 +1254,24 @@ function registry(): ResourceSpec[] {
       },
       async apply(http, config) {
         await http.put('/v1/connections/relay_limits', compact(config));
+      },
+    },
+
+    // 27. Signed-bot (Web Bot Auth) allow and block lists. An entry is `https://host` or { directory, name }.
+    {
+      kind: 'singleton',
+      type: 'web_bot_auth',
+      fileKeys: ['allow', 'block'],
+      async fetchLive(http) {
+        const v = await orNotFound(http.get<Record<string, unknown>>('/v1/web_bot_auth'), null);
+        if (!v) return null;
+        const entries = (list: unknown): Json =>
+          (Array.isArray(list) ? list : []).map((e: { directory: string; name?: string | null }) => (e.name ? { directory: e.directory, name: e.name } : e.directory));
+        return { allow: entries(v.allow), block: entries(v.block) };
+      },
+      async apply(http, config) {
+        const c = compact(config);
+        await http.put('/v1/web_bot_auth', { allow: c.allow ?? [], block: c.block ?? [] });
       },
     },
   ];

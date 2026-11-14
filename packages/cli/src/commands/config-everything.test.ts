@@ -112,4 +112,21 @@ describe('config as code: everything', () => {
     expect(patch.auth_config.appApproval).toEqual({ stepUp: true });
     expect(patch.auth_config.captcha).toEqual({ flows: { signIn: { enabled: true } } });
   });
+
+  it('applies and reads the web_bot_auth lists', async () => {
+    const api = new Api();
+    const p = file({ web_bot_auth: { allow: ['https://bot.example.com', { directory: 'https://crawler.example.org', name: 'Example crawler' }], block: ['https://scraper.example.net'] } });
+    expect(await run(['apply', p, '--yes'], ctx(api))).toBe(0);
+    expect(write(api, '/v1/web_bot_auth')).toMatchObject({
+      method: 'PUT',
+      body: { allow: ['https://bot.example.com', { directory: 'https://crawler.example.org', name: 'Example crawler' }], block: ['https://scraper.example.net'] },
+    });
+    const live = {
+      '/v1/web_bot_auth': {
+        allow: [{ directory: 'https://bot.example.com', name: null }, { directory: 'https://crawler.example.org', name: 'Example crawler' }],
+        block: [{ directory: 'https://scraper.example.net', name: null }],
+      },
+    };
+    expect(await run(['plan', p, '--check'], ctx(new Api(live)))).toBe(0);
+  });
 });

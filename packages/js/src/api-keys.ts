@@ -29,6 +29,12 @@ export interface UserApiKey {
   last_used_at: number | null;
   expires_at: number | null;
   revoked_at: number | null;
+  /** Why it was revoked when you did not: `membership_ended`, `creator_departed` or `organization_deleted`. */
+  revoked_reason?: string | null;
+  /** The organization a key of yours is bound to (it ends when you leave that organization); null = unbound. */
+  organization_id?: string | null;
+  /** The member who created an organization key. */
+  created_by_user_id?: string | null;
   created_at: number;
 }
 
@@ -66,8 +72,14 @@ export interface CreateUserApiKeyInput {
   scopes?: string[];
   /** Only claim names the application allows (`allowedClaims`). */
   claims?: Record<string, unknown>;
-  /** Create the key for this (active) organization instead of the user. */
+  /** Create the key for this (active) organization instead of the user. With `bindToOrganization`, the id of the organization to bind YOUR key to instead. */
   organizationId?: string;
+  /**
+   * With `organizationId`: make your own key BOUND to that organization (you must be a
+   * member) instead of the organization's key. It carries only what your role there
+   * allows and is revoked when you leave the organization.
+   */
+  bindToOrganization?: boolean;
   /** Key type (e.g. `sk`); required when the application sets `keyTypes`. */
   type?: string;
 }
@@ -130,10 +142,12 @@ async function call<T>(client: FapiClient, path: string, init: RequestInit = {})
 /** List the user's keys (or the active organization's, with `organizationId`). */
 export async function listApiKeys(
   client: FapiClient,
-  options: { organizationId?: string; type?: string } = {},
+  options: { organizationId?: string; type?: string; bound?: boolean } = {},
 ): Promise<UserApiKeyList> {
   const params = new URLSearchParams();
   if (options.organizationId) params.set('organization_id', options.organizationId);
+  // With organizationId: your own keys bound to that organization, not the organization's keys.
+  if (options.bound && options.organizationId) params.set('subject_type', 'user');
   if (options.type) params.set('type', options.type);
   const query = params.size ? `?${params}` : '';
   const body = await call<{
@@ -166,6 +180,7 @@ export async function createApiKey(
   if (input.scopes !== undefined) body.scopes = input.scopes;
   if (input.claims !== undefined) body.claims = input.claims;
   if (input.organizationId !== undefined) body.organization_id = input.organizationId;
+  if (input.bindToOrganization) body.subject_type = 'user';
   if (input.type !== undefined) body.type = input.type;
   return call<CreatedUserApiKey>(client, BASE, { method: 'POST', body: JSON.stringify(body) });
 }

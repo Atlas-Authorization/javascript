@@ -262,3 +262,21 @@ describe('passkey second factor on a phone', () => {
     expect(a).toEqual({ challenge: 'chal_f', credential_id: 'raw_Y', authenticator_data: 'AD', client_data_json: 'CDJ', signature: 'SIG' });
   });
 });
+
+describe('nativePasskeySignIn', () => {
+  it('runs begin, the prompt and finish as flow state, and reports a dismissed prompt as passkey_cancelled', async () => {
+    const { FapiClient } = await import('@atlasauth/js');
+    const { nativePasskeySignIn } = await import('./index');
+    const reply = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'content-type': 'application/json' } });
+    const client = new FapiClient({
+      publishableKey: 'pk_test_x',
+      baseUrl: 'https://fapi.test',
+      fetchImpl: (async (u: string) => (String(u).endsWith('/begin') ? reply({ handle: 'h', challenge: 'c' }) : reply({ id: 'att_1', status: 'complete', ticket: 'tk' }))) as unknown as typeof fetch,
+    });
+    const assertion = { id: 'cred', rawId: 'cred', response: { authenticatorData: 'a', clientDataJSON: 'b', signature: 's' } };
+    const ok = await nativePasskeySignIn({ get: async () => assertion, create: async () => ({}) } as never)(client, { captcha: null });
+    expect(ok).toMatchObject({ attempt: { id: 'att_1' }, ticket: 'tk', errors: [] });
+    const no = await nativePasskeySignIn({ get: async () => { throw new Error('cancelled'); }, create: async () => ({}) } as never)(client, { captcha: null });
+    expect(no.errors[0]).toMatchObject({ reason: 'passkey_cancelled' });
+  });
+});

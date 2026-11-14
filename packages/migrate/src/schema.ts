@@ -362,6 +362,14 @@ export interface MembershipRecord {
   user_id: string;
   /** Role key (a `role` record key, or `admin` / `member`). */
   role: string;
+  /** Readable by the application. */
+  public_metadata?: Record<string, unknown>;
+  /** Backend only. */
+  private_metadata?: Record<string, unknown>;
+  /** Permission keys granted on top of the role; they must exist in Atlas. */
+  permissions?: string[];
+  /** Sign-in methods whose sessions mint with the organization's claims (e.g. `passkey`, `oauth:google`). */
+  allowed_sign_in_methods?: string[];
   created_at?: Timestamp;
 }
 
@@ -374,6 +382,17 @@ export interface InvitationRecord {
   inviter_user_id?: string;
   expires_at?: Timestamp;
   created_at?: Timestamp;
+  /**
+   * The 64-character hex SHA-256 of the accept token already issued, so the link in the invitee's inbox
+   * keeps working after the move. Never the token itself.
+   */
+  token_sha256?: string;
+  /** `link` (whoever holds the link, signed in) or `verified_email`. Default: the instance setting. */
+  accept_by?: 'link' | 'verified_email';
+  public_metadata?: Record<string, unknown>;
+  private_metadata?: Record<string, unknown>;
+  permissions?: string[];
+  allowed_sign_in_methods?: string[];
 }
 
 /**
@@ -585,6 +604,9 @@ export function validateRecord(model: string, data: unknown): RecordIssue[] {
     case 'invitation':
       need('id');
       need('email');
+      if (d.token_sha256 !== undefined && !(typeof d.token_sha256 === 'string' && /^[a-fA-F0-9]{64}$/.test(d.token_sha256))) {
+        issues.push({ field: 'token_sha256', message: 'invitation.token_sha256 must be the 64-character hex SHA-256 of the token.' });
+      }
       break;
     case 'api_key':
       need('id');

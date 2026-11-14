@@ -965,19 +965,20 @@ Usage:
           webhook_endpoints:   [ { url: ..., enabled_events: [...], secret: "\${WEBHOOK_SECRET}", active: false } ]
           email_provider:      { transport: brevo, from_address: ..., config: { api_key: "\${BREVO_KEY}" } }
           sms_provider:        { transport: twilio, from_address: "+15551234567", config: { account_sid: ..., auth_token: "\${TWILIO_TOKEN}" } }
+          push_provider:       { transport: expo, config: { access_token: "\${EXPO_TOKEN}" } }   # or apns_fcm
           hooks:               { before_user_create: { url: ..., timeout_ms, fail_closed, enabled } }
           branding:            { applicationName: ..., logoUrl: ... }
           sign_in_with_atlas:  { enabled: true }
         or a directory from 'atlas config export' (default ./atlas-config).
 
 Shows the plan, asks before applying (--yes skips the question; needed without a
-terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, instance,
+terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance,
 org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers,
 custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles,
 webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans,
 notification_templates, email_templates, organization_policies, branding, cookie_consent,
 sign_in_with_atlas, signing_key_policy, hosted_pages, connection_oauth_clients, migration_bridges,
-impersonation_policy, connection_token_limits, connection_provider_topics, connection_relay_limits. Re-running is a no-op.
+impersonation_policy, connection_token_limits, connection_provider_topics, connection_relay_limits, web_bot_auth. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --prune         also delete live resources missing from the config, and compare every live key

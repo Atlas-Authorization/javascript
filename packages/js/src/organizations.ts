@@ -32,6 +32,12 @@ export interface OrganizationMember {
   id: string;
   role: string;
   user: { id: string; first_name: string | null; last_name: string | null; image_url: string | null } | null;
+  /** The seat's public metadata. */
+  public_metadata?: Record<string, unknown>;
+  /** Extra permissions on top of the role. Only for callers who manage members. */
+  permissions?: string[];
+  /** Sign-in methods whose sessions carry this organization's claims; null = any. Only for callers who manage members. */
+  allowed_sign_in_methods?: string[] | null;
 }
 
 export interface OrganizationInvitation {
@@ -44,6 +50,14 @@ export interface OrganizationInvitation {
   inviter_user_id: string | null;
   expires_at: number;
   created_at: number;
+  delivery?: 'email' | 'link';
+  accept_by?: 'link' | 'verified_email' | null;
+  permissions?: string[];
+  allowed_sign_in_methods?: string[] | null;
+  /** Link delivery, on create and resend only, shown once: the single-use token. */
+  accept_token?: string;
+  /** Link delivery, on create only, shown once: `redirectUrl` with `?invitation_token=` appended. */
+  accept_url?: string | null;
 }
 
 /** What an accept page shows before the invitee signs in. */
@@ -314,6 +328,36 @@ export async function updateMemberRole(
   return call(client, `${ORGS}/${enc(organizationId)}/memberships/${enc(userId)}`, json('PATCH', { role }));
 }
 
+/**
+ * Change what a member's seat carries beyond the role: the full list of extra
+ * `permissions` (you may add only permissions you hold yourself) and/or the
+ * `allowedSignInMethods` whose sessions carry this organization's claims
+ * (`null` clears the restriction). Needs member management.
+ */
+export async function updateMemberAccess(
+  client: FapiClient,
+  organizationId: string,
+  userId: string,
+  input: { role?: string; permissions?: string[]; allowedSignInMethods?: string[] | null },
+): Promise<{
+  object: 'organization_membership';
+  organization_id: string;
+  user_id: string;
+  role: string;
+  permissions: string[];
+  allowed_sign_in_methods: string[] | null;
+}> {
+  return call(
+    client,
+    `${ORGS}/${enc(organizationId)}/memberships/${enc(userId)}`,
+    json('PATCH', {
+      ...(input.role !== undefined ? { role: input.role } : {}),
+      ...(input.permissions !== undefined ? { permissions: input.permissions } : {}),
+      ...(input.allowedSignInMethods !== undefined ? { allowed_sign_in_methods: input.allowedSignInMethods } : {}),
+    }),
+  );
+}
+
 export async function removeMember(client: FapiClient, organizationId: string, userId: string): Promise<unknown> {
   return call(client, `${ORGS}/${enc(organizationId)}/memberships/${enc(userId)}`, json('DELETE'));
 }
@@ -332,12 +376,32 @@ export async function listOrganizationInvitations(
 export async function inviteMember(
   client: FapiClient,
   organizationId: string,
-  input: { emailAddress: string; role: string },
+  input: {
+    emailAddress: string;
+    role: string;
+    /** `link`: nothing is sent; `accept_token` (and `accept_url` with `redirectUrl`) come back once. Default `email`. */
+    delivery?: 'email' | 'link';
+    /** Link delivery: who may accept by link. Default: the instance setting. */
+    acceptBy?: 'link' | 'verified_email';
+    /** Link delivery: a page in your app (an allowed origin) that reads `invitation_token`. */
+    redirectUrl?: string;
+    /** Extra permissions on top of the role; only ones you hold yourself. */
+    permissions?: string[];
+    allowedSignInMethods?: string[] | null;
+  },
 ): Promise<OrganizationInvitation> {
   return call(
     client,
     `${ORGS}/${enc(organizationId)}/invitations`,
-    json('POST', { email_address: input.emailAddress, role: input.role }),
+    json('POST', {
+      email_address: input.emailAddress,
+      role: input.role,
+      ...(input.delivery ? { delivery: input.delivery } : {}),
+      ...(input.acceptBy ? { accept_by: input.acceptBy } : {}),
+      ...(input.redirectUrl ? { redirect_url: input.redirectUrl } : {}),
+      ...(input.permissions ? { permissions: input.permissions } : {}),
+      ...(input.allowedSignInMethods !== undefined ? { allowed_sign_in_methods: input.allowedSignInMethods } : {}),
+    }),
   );
 }
 
@@ -368,6 +432,36 @@ export async function getOrganizationInvitation(
 /** Accept an invitation by id as the signed-in user. */
 export async function acceptOrganizationInvitation(client: FapiClient, invitationId: string): Promise<unknown> {
   return call(client, `/v1/client/organization_invitations/${enc(invitationId)}/accept`, json('POST'));
+}
+
+/** The seat created by {@link acceptOrganizationInvitationByToken}. */
+export interface AcceptedInvitationMembership {
+  object: 'organization_membership';
+  id: string;
+  organization_id: string;
+  user_id: string;
+  role_id: string;
+  invitation_id: string;
+  invited_email_address: string;
+  /** The verified address of the accepting user (null when they hold none). */
+  accepted_email_address: string | null;
+  /** True when the accepting user's address differs from the invited one (link-holder acceptance). */
+  email_mismatch: boolean;
+  created_at: number;
+}
+
+/**
+ * Accept an invitation by the single-use token from its link
+ * (`delivery: "link"`), as the signed-in user. Pass the `invitation_token`
+ * your accept page received. Rate limited; a used, expired or unknown token
+ * fails (404 / 400), and who may accept follows the instance's
+ * `organizations.invitationAccept` or the invitation's `accept_by`.
+ */
+export async function acceptOrganizationInvitationByToken(
+  client: FapiClient,
+  token: string,
+): Promise<AcceptedInvitationMembership> {
+  return call(client, '/v1/client/organization_invitations/accept_by_token', json('POST', { token }));
 }
 
 /** Invitations addressed to the signed-in user. */

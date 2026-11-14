@@ -69,6 +69,22 @@ export interface ResourceRoleAssignment {
   created_at: number;
 }
 
+/** One entry of the assignment change feed: a role assignment created (or updated) or deleted. */
+export interface ResourceRoleAssignmentChange {
+  object: 'resource_role_assignment_change';
+  /** Position in the feed (also the cursor). */
+  seq: number;
+  change: 'created' | 'deleted';
+  assignment_id: string;
+  resource_id: string;
+  resource_type: string;
+  resource_external_id: string;
+  subject: ResourceSubject;
+  role: string;
+  inherit: boolean;
+  created_at: number;
+}
+
 export interface ResourceCheckBody {
   subject: ResourceSubject;
   permission: string;
@@ -104,7 +120,7 @@ export function resourcesResource(request: RequestFn) {
         return request({ method: 'DELETE', path: `/v1/resource_types/${enc(key)}` });
       },
     },
-    list(query: { type?: string; parent_id?: string; limit?: number } = {}): Promise<ListPage<Resource>> {
+    list(query: { type?: string; parent_id?: string; limit?: number; starting_after?: string } = {}): Promise<ListPage<Resource> & { next_cursor?: string | null }> {
       const q = new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined).map(([k, v]): [string, string] => [k, String(v)]));
       return request({ method: 'GET', path: `/v1/resources${q.size ? `?${q}` : ''}` });
     },
@@ -126,6 +142,16 @@ export function resourcesResource(request: RequestFn) {
       list(query: { resource_id?: string; subject_type?: string; subject_id?: string } = {}): Promise<ListPage<ResourceRoleAssignment>> {
         const q = new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined) as [string, string][]);
         return request({ method: 'GET', path: `/v1/resource_role_assignments${q.size ? `?${q}` : ''}` });
+      },
+      /**
+       * The change feed of role assignments, oldest first: every assignment created
+       * (or its `inherit` updated) and every one deleted, including those that ended
+       * with their resource or type. Pass the previous `next_cursor` as `after`.
+       * Without `after` it replays every live assignment as `created`.
+       */
+      changes(query: { after?: string; limit?: number } = {}): Promise<ListPage<ResourceRoleAssignmentChange> & { next_cursor: string }> {
+        const q = new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined).map(([k, v]): [string, string] => [k, String(v)]));
+        return request({ method: 'GET', path: `/v1/resource_role_assignments/changes${q.size ? `?${q}` : ''}` });
       },
       /** Assign `role` on `resource` to a user, group or org. */
       assign(body: { resource: ResourceRef; subject: ResourceSubject; role: string; inherit?: boolean }): Promise<ResourceRoleAssignment> {

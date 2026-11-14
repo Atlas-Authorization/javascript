@@ -461,6 +461,10 @@ describe('parity wave: the full-breadth namespaces reach every BAPI resource', (
     expect(last(calls)).toMatchObject({ method: 'DELETE', url: `${API_URL}/v1/device_sso/registrations/dsso_1` });
     await c.identityVerification.decide('idv_1', { decision: 'approved' });
     expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/identity_verifications/idv_1/decide` });
+    await c.identityVerification.getForUser('usr_1', 'idv_1');
+    expect(last(calls)).toMatchObject({ method: 'GET', url: `${API_URL}/v1/users/usr_1/identity_verifications/idv_1` });
+    await c.identityVerification.importCheck('usr_1', { provider: 'stripe_identity', session_id: 'vs_1' });
+    expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/users/usr_1/identity_verifications/import` });
     await c.iga.requests.decide('igr_1', { decision: 'approve', approver_user_id: 'u1' });
     expect(last(calls)).toMatchObject({ method: 'POST', url: `${API_URL}/v1/iga/requests/igr_1/decide` });
     await c.iga.campaigns.evidenceCsv('igc_1');

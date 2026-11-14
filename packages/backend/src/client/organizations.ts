@@ -66,7 +66,51 @@ export interface OrganizationMembership {
    * through the API or dashboard), or null (joined by invitation, or older rows).
    */
   role_source?: string | null;
+  /** Readable by the application; set from the invitation on accept or with `update`. Also in `{{org.membership.public_metadata.*}}` JWT template variables. */
+  public_metadata?: Record<string, unknown>;
+  /** Backend only: never in a token, a webhook or a client response. */
+  private_metadata?: Record<string, unknown>;
+  /** Permission keys this member holds on top of the role; they join `org_permissions` in the session token. */
+  permissions?: string[];
+  /** Sign-in methods whose sessions mint with this organization's claims; null = any. */
+  allowed_sign_in_methods?: string[] | null;
   created_at: number;
+}
+
+/** The grants a membership or an invitation carries beyond its role. */
+export interface OrganizationSeatGrants {
+  public_metadata?: Record<string, unknown>;
+  private_metadata?: Record<string, unknown>;
+  /** Permission keys that exist in the instance; added to the role's permissions in `org_permissions`. */
+  permissions?: string[];
+  /** e.g. `["passkey", "oauth:google"]`; null (or []) = any method. */
+  allowed_sign_in_methods?: string[] | null;
+}
+
+/** An invitation row for `invitations.import`. */
+export interface OrganizationInvitationImportRow extends OrganizationSeatGrants {
+  email: string;
+  role: string;
+  /** The 64-character hex SHA-256 of the accept token already issued. Never the token. */
+  token_sha256: string;
+  /** Epoch milliseconds or ISO 8601; defaults to the instance's invitation TTL. */
+  expires_at?: number | string;
+  inviter_user_id?: string | null;
+  accept_by?: 'link' | 'verified_email';
+}
+
+/** `POST /v1/organizations/:id/invitations/import`. */
+export interface OrganizationInvitationImport {
+  object: 'organization_invitation_import';
+  organization_id: string;
+  dry_run: boolean;
+  created: number;
+  unchanged: number;
+  invalid: number;
+  data: Array<
+    | { index: number; status: 'created' | 'unchanged' | 'would_create'; id?: string }
+    | { index: number; status: 'invalid_row'; code: string; message: string; param?: string }
+  >;
 }
 
 /** `GET /v1/organizations/:id/mfa_status`: does a session meet one organization's MFA policy. */
@@ -96,9 +140,24 @@ export interface OrganizationInvitation {
   email: string;
   role: string;
   status: string;
-  inviter_user_id: string;
+  inviter_user_id: string | null;
+  /** `email`: your app sends it. `link`: nothing is sent; the accept link is the delivery. */
+  delivery?: 'email' | 'link';
+  /** Who may accept by link: `link` (whoever holds it, signed in) or `verified_email`; null = the instance setting `organizations.invitationAccept`. */
+  accept_by?: 'link' | 'verified_email' | null;
+  public_metadata?: Record<string, unknown>;
+  private_metadata?: Record<string, unknown>;
+  permissions?: string[];
+  allowed_sign_in_methods?: string[] | null;
+  accepted_by_user_id?: string | null;
+  /** The verified address of the user who accepted, when it differs from `email`. */
+  accepted_email_address?: string | null;
   expires_at: number;
   created_at: number;
+  /** Link delivery, on create and resend only, shown once: the single-use token (only its SHA-256 is stored). */
+  accept_token?: string;
+  /** Link delivery with `redirect_url`, on create only, shown once: that URL with `?invitation_token=` appended. */
+  accept_url?: string | null;
 }
 
 export interface OrgDomain {
@@ -503,7 +562,7 @@ export function organizationsResource(request: RequestFn) {
       upsert(
         orgId: string,
         userId: string,
-        body: { role: string; role_source?: string },
+        body: { role: string; role_source?: string } & OrganizationSeatGrants,
         idempotencyKey?: string,
       ): Promise<OrganizationMembership & { unchanged: boolean }> {
         return request({
@@ -515,13 +574,17 @@ export function organizationsResource(request: RequestFn) {
       },
       add(
         orgId: string,
-        body: { user_id: string; role?: string },
+        body: { user_id: string; role?: string } & OrganizationSeatGrants,
         idempotencyKey?: string,
       ): Promise<{
         object: 'organization_membership';
         organization_id: string;
         user_id: string;
         role: string;
+        public_metadata?: Record<string, unknown>;
+        private_metadata?: Record<string, unknown>;
+        permissions?: string[];
+        allowed_sign_in_methods?: string[] | null;
       }> {
         return request({
           method: 'POST',
@@ -538,8 +601,17 @@ export function organizationsResource(request: RequestFn) {
          * `sso:<connection id>` or `ldap:<connection id>` hands it back to that source.
          * A role sent alone counts as `manual`.
          */
-        body: { role?: string; role_source?: string },
-      ): Promise<{ object: 'organization_membership'; role?: string; role_source?: string | null; updated: true }> {
+        body: { role?: string; role_source?: string } & OrganizationSeatGrants,
+      ): Promise<{
+        object: 'organization_membership';
+        role?: string;
+        role_source?: string | null;
+        public_metadata?: Record<string, unknown>;
+        private_metadata?: Record<string, unknown>;
+        permissions?: string[];
+        allowed_sign_in_methods?: string[] | null;
+        updated: true;
+      }> {
         return request({
           method: 'PATCH',
           path: `/v1/organizations/${enc(orgId)}/memberships/${enc(userId)}`,
@@ -563,16 +635,18 @@ export function organizationsResource(request: RequestFn) {
       },
       create(
         orgId: string,
-        body: { email: string; role: string; inviter_user_id: string },
+        body: {
+          email: string;
+          role: string;
+          inviter_user_id: string;
+          /** `link`: no mail; `accept_token` (and `accept_url` with `redirect_url`) come back once. Default `email`. */
+          delivery?: 'email' | 'link';
+          accept_by?: 'link' | 'verified_email';
+          /** A page in your app on one of the instance's allowed origins; `accept_url` is this URL with `?invitation_token=` appended. */
+          redirect_url?: string;
+        } & OrganizationSeatGrants,
         idempotencyKey?: string,
-      ): Promise<{
-        object: 'organization_invitation';
-        id: string;
-        organization_id: string;
-        email: string;
-        status: string;
-        expires_at: number;
-      }> {
+      ): Promise<OrganizationInvitation> {
         return request({
           method: 'POST',
           path: `/v1/organizations/${enc(orgId)}/invitations`,
@@ -587,6 +661,30 @@ export function organizationsResource(request: RequestFn) {
         return request({
           method: 'POST',
           path: `/v1/organizations/${enc(orgId)}/invitations/${enc(invitationId)}/revoke`,
+        });
+      },
+      /** Same id, a fresh expiry; a link invitation gets a NEW `accept_token` (the old link stops working). */
+      resend(orgId: string, invitationId: string): Promise<OrganizationInvitation> {
+        return request({
+          method: 'POST',
+          path: `/v1/organizations/${enc(orgId)}/invitations/${enc(invitationId)}/resend`,
+        });
+      },
+      /**
+       * Import invitations that already exist elsewhere, keeping their links working:
+       * each row carries the `token_sha256` of the token already issued and its `expires_at`.
+       * Up to 500 rows; `dry_run` checks every row and writes nothing.
+       */
+      import(
+        orgId: string,
+        body: { invitations: OrganizationInvitationImportRow[]; dry_run?: boolean },
+        idempotencyKey?: string,
+      ): Promise<OrganizationInvitationImport> {
+        return request({
+          method: 'POST',
+          path: `/v1/organizations/${enc(orgId)}/invitations/import`,
+          body,
+          idempotencyKey,
         });
       },
     },

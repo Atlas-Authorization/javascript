@@ -4,7 +4,7 @@
  * /v1/client/sign_ins/id_token`) and traded for a session. The provider's token
  * cache stores the returned session JWT.
  */
-import { linkExternalAccountWithIdToken, mintNativeNonce, nativeSignIn, type FapiClient, type FieldError, type LinkExternalAccountResult } from '@atlasauth/js';
+import { linkExternalAccountWithIdToken, mintNativeNonce, nativeSignIn, type FapiClient, type FieldError, type FlowState, type LinkExternalAccountResult, type NativeSignInProvider } from '@atlasauth/js';
 
 export interface NativeSocialResult {
   status: 'complete' | 'needs_more' | 'error' | 'cancelled';
@@ -71,4 +71,42 @@ export async function signInWithGoogle(client: FapiClient, google: GoogleSigninL
   const idToken = r?.data?.idToken ?? r?.idToken;
   if (!idToken) return { status: 'cancelled', errors: [] };
   return signInWithIdToken(client, { provider: 'google', idToken, nonce });
+}
+
+const nativeFlow = (errors: FieldError[]): FlowState => ({ attempt: null, errors, busy: false, pollSecret: null, ticket: null });
+const cancelled = (): FlowState => nativeFlow([{ code: 'NATIVE_CANCELLED', reason: 'native_cancelled', message: 'The sign-in was cancelled.' }]);
+
+/**
+ * The Apple sheet as a `nativeSignIn.apple` provider for `createSignInFlow` / `useSignInScreen`: the nonce, the sheet,
+ * then the id token, returned as the flow's own state so a second factor or policy continues in the same flow.
+ */
+export function appleSignInProvider(apple: AppleAuthenticationLike): NativeSignInProvider {
+  return async (client) => {
+    const nonce = (await mintNativeNonce(client, 'apple')) ?? undefined;
+    if (!nonce) return nativeFlow([{ code: 'NONCE', message: 'Could not start Apple sign-in.' }]);
+    let idToken: string | null;
+    try {
+      ({ identityToken: idToken } = await apple.signInAsync({ requestedScopes: [apple.AppleAuthenticationScope.EMAIL, apple.AppleAuthenticationScope.FULL_NAME], nonce }));
+    } catch {
+      return cancelled();
+    }
+    return idToken ? nativeSignIn(client, { provider: 'apple', idToken, nonce }) : cancelled();
+  };
+}
+
+/** The Google sheet as a `nativeSignIn.google` provider; see {@link appleSignInProvider}. */
+export function googleSignInProvider(google: GoogleSigninLike): NativeSignInProvider {
+  return async (client) => {
+    const nonce = (await mintNativeNonce(client, 'google')) ?? undefined;
+    if (!nonce) return nativeFlow([{ code: 'NONCE', message: 'Could not start Google sign-in.' }]);
+    let response: unknown;
+    try {
+      response = await google.signIn({ nonce });
+    } catch {
+      return cancelled();
+    }
+    const r = response as { idToken?: string; data?: { idToken?: string } } | null;
+    const idToken = r?.data?.idToken ?? r?.idToken;
+    return idToken ? nativeSignIn(client, { provider: 'google', idToken, nonce }) : cancelled();
+  };
 }

@@ -34,7 +34,11 @@ export type EmailTemplateName =
   | 'impersonation_alert'
   | 'verification_link'
   | 'password_reset_link'
-  | 'account_reactivated';
+  | 'account_reactivated'
+  | 'deletion_scheduled'
+  | 'deletion_reminder'
+  | 'deletion_canceled'
+  | 'deletion_paused';
 
 /** The customizable body of a template: a subject line and a text body. */
 export interface EmailTemplateBody {

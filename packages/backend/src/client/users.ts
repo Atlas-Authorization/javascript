@@ -25,6 +25,12 @@ export interface User {
   last_sign_in_at: number | null;
   /** Epoch ms when ALL of the user's sessions last ended together; null = never. Also on the `user.sessions_revoked` event. */
   sessions_revoked_at?: number | null;
+  /** A scheduled deletion: when it was scheduled and when it runs (epoch ms); null = none. */
+  deletion_scheduled_at?: number | null;
+  deletion_effective_at?: number | null;
+  /** A `pre_user_deletion` Action put the scheduled deletion on hold until the person re-confirms: when, and its reason (null = not on hold). */
+  deletion_paused_at?: number | null;
+  deletion_pause_reason?: string | null;
   created_at: number;
   updated_at: number;
   /**

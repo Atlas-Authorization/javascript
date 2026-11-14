@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/migrate",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The vendor-neutral Atlas migration bundle: schema, sealing (X25519 + AES-256-GCM to your Atlas instance's import key), a validating writer and an upload client. Every `atlas migrate export <vendor>` exporter writes this format; Atlas imports it through /v1/migrations/{source}/imports.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

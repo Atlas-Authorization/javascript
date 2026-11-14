@@ -14,6 +14,7 @@ export type ActionTrigger =
   | 'post_token_exchange'
   | 'custom_token_exchange'
   | 'pre_user_update'
+  | 'pre_user_deletion'
   | 'mfa_verification_attempt'
   | 'password_verification_attempt'
   | 'account_link_decision'
@@ -146,7 +147,14 @@ export interface ActionTestEvent {
   /** Registration triggers: the typed sign-up field values (`event.signUpFields`). */
   sign_up_fields?: Record<string, string>;
   /** Organization triggers: `event.organization`. */
-  organization?: { id?: string | null; name?: string; slug?: string };
+  organization?: {
+    id?: string | null;
+    name?: string;
+    slug?: string;
+    publicMetadata?: Record<string, unknown>;
+    privateMetadata?: Record<string, unknown>;
+    entitlements?: { plan: string; features: string[]; limits: Record<string, unknown> } | null;
+  };
 }
 
 /** An outbound request the code queued with `api.http` (a dry run sends nothing). */

@@ -15,7 +15,7 @@ import { nextStep, type AttemptView, type FieldError, type PendingPolicy, type P
 import { fetchInstanceSettings, type InstanceSettings } from './instance-settings';
 import { acknowledgeRecoveryCodes, mfaChoicesFrom, pendingRecoveryCodes, prepareMfaEnrollment, type MfaEnrollment } from './mfa-enrollment';
 import { acceptAttemptPolicies, type PolicyAcceptance } from './policies';
-import { signInWithPasskey } from './passkey-sign-in';
+import { signInWithPasskey, type PasskeyCaptchaSource } from './passkey-sign-in';
 import { passkeysSupported, type WebAuthnHost } from './passkey';
 import { passkeySecondFactorAssertion, passkeySecondFactorBody, type PasskeyAssertionProvider, type PasskeySecondFactorAssertion } from './passkey-second-factor';
 import { canRecoverWithIdentityCheck, startIdentityCheckRecovery, type RecoveryChallenge } from './mfa-recovery';
@@ -91,6 +91,19 @@ export interface FlowSnapshot {
   sentTo: string | null;
 }
 
+/**
+ * A sign-in the platform runs for you (the Apple or Google system sheet, a native passkey prompt): it returns the
+ * resulting attempt, and the flow takes it from there (second factor, policies, ticket exchange).
+ */
+export type NativeSignInProvider = (client: FapiClient, opts: { captcha: PasskeyCaptchaSource | null }) => Promise<FlowState>;
+
+export interface NativeSignInProviders {
+  /** Replaces the browser WebAuthn passkey sign-in (React Native: `nativePasskeySignIn(Passkey)` from `@atlasauth/expo-passkeys`). */
+  passkey?: NativeSignInProvider;
+  apple?: NativeSignInProvider;
+  google?: NativeSignInProvider;
+}
+
 export interface FlowOptions {
   client: FapiClient;
   /**
@@ -108,6 +121,8 @@ export interface FlowOptions {
    * when the account holds one.
    */
   passkeyAssertion?: PasskeyAssertionProvider;
+  /** The system-sheet sign-ins a native app runs (passkey, Apple, Google). See {@link NativeSignInProvider}. */
+  nativeSignIn?: NativeSignInProviders;
 }
 
 interface Core {
@@ -355,6 +370,8 @@ export interface SignInFlow extends Core {
   submitEmailCode(code: string): Promise<FlowSnapshot>;
   /** Sign in with a passkey (starts at `needs_identifier`; needs no identifier). */
   signInWithPasskey(): Promise<FlowSnapshot>;
+  /** Sign in with the Apple or Google system sheet (the `nativeSignIn` option). A dismissed sheet is an error with reason `native_cancelled`. */
+  signInNative(provider: 'apple' | 'google'): Promise<FlowSnapshot>;
   /** `needs_second_factor`: a code for `strategy` (default: authenticator app). */
   submitSecondFactor(code: string, strategy?: (typeof SECOND_FACTOR_STRATEGIES)[number], options?: { rememberDevice?: boolean }): Promise<FlowSnapshot>;
   /**
@@ -415,7 +432,7 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
   const passkey = async (solved = false): Promise<FlowSnapshot> => {
     viaPasskey = true;
     const snap = await core.run(() =>
-      signInWithPasskey(client, { captcha: core.captchaToken ? async () => core.takeCaptchaToken() : null }),
+      (opts.nativeSignIn?.passkey ?? signInWithPasskey)(client, { captcha: core.captchaToken ? async () => core.takeCaptchaToken() : null }),
     );
     viaPasskey = await core.captchaStepFromErrors();
     if (!viaPasskey) return snap;
@@ -447,6 +464,11 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
     sendEmailCode: () => core.run(() => prepareFactor(client, core.flow, 'email_code')),
     submitEmailCode: (code) => core.run(() => advance(client, core.flow, { code })),
     signInWithPasskey: () => passkey(),
+    signInNative: (provider) => {
+      const run = opts.nativeSignIn?.[provider];
+      if (!run) return core.run(async () => ({ ...core.flow, errors: [{ code: 'NATIVE_UNAVAILABLE', reason: 'native_unavailable', message: `Sign in with ${provider === 'apple' ? 'Apple' : 'Google'} is not set up in this app.` }] }));
+      return core.run(() => run(client, { captcha: null }));
+    },
     submitSecondFactor: (code, strategy = 'totp', options = {}) =>
       core.run(() =>
         advance(client, core.flow, {

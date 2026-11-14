@@ -15,7 +15,7 @@
  * for tests and single-process apps; back it with a table in production.
  */
 import { createHash } from './edge-crypto';
-import type { ApiKey, ApiKeyImportOutcome, ApiKeyWithSecret, CreateApiKeyBody, apiKeysResource } from './client/api-keys';
+import type { ApiKey, ApiKeyImportOutcome, ApiKeyOrganization, ApiKeyWithSecret, CreateApiKeyBody, apiKeysResource } from './client/api-keys';
 
 /** What the mirror keeps per key. Never the secret: only its sha256 (hex). */
 export interface MirroredApiKey {
@@ -35,6 +35,10 @@ export interface MirroredApiKey {
   expires_at: number | null;
   /** Epoch ms; null = live. */
   revoked_at: number | null;
+  /** The organization a user key is bound to; null/absent = unbound. */
+  organization_id?: string | null;
+  /** Why it was revoked, when Atlas said (`membership_ended`, `creator_departed`, `organization_deleted`). */
+  revoked_reason?: string | null;
 }
 
 export interface KeyMirrorStore {
@@ -42,7 +46,13 @@ export interface KeyMirrorStore {
   get(id: string): Promise<MirroredApiKey | null>;
   getByHash(hash: string): Promise<MirroredApiKey | null>;
   /** Stamp a key revoked. A no-op for an id the mirror does not hold. */
-  markRevoked(id: string, revokedAt: number): Promise<void>;
+  markRevoked(id: string, revokedAt: number, reason?: string | null): Promise<void>;
+  /**
+   * Stamp every live key of `userId` bound to `organizationId` revoked (reason
+   * `membership_ended`). Optional: a store without it still drops those keys through
+   * the revocation feed and the `api_key.revoked` webhook Atlas sends for each.
+   */
+  markMembershipEnded?(userId: string, organizationId: string, revokedAt: number): Promise<void>;
   /** The revocation-feed cursor last consumed (null = from the start). */
   getCursor(): Promise<string | null>;
   setCursor(cursor: string): Promise<void>;
@@ -68,9 +78,20 @@ export function memoryKeyMirrorStore(): KeyMirrorStore & { keys: Map<string, Mir
       for (const k of keys.values()) if (k.hash === hash) return k;
       return null;
     },
-    async markRevoked(id, revokedAt) {
+    async markRevoked(id, revokedAt, reason) {
       const k = keys.get(id);
-      if (k && k.revoked_at === null) k.revoked_at = revokedAt;
+      if (k && k.revoked_at === null) {
+        k.revoked_at = revokedAt;
+        if (reason) k.revoked_reason = reason;
+      }
+    },
+    async markMembershipEnded(userId, organizationId, revokedAt) {
+      for (const k of keys.values()) {
+        if (k.revoked_at === null && k.subject_type === 'user' && k.subject_id === userId && k.organization_id === organizationId) {
+          k.revoked_at = revokedAt;
+          k.revoked_reason = 'membership_ended';
+        }
+      }
     },
     async getCursor() {
       return cursor;
@@ -117,13 +138,21 @@ export interface KeyMirrorOptions {
    * minute. Unset (the default) turns the check off, for webhook-only mirrors.
    */
   maxStalenessMs?: number;
+  /**
+   * For a key bound to an organization: the user's CURRENT membership, from your own
+   * data (return null when they are no longer a member). The key's scopes are narrowed
+   * to what the membership's permissions cover, exactly as Atlas verify does. Without
+   * it, a bound key is verified at Atlas (needs `apiKeys.verify`); with neither it
+   * answers `{ valid: false, code: 'membership_unresolved' }`.
+   */
+  membership?: (userId: string, organizationId: string) => Promise<ApiKeyOrganization | null> | ApiKeyOrganization | null;
   /** Clock, for tests. */
   now?: () => number;
 }
 
 export type MirrorVerification =
-  | { valid: true; key: MirroredApiKey; effective_scopes: string[] }
-  | { valid: false; code?: 'insufficient_scope' | 'ip_not_allowed' | 'client_ip_required'; missing_scopes?: string[] }
+  | { valid: true; key: MirroredApiKey; effective_scopes: string[]; /** A bound key: the membership the scopes were narrowed by. */ organization?: ApiKeyOrganization }
+  | { valid: false; code?: 'insufficient_scope' | 'ip_not_allowed' | 'client_ip_required' | 'membership_unresolved'; missing_scopes?: string[] }
   | {
       valid: false;
       /** The mirror is not fresh enough to answer: not synced yet, or last sync older than `maxStalenessMs`. Retry after `sync()`. */
@@ -237,7 +266,23 @@ function toMirrored(key: ApiKey, hash: string): MirroredApiKey {
     allowed_ips: key.allowed_ips ?? null,
     expires_at: key.expires_at ?? null,
     revoked_at: key.revoked_at ?? null,
+    organization_id: key.organization_id ?? null,
+    revoked_reason: key.revoked_reason ?? null,
   };
+}
+
+/** Whether a permission covers a key scope: same name, `*`, or `<prefix>:*`. Mirrors Atlas verify. */
+export function permissionCoversScope(permission: string, scope: string): boolean {
+  if (permission === scope || permission === '*') return true;
+  return permission.endsWith(':*') && scope.startsWith(permission.slice(0, -1));
+}
+
+/**
+ * The key scopes a membership's permissions cover: what Atlas returns as
+ * `effective_scopes` for a key bound to an organization. Sorted.
+ */
+export function intersectScopesWithPermissions(scopes: readonly string[], permissions: readonly string[]): string[] {
+  return [...new Set(scopes.filter((s) => permissions.some((p) => permissionCoversScope(p, s))))].sort();
 }
 
 export function createKeyMirror(options: KeyMirrorOptions) {
@@ -334,10 +379,27 @@ export function createKeyMirror(options: KeyMirrorOptions) {
         if (!opts.clientIp) return { valid: false, code: 'client_ip_required' };
         if (!ipInAllowlist(opts.clientIp, key.allowed_ips)) return { valid: false, code: 'ip_not_allowed' };
       }
-      const effective = expand(key.scopes ?? [], implications, allowed);
+      let effective = expand(key.scopes ?? [], implications, allowed);
+      let organization: ApiKeyOrganization | undefined;
+      if (key.subject_type === 'user' && key.organization_id) {
+        // A bound key stands for the user's CURRENT membership; never answer from the key's own scopes.
+        if (options.membership) {
+          const held = await options.membership(key.subject_id, key.organization_id);
+          if (!held) return { valid: false };
+          organization = held;
+          effective = intersectScopesWithPermissions(effective, held.permissions);
+        } else if (apiKeys.verify) {
+          const remote = await apiKeys.verify(secret, opts.clientIp ? { client_ip: opts.clientIp } : {});
+          if (!remote.valid || !remote.organization) return { valid: false };
+          organization = remote.organization;
+          effective = remote.effective_scopes ?? [];
+        } else {
+          return { valid: false, code: 'membership_unresolved' };
+        }
+      }
       const missing = (opts.requiredScopes ?? []).filter((s) => !effective.includes(s));
       if (missing.length > 0) return { valid: false, code: 'insufficient_scope', missing_scopes: missing };
-      return { valid: true, key, effective_scopes: effective };
+      return { valid: true, key, effective_scopes: effective, ...(organization ? { organization } : {}) };
     },
 
     /**
@@ -351,7 +413,7 @@ export function createKeyMirror(options: KeyMirrorOptions) {
       for (;;) {
         const page = await apiKeys.listRevoked({ ...(since ? { since } : {}), limit: 100 });
         for (const ref of page.data) {
-          await store.markRevoked(ref.id, ref.revoked_at ?? now());
+          await store.markRevoked(ref.id, ref.revoked_at ?? now(), ref.revoked_reason ?? null);
           revoked++;
         }
         if (page.next_cursor) {
@@ -374,13 +436,22 @@ export function createKeyMirror(options: KeyMirrorOptions) {
      * Returns whether the event changed the mirror.
      */
     async applyWebhook(event: { type: string; data: unknown }): Promise<boolean> {
+      // A member removed from an organization: drop the keys bound to that membership at once.
+      if (event?.type === 'organization_membership.deleted' || event?.type === 'organizationMembership.deleted') {
+        const m = event.data as { user_id?: unknown; organization_id?: unknown } | null;
+        if (m && typeof m.user_id === 'string' && typeof m.organization_id === 'string' && store.markMembershipEnded) {
+          await store.markMembershipEnded(m.user_id, m.organization_id, now());
+          return true;
+        }
+        return false;
+      }
       if (!event || typeof event.type !== 'string' || !event.type.startsWith('api_key.')) return false;
       const data = event.data as Partial<ApiKey> | null;
       if (!data || typeof data.id !== 'string') return false;
       const held = await store.get(data.id);
       if (!held) return false;
       if (event.type === 'api_key.revoked' || (typeof data.revoked_at === 'number' && held.revoked_at === null)) {
-        await store.markRevoked(held.id, typeof data.revoked_at === 'number' ? data.revoked_at : now());
+        await store.markRevoked(held.id, typeof data.revoked_at === 'number' ? data.revoked_at : now(), data.revoked_reason ?? null);
         return true;
       }
       if (event.type === 'api_key.updated' || event.type === 'api_key.created') {

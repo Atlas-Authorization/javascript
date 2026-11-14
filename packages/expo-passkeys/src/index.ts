@@ -20,6 +20,8 @@ import {
   getHeadlessCaptchaSolver,
   type FieldError,
   type FlowCaptcha,
+  type FlowState,
+  type NativeSignInProvider,
   type PasskeyAssertionBody,
   type PasskeyAssertionProvider,
   type PasskeyRegistrationBody,
@@ -231,5 +233,28 @@ export async function authenticatePasskeySecondFactor(opts: {
     attemptId: result.attemptId,
     attemptStatus: result.status,
     errors: [],
+  };
+}
+
+/**
+ * Passkey sign-in for `createSignInFlow` / `createSignInScreen` on a phone: begin, the platform prompt, finish,
+ * returned as the flow's own state (so a passkey that owes a second factor continues in the same flow).
+ * Pass it as `nativeSignIn: { passkey: nativePasskeySignIn(Passkey) }`. A dismissed prompt is the error
+ * `passkey_cancelled`, never a throw.
+ */
+export function nativePasskeySignIn(passkey: ReactNativePasskey): NativeSignInProvider {
+  return async (client, { captcha }) => {
+    const base: FlowState = { attempt: null, errors: [], busy: false, pollSecret: null, ticket: null };
+    const begin = await beginPasskeySignIn(client, { captcha });
+    if (!begin.ok || !begin.data) return { ...base, errors: begin.errors };
+    let body;
+    try {
+      body = toAssertionFinishBody(begin.data, await passkey.get(begin.data));
+    } catch (e) {
+      return { ...base, errors: [{ code: 'PASSKEY_CANCELLED', reason: 'passkey_cancelled', message: e instanceof Error && e.message ? e.message : 'The passkey prompt was cancelled.' }] };
+    }
+    const finish = await client.post<NonNullable<FlowState['attempt']> & { ticket?: string }>('/v1/client/sign_ins/passkey/finish', body);
+    if (!finish.ok || !finish.data) return { ...base, errors: finish.errors };
+    return { ...base, attempt: finish.data, ticket: finish.data.ticket ?? null };
   };
 }

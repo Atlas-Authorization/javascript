@@ -184,6 +184,19 @@ describe('api.http in the harness', () => {
   });
 });
 
+describe('pre_user_deletion in the harness', () => {
+  it('records pause with a default reason and lets deny win over it', async () => {
+    const paused = await runScript(`api.access.pause();`, createTestEvent('pre_user_deletion'));
+    expect(paused.error).toBeNull();
+    expect(paused.pauseReason).toBe('Confirm the deletion to continue.');
+    expect(paused.denied).toBe(false);
+    const both = await runScript(`api.access.pause('confirm'); api.access.deny('legal hold');`, createTestEvent('pre_user_deletion'));
+    expect(both.pauseReason).toBe('confirm');
+    expect(both.denied).toBe(true);
+    expect(both.denyReason).toBe('legal hold');
+  });
+});
+
 describe('EXT-01 api surface in the harness', () => {
   it('captures lock, suppressClaim, user edits and sign-up shaping', async () => {
     const result = await runScript(

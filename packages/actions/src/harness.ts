@@ -19,6 +19,7 @@ import type {
   EventForTrigger,
   PostLoginApi,
   AttemptApi,
+  DeletionApi,
   PreTokenApi,
   PreUserRegistrationApi,
   PostUserRegistrationApi,
@@ -31,6 +32,7 @@ export interface CapturedApiCall {
   method:
     | 'access.deny'
     | 'access.lock'
+    | 'access.pause'
     | 'exchange.setUserById'
     | 'exchange.setUserByEmail'
     | 'exchange.setUserByExternalId'
@@ -70,6 +72,8 @@ export interface ActionRunResult {
   sessionData: Record<string, unknown>;
   /** `api.access.lock` reason (attempt triggers), or null. */
   lockReason: string | null;
+  /** `api.access.pause` reason (`pre_user_deletion`), or null. */
+  pauseReason: string | null;
   /** `api.challenge.set` (custom_challenge_create). */
   challenge: { prompt: string; hint: string | null; state: unknown } | null;
   /** `api.challenge.accept` (custom_challenge_verify): null until called. */
@@ -131,6 +135,7 @@ function emptyResult(): ActionRunResult {
     appMetadata: {},
     sessionData: {},
     lockReason: null,
+    pauseReason: null,
     challenge: null,
     challengeAccept: null,
     exchangeSubject: null,
@@ -200,7 +205,7 @@ function queueHttp(
  * reach at author time, while a raw script (via {@link runScript}) sees it all.
  */
 export function createMockApi(result: ActionRunResult = emptyResult()): {
-  api: PostLoginApi & PreUserRegistrationApi & PostUserRegistrationApi & AttemptApi & PreTokenApi & CustomTokenExchangeApi;
+  api: PostLoginApi & PreUserRegistrationApi & PostUserRegistrationApi & AttemptApi & DeletionApi & PreTokenApi & CustomTokenExchangeApi;
   result: ActionRunResult;
 } {
   const key = (k: string) => String(k).slice(0, KEY_MAX);
@@ -217,6 +222,10 @@ export function createMockApi(result: ActionRunResult = emptyResult()): {
       lock(reason?: string) {
         result.lockReason = (reason == null ? 'Account locked.' : String(reason)).slice(0, REASON_MAX);
         result.calls.push({ method: 'access.lock', args: [reason] });
+      },
+      pause(reason?: string) {
+        result.pauseReason = (reason == null ? 'Confirm the deletion to continue.' : String(reason)).slice(0, REASON_MAX);
+        result.calls.push({ method: 'access.pause', args: [reason] });
       },
     },
     exchange: {
@@ -398,6 +407,8 @@ export function createTestEvent<T extends ActionTrigger>(
   if (isObject(o.context)) Object.assign(base.context, o.context);
   if (isObject(o.signUpFields)) Object.assign(base.signUpFields, o.signUpFields);
   if (isObject(o.organization)) Object.assign(base, { organization: o.organization });
+  if (isObject(o.membership)) Object.assign(base, { membership: o.membership });
+  if (isObject(o.invitation)) Object.assign(base, { invitation: o.invitation });
 
   return base as unknown as EventForTrigger<T>;
 }
@@ -413,7 +424,11 @@ export interface DeepPartialEvent {
   /** Registration triggers: the typed sign-up field values. */
   signUpFields?: Record<string, string>;
   /** Organization triggers. */
-  organization?: { id: string | null; name: string; slug: string };
+  organization?: { id: string | null; name: string; slug: string; publicMetadata?: Record<string, unknown>; privateMetadata?: Record<string, unknown>; entitlements?: { plan: string; features: string[]; limits: Record<string, unknown> } | null };
+  /** `pre_member_add`: the seat about to be created. */
+  membership?: { role: string; source: string; publicMetadata?: Record<string, unknown>; privateMetadata?: Record<string, unknown>; permissions?: string[]; allowedSignInMethods?: string[] | null };
+  /** `pre_invitation_create`: the invitation about to be issued. */
+  invitation?: { email: string; role: string; delivery?: 'email' | 'link'; publicMetadata?: Record<string, unknown>; privateMetadata?: Record<string, unknown>; permissions?: string[]; allowedSignInMethods?: string[] | null };
 }
 
 /** A bare handler whose param types the caller need not pin — the escape hatch. */

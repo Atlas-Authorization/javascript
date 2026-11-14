@@ -20,8 +20,10 @@ export type WebhookDataAgentAccess = {
   /** Created (epoch ms). */
   created_at?: number;
   revoked?: number;
+  machine_grants?: number;
   agent_disabled?: boolean;
   agent?: Record<string, unknown> | null;
+  constraints?: Record<string, unknown> | null;
   [key: string]: unknown;
 };
 
@@ -82,6 +84,12 @@ export type WebhookDataApiKey = {
   created_at?: number | null;
   /** Updated (epoch ms), or null. */
   updated_at?: number | null;
+  /** The organization a user key is bound to, or null. */
+  organization_id?: string | null;
+  /** The member who created an organization key, or null. */
+  created_by_user_id?: string | null;
+  /** Why the key was revoked when it was not a person: membership_ended, creator_departed or organization_deleted. */
+  revoked_reason?: string | null;
   /** api_key.limit_reached: the limit that was reached. */
   limit?: Record<string, unknown>;
   [key: string]: unknown;
@@ -518,6 +526,35 @@ export type WebhookDataGroupMember = {
   [key: string]: unknown;
 };
 
+/** An identity check reached a verdict. */
+export type WebhookDataIdentityVerification = {
+  object: "identity_verification";
+  id: string;
+  user_id: string;
+  provider: string;
+  status: "approved" | "declined" | "needs_review";
+  reason?: string | null;
+  imported?: boolean;
+  /** When the verification service verified the person (epoch ms), or null. */
+  verified_at?: number | null;
+  /** Completed (epoch ms), or null. */
+  completed_at?: number | null;
+  /** True when the opted-in verified attributes will ride on the first delivery. */
+  has_verified_attributes?: boolean;
+  /** The facts you configured, in the first delivery only (Atlas keeps no copy afterwards). */
+  verified_attributes?: {
+    full_name?: string;
+    birth_year?: number;
+    birth_month?: number;
+    /** One boolean per configured age, keyed by the age, e.g. { "18": true }. */
+    age_over?: Record<string, boolean>;
+    /** The document's issuing country (ISO 3166-1 alpha-2). */
+    document_country?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
 /** An identity-governance event: a request, grant, access-review campaign, separation-of-duties violation or joiner/mover/leaver change. */
 export type WebhookDataIga = {
   object: "iga_request" | "iga_grant" | "iga_campaign" | "iga_sod_violation" | "iga_jml" | "iga_activation";
@@ -572,6 +609,17 @@ export type WebhookDataInvitation = {
   expires_at: number;
   /** Created (epoch ms). */
   created_at: number;
+  delivery?: "email" | "link";
+  accept_by?: string | null;
+  public_metadata?: Record<string, unknown> | null;
+  permissions?: string[];
+  allowed_sign_in_methods?: string[] | null;
+  /** organization_invitation.accepted only: the user who accepted. */
+  accepted_by_user_id?: string;
+  /** organization_invitation.accepted only: the verified address of the accepting user. */
+  accepted_email_address?: string | null;
+  /** organization_invitation.accepted only: true when the accepting user's verified address differs from the invited one (link-holder acceptance). */
+  email_mismatch?: boolean;
   [key: string]: unknown;
 };
 
@@ -640,6 +688,11 @@ export type WebhookDataMembership = {
   previous_role?: string;
   /** organization_membership.updated only: the role id before the change. */
   previous_role_id?: string;
+  public_metadata?: Record<string, unknown> | null;
+  /** Permissions granted on top of the role. */
+  permissions?: string[];
+  /** Sign-in methods whose sessions mint with this organization's claims; null = any. */
+  allowed_sign_in_methods?: string[] | null;
   /** organization_membership.updated only: what manages the role now. `scim`, `sso:<connection id>` or `ldap:<connection id>` when your identity provider's groups or roles changed it; `manual` when it was set through the API or dashboard (directory changes then leave it alone). */
   role_source?: string | null;
   [key: string]: unknown;
@@ -663,6 +716,27 @@ export type WebhookDataOAuthClientStatus = {
   previous: "development" | "in_review" | "approved" | "suspended";
   /** At (epoch ms). */
   at?: number;
+  [key: string]: unknown;
+};
+
+/** An OAuth token family ended. */
+export type WebhookDataOAuthTokensRevoked = {
+  object: "oauth_tokens_revocation";
+  /** The OAuth client's public client_id. */
+  client_id: string;
+  user_id: string;
+  /** The Grant Management grant_id the family was issued under, or null. */
+  grant_id: string | null;
+  /** The refresh-token family; the `fid` claim of every access token minted from it. */
+  family_id: string;
+  /** The API (resource server identifier) the family was issued for, or null. */
+  audience: string | null;
+  /** Single access tokens (their `jti`) revoked on their own; empty when the whole family ended. */
+  access_token_jtis: string[];
+  /** refresh_token_reuse: a rotated refresh token was replayed; client_revoked: the client called /oauth2/revoke; admin_revoked / user_revoked: the grant was ended by an operator or the user. */
+  reason: "refresh_token_reuse" | "client_revoked" | "admin_revoked" | "user_revoked" | "grant_revoked" | "logout";
+  /** When the family ended (epoch ms). */
+  revoked_at: number;
   [key: string]: unknown;
 };
 
@@ -838,6 +912,21 @@ export type WebhookDataRequiredAction = {
   created_at?: number;
   /** user.required_action_completed only: who finished it (system = it was already true). */
   completed_by?: "user" | "system";
+  [key: string]: unknown;
+};
+
+/** A role assignment on a resource. */
+export type WebhookDataResourceRoleAssignment = {
+  object: "resource_role_assignment";
+  id: string;
+  resource_id: string;
+  resource_type: string;
+  resource_external_id: string;
+  subject: Record<string, unknown>;
+  role: string;
+  inherit: boolean;
+  /** Created (epoch ms). */
+  created_at?: number;
   [key: string]: unknown;
 };
 
@@ -1314,7 +1403,7 @@ export type WebhookDataUserDeleted = {
   [key: string]: unknown;
 };
 
-/** A graceful deletion was scheduled or canceled. */
+/** A graceful deletion was scheduled, canceled or paused. */
 export type WebhookDataUserDeletionSchedule = {
   object: "user";
   id: string;
@@ -1325,6 +1414,10 @@ export type WebhookDataUserDeletionSchedule = {
   deletion_effective_at: number | null;
   /** Canceled (epoch ms), or null. */
   deletion_canceled_at?: number | null;
+  /** Paused (epoch ms), or null. */
+  deletion_paused_at?: number | null;
+  deletion_pause_reason?: string | null;
+  deletion_refusal_reason?: string | null;
   data_subject_request_id?: string;
   primary_email_address?: string | null;
   email_addresses?: Array<Record<string, unknown>>;
@@ -1510,6 +1603,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"group.member_added", WebhookDataGroupMember>
   | AtlasWebhookEnvelope<"group.member_removed", WebhookDataGroupMember>
   | AtlasWebhookEnvelope<"group.updated", WebhookDataGroup>
+  | AtlasWebhookEnvelope<"identity_verification.completed", WebhookDataIdentityVerification>
   | AtlasWebhookEnvelope<"iga_activation.started", WebhookDataIga>
   | AtlasWebhookEnvelope<"iga_campaign.closed", WebhookDataIga>
   | AtlasWebhookEnvelope<"iga_campaign.launched", WebhookDataIga>
@@ -1538,6 +1632,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"message.rate_limited", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"mfa_factor.quarantined", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"oauth_client.status_changed", WebhookDataOAuthClientStatus>
+  | AtlasWebhookEnvelope<"oauth_tokens.revoked", WebhookDataOAuthTokensRevoked>
   | AtlasWebhookEnvelope<"organization.created", WebhookDataOrganization>
   | AtlasWebhookEnvelope<"organization.deleted", WebhookDataOrganization>
   | AtlasWebhookEnvelope<"organization.it_alert", WebhookDataOrgItAlert>
@@ -1561,6 +1656,8 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"policy.version_published", WebhookDataPolicyVersionPublished>
   | AtlasWebhookEnvelope<"privacy_request.completed", WebhookDataPrivacyRequest>
   | AtlasWebhookEnvelope<"privacy_request.updated", WebhookDataPrivacyRequest>
+  | AtlasWebhookEnvelope<"resource_role_assignment.created", WebhookDataResourceRoleAssignment>
+  | AtlasWebhookEnvelope<"resource_role_assignment.deleted", WebhookDataResourceRoleAssignment>
   | AtlasWebhookEnvelope<"risk.elevated", WebhookDataSessionRisk>
   | AtlasWebhookEnvelope<"risky_user.updated", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"role.created", WebhookDataRole>
@@ -1616,6 +1713,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"user.deactivated", WebhookDataUserDeactivated>
   | AtlasWebhookEnvelope<"user.deleted", WebhookDataUserDeleted>
   | AtlasWebhookEnvelope<"user.deletion_canceled", WebhookDataUserDeletionSchedule>
+  | AtlasWebhookEnvelope<"user.deletion_paused", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.deletion_requested", WebhookDataSubjectRequest>
   | AtlasWebhookEnvelope<"user.deletion_scheduled", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.graduated", WebhookDataUser>
@@ -1710,6 +1808,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "group.member_added",
   "group.member_removed",
   "group.updated",
+  "identity_verification.completed",
   "iga_activation.started",
   "iga_campaign.closed",
   "iga_campaign.launched",
@@ -1738,6 +1837,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "message.rate_limited",
   "mfa_factor.quarantined",
   "oauth_client.status_changed",
+  "oauth_tokens.revoked",
   "organization.created",
   "organization.deleted",
   "organization.it_alert",
@@ -1761,6 +1861,8 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "policy.version_published",
   "privacy_request.completed",
   "privacy_request.updated",
+  "resource_role_assignment.created",
+  "resource_role_assignment.deleted",
   "risk.elevated",
   "risky_user.updated",
   "role.created",
@@ -1816,6 +1918,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "user.deactivated",
   "user.deleted",
   "user.deletion_canceled",
+  "user.deletion_paused",
   "user.deletion_requested",
   "user.deletion_scheduled",
   "user.graduated",

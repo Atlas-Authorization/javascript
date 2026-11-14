@@ -37,6 +37,8 @@ export interface Machine {
   public_key_jkt: string | null;
   metadata: MachineMetadata;
   enrolled_at: number | null;
+  /** When the machine last minted a token (epoch ms); null = never. */
+  last_token_at?: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -114,15 +116,20 @@ export interface MachineEnrolmentToken {
   uses: number;
   expires_at: number;
   requires_approval: boolean;
+  /** `user_code` for a short single-use code, else `token`. */
+  format?: 'token' | 'user_code';
   created_at: number;
 }
 
-/** The create response: the enrolment token plus its `met_` secret, shown once. */
+/** The create response: the enrolment token plus its secret, shown once: `token` (a `met_` secret), or `user_code` for `format: 'user_code'`. */
 export interface MachineEnrolmentTokenWithSecret extends MachineEnrolmentToken {
-  token: string;
+  token?: string;
+  user_code?: string;
 }
 
 export interface CreateEnrolmentTokenBody {
+  /** `user_code` mints a short single-use code (8 letters, 5 to 15 minutes) a person types on the device. Default `token`. */
+  format?: 'token' | 'user_code';
   /** Bind machines enrolled with this token to an organization. */
   organization_id?: string;
   /** Round-7: the user who will own machines enrolled with this token. */

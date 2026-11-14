@@ -162,3 +162,9 @@ export * from './uma';
 
 // Step-up with no DOM: choose a held factor, re-verify, retry the refused call (bearer sessions included).
 export * from './step-up-flow';
+
+// Sign-in and account-security screens as framework-free view-models (steps, methods, fields, human errors, step-up inside).
+export * from './sign-in-screen';
+export * from './security-section';
+// Mint a short enrolment code for a device the signed-in user owns.
+export * from './machine-enrolment';

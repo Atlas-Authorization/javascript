@@ -8,6 +8,7 @@ import {
 } from 'jose';
 import { JwksCache, readKid, type Jwks } from './jwks-cache';
 import { ATLAS_SIGNING_ALGS } from './algs';
+import { OAuthTokenRevocationList, type OAuthTokenRevocationOptions } from './oauth-token-revocation';
 
 /**
  * Protecting YOUR API — or your own MCP server — with access tokens Atlas
@@ -229,6 +230,21 @@ export interface AccessTokenVerifierOptions {
    * are issued to).
    */
   introspection?: IntrospectionOptions;
+  /**
+   * Also reject tokens Atlas has revoked, with no call per request: the verifier polls
+   * `GET /v1/resource_servers/{id}/revoked_tokens` and refuses a token whose `fid` (its
+   * refresh-token family: reuse detected, /oauth2/revoke, the grant ended) or `jti` is listed.
+   * `true` uses the defaults; pass an object to tune the poll. Needs `secretKey`
+   * (with `resource_servers:read`), and either `resourceServerId` or a single string `audience`.
+   * The worst-case window is the poll interval plus the time to your next poll.
+   */
+  revocation?: boolean | OAuthTokenRevocationOptions;
+  /** A secret key with `resource_servers:read`, for `revocation`. */
+  secretKey?: string;
+  /** The Atlas id of your resource server, for `revocation`; default: found by `audience`. */
+  resourceServerId?: string;
+  /** Backend API origin for `revocation`; default https://api.atlasauth.net. */
+  apiUrl?: string;
   fetchImpl?: typeof fetch;
   now?: () => number;
 }
@@ -458,6 +474,20 @@ export function createAccessTokenVerifier(
     ? createIntrospector(issuer, options.introspection, { fetchImpl: options.fetchImpl, now: options.now })
     : null;
 
+  if (options.revocation && !options.secretKey) {
+    throw new Error('createAccessTokenVerifier with `revocation` needs `secretKey` (with resource_servers:read).');
+  }
+  const revocationList = options.revocation
+    ? new OAuthTokenRevocationList(options.revocation === true ? {} : options.revocation, {
+        secretKey: options.secretKey!,
+        resourceServerId: options.resourceServerId,
+        identifier: typeof options.audience === 'string' ? options.audience : undefined,
+        baseUrl: options.apiUrl,
+        fetchImpl: options.fetchImpl,
+        now,
+      })
+    : null;
+
   return async (request, extra) => {
     const required = [...(options.requiredScopes ?? []), ...(extra?.requiredScopes ?? [])];
     const scheme: 'Bearer' | 'DPoP' = options.requireDpop ? 'DPoP' : 'Bearer';
@@ -537,6 +567,12 @@ export function createAccessTokenVerifier(
       if (!aud.some((a) => audiences.includes(a))) {
         return fail(401, 'invalid_token', 'The access token was not issued for this resource.');
       }
+    }
+
+    // Revoked token families and single tokens (the polled feed): no call per request.
+    if (revocationList) {
+      if (await revocationList.isRevoked(claims as { fid?: unknown; jti?: unknown })) return fail(401, 'invalid_token', 'The access token has been revoked.');
+      if (revocationList.unavailable()) return fail(401, 'invalid_token', 'Token revocation status is unavailable right now.');
     }
 
     // Sender constraint (RFC 9449). A bound token is only ever a DPoP token.

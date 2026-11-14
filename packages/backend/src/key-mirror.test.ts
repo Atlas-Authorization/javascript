@@ -206,3 +206,39 @@ describe('allowed_ips on the mirror', () => {
     expect((await mirror.verify('ak_0123_secret')).valid).toBe(true);
   });
 });
+
+describe('createKeyMirror: keys bound to an organization', () => {
+  const BOUND = { ...KEY, subject_type: 'user' as const, subject_id: 'usr_1', organization_id: 'org_1', scopes: ['calls:write', 'calls:read'] };
+  const bound = (membership?: Parameters<typeof createKeyMirror>[0]['membership']) => {
+    const { api } = fakeAtlas();
+    api.create.mockResolvedValue({ ...BOUND, id: 'eak_b', secret: 'ak_0123_bound', note: '' } as never);
+    const store = memoryKeyMirrorStore();
+    return { mirror: createKeyMirror({ store, apiKeys: api as never, membership }), store, api };
+  };
+
+  it('narrows the scopes to what the current membership covers, and drops the key when there is none', async () => {
+    let held: { id: string; role: string; permissions: string[] } | null = { id: 'org_1', role: 'org:member', permissions: ['calls:read'] };
+    const { mirror } = bound(async () => held);
+    await mirror.mint({ subject_type: 'user', subject_id: 'usr_1', organization_id: 'org_1', scopes: ['calls:write', 'calls:read'] });
+    const ok = await mirror.verify('ak_0123_bound');
+    expect(ok).toMatchObject({ valid: true, effective_scopes: ['calls:read'], organization: { role: 'org:member' } });
+    held = null;
+    expect(await mirror.verify('ak_0123_bound')).toEqual({ valid: false });
+  });
+
+  it('without a membership source it refuses rather than answering from the key scopes', async () => {
+    const { mirror, api } = bound();
+    // The fake client has no verify, so there is nothing to resolve the membership with.
+    await mirror.mint({ subject_type: 'user', subject_id: 'usr_1', organization_id: 'org_1' });
+    expect(api.create).toHaveBeenCalled();
+    expect(await mirror.verify('ak_0123_bound')).toMatchObject({ valid: false, code: 'membership_unresolved' });
+  });
+
+  it('drops the keys of a removed member from the membership webhook and from the feed', async () => {
+    const { mirror, store } = bound(async () => ({ id: 'org_1', role: 'org:member', permissions: ['calls:read'] }));
+    await mirror.mint({ subject_type: 'user', subject_id: 'usr_1', organization_id: 'org_1' });
+    expect(await mirror.applyWebhook({ type: 'organization_membership.deleted', data: { user_id: 'usr_1', organization_id: 'org_1' } })).toBe(true);
+    expect(await mirror.verify('ak_0123_bound')).toEqual({ valid: false });
+    expect((await store.get('eak_b'))?.revoked_reason).toBe('membership_ended');
+  });
+});

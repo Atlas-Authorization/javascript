@@ -117,8 +117,21 @@ export * from './client';
 
 // A local, authoritative mirror of end-user API keys (mint/import/revoke at
 // Atlas, verify locally against sha256, sync from the revocation feed).
-export { createKeyMirror, memoryKeyMirrorStore, hashApiKeySecret } from './key-mirror';
+export { createKeyMirror, memoryKeyMirrorStore, hashApiKeySecret, intersectScopesWithPermissions, permissionCoversScope } from './key-mirror';
 export type { KeyMirror, KeyMirrorOptions, KeyMirrorStore, MirroredApiKey, MirrorVerification, MirrorImportInput, MirrorImportResult } from './key-mirror';
+export { createResourceRoleMirror, memoryResourceRoleMirrorStore, resolveMirrorGrants } from './resource-role-mirror';
+export type {
+  MirrorResourceRef,
+  MirrorSubject,
+  MirroredAssignment,
+  MirroredResource,
+  MirroredResourceType,
+  ResourceRoleCheckOptions,
+  ResourceRoleMirror,
+  ResourceRoleMirrorCheck,
+  ResourceRoleMirrorOptions,
+  ResourceRoleMirrorStore,
+} from './resource-role-mirror';
 
 // §1.3(c) dev/test tooling — offline fixtures for verifying Atlas-minted
 // session JWTs with no network call (Clerk's `@clerk/testing` equivalent).
@@ -185,3 +198,36 @@ export type {
 export * from './legacy-verify';
 export * from './uma';
 export type { SidListRevocation } from './sid-revocation';
+export type { OAuthTokenRevocationOptions } from './oauth-token-revocation';
+
+// Web Bot Auth (RFC 9421 signed bots): verify a request's signature against the bot's key directory, offline.
+export {
+  WEB_BOT_AUTH_TAG,
+  WEB_BOT_AUTH_DIRECTORY_PATH,
+  WEB_BOT_AUTH_DIRECTORY_MEDIA_TYPE,
+  WebBotAuthDirectoryCache,
+  buildSignatureBase,
+  createWebBotAuthVerifier,
+  decideWebBotAuth,
+  directoryUrlFor,
+  ed25519JwkThumbprint,
+  normalizeDirectory,
+  parseSignatureAgent,
+  signWebBotAuthRequest,
+  verifyWebBotAuth,
+} from './web-bot-auth';
+export type {
+  SignWebBotAuthInput,
+  WebBotAuthDecision,
+  WebBotAuthDecisionKind,
+  WebBotAuthFailure,
+  WebBotAuthHeaders,
+  WebBotAuthJwk,
+  WebBotAuthListEntry,
+  WebBotAuthPolicy,
+  WebBotAuthRequest,
+  WebBotAuthResult,
+  WebBotAuthTier,
+  WebBotAuthVerifierOptions,
+  WebBotAuthVerifyOptions,
+} from './web-bot-auth';

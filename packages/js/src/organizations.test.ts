@@ -10,6 +10,8 @@ import {
   listAssignablePermissions,
   updateOrganizationRole,
   inviteMember,
+  acceptOrganizationInvitationByToken,
+  updateMemberAccess,
   leaveOrganization,
   listOrganizationMembers,
   listOrganizationRoles,
@@ -183,5 +185,44 @@ describe('per-organization custom roles', () => {
     await ctl.load();
     expect(ctl.getState().status).toBe('ready');
     expect(ctl.getState().permissions).toEqual([]);
+  });
+});
+
+describe('link invitations and member access', () => {
+  it('inviteMember sends the link delivery fields only when given', async () => {
+    const { client, calls } = fakeClient(() => ok({ object: 'organization_invitation', id: 'inv_1' }));
+    await inviteMember(client, 'org_1', {
+      emailAddress: 'a@b.co',
+      role: 'org:member',
+      delivery: 'link',
+      acceptBy: 'link',
+      redirectUrl: 'https://app.example.com/accept',
+      permissions: ['org:invoices:export'],
+      allowedSignInMethods: ['passkey'],
+    });
+    expect(calls[0]!.body).toEqual({
+      email_address: 'a@b.co',
+      role: 'org:member',
+      delivery: 'link',
+      accept_by: 'link',
+      redirect_url: 'https://app.example.com/accept',
+      permissions: ['org:invoices:export'],
+      allowed_sign_in_methods: ['passkey'],
+    });
+  });
+
+  it('acceptOrganizationInvitationByToken posts the token to the by-token route', async () => {
+    const { client, calls } = fakeClient(() => ok({ object: 'organization_membership', id: 'orgmem_1', email_mismatch: false }));
+    const seat = await acceptOrganizationInvitationByToken(client, 'oit_abc');
+    expect(`${calls[0]!.method} ${calls[0]!.path}`).toBe('POST /v1/client/organization_invitations/accept_by_token');
+    expect(calls[0]!.body).toEqual({ token: 'oit_abc' });
+    expect(seat.id).toBe('orgmem_1');
+  });
+
+  it('updateMemberAccess patches permissions and sign-in methods, null clearing the restriction', async () => {
+    const { client, calls } = fakeClient(() => ok({ object: 'organization_membership' }));
+    await updateMemberAccess(client, 'org_1', 'user_2', { permissions: [], allowedSignInMethods: null });
+    expect(`${calls[0]!.method} ${calls[0]!.path}`).toBe('PATCH /v1/client/organizations/org_1/memberships/user_2');
+    expect(calls[0]!.body).toEqual({ permissions: [], allowed_sign_in_methods: null });
   });
 });

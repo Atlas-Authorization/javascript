@@ -71,6 +71,6 @@ describe('typed event/api per trigger', () => {
       const slug: string = event.organization.slug;
       api.access.deny(slug);
     });
-    expect(ACTION_TRIGGERS).toHaveLength(26);
+    expect(ACTION_TRIGGERS).toHaveLength(27);
   });
 });
