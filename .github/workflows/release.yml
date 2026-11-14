@@ -1,0 +1,74 @@
+name: npm release
+
+# Publishes every @atlasauth package whose version is not on npm yet, after the
+# monorepo sync lands a version bump. New versions go out under `next`, and
+# `latest` moves only once every new tarball is downloadable, so `latest`
+# never points at a package whose dependency is not published yet.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - name: Plan
+        id: plan
+        run: |
+          names=$(node .github/scripts/release-plan.mjs)
+          echo "names=$names" >> "$GITHUB_OUTPUT"
+          echo "To publish: ${names:-nothing}"
+
+      - name: Install
+        if: steps.plan.outputs.names != ''
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (the new packages and what they depend on)
+        if: steps.plan.outputs.names != ''
+        run: |
+          args=(); for n in ${{ steps.plan.outputs.names }}; do args+=(--filter "$n..."); done
+          pnpm -r "${args[@]}" build
+
+      - name: Publish under next
+        if: steps.plan.outputs.names != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          args=(); for n in ${{ steps.plan.outputs.names }}; do args+=(--filter "$n"); done
+          pnpm -r "${args[@]}" publish --access public --no-git-checks --tag next
+
+      - name: Move latest once every tarball is downloadable
+        if: steps.plan.outputs.names != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          for n in ${{ steps.plan.outputs.names }}; do
+            dir=$(grep -l "\"name\": \"$n\"" packages/*/package.json | head -1 | xargs dirname)
+            v=$(node -p "require('./$dir/package.json').version")
+            t="https://registry.npmjs.org/$n/-/${n##*/}-$v.tgz"
+            for _ in $(seq 1 90); do curl -sfI "$t" >/dev/null && break; sleep 10; done
+            curl -sfI "$t" >/dev/null || { echo "::error::$n@$v tarball not downloadable; latest not moved"; exit 1; }
+          done
+          for n in ${{ steps.plan.outputs.names }}; do
+            dir=$(grep -l "\"name\": \"$n\"" packages/*/package.json | head -1 | xargs dirname)
+            v=$(node -p "require('./$dir/package.json').version")
+            npm dist-tag add "$n@$v" latest
+          done
