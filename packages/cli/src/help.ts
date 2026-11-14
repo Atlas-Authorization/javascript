@@ -964,13 +964,14 @@ Usage:
           oauth_clients:       [ { name: ..., redirect_uris: [...] } ]
           webhook_endpoints:   [ { url: ..., enabled_events: [...], secret: "\${WEBHOOK_SECRET}", active: false } ]
           email_provider:      { transport: brevo, from_address: ..., config: { api_key: "\${BREVO_KEY}" } }
+          sms_provider:        { transport: twilio, from_address: "+15551234567", config: { account_sid: ..., auth_token: "\${TWILIO_TOKEN}" } }
           hooks:               { before_user_create: { url: ..., timeout_ms, fail_closed, enabled } }
           branding:            { applicationName: ..., logoUrl: ... }
           sign_in_with_atlas:  { enabled: true }
         or a directory from 'atlas config export' (default ./atlas-config).
 
 Shows the plan, asks before applying (--yes skips the question; needed without a
-terminal), then applies creates and updates in a fixed order: email_provider, instance,
+terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, instance,
 org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers,
 custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles,
 webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans,
@@ -991,6 +992,8 @@ Without --prune the plan compares only the keys the file sets.
                   endpoint already exists and the file has no ATLAS_WEBHOOK_SECRET, it is read
                   back (no rotation). An existing OAuth client's secret is never rotated: the
                   'atlas client rotate' command to run is printed. Only key names are printed.
+oauth_providers entries take settings.native_client_ids (a string or a list): the extra
+audiences a native app's id_token may carry.
 Placeholders: \${VAR} comes from the environment or --secrets-file; \${instance.fapi_host},
 \${instance.frontend_api_url} and \${instance.id} come from the instance the key targets.
 Applying stops if any \${VAR} is unresolved. A key the resource does not have is an

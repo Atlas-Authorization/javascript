@@ -15,7 +15,7 @@
  * for tests and single-process apps; back it with a table in production.
  */
 import { createHash } from './edge-crypto';
-import type { ApiKey, ApiKeyWithSecret, CreateApiKeyBody, apiKeysResource } from './client/api-keys';
+import type { ApiKey, ApiKeyImportOutcome, ApiKeyWithSecret, CreateApiKeyBody, apiKeysResource } from './client/api-keys';
 
 /** What the mirror keeps per key. Never the secret: only its sha256 (hex). */
 export interface MirroredApiKey {
@@ -46,12 +46,16 @@ export interface KeyMirrorStore {
   /** The revocation-feed cursor last consumed (null = from the start). */
   getCursor(): Promise<string | null>;
   setCursor(cursor: string): Promise<void>;
+  /** Epoch ms of the last COMPLETED `sync()` (null = never). Optional: without it the mirror keeps it in memory, so a restart reads as never synced. */
+  getLastSyncAt?(): Promise<number | null>;
+  setLastSyncAt?(at: number): Promise<void>;
 }
 
 /** An in-memory store, for tests and single-process apps. */
 export function memoryKeyMirrorStore(): KeyMirrorStore & { keys: Map<string, MirroredApiKey> } {
   const keys = new Map<string, MirroredApiKey>();
   let cursor: string | null = null;
+  let lastSyncAt: number | null = null;
   return {
     keys,
     async put(key) {
@@ -73,6 +77,12 @@ export function memoryKeyMirrorStore(): KeyMirrorStore & { keys: Map<string, Mir
     },
     async setCursor(c) {
       cursor = c;
+    },
+    async getLastSyncAt() {
+      return lastSyncAt;
+    },
+    async setLastSyncAt(at) {
+      lastSyncAt = at;
     },
   };
 }
@@ -98,13 +108,32 @@ export interface KeyMirrorOptions {
    * sha256 and verifies it locally from then on. Default false.
    */
   verifyAtAtlas?: boolean;
+  /**
+   * Freshness bound for the revocation feed. When set, `verify` answers
+   * `{ valid: false, code: 'stale' }` (never a plain unknown-key miss) if the mirror
+   * has never completed a `sync()` or the last one finished more than this many
+   * milliseconds ago, because a key revoked at Atlas may not have reached it yet.
+   * 300000 (5 minutes) is a good value when `sync()` runs every few seconds to a
+   * minute. Unset (the default) turns the check off, for webhook-only mirrors.
+   */
+  maxStalenessMs?: number;
   /** Clock, for tests. */
   now?: () => number;
 }
 
 export type MirrorVerification =
   | { valid: true; key: MirroredApiKey; effective_scopes: string[] }
-  | { valid: false; code?: 'insufficient_scope' | 'ip_not_allowed' | 'client_ip_required'; missing_scopes?: string[] };
+  | { valid: false; code?: 'insufficient_scope' | 'ip_not_allowed' | 'client_ip_required'; missing_scopes?: string[] }
+  | {
+      valid: false;
+      /** The mirror is not fresh enough to answer: not synced yet, or last sync older than `maxStalenessMs`. Retry after `sync()`. */
+      code: 'stale';
+      /** Epoch ms of the last completed sync; null = never. */
+      lastSyncAt: number | null;
+    };
+
+/** The result of `mirror.import`: the key plus whether Atlas created it or already held it. */
+export type MirrorImportResult = ApiKey & { outcome: ApiKeyImportOutcome };
 
 export type MirrorImportInput = Omit<CreateApiKeyBody, 'import' | 'prefix'> & {
   /** The full existing secret (hashed here, never sent) — or its `secretHash`. */
@@ -216,6 +245,8 @@ export function createKeyMirror(options: KeyMirrorOptions) {
   const now = options.now ?? Date.now;
   const implications = options.scopeImplications ?? {};
   const allowed = options.allowedScopes ?? [];
+  let memorySyncAt: number | null = null;
+  const readSyncAt = async () => (store.getLastSyncAt ? await store.getLastSyncAt() : memorySyncAt);
 
   return {
     /** Mint at Atlas, then mirror it. Resolves with the one-time `secret`. */
@@ -229,29 +260,35 @@ export function createKeyMirror(options: KeyMirrorOptions) {
      * Import an existing key by its sha256 (hex) so customers keep their secret:
      * Atlas stores the hash, the mirror stores the same hash.
      */
-    async import(input: MirrorImportInput, idempotencyKey?: string): Promise<ApiKey> {
+    async import(input: MirrorImportInput, idempotencyKey?: string): Promise<MirrorImportResult> {
       const { secret, secretHash, bcryptHash, argon2idHash, prefix, ...rest } = input;
       const legacy = bcryptHash ?? argon2idHash;
       if (legacy !== undefined) {
-        const imported = await apiKeys.create(
+        const imported = (await apiKeys.create(
           { ...rest, import: { secret_hash: legacy, hash_algorithm: bcryptHash !== undefined ? 'bcrypt' : 'argon2id', prefix } },
           idempotencyKey,
-        );
+        )) as ApiKey & { outcome?: ApiKeyImportOutcome };
         // No local sha256 yet: `verify` (with verifyAtAtlas) fills it in on first use.
-        await store.put(toMirrored(imported, `legacy:${imported.id}`));
-        return imported;
+        // A retry that answered already_present keeps a sha256 the mirror already learned.
+        if (imported.outcome !== 'already_present' || !(await store.get(imported.id))) {
+          await store.put(toMirrored(imported, `legacy:${imported.id}`));
+        }
+        return { ...imported, outcome: imported.outcome ?? 'created' };
       }
       const hash = secretHash?.toLowerCase() ?? (secret !== undefined ? hashApiKeySecret(secret) : undefined);
       if (!hash || !HEX64.test(hash)) {
         throw new TypeError('import needs the full `secret` or its `secretHash` (64 lowercase hex characters of sha256).');
       }
-      const imported = await apiKeys.create(
+      const imported = (await apiKeys.create(
         { ...rest, import: { secret_hash: hash, hash_algorithm: 'sha256_hex', prefix } },
         idempotencyKey,
-      );
+      )) as ApiKey & { outcome?: ApiKeyImportOutcome };
       await store.put(toMirrored(imported, hash));
-      return imported;
+      return { ...imported, outcome: imported.outcome ?? 'created' };
     },
+
+    /** Epoch ms of the last completed `sync()`; null = never synced. */
+    lastSyncAt: readSyncAt,
 
     /**
      * Revoke LOCALLY first (the key stops working here at once), then at Atlas.
@@ -270,10 +307,17 @@ export function createKeyMirror(options: KeyMirrorOptions) {
 
     /**
      * Verify a presented secret against the mirror — no network call. Unknown,
-     * revoked and expired keys all answer `{ valid: false }`.
+     * revoked and expired keys all answer `{ valid: false }`; a mirror that is not
+     * fresh (see `maxStalenessMs`) answers `code: 'stale'` instead.
      */
     async verify(secret: string, opts: { requiredScopes?: string[]; clientIp?: string } = {}): Promise<MirrorVerification> {
       if (typeof secret !== 'string' || !secret) return { valid: false };
+      if (options.maxStalenessMs !== undefined) {
+        const lastSyncAt = await readSyncAt();
+        if (lastSyncAt === null || now() - lastSyncAt > options.maxStalenessMs) {
+          return { valid: false, code: 'stale', lastSyncAt };
+        }
+      }
       const hash = hashApiKeySecret(secret);
       let key = await store.getByHash(hash);
       if (!key && options.verifyAtAtlas && apiKeys.verify && apiKeys.get) {
@@ -314,7 +358,11 @@ export function createKeyMirror(options: KeyMirrorOptions) {
           since = page.next_cursor;
           await store.setCursor(since);
         }
-        if (!page.has_more || !page.next_cursor) return { revoked };
+        if (!page.has_more || !page.next_cursor) {
+          memorySyncAt = now();
+          await store.setLastSyncAt?.(memorySyncAt);
+          return { revoked };
+        }
       }
     },
 

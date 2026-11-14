@@ -112,6 +112,56 @@ describe('createSignInFlow', () => {
     expect((snap.step as { factors: string[] }).factors).not.toContain('passkey');
   });
 
+  it('narrows the second factors to what the account holds and exposes attemptId', async () => {
+    const { client } = clientWith({
+      '/v1/client/sign_ins': [json(201, { id: 'sia_h', status: 'needs_first_factor', supported_first_factors: ['password'] })],
+      '/v1/client/sign_ins/sia_h/attempt_first_factor': [json(200, { id: 'sia_h', status: 'needs_second_factor' })],
+      '/v1/client/sign_ins/sia_h/second_factors': [json(200, { object: 'second_factors', factors: ['sms'], backup_codes: false })],
+    });
+    const flow = createSignInFlow({ client });
+    expect(flow.getSnapshot().attemptId).toBeNull();
+    await flow.submitIdentifier('a@b.co');
+    const snap = await flow.submitPassword('pw');
+    expect(snap.step).toEqual({ type: 'needs_second_factor', factors: ['sms'] });
+    expect(snap.attemptId).toBe('sia_h');
+  });
+
+  it('keeps backup_code when the account has recovery codes, and when the server does not say', async () => {
+    for (const [id, body, expected] of [
+      ['sia_b1', { object: 'second_factors', factors: ['totp'], backup_codes: true }, ['totp', 'backup_code']],
+      ['sia_b2', { object: 'second_factors', factors: ['totp'] }, ['totp', 'backup_code']],
+    ] as const) {
+      const { client } = clientWith({
+        '/v1/client/sign_ins': [json(201, { id, status: 'needs_first_factor', supported_first_factors: ['password'] })],
+        [`/v1/client/sign_ins/${id}/attempt_first_factor`]: [json(200, { id, status: 'needs_second_factor' })],
+        [`/v1/client/sign_ins/${id}/second_factors`]: [json(200, body)],
+      });
+      const flow = createSignInFlow({ client });
+      await flow.submitIdentifier('a@b.co');
+      expect((await flow.submitPassword('pw')).step).toEqual({ type: 'needs_second_factor', factors: expected });
+    }
+  });
+
+  it('puts sentTo on the snapshot after sendSecondFactorCode and clears it once the step moves on', async () => {
+    const { client } = clientWith({
+      '/v1/client/sign_ins': [json(201, { id: 'sia_s', status: 'needs_first_factor', supported_first_factors: ['password'] })],
+      '/v1/client/sign_ins/sia_s/attempt_first_factor': [json(200, { id: 'sia_s', status: 'needs_second_factor' })],
+      '/v1/client/sign_ins/sia_s/second_factors': [json(200, { object: 'second_factors', factors: ['sms'], backup_codes: false })],
+      '/v1/client/sign_ins/sia_s/prepare_second_factor': [json(201, { object: 'second_factor_challenge', strategy: 'sms', sent_to: '+1 ••• 4821' })],
+      '/v1/client/sign_ins/sia_s/attempt_second_factor': [json(200, { id: 'sia_s', status: 'complete', created_session_id: 'sess_s', ticket: 't' })],
+      '/v1/client/tickets/exchange': [json(200, {})],
+    });
+    const flow = createSignInFlow({ client });
+    await flow.submitIdentifier('a@b.co');
+    expect((await flow.submitPassword('pw')).sentTo).toBeNull();
+    const sent = await flow.sendSecondFactorCode('sms');
+    expect(sent.sentTo).toBe('+1 ••• 4821');
+    expect(sent.step.type).toBe('needs_second_factor');
+    const done = await flow.submitSecondFactor('123456', 'sms');
+    expect(done.step.type).toBe('complete');
+    expect(done.sentTo).toBeNull();
+  });
+
   it('a cancelled passkey prompt keeps the step with reason passkey_cancelled', async () => {
     const { client } = clientWith({
       '/v1/client/sign_ins': [json(201, { id: 'sia_c', status: 'needs_second_factor' })],

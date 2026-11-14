@@ -51,3 +51,5 @@ export {
   type SolveCaptchaOptions,
   type GetCaptchaTokenOptions,
 } from '@atlasauth/react-native';
+export * from './account-security-hook';
+export * from './step-up';

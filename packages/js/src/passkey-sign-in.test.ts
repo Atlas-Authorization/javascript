@@ -107,6 +107,16 @@ describe('signInWithPasskey', () => {
     expect(next.errors).toEqual([]);
   });
 
+  it('sends remember:false on the finish only when asked, so the default body is unchanged', async () => {
+    const script = (n: number) => (n === 1 ? { status: 201, body: OPTIONS } : { body: { status: 'complete' } });
+    const kept = scripted(script);
+    await signInWithPasskey(kept.client, { host: host(async () => assertion) });
+    expect(kept.calls[1]!.body).not.toHaveProperty('remember');
+    const dropped = scripted(script);
+    await signInWithPasskey(dropped.client, { host: host(async () => assertion), remember: false });
+    expect(dropped.calls[1]!.body).toMatchObject({ remember: false });
+  });
+
   it('a cancelled prompt is PASSKEY_CANCELLED, not a throw, and nothing is finished', async () => {
     const { client, calls } = scripted(() => ({ status: 201, body: OPTIONS }));
     const next = await signInWithPasskey(client, { host: host(async () => { throw new Error('NotAllowedError'); }) });

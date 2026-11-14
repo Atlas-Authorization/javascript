@@ -23,6 +23,8 @@ class FakeApi implements ConfigHttp {
   clients: Array<Record<string, unknown>> = [];
   webhooks: Array<Record<string, unknown>> = [];
   email: Record<string, unknown> | null = null;
+  sms: Record<string, unknown> | null = null;
+  oauthProviders: Array<Record<string, unknown>> = [];
   hook: Record<string, unknown> = { url: null, enabled: false, timeout_ms: 3000, fail_closed: false, signing_secret_set: false };
   branding: Record<string, unknown> = {};
   hookTestFails = false;
@@ -43,6 +45,10 @@ class FakeApi implements ConfigHttp {
     if (path === '/v1/messaging_providers/email') {
       return (this.email ?? { object: 'messaging_provider', configured: false, channel: 'email' }) as T;
     }
+    if (path === '/v1/messaging_providers/sms') {
+      return (this.sms ?? { object: 'messaging_provider', configured: false, channel: 'sms' }) as T;
+    }
+    if (path === '/v1/oauth_providers') return { data: this.oauthProviders } as T;
     if (path === '/v1/instance/hooks/before_user_create') return { object: 'before_user_create_hook', last_call: null, ...this.hook } as T;
     if (path === '/v1/branding') return { object: 'branding', ...this.branding, resolved: { applicationName: 'x', theme: 'auto' } } as T;
     if (path === '/v1/instance/cookie_consent') return this.cookie as T;
@@ -74,14 +80,28 @@ class FakeApi implements ConfigHttp {
   async put<T>(path: string, body: unknown): Promise<T> {
     this.writes.push({ method: 'PUT', path, body });
     if (path === '/v1/instance/cookie_consent') this.cookie = { object: 'cookie_consent', script_id: null, site_id: null, blocking_mode: null, extra_origins: [], settings_link: null, culture: 'page', ...(body as object) };
-    if (path === '/v1/messaging_providers/email') {
+    if (path === '/v1/messaging_providers/email' || path === '/v1/messaging_providers/sms') {
+      const channel = path.endsWith('/sms') ? 'sms' : 'email';
       const { config = {}, ...rest } = body as { config?: Record<string, string> };
-      const secrets = Object.keys(config).filter((k) => /key|secret/.test(k));
-      this.email = {
-        object: 'messaging_provider', configured: true, channel: 'email', mode: 'standard', status: 'active', ...rest,
+      const secrets = Object.keys(config).filter((k) => /key|secret|token/.test(k));
+      const row = {
+        object: 'messaging_provider', configured: true, channel, mode: 'standard', status: 'active', ...rest,
         config: Object.fromEntries(Object.entries(config).filter(([k]) => !secrets.includes(k))),
         secrets_set: Object.fromEntries(secrets.map((k) => [k, true])),
       };
+      if (channel === 'sms') this.sms = row;
+      else this.email = row;
+    }
+    if (path.startsWith('/v1/oauth_providers/')) {
+      const b = body as { values?: Record<string, string>; settings?: Record<string, string> };
+      const provider = path.split('/').pop()!;
+      const old = this.oauthProviders.find((r) => r.provider === provider);
+      const ids = b.settings?.native_client_ids;
+      const native = ids === undefined ? (old?.native_client_ids ?? []) : ids.split(/[\s,]+/).filter(Boolean);
+      this.oauthProviders = [
+        ...this.oauthProviders.filter((r) => r.provider !== provider),
+        { provider, configured: true, client_id: b.values?.client_id, has_secret: false, native_client_ids: native },
+      ];
     }
     return {} as T;
   }
@@ -538,5 +558,66 @@ describe('webhook endpoints managed by a connected platform', () => {
     const text = readFileSync(join(out, 'webhook_endpoints.json'), 'utf8');
     expect(text).toContain(own.url);
     expect(text).not.toContain(managed.url);
+  });
+});
+
+describe('sms_provider', () => {
+  const sid = `MG${'a1'.repeat(16)}`;
+  const doc = { sms_provider: { transport: 'twilio', config: { account_sid: 'AC123', auth_token: '${TWILIO_TOKEN}', messaging_service_sid: sid } } };
+  const secrets = () => {
+    const p = join(dir, 'sms-secrets.env');
+    writeFileSync(p, 'TWILIO_TOKEN=tok-123\n');
+    chmodSync(p, 0o600);
+    return p;
+  };
+
+  it('applies after email_provider, plans clean, and never prints the token', async () => {
+    const api = new FakeApi();
+    const io = captureIO();
+    expect(await run(['apply', file({ ...doc, email_provider: { transport: 'brevo', config: { api_key: 'k-123456' } } }), '--yes', '--secrets-file', secrets()], ctx(io, api))).toBe(0);
+    expect(api.writes.map((w) => w.path)).toEqual(['/v1/messaging_providers/email', '/v1/messaging_providers/sms']);
+    expect(api.writes[1]!.body).toMatchObject({ transport: 'twilio', config: { auth_token: 'tok-123', messaging_service_sid: sid } });
+    expect(io.stdout()).not.toContain('tok-123');
+    expect(await run(['plan', file(doc), '--check', '--secrets-file', secrets()], ctx(captureIO(), api))).toBe(0);
+  });
+
+  it('plan --check exits 2 when the transport or the sender drifts', async () => {
+    const api = new FakeApi();
+    await run(['apply', file(doc), '--yes', '--secrets-file', secrets()], ctx(captureIO(), api));
+    api.sms = { ...api.sms!, transport: 'vonage' };
+    expect(await run(['plan', file(doc), '--check', '--secrets-file', secrets()], ctx(captureIO(), api))).toBe(2);
+    api.sms = { ...api.sms, transport: 'twilio', config: { account_sid: 'AC123', messaging_service_sid: `MG${'b2'.repeat(16)}` } };
+    expect(await run(['plan', file(doc), '--check', '--secrets-file', secrets()], ctx(captureIO(), api))).toBe(2);
+  });
+
+  it('--rotate-secret sends the token again and a malformed messaging_service_sid is refused locally', async () => {
+    const api = new FakeApi();
+    await run(['apply', file(doc), '--yes', '--secrets-file', secrets()], ctx(captureIO(), api));
+    const before = api.writes.length;
+    expect(await run(['apply', file(doc), '--yes', '--rotate-secret', '--secrets-file', secrets()], ctx(captureIO(), api))).toBe(0);
+    expect(api.writes.length).toBe(before + 1);
+    const bad = file({ sms_provider: { transport: 'twilio', config: { account_sid: 'AC123', messaging_service_sid: 'MGnope' } } }, 'bad-sms.json');
+    expect(await run(['plan', bad], ctx(captureIO(), api))).toBe(1);
+  });
+});
+
+describe('oauth_providers settings.native_client_ids', () => {
+  const entry = (ids: string | string[]) => ({ oauth_providers: [{ provider: 'apple', client_id: 'com.example.service', settings: { native_client_ids: ids } }] });
+
+  it('applies a list as one comma string and plans clean in any order or form', async () => {
+    const api = new FakeApi();
+    expect(await run(['apply', file(entry(['com.example.app', 'com.example.app.beta'])), '--yes'], ctx(captureIO(), api))).toBe(0);
+    const put = api.writes.find((w) => w.path === '/v1/oauth_providers/apple')!;
+    expect(put.body).toMatchObject({ settings: { native_client_ids: 'com.example.app,com.example.app.beta' } });
+    expect(await run(['plan', file(entry(['com.example.app.beta', 'com.example.app']), 'o1.json'), '--check'], ctx(captureIO(), api))).toBe(0);
+    expect(await run(['plan', file(entry('com.example.app.beta, com.example.app'), 'o2.json'), '--check'], ctx(captureIO(), api))).toBe(0);
+  });
+
+  it('plan --check exits 2 when the audiences differ, and a non-string value is refused', async () => {
+    const api = new FakeApi();
+    await run(['apply', file(entry('com.example.app')), '--yes'], ctx(captureIO(), api));
+    expect(await run(['plan', file(entry(['com.example.app', 'other.app']), 'o3.json'), '--check'], ctx(captureIO(), api))).toBe(2);
+    const bad = file({ oauth_providers: [{ provider: 'apple', client_id: 'com.example.service', settings: { native_client_ids: 7 } }] }, 'o4.json');
+    expect(await run(['plan', bad], ctx(captureIO(), api))).toBe(1);
   });
 });

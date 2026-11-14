@@ -173,4 +173,36 @@ describe('allowed_ips on the mirror', () => {
     expect(await mirror.verify('ak_x_secret', { clientIp: '198.51.100.1' })).toEqual({ valid: false, code: 'ip_not_allowed' });
     expect((await mirror.verify('ak_x_secret', { clientIp: '203.0.113.5' })).valid).toBe(true);
   });
+
+  it('import returns the outcome and keeps an already_present answer', async () => {
+    const { api } = fakeAtlas();
+    const mirror = createKeyMirror({ store: memoryKeyMirrorStore(), apiKeys: api as never });
+    const first = await mirror.import({ subject_type: 'user', subject_id: 'u', secret: 'ak_x_secret', prefix: 'ak_x' });
+    expect(first.outcome).toBe('created');
+    api.create.mockResolvedValueOnce({ ...KEY, id: 'eak_imp', prefix: 'ak_x', outcome: 'already_present' } as never);
+    const retry = await mirror.import({ subject_type: 'user', subject_id: 'u', secret: 'ak_x_secret', prefix: 'ak_x' });
+    expect(retry).toMatchObject({ id: 'eak_imp', outcome: 'already_present' });
+  });
+
+  it('answers a distinct stale verdict until a sync completes within maxStalenessMs', async () => {
+    const { api } = fakeAtlas();
+    let t = 1_000;
+    const mirror = createKeyMirror({ store: memoryKeyMirrorStore(), apiKeys: api as never, maxStalenessMs: 60_000, now: () => t });
+    await mirror.mint({ subject_type: 'user', subject_id: 'u' });
+    expect(await mirror.lastSyncAt()).toBeNull();
+    expect(await mirror.verify('ak_0123_secret')).toEqual({ valid: false, code: 'stale', lastSyncAt: null });
+    await mirror.sync();
+    expect(await mirror.lastSyncAt()).toBe(1_000);
+    expect((await mirror.verify('ak_0123_secret')).valid).toBe(true);
+    expect(await mirror.verify('ak_unknown')).toEqual({ valid: false });
+    t = 62_000;
+    expect(await mirror.verify('ak_0123_secret')).toEqual({ valid: false, code: 'stale', lastSyncAt: 1_000 });
+  });
+
+  it('never reports stale when maxStalenessMs is unset', async () => {
+    const { api } = fakeAtlas();
+    const mirror = createKeyMirror({ store: memoryKeyMirrorStore(), apiKeys: api as never });
+    await mirror.mint({ subject_type: 'user', subject_id: 'u' });
+    expect((await mirror.verify('ak_0123_secret')).valid).toBe(true);
+  });
 });

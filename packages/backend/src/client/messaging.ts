@@ -110,6 +110,8 @@ export interface TwilioConfig extends SmsFrom {
   account_sid: string;
   /** Twilio auth token. Required on first setup. Write-only: never returned. */
   auth_token: string;
+  /** Twilio Messaging Service SID (`MG…`), sent instead of `from`. Either this or a sender is required. */
+  messaging_service_sid?: string;
   /** WhatsApp-enabled sender number, for the WhatsApp channel. */
   whatsapp_from?: string;
   /** Voice-capable number, for the voice channel. */

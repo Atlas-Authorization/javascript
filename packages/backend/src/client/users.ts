@@ -23,6 +23,8 @@ export interface User {
   status?: 'active' | 'suspended' | 'banned';
   /** Epoch milliseconds, or null if never signed in. */
   last_sign_in_at: number | null;
+  /** Epoch ms when ALL of the user's sessions last ended together; null = never. Also on the `user.sessions_revoked` event. */
+  sessions_revoked_at?: number | null;
   created_at: number;
   updated_at: number;
   /**

@@ -20,6 +20,12 @@ export interface Session {
   created_at: number;
   /** Custom per-session data your backend (or a post_login Action) attached; null when none. */
   custom_data?: Record<string, unknown> | null;
+  /** First-factor strategy the session signed in with (`password`, `email_code`, `passkey`, `oauth`, `sso`, `saml`, ...); null for a session created before this was recorded. */
+  sign_in_method?: string | null;
+  /** The social provider id when `sign_in_method` is `oauth`; otherwise null. */
+  provider?: string | null;
+  /** Authentication methods proven at sign-in (RFC 8176, e.g. `pwd`, `webauthn`, `ext`, `mfa`); null for a session created before this was recorded. */
+  amr?: string[] | null;
 }
 
 /** The session after a keep-alive {@link sessionsResource} `touch`. */

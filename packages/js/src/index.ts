@@ -159,3 +159,6 @@ export * from './external-passkeys';
 // Wallet-side helpers for verifiable credentials (receive an offer, present an SD-JWT VC).
 export * from './credentials';
 export * from './uma';
+
+// Step-up with no DOM: choose a held factor, re-verify, retry the refused call (bearer sessions included).
+export * from './step-up-flow';

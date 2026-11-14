@@ -40,6 +40,9 @@ export interface ApiKey {
   created_at: number;
 }
 
+/** What an import answered: a new row (`created`) or the same key already stored (`already_present`). */
+export type ApiKeyImportOutcome = 'created' | 'already_present';
+
 /** At most `max` successful verifies per `window_seconds`. */
 export interface ApiKeyRateLimit {
   max: number;

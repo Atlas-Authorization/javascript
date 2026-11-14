@@ -52,7 +52,7 @@ export type RequiredActionStep =
   /** The application closes it: send the person to `url`; nothing to submit here. */
   | { kind: 'custom'; url: string | null };
 
-/** Second-factor strategies the server accepts. Not narrowed per account: that would reveal what the account has. */
+/** Second-factor strategies the server accepts; `needs_second_factor.factors` narrows them to what the account holds. */
 export const SECOND_FACTOR_STRATEGIES = ['totp', 'backup_code', 'sms', 'email_code'] as const;
 
 export type FlowStep =
@@ -85,6 +85,10 @@ export interface FlowSnapshot {
   /** The first error's stable reason, or the captcha refusal's. */
   reason: string | null;
   busy: boolean;
+  /** The server's id for the current attempt (what `/v1/client/sign_ins/{id}/...` routes take), or null before one exists. */
+  attemptId: string | null;
+  /** After `sendSecondFactorCode('sms')`: the masked number the text went to (`+1 ••• 4821`); null otherwise. */
+  sentTo: string | null;
 }
 
 export interface FlowOptions {
@@ -157,9 +161,10 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
   let enrollment: MfaEnrollment | null = null;
   let recovery: RecoveryChallenge | null = null;
   let redirect: string | null = null;
+  let sentTo: string | null = null;
   const listeners = new Set<(s: FlowSnapshot) => void>();
 
-  const snapshot = (): FlowSnapshot => ({ step, errors, reason, busy });
+  const snapshot = (): FlowSnapshot => ({ step, errors, reason, busy, attemptId: flow.attempt?.id ?? null, sentTo });
   const emit = () => {
     const s = snapshot();
     for (const l of listeners) l(s);
@@ -178,16 +183,25 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
     return captchaSettings;
   };
 
-  // Whether this attempt's account holds a passkey this browser can use, asked once per attempt.
-  const passkeyChecks = new Map<string, boolean>();
-  const passkeyOffered = async (attemptId: string): Promise<boolean> => {
-    if (!opts.passkeyAssertion && !passkeysSupported()) return false;
-    const known = passkeyChecks.get(attemptId);
-    if (known !== undefined) return known;
-    const res = await client.get<{ factors?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/second_factors`);
-    const offered = res.ok && Array.isArray(res.data?.factors) && res.data.factors.includes('passkey');
-    passkeyChecks.set(attemptId, offered);
-    return offered;
+  // What this attempt's account holds, asked once per attempt (a failed ask is not remembered).
+  const heldChecks = new Map<string, { factors: string[]; backupCodes: boolean }>();
+  const heldFactors = async (attemptId: string) => {
+    const known = heldChecks.get(attemptId);
+    if (known) return known;
+    const res = await client.get<{ factors?: unknown; backup_codes?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId)}/second_factors`);
+    if (!res.ok || !Array.isArray(res.data?.factors)) return null;
+    // Only an explicit `false` hides backup_code, so a server that does not say keeps it.
+    const held = { factors: res.data.factors.filter((f): f is string => typeof f === 'string'), backupCodes: res.data.backup_codes !== false };
+    heldChecks.set(attemptId, held);
+    return held;
+  };
+  /** The second factors to offer: what the account holds; every strategy when that cannot be read. */
+  const secondFactorsFor = async (attemptId: string | undefined): Promise<string[]> => {
+    const held = attemptId ? await heldFactors(attemptId) : null;
+    if (!held) return [...SECOND_FACTOR_STRATEGIES];
+    const out: string[] = SECOND_FACTOR_STRATEGIES.filter((f) => (f === 'backup_code' ? held.backupCodes : held.factors.includes(f)));
+    if (held.factors.includes('passkey') && (opts.passkeyAssertion || passkeysSupported())) out.push('passkey');
+    return out;
   };
 
   const stepFor = async (attempt: AttemptView | null): Promise<FlowStep> => {
@@ -203,7 +217,7 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
       case 'collect_first_factor':
         return { type: 'needs_first_factor', factors: next.strategies };
       case 'collect_second_factor':
-        return { type: 'needs_second_factor', factors: [...SECOND_FACTOR_STRATEGIES, ...(attempt.id && (await passkeyOffered(attempt.id)) ? ['passkey'] : [])], ...(recovery ? { recovery } : {}) };
+        return { type: 'needs_second_factor', factors: await secondFactorsFor(attempt.id ?? undefined), ...(recovery ? { recovery } : {}) };
       case 'accept_policies':
         return { type: 'needs_policy_acceptance', policies: next.policies };
       case 'collect_email_code':
@@ -244,6 +258,7 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
     reason = errors[0]?.reason ?? next.attempt?.reason ?? null;
     busy = false;
     step = await stepFor(next.attempt);
+    if (step.type !== 'needs_second_factor') sentTo = null;
     return emit();
   };
 
@@ -271,6 +286,7 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
     get flow() { return flow; },
     get enrollment() { return enrollment; },
     set enrollment(e: MfaEnrollment | null) { enrollment = e; },
+    set sentTo(v: string | null) { sentTo = v; },
     get recovery() { return recovery; },
     set recovery(r: RecoveryChallenge | null) { recovery = r; },
     acknowledgeCodes() {
@@ -320,7 +336,7 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
         },
         acceptPolicies: (acceptances) => run(() => acceptAttemptPolicies(client, flow, acceptances)),
         reset() {
-          flow = initialFlow; step = { type: 'needs_identifier' }; errors = []; reason = null; captchaToken = null; redirect = null; enrollment = null; recovery = null;
+          flow = initialFlow; step = { type: 'needs_identifier' }; errors = []; reason = null; captchaToken = null; redirect = null; sentTo = null; enrollment = null; recovery = null;
           return emit();
         },
       };
@@ -455,7 +471,8 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
         return advance(client, core.flow, passkeySecondFactorBody(assertion, options.rememberDevice));
       }),
     async sendSecondFactorCode(strategy) {
-      const res = await client.post(`/v1/client/sign_ins/${encodeURIComponent(attemptId())}/prepare_second_factor`, { strategy });
+      const res = await client.post<{ sent_to?: unknown }>(`/v1/client/sign_ins/${encodeURIComponent(attemptId())}/prepare_second_factor`, { strategy });
+      core.sentTo = res.ok && typeof res.data?.sent_to === 'string' ? res.data.sent_to : null;
       return core.run(async () => ({ ...core.flow, errors: res.ok ? [] : res.errors }));
     },
     canRecover: () => canRecoverWithIdentityCheck(client, attemptId()),

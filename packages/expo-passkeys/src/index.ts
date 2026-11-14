@@ -138,6 +138,8 @@ export async function authenticateWithPasskey(opts: {
   captchaToken?: string;
   /** Asked for a fresh token after a captcha refusal; the begin is then retried once. */
   getCaptchaToken?: (request: PasskeyCaptchaTokenRequest) => Promise<string | null>;
+  /** Keep me signed in (default true). `false` is sent as `remember: false` on finish, so the session is a non-persistent one (the instance's `nonPersistent*` limits apply). */
+  remember?: boolean;
 }): Promise<PasskeySignInResult> {
   const client = createFapiClient(opts.config);
   const { captchaToken } = opts;
@@ -172,7 +174,7 @@ export async function authenticateWithPasskey(opts: {
 
   const finish = await client.post<{ id?: string; status?: string; ticket?: string }>(
     '/v1/client/sign_ins/passkey/finish',
-    body,
+    opts.remember === false ? { ...body, remember: false } : body,
   );
   if (!finish.ok || !finish.data) return { status: 'error', errors: finish.errors };
 

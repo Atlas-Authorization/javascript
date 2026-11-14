@@ -1390,6 +1390,19 @@ export type WebhookDataUserReferral = {
   [key: string]: unknown;
 };
 
+/** All of a user's sessions ended together. */
+export type WebhookDataUserSessionsRevoked = {
+  object: "user_sessions_revoked";
+  user_id: string;
+  /** When all of the user's sessions ended together; the same value as `sessions_revoked_at` on the user (epoch ms). */
+  sessions_revoked_at: number;
+  /** Why: revoked_by_api, revoked_by_admin, signed_out_everywhere, password_reset, password_changed, banned, contained, mfa_reset, account_recovered, merged, user_deleted, policy_directive, ssf, ... */
+  reason: string;
+  /** How many sessions this ended (0 when the user had none; a spared current session is not counted). */
+  sessions_revoked: number;
+  [key: string]: unknown;
+};
+
 /** A suspension lifted. */
 export type WebhookDataUserUnsuspended = {
   user_id: string;
@@ -1619,6 +1632,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"user.required_action_cleared", WebhookDataRequiredAction>
   | AtlasWebhookEnvelope<"user.required_action_completed", WebhookDataRequiredAction>
   | AtlasWebhookEnvelope<"user.required_action_requested", WebhookDataRequiredAction>
+  | AtlasWebhookEnvelope<"user.sessions_revoked", WebhookDataUserSessionsRevoked>
   | AtlasWebhookEnvelope<"user.suspended", WebhookDataDirective>
   | AtlasWebhookEnvelope<"user.unbanned", WebhookDataUser>
   | AtlasWebhookEnvelope<"user.unsuspended", WebhookDataUserUnsuspended>
@@ -1818,6 +1832,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "user.required_action_cleared",
   "user.required_action_completed",
   "user.required_action_requested",
+  "user.sessions_revoked",
   "user.suspended",
   "user.unbanned",
   "user.unsuspended",

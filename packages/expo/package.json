@@ -1,8 +1,29 @@
 {
   "name": "@atlasauth/expo",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./account-security": {
+      "types": "./dist/account-security.d.ts",
+      "default": "./dist/account-security.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "account-security": [
+        "./dist/account-security.d.ts"
+      ]
+    }
+  },
+  "sideEffects": [
+    "./dist/index.js"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
@@ -13,7 +34,7 @@
     "@atlasauth/react-native": "workspace:^"
   },
   "peerDependencies": {
-    "@atlasauth/js": ">=0.41.0 <1.0.0",
+    "@atlasauth/js": ">=0.42.0 <1.0.0",
     "react": ">=18",
     "react-native": ">=0.73",
     "expo-secure-store": ">=12",

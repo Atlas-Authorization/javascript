@@ -169,6 +169,45 @@ function enc(segment: string): string {
 // ───────────────────────────── the registry ─────────────────────────────
 
 /**
+ * The email / SMS provider singleton (`/v1/messaging_providers/<channel>`). Secrets
+ * (api_key, auth_token, …) are write-only: the live side shows "(secret set)".
+ */
+function messagingProviderSpec(channel: 'email' | 'sms'): SingletonSpec {
+  const path = `/v1/messaging_providers/${channel}`;
+  return {
+    kind: 'singleton',
+    type: `${channel}_provider`,
+    async fetchLive(http) {
+      let p: Record<string, unknown>;
+      try {
+        p = await http.get<Record<string, unknown>>(path);
+      } catch (err) {
+        if (isNotFound(err)) return null;
+        throw err;
+      }
+      if (!p || p.configured === false) return null;
+      const config: Record<string, Json> = { ...obj((p.config ?? null) as Json) };
+      const set = obj((p.secrets_set ?? null) as Json);
+      const names = Array.isArray(p.secrets_set) ? (p.secrets_set as string[]) : Object.keys(set).filter((k) => set[k] === true);
+      for (const k of names) config[k] = SECRET_SET;
+      return pick({ ...p, config }, ['transport', 'from_address', 'config']);
+    },
+    async apply(http, config) {
+      await http.put(path, compact(withoutMarkers(config)));
+    },
+    fileKeys: channel === 'email' ? ['transport', 'from_address', 'mode', 'config'] : ['transport', 'from_address', 'config'],
+    validate(config) {
+      const sid = obj(obj(config).config ?? null).messaging_service_sid;
+      return channel === 'sms' && typeof sid === 'string' && sid !== '' && !/^MG[0-9a-fA-F]{32}$/.test(sid)
+        ? ['sms_provider config.messaging_service_sid must be MG followed by 32 hex characters.']
+        : [];
+    },
+    reportsSecrets: true,
+  };
+}
+
+
+/**
  * The single source of truth for what `atlas config` round-trips — the same
  * resource set the Terraform provider manages. Each entry maps a resource type
  * to its list/create/update/delete endpoints and its redacted projection.
@@ -180,30 +219,9 @@ function registry(): ResourceSpec[] {
   const specs: ResourceSpec[] = [
     // 0. Email provider — first, because email sign-in strategies need one. Secrets
     //    (api_key, …) are write-only: the live side shows "(secret set)", never a value.
-    {
-      kind: 'singleton',
-      type: 'email_provider',
-      async fetchLive(http) {
-        let p: Record<string, unknown>;
-        try {
-          p = await http.get<Record<string, unknown>>('/v1/messaging_providers/email');
-        } catch (err) {
-          if (isNotFound(err)) return null;
-          throw err;
-        }
-        if (!p || p.configured === false) return null;
-        const config: Record<string, Json> = { ...obj((p.config ?? null) as Json) };
-        const set = obj((p.secrets_set ?? null) as Json);
-        const names = Array.isArray(p.secrets_set) ? (p.secrets_set as string[]) : Object.keys(set).filter((k) => set[k] === true);
-        for (const k of names) config[k] = SECRET_SET;
-        return pick({ ...p, config }, ['transport', 'from_address', 'config']);
-      },
-      async apply(http, config) {
-        await http.put('/v1/messaging_providers/email', compact(withoutMarkers(config)));
-      },
-      fileKeys: ['transport', 'from_address', 'mode', 'config'],
-      reportsSecrets: true,
-    },
+    messagingProviderSpec('email'),
+    // 0b. SMS provider — same shape as the email provider, minus `mode`.
+    messagingProviderSpec('sms'),
 
     // 1. Instance config (auth_config + allowed origins) — the §9.3 singleton.
     {
@@ -367,9 +385,27 @@ function registry(): ResourceSpec[] {
       type: 'oauth_providers',
       fileKeys: [...OAUTH_PROVIDER_KEYS, 'client_secret', 'values', 'settings'],
       validate(config) {
-        const { provider, mode } = obj(config);
-        if (mode === undefined || mode === 'native' || mode === 'redirect' || hasPlaceholder(mode)) return [];
-        return [`oauth_providers ${String(provider)}: mode must be native or redirect, got ${JSON.stringify(mode)}.`];
+        const { provider, mode, settings } = obj(config);
+        const out: string[] = [];
+        if (!(mode === undefined || mode === 'native' || mode === 'redirect' || hasPlaceholder(mode))) {
+          out.push(`oauth_providers ${String(provider)}: mode must be native or redirect, got ${JSON.stringify(mode)}.`);
+        }
+        const nci = settings && typeof settings === 'object' && !Array.isArray(settings) ? (settings as Record<string, Json>).native_client_ids : undefined;
+        if (nci !== undefined && nci !== null && typeof nci !== 'string' && !(Array.isArray(nci) && nci.every((x) => typeof x === 'string'))) {
+          out.push(`oauth_providers ${String(provider)}: settings.native_client_ids must be a string or a list of strings.`);
+        }
+        return out;
+      },
+      // A comma string and a list (any order) of native_client_ids are the same audiences.
+      align(live, desired) {
+        const want = nativeIds(obj(obj(desired).settings ?? null).native_client_ids);
+        const l = obj(live);
+        const ls = obj(l.settings ?? null);
+        if (want === null) return live;
+        // An empty list is satisfied by a provider with none stored.
+        const have = ls.native_client_ids === undefined ? [] : nativeIds(ls.native_client_ids);
+        if (have === null || [...have].sort().join('\n') !== [...want].sort().join('\n')) return live;
+        return { ...l, settings: { ...ls, native_client_ids: obj(obj(desired).settings ?? null).native_client_ids! } };
       },
       reportsSecrets: true,
       defaulted: ['mode'],
@@ -397,9 +433,13 @@ function registry(): ResourceSpec[] {
             id: String(r.provider ?? ''),
             config: {
               ...obj(pick(r, OAUTH_PROVIDER_KEYS)),
-              ...(r.setting_values && Object.keys(r.setting_values as object).length ? { settings: r.setting_values as Json } : {}),
+              ...(() => {
+                const settings: Record<string, Json> = { ...obj((r.setting_values ?? null) as Json) };
+                if (Array.isArray(r.native_client_ids) && r.native_client_ids.length) settings.native_client_ids = r.native_client_ids as Json;
+                return Object.keys(settings).length ? { settings } : {};
+              })(),
               ...(r.has_secret === true ? { client_secret: SECRET_SET } : {}),
-            },
+            } as Json,
           }));
       },
       create: putProvider,
@@ -1577,6 +1617,12 @@ function ssoKey(config: Config): string {
 }
 
 /** Configure an OAuth provider: credentials/scopes (PUT), then scope + enabled toggles. */
+/** native_client_ids as a trimmed list, from a comma/space string or a list; null when absent or not a string/list. */
+function nativeIds(v: Json | undefined): string[] | null {
+  const parts = typeof v === 'string' ? v.split(/[\s,]+/) : Array.isArray(v) && v.every((x) => typeof x === 'string') ? (v as string[]).flatMap((x) => x.split(/[\s,]+/)) : null;
+  return parts ? parts.filter(Boolean) : null;
+}
+
 async function putProvider(http: ConfigHttp, config: Config): Promise<void> {
   const c = obj(config);
   // Provider settings (a tenant, a domain, Apple's team/key ids) ride along in `values`.
@@ -1590,7 +1636,13 @@ async function putProvider(http: ConfigHttp, config: Config): Promise<void> {
   if (Object.keys(values).length) body.values = values;
   if (Array.isArray(c.scopes)) body.scopes = c.scopes;
   // Credential-less providers (siwe, siws, siwb, siwf) take verifier settings instead.
-  if (c.settings && typeof c.settings === 'object' && !Array.isArray(c.settings)) body.settings = c.settings;
+  if (c.settings && typeof c.settings === 'object' && !Array.isArray(c.settings)) {
+    const settings: Record<string, Json> = { ...c.settings };
+    // The API takes native_client_ids as a comma string; "" clears the stored list.
+    const ids = nativeIds(settings.native_client_ids);
+    if (ids !== null) settings.native_client_ids = ids.join(',');
+    body.settings = settings;
+  }
   if (c.mode !== undefined) body.mode = c.mode;
   const provider = String(c.provider ?? '');
   if (Object.keys(body).length) {

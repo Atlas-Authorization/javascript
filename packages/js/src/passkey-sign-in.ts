@@ -84,6 +84,11 @@ export interface PasskeySignInOptions extends PasskeyExtensionOptions {
   mediation?: 'optional' | 'conditional';
   signal?: AbortSignal;
   host?: WebAuthnHost;
+  /**
+   * Keep me signed in (default true). `false` makes the session cookie a
+   * browser-session cookie: nothing persistent is left once the browser closes.
+   */
+  remember?: boolean;
 }
 
 type FinishView = AttemptView & { created_session_id?: string | null; ticket?: string };
@@ -125,7 +130,7 @@ export async function signInWithPasskey(client: FapiClient, opts: PasskeySignInO
     };
   }
 
-  const done = await client.post<FinishView>(PASSKEY_SIGN_IN_FINISH_PATH, body);
+  const done = await client.post<FinishView>(PASSKEY_SIGN_IN_FINISH_PATH, opts.remember === false ? { ...body, remember: false } : body);
   if (!done.ok || !done.data) return { ...base, errors: done.errors };
   return { ...base, attempt: done.data, ticket: done.data.ticket ?? null };
 }

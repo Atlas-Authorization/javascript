@@ -7532,8 +7532,8 @@ packages:
     resolution: {integrity: sha512-1rXeuUUiGGrykh+CeBdu5Ie7OJwinCgQY0bc7GCRxy5xVHy+moaqkpL/jqQq0MtQOeYcrqEz4abc5f0KtU7W4A==}
     engines: {node: '>=12.5.0'}
 
-  colord@2.12.0:
-    resolution: {integrity: sha512-SpiONmQPZDqe50ivOTgkVikYsnp6l1HTFYqPRLNBCJJdA2Qympw2yYUzX99XlSbbKZswjiG6r+xsUpPPOHqY+Q==}
+  colord@2.13.0:
+    resolution: {integrity: sha512-2g8RPH6UvoD1ZXYmccAuo0zfMw4mxqzXbeToeVoMSm6na0QEDXggahcZdlTFnFdahlV3I158ipRb2AIvCcwiAQ==}
 
   colorette@2.0.20:
     resolution: {integrity: sha512-IfEDxwoWIjkeXL1eXcDiow4UbKjhLdq6/EuSVR9GMN7KVH3r9gQ83e73hsz1Nd1T3ijd5xv1wcWRYO+D6kCI2w==}
@@ -8937,8 +8937,8 @@ packages:
   fast-json-stable-stringify@2.1.0:
     resolution: {integrity: sha512-lhd/wF+Lk98HZoTCtlVraHtfh5XYijIjalXck7saUtuanSDyLMxnHhSXEDJqHxD7msR8D0uCmqlkwjCV8xvwHw==}
 
-  fast-json-stringify@7.3.5:
-    resolution: {integrity: sha512-g7H3xqJmdH9aWLWh8S3CqrRZFZ321yaeNHZp3QUDl3wtXDWjPChDXCDDTwA4M/zsU42nOhE+z5KmpCzgBaaCgw==}
+  fast-json-stringify@7.3.6:
+    resolution: {integrity: sha512-hXCpiZTZGiER/Xree1Tb4PY1DREPUnlWTP5Df9hgtoDnUppulV7Km8lh1/NEBuqz4JnNGSXghnABudfZ/iwIzg==}
 
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
@@ -17485,7 +17485,7 @@ snapshots:
 
   '@fastify/fast-json-stringify-compiler@5.2.0':
     dependencies:
-      fast-json-stringify: 7.3.5
+      fast-json-stringify: 7.3.6
 
   '@fastify/forwarded@3.1.2': {}
 
@@ -21877,7 +21877,7 @@ snapshots:
       color-convert: 2.0.1
       color-string: 1.9.1
 
-  colord@2.12.0: {}
+  colord@2.13.0: {}
 
   colorette@2.0.20: {}
 
@@ -23846,7 +23846,7 @@ snapshots:
 
   fast-json-stable-stringify@2.1.0: {}
 
-  fast-json-stringify@7.3.5:
+  fast-json-stringify@7.3.6:
     dependencies:
       '@fastify/merge-json-schemas': 0.2.2
       ajv: 8.20.0
@@ -23894,7 +23894,7 @@ snapshots:
       '@fastify/proxy-addr': 5.1.2
       abstract-logging: 2.0.1
       avvio: 9.3.1
-      fast-json-stringify: 7.3.5
+      fast-json-stringify: 7.3.6
       find-my-way: 9.10.0
       light-my-request: 6.8.0
       pino: 10.4.0
@@ -28082,7 +28082,7 @@ snapshots:
     dependencies:
       browserslist: 4.29.5
       caniuse-api: 3.0.0
-      colord: 2.12.0
+      colord: 2.13.0
       postcss: 8.5.33
       postcss-value-parser: 4.2.0
 
@@ -28191,7 +28191,7 @@ snapshots:
 
   postcss-minify-gradients@5.1.1(postcss@8.5.33):
     dependencies:
-      colord: 2.12.0
+      colord: 2.13.0
       cssnano-utils: 3.1.0(postcss@8.5.33)
       postcss: 8.5.33
       postcss-value-parser: 4.2.0

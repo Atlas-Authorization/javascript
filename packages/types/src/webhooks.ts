@@ -63,6 +63,7 @@ export type WebhookEvent =
   | 'session.pending'
   | 'session.updated'
   | 'session.expired'
+  | 'user.sessions_revoked'
   | 'risk.elevated'
   | 'grant.revoked'
   | 'email.created'
