@@ -32,3 +32,14 @@ export type { AgentTool } from './types';
 
 export { withGrantUsage, GrantUsageDeniedError } from './grant-usage';
 export type { GrantUsageToolOptions } from './grant-usage';
+
+export {
+  ApprovalDeniedError,
+  ApprovalPendingError,
+  ToolUsageDeniedError,
+  bindingFor,
+  createApprovalGate,
+  guardToolCall,
+  withApproval,
+} from './approval';
+export type { ApprovalGate, ApprovalGateClient, ApprovalGateOptions, ApprovalToolOptions } from './approval';

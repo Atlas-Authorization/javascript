@@ -1,5 +1,10 @@
 # @atlasauth/qwik changelog
 
+## 0.7.0
+
+- API keys, billing (pricing table, invoices, checkout with discount codes, usage reader) and device authorization components, matching React.
+- `<Protect>` narrows to your generated permission, role, plan and feature keys and gates on plan, feature and app roles.
+
 ## 0.6.0 — 2026-11-13
 
 - `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.

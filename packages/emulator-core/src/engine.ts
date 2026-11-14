@@ -8,7 +8,8 @@ import { WebhookService } from './webhooks';
 import { ChangeFeed, type FeedResource } from './feed';
 import { MessageSink } from './messages';
 import { genericHandler } from './generic';
-import { allHandlers, installPresenters, resetConsumers, resetSessions, resetUsage, seedAccess } from './handlers';
+import { chargeBudget, noteOperationUse } from './handlers/platform';
+import { allHandlers, installPresenters, resetConsumers, resetRound2, resetSessions, resetUsage, seedAccess } from './handlers';
 
 export interface KeyInfo {
   key: string;
@@ -50,7 +51,10 @@ export interface RouteContext {
 export interface Reply {
   status?: number;
   body?: unknown;
-  headers?: Record<string, string>;
+  /** A body sent as is (CSV, an exact JSON string whose digest was signed); `content-type` must then be set in `headers`. */
+  raw?: string;
+  /** A value may be a list: each entry becomes its own header line (several `set-cookie`). */
+  headers?: Record<string, string | string[]>;
 }
 
 export type Handler = (c: RouteContext) => Reply | Promise<Reply>;
@@ -72,6 +76,12 @@ interface CompiledRoute extends RouteDef {
   statics: number;
   op?: Operation;
 }
+
+const toHeaders = (h: Record<string, string | string[]>): Headers => {
+  const out = new Headers();
+  for (const [k, v] of Object.entries(h)) for (const x of Array.isArray(v) ? v : [v]) out.append(k, x);
+  return out;
+};
 
 const compileRoute = (r: RouteDef): Pick<CompiledRoute, 'regex' | 'names' | 'statics'> => {
   const names: string[] = [];
@@ -107,7 +117,7 @@ export class Engine {
   readonly presenters = new Map<FeedResource, { one(id: string): Obj | null; all(): string[] }>();
   readonly keys: KeyInfo[];
   private routes: CompiledRoute[] = [];
-  private readonly idem = new Map<string, { hash: string; status: number; body: string; headers: Record<string, string> }>();
+  private readonly idem = new Map<string, { hash: string; status: number; body: string; headers: Record<string, string | string[]> }>();
 
   constructor(readonly options: EmulatorOptions) {
     this.index = new OpenApiIndex(options.openapi);
@@ -153,6 +163,17 @@ export class Engine {
     this.webhooks.emit(event.type, event.data, event.actor ?? null);
   }
 
+  /** Every hand-written route and the OpenAPI operation it answers for (undefined: a route the document does not list, such as `/oauth2/*`). */
+  handwritten(): Array<{ method: string; pattern: string; op?: Operation; public: boolean }> {
+    return this.routes.map((r) => ({ method: r.method, pattern: r.pattern, op: r.op, public: r.public === true }));
+  }
+
+  /** Per operation of the document: `handler` (hand-written behaviour), `generic` (document-driven CRUD only) . */
+  coverage(): Record<string, 'handler' | 'generic'> {
+    const hand = new Set(this.routes.filter((r) => r.op).map((r) => `${r.op!.method} ${r.op!.path}`));
+    return Object.fromEntries(this.index.ops.map((o) => [`${o.method} ${o.path}`, hand.has(`${o.method} ${o.path}`) ? ('handler' as const) : ('generic' as const)]));
+  }
+
   /** Wait for in-flight webhook deliveries (and their scheduled retries to finish or be cancelled). */
   async flush(): Promise<void> {
     await this.webhooks.flush();
@@ -171,6 +192,7 @@ export class Engine {
     resetUsage(this);
     resetConsumers(this);
     resetSessions(this);
+    resetRound2(this);
     seedAccess(this);
   }
 
@@ -178,7 +200,8 @@ export class Engine {
     await this.webhooks.close();
   }
 
-  private authenticate(request: Request): KeyInfo {
+  /** The secret key a request carries; throws UNAUTHENTICATED / INVALID_KEY. Public so handlers on public routes can ask for one optionally. */
+  authenticateKey(request: Request): KeyInfo {
     const h = request.headers.get('authorization');
     const m = /^Bearer\s+(.+)$/i.exec(h ?? '');
     if (!m?.[1]) throw new EmulatorError('UNAUTHENTICATED', 'Send the instance secret key as `Authorization: Bearer sk_...`.');
@@ -230,7 +253,7 @@ export class Engine {
 
     let key: KeyInfo | null = null;
     if (!isPublic) {
-      key = this.authenticate(request);
+      key = this.authenticateKey(request);
       const scope = op?.scope ?? route?.scope;
       if (scope && key.scopes && !key.scopes.includes(scope) && !key.scopes.includes('*')) {
         throw new EmulatorError('SCOPE_MISSING', `This key lacks the \`${scope}\` scope.`, undefined, { meta: { required_scope: scope } });
@@ -241,7 +264,10 @@ export class Engine {
     let raw = '';
     if (method !== 'GET' && method !== 'DELETE') {
       raw = await request.text();
-      if (raw.trim()) {
+      if (raw.trim() && (request.headers.get('content-type') ?? '').includes('application/x-www-form-urlencoded')) {
+        // OAuth endpoints (RFC 6749) are form-encoded: every value is a string, repeated keys keep the last one.
+        body = Object.fromEntries(new URLSearchParams(raw));
+      } else if (raw.trim()) {
         try {
           const parsed = JSON.parse(raw);
           if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
@@ -266,28 +292,40 @@ export class Engine {
     const strict = this.options.strict === true || request.headers.get('atlas-strict') === 'true';
     if (unknown.length && strict) throw new EmulatorError('UNKNOWN_FIELD', `Unknown field: ${unknown[0]}.`, unknown[0]);
 
+    if (op) noteOperationUse(this, op.method, op.path);
+    // Write budgets: every write through a secret key counts; counter routes count twice. Enforce mode rejects the overrun.
+    const budgetHeaders: Record<string, string> = {};
+    if (!isPublic && method !== 'GET' && !path.startsWith('/__emulator')) {
+      const charges = [chargeBudget(this, 'writes')];
+      if (/\/(consume|refund)$|\/billing\/usage(\/batch)?$/.test(path)) charges.push(chargeBudget(this, 'counter_writes'));
+      if (charges.some((x) => x.rejected)) throw new EmulatorError('RATE_LIMITED', 'This instance is over its write budget for the current window. Retry after it resets.', undefined, { meta: { reason: 'write_budget' } });
+      if (charges.some((x) => x.exceeded)) budgetHeaders['Atlas-Write-Budget'] = 'exceeded';
+    }
+
     const idemKey = method === 'POST' ? request.headers.get('idempotency-key') : null;
     const idemId = idemKey ? `${key?.key ?? ''}|${path}|${idemKey}` : null;
     if (idemId) {
       const seen = this.idem.get(idemId);
       if (seen) {
         if (seen.hash !== raw) throw new EmulatorError('IDEMPOTENCY_CONFLICT', 'This Idempotency-Key was used with a different request body.');
-        return new Response(seen.body || null, { status: seen.status, headers: { ...seen.headers, 'idempotent-replayed': 'true' } });
+        return new Response(seen.body || null, { status: seen.status, headers: toHeaders({ ...seen.headers, 'idempotent-replayed': 'true' }) });
       }
     }
 
     const reply = await handler({ engine: this, request, params, query: url.searchParams, body, key, op });
     // A handler says "success" with 200 or 201; the document decides which one (a create is 201 only where the API says so).
     const status = op && (reply.status === undefined || reply.status === 200 || reply.status === 201) ? op.successStatus : (reply.status ?? 200);
-    const headers: Record<string, string> = { ...(reply.headers ?? {}) };
+    const headers: Record<string, string | string[]> = { ...budgetHeaders, ...(reply.headers ?? {}) };
     if (unknown.length) headers['Atlas-Unknown-Fields'] = unknown.join(',');
     let text = '';
-    if (reply.body !== undefined && status !== 204) {
+    if (reply.raw !== undefined && status !== 204) {
+      text = reply.raw;
+    } else if (reply.body !== undefined && status !== 204) {
       text = JSON.stringify(reply.body);
-      headers['content-type'] = 'application/json';
+      headers['content-type'] ??= 'application/json';
     }
     if (idemId && status < 500) this.idem.set(idemId, { hash: raw, status, body: text, headers });
-    return new Response(status === 204 ? null : text || null, { status, headers });
+    return new Response(status === 204 ? null : text || null, { status, headers: toHeaders(headers) });
   }
 }
 
@@ -307,6 +345,12 @@ function createDb(now: () => number) {
     endpoints: t('webhook_endpoints', 'whep'),
     sessions: t('sessions', 'sess'),
     jwtTemplates: t('jwt_templates', 'jwtt'),
+    oauthClients: t('oauth_clients', 'oac'),
+    enrolmentTokens: t('machine_enrolment_tokens', 'met'),
+    agentRequests: t('agent_access_requests', 'agentAccessRequest'),
+    passkeys: t('passkeys', 'pk'),
+    scimTokens: t('scim_tokens', 'scimtok'),
+    scimGroups: t('scim_groups', 'scimgrp'),
   };
   return { ...tables, clearAll: () => Object.values(tables).forEach((x) => x.clear()), newId: (p: string) => newId(p, now()) };
 }

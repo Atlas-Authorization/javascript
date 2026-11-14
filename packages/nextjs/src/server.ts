@@ -82,12 +82,16 @@ export function configFromEnv(env: Env = readEnv()): AtlasMiddlewareOptions {
 
   const publishableKey = pick(env, 'ATLAS_PUBLISHABLE_KEY', 'NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY');
 
+  // ATLAS_REVOCATION=true also rejects tokens of sessions Atlas has revoked (needs ATLAS_SECRET_KEY with sessions:read).
+  const revocation = ['true', '1', 'sid_list'].includes((pick(env, 'ATLAS_REVOCATION') ?? '').toLowerCase());
+
   return {
     jwksUrl,
     issuer,
     previousIssuers: previousIssuers?.length ? previousIssuers : undefined,
     authorizedParties,
     publishableKey,
+    ...(revocation ? { revocation: true, secretKey: pick(env, 'ATLAS_SECRET_KEY'), bapiBaseUrl: pick(env, 'ATLAS_API_BASE', 'ATLAS_API_URL', 'NEXT_PUBLIC_ATLAS_API_URL') } : {}),
   };
 }
 
@@ -187,7 +191,7 @@ async function edgeRequestFromContext(): Promise<EdgeRequest> {
  * every render, defeating the whole point of edge-local verification.
  */
 function cacheKey(options: AtlasMiddlewareOptions): string {
-  return [options.jwksUrl, options.issuer, (options.previousIssuers ?? []).join(','), (options.authorizedParties ?? []).join(',')].join('\n');
+  return [options.jwksUrl, options.issuer, (options.previousIssuers ?? []).join(','), (options.authorizedParties ?? []).join(','), options.revocation ? 'revocation' : ''].join('\n');
 }
 
 let authHelperCache: { key: string; fn: ReturnType<typeof createAuthHelper> } | undefined;

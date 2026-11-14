@@ -28,6 +28,12 @@ export interface BillingPlan {
   kind?: 'base' | 'addon';
   /** Autumn plans: the feature whose usage tracks the org's member count. */
   seat_feature_id?: string | null;
+  /** Pricing-table copy under the plan name. */
+  description?: string | null;
+  /** Pricing-table badge, e.g. "Most popular". */
+  badge?: string | null;
+  /** Pricing-table order, ascending. */
+  sort_order?: number;
   created_at: number;
   updated_at: number;
 }
@@ -119,6 +125,9 @@ export interface CreateBillingPlanBody {
   kind?: 'base' | 'addon';
   /** Autumn: one of the plan's features; its usage follows the org's member count. */
   seat_feature_id?: string | null;
+  description?: string | null;
+  badge?: string | null;
+  sort_order?: number;
 }
 
 export interface UpdateBillingPlanBody {
@@ -137,6 +146,9 @@ export interface UpdateBillingPlanBody {
   kind?: 'base' | 'addon';
   /** `null` clears it. */
   seat_feature_id?: string | null;
+  description?: string | null;
+  badge?: string | null;
+  sort_order?: number;
 }
 
 /** Filter the subscription read view to one subject. */

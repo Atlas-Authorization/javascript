@@ -7,12 +7,14 @@ import {
   evaluate,
   hasFromClaims,
   redeemHandshake,
+  type SidListRevocation,
   type MigrationBridgeDecision,
   type MigrationTokenExtractor,
   type ProtectCondition,
   type SessionClaims,
   type TokenFormat,
 } from '@atlasauth/backend';
+import type { LogoutDenylist } from './backchannel';
 import { decideRoute, safeRedirect, type MiddlewareConfig } from './matcher';
 
 /**
@@ -67,6 +69,19 @@ export interface AtlasMiddlewareOptions extends MiddlewareConfig {
    * for the instance and source. See {@link MigrationBridgeConfig}.
    */
   migrationBridge?: MigrationBridgeConfig;
+  /**
+   * Also reject a session token whose session Atlas has revoked (signed out elsewhere, a ban, a sign-out-everywhere),
+   * instead of trusting it until it expires (about a minute). `true` or an options object (poll interval, fail-closed
+   * behavior; see `SidListRevocation`). Needs `secretKey` (with `sessions:read`). Use `{ source: 'status_list', jwksUrl }`
+   * for the compact signed list. The list lives in the memory of each server instance or edge isolate.
+   */
+  revocation?: boolean | Omit<SidListRevocation, 'mode'>;
+  /** Sessions ended by an Atlas back-channel logout your route handler received (see `atlasBackchannelLogout`). A listed session is signed out here. */
+  logoutDenylist?: LogoutDenylist;
+  /** A secret key with `sessions:read`, for `revocation`. Server-side only. */
+  secretKey?: string;
+  /** Atlas Backend API origin for `revocation`. Default: the Atlas API. */
+  bapiBaseUrl?: string;
 }
 
 /** Options for {@link AtlasMiddlewareOptions.migrationBridge}. */
@@ -205,7 +220,12 @@ export function hasSignedInHint(request: EdgeRequest): boolean {
  * token as "not signed in" degrades to the sign-in screen, which is what the
  * user needs anyway.
  */
-export async function resolveAuth(backend: AtlasBackend, request: EdgeRequest): Promise<AuthState> {
+export async function resolveAuth(
+  backend: AtlasBackend,
+  request: EdgeRequest,
+  revocation?: Omit<SidListRevocation, 'mode'>,
+  denylist?: LogoutDenylist,
+): Promise<AuthState> {
   const header = request.headers.get('authorization');
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
   const cookie = readCookie(request.headers.get('cookie'), '__session');
@@ -213,8 +233,12 @@ export async function resolveAuth(backend: AtlasBackend, request: EdgeRequest): 
   const token = bearer ?? cookie;
   if (!token) return SIGNED_OUT;
 
-  const result = await backend.verify(token);
+  // With `revocation`, the session list is consulted too: a revoked or unverifiable-list session is signed out.
+  const result = revocation
+    ? await backend.authenticateRequest(request, { revocation: { mode: 'sid_list', ...revocation } })
+    : await backend.verify(token);
   if (!result.ok) return SIGNED_OUT;
+  if (denylist?.has(result.claims)) return SIGNED_OUT;
 
   return {
     userId: result.claims.sub,
@@ -223,6 +247,20 @@ export async function resolveAuth(backend: AtlasBackend, request: EdgeRequest): 
     orgRole: result.claims.org_role ?? null,
     claims: result.claims,
   };
+}
+
+/** The revocation options as `resolveAuth` takes them; undefined when revocation is off. */
+function revocationOf(options: AtlasMiddlewareOptions): Omit<SidListRevocation, 'mode'> | undefined {
+  if (!options.revocation) return undefined;
+  if (!options.secretKey) {
+    throw new Error('atlasMiddleware: `revocation` needs `secretKey` (a secret key with sessions:read).');
+  }
+  return options.revocation === true ? {} : options.revocation;
+}
+
+/** The AtlasBackend options the revocation poller needs. */
+function revocationBackendOptions(options: AtlasMiddlewareOptions): { secretKey?: string; bapiBaseUrl?: string } {
+  return options.revocation ? { secretKey: options.secretKey, bapiBaseUrl: options.bapiBaseUrl } : {};
 }
 
 /** A first-party cookie Atlas wants set on the response it returns. */
@@ -262,7 +300,9 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
     previousIssuers: options.previousIssuers,
     authorizedParties: options.authorizedParties,
     fetchImpl: options.fetchImpl,
+    ...revocationBackendOptions(options),
   });
+  const revocation = revocationOf(options);
 
   const bridgeConfig: BetterAuthBridgeConfig | null = options.betterAuthBridge
     ? options.betterAuthBridge === true
@@ -412,7 +452,7 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
       }
     }
 
-    const auth = await resolveAuth(backend, request);
+    const auth = await resolveAuth(backend, request, revocation, options.logoutDenylist);
 
     const decision = decideRoute({
       pathname: request.nextUrl.pathname,
@@ -533,7 +573,9 @@ export function createAuthHelper(options: AtlasMiddlewareOptions) {
     previousIssuers: options.previousIssuers,
     authorizedParties: options.authorizedParties,
     fetchImpl: options.fetchImpl,
+    ...revocationBackendOptions(options),
   });
+  const revocation = revocationOf(options);
 
   return async function auth(request: EdgeRequest): Promise<
     AuthState & {
@@ -552,7 +594,7 @@ export function createAuthHelper(options: AtlasMiddlewareOptions) {
       protect(condition?: ProtectCondition): asserts this is AuthState & { userId: string };
     }
   > {
-    const state = await resolveAuth(backend, request);
+    const state = await resolveAuth(backend, request, revocation, options.logoutDenylist);
 
     return {
       ...state,

@@ -59,3 +59,44 @@ export class AtlasAuthorizedRetriever<Node> {
   }
 }
 
+
+// ── Human approval before a tool runs ───────────────────────────────────────────
+
+import { guardToolCall, type ApprovalToolOptions } from '@atlasauth/backend';
+
+export {
+  ApprovalDeniedError,
+  ApprovalPendingError,
+  ToolUsageDeniedError,
+  createApprovalGate,
+  type ApprovalGate,
+  type ApprovalToolOptions,
+} from '@atlasauth/backend';
+
+/** The slice of a LlamaIndex.TS tool used here: `metadata.name` and `call(input)`. */
+export interface LlamaToolLike {
+  metadata: { name: string };
+  call?(input: unknown, ...rest: unknown[]): unknown;
+}
+
+/**
+ * Hold LlamaIndex tools for a human approval (and, with `usage`, a grant counter spend) before they run. The same option
+ * shape as `withApproval` in `@atlasauth/agent-toolkit`. Returns proxies whose `call` is gated; everything else is the
+ * original tool.
+ *
+ *   const tools = withApproval([sendEmailTool], { gate, user: 'user_123' });
+ */
+export function withApproval<T extends LlamaToolLike>(tools: readonly T[], options: ApprovalToolOptions): T[] {
+  return tools.map(
+    (tool) =>
+      new Proxy(tool, {
+        get(target, prop) {
+          const value = Reflect.get(target, prop, target) as unknown;
+          if (typeof value !== 'function') return value;
+          if (prop !== 'call') return (value as (...a: unknown[]) => unknown).bind(target);
+          return (input: unknown, ...rest: unknown[]) =>
+            guardToolCall(options, target.metadata.name, input, async (args) => await (value as (...a: unknown[]) => unknown).call(target, args, ...rest));
+        },
+      }),
+  );
+}

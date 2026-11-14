@@ -2,6 +2,7 @@
 import type { Engine, RouteDef } from '../engine';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
+import { assertNotOnHold } from './support';
 import { bump, listReply, merge, need } from './util';
 
 export function presentUser(e: Engine, u: Obj): Obj {
@@ -108,6 +109,8 @@ export function usersHandlers(): RouteDef[] {
           emails,
           primary_email_address_id: emails[0]?.id ?? null,
           has_password: typeof c.body.password === 'string' || typeof c.body.password_hash === 'string' || typeof c.body.password_digest === 'string',
+          // Test-only: lets the Frontend API mock sign this user in with a password. Never serialised.
+          password_plain: typeof c.body.password === 'string' ? c.body.password : null,
           public_metadata: c.body.public_metadata ?? {},
           unsafe_metadata: c.body.unsafe_metadata ?? {},
           private_metadata: c.body.private_metadata ?? {},
@@ -144,6 +147,7 @@ export function usersHandlers(): RouteDef[] {
       handler: (c) => {
         const e = c.engine;
         const u = live(e, c.params.id);
+        assertNotOnHold(e, u.id);
         u.deleted = true;
         for (const m of e.db.memberships.filter((x) => x.user_id === u.id)) {
           e.db.memberships.delete(m.id);

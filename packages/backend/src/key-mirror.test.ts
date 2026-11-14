@@ -136,6 +136,49 @@ describe('createKeyMirror', () => {
     expect((await mirror.verify('ak_0123_secret')).valid).toBe(false);
   });
 
+  it('applyWebhook lifts a revocation on api_key.restored, and only a revocation', async () => {
+    const { api } = fakeAtlas();
+    const store = memoryKeyMirrorStore();
+    const mirror = createKeyMirror({ store, apiKeys: api as never, now: () => 42 });
+    await mirror.mint({ subject_type: 'user', subject_id: 'u' });
+    // Not revoked: nothing to restore.
+    expect(await mirror.applyWebhook({ type: 'api_key.restored', data: { id: 'eak_new', revoked_at: null } })).toBe(false);
+    await mirror.applyWebhook({ type: 'api_key.revoked', data: { id: 'eak_new', revoked_reason: 'user_banned' } });
+    expect((await mirror.verify('ak_0123_secret')).valid).toBe(false);
+    expect(await mirror.applyWebhook({ type: 'api_key.restored', data: { id: 'eak_new', revoked_at: null } })).toBe(true);
+    expect(store.keys.get('eak_new')).toMatchObject({ revoked_at: null, revoked_reason: null });
+    expect((await mirror.verify('ak_0123_secret')).valid).toBe(true);
+  });
+
+  it('rotate adds the successor and moves the old key to the end of its overlap', async () => {
+    const { api } = fakeAtlas();
+    const store = memoryKeyMirrorStore();
+    const rotate = vi.fn(async (id: string, body: { overlap_seconds?: number }) => ({
+      ...KEY,
+      id: 'eak_next',
+      secret: 'ak_next_secret',
+      note: '',
+      rotated_from_id: id,
+      overlap_seconds: body.overlap_seconds ?? 86400,
+      previous_key: { id, prefix: 'ak_0123', expires_at: body.overlap_seconds === 0 ? null : 5000, revoked: body.overlap_seconds === 0 },
+    }));
+    const mirror = createKeyMirror({ store, apiKeys: { ...api, rotate } as never, now: () => 42 });
+    await mirror.mint({ subject_type: 'user', subject_id: 'u' });
+    await mirror.rotate('eak_new', { overlap_seconds: 60 });
+    expect(store.keys.get('eak_next')!.hash).toBe(hashApiKeySecret('ak_next_secret'));
+    expect(store.keys.get('eak_new')!.expires_at).toBe(5000);
+    expect((await mirror.verify('ak_0123_secret')).valid).toBe(true);
+    await mirror.rotate('eak_new', { overlap_seconds: 0 });
+    expect(store.keys.get('eak_new')).toMatchObject({ revoked_at: 42, revoked_reason: 'rotated' });
+    expect((await mirror.verify('ak_0123_secret')).valid).toBe(false);
+  });
+
+  it('rotate needs a client that can rotate', async () => {
+    const { api } = fakeAtlas();
+    const mirror = createKeyMirror({ store: memoryKeyMirrorStore(), apiKeys: api as never });
+    await expect(mirror.rotate('eak_new')).rejects.toBeInstanceOf(TypeError);
+  });
+
   it('refuses an expired key', async () => {
     const { api } = fakeAtlas();
     api.create.mockResolvedValueOnce({ ...KEY, id: 'eak_exp', expires_at: 100, secret: 'ak_exp', note: '' } as never);
@@ -240,5 +283,40 @@ describe('createKeyMirror: keys bound to an organization', () => {
     expect(await mirror.applyWebhook({ type: 'organization_membership.deleted', data: { user_id: 'usr_1', organization_id: 'org_1' } })).toBe(true);
     expect(await mirror.verify('ak_0123_bound')).toEqual({ valid: false });
     expect((await store.get('eak_b'))?.revoked_reason).toBe('membership_ended');
+  });
+});
+
+describe('createKeyMirror: serveStaleForMs', () => {
+  it('keeps answering from the last sync for the grace, flags it, then refuses', async () => {
+    const { api } = fakeAtlas();
+    let t = 1_000;
+    const served: Array<{ lastSyncAt: number | null; staleForMs: number }> = [];
+    const mirror = createKeyMirror({
+      store: memoryKeyMirrorStore(),
+      apiKeys: api as never,
+      maxStalenessMs: 60_000,
+      serveStaleForMs: 30_000,
+      onServeStale: (i) => served.push(i),
+      now: () => t,
+    });
+    await mirror.mint({ subject_type: 'user', subject_id: 'u' });
+    await mirror.sync();
+    t = 31_000;
+    const fresh = await mirror.verify('ak_0123_secret');
+    expect(fresh.valid).toBe(true);
+    expect('stale' in fresh).toBe(false);
+    t = 70_000; // 9s past maxStalenessMs: inside the grace
+    const graced = await mirror.verify('ak_0123_secret');
+    expect(graced).toMatchObject({ valid: true, stale: true });
+    expect(served).toEqual([{ lastSyncAt: 1_000, staleForMs: 9_000 }]);
+    t = 95_000; // 34s past: grace spent
+    expect(await mirror.verify('ak_0123_secret')).toEqual({ valid: false, code: 'stale', lastSyncAt: 1_000 });
+  });
+
+  it('never serves before the first sync, and defaults to no grace', async () => {
+    const { api } = fakeAtlas();
+    const mirror = createKeyMirror({ store: memoryKeyMirrorStore(), apiKeys: api as never, maxStalenessMs: 60_000, serveStaleForMs: 1e9, now: () => 5 });
+    await mirror.mint({ subject_type: 'user', subject_id: 'u' });
+    expect(await mirror.verify('ak_0123_secret')).toEqual({ valid: false, code: 'stale', lastSyncAt: null });
   });
 });

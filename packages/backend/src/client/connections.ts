@@ -191,6 +191,8 @@ export interface ImportConnectionsBody {
   dry_run?: boolean;
   /** With `dry_run`: also refresh rotating providers' rows, accepting that the token you sent is replaced at the provider. */
   verify?: boolean;
+  /** Swap each imported non-expiring Shopify offline token for an expiring access token and a refresh token (a dry run never does). A refusal keeps the original token. */
+  exchange_expiring?: boolean;
 }
 
 export interface ImportConnectionResult {
@@ -201,6 +203,10 @@ export interface ImportConnectionResult {
   connection_id: string | null;
   validated: boolean;
   refreshed: boolean;
+  /** With `exchange_expiring`: whether the token was swapped for an expiring one. */
+  exchanged?: boolean;
+  /** When `exchanged` is false: the provider's error code. */
+  exchange_error?: string;
   error: { code: string; message: string; field?: string; provider_error?: { code: string; description: string | null; http_status: number | null } } | null;
 }
 
@@ -275,8 +281,12 @@ export interface ConnectionOAuthClient {
   scopes: string[];
   host_params: Record<string, string>;
   enabled: boolean;
-  /** The redirect URI to register on this client at the provider. */
+  /** Your own https redirect URI for this client, or null when Atlas's callback is used. */
+  redirect_uri?: string | null;
+  /** The redirect URI to register on this client at the provider: `redirect_uri` when set, else Atlas's callback. */
   callback_url: string;
+  /** Where your `redirect_uri` page can 302 the browser (keeping code and state) to let Atlas finish the connect. */
+  forward_url?: string;
   created_at: number;
   updated_at: number;
 }
@@ -292,6 +302,30 @@ export interface SetConnectionOAuthClientBody {
   scopes?: string[];
   host_params?: Record<string, string>;
   enabled?: boolean;
+  /** An https redirect URI on your own domain, registered at the provider as this app's redirect URI; `null` clears it. */
+  redirect_uri?: string | null;
+}
+
+/** Forward what your own redirect page received: finishes a connect started with a client that has a `redirect_uri`. */
+export interface CompleteConnectionOAuthBody {
+  code: string;
+  state: string;
+  /** Optional check: exactly the client's registered redirect_uri. */
+  redirect_uri?: string;
+  /** Optional check: the id of the client the connect was started with. */
+  oauth_client_id?: string;
+  /** Other query parameters of the provider redirect (for example a Shopify hmac). */
+  query?: Record<string, string>;
+}
+
+export interface ConnectionOAuthCompletion {
+  object: 'connection_oauth_completion';
+  connection: Record<string, unknown>;
+  connection_ids: string[];
+  created: boolean;
+  reconnected_existing: boolean;
+  /** The page the connect was started to return to. */
+  redirect_url: string;
 }
 
 const SKEW_MS = 60_000;
@@ -556,6 +590,10 @@ export function connectionsResource(request: RequestFn) {
       },
     },
     oauthClients: {
+      /** `POST /v1/connections/oauth/complete`: forward the code and state your own redirect page received. */
+      complete(body: CompleteConnectionOAuthBody): Promise<ConnectionOAuthCompletion> {
+        return request({ method: 'POST', path: '/v1/connections/oauth/complete', body });
+      },
       set(body: SetConnectionOAuthClientBody): Promise<ConnectionOAuthClient> {
         return request({ method: 'PUT', path: '/v1/connections/oauth_clients', body });
       },

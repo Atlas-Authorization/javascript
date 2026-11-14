@@ -40,19 +40,44 @@ const localizations = simpleResourceSpec({
   fileKeys: ['resource_type', 'resource_name', 'locale', 'content', 'enabled'],
 });
 
-/** Hosted-page templates: the file is the LIVE template; apply saves a draft and promotes it. */
+/**
+ * Hosted-page templates: the file is the LIVE template; apply saves a draft and promotes it. An entry is one page
+ * for one audience: no `client_id` / `organization_id` / `locale` is the instance-wide template, otherwise the
+ * template for that OAuth client or organization and/or language. Pages: sign-in, sign-up, user-profile, mfa,
+ * reset, verify, consent, device.
+ */
+const audienceKey = (c: Record<string, Json>): string => {
+  const who = c.client_id ? `client:${String(c.client_id)}` : c.organization_id ? `org:${String(c.organization_id)}` : '';
+  const locale = c.locale ? String(c.locale) : '';
+  return [String(c.page ?? ''), who, locale].filter((x, i) => i === 0 || x !== '').join('|');
+};
+
+const audienceQuery = (c: Record<string, Json>, status?: string): string => {
+  const q = new URLSearchParams();
+  if (c.client_id) q.set('client_id', String(c.client_id));
+  if (c.organization_id) q.set('organization_id', String(c.organization_id));
+  if (c.locale) q.set('locale', String(c.locale));
+  if (status) q.set('status', status);
+  const s = q.toString();
+  return s ? `?${s}` : '';
+};
+
 const pageTemplates: CollectionSpec = {
   kind: 'collection',
   type: 'page_templates',
   prune: false,
-  fileKeys: ['page', 'definition'],
-  keyOf: (c) => String(isObj(c) ? (c.page ?? '') : ''),
+  fileKeys: ['page', 'client_id', 'organization_id', 'locale', 'definition'],
+  keyOf: (c) => (isObj(c) ? audienceKey(c) : ''),
   async fetchLive(http: ConfigHttp): Promise<LiveEntry[]> {
-    const res = await http.get<{ data?: Array<{ page?: string; live?: { definition?: Json } | null }> }>('/v1/instance/page_templates');
+    const res = await http.get<{ data?: Array<{ page?: string; scope?: { type?: string; id?: string | null }; locale?: string | null; live?: { definition?: Json } | null }> }>('/v1/instance/page_templates');
     const out: LiveEntry[] = [];
     for (const row of Array.isArray(res?.data) ? res.data : []) {
       if (!row.page || !row.live?.definition) continue;
-      out.push({ key: row.page, id: row.page, config: { page: row.page, definition: row.live.definition } });
+      const config: Record<string, Json> = { page: row.page, definition: row.live.definition };
+      if (row.scope?.type === 'client' && row.scope.id) config.client_id = row.scope.id;
+      if (row.scope?.type === 'org' && row.scope.id) config.organization_id = row.scope.id;
+      if (row.locale) config.locale = row.locale;
+      out.push({ key: audienceKey(config), id: JSON.stringify(config), config });
     }
     return out;
   },
@@ -63,15 +88,17 @@ const pageTemplates: CollectionSpec = {
     await savePage(http, config);
   },
   async remove(http, live) {
-    await http.delete(`/v1/instance/page_templates/${enc(live.id)}?status=live`);
+    const c = JSON.parse(live.id) as Record<string, Json>;
+    await http.delete(`/v1/instance/page_templates/${enc(String(c.page))}${audienceQuery(c, 'live')}`);
   },
 };
 
 async function savePage(http: ConfigHttp, config: Json): Promise<void> {
   const c = isObj(config) ? config : {};
   const page = enc(String(c.page ?? ''));
-  await http.put(`/v1/instance/page_templates/${page}`, { definition: c.definition ?? null });
-  await http.post(`/v1/instance/page_templates/${page}/promote`, {});
+  const q = audienceQuery(c);
+  await http.put(`/v1/instance/page_templates/${page}${q}`, { definition: c.definition ?? null });
+  await http.post(`/v1/instance/page_templates/${page}/promote${q}`, {});
 }
 
 // A passkey campaign is immutable: change it by deleting (--prune-type) and applying again.
@@ -81,6 +108,25 @@ const passkeyCampaigns = simpleResourceSpec({
   idKey: 'id',
   fileKeys: ['name', 'segment', 'frequency_cap_days', 'starts_at', 'ends_at'],
   createOnly: ['segment', 'frequency_cap_days', 'starts_at', 'ends_at'],
+});
+
+// Named step-up policies: how recent and how strong a re-authentication a sensitive action needs. Matched by name.
+const stepUpPolicies = simpleResourceSpec({
+  type: 'step_up_policies',
+  path: '/v1/step_up/policies',
+  idKey: 'id',
+  fileKeys: ['name', 'description', 'enabled', 'max_age_seconds', 'required_acr', 'required_amr', 'required_amr_any', 'phishing_resistant', 'allowed_methods', 'receipt_ttl_seconds'],
+});
+
+// MFA rollout campaigns. Who a campaign targets is fixed once it runs: change it by deleting (--prune-type) and applying again.
+const mfaCampaigns = simpleResourceSpec({
+  type: 'mfa_campaigns',
+  path: '/v1/mfa_campaigns',
+  idKey: 'id',
+  fileKeys: ['name', 'target_type', 'target_value', 'required_factors', 'starts_at', 'grace_until', 'nag_interval_days', 'enforce'],
+  createOnly: ['target_type', 'target_value', 'starts_at'],
+  // An ended campaign is history, not configuration.
+  liveFilter: (row) => row.status !== 'ended',
 });
 
 const policySettings = simpleSingletonSpec({ type: 'policy_settings', path: '/v1/instance/policy_settings', method: 'patch', fileKeys: ['session_claim'] });
@@ -96,7 +142,8 @@ const actions = simpleResourceSpec({
   type: 'actions',
   path: '/v1/actions',
   idKey: 'id',
-  fileKeys: ['name', 'trigger', 'code', 'runtime', 'http_target', 'enabled', 'secrets', 'signing_secret'],
+  // `code_file` (a path relative to the config) is read into `code` before the plan compares anything.
+  fileKeys: ['name', 'trigger', 'code', 'code_file', 'runtime', 'http_target', 'enabled', 'egress_allowlist', 'secrets', 'signing_secret'],
   sealed: ['secrets', 'signing_secret'],
   createOnly: ['trigger', 'runtime'],
 });
@@ -152,7 +199,8 @@ const journeys = simpleResourceSpec({
   path: '/v1/flows',
   idKey: 'id',
   detail: true,
-  fileKeys: ['name', 'description', 'is_default', 'applications', 'enabled', 'definition'],
+  // `abandon_after_hours`: how long a started run may sit untouched before journey.abandoned is sent (null = 72).
+  fileKeys: ['name', 'description', 'is_default', 'applications', 'enabled', 'abandon_after_hours', 'definition'],
 });
 
 const workflows = simpleResourceSpec({
@@ -254,6 +302,8 @@ export function signInOpsTypes(): ResourceSpec[] {
     localizations,
     pageTemplates,
     passkeyCampaigns,
+    stepUpPolicies,
+    mfaCampaigns,
     policySettings,
     policySource,
     actions,

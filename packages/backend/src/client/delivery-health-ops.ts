@@ -2,7 +2,7 @@ import { enc, type RequestFn } from './request';
 
 type C_DeliveryHealth = {
   object?: 'delivery_health';
-  kind?: 'webhook_endpoint' | 'referral_connection' | 'backchannel_receiver' | 'integration';
+  kind?: 'webhook_endpoint' | 'referral_connection' | 'backchannel_receiver' | 'integration' | 'messaging_email' | 'messaging_sms' | 'messaging_push';
   target_id?: string;
   url?: string | null;
   label?: string | null;

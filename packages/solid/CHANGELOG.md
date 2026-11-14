@@ -2,6 +2,10 @@
 
 
 
+## 0.17.0
+
+- API keys, billing (pricing table, invoices, checkout with discount codes, `useUsage`) and device authorization components, matching React.
+
 ## 0.16.0 — 2026-11-13
 
 - `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.

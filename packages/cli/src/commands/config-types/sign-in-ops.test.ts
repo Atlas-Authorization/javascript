@@ -109,6 +109,34 @@ describe('page_templates', () => {
     await run('page_templates', [], gone, { pruneTypes: ['page_templates'] });
     expect(gone.calls).toEqual([{ method: 'DELETE', path: '/v1/instance/page_templates/sign-up?status=live' }]);
   });
+
+  it('keeps a template per client, organization and language, each its own entry', async () => {
+    const definition = { version: 1, regions: { header: [] } };
+    const http = new Http({
+      '/v1/instance/page_templates': [
+        { page: 'sign-in', scope: { type: 'instance', id: null }, locale: null, live: { definition }, draft: null },
+        { page: 'sign-in', scope: { type: 'client', id: 'client_a' }, locale: 'fr', live: { definition }, draft: null },
+      ],
+    });
+    const live = await liveOf('page_templates', http);
+    expect(live.map((l) => (l as unknown as { key: string }).key)).toEqual(['sign-in', 'sign-in|client:client_a|fr']);
+    // Unchanged when both match; a new organization entry is saved with its audience in the query.
+    const doc: Json = [
+      { page: 'sign-in', definition },
+      { page: 'sign-in', client_id: 'client_a', locale: 'fr', definition },
+      { page: 'consent', organization_id: 'org_1', definition },
+    ];
+    const out = await run('page_templates', doc, http);
+    expect(out.summary).toEqual(['create page_templates consent|org:org_1']);
+    expect(http.calls).toEqual([
+      { method: 'PUT', path: '/v1/instance/page_templates/consent?organization_id=org_1', body: { definition } },
+      { method: 'POST', path: '/v1/instance/page_templates/consent/promote?organization_id=org_1', body: {} },
+    ]);
+    // Taking one down names its audience.
+    const gone = new Http({ '/v1/instance/page_templates': [{ page: 'sign-in', scope: { type: 'client', id: 'client_a' }, locale: 'fr', live: { definition }, draft: null }] });
+    await run('page_templates', [], gone, { pruneTypes: ['page_templates'] });
+    expect(gone.calls).toEqual([{ method: 'DELETE', path: '/v1/instance/page_templates/sign-in?client_id=client_a&locale=fr&status=live' }]);
+  });
 });
 
 describe('passkey_campaigns', () => {
@@ -117,6 +145,36 @@ describe('passkey_campaigns', () => {
     const { plan, summary } = await run('passkey_campaigns', [{ name: 'spring', segment: {}, frequency_cap_days: 7, starts_at: 1 }], http);
     expect(summary).toEqual([]);
     expect(plan.warnings.join(' ')).toContain('frequency_cap_days cannot be changed in place');
+  });
+});
+
+describe('step_up_policies', () => {
+  it('matches by name and patches only what drifted', async () => {
+    const live = { id: 'supol_1', name: 'wire_transfer', description: null, enabled: true, max_age_seconds: 300, required_acr: [], required_amr: [], required_amr_any: [], phishing_resistant: false, allowed_methods: [], receipt_ttl_seconds: 60 };
+    const http = new Http({ '/v1/step_up/policies': [live] });
+    const same = await run('step_up_policies', [{ name: 'wire_transfer', max_age_seconds: 300, phishing_resistant: false }], http);
+    expect(same.summary).toEqual([]);
+    const drift = await run('step_up_policies', [{ name: 'wire_transfer', max_age_seconds: 120, phishing_resistant: true, allowed_methods: ['passkey'] }], http);
+    expect(drift.summary.length).toBeGreaterThan(0);
+    expect(http.calls.some((c) => c.method === 'PATCH' && c.path === '/v1/step_up/policies/supol_1')).toBe(true);
+  });
+  it('creates a missing policy', async () => {
+    const http = new Http({ '/v1/step_up/policies': [] });
+    await run('step_up_policies', [{ name: 'export_data', max_age_seconds: 600 }], http);
+    expect(http.calls).toContainEqual({ method: 'POST', path: '/v1/step_up/policies', body: { name: 'export_data', max_age_seconds: 600 } });
+  });
+});
+
+describe('mfa_campaigns', () => {
+  it('warns instead of failing when the target differs, and ignores ended campaigns', async () => {
+    const http = new Http({
+      '/v1/mfa_campaigns': [
+        { id: 'mfacp_1', name: 'staff', target_type: 'group', target_value: 'staff', required_factors: ['totp'], starts_at: 1, grace_until: null, nag_interval_days: 3, enforce: false, status: 'active' },
+        { id: 'mfacp_0', name: 'old', target_type: 'all', target_value: null, required_factors: [], starts_at: 1, grace_until: null, nag_interval_days: 3, enforce: false, status: 'ended' },
+      ],
+    });
+    const { plan } = await run('mfa_campaigns', [{ name: 'staff', target_type: 'org', target_value: 'org_1', required_factors: ['totp'], starts_at: 1, nag_interval_days: 3, enforce: false }], http);
+    expect(plan.warnings.join(' ')).toContain('target_type cannot be changed in place');
   });
 });
 

@@ -246,3 +246,36 @@ export async function deleteOrganizationOAuthClient(client: FapiClient, organiza
     throw new ConnectionRequestError(res.status, first?.code ?? 'UNKNOWN', first?.message ?? 'The request failed.');
   }
 }
+
+export interface ReconnectControllerOptions {
+  /** Where the provider returns the browser after consent. */
+  redirectUrl: string;
+  /** Reconnect an organization's connection instead of the signed-in user's own. */
+  organizationId?: string;
+  /** Opens the provider consent URL. Default: navigate this window. */
+  open?: (url: string) => void;
+}
+
+/** Connections that need the user to authorize again (the ones a reconnect button belongs on). */
+export const connectionsNeedingReconnect = (connections: readonly AppConnection[]): AppConnection[] =>
+  connections.filter((c) => c.kind === 'oauth' && c.status === 'needs_reauth');
+
+/**
+ * Framework-neutral reconnect: fetch a fresh authorization link for a connection and open it. Stores the new tokens on
+ * the same connection; adds no sign-in method and needs no step-up.
+ */
+export function createReconnectController(client: FapiClient, options: ReconnectControllerOptions) {
+  const open = options.open ?? ((url: string) => { if (typeof window !== 'undefined') window.location.assign(url); });
+  /** The consent link for a connection, without opening it. */
+  const link = (connectionId: string): Promise<ConnectionAuthorization> =>
+    options.organizationId
+      ? connectOrganizationConnection(client, options.organizationId, connectionId, { redirectUrl: options.redirectUrl })
+      : connectMyConnection(client, connectionId, { redirectUrl: options.redirectUrl });
+  /** Fetch the link and open it; resolves with the authorization once opened. */
+  const reconnect = async (connectionId: string): Promise<ConnectionAuthorization> => {
+    const auth = await link(connectionId);
+    open(auth.authorization_url);
+    return auth;
+  };
+  return { link, reconnect };
+}

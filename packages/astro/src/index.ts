@@ -50,4 +50,4 @@ export function atlasAstro(_options: AtlasAstroOptions = {}): AtlasAstroIntegrat
 }
 
 // Rate limiting and grant usage (see ./limits).
-export { atlasRateLimit, atlasGrantUsage, type AtlasLimitOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter, type LimitClaims, type LimitVerdict } from './limits';
+export { atlasRateLimit, atlasGrantUsage, atlasRequireFeature, type FeatureCheck, type FeatureOptions, type AtlasLimitOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter, type LimitClaims, type LimitVerdict } from './limits';

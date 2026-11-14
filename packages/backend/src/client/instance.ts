@@ -809,6 +809,17 @@ export interface UpdateSignInWithAtlasBody {
   connection_id?: string | null;
 }
 
+/** The limits the write routes enforce, for checking a config before writing it (`GET /v1/config/limits`). */
+export interface ConfigLimits {
+  object: 'config_limits';
+  limits: {
+    resource_types: { max_roles_per_type: number; key_pattern: string; name_max_length: number };
+    app_roles: { max_permissions_per_role: number; max_roles_per_instance: number };
+    permissions: { max_implied_per_permission: number; key_max_length: number };
+    scopes: { description_max_length: number; label_max_length: number };
+  };
+}
+
 /** Where the hosted pages send the browser (`GET/PATCH /v1/instance/hosted_pages`). */
 export interface HostedPagesSettings {
   object: 'hosted_pages';
@@ -878,6 +889,10 @@ export function instanceResource(request: RequestFn) {
       update(body: UpdateSignInWithAtlasBody): Promise<SignInWithAtlasSettings> {
         return request({ method: 'PATCH', path: '/v1/instance/sign_in_with_atlas', body });
       },
+    },
+    /** `GET /v1/config/limits`: the limits writes enforce (roles per resource type, implied permissions, text lengths). */
+    configLimits(): Promise<ConfigLimits> {
+      return request({ method: 'GET', path: '/v1/config/limits' });
     },
     /** Send the hosted sign-in, sign-up and account pages to your app's own pages (302). */
     hostedPages: {

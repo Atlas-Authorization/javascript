@@ -1,13 +1,18 @@
 import {
   AtlasBackend,
   createAccessTokenVerifier,
+  createEdgeRevocationChecker,
   type AccessTokenVerifierOptions,
+  type EdgeRevocationOptions,
   type AtlasBackendOptions,
   type ProtectCondition,
 } from '@atlasauth/backend';
 import {
+  featureGate,
   grantUsageGate,
   rateLimitGate,
+  type FeatureCheck,
+  type FeatureOptions,
   type GrantUsageCheck,
   type GrantUsageOptions,
   type RateLimitCheck,
@@ -26,10 +31,25 @@ import {
  * on HTTP APIs it answers a Deny / `isAuthorized: false` (HTTP 403).
  */
 
-export type { GrantUsageCheck, GrantUsageOptions, RateLimitCheck, RateLimiter } from './limits';
+export type { FeatureCheck, FeatureOptions, GrantUsageCheck, GrantUsageOptions, RateLimitCheck, RateLimiter } from './limits';
 export type { AccessTokenVerifierOptions, AtlasBackendOptions, ProtectCondition } from '@atlasauth/backend';
+export { createEdgeRevocationChecker, verifyStatusListToken, StatusListError } from '@atlasauth/backend';
+export type { EdgeRevocationOptions, EdgeRevocationVerdict, VerifiedStatusList } from '@atlasauth/backend';
+
+/**
+ * Reject session tokens whose session Atlas has revoked, using the signed status list
+ * (`GET /v1/sessions/revocations/status-list`). The list is fetched with your secret key, verified against the instance
+ * JWKS, and held in the warm Lambda; a session in it is refused on every request, even when the token result itself
+ * is cached. A list that cannot be refreshed for `staleAfterMs` fails closed (a Deny) unless `onStale: 'allow'`.
+ */
+export interface LambdaRevocationOptions extends Omit<EdgeRevocationOptions, 'jwksUrl'> {
+  /** The instance JWKS URL. Default: the `jwksUrl` of the `session` options when they carry one. */
+  jwksUrl?: string;
+}
 
 export interface LambdaAuthorizerOptions {
+  /** Refuse session tokens of revoked sessions (see {@link LambdaRevocationOptions}). Applies to session tokens only. */
+  revocation?: LambdaRevocationOptions;
   /**
    * Rate limit after a token verifies (a `createRateLimiter` limiter or a `rateLimitRequest` check):
    * a request over the limit is answered like a refused policy (Deny / `isAuthorized: false`).
@@ -38,6 +58,8 @@ export interface LambdaAuthorizerOptions {
   rateLimit?: RateLimiter | RateLimitCheck;
   /** Consume a grant counter after a token verifies; a spent counter or missing grant answers Deny. Same TTL note as `rateLimit`. */
   grantUsage?: GrantUsageOptions | GrantUsageCheck;
+  /** Require a plan feature after a token verifies (`requireFeature` options or check); a plan without it answers Deny. Same TTL note as `rateLimit`: the plan is read through your entitlement cache. */
+  feature?: FeatureOptions | FeatureCheck;
   /** Verify Atlas session tokens (the `__session` cookie / Bearer session JWT). Options as for `AtlasBackend`, or an instance. */
   session?: AtlasBackendOptions | AtlasBackend;
   /** Verify OAuth access tokens (audience, requiredScopes ...). DPoP is not available through an authorizer. */
@@ -186,11 +208,19 @@ export function createLambdaAuthorizer(options: LambdaAuthorizerOptions) {
   const backend = options.session ? (options.session instanceof AtlasBackend ? options.session : new AtlasBackend(options.session)) : null;
   const verifyAccess = options.accessToken ? createAccessTokenVerifier({ ...options.accessToken, now: options.accessToken.now ?? options.now }) : null;
   const ttl = (options.cacheTtlSeconds ?? 30) * 1000;
+  const revocationChecker = options.revocation
+    ? (() => {
+        const jwksUrl = options.revocation.jwksUrl ?? (options.session && !(options.session instanceof AtlasBackend) ? (options.session as { jwksUrl?: string }).jwksUrl : undefined);
+        if (!jwksUrl) throw new Error('createLambdaAuthorizer `revocation` needs `jwksUrl` (or `session.jwksUrl`).');
+        return createEdgeRevocationChecker({ now: options.now, ...options.revocation, jwksUrl });
+      })()
+    : null;
   const max = options.cacheMax ?? 1000;
   const cache = new Map<string, { outcome: Outcome; until: number }>();
   const gates = [
     ...(options.rateLimit ? [rateLimitGate(options.rateLimit)] : []),
     ...(options.grantUsage ? [grantUsageGate(options.grantUsage)] : []),
+    ...(options.feature ? [featureGate(options.feature)] : []),
   ];
 
   async function resolve(token: string): Promise<Outcome> {
@@ -290,6 +320,11 @@ export function createLambdaAuthorizer(options: LambdaAuthorizerOptions) {
     if (outcome.kind === 'deny') {
       if (simple) return { isAuthorized: false };
       return policy('anonymous', 'Deny', arn);
+    }
+    // A revoked session is refused on every request, cached token result or not. Never allows on an error.
+    if (revocationChecker && outcome.principal.kind === 'session' && outcome.principal.sessionId) {
+      const verdict = await revocationChecker.check(outcome.principal.sessionId).catch(() => 'unavailable' as const);
+      if (verdict !== 'ok') return refuse();
     }
     for (const gate of gates) {
       // A throwing gate (usage call failed) refuses: never allow on an error.

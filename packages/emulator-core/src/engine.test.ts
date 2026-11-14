@@ -459,6 +459,10 @@ describe('tokens, sessions and the clock', () => {
     const s = (await call('POST', '/v1/sessions', { user_id: u.id })).json;
     const r1 = await call('POST', '/__emulator/sessions/refresh', { refresh_token: s.refresh_token });
     expect(r1.json.refresh_token).not.toBe(s.refresh_token);
+    // Inside the grace window a replay is a client that lost the reply: same successor, no second rotation.
+    const replay = await call('POST', '/__emulator/sessions/refresh', { refresh_token: s.refresh_token });
+    expect(replay.json.refresh_token).toBe(r1.json.refresh_token);
+    await call('POST', '/__emulator/time/advance', { ms: 31_000 });
     const reuse = await call('POST', '/__emulator/sessions/refresh', { refresh_token: s.refresh_token });
     expect(reuse.json.errors[0].code).toBe('REFRESH_REUSE_DETECTED');
     expect((await call('POST', '/__emulator/sessions/refresh', { refresh_token: r1.json.refresh_token })).json.errors[0].code).toBe('SESSION_REVOKED');

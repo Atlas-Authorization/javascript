@@ -2,6 +2,10 @@
 
 
 
+## 0.23.0
+
+- API keys, billing (pricing table, invoices, checkout with discount codes, `createUsage`) and device authorization components, matching React.
+
 ## 0.22.0
 
 - New `atlasRateLimit` and `atlasGrantUsage` helpers: enforce Atlas rate-limit policies and metered grant usage (consume/refund with idempotency) in your routes. Requires `@atlasauth/backend` 0.51.0 or later.

@@ -32,6 +32,7 @@ export type ActionTrigger =
   | 'password_verification_attempt'
   | 'account_link_decision'
   | 'billing_plan_selected'
+  | 'pre_message_send'
   | 'post_change_password'
   | 'post_password_reset'
   | 'post_user_update'
@@ -62,6 +63,7 @@ export const ACTION_TRIGGERS: readonly ActionTrigger[] = [
   'password_verification_attempt',
   'account_link_decision',
   'billing_plan_selected',
+  'pre_message_send',
   'post_change_password',
   'post_password_reset',
   'post_user_update',
@@ -223,6 +225,22 @@ export interface AttemptAccessApi extends AccessApi {
  */
 export interface DeletionAccessApi extends AccessApi {
   pause(reason?: string): void;
+}
+
+/** What `api.message.rewrite` may change on a message about to be sent. */
+export interface MessageRewrite {
+  subject?: string;
+  /** Replaces the whole text body (the HTML part is dropped). */
+  text?: string;
+  /** Non-secret template variables (a variable that could carry a code or link is ignored). */
+  variables?: Record<string, string>;
+}
+
+/** api for `pre_message_send`: `access.deny(reason)` blocks the message, `message.rewrite` rewords it. */
+export interface MessageSendApi {
+  access: AccessApi;
+  message: { rewrite(change: MessageRewrite): void };
+  console: ConsoleApi;
 }
 
 /** api for `pre_user_deletion`: allow (do nothing), `access.deny(reason)` or `access.pause(reason)`. */
@@ -503,6 +521,8 @@ export type EventForTrigger<T extends ActionTrigger> = T extends 'post_login'
 /** The api type for a trigger. */
 export type ApiForTrigger<T extends ActionTrigger> = T extends 'post_login'
   ? PostLoginApi
+  : T extends 'pre_message_send'
+  ? MessageSendApi
   : T extends 'custom_token_exchange'
     ? CustomTokenExchangeApi
     : T extends 'pre_user_deletion'

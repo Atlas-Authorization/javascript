@@ -11,6 +11,8 @@ export interface SyncOptions {
   /** Pin the trusted bundle signing keys. Default: fetched once from `<baseUrl>/.well-known/jwks.json` (trust on first use over TLS). */
   jwks?: { keys: Array<Record<string, unknown>> };
   intervalMs?: number;
+  /** How long each long poll of the authorization event feed is held open (default 25000). */
+  watchWaitMs?: number;
   fetch?: Fetch;
   onError?: (err: unknown) => void;
 }
@@ -31,14 +33,16 @@ export class PdpSync {
   private storeIds = new Map<string, string>();
   private readonly f: Fetch;
   private running = false;
+  private watching = false;
+  private abort: AbortController | undefined;
 
   constructor(private readonly o: SyncOptions) {
     this.f = o.fetch ?? fetch;
     this.jwks = o.jwks;
   }
 
-  private async get<T>(path: string): Promise<T> {
-    const res = await this.f(`${this.o.baseUrl.replace(/\/$/, '')}${path}`, { headers: { authorization: `Bearer ${this.o.apiKey}` } });
+  private async get<T>(path: string, signal?: AbortSignal): Promise<T> {
+    const res = await this.f(`${this.o.baseUrl.replace(/\/$/, '')}${path}`, { headers: { authorization: `Bearer ${this.o.apiKey}` }, signal });
     if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
     return (await res.json()) as T;
   }
@@ -101,8 +105,40 @@ export class PdpSync {
     this.timer.unref?.();
   }
 
+  /**
+   * Refresh the moment Atlas says tuples, a model or a sync run changed (the authorization event feed, long-polled),
+   * instead of waiting for the next interval. The interval stays as the safety net. Returns once the loop is running.
+   */
+  startWatching(): void {
+    if (this.watching) return;
+    this.watching = true;
+    this.abort = new AbortController();
+    void this.watchLoop(this.abort.signal);
+  }
+
+  private async watchLoop(signal: AbortSignal): Promise<void> {
+    let after: string | number = 'latest';
+    let failures = 0;
+    while (this.watching && !signal.aborted) {
+      try {
+        const page: { data: unknown[]; next_after: number } = await this.get(`/v1/authz/events?after=${after}&wait_ms=${this.o.watchWaitMs ?? 25_000}&kinds=tuples_written,tuples_deleted,model_written,sync_run`, signal);
+        if (failures > 0 || page.data.length > 0) await this.syncOnce();
+        failures = 0;
+        after = page.next_after;
+      } catch (e) {
+        if (signal.aborted) return;
+        failures++;
+        this.o.onError?.(e);
+        // Back off (up to 30s) so an Atlas without the feed, or an outage, is not hammered.
+        await new Promise((r) => setTimeout(r, Math.min(30_000, 1000 * 2 ** Math.min(failures, 5))));
+      }
+    }
+  }
+
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    this.watching = false;
+    this.abort?.abort();
   }
 }
 

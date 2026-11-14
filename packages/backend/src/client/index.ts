@@ -1,4 +1,4 @@
-import { createRequest, type AtlasClientConfig, type AtlasRequestSettings } from './request';
+import { createRequest, type AtlasClientConfig, type AtlasRequestSettings, type DryRunResult } from './request';
 import { usersResource } from './users';
 import { sessionsResource } from './sessions';
 import { organizationsResource } from './organizations';
@@ -14,7 +14,7 @@ import { waitlistResource } from './waitlist';
 import { allowlistResource, blocklistResource } from './restrictions';
 import { attackProtectionResource } from './attack-protection';
 import { mfaFactorsResource } from './mfa-factors';
-import { actorTokensResource } from './actor-tokens';
+import { actorTokensResource, impersonationsResource } from './actor-tokens';
 import { invitationsResource } from './invitations';
 import { webhooksResource } from './webhooks';
 import { appEventsResource } from './app-events';
@@ -22,10 +22,12 @@ import { signInTokensResource } from './sign-in-tokens';
 import { auditLogsResource } from './audit-logs';
 import { jwtTemplatesResource } from './jwt-templates';
 import { apiKeysResource } from './api-keys';
+import { atlasIdAppsResource } from './atlas-id-apps';
 import { appRolesResource } from './app-roles';
 import { groupsResource } from './groups';
 import { machinesResource } from './machines';
 import { grantUsageResource } from './grant-usage';
+import { approvalsResource } from './approvals';
 import { oauthProvidersResource } from './oauth-providers';
 import { ssoOnboardingResource } from './sso-onboarding';
 import { scimProvisioningResource } from './scim-provisioning';
@@ -42,6 +44,7 @@ import { networkZonesResource } from './network-zones';
 import { accessPoliciesResource } from './access-policies';
 import { abacResource } from './abac';
 import { authzDecisionsResource } from './authz-decisions';
+import { authzExplainResource, fgaSyncResource } from './authz-explain';
 import { policyBundlesResource } from './policy-bundles';
 import { resourcesResource } from './resources';
 import { orgRoleGrantsResource } from './org-role-grants';
@@ -59,7 +62,9 @@ import { workflowsResource } from './workflows';
 import { pageTemplatesResource } from './page-templates';
 import { actionGalleryResource, actionTemplatesResource } from './action-gallery';
 import { billingResource } from './billing-plans';
+import { billingDepthResource, entitlementConsumeResource } from './billing-depth';
 import { messagingResource } from './messaging';
+import { messageLedgerResource, messageReceiversResource, messagingRoutingResource, suppressionsResource } from './message-ledger';
 import { importExportResource } from './import-export';
 import { betterAuthImportsResource } from './better-auth-imports';
 import { migrationsResource } from './migrations';
@@ -81,6 +86,8 @@ import { captchaResource } from './captcha';
 import { designResource } from './design';
 import { entitlementOverridesResource, entitlementsResource } from './entitlement-overrides';
 import { rateLimitPoliciesResource } from './rate-limit-policies';
+import { abuseSignalsResource, orgRoleSetsResource, orgTemplatesResource } from './org-depth';
+import { machineTrustPoliciesResource } from './machine-trust-policies';
 import { orgLdapConnectionsResource } from './org-ldap-connections';
 import { organizationSettingsSchemaResource } from './organization-settings-schema';
 import { emailAddressesResource } from './email-addresses';
@@ -106,6 +113,11 @@ import {
 import { partnerPlatformsResource } from './partner-platforms';
 import { configChangelogResource, eventsResource, usageResource } from './activity';
 import { changesResource } from './changes';
+import { stepUpResource } from './step-up';
+import { mfaCampaignsResource } from './mfa-campaigns';
+import { riskSignalsResource } from './risk-signals';
+import { usersDepthResource } from './users-depth';
+import { dataKeyDrillsResource, deprecationsResource, writeBudgetResource } from './platform-resilience';
 import { analyticsResource } from './analytics-reports';
 import { appCatalogResource } from './app-catalog';
 import { cloudAccessResource, samlIdpResource, wsfedConnectionsResource } from './saml-idp';
@@ -127,8 +139,10 @@ import { ldapServerClientsOpsResource } from './ldap-server-clients-ops';
 import { usersOpsResource } from './users-ops';
 import { deliveryHealthOpsResource } from './delivery-health-ops';
 import { organizationsOpsResource } from './organizations-ops';
+import { organizationItAdminResource, ssoConnectionItAdminResource } from './it-admin';
 import { instanceOpsResource } from './instance-ops';
 import { sessionsOpsResource } from './sessions-ops';
+import { sessionsFeedResource } from './sessions-feed';
 import { migrationsOpsResource } from './migrations-ops';
 import { allowlistIdentifiersOpsResource } from './allowlist-identifiers-ops';
 import { blocklistIdentifiersOpsResource } from './blocklist-identifiers-ops';
@@ -150,6 +164,7 @@ import { igaOpsResource } from './iga-ops';
 import { scimProvisioningPresetsOpsResource } from './scim-provisioning-presets-ops';
 import { billingOpsResource } from './billing-ops';
 import { connectionsOpsResource } from './connections-ops';
+import { connectionLimitsResource, connectionReconnectResource, connectionsActivityResource, providerEventsResource, providerPolicyResource, providerSubscriptionsResource, relayResource } from './connections-extras';
 import { fgaOpsResource } from './fga-ops';
 import { auditRetentionOpsResource } from './audit-retention-ops';
 import { opaOpsResource } from './opa-ops';
@@ -175,21 +190,25 @@ export function createAtlasClient(config: AtlasClientConfig): AtlasClient {
     withOptions(overrides: AtlasRequestSettings): AtlasClient {
       return createAtlasClient({ ...config, ...overrides });
     },
+    async dryRun(run: (client: AtlasClient) => Promise<unknown>): Promise<DryRunResult> {
+      // Every typed method keeps its own signature; the dry run swaps the answer's type, not the call.
+      return (await run(createAtlasClient({ ...config, dryRun: true }))) as DryRunResult;
+    },
   };
 }
 
 function buildNamespaces(request: RequestFn) {
   return {
     users: { ...usersResource(request), ...usersOpsResource(request) },
-    sessions: { ...sessionsResource(request), ...sessionsOpsResource(request) },
-    organizations: { ...organizationsResource(request), ...organizationsOpsResource(request) },
+    sessions: { ...sessionsResource(request), ...sessionsOpsResource(request), ...sessionsFeedResource(request) },
+    organizations: { ...organizationsResource(request), ...organizationsOpsResource(request), ...organizationItAdminResource(request) },
     roles: rolesResource(request),
     permissions: permissionsResource(request),
     oauthClients: { ...oauthClientsResource(request), ...oauthClientsOpsResource(request) },
     passkeyApi: passkeyApiResource(request),
     vc: vcResource(request),
     resourceServers: resourceServersResource(request),
-    ssoConnections: { ...ssoConnectionsResource(request), ...ssoConnectionsOpsResource(request) },
+    ssoConnections: { ...ssoConnectionsResource(request), ...ssoConnectionsOpsResource(request), ...ssoConnectionItAdminResource(request) },
     scimTokens: scimTokensResource(request),
     scimResourceTypes: scimResourceTypesResource(request),
     domains: domainsResource(request),
@@ -200,6 +219,7 @@ function buildNamespaces(request: RequestFn) {
     // HOTP, Yubico OTP, Duo, smart card and security-question administration.
     mfaFactors: mfaFactorsResource(request),
     actorTokens: actorTokensResource(request),
+    impersonations: impersonationsResource(request),
     invitations: invitationsResource(request),
     webhooks: webhooksResource(request),
     // Application webhooks: your own events, sent to your customers' (organizations') endpoints.
@@ -208,6 +228,8 @@ function buildNamespaces(request: RequestFn) {
     auditLogs: auditLogsResource(request),
     jwtTemplates: jwtTemplatesResource(request),
     apiKeys: apiKeysResource(request),
+    // Sign in with Atlas apps this instance manages; adopt one with a code its owner issued.
+    atlasIdApps: atlasIdAppsResource(request),
     // App-level (instance-wide) user roles and permissions.
     appRoles: appRolesResource(request),
     groups: groupsResource(request),
@@ -215,10 +237,12 @@ function buildNamespaces(request: RequestFn) {
     machines: machinesResource(request),
     // Atomic usage counters on machine and agent grants.
     grantUsage: grantUsageResource(request),
+    // Approval requests v2: lifetime, N-of-M approvers, signed receipts.
+    approvals: approvalsResource(request),
     oauthProviders: oauthProvidersResource(request),
     ssoOnboarding: ssoOnboardingResource(request),
     scimProvisioning: scimProvisioningResource(request),
-    fga: { ...fgaResource(request), ...fgaOpsResource(request) },
+    fga: { ...fgaResource(request), ...fgaOpsResource(request), ...fgaSyncResource(request) },
     rateLimitPolicy: rateLimitPolicyResource(request),
     riskBasedMfa: riskBasedMfaResource(request),
     riskEvents: riskEventsResource(request),
@@ -232,6 +256,7 @@ function buildNamespaces(request: RequestFn) {
     accessPolicies: accessPoliciesResource(request),
     abac: abacResource(request),
     authzDecisions: authzDecisionsResource(request),
+    authz: authzExplainResource(request),
     policyBundles: { ...policyBundlesResource(request), ...policyBundlesOpsResource(request) },
     resources: resourcesResource(request),
     orgRoleGrants: { ...orgRoleGrantsResource(request), ...orgRoleGrantsOpsResource(request) },
@@ -261,8 +286,11 @@ function buildNamespaces(request: RequestFn) {
     pageTemplates: pageTemplatesResource(request),
     actionGallery: actionGalleryResource(request),
     actionTemplates: actionTemplatesResource(request),
-    billing: { ...billingResource(request), ...billingOpsResource(request) },
-    messaging: messagingResource(request),
+    messages: messageLedgerResource(request),
+    suppressions: suppressionsResource(request),
+    messageReceivers: messageReceiversResource(request),
+    billing: { ...billingResource(request), ...billingOpsResource(request), ...billingDepthResource(request) },
+    messaging: { ...messagingResource(request), ...messagingRoutingResource(request) },
     importExport: importExportResource(request),
     // Migrate from Better Auth: sealed-bundle upload, dry run and resumable apply.
     betterAuthImports: betterAuthImportsResource(request),
@@ -305,7 +333,11 @@ function buildNamespaces(request: RequestFn) {
     design: designResource(request),
     entitlementOverrides: entitlementOverridesResource(request),
     rateLimitPolicies: rateLimitPoliciesResource(request),
-    entitlements: entitlementsResource(request),
+    orgRoleSets: orgRoleSetsResource(request),
+    orgTemplates: orgTemplatesResource(request),
+    abuseSignals: abuseSignalsResource(request),
+    machineTrustPolicies: machineTrustPoliciesResource(request),
+    entitlements: { ...entitlementsResource(request), ...entitlementConsumeResource(request) },
     orgLdapConnections: { ...orgLdapConnectionsResource(request), ...orgLdapConnectionsOpsResource(request) },
     organizationSettingsSchema: organizationSettingsSchemaResource(request),
     emailAddresses: emailAddressesResource(request),
@@ -313,7 +345,19 @@ function buildNamespaces(request: RequestFn) {
     openfga: openfgaResource(request),
     connectors: connectorsResource(request),
     // Org- or user-owned provider connections that own their tokens, per-owner OAuth clients, token reads.
-    connections: { ...connectionsResource(request), ...connectionsOpsResource(request) },
+    connections: { ...connectionsResource(request), ...connectionsOpsResource(request), ...connectionsActivityResource(request) },
+    /** `POST /v1/connections/{id}/relay`, its size limits and the on-prem relay agents. */
+    relay: relayResource(request),
+    /** Business topics and per-connection provider subscriptions. */
+    providerSubscriptions: providerSubscriptionsResource(request),
+    /** Per-provider connection policy (one account per owner, the notice secret). */
+    providerPolicy: providerPolicyResource(request),
+    /** Persisted provider events: read back and replay. */
+    providerEvents: providerEventsResource(request),
+    /** Relay size limits and token-read rate limits. */
+    connectionLimits: connectionLimitsResource(request),
+    /** Hosted reconnect settings and links. */
+    connectionReconnect: connectionReconnectResource(request),
     customOAuthProviders: customOAuthProvidersResource(request),
     notifications: notificationsResource(request),
     // The tenant's own custom audit events (distinct from Atlas's auditLogs).
@@ -341,6 +385,20 @@ function buildNamespaces(request: RequestFn) {
     events: eventsResource(request),
     /** The change feed: ordered changes to users, organizations, memberships, keys and machines. */
     changes: changesResource(request),
+    /** Named step-up policies and the assertion a resource server asks before a sensitive action. */
+    stepUp: stepUpResource(request),
+    /** MFA rollout campaigns: target, deadline, nag interval, enforcement. */
+    mfaCampaigns: mfaCampaignsResource(request),
+    /** Your own risk signals for users and IPs, and the risk-policy what-if replay. */
+    riskSignals: riskSignalsResource(request),
+    /** Bulk user actions, legal holds, deletion receipts and deadlines, deleted-address import, tenant export and import. */
+    ...usersDepthResource(request),
+    /** Per-instance write budgets: limits, observe/enforce mode, and recent overruns. */
+    writeBudget: writeBudgetResource(request),
+    /** Deprecated routes and fields with their sunset dates, and which ones this instance still uses. */
+    deprecations: deprecationsResource(request),
+    /** Rotation drills for the customer-managed data key (a dry-run re-wrap). */
+    dataKeyDrills: dataKeyDrillsResource(request),
     usage: usageResource(request),
     analytics: analyticsResource(request),
     appCatalog: { ...appCatalogResource(request), ...appCatalogOpsResource(request) },
@@ -394,6 +452,12 @@ export interface AtlasClient extends AtlasClientNamespaces {
    * `atlas.withOptions({ strict: true }).users.update(...)` for one strict call.
    */
   withOptions(overrides: AtlasRequestSettings): AtlasClient;
+  /**
+   * Run any typed write as a dry run and get a typed {@link DryRunResult} instead of the method's
+   * own return type: `const plan = await atlas.dryRun((c) => c.users.update(id, { first_name: 'A' }))`.
+   * Nothing changes; `plan.changes` lists what would, and `plan.would_return` is what the real call returns.
+   */
+  dryRun(run: (client: AtlasClient) => Promise<unknown>): Promise<DryRunResult>;
 }
 
 export type {
@@ -424,6 +488,7 @@ export * from './flags';
 export * from './users';
 export * from './sessions';
 export * from './organizations';
+export * from './org-depth';
 export * from './app-events';
 export * from './roles';
 export * from './app-roles';
@@ -444,8 +509,11 @@ export * from './sign-in-tokens';
 export * from './audit-logs';
 export * from './jwt-templates';
 export * from './api-keys';
+export * from './atlas-id-apps';
 export * from './machines';
+export * from './machine-trust-policies';
 export * from './grant-usage';
+export * from './approvals';
 export * from './oauth-providers';
 export * from './sso-onboarding';
 export * from './scim-provisioning';
@@ -462,6 +530,7 @@ export * from './network-zones';
 export * from './access-policies';
 export * from './abac';
 export * from './authz-decisions';
+export * from './authz-explain';
 export * from './policy-bundles';
 export * from './resources';
 export * from './org-role-grants';
@@ -479,6 +548,7 @@ export * from './workflows';
 export * from './action-gallery';
 export * from './billing-plans';
 export * from './messaging';
+export * from './message-ledger';
 export * from './import-export';
 export * from './better-auth-imports';
 export * from './migrations';
@@ -532,13 +602,20 @@ export * from './credentials';
 export * from './partner-platforms';
 export * from './operator';
 export * from './changes';
+export * from './step-up';
+export * from './mfa-campaigns';
+export * from './risk-signals';
+export * from './users-depth';
+export * from './platform-resilience';
 export * from './app-catalog-ops';
 export * from './ldap-server-clients-ops';
 export * from './users-ops';
 export * from './delivery-health-ops';
 export * from './organizations-ops';
+export * from './it-admin';
 export * from './instance-ops';
 export * from './sessions-ops';
+export * from './sessions-feed';
 export * from './migrations-ops';
 export * from './allowlist-identifiers-ops';
 export * from './blocklist-identifiers-ops';
@@ -559,7 +636,9 @@ export * from './organization-connections-ops';
 export * from './iga-ops';
 export * from './scim-provisioning-presets-ops';
 export * from './billing-ops';
+export * from './billing-depth';
 export * from './connections-ops';
+export * from './connections-extras';
 export * from './fga-ops';
 export * from './audit-retention-ops';
 export * from './opa-ops';

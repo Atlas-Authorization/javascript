@@ -8,6 +8,7 @@ import { getResponse } from 'msw';
 import { atlasHandlers, createAtlasMock, type AtlasMock, type AtlasMockSeed } from '@atlasauth/msw';
 import { createEmulatorEngine, type Engine, type EmulatorOptions as CoreOptions } from '@atlasauth/emulator-core';
 import { loadOpenApi } from '@atlasauth/emulator-core/server';
+import { syncState, translateBearer } from './bridge';
 
 export interface CaughtMessage {
   id: number;
@@ -105,7 +106,8 @@ export async function startEmulator(options: EmulatorOptions = {}): Promise<Emul
 
   const own = async (request: Request): Promise<Response | null> => {
     const { pathname } = new URL(request.url);
-    if (pathname === '/.well-known/openid-configuration') {
+    // Without the engine this server answers discovery itself; with it, the engine's richer document is served below.
+    if (!core && pathname === '/.well-known/openid-configuration') {
       return Response.json({
         issuer: origin,
         jwks_uri: `${origin}/.well-known/jwks.json`,
@@ -128,16 +130,34 @@ export async function startEmulator(options: EmulatorOptions = {}): Promise<Emul
     if (pathname === '/__emulator/reset' && request.method === 'POST') {
       mock.reset();
       core?.reset();
+      if (core) syncState(mock, core);
       mail.length = 0;
       seen.clear();
       return Response.json({ ok: true });
+    }
+    if (core) {
+      // One state: the engine answers every route the Frontend API mock is not the home of (Backend API, OAuth provider,
+      // SCIM, well-known documents and the real session refresh route); records are mirrored both ways around each call.
+      const owned = /^\/(v1|\.well-known|oauth2|scim|__emulator)(\/|$)/.test(pathname);
+      // The engine also answers the person-facing routes it models itself (approvals, approval keys, CIBA requests, journeys); the session bearer is translated.
+      const engineClient = /^\/v1\/client\/me\/(approvals|approval_keys|backchannel_requests|journeys)(\/|$)/.test(pathname);
+      const mockHome = pathname.startsWith('/v1/client') && !/^\/v1\/client\/sessions\/[^/]+\/tokens$/.test(pathname) && !engineClient;
+      syncState(mock, core);
+      if (owned && !mockHome) {
+        const reply = await core.handle(engineClient ? await translateBearer(mock, core, request) : request);
+        syncState(mock, core);
+        return reply;
+      }
+      const res = await getResponse(handlers, await translateBearer(mock, core, request));
+      syncState(mock, core);
+      if (res) harvest();
+      return res ?? null;
     }
     const res = await getResponse(handlers, request);
     if (res) {
       harvest();
       return res;
     }
-    if (core && (pathname.startsWith('/v1/') || pathname.startsWith('/__emulator/') || pathname.startsWith('/.well-known/'))) return core.handle(request);
     return null;
   };
 
@@ -158,7 +178,13 @@ export async function startEmulator(options: EmulatorOptions = {}): Promise<Emul
   const seed = options.seed ?? {};
   mock = createAtlasMock({ ...seed, instance: { ...seed.instance, fapiBaseUrl: origin, bapiBaseUrl: origin } });
   handlers = atlasHandlers(mock);
-  if (options.openapi) core = createEmulatorEngine({ ...options.core, openapi: await loadOpenApi(options.openapi as string), issuer: origin });
+  if (options.openapi) {
+    // The mock's own secret key works on the engine too, so one key serves both surfaces.
+    const configured = options.core?.secretKeys ?? 'sk_test_emulator';
+    const keys = (typeof configured === 'string' ? [{ key: configured }] : configured).concat(mock.instance.secretKey ? [{ key: mock.instance.secretKey }] : []);
+    core = createEmulatorEngine({ ...options.core, secretKeys: keys, openapi: await loadOpenApi(options.openapi as string), issuer: origin });
+    syncState(mock, core);
+  }
   return { url: origin, mock, core, mail, close: async () => {
       await core?.close();
       await new Promise<void>((ok) => (server.closeAllConnections(), server.close(() => ok())));

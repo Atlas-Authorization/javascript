@@ -660,8 +660,13 @@ export function messagingResource(request: RequestFn) {
         });
       },
     },
-    /** Send a fixed, clearly-marked test message through the channel's provider. */
-    test(channel: 'email' | 'sms', body: { to: string }): Promise<MessagingTestResult> {
+    /**
+     * Send a fixed, clearly-marked test message through the channel's provider. `push` takes a device
+     * token (the response shows its last 6 characters); `whatsapp` and `voice` ride the Twilio account of
+     * your SMS provider and take an E.164 number (the call speaks six zeros). A test goes through the
+     * suppression list, the `pre_message_send` hook and the message ledger like any send.
+     */
+    test(channel: 'email' | 'sms' | 'push' | 'whatsapp' | 'voice', body: { to: string }): Promise<MessagingTestResult> {
       return request({
         method: 'POST',
         path: `/v1/messaging_providers/${enc(channel)}/test`,

@@ -37,6 +37,9 @@ class Api implements ConfigHttp {
     if (this.failWrites) throw new AtlasApiError(422, [{ code: 'VALIDATION_FAILED', message: this.failWrites }]);
   }
   async post<T>(path: string, body: unknown): Promise<T> {
+    // pre-flight validates only; the rotate_secret dry run is answered below (it can refuse)
+    if (path.includes('dry_run=true') && !path.includes('/rotate_secret')) return {} as T;
+   
     const b = (body ?? {}) as Record<string, unknown>;
     if (path.includes('/rotate_secret')) {
       if (path.includes('dry_run=true') && this.dryRunUnavailable) throw new AtlasApiError(403, [{ code: 'FORBIDDEN', message: 'no' }]);
@@ -55,6 +58,8 @@ class Api implements ConfigHttp {
     return {} as T;
   }
   async put<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
     this.note('PUT', path, body);
     const m = /^\/v1\/oauth_providers\/(.+)$/.exec(path);
     if (m) {
@@ -69,10 +74,14 @@ class Api implements ConfigHttp {
     return {} as T;
   }
   async patch<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
     this.note('PATCH', path, body);
     return {} as T;
   }
   async delete(path: string): Promise<void> {
+    if (path.includes('dry_run=true')) return;
+   
     this.note('DELETE', path, undefined);
   }
 }
@@ -166,7 +175,7 @@ describe('a sentinel secret through every output', () => {
     api.failWrites = `client_secret ${SENTINEL} was refused`;
     const io = captureIO();
     expect(await run(['apply', file(google()), '--yes', '--secrets-file', secrets()], ctx(io, api))).toBe(1);
-    expect(io.stderr()).toContain('API error');
+    expect(io.stderr()).toContain('create oauth_providers google failed');
     clean(io);
   });
 

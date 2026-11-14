@@ -2,6 +2,10 @@
 
 
 
+## 0.20.0
+
+- Journey file fields upload for real in the widget (images and PDF, up to 5 MB); sign-up journeys and page templates per audience.
+
 ## 0.19.9 — 2026-11-12
 
 - Picks up `@atlasauth/design` 0.4.0 (zod 4, fixes a zod 3 memory-exhaustion advisory). No API change.

@@ -147,6 +147,10 @@ export interface DataKeyProviderStatus {
   health: { ok: boolean | null; checked_at: number | null; error: string | null } | null;
   /** How long a revoked key keeps working before Atlas fails closed. */
   fail_closed_after_seconds: number;
+  /** Whether your key service is confirming the data key now; `unavailable_since` is set while it is not. */
+  availability: { available: boolean; unavailable_since: number | null; reason: string | null } | null;
+  /** What Atlas does while the key is unavailable. */
+  failure_mode: { while_unavailable: string; recovery: string; events: string[] };
   cache_window_seconds: number;
   cache_window_min_seconds: number;
   cache_window_max_seconds: number;

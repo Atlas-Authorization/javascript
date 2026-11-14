@@ -104,6 +104,8 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
       throw notFound();
     },
     async post<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
       record('POST', path, body);
       const b = (body ?? {}) as Record<string, unknown>;
       if (platform && path === '/v1/platform/apps') {
@@ -168,10 +170,14 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
       return {} as T;
     },
     async put<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
       record('PUT', path, body);
       return {} as T;
     },
     async patch<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
       record('PATCH', path, body);
       if (path === '/v1/instance') {
         const sent = (body as { auth_config: { strategies?: Record<string, boolean>; strictRequestBodies?: boolean } }).auth_config;
@@ -195,6 +201,8 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
       return {} as T;
     },
     async delete(path: string): Promise<void> {
+    if (path.includes('dry_run=true')) return;
+   
       record('DELETE', path, undefined);
     },
   };
@@ -401,6 +409,18 @@ describe('atlas init: secret layouts and strict bodies', () => {
     expect(await run(BASE, ctxWith(io))).toBe(0);
     expect(strictWrites()).toHaveLength(0);
     expect(io.stdout()).toContain('opted out');
+  });
+
+  it('never flips an existing lenient instance to strict', async () => {
+    const strictWrites = () => state.writes.filter((w) => (w.body as { auth_config?: { strictRequestBodies?: boolean } })?.auth_config?.strictRequestBodies === true);
+    expect(await run(BASE, ctxWith(captureIO()))).toBe(0);
+    // Pretend the instance predates strict bodies: the app exists, the setting was never written.
+    state.instance.strict = undefined;
+    state.writes = [];
+    const io = captureIO();
+    expect(await run(BASE, ctxWith(io))).toBe(0);
+    expect(strictWrites()).toHaveLength(0);
+    expect(io.stdout()).toContain('lenient_instance');
   });
 });
 

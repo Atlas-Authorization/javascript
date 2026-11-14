@@ -1,5 +1,17 @@
 # @atlasauth/backend changelog
 
+## 0.52.0
+
+- Step-up: `client.stepUp` (policy CRUD and `assert`), `requireStepUp` gate and offline `verifyStepUpReceipt`.
+- Approvals: `client.approvals`, `createApprovalGate` and `verifyApprovalReceipt`; impersonations resource (start, end, list, approve, deny).
+- New clients for MFA campaigns, risk signals, authorization (`authz` explain, what-if, events; `fga.sync`), message ledger, suppressions and fallbacks, machine trust policies, write budget, deprecations, key rotation drills, org role sets, org templates, abuse signals, bulk user actions, legal holds, instance export and import, connection activity, provider events and reconnect settings, web bot directories.
+- Machines and keys: `machines.setTokenBinding`, `verifyMachineToken` and `verifyApiKeyToken` for local verification, `apiKeys.rotate`, `posture` and `callers`, resource-verifier options `requireSenderConstrained`, `clientCertThumbprint` and `requireAuthorizationDetails`.
+- Billing: entitlement cache with `hasFeature` and `requireFeature` (`@atlasauth/backend/entitlements`), invoices, refunds, trial extension, usage batch and read-back, `entitlements.consume`.
+- Sessions: revocation feed and signed status list verification, optional serve-stale grace on the key and role mirrors.
+- Webhooks, Actions and workflows: filters, DLQ, versions, cancel and retry, `appEvents.broadcast`, `atlas.dryRun()` returning a typed `DryRunResult`.
+- Organizations: IT health, SCIM request log, directory sync retry, SSO login history and tests, `scimTokens.rotate`.
+- List methods pass `starting_after` through and return `next_cursor`.
+
 ## 0.51.0
 
 - `@atlasauth/backend/rate-limit`: `createRateLimiter` and `rateLimitRequest` enforce Atlas rate-limit policies locally (memory or Redis, fixed window, `RateLimit-*` headers, 429 with `Retry-After`).

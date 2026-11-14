@@ -125,8 +125,8 @@ export { ProfileTraits, useProfileTraits } from './profile-traits';
 export type { ProfileCompletionProps } from './profile-completion';
 export { ProfileCompletion } from './profile-completion';
 // Connected accounts (`<ConnectedAccounts/>` + `useConnectedAccounts()`): app-defined connections with live status.
-export type { ConnectedAccountsProps, UseConnectedAccountsResult } from './connected-accounts';
-export { ConnectedAccounts, useConnectedAccounts } from './connected-accounts';
+export type { ConnectedAccountsProps, ReconnectConnectionProps, UseConnectedAccountsResult } from './connected-accounts';
+export { ConnectedAccounts, ReconnectConnection, useConnectedAccounts, useReconnectConnection } from './connected-accounts';
 // Device sign-in approval on your own page (`<DeviceAuthorization/>` + `useDeviceAuthorization()`).
 export type {
   DeviceAuthorizationProps,
@@ -150,4 +150,7 @@ export {
   PricingTable,
   Invoices,
   EmbeddedCheckout,
+  Checkout,
+  useUsage,
 } from './billing';
+export type { CheckoutLabels } from './billing';

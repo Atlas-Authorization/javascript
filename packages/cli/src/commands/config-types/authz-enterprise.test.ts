@@ -57,6 +57,17 @@ describe('group 2 config types', () => {
     expect(http.calls[1]).toEqual({ method: 'PATCH', path: '/v1/billing/coupons/cpn_1', body: { active: false, name: 'Welcome' } });
   });
 
+  it('billing_coupons: expiry, eligible plans and the first-time rule go out on create and update', async () => {
+    const http = new Http();
+    const s = byType('billing_coupons');
+    if (s.kind !== 'collection') throw new Error('collection');
+    const fields = { expires_at: 1900000000000, plan_ids: ['bplan_1'], first_time_only: true };
+    await s.create(http, { code: 'LAUNCH', percent_off: 20, ...fields });
+    await s.update!(http, live('cpn_2'), { code: 'LAUNCH', percent_off: 20, ...fields });
+    expect(http.calls[0]!.body).toEqual({ code: 'LAUNCH', percent_off: 20, ...fields });
+    expect(http.calls[1]).toEqual({ method: 'PATCH', path: '/v1/billing/coupons/cpn_2', body: fields });
+  });
+
   it('iga_bundles: entitlement_ids go out as entitlements', async () => {
     const http = new Http();
     const s = byType('iga_bundles');
@@ -104,5 +115,13 @@ describe('group 2 config types', () => {
     expect(await s.fetchLive(http)).toEqual({ cache_ttl_ms: 5, default_consistency: 'UNSPECIFIED', changelog_retention_days: null });
     await s.apply(http, { cache_ttl_ms: 10, bogus: 1 }, { forceHook: false });
     expect(http.calls).toEqual([{ method: 'PUT', path: '/v1/fga/settings', body: { cache_ttl_ms: 10 } }]);
+  });
+  it('fga_sync is a settings singleton that sends only its own keys', async () => {
+    const s = byType('fga_sync');
+    if (s.kind !== 'singleton') throw new Error('singleton');
+    const http = new Http({ '/v1/fga/sync': { object: 'fga.sync', enabled: true, store_id: 'fgas_1', sync_groups: false, managed: { total: 3 }, backfill: null } });
+    expect(await s.fetchLive(http)).toEqual({ enabled: true, store_id: 'fgas_1', sync_groups: false });
+    await s.apply(http, { enabled: false, bogus: 1 }, { forceHook: false });
+    expect(http.calls).toEqual([{ method: 'PUT', path: '/v1/fga/sync', body: { enabled: false } }]);
   });
 });

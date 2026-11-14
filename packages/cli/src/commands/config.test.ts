@@ -48,6 +48,8 @@ class MockApi implements ConfigHttp {
   }
 
   async post<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
     this.writes.push({ method: 'POST', path, body });
     if (path === '/v1/redirect_urls') {
       const url = (body as { url: string }).url;
@@ -56,14 +58,20 @@ class MockApi implements ConfigHttp {
     return {} as T;
   }
   async put<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
     this.writes.push({ method: 'PUT', path, body });
     return {} as T;
   }
   async patch<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
     this.writes.push({ method: 'PATCH', path, body });
     return {} as T;
   }
   async delete(path: string): Promise<void> {
+    if (path.includes('dry_run=true')) return;
+   
     this.writes.push({ method: 'DELETE', path, body: undefined });
   }
 }
@@ -671,6 +679,8 @@ describe('atlas apply / atlas plan (one config file)', () => {
   it('keeps a one-time client secret from a create in a 0600 file under --out', async () => {
     class SecretApi extends MockApi {
       override async post<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
         await super.post(path, body);
         return (path === '/v1/oauth_clients' ? { id: 'oc_1', client_id: 'cid_1', client_secret: 'once-only' } : {}) as T;
       }

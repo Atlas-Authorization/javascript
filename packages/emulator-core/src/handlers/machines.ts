@@ -2,6 +2,7 @@
 import type { Engine, RouteDef } from '../engine';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
+import { agentGrant, resourceServerOf } from './device';
 import { bump, listReply, need } from './util';
 
 export function presentMachine(e: Engine, m: Obj): Obj {
@@ -12,6 +13,7 @@ export function presentMachine(e: Engine, m: Obj): Obj {
     organization_id: m.organization_id ?? null,
     owner_user_id: m.owner_user_id ?? null,
     status: m.status,
+    token_binding: m.token_binding ?? 'none',
     effective_status: m.status,
     metadata: m.metadata ?? {},
     created_at: m.created_at,
@@ -113,8 +115,8 @@ function sweepLeases(e: Engine): void {
 
 function resolveGrant(e: Engine, type: string, id: string | undefined): Obj {
   if (type !== 'machine' && type !== 'agent') throw new EmulatorError('VALIDATION_FAILED', 'grantType must be machine or agent.', 'grantType');
-  // Agent grants are not modelled by the emulator.
-  const g = type === 'machine' ? e.db.grants.get(id) : undefined;
+  // An agent grant is an approved agent access request; both kinds share one counter engine.
+  const g = type === 'machine' ? e.db.grants.get(id) : agentGrant(e, id);
   if (!g) throw notFound('Grant');
   return g;
 }
@@ -330,6 +332,10 @@ export function machinesHandlers(): RouteDef[] {
         const e = c.engine;
         const m = liveMachine(e, c.params.id);
         if (typeof c.body.name === 'string') m.name = c.body.name;
+        if (c.body.token_binding !== undefined) {
+          if (!['none', 'dpop', 'mtls', 'any'].includes(c.body.token_binding)) throw new EmulatorError('VALIDATION_FAILED', 'token_binding must be none, dpop, mtls or any.', 'token_binding');
+          m.token_binding = c.body.token_binding;
+        }
         bump(e, m);
         mEvent(e, 'machine.updated', m, 'update');
         return { body: presentMachine(e, m) };
@@ -384,12 +390,48 @@ export function machinesHandlers(): RouteDef[] {
     {
       method: 'POST',
       pattern: '/v1/m2m_tokens/verify',
-      handler: (c) => {
+      handler: async (c) => {
         const e = c.engine;
-        const secret = String(c.body.secret ?? c.body.token ?? '');
-        const m = e.db.machines.find((x) => !x.deleted && x.secret === secret);
-        if (!m || m.status === 'revoked') return { body: { object: 'm2m_token_verification', valid: false } };
-        return { body: { object: 'm2m_token_verification', valid: true, machine_id: m.id, name: m.name } };
+        const token = String(c.body.token ?? c.body.secret ?? '').trim();
+        if (!token) throw new EmulatorError('VALIDATION_FAILED', 'A `token` is required.', 'token');
+        const invalid = { body: { object: 'm2m_verification', valid: false } };
+        const now = e.clock.now();
+        let m: Obj | undefined;
+        let fields: Obj = {};
+        if (token.startsWith('mk_')) m = e.db.machines.find((x) => !x.deleted && x.secret === token);
+        else {
+          const r = await e.tokens.verifyAny(token);
+          if (!r.ok || r.claims.token_use !== 'm2m') return invalid;
+          m = e.db.machines.get(String(r.claims.sub));
+          const audience = typeof r.claims.aud === 'string' ? r.claims.aud : null;
+          if (m && audience) {
+            // The token's grant is gone: it would still pass a local check until it expires, but the engine knows better.
+            const rs = resourceServerOf(e, audience);
+            if (!e.db.grants.find((g) => g.machine_id === m!.id && (g.resource_server_id === rs.id || g.resource_server_id === rs.identifier))) return invalid;
+          }
+          fields = {
+            audience,
+            scopes: typeof r.claims.scope === 'string' ? r.claims.scope.split(' ').filter(Boolean) : [],
+            organization_id: r.claims.org_id ?? null,
+            cnf: r.claims.cnf ?? null,
+            org_role: r.claims.org_role ?? null,
+            org_permissions: r.claims.org_permissions ?? [],
+            expires_at: typeof r.claims.exp === 'number' ? r.claims.exp * 1000 : null,
+          };
+        }
+        // A revoked machine's credential must not verify either: revocation is one state.
+        if (!m || m.deleted || m.status === 'revoked') return invalid;
+        return {
+          body: {
+            object: 'm2m_verification',
+            valid: true,
+            machine_id: m.id,
+            name: m.name,
+            ...fields,
+            grants: e.db.grants.filter((g) => g.machine_id === m!.id && !(g.expires_at && g.expires_at <= now)).map((g) => ({ resource_server_id: g.resource_server_id, audience: resourceServerOf(e, g.resource_server_id).identifier, scopes: g.scopes })),
+            organization_memberships: (e.generic.get('organizations/machine_memberships')?.filter((x) => x.machine_id === m!.id) ?? []).map((x) => ({ organization_id: x._parent, role: x.role ?? null })),
+          },
+        };
       },
     },
     {

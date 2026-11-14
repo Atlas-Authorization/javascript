@@ -4,6 +4,10 @@ import { authzEnterpriseSpecs } from './authz-enterprise';
 import { signInOpsTypes } from './sign-in-ops';
 import { TRAITS_SPECS } from './traits';
 import { RATE_LIMIT_CONFIG_TYPES } from './rate-limits';
+import { ORG_DEPTH_CONFIG_TYPES } from './org-depth';
+import { MACHINE_TRUST_CONFIG_TYPES } from './machine-trust';
+import { MESSAGING_DELIVERY_SPECS } from './messaging-delivery';
+import { WRITE_BUDGET_CONFIG_TYPES } from './write-budget';
 
 /**
  * Resource types registered outside config.ts. Each group file exports a list of
@@ -16,6 +20,10 @@ const GROUPS: ResourceSpec[][] = [
   authzEnterpriseSpecs,
   TRAITS_SPECS,
   RATE_LIMIT_CONFIG_TYPES,
+  ORG_DEPTH_CONFIG_TYPES,
+  MACHINE_TRUST_CONFIG_TYPES,
+  MESSAGING_DELIVERY_SPECS,
+  WRITE_BUDGET_CONFIG_TYPES,
 ];
 
 export function registeredConfigTypes(): ResourceSpec[] {

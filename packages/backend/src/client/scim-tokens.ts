@@ -12,6 +12,13 @@ export interface ScimToken {
   scopes?: Array<'read' | 'write'> | null;
   /** SCIM user roles[].value → organization role key. */
   role_mappings?: ScimRoleMapping[];
+  /** IPs and CIDR ranges the token may be used from; empty = any address. */
+  ip_allow_list?: string[];
+  /** On = the attributes this directory owns cannot be edited anywhere but the identity provider. */
+  profile_lock?: boolean;
+  rotated_at?: number | null;
+  /** The token this one replaced, when it came from a rotation. */
+  rotated_from_id?: string | null;
   last_used_at: number | null;
   expires_at: number | null;
   revoked_at: number | null;
@@ -40,12 +47,29 @@ export interface CreateScimTokenBody {
   /** ['read'] mints a read-only token. */
   scopes?: Array<'read' | 'write'>;
   role_mappings?: ScimRoleMapping[];
+  /** Source IPs / CIDR ranges the token may be used from (at most 50). Omitted or empty = any address. */
+  ip_allow_list?: string[] | null;
+  profile_lock?: boolean;
 }
 
 export interface UpdateScimTokenBody {
   name?: string | null;
   scopes?: Array<'read' | 'write'> | null;
   role_mappings?: ScimRoleMapping[] | null;
+  /** null or [] clears the allow-list. */
+  ip_allow_list?: string[] | null;
+  profile_lock?: boolean;
+}
+
+export interface RotateScimTokenBody {
+  name?: string;
+  /** How long the previous token keeps working, 0 to 2592000 seconds (default 86400; 0 = revoke it now). */
+  grace_period_seconds?: number;
+}
+
+/** A rotation's response: the new token with its secret, and when the previous one stops working. */
+export interface RotatedScimToken extends ScimTokenWithSecret {
+  rotated_from: { id: string; prefix: string; valid_until: number };
 }
 
 export function scimTokensResource(request: RequestFn) {
@@ -59,6 +83,10 @@ export function scimTokensResource(request: RequestFn) {
     /** Change a token's name, scopes or role mappings. */
     update(id: string, body: UpdateScimTokenBody): Promise<ScimToken> {
       return request({ method: 'PATCH', path: `/v1/scim_tokens/${enc(id)}`, body });
+    },
+    /** Mint a replacement (same organization, scopes, role mappings, IP allow-list and lock); the old token works until the grace period ends. The new secret is shown once. */
+    rotate(id: string, body: RotateScimTokenBody = {}, idempotencyKey?: string): Promise<RotatedScimToken> {
+      return request({ method: 'POST', path: `/v1/scim_tokens/${enc(id)}/rotate`, body, idempotencyKey });
     },
     revoke(
       id: string,

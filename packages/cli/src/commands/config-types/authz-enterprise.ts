@@ -97,10 +97,24 @@ export const authzEnterpriseSpecs: ResourceSpec[] = [
   // Relationship-based authorization
   simpleResourceSpec({ type: 'fga_stores', path: '/v1/fga/stores', idKey: 'id', fileKeys: ['name'] }),
   settingsSpec({ type: 'fga_settings', path: '/v1/fga/settings', fileKeys: ['cache_ttl_ms', 'default_consistency', 'changelog_retention_days'] }),
+  settingsSpec({ type: 'fga_sync', path: '/v1/fga/sync', fileKeys: ['enabled', 'store_id', 'sync_memberships', 'sync_org_roles', 'sync_groups', 'user_type', 'org_type', 'group_type', 'member_relation', 'role_relation_prefix', 'group_key'] }),
+  settingsSpec({ type: 'authz_decision_settings', path: '/v1/authz_decision_settings', fileKeys: ['enabled', 'sample_rate_allow', 'sample_rate_deny', 'input_mode', 'redact', 'ship_to_events', 'retention_days'] }),
+  // What the SDK captures onto new users and which measurement scripts load; `default_params` is read-only and left out.
+  settingsSpec({
+    type: 'marketing_settings',
+    path: '/v1/marketing_settings',
+    fileKeys: ['capture', 'scripts'],
+    liveOf: (res) => {
+      const { default_params: _defaults, ...capture } = (res.capture ?? {}) as Record<string, Json>;
+      return { capture, scripts: (res.scripts ?? {}) as Record<string, Json> };
+    },
+  }),
   // Groups and application roles
   simpleResourceSpec({ type: 'groups', path: '/v1/groups', nameKey: 'slug', idKey: 'id', fileKeys: ['slug', 'name', 'description', 'attributes', 'app_role_keys', 'include_in_token', 'dynamic_filter', 'sso_match'] }),
   simpleResourceSpec({ type: 'group_rules', path: '/v1/group_rules', idKey: 'id', fileKeys: ['name', 'enabled', 'priority', 'condition', 'actions'] }),
   simpleResourceSpec({ type: 'app_roles', path: '/v1/app_roles', nameKey: 'key', idKey: 'id', fileKeys: ['key', 'name', 'description', 'permissions'], updateKeys: ['name', 'description', 'permissions'] }),
+  // Resource-scoped roles: the registry of resource types and their roles (a type's roles are replaced as a whole).
+  simpleResourceSpec({ type: 'resource_types', path: '/v1/resource_types', nameKey: 'key', idKey: 'key', fileKeys: ['key', 'name', 'description', 'parent_type', 'inherit', 'roles'], updateKeys: ['name', 'description', 'parent_type', 'inherit', 'roles'] }),
   // Identity governance
   simpleResourceSpec({ type: 'iga_sod_rules', path: '/v1/iga/sod_rules', idKey: 'id', fileKeys: ['name', 'description', 'entitlement_a', 'entitlement_b', 'mode', 'approver', 'enabled'], updateKeys: ['name', 'description', 'mode', 'approver', 'enabled'] }),
   simpleResourceSpec({ type: 'iga_birthright_rules', path: '/v1/iga/birthright_rules', idKey: 'id', fileKeys: ['name', 'match', 'entitlement_ids', 'revoke_on_unmatch', 'enabled'] }),
@@ -113,7 +127,7 @@ export const authzEnterpriseSpecs: ResourceSpec[] = [
   simpleResourceSpec({ type: 'service_connectors', path: '/v1/service_connectors', idKey: 'id', fileKeys: ['name', 'kind', 'config', 'credentials', 'enabled'], writeOnly: ['credentials'], updateKeys: ['config', 'credentials', 'enabled'] }),
   { ...simpleResourceSpec({ type: 'logout_notify_endpoints', path: '/v1/logout_notify_endpoints', nameKey: 'url', idKey: 'id', fileKeys: ['url', 'oauth_client_id', 'audience', 'description'], updateKeys: ['audience', 'description'] }), defaulted: ['audience'] },
   // Billing
-  simpleResourceSpec({ type: 'billing_coupons', path: '/v1/billing/coupons', nameKey: 'code', idKey: 'id', fileKeys: ['code', 'name', 'percent_off', 'amount_off', 'currency', 'duration', 'duration_months', 'max_redemptions', 'plan_ids', 'first_time_only', 'active'], createKeys: ['name', 'percent_off', 'amount_off', 'currency', 'duration', 'duration_months', 'max_redemptions', 'plan_ids', 'first_time_only'], updateKeys: ['active', 'name', 'max_redemptions'] }),
+  simpleResourceSpec({ type: 'billing_coupons', path: '/v1/billing/coupons', nameKey: 'code', idKey: 'id', fileKeys: ['code', 'name', 'percent_off', 'amount_off', 'currency', 'duration', 'duration_months', 'max_redemptions', 'expires_at', 'plan_ids', 'first_time_only', 'active'], createKeys: ['name', 'percent_off', 'amount_off', 'currency', 'duration', 'duration_months', 'max_redemptions', 'expires_at', 'plan_ids', 'first_time_only'], updateKeys: ['active', 'name', 'max_redemptions', 'expires_at', 'plan_ids', 'first_time_only'] }),
   settingsSpec({ type: 'billing_settings', path: '/v1/billing/settings', fileKeys: ['default_limit_merge', 'limit_merge'] }),
   billingProviders,
   // Identity verification

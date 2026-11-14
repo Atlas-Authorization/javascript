@@ -200,6 +200,7 @@ interface Component {
   params: SfParams;
 }
 
+
 interface ParsedSignatureInput {
   label: string;
   components: Component[];
@@ -351,37 +352,205 @@ export function headerValue(headers: WebBotAuthHeaders, name: string): string | 
 
 const DERIVED = new Set(['@method', '@authority', '@path', '@target-uri', '@scheme', '@query', '@request-target']);
 
-function componentValue(name: string, req: WebBotAuthRequest, url: URL): string | undefined {
-  switch (name) {
-    case '@method':
-      return req.method.toUpperCase();
-    case '@authority':
-      return url.host.toLowerCase();
-    case '@path':
-      return url.pathname === '' ? '/' : url.pathname;
-    case '@target-uri':
-      return url.href;
-    case '@scheme':
-      return url.protocol.replace(/:$/, '').toLowerCase();
-    case '@query':
-      return url.search === '' ? '?' : url.search;
-    case '@request-target':
-      return `${url.pathname === '' ? '/' : url.pathname}${url.search}`;
-    default:
-      return headerValue(req.headers, name);
+/** A covered component: a header name or derived component, with its RFC 9421 parameters (`sf`, `key`, `bs`, `name`). */
+export interface WebBotAuthComponent {
+  name: string;
+  params?: Record<string, string | number | boolean | Uint8Array>;
+}
+
+const escapeSfString = (v: string): string => `"${v.replace(/[\\"]/g, '\\$&')}"`;
+
+/** The component identifier as it is written in `Signature-Input` and in the signature base: `"name";param=value`. */
+export function serializeComponentId(c: WebBotAuthComponent): string {
+  let out = escapeSfString(c.name);
+  for (const [k, v] of Object.entries(c.params ?? {})) {
+    if (v === true) out += `;${k}`;
+    else if (v === false) out += `;${k}=?0`;
+    else if (typeof v === 'string') out += `;${k}=${escapeSfString(v)}`;
+    else if (typeof v === 'number') out += `;${k}=${v}`;
+    else out += `;${k}=:${bytesToBase64(v)}:`;
   }
+  return out;
+}
+
+// -- Canonical structured-field serialization (RFC 8941 section 4), for the `sf` and `key` parameters.
+// Works on the text: strings, tokens, byte sequences and booleans are already canonical when valid;
+// whitespace, list separators and decimals are normalised. Anything malformed returns null.
+
+const SF_KEY = /^[a-z*][a-z0-9_.*-]*/;
+
+function sfBareItem(text: string, i: number): { out: string; end: number } | null {
+  const c = text[i];
+  if (c === '"') {
+    const str = readString(text, i);
+    return str ? { out: text.slice(i, str.end), end: str.end } : null;
+  }
+  if (c === ':') {
+    const close = text.indexOf(':', i + 1);
+    if (close < 0 || !base64ToBytes(text.slice(i + 1, close))) return null;
+    return { out: text.slice(i, close + 1), end: close + 1 };
+  }
+  if (c === '?') {
+    const b = text.slice(i, i + 2);
+    return b === '?0' || b === '?1' ? { out: b, end: i + 2 } : null;
+  }
+  if (c !== undefined && /[-0-9]/.test(c)) {
+    const m = /^-?\d{1,15}(\.\d{1,3})?/.exec(text.slice(i));
+    if (!m) return null;
+    if (m[1] === undefined) return { out: m[0], end: i + m[0].length };
+    const fixed = Number(m[0]).toFixed(3).replace(/0+$/, '');
+    return { out: fixed.endsWith('.') ? `${fixed}0` : fixed, end: i + m[0].length };
+  }
+  if (c !== undefined && /[A-Za-z*]/.test(c)) {
+    let j = i;
+    while (j < text.length && TOKEN_CHARS.test(text[j]!)) j++;
+    return { out: text.slice(i, j), end: j };
+  }
+  return null;
+}
+
+function sfParams(text: string, i: number): { out: string; end: number } | null {
+  let out = '';
+  while (true) {
+    let j = i;
+    while (text[j] === ' ' || text[j] === '\t') j++;
+    if (text[j] !== ';') return { out, end: i };
+    j++;
+    while (text[j] === ' ') j++;
+    const key = SF_KEY.exec(text.slice(j))?.[0];
+    if (!key) return null;
+    j += key.length;
+    out += `;${key}`;
+    if (text[j] === '=') {
+      const v = sfBareItem(text, j + 1);
+      if (!v) return null;
+      out += `=${v.out}`;
+      j = v.end;
+    }
+    i = j;
+  }
+}
+
+function sfItem(text: string): string | null {
+  const t = text.trim();
+  let body: { out: string; end: number } | null;
+  if (t[0] === '(') {
+    let depth = 0;
+    let quoted = false;
+    let close = -1;
+    for (let k = 0; k < t.length; k++) {
+      const ch = t[k]!;
+      if (quoted) {
+        if (ch === '\\') k++;
+        else if (ch === '"') quoted = false;
+      } else if (ch === '"') quoted = true;
+      else if (ch === '(') depth++;
+      else if (ch === ')' && --depth === 0) {
+        close = k;
+        break;
+      }
+    }
+    if (close < 0) return null;
+    const members: string[] = [];
+    for (const m of splitTop(t.slice(1, close).replace(/\s+/g, ' '), ' ')) {
+      const canon = sfItem(m);
+      if (canon === null) return null;
+      members.push(canon);
+    }
+    body = { out: `(${members.join(' ')})`, end: close + 1 };
+  } else {
+    body = sfBareItem(t, 0);
+  }
+  if (!body) return null;
+  const params = sfParams(t, body.end);
+  if (!params || t.slice(params.end).trim() !== '') return null;
+  return body.out + params.out;
+}
+
+/** `key=value` members of a Dictionary, canonicalised, in order. Null when malformed. */
+function sfDictionary(text: string): Array<{ key: string; value: string }> | null {
+  const out: Array<{ key: string; value: string }> = [];
+  for (const member of splitTop(text, ',')) {
+    const key = SF_KEY.exec(member)?.[0];
+    if (!key) return null;
+    const rest = member.slice(key.length);
+    let value: string | null;
+    if (rest.startsWith('=')) value = sfItem(rest.slice(1));
+    else value = sfItem(`?1${rest}`);
+    if (value === null) return null;
+    out.push({ key, value });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/** The canonical Structured Field form of a header value (Dictionary when it reads as one, else List or Item). */
+function sfSerialize(text: string): string | null {
+  const members = splitTop(text, ',');
+  if (members.length > 0 && members.every((m) => /^[a-z*][a-z0-9_.*-]*(=|;|$)/.test(m)) && members.some((m) => /^[a-z*][a-z0-9_.*-]*=/.test(m))) {
+    const dict = sfDictionary(text);
+    return dict ? dict.map((d) => (d.value === '?1' ? d.key : d.value.startsWith('?1;') ? `${d.key}${d.value.slice(2)}` : `${d.key}=${d.value}`)).join(', ') : null;
+  }
+  const items = members.map(sfItem);
+  return items.every((x): x is string => x !== null) && items.length > 0 ? items.join(', ') : null;
+}
+
+const percentEncode = (v: string): string => encodeURIComponent(v).replace(/[!'()*]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`);
+
+function componentValue(c: WebBotAuthComponent, req: WebBotAuthRequest, url: URL): string | undefined {
+  const { name } = c;
+  const params = c.params ?? {};
+  const keys = Object.keys(params);
+  if (name === '@query-param') {
+    if (keys.length !== 1 || typeof params.name !== 'string') return undefined;
+    const found = new URLSearchParams(url.search).getAll(params.name);
+    return found.length === 1 ? percentEncode(found[0]!) : undefined;
+  }
+  if (name.startsWith('@')) {
+    if (keys.length > 0) return undefined;
+    switch (name) {
+      case '@method':
+        return req.method.toUpperCase();
+      case '@authority':
+        return url.host.toLowerCase();
+      case '@path':
+        return url.pathname === '' ? '/' : url.pathname;
+      case '@target-uri':
+        return url.href;
+      case '@scheme':
+        return url.protocol.replace(/:$/, '').toLowerCase();
+      case '@query':
+        return url.search === '' ? '?' : url.search;
+      case '@request-target':
+        return `${url.pathname === '' ? '/' : url.pathname}${url.search}`;
+      default:
+        return undefined;
+    }
+  }
+  const raw = headerValue(req.headers, name);
+  if (raw === undefined) return undefined;
+  if (keys.length === 0) return raw;
+  // Header-field parameters: at most one of sf, key (with a string value) or bs. req and tr belong to responses and trailers.
+  if (keys.length !== 1) return undefined;
+  if (params.sf === true) return sfSerialize(raw) ?? undefined;
+  if (typeof params.key === 'string') {
+    const member = sfDictionary(raw)?.find((d) => d.key === params.key);
+    return member ? member.value : undefined;
+  }
+  if (params.bs === true) return `:${bytesToBase64(enc.encode(raw))}:`;
+  return undefined;
 }
 
 /**
  * Build the RFC 9421 signature base: one `"id": value` line per covered
  * component, then the `@signature-params` line. `signatureParams` is the inner
  * list with its parameters, serialised exactly as it appears in `Signature-Input`.
- * Returns a failure reason instead of a base when a component is unsupported or
- * missing.
+ * A component is a name, or `{ name, params }` for the parameterised forms: a header with `sf`,
+ * `key="member"` or `bs`, and `@query-param` with `name`. Returns a failure reason instead of
+ * a base when a component is unsupported or missing.
  */
 export function buildSignatureBase(
   req: WebBotAuthRequest,
-  componentNames: readonly string[],
+  components: ReadonlyArray<string | WebBotAuthComponent>,
   signatureParams: string,
 ): { base: string } | { error: 'unsupported_component' | 'component_missing' | 'bad_request' } {
   let url: URL;
@@ -392,13 +561,20 @@ export function buildSignatureBase(
   }
   const seen = new Set<string>();
   const lines: string[] = [];
-  for (const name of componentNames) {
-    if (name !== name.toLowerCase() || seen.has(name)) return { error: 'unsupported_component' };
-    if (name.startsWith('@') && !DERIVED.has(name)) return { error: 'unsupported_component' };
-    seen.add(name);
-    const v = componentValue(name, req, url);
+  for (const entry of components) {
+    const c: WebBotAuthComponent = typeof entry === 'string' ? { name: entry } : entry;
+    if (c.name !== c.name.toLowerCase()) return { error: 'unsupported_component' };
+    if (c.name.startsWith('@') && !DERIVED.has(c.name) && c.name !== '@query-param') return { error: 'unsupported_component' };
+    const id = serializeComponentId(c);
+    if (seen.has(id)) return { error: 'unsupported_component' };
+    seen.add(id);
+    const known = Object.keys(c.params ?? {}).every((k) => ['sf', 'key', 'bs', 'name'].includes(k));
+    if (!known) return { error: 'unsupported_component' };
+    // A derived component takes no header parameters (only @query-param takes `name`).
+    if (c.name.startsWith('@') && c.name !== '@query-param' && Object.keys(c.params ?? {}).length > 0) return { error: 'unsupported_component' };
+    const v = componentValue(c, req, url);
     if (v === undefined || /[\r\n]/.test(v)) return { error: 'component_missing' };
-    lines.push(`"${name}": ${v}`);
+    lines.push(`${id}: ${v}`);
   }
   lines.push(`"@signature-params": ${signatureParams}`);
   return { base: lines.join('\n') };
@@ -503,15 +679,18 @@ export async function verifyWebBotAuth(req: WebBotAuthRequest, opts: WebBotAuthV
 
   // Coverage: the signature must bind the host, and the directory claim it relies on.
   const names = input.components.map((c) => c.name);
-  if (input.components.some((c) => Object.keys(c.params).length > 0)) return fail('unsupported_component', base);
   const agentHeader = headerValue(req.headers, 'signature-agent');
   if (agentHeader === undefined) return fail('missing_signature_agent', base);
-  if (!names.includes('@authority') || !names.includes('signature-agent')) return fail('components_not_covered', base);
-  const directory = parseSignatureAgent(agentHeader, input.label);
+  const agentComponent = input.components.find((c) => c.name === 'signature-agent');
+  if (!names.includes('@authority') || !agentComponent) return fail('components_not_covered', base);
+  // Covered as a dictionary member (`;key="m"`): the directory must come from that member, or an uncovered one could be swapped in.
+  const agentKey = typeof agentComponent.params.key === 'string' ? agentComponent.params.key : undefined;
+  if (agentKey !== undefined && !splitTop(agentHeader, ',').some((m) => m.startsWith(`${agentKey}=`))) return fail('bad_signature_agent', base);
+  const directory = parseSignatureAgent(agentHeader, agentKey ?? input.label);
   if (!directory) return fail('bad_signature_agent', base);
   const withDir = { ...base, directory };
 
-  const built = buildSignatureBase(req, names, input.raw);
+  const built = buildSignatureBase(req, input.components, input.raw);
   if ('error' in built) return fail(built.error, withDir);
 
   const dirUrl = directoryUrlFor(directory);
@@ -555,8 +734,8 @@ export interface SignWebBotAuthInput {
   expires: number;
   nonce?: string;
   label?: string;
-  /** Covered components; must include @authority and signature-agent. Default those two. */
-  components?: readonly string[];
+  /** Covered components; must include @authority and signature-agent. Default those two. Use `{ name, params }` for a header with `sf` / `key` / `bs`, or `@query-param` with `name`. */
+  components?: ReadonlyArray<string | WebBotAuthComponent>;
 }
 
 /** Produce the three headers (`signature-agent`, `signature-input`, `signature`) for a request. */
@@ -567,7 +746,7 @@ export function signWebBotAuthRequest(input: SignWebBotAuthInput): Record<string
   const keyId = ed25519JwkThumbprint({ x: bytesToBase64Url(pub) });
   const agentHeader = `"${input.signatureAgent}"`;
   const params =
-    `(${components.map((c) => `"${c}"`).join(' ')});created=${input.created};keyid="${keyId}";alg="ed25519";expires=${input.expires}` +
+    `(${components.map((c) => serializeComponentId(typeof c === 'string' ? { name: c } : c)).join(' ')});created=${input.created};keyid="${keyId}";alg="ed25519";expires=${input.expires}` +
     `${input.nonce ? `;nonce="${input.nonce}"` : ''};tag="${WEB_BOT_AUTH_TAG}"`;
   const headers = { ...input.headers, 'signature-agent': agentHeader };
   const built = buildSignatureBase({ method: input.method, url: input.url, headers }, components, params);
@@ -698,9 +877,14 @@ export function decideWebBotAuth(result: WebBotAuthResult, policy: WebBotAuthPol
 
 export interface WebBotAuthVerifierOptions extends WebBotAuthPolicy {
   /**
-   * The fetch used for directories. Defaults to the global one with a 5 second
-   * limit, https only, no redirects and a 64 KB cap. If your server can reach
-   * private networks, pass a fetch that refuses private addresses.
+   * The fetch used for directories. On Node the default is the same pinned-address transport the
+   * Atlas server uses: it resolves the host once, refuses any special-purpose address (loopback,
+   * private, link-local and the cloud metadata address, ULA, multicast, IPv6 forms embedding an
+   * IPv4 address), connects to the vetted address only, never follows a redirect, and caps time
+   * and size. On an edge runtime (no DNS access) the default is the global fetch, 5 seconds,
+   * https only, no redirects, a 64 KB cap and a refusal of literal and single-label hosts: those
+   * runtimes sandbox outbound traffic themselves. A `fetch` you pass is used as given, behind the
+   * same literal-host refusal, so it must refuse private addresses itself.
    */
   fetch?: typeof fetch;
   ttlMs?: number;
@@ -723,8 +907,20 @@ const isPrivateHostLiteral = (host: string): boolean => {
 };
 
 /** A verifier that runs inside your own server: no call to Atlas, directories cached in memory. */
+/** The pinned transport on Node (loaded lazily so edge bundles never see `node:dns`); null elsewhere. */
+let defaultPinned: Promise<typeof fetch | null> | undefined;
+function pinnedFetchOnNode(): Promise<typeof fetch | null> {
+  defaultPinned ??=
+    typeof process !== 'undefined' && !!process.versions?.node
+      ? (async () => {
+          const spec = './web-bot-auth-pinned';
+          return ((await import(/* webpackIgnore: true */ spec)) as { createPinnedFetch: () => typeof fetch }).createPinnedFetch();
+        })().catch(() => null)
+      : Promise.resolve(null);
+  return defaultPinned;
+}
+
 export function createWebBotAuthVerifier(options: WebBotAuthVerifierOptions = {}) {
-  const f = options.fetch ?? globalThis.fetch;
   const now = options.now ?? Date.now;
   const cache = new WebBotAuthDirectoryCache({
     ttlMs: options.ttlMs,
@@ -733,6 +929,7 @@ export function createWebBotAuthVerifier(options: WebBotAuthVerifierOptions = {}
     fetchJson: async (url) => {
       const u = new URL(url);
       if (u.protocol !== 'https:' || isPrivateHostLiteral(u.hostname)) return null;
+      const f = options.fetch ?? (await pinnedFetchOnNode()) ?? globalThis.fetch;
       const res = await f(url, {
         headers: { accept: WEB_BOT_AUTH_DIRECTORY_MEDIA_TYPE },
         redirect: 'manual',

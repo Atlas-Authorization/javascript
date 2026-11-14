@@ -155,3 +155,21 @@ describe('Protect renders on the permission and falls back otherwise', () => {
     expect(wrapper.find('.no').exists()).toBe(false);
   });
 });
+
+describe('Protect gates on plan and feature as well as permissions', () => {
+  it('honours the plan and feature props against the pla/fea claims', async () => {
+    const client = makeClient();
+    client.status.value = 'signed_in';
+    client.claims.value = { sub: 'u1', sid: 's1', exp: 0, pla: 'pro', fea: ['exports'] } as SessionClaims;
+    const wrapper = mountWith(client, () =>
+      h('div', [
+        h(Protect, { plan: 'pro' }, { default: () => h('i', { class: 'plan-ok' }) }),
+        h(Protect, { feature: 'exports' }, { default: () => h('i', { class: 'feat-ok' }) }),
+        h(Protect, { feature: 'sso' }, { default: () => h('i', { class: 'feat-no' }) }),
+      ]),
+    );
+    expect(wrapper.find('.plan-ok').exists()).toBe(true);
+    expect(wrapper.find('.feat-ok').exists()).toBe(true);
+    expect(wrapper.find('.feat-no').exists()).toBe(false);
+  });
+});

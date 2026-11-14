@@ -12,6 +12,7 @@ export * from './attempt';
 export * from './first-factor';
 export * from './app-approval';
 export * from './push-devices';
+export * from './approvals';
 export * from './initial-state';
 // Server errors in the app's language (`error.<reason>` catalog keys).
 export * from './errors';
@@ -68,6 +69,8 @@ export * from './email-code-check';
 // SRP-6a sign-in (RFC 5054, 3072-bit group, SHA-256): the password never leaves the browser.
 export * from './srp';
 export * from './step-up';
+// MFA rollout campaigns: the prompt the signed-in user is nagged with, and what they did with it.
+export * from './mfa-campaign';
 export * from './sign-in-flow';
 export * from './org-step-up';
 export * from './telegram';
@@ -99,6 +102,7 @@ export * from './mfa-recovery';
 // Identity verification (document and selfie) through the app's verification service.
 export * from './identity-verification';
 export * from './avatar';
+export * from './journey-upload';
 export * from './account-security';
 export * from './passkey-second-factor';
 // Identity governance: request access, approve, review, delegate.
@@ -169,3 +173,5 @@ export * from './sign-in-screen';
 export * from './security-section';
 // Mint a short enrolment code for a device the signed-in user owns.
 export * from './machine-enrolment';
+// Framework-neutral controllers behind the API keys, billing and device authorization components.
+export * from './component-controllers';

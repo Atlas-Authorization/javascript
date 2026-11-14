@@ -2,6 +2,7 @@
 import type { Engine, RouteDef } from '../engine';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
+import { recordCaller } from './round2';
 import { bump, listReply, need } from './util';
 
 export function presentKey(e: Engine, k: Obj): Obj {
@@ -47,7 +48,8 @@ export function keysHandlers(): RouteDef[] {
       handler: (c) => {
         const t = c.query.get('subject_type');
         const s = c.query.get('subject_id');
-        return listReply(c, c.engine.db.apiKeys.filter((k) => (!t || k.subject_type === t) && (!s || k.subject_id === s)), (k) => presentKey(c.engine, k));
+        const org = c.query.get('organization_id');
+        return listReply(c, c.engine.db.apiKeys.filter((k) => (!t || k.subject_type === t) && (!s || k.subject_id === s) && (!org || k.organization_id === org)), (k) => presentKey(c.engine, k));
       },
     },
     {
@@ -77,6 +79,8 @@ export function keysHandlers(): RouteDef[] {
           last_used_at: null,
           expires_at: typeof c.body.expires_at === 'number' ? c.body.expires_at : typeof c.body.expires_in_seconds === 'number' ? now + c.body.expires_in_seconds * 1000 : null,
           revoked_at: null,
+          allowed_ips: Array.isArray(c.body.allowed_ips) ? c.body.allowed_ips : [],
+          organization_id: c.body.organization_id ?? null,
           created_at: now,
         });
         kEvent(e, 'api_key.created', k, 'create');
@@ -127,6 +131,7 @@ export function keysHandlers(): RouteDef[] {
           k.remaining -= 1;
         }
         k.last_used_at = now;
+        recordCaller(e, k.id, typeof c.body.client_ip === 'string' ? c.body.client_ip : null, c.request.headers.get('user-agent'));
         return {
           body: e.shape('ApiKeyVerificationValid', {
             object: 'api_key_verification',

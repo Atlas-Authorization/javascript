@@ -20,6 +20,7 @@ import { deliverSecret, productDir, writeSecretFile } from '../secrets';
 import { envApiUrl, requireArg, resolveAuth, wantsJson } from './shared';
 import { declaredCookiesCheck, loginReadinessCheck, parseOrigin, pathMountCheck, preflightCheck } from './golive';
 import { scanForSecrets } from './doctor-scan';
+import { doctorResourceServer } from './doctor-rs';
 
 /**
  * The project commands that sit beside `atlas init`: `preflight` (a CI gate),
@@ -231,6 +232,8 @@ const HEALTH_COLUMNS: Column<HealthCheckRow>[] = [
 
 /** `atlas doctor` — the integration-health report; exit 1 when a check fails. */
 export async function doctor(ctx: RunContext, args: ParsedArgs): Promise<number> {
+  // `atlas doctor rs <url>` probes a resource server from outside: no key.
+  if (args.positionals[1] === 'rs') return doctorResourceServer(ctx, args.positionals[2], wantsJson(args.values));
   const scanDir = str(args.values, 'scan-dir');
   const scanImage = str(args.values, 'scan-image');
   if (scanDir !== undefined || scanImage !== undefined) return scanForSecrets(ctx, { dir: scanDir, image: scanImage, json: wantsJson(args.values) });

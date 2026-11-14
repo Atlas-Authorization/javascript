@@ -12,6 +12,9 @@ import { UserProfileComponent } from './components/user-profile.component';
 import { OrganizationProfileComponent } from './components/organization-profile.component';
 import { OrganizationAuditLogComponent } from './components/organization-audit-log.component';
 import { ManageCibaComponent } from './components/manage-ciba.component';
+import { ApiKeysComponent } from './components/api-keys.component';
+import { DeviceAuthorizationComponent } from './components/device-authorization.component';
+import { CheckoutComponent, EmbeddedCheckoutComponent, InvoicesComponent, PricingTableComponent } from './components/billing.component';
 import { AtlasPoliciesDirective, PolicyAcceptStepComponent, PolicyGateComponent } from './components/policy-host';
 
 /**
@@ -38,6 +41,12 @@ export const ATLAS_UI = [
   OrganizationProfileComponent,
   OrganizationAuditLogComponent,
   ManageCibaComponent,
+  ApiKeysComponent,
+  DeviceAuthorizationComponent,
+  PricingTableComponent,
+  InvoicesComponent,
+  EmbeddedCheckoutComponent,
+  CheckoutComponent,
   AtlasPoliciesDirective,
   PolicyAcceptStepComponent,
   PolicyGateComponent,

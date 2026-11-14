@@ -58,3 +58,21 @@ export * from './step-up';
 // Sign-in and account-security screens as view-models (steps, methods, fields, human errors, step-up inside).
 export * from './screens';
 export * from './screens-hook';
+
+// Default React Native screens (sign-in, sign-up, second factor, account security) built on those view-models,
+// and the element builders behind them (themeable, testable without a renderer).
+export * from './native-screens';
+export {
+  DEFAULT_SCREEN_STRINGS,
+  DEFAULT_SCREEN_THEME,
+  renderAuthScreen,
+  renderField,
+  renderSecuritySection,
+  type AuthActions,
+  type FieldValues,
+  type RenderEnv,
+  type ScreenPrimitives,
+  type ScreenStyles,
+  type ScreenTheme,
+  type SecurityActions,
+} from './native-screens-render';

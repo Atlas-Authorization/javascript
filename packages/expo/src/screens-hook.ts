@@ -1,7 +1,7 @@
 import { useMemo, useRef, useSyncExternalStore } from 'react';
 import type { SecuritySectionKind, SecuritySectionView, SignInScreenView } from '@atlasauth/js';
 import { useExpoFapiClient } from './policies';
-import { createExpoSecuritySection, createExpoSignInScreen, type SecuritySectionSetup, type SignInScreenSetup } from './screens';
+import { createExpoSecuritySection, createExpoSignInScreen, createExpoSignUpScreen, type SecuritySectionSetup, type SignInScreenSetup } from './screens';
 
 /**
  * The whole sign-in screen as a view-model: `const { view, ...actions } = useSignInScreen({ apple, google, passkey })`.
@@ -14,6 +14,19 @@ export function useSignInScreen(setup: SignInScreenSetup = {}) {
   const client = useExpoFapiClient();
   // Created once per client; the setup (providers, localization) is read when the client changes.
   const screen = useMemo(() => createExpoSignInScreen(client, setup), [client]); // eslint-disable-line react-hooks/exhaustive-deps
+  const view: SignInScreenView = useSyncExternalStore(screen.subscribe, screen.getView, screen.getView);
+  return { view, ...screen };
+}
+
+/**
+ * The create-account screen as a view-model: `const { view, submit, saveDraft } = useSignUpScreen()`. Starts at
+ * `view.step === 'details'` (`view.fields`, `view.legal`); after the account is made it walks the same steps as
+ * sign-in: verify the email, policies, second-factor setup, recovery codes, and the required actions and journey
+ * forms a sign-up journey adds (`required_action`, with typed `view.fields` and `saveDraft()` to resume later).
+ */
+export function useSignUpScreen(setup: Pick<SignInScreenSetup, 'localization' | 'passkey'> = {}) {
+  const client = useExpoFapiClient();
+  const screen = useMemo(() => createExpoSignUpScreen(client, setup), [client]); // eslint-disable-line react-hooks/exhaustive-deps
   const view: SignInScreenView = useSyncExternalStore(screen.subscribe, screen.getView, screen.getView);
   return { view, ...screen };
 }

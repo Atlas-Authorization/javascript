@@ -256,6 +256,7 @@ export function AttemptFlow({
   sessionKept,
   recoveryCodes = null,
   onRecoveryCodesSaved,
+  onUploadFile,
   onPolicyDecline,
   prefill,
   alternatives,
@@ -299,6 +300,8 @@ export function AttemptFlow({
    */
   recoveryCodes?: string[] | null;
   onRecoveryCodesSaved?(): void;
+  /** A journey `file` field: upload the picked file, answer its upload id (or null with the reason in `errors`). Absent = a text box for the reference. */
+  onUploadFile?(field: string, file: File): Promise<string | null>;
   /** The user declined a policy the sign-in was waiting on: cancel the attempt (`needs_policy_acceptance`). */
   onPolicyDecline?(policy: { key: string; title: string }): void;
   /** Prefill the identifier (see {@link FlowProps.initialValues}); absent = no prefill. */
@@ -322,6 +325,15 @@ export function AttemptFlow({
 
   const [values, setValues] = usePrefilledValues(prefill ? 'identifier' : null, prefill?.email);
   const step = attempt ? nextStep(attempt) : { kind: 'collect_identifier' as const };
+  // A journey form the person left half done comes back with what they saved: seed it once per form.
+  const owedForm = attempt?.pending_required_actions?.[0];
+  const owedFormId = owedForm?.action === 'journey_form' ? owedForm.id : null;
+  useEffect(() => {
+    if (!owedFormId || !owedForm?.fields) return;
+    const seed: Record<string, string> = {};
+    for (const f of owedForm.fields) if (f.value !== undefined) seed[`field:${f.key}`] = Array.isArray(f.value) ? f.value.join(',') : String(f.value);
+    if (Object.keys(seed).length) setValues((cur) => ({ ...seed, ...cur }));
+  }, [owedFormId]); // eslint-disable-line react-hooks/exhaustive-deps
   // The MFA steps: what the app offers, and the enrolment step's own state.
   const mfaChoices = useMfaChoices();
   const enrolment = useMfaEnrollment(attempt?.id ?? null, step.kind === 'enroll_second_factor');
@@ -563,23 +575,46 @@ export function AttemptFlow({
             owed.intro ? <p key="intro" className={cls('text', 'atlas-text')}>{owed.intro}</p> : null,
             ...asked.map((f) => {
               const name = `field:${f.key}`;
+              // What the person typed, else what they saved earlier (a list is comma-joined, a checkbox 'true' / 'false').
+              const saved = f.value === undefined ? '' : Array.isArray(f.value) ? f.value.join(',') : String(f.value);
+              const val = values[name] ?? saved;
+              const optionLabel = (o: string) => f.option_labels?.[o] ?? o;
               const label = <span className={cls('formFieldLabel', 'atlas-field-label')}>{f.label}{f.required ? ' *' : ''}</span>;
+              const help = f.help ? <small key="help" className={cls('text', 'atlas-text')}>{f.help}</small> : null;
               if (f.type === 'checkbox') {
                 return (
                   <label key={f.key} className={cls('formField', 'atlas-field')}>
-                    <input type="checkbox" name={name} checked={values[name] === 'true'} onChange={(event) => set(f.key, event.target.checked ? 'true' : 'false')} />
+                    <input type="checkbox" name={name} checked={val === 'true'} onChange={(event) => set(f.key, event.target.checked ? 'true' : 'false')} />
                     {label}
+                    {f.link && f.link.url.startsWith('https://') ? <> <a href={f.link.url} target="_blank" rel="noopener noreferrer">{f.link.text}</a></> : null}
+                    {help}
                   </label>
+                );
+              }
+              if (f.type === 'multi_select') {
+                const picked = val ? val.split(',').filter(Boolean) : [];
+                return (
+                  <fieldset key={f.key} className={cls('formField', 'atlas-field')}>
+                    <legend>{label}</legend>
+                    {f.options.map((o) => (
+                      <label key={o}>
+                        <input type="checkbox" name={name} value={o} checked={picked.includes(o)} onChange={(event) => set(f.key, (event.target.checked ? [...picked, o] : picked.filter((x) => x !== o)).join(','))} />
+                        {optionLabel(o)}
+                      </label>
+                    ))}
+                    {help}
+                  </fieldset>
                 );
               }
               if (f.type === 'select') {
                 return (
                   <label key={f.key} className={cls('formField', 'atlas-field')}>
                     {label}
-                    <select className={inputClass} name={name} value={values[name] ?? ''} onChange={(event) => set(f.key, event.target.value)}>
+                    <select className={inputClass} name={name} value={val} onChange={(event) => set(f.key, event.target.value)}>
                       <option value="" />
-                      {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                      {f.options.map((o) => <option key={o} value={o}>{optionLabel(o)}</option>)}
                     </select>
+                    {help}
                   </label>
                 );
               }
@@ -587,7 +622,30 @@ export function AttemptFlow({
                 return (
                   <label key={f.key} className={cls('formField', 'atlas-field')}>
                     {label}
-                    <textarea className={inputClass} name={name} rows={3} placeholder={f.placeholder ?? undefined} value={values[name] ?? ''} onChange={(event) => set(f.key, event.target.value)} />
+                    <textarea className={inputClass} name={name} rows={3} placeholder={f.placeholder ?? undefined} value={val} onChange={(event) => set(f.key, event.target.value)} />
+                    {help}
+                  </label>
+                );
+              }
+              if (f.type === 'file' && onUploadFile) {
+                return (
+                  <label key={f.key} className={cls('formField', 'atlas-field')}>
+                    {label}
+                    <input
+                      className={inputClass}
+                      type="file"
+                      name={name}
+                      accept={f.accept?.join(',') || 'image/png,image/jpeg,image/gif,image/webp,application/pdf'}
+                      disabled={busy}
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        const id = await onUploadFile(f.key, file);
+                        if (id) set(f.key, id);
+                      }}
+                    />
+                    {val ? <span className={cls('text', 'atlas-text')}>{'\u2713'}</span> : null}
+                    {help}
                   </label>
                 );
               }
@@ -596,12 +654,14 @@ export function AttemptFlow({
                   {label}
                   <input
                     className={inputClass}
-                    type={f.type === 'email' || f.type === 'number' || f.type === 'date' ? f.type : 'text'}
+                    type={f.type === 'phone' ? 'tel' : f.type === 'file' ? 'url' : f.type === 'email' || f.type === 'number' || f.type === 'date' ? f.type : 'text'}
                     name={name}
                     placeholder={f.placeholder ?? undefined}
-                    value={values[name] ?? ''}
+                    autoComplete={f.type === 'phone' ? 'tel' : undefined}
+                    value={val}
                     onChange={(event) => set(f.key, event.target.value)}
                   />
+                  {help}
                 </label>
               );
             }),

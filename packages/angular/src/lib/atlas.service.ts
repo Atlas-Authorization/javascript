@@ -47,6 +47,7 @@ import {
   configureReferralCapture,
   withDevBrowser,
   reauthenticate,
+  type ReauthOptions,
 } from '@atlasauth/js';
 import { evaluate, type ProtectCondition } from '@atlasauth/authz';
 import { ATLAS_OPTIONS } from './atlas.config';
@@ -349,6 +350,11 @@ export class AtlasService implements OnDestroy {
       { strategy: 'password', password },
       { api: this.baseUrl, publishableKey: this.publishableKey, fetchImpl: this.doFetch, locale: this.requestLocale },
     );
+  }
+
+  /** The options a step-up ("confirm it's you") needs: this instance's Frontend API, key and language. */
+  createReauthOptions(): ReauthOptions {
+    return { api: this.baseUrl, publishableKey: this.publishableKey, fetchImpl: this.doFetch, locale: this.requestLocale };
   }
 
   /** A fresh {@link FapiClient} for driving a sign-in/sign-up flow. */

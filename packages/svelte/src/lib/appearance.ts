@@ -63,7 +63,11 @@ export type ElementKey =
   | 'badge'
   | 'alert'
   | 'text'
-  | 'link';
+  | 'link'
+  | 'pricingTable'
+  | 'planName'
+  | 'price'
+  | 'priceInterval';
 
 export interface Appearance extends DesignAppearance {
   /** A prebuilt token theme to start from (pre-design-system themes). */

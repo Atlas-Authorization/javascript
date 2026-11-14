@@ -2,6 +2,11 @@
 
 
 
+## 0.24.0
+
+- API keys, billing (pricing table, invoices, embedded checkout with discount codes, usage reader) and device authorization components, matching React.
+- `<Protect>` now enforces the `plan`, `feature` and app-role props it used to ignore (behaviour change) and narrows to your generated permission, role, plan and feature keys.
+
 ## 0.23.1
 
 - Permission checks are typed from a generated `atlas-types.d.ts` when present (via `@atlasauth/authz`).

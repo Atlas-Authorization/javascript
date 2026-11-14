@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/langchain",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Authorization-filtered LangChain retrieval backed by Atlas FGA: a retriever that only returns documents the asking user may see.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@atlasauth/backend": "workspace:^",
     "@atlasauth/rag": "workspace:^"
   },
   "keywords": ["atlas", "atlasauth", "langchain", "rag", "authorization", "fga"],

@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/actions",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Typed SDK, local test harness and template gallery for Atlas Actions — tenant code run at fixed points in the auth pipeline (the Atlas peer of @auth0/actions).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

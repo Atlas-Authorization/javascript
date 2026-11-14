@@ -61,6 +61,23 @@ export { default as SignUp } from './components/SignUp.svelte';
 export { default as UserButton } from './components/UserButton.svelte';
 export { default as UserProfile } from './components/UserProfile.svelte';
 export { default as ManageCiba } from './components/ManageCiba.svelte';
+// API keys, billing and device authorization.
+export { default as ApiKeys } from './components/ApiKeys.svelte';
+export { default as DeviceAuthorization } from './components/DeviceAuthorization.svelte';
+export { default as PricingTable } from './components/PricingTable.svelte';
+export { default as Invoices } from './components/Invoices.svelte';
+export { default as EmbeddedCheckout } from './components/EmbeddedCheckout.svelte';
+export { default as Checkout } from './components/Checkout.svelte';
+export { controllerStore, createApiKeysController, createBillingController, createCheckoutController, createDeviceAuthorizationController, createUsage } from './managed';
+export {
+  API_KEYS_LABELS,
+  BILLING_LABELS,
+  CHECKOUT_LABELS,
+  DEVICE_AUTH_LABELS,
+  type ApiKeysState,
+  type BillingState,
+  type DeviceAuthorizationState,
+} from '@atlasauth/js';
 export { default as OrganizationSwitcher } from './components/OrganizationSwitcher.svelte';
 export { default as OrganizationProfile } from './components/OrganizationProfile.svelte';
 export { default as OrganizationAuditLog } from './components/OrganizationAuditLog.svelte';

@@ -3,6 +3,8 @@ import type { Engine, RouteDef } from '../engine';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
 import { randomToken } from '../store';
+import { discoveryDocument } from './oauth';
+import { revokeSession } from './round2';
 import { listReply, need } from './util';
 
 const memberOrgRole = (e: Engine, userId: string, orgId: string | null | undefined): Obj => {
@@ -25,7 +27,16 @@ const presentSession = (s: Obj): Obj => ({
   last_active_at: s.last_active_at,
 });
 
-const refreshTokens = new WeakMap<Engine, Map<string, { sessionId: string; used: boolean }>>();
+/** A replay of a just-rotated token within this window is a client that lost the reply, not theft (the real service uses 30 s). */
+export const REFRESH_GRACE_MS = 30_000;
+
+interface RefreshRec {
+  sessionId: string;
+  /** Set once the token is spent: when, and which token replaced it. */
+  rotatedAt?: number;
+  successor?: string;
+}
+const refreshTokens = new WeakMap<Engine, Map<string, RefreshRec>>();
 const refreshMap = (e: Engine) => {
   let m = refreshTokens.get(e);
   if (!m) refreshTokens.set(e, (m = new Map()));
@@ -33,30 +44,39 @@ const refreshMap = (e: Engine) => {
 };
 export const resetSessions = (e: Engine): void => void refreshTokens.delete(e);
 
-export function issueRefreshToken(e: Engine, sessionId: string): string {
-  const t = `rt_${randomToken(32)}`;
-  refreshMap(e).set(t, { sessionId, used: false });
+export function issueRefreshToken(e: Engine, sessionId: string, token?: string): string {
+  const t = token ?? `rt_${randomToken(32)}`;
+  refreshMap(e).set(t, { sessionId });
   return t;
 }
 
 /**
- * Rotate a refresh token: the old one becomes single-use spent, a new one is issued. Presenting a spent
- * token again revokes the session (reuse detection) and answers REFRESH_REUSE_DETECTED.
+ * Rotate a refresh token, like the real service: the old one is spent and a new one issued. A replay of the
+ * spent token inside the grace window is idempotent (a fresh JWT and the token already issued, no second
+ * rotation); outside it the replay is theft: the session is revoked and REFRESH_REUSE_DETECTED answers.
  */
-export async function refreshSession(e: Engine, token: string): Promise<{ jwt: string; refresh_token: string; expires_in: number }> {
+export async function refreshSession(e: Engine, token: string): Promise<{ jwt: string; refresh_token: string; expires_in: number; session_id: string }> {
   const rec = refreshMap(e).get(token);
-  if (!rec) throw new EmulatorError('UNAUTHENTICATED', 'Unknown refresh token.');
+  if (!rec) throw new EmulatorError('UNAUTHENTICATED', 'That session is no longer valid.');
   const s = e.db.sessions.get(rec.sessionId);
-  if (!s || s.status !== 'active') throw new EmulatorError('SESSION_REVOKED', 'The session is no longer active.');
-  if (rec.used) {
-    s.status = 'revoked';
-    throw new EmulatorError('REFRESH_REUSE_DETECTED', 'This refresh token was already used; the session was revoked.');
+  if (!s || s.status === 'revoked') throw new EmulatorError('SESSION_REVOKED', 'The session is no longer active.');
+  const now = e.clock.now();
+  if (s.expires_at <= now) throw new EmulatorError('SESSION_EXPIRED', 'The session has expired.');
+  const mint = async () => (await e.tokens.mintSession({ userId: s.user_id, sessionId: s.id, organizationId: s.organization_id, claims: memberOrgRole(e, s.user_id, s.organization_id) }));
+  if (rec.rotatedAt !== undefined) {
+    if (now - rec.rotatedAt <= REFRESH_GRACE_MS && rec.successor) {
+      const minted = await mint();
+      return { jwt: minted.jwt, refresh_token: rec.successor, expires_in: minted.expiresIn, session_id: s.id };
+    }
+    revokeSession(e, s, 'refresh_token_reuse');
+    throw new EmulatorError('REFRESH_REUSE_DETECTED', 'This session was ended for security reasons. Please sign in again.');
   }
-  if (s.expires_at <= e.clock.now()) throw new EmulatorError('SESSION_EXPIRED', 'The session has expired.');
-  rec.used = true;
-  s.last_active_at = e.clock.now();
-  const minted = await e.tokens.mintSession({ userId: s.user_id, sessionId: s.id, organizationId: s.organization_id, claims: memberOrgRole(e, s.user_id, s.organization_id) });
-  return { jwt: minted.jwt, refresh_token: issueRefreshToken(e, s.id), expires_in: minted.expiresIn };
+  s.last_active_at = now;
+  const minted = await mint();
+  const next = issueRefreshToken(e, s.id);
+  rec.rotatedAt = now;
+  rec.successor = next;
+  return { jwt: minted.jwt, refresh_token: next, expires_in: minted.expiresIn, session_id: s.id };
 }
 
 export function sessionsHandlers(): RouteDef[] {
@@ -68,13 +88,27 @@ export function sessionsHandlers(): RouteDef[] {
       public: true,
       handler: async (c) => ({ body: await c.engine.tokens.jwks() }),
     },
+    { method: 'GET', pattern: '/.well-known/openid-configuration', public: true, handler: (c) => ({ body: discoveryDocument(c.engine) }) },
     {
-      method: 'GET',
-      pattern: '/.well-known/openid-configuration',
+      // The real Frontend API route (same path, credential sources and answer): the refresh credential is the
+      // `__atlas_rt` cookie, the `x-refresh-token` header or the `refresh_token` body field; a cookieless caller gets
+      // the rotated token back in the body. The session id in the path must be the token's session.
+      method: 'POST',
+      pattern: '/v1/client/sessions/:id/tokens',
       public: true,
-      handler: (c) => {
-        const iss = c.engine.issuer;
-        return { body: { issuer: iss, jwks_uri: `${iss}/.well-known/jwks.json`, authorization_endpoint: `${iss}/oauth2/authorize`, token_endpoint: `${iss}/oauth2/token`, response_types_supported: ['code'], subject_types_supported: ['public'], id_token_signing_alg_values_supported: ['RS256', 'ES256'], atlas_emulator: true } };
+      handler: async (c) => {
+        const cookie = /(?:^|;\s*)__atlas_rt=([^;]+)/.exec(c.request.headers.get('cookie') ?? '')?.[1];
+        const header = c.request.headers.get('x-refresh-token');
+        const bodyToken = typeof c.body.refresh_token === 'string' ? c.body.refresh_token : undefined;
+        const presented = cookie ? decodeURIComponent(cookie) : (header ?? bodyToken);
+        if (!presented) throw new EmulatorError('UNAUTHENTICATED', 'No refresh token was presented.');
+        const out = await refreshSession(c.engine, presented);
+        if (out.session_id !== c.params.id) throw notFound('Session');
+        const attrs = 'Path=/; HttpOnly; SameSite=Lax';
+        return {
+          body: { object: 'session_tokens', jwt: out.jwt, session_id: out.session_id, expires_in: out.expires_in, ...(cookie ? {} : { refresh_token: out.refresh_token }) },
+          headers: { 'set-cookie': [`__session=${out.jwt}; ${attrs}; Max-Age=${out.expires_in}`, `__atlas_rt=${encodeURIComponent(out.refresh_token)}; ${attrs}`] },
+        };
       },
     },
     {
@@ -95,8 +129,9 @@ export function sessionsHandlers(): RouteDef[] {
       },
     },
     { method: 'GET', pattern: '/v1/sessions', handler: (c) => {
-      const uid = c.query.get('user_id');
-      return listReply(c, c.engine.db.sessions.filter((s) => !uid || s.user_id === uid), presentSession);
+      const q = (k: string) => c.query.get(k);
+      const sessions = c.engine.db.sessions.filter((s) => (!q('user_id') || s.user_id === q('user_id')) && (!q('organization_id') || s.organization_id === q('organization_id')) && (q('active') === null || (s.status === 'active') === (q('active') === 'true')) && (!q('created_after') || s.created_at >= Date.parse(q('created_after')!)) && (!q('created_before') || s.created_at <= Date.parse(q('created_before')!)));
+      return listReply(c, sessions, presentSession);
     } },
     {
       method: 'GET',
@@ -113,7 +148,7 @@ export function sessionsHandlers(): RouteDef[] {
       handler: (c) => {
         const s = c.engine.db.sessions.get(c.params.id);
         if (!s) throw notFound('Session');
-        s.status = 'revoked';
+        revokeSession(c.engine, s, 'admin');
         return { body: presentSession(s) };
       },
     },

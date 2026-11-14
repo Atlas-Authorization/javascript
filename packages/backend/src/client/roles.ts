@@ -21,6 +21,8 @@ export interface Permission {
   name: string;
   description: string | null;
   is_system: boolean;
+  /** Permission keys held along with this one, transitively. */
+  implies?: string[];
 }
 
 export interface CreateRoleBody {
@@ -90,11 +92,15 @@ export interface CreatePermissionBody {
   key: string;
   name?: string;
   description?: string;
+  /** Permission keys held along with this one (transitively, at most 50), e.g. `['org:invoices:read']`. */
+  implies?: string[];
 }
 
 export interface UpdatePermissionBody {
   name?: string;
   description?: string | null;
+  /** Replaces the implied permission keys; `[]` clears them. */
+  implies?: string[];
   /** May be supplied but must equal the current key — the key is immutable. */
   key?: string;
 }

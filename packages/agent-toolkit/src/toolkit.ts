@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import type { ToolDefinition, ToolResource } from './types';
 import { selectTools, type ToolSelection } from './registry';
 import { withGrantUsage, type GrantUsageToolOptions } from './grant-usage';
+import { withApproval, type ApprovalToolOptions } from './approval';
 
 /**
  * A tool with its Atlas client already bound in, so callers (and the framework
@@ -42,6 +43,12 @@ export interface CreateAtlasToolkitOptions extends ToolSelection {
    * (and is refunded if it throws). See {@link withGrantUsage}.
    */
   grantUsage?: GrantUsageToolOptions;
+  /**
+   * Hold tools for a human approval before they run: the toolkit creates an approval request, waits (or hands back a
+   * resume token), spends the approval once and only then runs the tool. Without `requireFor`, every tool that is not a
+   * pure read needs one. Runs before the `grantUsage` spend. See {@link withApproval}.
+   */
+  approvals?: ApprovalToolOptions;
 }
 
 /** Group-accessor names, keyed off {@link ToolResource}. `api_keys` → `apiKeys`. */
@@ -115,7 +122,14 @@ export function createAtlasToolkit(options: CreateAtlasToolkitOptions): AtlasToo
     schema: def.schema,
     execute: (args: unknown) => def.execute(args, ctx),
   }));
-  const bound = options.grantUsage ? withGrantUsage(unmetered, options.grantUsage) : unmetered;
+  const metered = options.grantUsage ? withGrantUsage(unmetered, options.grantUsage) : unmetered;
+  const bound = options.approvals
+    ? withApproval(metered, {
+        // A pure read needs no approval unless the caller says otherwise.
+        requireFor: (name) => !unmetered.find((t) => t.name === name)?.readOnly,
+        ...options.approvals,
+      })
+    : metered;
 
   const tools: Record<string, BoundTool> = {};
   const groups = {

@@ -18,10 +18,18 @@ class Api implements ConfigHttp {
     if (path in this.live) return this.live[path] as T;
     throw new AtlasApiError(404, [{ code: 'NOT_FOUND', message: path }]);
   }
-  async post<T>(path: string, body: unknown): Promise<T> { this.writes.push({ method: 'POST', path, body }); return {} as T; }
-  async put<T>(path: string, body: unknown): Promise<T> { this.writes.push({ method: 'PUT', path, body }); return {} as T; }
-  async patch<T>(path: string, body: unknown): Promise<T> { this.writes.push({ method: 'PATCH', path, body }); return {} as T; }
-  async delete(path: string): Promise<void> { this.writes.push({ method: 'DELETE', path, body: undefined }); }
+  async post<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+    this.writes.push({ method: 'POST', path, body }); return {} as T; }
+  async put<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+    this.writes.push({ method: 'PUT', path, body }); return {} as T; }
+  async patch<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+    this.writes.push({ method: 'PATCH', path, body }); return {} as T; }
+  async delete(path: string): Promise<void> {
+    if (path.includes('dry_run=true')) return;
+    this.writes.push({ method: 'DELETE', path, body: undefined }); }
 }
 
 const ctx = (api: ConfigHttp, env: NodeJS.ProcessEnv = {}): RunContext => ({
@@ -54,6 +62,7 @@ describe('config as code: everything', () => {
       impersonation_policy: { require_reason: true, reason_codes: ['support'], max_duration_seconds: 900, read_only_default: true },
       connection_token_limits: { per_key: 1000, per_app: 200, providers: { ebay: 50 } },
       connection_provider_topics: { topics: { shopify: ['orders/create'], ebay: ['ItemSold'] } },
+      connection_reconnect: { enabled: true, link_ttl_hours: 72, return_url: 'https://app.example.com/connections', providers: ['shopify'] },
       connection_relay_limits: { request_bytes: 524288, response_bytes: 2097152 },
     });
     expect(await run(['apply', p, '--yes'], ctx(api, { EBAY_SECRET: 'es' }))).toBe(0);
@@ -67,6 +76,7 @@ describe('config as code: everything', () => {
     expect(write(api, '/v1/instance/impersonation_policy')!.body).toMatchObject({ require_reason: true, max_duration_seconds: 900 });
     expect(write(api, '/v1/connections/token_limits')!.body).toEqual({ per_key: 1000, per_app: 200, providers: { ebay: 50 } });
     expect(write(api, '/v1/connections/relay_limits')!.body).toEqual({ request_bytes: 524288, response_bytes: 2097152 });
+    expect(write(api, '/v1/connection_reconnect_settings')).toMatchObject({ method: 'PUT', body: { enabled: true, link_ttl_hours: 72, return_url: 'https://app.example.com/connections', providers: ['shopify'] } });
   });
 
   it('is clean when live matches (secrets are not drift) and exits 2 when it differs', async () => {

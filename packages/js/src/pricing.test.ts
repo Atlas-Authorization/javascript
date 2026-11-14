@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { formatMoney, planPriceView, type PublicBillingPlan } from './pricing';
+import { describeDiscount, formatMoney, planPriceView, startPlanCheckout, validatePlanCoupon, type PublicBillingPlan } from './pricing';
+import type { FapiClient } from './fapi';
 
 const plan = (over: Partial<PublicBillingPlan> = {}): PublicBillingPlan => ({
   object: 'billing_plan', id: 'bp_1', name: 'Pro', slug: 'pro', interval: 'month', amount: '1500', currency: 'usd',
@@ -39,5 +40,35 @@ describe('planPriceView', () => {
   });
   it('marks a free plan', () => {
     expect(planPriceView(plan({ amount: null }), { locale: 'en-US' })).toMatchObject({ free: true, price: '$0.00' });
+  });
+});
+
+describe('discount codes at checkout', () => {
+  const fake = (response: { ok: boolean; data?: unknown; errors?: Array<{ message: string }> }) => {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    const client = { post: async (path: string, body: unknown) => (calls.push({ path, body }), { errors: [], ...response }) } as unknown as FapiClient;
+    return { client, calls };
+  };
+
+  it('describes a discount in one line', () => {
+    expect(describeDiscount({ percent_off: 20, amount_off: null, currency: null, duration: 'once', duration_months: null })).toBe('20% off on the first payment');
+    expect(describeDiscount({ percent_off: 20, amount_off: null, currency: null, duration: 'repeating', duration_months: 3 })).toBe('20% off for 3 months');
+    expect(describeDiscount({ percent_off: null, amount_off: 500, currency: 'usd', duration: 'forever', duration_months: null }, 'en-US')).toBe('$5.00 off, forever');
+  });
+
+  it('validates a code for a plan and reports why it failed', async () => {
+    const ok = fake({ ok: true, data: { valid: true, reason: null, discount: { percent_off: 10, amount_off: null, currency: null, duration: 'once', duration_months: null } } });
+    expect(await validatePlanCoupon(ok.client, { planId: 'bp_1', code: ' SAVE10 ', orgId: 'org_1' })).toMatchObject({ valid: true });
+    expect(ok.calls[0]).toEqual({ path: '/v1/client/billing/coupons/validate', body: { code: 'SAVE10', plan_id: 'bp_1', org_id: 'org_1' } });
+    const bad = fake({ ok: true, data: { valid: false, reason: 'expired' } });
+    expect(await validatePlanCoupon(bad.client, { planId: 'bp_1', code: 'OLD' })).toEqual({ valid: false, reason: 'expired' });
+    const down = fake({ ok: false });
+    expect(await validatePlanCoupon(down.client, { planId: 'bp_1', code: 'X' })).toEqual({ valid: false, reason: 'invalid' });
+  });
+
+  it('sends the code with the checkout', async () => {
+    const f = fake({ ok: true, data: { url: 'https://pay.example/c' } });
+    await startPlanCheckout(f.client, { planId: 'bp_1', successUrl: 'https://app.example/done', couponCode: 'SAVE10' });
+    expect(f.calls[0]!.body).toMatchObject({ plan_id: 'bp_1', coupon_code: 'SAVE10' });
   });
 });

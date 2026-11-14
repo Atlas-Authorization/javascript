@@ -67,4 +67,4 @@ export const atlasPlugin = {
 };
 
 // Rate limiting and grant usage (see ./limits).
-export { atlasLimitsPlugin, type AtlasLimitsPluginOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter } from './limits';
+export { atlasLimitsPlugin, atlasRequireFeature, type FeatureCheck, type FeatureOptions, type AtlasLimitsPluginOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter } from './limits';

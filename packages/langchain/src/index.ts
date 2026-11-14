@@ -42,3 +42,52 @@ export class AtlasAuthorizedRetriever<Doc> {
 export function authorizedSimilaritySearch<Doc>(vectorStore: LangChainVectorStore<Doc>, query: string, access: AccessQuery, opts: Omit<AtlasRetrieverOptions<Doc>, 'vectorStore' | 'access'> & { k?: number } = {}): Promise<Doc[]> {
   return new AtlasAuthorizedRetriever<Doc>({ ...opts, vectorStore, access }).invoke(query);
 }
+
+// ── Human approval before a tool runs ───────────────────────────────────────────
+
+import { guardToolCall, type ApprovalToolOptions } from '@atlasauth/backend';
+
+export {
+  ApprovalDeniedError,
+  ApprovalPendingError,
+  ToolUsageDeniedError,
+  createApprovalGate,
+  type ApprovalGate,
+  type ApprovalToolOptions,
+} from '@atlasauth/backend';
+
+/** The slice of a LangChain tool used here: `name`, and `invoke` / `call` taking the tool input. */
+export interface LangChainToolLike {
+  name: string;
+  invoke?(input: unknown, config?: unknown): Promise<unknown>;
+  call?(input: unknown, config?: unknown): Promise<unknown>;
+}
+
+const isToolCall = (v: unknown): v is { type: 'tool_call'; args: unknown } =>
+  typeof v === 'object' && v !== null && (v as { type?: unknown }).type === 'tool_call' && 'args' in v;
+
+/**
+ * Hold LangChain tools for a human approval (and, with `usage`, a grant counter spend) before they run. The same option
+ * shape as `withApproval` in `@atlasauth/agent-toolkit`. Returns proxies; the tools you pass in are untouched, and every
+ * other property (schema, description, `bindTools` metadata) is the original tool's.
+ *
+ *   const tools = withApproval([transferFunds], { gate, user: 'user_123', requireFor: ['transfer_funds'] });
+ */
+export function withApproval<T extends LangChainToolLike>(tools: readonly T[], options: ApprovalToolOptions): T[] {
+  return tools.map(
+    (tool) =>
+      new Proxy(tool, {
+        get(target, prop) {
+          const value = Reflect.get(target, prop, target) as unknown;
+          if (typeof value !== 'function') return value;
+          if (prop !== 'invoke' && prop !== 'call') return (value as (...a: unknown[]) => unknown).bind(target);
+          return (input: unknown, ...rest: unknown[]) => {
+            const call = isToolCall(input);
+            return guardToolCall(options, target.name, call ? input.args : input, (args) =>
+              (value as (...a: unknown[]) => Promise<unknown>).call(target, call ? { ...(input as object), args } : args, ...rest),
+            );
+          };
+        },
+      }),
+  );
+}

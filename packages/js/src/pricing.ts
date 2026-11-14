@@ -36,6 +36,12 @@ export interface PublicBillingPlan {
   annual_amount?: number | string | null;
   promotion?: PlanPromotionView | null;
   provider?: string;
+  /** Copy under the plan name. */
+  description?: string | null;
+  /** A badge on the plan card, e.g. "Most popular". */
+  badge?: string | null;
+  /** The order the plans are listed in (ascending); the list already comes sorted. */
+  sort_order?: number;
 }
 
 /** What to render for one plan at one billing interval. */
@@ -114,15 +120,53 @@ export async function listPublicPlans(client: FapiClient, opts: { audience?: 'us
  */
 export async function startPlanCheckout(
   client: FapiClient,
-  input: { planId: string; interval?: 'month' | 'year'; orgId?: string; successUrl: string; cancelUrl?: string },
+  input: { planId: string; interval?: 'month' | 'year'; orgId?: string; successUrl: string; cancelUrl?: string; couponCode?: string },
 ): Promise<{ url: string | null; error?: string }> {
   const res = await client.post<{ url?: string }>('/v1/client/billing/checkout', {
     plan_id: input.planId,
     ...(input.orgId ? { org_id: input.orgId } : {}),
     ...(input.interval ? { interval: input.interval } : {}),
+    ...(input.couponCode ? { coupon_code: input.couponCode } : {}),
     success_url: input.successUrl,
     cancel_url: input.cancelUrl ?? input.successUrl,
   });
   if (res.ok && res.data?.url) return { url: res.data.url };
   return { url: null, error: res.errors[0]?.message ?? 'Could not start checkout.' };
+}
+
+/** What a discount code does, as the checkout form shows it. */
+export interface CouponDiscountView {
+  percent_off: number | null;
+  /** Minor units. */
+  amount_off: number | null;
+  currency: string | null;
+  duration: 'once' | 'repeating' | 'forever';
+  duration_months: number | null;
+}
+
+export type CouponCheck =
+  | { valid: true; discount: CouponDiscountView }
+  /** `reason`: `invalid` (unknown or inactive), `expired`, `exhausted`, `plan_not_eligible`, `first_time_only` or `already_used`. */
+  | { valid: false; reason: string };
+
+/** Would this code work for this plan and subject? For a checkout form's "apply" button. Needs a signed-in session. */
+export async function validatePlanCoupon(
+  client: FapiClient,
+  input: { planId: string; code: string; orgId?: string },
+): Promise<CouponCheck> {
+  const res = await client.post<{ valid: boolean; reason: string | null; discount?: CouponDiscountView }>('/v1/client/billing/coupons/validate', {
+    code: input.code.trim(),
+    plan_id: input.planId,
+    ...(input.orgId ? { org_id: input.orgId } : {}),
+  });
+  if (res.ok && res.data?.valid && res.data.discount) return { valid: true, discount: res.data.discount };
+  return { valid: false, reason: res.ok ? (res.data?.reason ?? 'invalid') : 'invalid' };
+}
+
+/** "20% off", "5.00 USD off", with its duration ("for 3 months", "forever"): one line for the form. */
+export function describeDiscount(d: CouponDiscountView, locale?: string): string {
+  const what = d.percent_off !== null ? `${d.percent_off}% off` : `${formatMoney(d.amount_off ?? 0, d.currency ?? 'usd', locale)} off`;
+  if (d.duration === 'forever') return `${what}, forever`;
+  if (d.duration === 'repeating' && d.duration_months) return `${what} for ${d.duration_months} month${d.duration_months === 1 ? '' : 's'}`;
+  return `${what} on the first payment`;
 }

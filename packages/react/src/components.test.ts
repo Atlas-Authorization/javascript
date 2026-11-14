@@ -104,6 +104,8 @@ describe('§commerce billing surface (Clerk commerce parity)', () => {
       'PricingTable',
       'Invoices',
       'EmbeddedCheckout',
+      'Checkout',
+      'useUsage',
     ] as const) {
       expect(typeof (sdk as Record<string, unknown>)[name]).toBe('function');
     }

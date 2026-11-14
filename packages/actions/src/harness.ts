@@ -36,6 +36,7 @@ export interface CapturedApiCall {
     | 'exchange.setUserById'
     | 'exchange.setUserByEmail'
     | 'exchange.setUserByExternalId'
+    | 'message.rewrite'
     | 'challenge.set'
     | 'challenge.accept'
     | 'accessToken.suppressClaim'
@@ -74,6 +75,8 @@ export interface ActionRunResult {
   lockReason: string | null;
   /** `api.access.pause` reason (`pre_user_deletion`), or null. */
   pauseReason: string | null;
+  /** `api.message.rewrite` (pre_message_send), or null. */
+  messageRewrite: { subject?: string; text?: string; variables?: Record<string, string> } | null;
   /** `api.challenge.set` (custom_challenge_create). */
   challenge: { prompt: string; hint: string | null; state: unknown } | null;
   /** `api.challenge.accept` (custom_challenge_verify): null until called. */
@@ -136,6 +139,7 @@ function emptyResult(): ActionRunResult {
     sessionData: {},
     lockReason: null,
     pauseReason: null,
+    messageRewrite: null,
     challenge: null,
     challengeAccept: null,
     exchangeSubject: null,
@@ -252,6 +256,18 @@ export function createMockApi(result: ActionRunResult = emptyResult()): {
           ...(o?.emailVerified === true ? { emailVerified: true } : {}),
         };
         result.calls.push({ method: 'exchange.setUserByExternalId', args: [externalId, o] });
+      },
+    },
+    message: {
+      rewrite(change: { subject?: string; text?: string; variables?: Record<string, string> }) {
+        const variables: Record<string, string> = {};
+        for (const [k, v] of Object.entries(change?.variables ?? {}).slice(0, 50)) variables[key(k)] = String(v).slice(0, 2000);
+        result.messageRewrite = {
+          ...(change?.subject != null ? { subject: String(change.subject).slice(0, 500) } : {}),
+          ...(change?.text != null ? { text: String(change.text).slice(0, 20_000) } : {}),
+          ...(Object.keys(variables).length ? { variables } : {}),
+        };
+        result.calls.push({ method: 'message.rewrite', args: [change] });
       },
     },
     challenge: {

@@ -124,6 +124,10 @@ export interface OAuthTokenLifetimes {
   refresh_token_idle_ttl_seconds?: number | null;
   authorization_code_ttl_seconds?: number | null;
   device_code_ttl_seconds?: number | null;
+  /** The oldest sign-in that may authorize this app without signing in again (300 to 7776000). */
+  session_absolute_ttl_seconds?: number | null;
+  /** How long the user's session may sit idle before this app asks them to sign in again. */
+  session_idle_ttl_seconds?: number | null;
 }
 
 /** Access-token format and lifetimes, accepted on create and update. */
@@ -291,6 +295,8 @@ export interface ImportOAuthClientEntry {
   allowed_scopes?: string[];
   grant_types?: string[];
   token_endpoint_auth_method?: string;
+  /** First-party clients only: a refresh also slides the Atlas session. Absent: false on a new client, unchanged on a re-import. */
+  refresh_touches_session?: boolean;
 }
 
 /** An imported client as returned by `import`. */

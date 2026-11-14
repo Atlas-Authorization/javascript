@@ -511,5 +511,13 @@ export const ERROR_CATALOG: Record<string, { status: number; title: string }> = 
   "RESYNC_REQUIRED": {
     "status": 410,
     "title": "Resync required"
+  },
+  "LEGAL_HOLD": {
+    "status": 409,
+    "title": "User is on legal hold"
+  },
+  "OWNERSHIP_TRANSFER_REQUIRED": {
+    "status": 409,
+    "title": "Ownership transfer required"
   }
 };

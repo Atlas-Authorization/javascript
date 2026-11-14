@@ -15,7 +15,9 @@ export type SsoPortalIntent =
   | 'audit_log'
   | 'certificate_renewal'
   | 'api_keys'
-  | 'webhooks';
+  | 'webhooks'
+  /** Read-only live status: sign-in and SCIM health, request log, sign-in history, sync runs. */
+  | 'health';
 
 export interface SsoOnboardingProfile {
   object: 'sso_onboarding_profile';

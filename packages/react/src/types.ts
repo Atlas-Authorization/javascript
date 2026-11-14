@@ -79,6 +79,12 @@ export interface AtlasBillingPlan {
   annual_amount?: string | null;
   /** A display-only promotion (label, percent_off | amount_off, ends_at, code). */
   promotion?: { label: string; percent_off?: number; amount_off?: number; ends_at?: number; code?: string } | null;
+  /** Copy under the plan name. */
+  description?: string | null;
+  /** A badge on the plan card, e.g. "Most popular". */
+  badge?: string | null;
+  /** The order the plans are listed in (ascending). */
+  sort_order?: number;
 }
 
 /** §commerce a stored Stripe invoice for the subject (billing history). */

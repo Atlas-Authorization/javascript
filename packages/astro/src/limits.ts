@@ -3,7 +3,7 @@
  * `@atlasauth/backend` (`rateLimitRequest`, `requireGrantUsage`) and accept either the limiter /
  * usage options or an already-built check. A limit store or usage call that throws is an error, never an allow.
  */
-import { rateLimitRequest, requireGrantUsage } from '@atlasauth/backend';
+import { rateLimitRequest, requireFeature, requireGrantUsage } from '@atlasauth/backend';
 import { getAuth, type AtlasAPIContext, type AtlasMiddlewareHandler } from './server';
 
 /** Options for the usage gate (`requireGrantUsage` in `@atlasauth/backend`). */
@@ -80,6 +80,17 @@ export function grantUsageGate(options: GrantUsageOptions | GrantUsageCheck): Li
   return (input) => check(neutral(input));
 }
 
+/** Options for the feature gate (`requireFeature` in `@atlasauth/backend`). */
+export type FeatureOptions = Parameters<typeof requireFeature>[0];
+/** The framework-neutral feature check `requireFeature(opts)` returns. */
+export type FeatureCheck = ReturnType<typeof requireFeature>;
+
+/** Turn feature options (or an already-built `requireFeature` check) into a gate. */
+export function featureGate(options: FeatureOptions | FeatureCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireFeature(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
 /** The JSON body of a denial. */
 export function denialBody(v: Extract<LimitVerdict, { allowed: false }>): unknown {
   return v.body ?? { errors: [{ code: v.status === 429 ? 'RATE_LIMITED' : 'FORBIDDEN' }] };
@@ -153,6 +164,11 @@ export function atlasRateLimit(limiter: RateLimiter | RateLimitCheck, options: A
 /** Grant usage middleware: 429 when the counter is spent, 403 when the grant is missing or expired. */
 export function atlasGrantUsage(usage: GrantUsageOptions | GrantUsageCheck, options: AtlasLimitOptions = {}): AtlasMiddlewareHandler {
   return middleware(grantUsageGate(usage), options);
+}
+
+/** Allow the request only when the subject's plan includes a feature: 401 without a subject, 403 `feature_not_entitled` otherwise. Reads through an entitlement cache (`createEntitlementCache`). */
+export function atlasRequireFeature(feature: FeatureOptions | FeatureCheck, options: AtlasLimitOptions = {}): AtlasMiddlewareHandler {
+  return middleware(featureGate(feature), options);
 }
 
 function mergeHeaders(base: Headers, extra: LimitHeaders): Headers {

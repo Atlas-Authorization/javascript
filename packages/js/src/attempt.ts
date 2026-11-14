@@ -66,7 +66,7 @@ export interface PendingRequiredAction {
   reason: string | null;
   /** `complete_profile` (progressive profiling) and `journey_form`: the fields asked for. */
   fields?: ProfileCompletionField[];
-  /** `journey_form` (a server-driven step of the sign-in journey): its heading and introduction. */
+  /** `journey_form` (a server-driven step of a sign-in or sign-up journey): its heading and introduction, in the request language. */
   title?: string | null;
   intro?: string | null;
 }
@@ -75,10 +75,22 @@ export interface PendingRequiredAction {
 export interface ProfileCompletionField {
   key: string;
   label: string;
+  /** Journey forms: `text`, `email`, `number`, `date`, `select`, `multi_select`, `phone`, `checkbox`, `textarea` or `file`. */
   type: string;
   required: boolean;
   placeholder: string | null;
   options: string[];
+  /** A select's options as shown (by option value), in the page language. */
+  option_labels?: Record<string, string>;
+  /** Helper text under the field. */
+  help?: string;
+  /** checkbox: a link inside its label (https). */
+  link?: { text: string; url: string };
+  /** file: the types the picker offers and the size limit. The value you submit is a reference (an upload id or an https URL). */
+  accept?: string[];
+  max_bytes?: number;
+  /** What the person saved earlier for this field (a list for a multi-select, a boolean for a checkbox). */
+  value?: string | number | boolean | string[];
 }
 
 /** One policy an attempt waits on (`pending_policies`). */

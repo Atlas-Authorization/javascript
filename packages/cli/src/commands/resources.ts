@@ -1,4 +1,4 @@
-import { str, type ParsedArgs } from '../args';
+import { str, type ParsedArgs, type Values } from '../args';
 import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { printJson, renderTable } from '../output';
@@ -19,6 +19,12 @@ export interface Op {
   f?: string;
   /** Turn the answer into the single line to print (and may refuse it). */
   out?: (res: Record<string, unknown>) => string;
+  /** Flags forwarded as query parameters (kebab-case flag -> snake_case parameter). */
+  query?: readonly string[];
+  /** Body fields this op always sends (the verb is the decision, e.g. approve). */
+  fixed?: Record<string, unknown>;
+  /** Flags that fill body fields (kebab-case flag -> snake_case field), so the body needs no JSON. */
+  bodyFlags?: readonly string[];
 }
 export type Ops = Record<string, Op>;
 export type Handler = (ctx: RunContext, args: ParsedArgs) => Promise<number>;
@@ -56,12 +62,28 @@ export function resourceCommand(name: string, ops: Ops): Handler {
     if (flags.includes('q')) {
       const q = new URLSearchParams();
       for (const k of ['limit', 'starting-after', 'status'] as const) {
-        const v = str(args.values, k);
+        const v = str(args.values, k as keyof Values);
         if (v) q.set(k.replace('-', '_'), v);
       }
       if ([...q].length) path += `?${q}`;
     }
-    const payload = flags.includes('b') ? body(ctx, args) : undefined;
+    if (op.query) {
+      const q = new URLSearchParams(path.includes('?') ? path.slice(path.indexOf('?') + 1) : '');
+      for (const k of op.query) {
+        const v = str(args.values, k as keyof Values);
+        if (v) q.set(k.replace(/-/g, '_'), v);
+      }
+      if (op.query.includes('live') && args.values.live === true) q.set('live', 'true');
+      path = path.split('?')[0]! + ([...q].length ? `?${q}` : '');
+    }
+    let payload = flags.includes('b') ? body(ctx, args) : undefined;
+    if (payload && op.bodyFlags) {
+      for (const k of op.bodyFlags) {
+        const v = str(args.values, k as keyof Values);
+        if (v !== undefined && v !== '') payload[k.replace(/-/g, '_')] = v;
+      }
+    }
+    if (op.fixed) payload = { ...(payload ?? {}), ...op.fixed };
     const auth = resolveAuth(ctx, args.values);
     const http = httpFor(ctx, { secretKey: auth.secretKey, apiUrl: envApiUrl(ctx.env) ?? auth.apiUrl });
     let res: unknown;
@@ -96,6 +118,13 @@ const launch = (r: Record<string, unknown>): string => {
 export const WORKFLOWS: Ops = {
   list: { m: 'GET', p: '/v1/workflows', f: 'q' },
   get: { m: 'GET', p: '/v1/workflows/{}' },
+  runs: { m: 'GET', p: '/v1/workflows/{}/runs', f: 'q' },
+  // A dry run executes nothing: every step reports what it would do.
+  'dry-run': { m: 'POST', p: '/v1/workflows/{}/dry_run', f: 'b', bodyFlags: ['user-id', 'organization-id'] },
+  cancel: { m: 'POST', p: '/v1/workflows/{}/runs/{}/cancel', f: 'y' },
+  retry: { m: 'POST', p: '/v1/workflows/{}/runs/{}/retry', f: 'by', bodyFlags: ['from-step'] },
+  approve: { m: 'POST', p: '/v1/workflow_approvals/{}/decide', f: 'by', fixed: { decision: 'approve' }, bodyFlags: ['comment'] },
+  deny: { m: 'POST', p: '/v1/workflow_approvals/{}/decide', f: 'by', fixed: { decision: 'deny' }, bodyFlags: ['comment'] },
   triggers: { m: 'GET', p: '/v1/workflow_triggers' },
   templates: { m: 'GET', p: '/v1/workflow_templates' },
   'from-template': { m: 'POST', p: '/v1/workflows/from_template', f: 'b' },
@@ -106,6 +135,26 @@ export const WORKFLOWS: Ops = {
   approvals: { m: 'GET', p: '/v1/workflow_approvals', f: 'q' },
   decide: { m: 'POST', p: '/v1/workflow_approvals/{}/decide', f: 'by' },
 };
+/** Application events: the catalog of types, publishing (organization_id "*" broadcasts) and the log. */
+export const APP_EVENTS: Ops = {
+  types: { m: 'GET', p: '/v1/app_event_types' },
+  'type-get': { m: 'GET', p: '/v1/app_event_types/{}' },
+  'type-create': { m: 'POST', p: '/v1/app_event_types', f: 'b' },
+  'type-update': { m: 'PATCH', p: '/v1/app_event_types/{}', f: 'b' },
+  'type-delete': { m: 'DELETE', p: '/v1/app_event_types/{}', f: 'y' },
+  publish: { m: 'POST', p: '/v1/app_events', f: 'b', bodyFlags: ['organization-id', 'type'] },
+  list: { m: 'GET', p: '/v1/app_events', f: 'q', query: ['organization-id', 'type'] },
+  get: { m: 'GET', p: '/v1/app_events/{}' },
+};
+
+/** Why a request was refused, whether an origin can sign in, and what a browser request would hit. */
+export const DIAGNOSTICS: Ops = {
+  traces: { m: 'GET', p: '/v1/diagnostics/traces', query: ['user-id', 'since', 'until', 'code'] },
+  trace: { m: 'GET', p: '/v1/diagnostics/traces/{}' },
+  'login-readiness': { m: 'GET', p: '/v1/diagnostics/login_readiness', query: ['origin', 'live'] },
+  inspect: { m: 'GET', p: '/v1/diagnostics/request_inspector', query: ['origin', 'method', 'path', 'token'] },
+};
+
 export const CHAT: Ops = {
   list: { m: 'GET', p: '/v1/chat_integrations' },
   get: { m: 'GET', p: '/v1/chat_integrations/{}' },

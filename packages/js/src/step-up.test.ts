@@ -53,3 +53,57 @@ describe('step-up', () => {
     expect(authenticatedWithin({ auth_time: '1800000000' }, 300, now)).toBe(false);
   });
 });
+
+describe('withStepUp(policy, fn)', () => {
+  const refusal = { errors: [{ code: 'STEP_UP_REQUIRED', message: 'x', meta: { action: 'policy', policy: 'wire_transfer', accepted_factors: ['passkey', 'totp'], max_age_seconds: 120 } }] };
+
+  it('runs fn once when nothing is refused', async () => {
+    const { withStepUp } = await import('./step-up');
+    const { client } = clientWith(() => json(200, {}));
+    const fn = vi.fn(async () => 'done');
+    expect(await withStepUp('wire_transfer', fn, { client, prompt: () => null })).toBe('done');
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-authenticates with the policy and re-runs fn after a refused fetch Response', async () => {
+    const { withStepUp } = await import('./step-up');
+    const body = { object: 'client', stepped_up: true, auth_time: 1, amr: ['otp', 'mfa', 'totp'], acr: 'urn:atlas:acr:step_up', jwt: 'j', expires_in_seconds: 60 };
+    const { client, calls } = clientWith(() => json(200, body));
+    let n = 0;
+    const fn = vi.fn(async () => (n++ === 0 ? json(403, refusal) : json(200, { ok: true })));
+    const prompt = vi.fn((p: { acceptedFactors: string[]; policy?: string | null }) => {
+      expect(p.acceptedFactors).toEqual(['passkey', 'totp']);
+      expect(p.policy).toBe('wire_transfer');
+      return { strategy: 'totp' as const, code: '123456' };
+    });
+    const res = await withStepUp('wire_transfer', fn, { client, prompt });
+    expect(res.status).toBe(200);
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ strategy: 'totp', code: '123456', policy: 'wire_transfer' });
+  });
+
+  it('understands a thrown refusal, and rethrows any other error', async () => {
+    const { withStepUp } = await import('./step-up');
+    const body = { object: 'client', stepped_up: true, auth_time: 1, amr: ['pwd'], acr: 'urn:atlas:acr:step_up', jwt: 'j', expires_in_seconds: 60 };
+    const { client } = clientWith(() => json(200, body));
+    let n = 0;
+    const fn = vi.fn(async () => {
+      if (n++ === 0) throw Object.assign(new Error('refused'), { code: 'STEP_UP_REQUIRED', meta: refusal.errors[0]!.meta });
+      return 'after';
+    });
+    expect(await withStepUp('wire_transfer', fn, { client, prompt: () => ({ strategy: 'password', password: 'pw' }) })).toBe('after');
+    await expect(withStepUp('p', async () => { throw new Error('network'); }, { client, prompt: () => null })).rejects.toThrow('network');
+  });
+
+  it('polls a push step-up until the device answers', async () => {
+    const { withStepUp } = await import('./step-up');
+    const final = { object: 'client', stepped_up: true, auth_time: 1, amr: ['mfa', 'push'], acr: 'urn:atlas:acr:step_up', jwt: 'j', expires_in_seconds: 60 };
+    const replies = [json(202, { object: 'step_up_challenge', strategy: 'push', status: 'pending' }), json(200, final)];
+    const { client, calls } = clientWith(() => replies.shift()!);
+    let n = 0;
+    const fn = vi.fn(async () => (n++ === 0 ? json(403, refusal) : json(200, {})));
+    await withStepUp('wire_transfer', fn, { client, prompt: () => ({ strategy: 'push' }), pollIntervalMs: 1 });
+    expect(calls).toHaveLength(2);
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+});

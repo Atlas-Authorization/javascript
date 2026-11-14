@@ -82,6 +82,12 @@ export interface WebhookEndpoint extends ProvisioningFields {
   /** The connected platform that created and holds this endpoint (read-only); null for one you created. */
   managed_by?: string | null;
   signature_versions?: Array<'v1' | 'v2'>;
+  filters?: WebhookEndpointFilters | null;
+  /** The names of the static headers; their values are never returned. */
+  header_names?: string[];
+  /** The OAuth settings without the client secret. */
+  oauth?: (Omit<WebhookEndpointOAuth, 'client_secret'> & { client_secret_set: true }) | null;
+  max_rps?: number | null;
   destination?: WebhookDestination & { credentials_set?: boolean };
   health?: 'healthy' | 'failing' | 'disabled';
   /** Start of the current failure streak (epoch ms), or null when the last delivery succeeded. */
@@ -176,6 +182,42 @@ export interface WebhookEndpointSettings {
   destination_credentials?: WebhookDestinationCredentials;
   /** false = switched off: nothing is delivered until it is enabled (on create too). Default true. */
   active?: boolean;
+  /** Which events the endpoint receives beyond `enabled_events`. null clears it. */
+  filters?: WebhookEndpointFilters | null;
+  /** Static request headers sent on every delivery (HTTPS endpoints, 1 to 10). Values are write-only. null clears them. */
+  headers?: Record<string, string> | null;
+  /** Have Atlas get an OAuth bearer token (client-credentials grant) and send it on every delivery. The secret is write-only. null clears it. */
+  oauth?: WebhookEndpointOAuth | null;
+  /** Most deliveries per second (1 to 1000); null = unlimited. */
+  max_rps?: number | null;
+}
+
+export interface WebhookEndpointFilters {
+  /** Only events that belong to one of these organizations (up to 100). */
+  organization_ids?: string[];
+  /** Up to 10 predicates over the event `data`; all must hold. A path cannot read private metadata. */
+  metadata?: Array<{ path: string; equals?: string | number | boolean | null; in?: Array<string | number | boolean | null>; exists?: boolean }>;
+}
+
+export interface WebhookEndpointOAuth {
+  token_url: string;
+  client_id: string;
+  client_secret: string;
+  scope?: string;
+  audience?: string;
+}
+
+/** One dead letter: a delivery that used every attempt. */
+export type WebhookDeadLetter = WebhookDelivery;
+
+export interface WebhookDeadLetterPage {
+  object: 'list';
+  data: WebhookDeadLetter[];
+  has_more: boolean;
+  next_cursor: string | null;
+  /** Unacknowledged dead letters the endpoint holds. */
+  depth: number;
+  max_attempts: number;
 }
 
 export interface CreateWebhookEndpointBody extends WebhookEndpointSettings, ProvisioningInput {
@@ -238,7 +280,14 @@ export interface EgressIps {
   note: string;
 }
 
-export type DeliveryTargetKind = 'webhook_endpoint' | 'referral_connection' | 'backchannel_receiver' | 'integration';
+export type DeliveryTargetKind =
+  | 'webhook_endpoint'
+  | 'referral_connection'
+  | 'backchannel_receiver'
+  | 'integration'
+  | 'messaging_email'
+  | 'messaging_sms'
+  | 'messaging_push';
 
 export interface DeliveryHealth {
   object: 'delivery_health';
@@ -415,6 +464,18 @@ export function webhooksResource(request: RequestFn) {
         idempotencyKey?: string,
       ): Promise<WebhookBulkResult> {
         return request({ method: 'POST', path: `/v1/webhook_endpoints/${enc(id)}/replay`, body, idempotencyKey });
+      },
+      /** The dead-letter queue: deliveries that used every attempt, newest first, with payloads. Page with `starting_after`. */
+      dlq(id: string, params: { limit?: number; starting_after?: string } = {}): Promise<WebhookDeadLetterPage> {
+        return request({ method: 'GET', path: `/v1/webhook_endpoints/${enc(id)}/dlq`, query: params });
+      },
+      /** Acknowledge handled dead letters (up to 100): they leave the queue. */
+      dlqAck(id: string, deliveryIds: string[]): Promise<{ object: 'webhook_dlq_ack'; endpoint_id: string; requested: number; acknowledged: number }> {
+        return request({ method: 'POST', path: `/v1/webhook_endpoints/${enc(id)}/dlq/ack`, body: { delivery_ids: deliveryIds } });
+      },
+      /** Send dead letters again as fresh attempts (up to 100) and take them out of the queue. */
+      dlqRequeue(id: string, deliveryIds: string[], idempotencyKey?: string): Promise<{ object: 'webhook_dlq_requeue'; endpoint_id: string; requested: number; queued: number; skipped: number }> {
+        return request({ method: 'POST', path: `/v1/webhook_endpoints/${enc(id)}/dlq/requeue`, body: { delivery_ids: deliveryIds }, idempotencyKey });
       },
       /** Redeliver a past event as a fresh attempt (409 once past its retention). */
       redeliver(id: string, deliveryId: string): Promise<WebhookDeliveryQueued> {

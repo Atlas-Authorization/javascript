@@ -84,7 +84,11 @@ export interface OrganizationLogStream {
   id: string;
   organization_id: string;
   url: string;
+  /** `json`, `ocsf` or `cef`. */
   format: string;
+  /** `https` (a signed POST), `splunk_hec`, `datadog` or `elastic`. */
+  sink_type: string;
+  sink_config: Record<string, string> | null;
   active: boolean;
   has_secret: boolean;
   created_at: number;
@@ -195,8 +199,8 @@ export const organizationAdmin = {
   listLogStreams: async (c: FapiClient, org: string) =>
     (await call<Page<OrganizationLogStream>>(c, `${base(org)}/log_streams`, send('GET'))).data,
   /** The returned `secret` signs deliveries and is shown once. */
-  addLogStream: (c: FapiClient, org: string, input: { url: string; format?: string }) =>
-    call<OrganizationLogStream & { secret: string }>(c, `${base(org)}/log_streams`, send('POST', input)),
+  addLogStream: (c: FapiClient, org: string, input: { url: string; format?: 'json' | 'ocsf' | 'cef'; sink_type?: 'https' | 'splunk_hec' | 'datadog' | 'elastic'; sink_config?: Record<string, string>; secret?: string }) =>
+    call<OrganizationLogStream & { secret?: string }>(c, `${base(org)}/log_streams`, send('POST', input)),
   removeLogStream: (c: FapiClient, org: string, streamId: string) =>
     call<{ id: string; deleted: true }>(c, `${base(org)}/log_streams/${enc(streamId)}`, send('DELETE')),
 

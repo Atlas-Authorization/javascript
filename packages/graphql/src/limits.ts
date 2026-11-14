@@ -3,7 +3,7 @@
  * `@atlasauth/backend` (`rateLimitRequest`, `requireGrantUsage`) and accept either the limiter /
  * usage options or an already-built check. A limit store or usage call that throws is an error, never an allow.
  */
-import { rateLimitRequest, requireGrantUsage } from '@atlasauth/backend';
+import { rateLimitRequest, requireGrantUsage, requireFeature } from '@atlasauth/backend';
 import { AtlasGraphQLError, type AtlasContext } from './index';
 
 /** Options for the usage gate (`requireGrantUsage` in `@atlasauth/backend`). */
@@ -77,6 +77,17 @@ export function rateLimitGate(limiter: RateLimiter | RateLimitCheck, subjectFrom
 /** Turn usage-gate options (or an already-built `requireGrantUsage` check) into a gate. */
 export function grantUsageGate(options: GrantUsageOptions | GrantUsageCheck): LimitGate {
   const check = (typeof options === 'function' ? options : requireGrantUsage(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
+/** Options for the feature gate (`requireFeature` in `@atlasauth/backend`). */
+export type FeatureOptions = Parameters<typeof requireFeature>[0];
+/** The framework-neutral feature check `requireFeature(opts)` returns. */
+export type FeatureCheck = ReturnType<typeof requireFeature>;
+
+/** Turn feature options (or an already-built `requireFeature` check) into a gate: 401 without a subject, 403 `feature_not_entitled` when the plan lacks the feature. */
+export function featureGate(options: FeatureOptions | FeatureCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireFeature(options)) as (req: never) => Promise<LimitVerdict>;
   return (input) => check(neutral(input));
 }
 
@@ -159,6 +170,11 @@ export function withRateLimit(limiter: RateLimiter | RateLimitCheck, options: At
 /** Wrap a resolver so it consumes a grant counter first: `RATE_LIMITED` (429) when spent, `FORBIDDEN` (403) when the grant is missing or expired. */
 export function withGrantUsage(usage: GrantUsageOptions | GrantUsageCheck, options: AtlasLimitOptions = {}) {
   return wrap(grantUsageGate(usage), options);
+}
+
+/** Wrap a resolver so it needs a plan feature: `UNAUTHENTICATED`-style 401 without a subject, `FORBIDDEN` (403, `feature_not_entitled`) when the plan lacks it. */
+export function withFeature(feature: FeatureOptions | FeatureCheck, options: AtlasLimitOptions = {}) {
+  return wrap(featureGate(feature), options);
 }
 
 function mergeHeaders(base: Headers, extra: LimitHeaders): Headers {

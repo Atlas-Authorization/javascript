@@ -6,9 +6,11 @@
  *   EMULATOR_SECRET_KEY    its secret key (default sk_test_emulator)
  *   PARITY_BASE_URL        the real Atlas Backend API to compare against (a development instance)
  *   PARITY_SECRET_KEY      its secret key
+ *   PARITY_GROUPS          comma list of feature groups to run (oauth,scim,agents,passkeys,device,round2); default all
  * Exit code 1 when any request differs. Run it on CI, never against production data.
  */
-import { defaultParityRequests, runParity } from './parity';
+import { runParity } from './parity';
+import { fullParityRequests } from './parity-routes';
 import { startEmulatorServer } from './server';
 
 async function main(): Promise<void> {
@@ -30,7 +32,7 @@ async function main(): Promise<void> {
     url = s.url;
     close = s.close;
   }
-  const results = await runParity({ requests: defaultParityRequests, emulator: { baseUrl: url, secretKey: key }, reference: { baseUrl: refUrl, secretKey: refKey } });
+  const results = await runParity({ requests: fullParityRequests, groups: process.env.PARITY_GROUPS?.split(',').filter(Boolean), emulator: { baseUrl: url, secretKey: key }, reference: { baseUrl: refUrl, secretKey: refKey } });
   await close?.();
   let bad = 0;
   for (const r of results) {

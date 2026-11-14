@@ -7,6 +7,7 @@ import { presentKey } from './keys';
 import { presentGrant, presentMachine } from './machines';
 import { presentInvitation, presentOrg } from './orgs';
 import { presentMembership, presentUser } from './users';
+import { parseEndpointExtras, presentEndpointExtras } from '../webhook-ext';
 import { listReply, merge, need } from './util';
 
 function presentEndpoint(e: Engine, ep: Obj): Obj {
@@ -23,6 +24,7 @@ function presentEndpoint(e: Engine, ep: Obj): Obj {
     last_success_at: ep.last_success_at ?? null,
     last_failure: ep.last_failure ?? null,
     consecutive_failures: ep.consecutive_failures ?? 0,
+    ...presentEndpointExtras(ep),
   });
 }
 
@@ -86,7 +88,7 @@ export function hooksHandlers(): RouteDef[] {
         const events: string[] = c.body.enabled_events ?? ['*'];
         if (!events.length) throw new EmulatorError('VALIDATION_FAILED', 'enabled_events cannot be empty.', 'enabled_events');
         const secret = typeof c.body.secret === 'string' ? c.body.secret : e.webhooks.newSecret();
-        const ep = e.db.endpoints.insert({ url, description: c.body.description ?? null, enabled_events: events, active: c.body.active !== false, event_naming: c.body.event_naming ?? 'canonical', secret, consecutive_failures: 0, created_at: e.clock.now() });
+        const ep = e.db.endpoints.insert({ ...parseEndpointExtras(c.body), url, description: c.body.description ?? null, enabled_events: events, active: c.body.active !== false, event_naming: c.body.event_naming ?? 'canonical', secret, consecutive_failures: 0, created_at: e.clock.now() });
         return { status: 201, body: { ...presentEndpoint(e, ep), secret } };
       },
     },
@@ -106,6 +108,7 @@ export function hooksHandlers(): RouteDef[] {
         const ep = c.engine.db.endpoints.get(c.params.id);
         if (!ep) throw notFound('Webhook endpoint');
         for (const k of ['url', 'description', 'enabled_events', 'active', 'event_naming']) if (k in c.body) ep[k] = c.body[k];
+        Object.assign(ep, parseEndpointExtras(c.body, ep));
         if (c.body.active === true) Object.assign(ep, { consecutive_failures: 0, failing_since: null });
         return { body: presentEndpoint(c.engine, ep) };
       },

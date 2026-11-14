@@ -13,6 +13,7 @@ Environment:
   ATLAS_PDP_TOKEN      require this bearer token on every request
   ATLAS_PDP_ID         stable id shown in the fleet list (default: random)
   ATLAS_PDP_SYNC_MS    sync interval (default 15000)
+  ATLAS_PDP_WATCH      0 to turn off the authorization event watch (a tuple change refreshes the PDP at once; default on)
   ATLAS_PDP_SHIP       "0" to stop shipping decisions to Atlas
   PORT                 listen port (default 8181)
   HOST                 listen address (default 127.0.0.1)
@@ -34,6 +35,7 @@ async function main() {
   await sync.syncOnce();
   log('bundle loaded', { revision: pdp.revision });
   sync.start();
+  if (process.env.ATLAS_PDP_WATCH !== '0') sync.startWatching();
   let shipper: DecisionShipper | undefined;
   if (process.env.ATLAS_PDP_SHIP !== '0') {
     shipper = new DecisionShipper({ baseUrl, apiKey, pdp: { id: process.env.ATLAS_PDP_ID ?? randomUUID(), name: process.env.ATLAS_PDP_NAME, version: '0.1.0' }, revision: () => pdp.revision, onError: (e) => log('ship failed', String(e)) });

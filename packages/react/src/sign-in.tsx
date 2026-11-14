@@ -11,6 +11,7 @@ import {
   startOauthPopup,
   startOauthRedirect,
   type OAuthPopupHandlers,
+  uploadJourneyFile,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { FapiClient, initialFlow, type FlowState } from './fapi';
@@ -108,6 +109,12 @@ function SignInFlow(props: FlowProps) {
         passwordHold={state.passwordHold}
         recoveryCodes={pendingRecoveryCodes(state)}
         onRecoveryCodesSaved={saveRecoveryCodes}
+        onUploadFile={async (field, file) => {
+          const out = await uploadJourneyFile(client, state, field, file);
+          if (out.ok) return out.id;
+          setState((cur) => ({ ...cur, errors: out.errors.map((e) => ({ code: e.code ?? 'upload_failed', message: e.message })) }));
+          return null;
+        }}
         onPolicyDecline={(policy) =>
           // Declining cancels the attempt: back to the first step, saying why.
           setState({

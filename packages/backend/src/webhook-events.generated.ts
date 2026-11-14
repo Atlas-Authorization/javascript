@@ -88,7 +88,7 @@ export type WebhookDataApiKey = {
   organization_id?: string | null;
   /** The member who created an organization key, or null. */
   created_by_user_id?: string | null;
-  /** Why the key was revoked when it was not a person: membership_ended, creator_departed or organization_deleted. */
+  /** Why the key was revoked when it was not a person: membership_ended, creator_departed, organization_deleted, user_banned or rotated. */
   revoked_reason?: string | null;
   /** api_key.limit_reached: the limit that was reached. */
   limit?: Record<string, unknown>;
@@ -110,6 +110,44 @@ export type WebhookDataApiKeyExpiring = {
   [key: string]: unknown;
 };
 
+/** The successor of a rotated end-user API key (never the secret). */
+export type WebhookDataApiKeyRotated = {
+  object: "api_key";
+  id: string;
+  prefix: string;
+  subject_type: string;
+  subject_id: string;
+  name?: string | null;
+  organization_id?: string | null;
+  /** Expires (epoch ms), or null. */
+  expires_at?: number | null;
+  /** Created (epoch ms), or null. */
+  created_at?: number | null;
+  /** The key this one replaces. */
+  previous_key_id: string;
+  /** When the previous key stops working; null when it was revoked at once (epoch ms), or null. */
+  previous_key_expires_at?: number | null;
+  overlap_seconds: number;
+  [key: string]: unknown;
+};
+
+/** An end-user API key used 80 or 100 percent of its rate limit in the current window. */
+export type WebhookDataApiKeyThreshold = {
+  object: "api_key";
+  id: string;
+  prefix: string;
+  subject_type: string;
+  subject_id: string;
+  name?: string | null;
+  threshold: 80 | 100;
+  used: number;
+  limit: number;
+  window_seconds?: number;
+  /** When the window ends (epoch ms), or null. */
+  resets_at?: number | null;
+  [key: string]: unknown;
+};
+
 /** An app role. */
 export type WebhookDataAppRole = {
   object: "app_role";
@@ -123,6 +161,20 @@ export type WebhookDataAppRole = {
   created_at: number;
   /** Updated (epoch ms). */
   updated_at: number;
+  [key: string]: unknown;
+};
+
+/** One approver answered an approval request. */
+export type WebhookDataApprovalDecision = {
+  object: "approval_request";
+  id: string;
+  approver_user_id: string;
+  decision: "approve" | "deny";
+  method?: "device_key" | "passkey" | "number_match";
+  approvals_received?: number;
+  required?: number;
+  /** At (epoch ms). */
+  at?: number;
   [key: string]: unknown;
 };
 
@@ -248,6 +300,25 @@ export type WebhookDataBillingInvoiceFailed = {
   [key: string]: unknown;
 };
 
+/** A refund of an invoice. */
+export type WebhookDataBillingRefund = {
+  object: "billing_refund";
+  id: string;
+  invoice_id: string;
+  subject_type: string;
+  subject_id: string;
+  provider?: string;
+  provider_refund_id?: string | null;
+  /** Minor units. */
+  amount: number;
+  currency: string;
+  reason?: string | null;
+  status: string;
+  /** Created (epoch ms). */
+  created_at?: number;
+  [key: string]: unknown;
+};
+
 /** A subject's subscription to a plan you sell. */
 export type WebhookDataBillingSubscription = {
   object: "billing_subscription";
@@ -315,6 +386,25 @@ export type WebhookDataBillingSuspended = {
   [key: string]: unknown;
 };
 
+/** A trial extension. */
+export type WebhookDataBillingTrialExtension = {
+  object: "billing_trial_extension";
+  id: string;
+  subscription_id: string;
+  subject_type: string;
+  subject_id: string;
+  /** The trial end before (epoch ms), or null. */
+  previous_trial_end?: number | null;
+  /** The new trial end (epoch ms). */
+  trial_end: number;
+  status?: string;
+  extended_days_total?: number;
+  reason?: string | null;
+  /** Created (epoch ms). */
+  created_at?: number;
+  [key: string]: unknown;
+};
+
 /** A trial is about to end. */
 export type WebhookDataBillingTrialWillEnd = {
   object: "billing_subscription";
@@ -344,6 +434,25 @@ export type WebhookDataBillingTrialWillEnd = {
   previous?: Record<string, unknown> | null;
   /** billing_trial.ended: the trial converted to a paid subscription. */
   converted?: boolean;
+  [key: string]: unknown;
+};
+
+/** A bulk user action that finished or stopped. */
+export type WebhookDataBulkUserAction = {
+  object: "bulk_user_action";
+  id: string;
+  action: string;
+  status: "completed" | "failed" | "cancelled";
+  total?: number;
+  processed?: number;
+  succeeded?: number;
+  failed?: number;
+  skipped?: number;
+  error?: string | null;
+  /** Created (epoch ms). */
+  created_at?: number;
+  /** Finished (epoch ms), or null. */
+  completed_at?: number | null;
   [key: string]: unknown;
 };
 
@@ -404,6 +513,10 @@ export type WebhookDataConnection = {
       listing_id?: string;
       product_id?: string;
     };
+    /** True when this delivery is a replay of a stored event; deduplicate on delivery_id (or event_id). */
+    replayed?: boolean;
+    /** The stored event this delivery came from (GET /v1/connections/{id}/provider_events). */
+    event_id?: string;
     [key: string]: unknown;
   };
   /** `connection.owner_changed`: the owner before the transfer. */
@@ -412,6 +525,32 @@ export type WebhookDataConnection = {
     id: string;
     [key: string]: unknown;
   };
+  [key: string]: unknown;
+};
+
+/** A key rotation drill finished. Nothing was changed. */
+export type WebhookDataDataKeyDrill = {
+  object: "data_key_drill";
+  id: string;
+  ok: boolean;
+  data_keys?: number;
+  vault_versions?: number;
+  failed?: number;
+  failure_reason?: string | null;
+  /** At (epoch ms). */
+  at?: number;
+  [key: string]: unknown;
+};
+
+/** The customer-managed data key became unavailable or recovered. No key material. */
+export type WebhookDataDataKeyProvider = {
+  object: "data_key_provider";
+  provider: string | null;
+  reason?: string | null;
+  fail_closed_after_seconds?: number | null;
+  unavailable_for_seconds?: number | null;
+  /** At (epoch ms). */
+  at?: number;
   [key: string]: unknown;
 };
 
@@ -440,6 +579,36 @@ export type WebhookDataDirective = {
   read_only?: boolean;
   forced_logout?: boolean;
   reason?: string;
+  [key: string]: unknown;
+};
+
+/** A custom domain was activated, or failed verification. */
+export type WebhookDataDomainActivation = {
+  object: "domain";
+  domain: string;
+  kind: "frontend_api" | "path_mount";
+  /** Activated (epoch ms), or null. */
+  activated_at?: number | null;
+  reason?: string | null;
+  fix?: string | null;
+  /** At (epoch ms). */
+  at?: number;
+  [key: string]: unknown;
+};
+
+/** A data subject request past its response deadline. */
+export type WebhookDataDsrOverdue = {
+  object: "data_subject_request";
+  id: string;
+  user_id: string;
+  type: string;
+  canonical_type?: string;
+  status: string;
+  /** Requested (epoch ms). */
+  requested_at?: number;
+  /** Due (epoch ms). */
+  due_at: number;
+  days_overdue?: number;
   [key: string]: unknown;
 };
 
@@ -475,6 +644,20 @@ export type WebhookDataEntitlement = {
   [key: string]: unknown;
 };
 
+/** A feature limit reached in its window. */
+export type WebhookDataEntitlementLimit = {
+  object: "entitlement_limit";
+  subject_type: string;
+  subject_id: string;
+  feature: string;
+  limit?: number | null;
+  used: number | null;
+  source?: "atlas" | "provider";
+  /** Window start (epoch ms), or null. */
+  window_start?: number | null;
+  [key: string]: unknown;
+};
+
 /** A sales-led entitlement override. */
 export type WebhookDataEntitlementOverride = {
   object: "entitlement_override";
@@ -505,6 +688,48 @@ export type WebhookDataFeatureFlag = {
   default_value?: unknown;
   rules?: number;
   actor?: string | null;
+  [key: string]: unknown;
+};
+
+/** A managed FGA sync backfill that finished. */
+export type WebhookDataFgaSyncRun = {
+  object: "fga_sync_run";
+  id: string;
+  kind: string;
+  status: "completed" | "failed";
+  store_id?: string | null;
+  repair?: boolean;
+  subjects?: number;
+  written?: number;
+  deleted?: number;
+  skipped?: number;
+  skipped_reasons?: Record<string, number>;
+  error?: string | null;
+  requested_by?: string | null;
+  /** Started (epoch ms), or null. */
+  started_at?: number | null;
+  /** Finished (epoch ms), or null. */
+  finished_at?: number | null;
+  /** Created (epoch ms). */
+  created_at?: number;
+  [key: string]: unknown;
+};
+
+/** Relationship tuples written or deleted in one call. */
+export type WebhookDataFgaTupleBatch = {
+  object: "fga_tuple_batch";
+  store_id: string;
+  store_revision: number;
+  source: "api" | "sync";
+  count: number;
+  /** A sample of the tuples (at most 25). */
+  tuples: Array<{
+    user: string;
+    relation: string;
+    object: string;
+    [key: string]: unknown;
+  }>;
+  truncated?: boolean;
   [key: string]: unknown;
 };
 
@@ -617,6 +842,23 @@ export type WebhookDataIga = {
   [key: string]: unknown;
 };
 
+/** A whole-instance export or import that finished or stopped. */
+export type WebhookDataInstanceExport = {
+  object: "instance_export";
+  id: string;
+  kind: "export" | "import";
+  status: "completed" | "failed";
+  counts?: Record<string, unknown> | null;
+  /** Download expires (epoch ms), or null. */
+  expires_at?: number | null;
+  error?: string | null;
+  /** Created (epoch ms). */
+  created_at?: number;
+  /** Finished (epoch ms), or null. */
+  completed_at?: number | null;
+  [key: string]: unknown;
+};
+
 /** An instance invitation (POST /v1/invitations). */
 export type WebhookDataInstanceInvitation = {
   object: "invitation";
@@ -681,6 +923,31 @@ export type WebhookDataJobRun = {
   [key: string]: unknown;
 };
 
+/** A user's run through a journey. */
+export type WebhookDataJourneyRun = {
+  object: "journey_run";
+  journey_id: string;
+  user_id: string;
+  stage: "sign_up" | "sign_in";
+  /** journey.started: the steps held. */
+  steps?: string[];
+  /** journey.step_completed: the step finished. */
+  step?: string;
+  /** journey.step_completed: steps still open. */
+  open?: number;
+  /** journey.completed: every step finished. */
+  steps_completed?: string[];
+  /** journey.completed: time from start to the last step. */
+  duration_ms?: number;
+  /** journey.abandoned: the steps left open. */
+  open_steps?: string[];
+  /** The last time the user touched the run (epoch ms). */
+  last_activity_at?: number;
+  /** At (epoch ms). */
+  at?: number;
+  [key: string]: unknown;
+};
+
 /** A JWT template. `changed` (updated events) names the fields that differ. No signing material. */
 export type WebhookDataJwtTemplate = {
   object: "jwt_template";
@@ -691,6 +958,21 @@ export type WebhookDataJwtTemplate = {
   created_at?: number | null;
   /** Updated (epoch ms), or null. */
   updated_at?: number | null;
+  [key: string]: unknown;
+};
+
+/** A legal hold placed on or released from a user. */
+export type WebhookDataLegalHold = {
+  object: "legal_hold";
+  user_id: string;
+  reason: string;
+  case_ref?: string | null;
+  placed_by?: string | null;
+  /** Placed (epoch ms), or null. */
+  placed_at?: number | null;
+  /** Released (epoch ms), or null. */
+  released_at?: number | null;
+  release_reason?: string | null;
   [key: string]: unknown;
 };
 
@@ -780,21 +1062,39 @@ export type WebhookDataMembership = {
   permissions?: string[];
   /** Sign-in methods whose sessions mint with this organization's claims; null = any. */
   allowed_sign_in_methods?: string[] | null;
+  /** When the membership ends (epoch ms); null when it does not expire. */
+  expires_at?: number | null;
   /** organization_membership.updated only: what manages the role now. `scim`, `sso:<connection id>` or `ldap:<connection id>` when your identity provider's groups or roles changed it; `manual` when it was set through the API or dashboard (directory changes then leave it alone). */
   role_source?: string | null;
   [key: string]: unknown;
 };
 
-/** A message the provider reported as failed, bounced or complained about. The provider key is the instance's own. */
+/** A message the provider reported as delivered, failed, bounced or complained about. The provider key is the instance's own. */
 export type WebhookDataMessageFailure = {
   object: "message_delivery";
   message_id: string;
-  channel: "email" | "sms";
+  channel: "email" | "sms" | "whatsapp" | "voice" | "push";
   recipient?: string | null;
   reason?: string | null;
   bounce_type?: "hard" | "soft" | "unknown";
   provider?: string | null;
+  provider_message_id?: string | null;
+  ledger_id?: string | null;
   user_id?: string | null;
+  /** At (epoch ms). */
+  at?: number;
+  [key: string]: unknown;
+};
+
+/** An address, number or device was added to the suppression list. */
+export type WebhookDataMessageSuppression = {
+  object: "message_suppression";
+  id: string;
+  channel: "email" | "sms" | "whatsapp" | "voice" | "push";
+  recipient?: string;
+  reason: string;
+  source?: string;
+  message_id?: string | null;
   /** At (epoch ms). */
   at?: number;
   [key: string]: unknown;
@@ -807,6 +1107,20 @@ export type WebhookDataMfaFactor = {
   factor_id: string;
   type: string;
   removed_by?: "user" | "admin" | "reset" | "system";
+  /** At (epoch ms). */
+  at?: number;
+  [key: string]: unknown;
+};
+
+/** A push sign-in prompt was reported as not the user, or the user's push prompts were locked after a streak of denials. */
+export type WebhookDataMfaPush = {
+  object: "mfa_push";
+  user_id: string;
+  challenge_id?: string | null;
+  context?: Record<string, unknown> | null;
+  streak?: number | null;
+  /** When the lock ends (epoch ms), or null. */
+  locked_until?: number | null;
   /** At (epoch ms). */
   at?: number;
   [key: string]: unknown;
@@ -918,6 +1232,35 @@ export type WebhookDataOrganization = {
   [key: string]: unknown;
 };
 
+/** A membership reached its end date and was removed. */
+export type WebhookDataOrganizationMembershipExpired = {
+  object: "organization_membership";
+  id: string;
+  organization_id: string;
+  user_id: string;
+  role?: string | null;
+  /** When the seat ended (epoch ms), or null. */
+  expires_at?: number | null;
+  /** Removed (epoch ms). */
+  at?: number;
+  [key: string]: unknown;
+};
+
+/** Seat usage crossed the warning level or reached the limit. */
+export type WebhookDataOrganizationSeats = {
+  object: "organization_seats";
+  organization_id: string;
+  limit?: number | null;
+  used: number;
+  available?: number | null;
+  percent_used?: number | null;
+  /** `organization.seat_limit_reached`: true when an add or accept was turned away. */
+  refused?: boolean;
+  /** At (epoch ms). */
+  at?: number;
+  [key: string]: unknown;
+};
+
 /** An organization's custom settings document after a change. */
 export type WebhookDataOrganizationSettings = {
   object: "organization_settings";
@@ -949,6 +1292,7 @@ export type WebhookDataPermission = {
   name: string;
   description?: string | null;
   is_system: boolean;
+  implies?: string[];
   [key: string]: unknown;
 };
 
@@ -1061,6 +1405,17 @@ export type WebhookDataRecoveryCodes = {
   [key: string]: unknown;
 };
 
+/** A recovery request was refused by a throttle. */
+export type WebhookDataRecoveryThrottled = {
+  object: "recovery_throttle";
+  limit: "account" | "ip";
+  ip?: string | null;
+  count?: number;
+  /** At (epoch ms). */
+  at?: number;
+  [key: string]: unknown;
+};
+
 /** An action a user owes at their next sign-in was requested, completed or withdrawn. */
 export type WebhookDataRequiredAction = {
   object: "required_action";
@@ -1087,6 +1442,22 @@ export type WebhookDataResourceRoleAssignment = {
   subject: Record<string, unknown>;
   role: string;
   inherit: boolean;
+  /** Created (epoch ms). */
+  created_at?: number;
+  [key: string]: unknown;
+};
+
+/** A risk signal reported for a user or an IP address. */
+export type WebhookDataRiskSignal = {
+  object: "risk_signal";
+  id: string;
+  subject_type: "user" | "ip";
+  subject: string;
+  signal_type: string;
+  severity: "low" | "medium" | "high" | "critical";
+  source?: string;
+  /** Expires (epoch ms). */
+  expires_at?: number;
   /** Created (epoch ms). */
   created_at?: number;
   [key: string]: unknown;
@@ -1287,6 +1658,20 @@ export type WebhookDataSignInApproval = {
   ip?: string | null;
   location?: string | null;
   user_agent?: string | null;
+  [key: string]: unknown;
+};
+
+/** A sign-up was refused by abuse protection. */
+export type WebhookDataSignUpBlocked = {
+  object: "sign_up_block";
+  reason: "ip_limit" | "asn_limit" | "risk_score" | "disposable_email";
+  risk_score?: number | null;
+  reasons?: string[];
+  ip?: string | null;
+  asn?: number | null;
+  email_domain?: string | null;
+  /** At (epoch ms). */
+  at?: number;
   [key: string]: unknown;
 };
 
@@ -1684,6 +2069,8 @@ export type WebhookDataUserReferral = {
   atlas_id_sub?: string;
   /** Sign in with Atlas sign-up: the app the person signed in to. */
   atlas_id_app_id?: string;
+  /** Sign in with Atlas sign-up: how the referral reached the sign-in. automatic = read from the landing URL parameters your referral settings name; explicit = `ref` / `ref_*` parameters the app forwarded on the authorize request. null when the request carried no referral. */
+  link_kind?: "automatic" | "explicit" | null;
   [key: string]: unknown;
 };
 
@@ -1732,6 +2119,19 @@ export type WebhookDataWorkflow = {
   [key: string]: unknown;
 };
 
+/** An instance write budget was exceeded. */
+export type WebhookDataWriteBudget = {
+  object: "write_budget";
+  budget: "writes" | "counter_writes" | "events" | "webhook_fanout";
+  limit: number;
+  window_seconds: number;
+  used: number;
+  mode: "observe" | "enforce";
+  /** At (epoch ms). */
+  at?: number;
+  [key: string]: unknown;
+};
+
 /** The signed envelope of every delivery: `type` names the event, `data` is its subject. */
 export interface AtlasWebhookEnvelope<T extends string, D> {
   /** The event id (also the `atlas-id` header). */
@@ -1759,12 +2159,16 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"api_key.created", WebhookDataApiKey>
   | AtlasWebhookEnvelope<"api_key.expiring", WebhookDataApiKeyExpiring>
   | AtlasWebhookEnvelope<"api_key.limit_reached", WebhookDataApiKey>
+  | AtlasWebhookEnvelope<"api_key.rate_limit_threshold", WebhookDataApiKeyThreshold>
+  | AtlasWebhookEnvelope<"api_key.restored", WebhookDataApiKey>
   | AtlasWebhookEnvelope<"api_key.revoked", WebhookDataApiKey>
+  | AtlasWebhookEnvelope<"api_key.rotated", WebhookDataApiKeyRotated>
   | AtlasWebhookEnvelope<"api_key.updated", WebhookDataApiKey>
   | AtlasWebhookEnvelope<"app_role.created", WebhookDataAppRole>
   | AtlasWebhookEnvelope<"app_role.deleted", WebhookDataAppRole>
   | AtlasWebhookEnvelope<"app_role.updated", WebhookDataAppRole>
   | AtlasWebhookEnvelope<"approval_request.approved", WebhookDataApprovalRequest>
+  | AtlasWebhookEnvelope<"approval_request.approver_decided", WebhookDataApprovalDecision>
   | AtlasWebhookEnvelope<"approval_request.cancelled", WebhookDataApprovalRequest>
   | AtlasWebhookEnvelope<"approval_request.denied", WebhookDataApprovalRequest>
   | AtlasWebhookEnvelope<"approval_request.expired", WebhookDataApprovalRequest>
@@ -1772,13 +2176,17 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"billing_credit.granted", WebhookDataBillingCredit>
   | AtlasWebhookEnvelope<"billing_dunning.notice", WebhookDataBillingDunningNotice>
   | AtlasWebhookEnvelope<"billing_invoice.payment_failed", WebhookDataBillingInvoiceFailed>
+  | AtlasWebhookEnvelope<"billing_refund.created", WebhookDataBillingRefund>
   | AtlasWebhookEnvelope<"billing_subscription.canceled", WebhookDataBillingSubscription>
   | AtlasWebhookEnvelope<"billing_subscription.created", WebhookDataBillingSubscription>
   | AtlasWebhookEnvelope<"billing_subscription.suspended", WebhookDataBillingSuspended>
   | AtlasWebhookEnvelope<"billing_subscription.updated", WebhookDataBillingSubscription>
   | AtlasWebhookEnvelope<"billing_trial.ended", WebhookDataBillingSubscription>
+  | AtlasWebhookEnvelope<"billing_trial.extended", WebhookDataBillingTrialExtension>
   | AtlasWebhookEnvelope<"billing_trial.started", WebhookDataBillingSubscription>
   | AtlasWebhookEnvelope<"billing_trial.will_end", WebhookDataBillingTrialWillEnd>
+  | AtlasWebhookEnvelope<"bulk_user_action.completed", WebhookDataBulkUserAction>
+  | AtlasWebhookEnvelope<"bulk_user_action.failed", WebhookDataBulkUserAction>
   | AtlasWebhookEnvelope<"connection.connected", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.deleted", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.expiring", WebhookDataConnection>
@@ -1792,6 +2200,9 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"connection.secret_expiring", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.trigger_fired", WebhookDataTriggerFired>
   | AtlasWebhookEnvelope<"connection.updated", WebhookDataConnection>
+  | AtlasWebhookEnvelope<"data_key_provider.drill_completed", WebhookDataDataKeyDrill>
+  | AtlasWebhookEnvelope<"data_key_provider.recovered", WebhookDataDataKeyProvider>
+  | AtlasWebhookEnvelope<"data_key_provider.unavailable", WebhookDataDataKeyProvider>
   | AtlasWebhookEnvelope<"data_subject_request.fulfilled", WebhookDataSubjectRequest>
   | AtlasWebhookEnvelope<"data_subject_request.rejected", WebhookDataSubjectRequest>
   | AtlasWebhookEnvelope<"data_subject_request.scheduled", WebhookDataSubjectRequest>
@@ -1803,17 +2214,26 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"device_integration.sync_failed", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"directory_pull_run.completed", WebhookDataJobRun>
   | AtlasWebhookEnvelope<"directory_pull_run.failed", WebhookDataJobRun>
+  | AtlasWebhookEnvelope<"domain.activated", WebhookDataDomainActivation>
+  | AtlasWebhookEnvelope<"domain.failed", WebhookDataDomainActivation>
+  | AtlasWebhookEnvelope<"dsr.overdue", WebhookDataDsrOverdue>
   | AtlasWebhookEnvelope<"email.bounced", WebhookDataMessageFailure>
   | AtlasWebhookEnvelope<"email.complained", WebhookDataMessageFailure>
   | AtlasWebhookEnvelope<"email.created", WebhookDataEmailMessage>
+  | AtlasWebhookEnvelope<"email.delivered", WebhookDataMessageFailure>
   | AtlasWebhookEnvelope<"email.failed", WebhookDataMessageFailure>
   | AtlasWebhookEnvelope<"entitlement.created", WebhookDataEntitlement>
   | AtlasWebhookEnvelope<"entitlement.deleted", WebhookDataEntitlement>
+  | AtlasWebhookEnvelope<"entitlement.limit_reached", WebhookDataEntitlementLimit>
   | AtlasWebhookEnvelope<"entitlement.updated", WebhookDataEntitlement>
   | AtlasWebhookEnvelope<"entitlement_override.created", WebhookDataEntitlementOverride>
   | AtlasWebhookEnvelope<"entitlement_override.deleted", WebhookDataEntitlementOverride>
   | AtlasWebhookEnvelope<"entitlement_override.expired", WebhookDataEntitlementOverride>
   | AtlasWebhookEnvelope<"feature_flag.changed", WebhookDataFeatureFlag>
+  | AtlasWebhookEnvelope<"fga.tuple_deleted", WebhookDataFgaTupleBatch>
+  | AtlasWebhookEnvelope<"fga.tuple_written", WebhookDataFgaTupleBatch>
+  | AtlasWebhookEnvelope<"fga_sync.completed", WebhookDataFgaSyncRun>
+  | AtlasWebhookEnvelope<"fga_sync.failed", WebhookDataFgaSyncRun>
   | AtlasWebhookEnvelope<"grant.exhausted", WebhookDataGrantUsage>
   | AtlasWebhookEnvelope<"grant.revoked", WebhookDataGrant>
   | AtlasWebhookEnvelope<"grant.usage_threshold", WebhookDataGrantUsage>
@@ -1840,9 +2260,15 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"impersonation.started", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"import_job.completed", WebhookDataJobRun>
   | AtlasWebhookEnvelope<"import_job.failed", WebhookDataJobRun>
+  | AtlasWebhookEnvelope<"instance_export.completed", WebhookDataInstanceExport>
+  | AtlasWebhookEnvelope<"instance_export.failed", WebhookDataInstanceExport>
   | AtlasWebhookEnvelope<"invitation.accepted", WebhookDataInstanceInvitation>
   | AtlasWebhookEnvelope<"invitation.created", WebhookDataInstanceInvitation>
   | AtlasWebhookEnvelope<"invitation.revoked", WebhookDataInstanceInvitation>
+  | AtlasWebhookEnvelope<"journey.abandoned", WebhookDataJourneyRun>
+  | AtlasWebhookEnvelope<"journey.completed", WebhookDataJourneyRun>
+  | AtlasWebhookEnvelope<"journey.started", WebhookDataJourneyRun>
+  | AtlasWebhookEnvelope<"journey.step_completed", WebhookDataJourneyRun>
   | AtlasWebhookEnvelope<"jwt_template.created", WebhookDataJwtTemplate>
   | AtlasWebhookEnvelope<"jwt_template.deleted", WebhookDataJwtTemplate>
   | AtlasWebhookEnvelope<"jwt_template.updated", WebhookDataJwtTemplate>
@@ -1858,9 +2284,12 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"machine_membership.updated", WebhookDataMachineMembership>
   | AtlasWebhookEnvelope<"mcp_gateway.tool_changed", WebhookDataMcpToolChange>
   | AtlasWebhookEnvelope<"message.rate_limited", WebhookDataSecuritySignal>
+  | AtlasWebhookEnvelope<"message_suppression.created", WebhookDataMessageSuppression>
   | AtlasWebhookEnvelope<"mfa_factor.enrolled", WebhookDataMfaFactor>
   | AtlasWebhookEnvelope<"mfa_factor.quarantined", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"mfa_factor.removed", WebhookDataMfaFactor>
+  | AtlasWebhookEnvelope<"mfa_push.locked", WebhookDataMfaPush>
+  | AtlasWebhookEnvelope<"mfa_push.reported", WebhookDataMfaPush>
   | AtlasWebhookEnvelope<"oauth_client.created", WebhookDataOAuthClientLifecycle>
   | AtlasWebhookEnvelope<"oauth_client.deleted", WebhookDataOAuthClientLifecycle>
   | AtlasWebhookEnvelope<"oauth_client.secret_rotated", WebhookDataOAuthClientLifecycle>
@@ -1870,6 +2299,8 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"organization.created", WebhookDataOrganization>
   | AtlasWebhookEnvelope<"organization.deleted", WebhookDataOrganization>
   | AtlasWebhookEnvelope<"organization.it_alert", WebhookDataOrgItAlert>
+  | AtlasWebhookEnvelope<"organization.seat_limit_reached", WebhookDataOrganizationSeats>
+  | AtlasWebhookEnvelope<"organization.seats_low", WebhookDataOrganizationSeats>
   | AtlasWebhookEnvelope<"organization.updated", WebhookDataOrganization>
   | AtlasWebhookEnvelope<"organization_domain.created", WebhookDataOrgDomain>
   | AtlasWebhookEnvelope<"organization_domain.deleted", WebhookDataOrgDomain>
@@ -1881,6 +2312,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"organization_invitation.revoked", WebhookDataInvitation>
   | AtlasWebhookEnvelope<"organization_membership.created", WebhookDataMembership>
   | AtlasWebhookEnvelope<"organization_membership.deleted", WebhookDataMembership>
+  | AtlasWebhookEnvelope<"organization_membership.expired", WebhookDataOrganizationMembershipExpired>
   | AtlasWebhookEnvelope<"organization_membership.updated", WebhookDataMembership>
   | AtlasWebhookEnvelope<"organization_settings.updated", WebhookDataOrganizationSettings>
   | AtlasWebhookEnvelope<"passkey.registered", WebhookDataPasskey>
@@ -1893,10 +2325,12 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"privacy_request.completed", WebhookDataPrivacyRequest>
   | AtlasWebhookEnvelope<"privacy_request.updated", WebhookDataPrivacyRequest>
   | AtlasWebhookEnvelope<"rate_limit_policy.updated", WebhookDataRateLimitPolicy>
+  | AtlasWebhookEnvelope<"recovery.throttled", WebhookDataRecoveryThrottled>
   | AtlasWebhookEnvelope<"recovery_codes.regenerated", WebhookDataRecoveryCodes>
   | AtlasWebhookEnvelope<"resource_role_assignment.created", WebhookDataResourceRoleAssignment>
   | AtlasWebhookEnvelope<"resource_role_assignment.deleted", WebhookDataResourceRoleAssignment>
   | AtlasWebhookEnvelope<"risk.elevated", WebhookDataSessionRisk>
+  | AtlasWebhookEnvelope<"risk_signal.created", WebhookDataRiskSignal>
   | AtlasWebhookEnvelope<"risky_user.updated", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"role.created", WebhookDataRole>
   | AtlasWebhookEnvelope<"role.deleted", WebhookDataRole>
@@ -1921,10 +2355,12 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"session.revoked", WebhookDataSession>
   | AtlasWebhookEnvelope<"session.updated", WebhookDataSession>
   | AtlasWebhookEnvelope<"sign_in.approval_requested", WebhookDataSignInApproval>
+  | AtlasWebhookEnvelope<"sign_up.blocked", WebhookDataSignUpBlocked>
   | AtlasWebhookEnvelope<"signing_key.activated", WebhookDataSigningKey>
   | AtlasWebhookEnvelope<"signing_key.rotated", WebhookDataSigningKeyRotated>
   | AtlasWebhookEnvelope<"signing_key.staged", WebhookDataSigningKey>
   | AtlasWebhookEnvelope<"sms.created", WebhookDataSmsMessage>
+  | AtlasWebhookEnvelope<"sms.delivered", WebhookDataMessageFailure>
   | AtlasWebhookEnvelope<"sms.failed", WebhookDataMessageFailure>
   | AtlasWebhookEnvelope<"sso_connection.activated", WebhookDataSsoConnection>
   | AtlasWebhookEnvelope<"sso_connection.created", WebhookDataSsoConnection>
@@ -1959,8 +2395,11 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"user.deletion_canceled", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.deletion_paused", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.deletion_requested", WebhookDataSubjectRequest>
+  | AtlasWebhookEnvelope<"user.deletion_resumed", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.deletion_scheduled", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.graduated", WebhookDataUser>
+  | AtlasWebhookEnvelope<"user.legal_hold_placed", WebhookDataLegalHold>
+  | AtlasWebhookEnvelope<"user.legal_hold_released", WebhookDataLegalHold>
   | AtlasWebhookEnvelope<"user.locked", WebhookDataUserLocked>
   | AtlasWebhookEnvelope<"user.merged", WebhookDataUserMerged>
   | AtlasWebhookEnvelope<"user.parental_consent_declined", WebhookDataMinorStatus>
@@ -1987,8 +2426,10 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"webhook_endpoint.recovered", WebhookDataDeliveryHealth>
   | AtlasWebhookEnvelope<"workflow.approval_decided", WebhookDataWorkflow>
   | AtlasWebhookEnvelope<"workflow.approval_needed", WebhookDataWorkflow>
+  | AtlasWebhookEnvelope<"workflow.run_cancelled", WebhookDataWorkflow>
   | AtlasWebhookEnvelope<"workflow.run_failed", WebhookDataWorkflow>
-  | AtlasWebhookEnvelope<"workflow.run_succeeded", WebhookDataWorkflow>;
+  | AtlasWebhookEnvelope<"workflow.run_succeeded", WebhookDataWorkflow>
+  | AtlasWebhookEnvelope<"write_budget.exceeded", WebhookDataWriteBudget>;
 
 export type AtlasWebhookEventType = AtlasWebhookEvent['type'];
 
@@ -2004,12 +2445,16 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "api_key.created",
   "api_key.expiring",
   "api_key.limit_reached",
+  "api_key.rate_limit_threshold",
+  "api_key.restored",
   "api_key.revoked",
+  "api_key.rotated",
   "api_key.updated",
   "app_role.created",
   "app_role.deleted",
   "app_role.updated",
   "approval_request.approved",
+  "approval_request.approver_decided",
   "approval_request.cancelled",
   "approval_request.denied",
   "approval_request.expired",
@@ -2017,13 +2462,17 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "billing_credit.granted",
   "billing_dunning.notice",
   "billing_invoice.payment_failed",
+  "billing_refund.created",
   "billing_subscription.canceled",
   "billing_subscription.created",
   "billing_subscription.suspended",
   "billing_subscription.updated",
   "billing_trial.ended",
+  "billing_trial.extended",
   "billing_trial.started",
   "billing_trial.will_end",
+  "bulk_user_action.completed",
+  "bulk_user_action.failed",
   "connection.connected",
   "connection.deleted",
   "connection.expiring",
@@ -2037,6 +2486,9 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "connection.secret_expiring",
   "connection.trigger_fired",
   "connection.updated",
+  "data_key_provider.drill_completed",
+  "data_key_provider.recovered",
+  "data_key_provider.unavailable",
   "data_subject_request.fulfilled",
   "data_subject_request.rejected",
   "data_subject_request.scheduled",
@@ -2048,17 +2500,26 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "device_integration.sync_failed",
   "directory_pull_run.completed",
   "directory_pull_run.failed",
+  "domain.activated",
+  "domain.failed",
+  "dsr.overdue",
   "email.bounced",
   "email.complained",
   "email.created",
+  "email.delivered",
   "email.failed",
   "entitlement.created",
   "entitlement.deleted",
+  "entitlement.limit_reached",
   "entitlement.updated",
   "entitlement_override.created",
   "entitlement_override.deleted",
   "entitlement_override.expired",
   "feature_flag.changed",
+  "fga.tuple_deleted",
+  "fga.tuple_written",
+  "fga_sync.completed",
+  "fga_sync.failed",
   "grant.exhausted",
   "grant.revoked",
   "grant.usage_threshold",
@@ -2085,9 +2546,15 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "impersonation.started",
   "import_job.completed",
   "import_job.failed",
+  "instance_export.completed",
+  "instance_export.failed",
   "invitation.accepted",
   "invitation.created",
   "invitation.revoked",
+  "journey.abandoned",
+  "journey.completed",
+  "journey.started",
+  "journey.step_completed",
   "jwt_template.created",
   "jwt_template.deleted",
   "jwt_template.updated",
@@ -2103,9 +2570,12 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "machine_membership.updated",
   "mcp_gateway.tool_changed",
   "message.rate_limited",
+  "message_suppression.created",
   "mfa_factor.enrolled",
   "mfa_factor.quarantined",
   "mfa_factor.removed",
+  "mfa_push.locked",
+  "mfa_push.reported",
   "oauth_client.created",
   "oauth_client.deleted",
   "oauth_client.secret_rotated",
@@ -2115,6 +2585,8 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "organization.created",
   "organization.deleted",
   "organization.it_alert",
+  "organization.seat_limit_reached",
+  "organization.seats_low",
   "organization.updated",
   "organization_domain.created",
   "organization_domain.deleted",
@@ -2126,6 +2598,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "organization_invitation.revoked",
   "organization_membership.created",
   "organization_membership.deleted",
+  "organization_membership.expired",
   "organization_membership.updated",
   "organization_settings.updated",
   "passkey.registered",
@@ -2138,10 +2611,12 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "privacy_request.completed",
   "privacy_request.updated",
   "rate_limit_policy.updated",
+  "recovery.throttled",
   "recovery_codes.regenerated",
   "resource_role_assignment.created",
   "resource_role_assignment.deleted",
   "risk.elevated",
+  "risk_signal.created",
   "risky_user.updated",
   "role.created",
   "role.deleted",
@@ -2166,10 +2641,12 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "session.revoked",
   "session.updated",
   "sign_in.approval_requested",
+  "sign_up.blocked",
   "signing_key.activated",
   "signing_key.rotated",
   "signing_key.staged",
   "sms.created",
+  "sms.delivered",
   "sms.failed",
   "sso_connection.activated",
   "sso_connection.created",
@@ -2204,8 +2681,11 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "user.deletion_canceled",
   "user.deletion_paused",
   "user.deletion_requested",
+  "user.deletion_resumed",
   "user.deletion_scheduled",
   "user.graduated",
+  "user.legal_hold_placed",
+  "user.legal_hold_released",
   "user.locked",
   "user.merged",
   "user.parental_consent_declined",
@@ -2232,6 +2712,8 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "webhook_endpoint.recovered",
   "workflow.approval_decided",
   "workflow.approval_needed",
+  "workflow.run_cancelled",
   "workflow.run_failed",
   "workflow.run_succeeded",
+  "write_budget.exceeded",
 ] as const satisfies readonly AtlasWebhookEventType[];

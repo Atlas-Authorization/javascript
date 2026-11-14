@@ -17,9 +17,12 @@
 import { localizedErrorMessage, type ErrorStrings } from './errors';
 import type { PendingPolicy, ProfileCompletionField } from './attempt';
 import type { PolicyAcceptance } from './policies';
-import { createSignInFlow, type FlowOptions, type FlowSnapshot, type FlowStep, type RequiredActionStep, type SignInFlow } from './sign-in-flow';
+import { fetchInstanceSettings, type InstanceSettings, type PublicSignUpField } from './instance-settings';
+import { createSignInFlow, createSignUpFlow, type FlowOptions, type FlowSnapshot, type FlowStep, type RequiredActionStep, type SignInFlow, type SignUpFlow } from './sign-in-flow';
 
 export type SignInScreenStep =
+  /** Sign-up only: the create-account form (`fields`: email, password and the instance's sign-up fields). */
+  | 'details'
   | 'identifier'
   | 'first_factor'
   | 'second_factor'
@@ -45,14 +48,30 @@ export type SignInMethod = 'password' | 'email_code' | 'passkey' | 'apple' | 'go
 export interface ScreenField {
   /** `identifier`, `password`, `code`, `second_code`, `phone`, `new_password`, `first_name`, `last_name`, `username`, or a server-defined field key. */
   name: string;
-  kind: 'text' | 'password' | 'code' | 'phone';
-  /** The platform autofill hint (`username`, `current-password`, `new-password`, `one-time-code`, `tel`). */
-  autoComplete: 'username' | 'current-password' | 'new-password' | 'one-time-code' | 'tel' | 'off';
+  /**
+   * What to draw. `select` is one choice from `options`, `multi_select` several (submit them as a list),
+   * `checkbox` a yes / no (`'true'` / `'false'`; its `link` sits in the label), `file` a reference the app
+   * obtained itself (an upload id or an https URL), `phone` a number in international form (+15551234567).
+   */
+  kind: 'text' | 'password' | 'code' | 'phone' | 'email' | 'number' | 'date' | 'select' | 'multi_select' | 'checkbox' | 'textarea' | 'file';
+  /** The platform autofill hint (`username`, `current-password`, `new-password`, `one-time-code`, `tel`, `email`). */
+  autoComplete: 'username' | 'current-password' | 'new-password' | 'one-time-code' | 'tel' | 'email' | 'off';
   secure: boolean;
   /** Server-defined fields: the label to show, whether it must be filled, and the choices of a select. */
   label?: string;
   required?: boolean;
   options?: string[];
+  /** The label of each option, by option value, in the person's language. */
+  optionLabels?: Record<string, string>;
+  placeholder?: string;
+  help?: string;
+  /** checkbox: a link in its label (https). */
+  link?: { text: string; url: string };
+  /** file: the types the picker offers and the size limit. */
+  accept?: string[];
+  maxBytes?: number;
+  /** What the person saved earlier for this field: prefill it. */
+  value?: string | number | boolean | string[];
 }
 
 /** Mid-sign-in second-factor setup. */
@@ -111,6 +130,8 @@ export interface SignInScreenView {
   policies: PendingPolicy[];
   /** required_action. */
   requiredAction: ScreenRequiredAction | null;
+  /** Sign-up screens: the terms and privacy links and whether agreeing is required (send `consent: 'true'`). Null on a sign-in screen. */
+  legal: InstanceSettings['legal'] | null;
   /** The flow's own step, for `other` and for the details of `captcha` / `redirect`. */
   flowStep: FlowStep;
 }
@@ -156,9 +177,16 @@ export interface SignInScreen {
   checkIdentityVerification(): Promise<void>;
   /** Answer a `captcha` step with a token you obtained yourself. */
   submitCaptcha(token: string): Promise<void>;
+  /** required_action / journey_form: keep the answers so far (by field name) without finishing the step. They return as each field's `value`. */
+  saveDraft(values?: Record<string, string>): Promise<void>;
+  /** A `file` field: upload the picked file; answers the upload id to submit as that field's value, or null (the reason is in `view.errors`). */
+  uploadFile(field: string, file: Blob): Promise<string | null>;
   /** Start over from the identifier. */
   reset(): void;
 }
+
+/** The sign-up screen: {@link SignInScreen} without the sign-in-only one-tap methods, over a sign-up flow. */
+export type SignUpScreen = Omit<SignInScreen, 'flow' | 'signInWithPasskey' | 'signInWithApple' | 'signInWithGoogle'> & { readonly flow: SignUpFlow };
 
 const FIRST_FACTOR_METHODS: SignInMethod[] = ['password', 'email_code'];
 const SECOND_FACTOR_METHODS: SignInMethod[] = ['totp', 'backup_code', 'sms', 'email_code', 'passkey'];
@@ -173,22 +201,54 @@ const FIELDS: Record<'identifier' | 'password' | 'code' | 'backup', ScreenField>
 };
 
 const FIELD_CODE = FIELDS.code;
+const FIELD_EMAIL: ScreenField = { name: 'email', kind: 'email', autoComplete: 'email', secure: false, required: true };
+const FIELD_SIGN_UP_PASSWORD: ScreenField = { name: 'password', kind: 'password', autoComplete: 'new-password', secure: true, required: true };
 const FIELD_SECOND_CODE: ScreenField = { name: 'second_code', kind: 'code', autoComplete: 'one-time-code', secure: false };
 const FIELD_PHONE: ScreenField = { name: 'phone', kind: 'phone', autoComplete: 'tel', secure: false };
 const FIELD_NEW_PASSWORD: ScreenField = { name: 'new_password', kind: 'password', autoComplete: 'new-password', secure: true };
-const profileField = (f: ProfileCompletionField): ScreenField => ({
-  name: f.key,
-  kind: f.type === 'password' ? 'password' : 'text',
-  autoComplete: f.type === 'password' ? 'new-password' : 'off',
-  secure: f.type === 'password',
-  label: f.label,
-  required: f.required,
-  ...(f.options?.length ? { options: f.options } : {}),
-});
+const FIELD_KINDS: Record<string, ScreenField['kind']> = {
+  email: 'email', number: 'number', date: 'date', select: 'select', multi_select: 'multi_select', phone: 'phone',
+  checkbox: 'checkbox', textarea: 'textarea', file: 'file', password: 'password',
+};
+const profileField = (f: ProfileCompletionField): ScreenField => {
+  const kind = FIELD_KINDS[f.type] ?? 'text';
+  return {
+    name: f.key,
+    kind,
+    autoComplete: kind === 'password' ? 'new-password' : kind === 'phone' ? 'tel' : kind === 'email' ? 'email' : 'off',
+    secure: kind === 'password',
+    label: f.label,
+    required: f.required,
+    ...(f.options?.length ? { options: f.options } : {}),
+    ...(f.option_labels ? { optionLabels: f.option_labels } : {}),
+    ...(f.placeholder ? { placeholder: f.placeholder } : {}),
+    ...(f.help ? { help: f.help } : {}),
+    ...(f.link ? { link: f.link } : {}),
+    ...(f.accept ? { accept: f.accept } : {}),
+    ...(f.max_bytes ? { maxBytes: f.max_bytes } : {}),
+    ...(f.value !== undefined ? { value: f.value } : {}),
+  };
+};
 
-const screenStep = (step: FlowStep): SignInScreenStep => {
+/** The create-account form's own fields, from the instance's public settings. */
+const signUpFieldOf = (f: PublicSignUpField): ScreenField => {
+  const kind: ScreenField['kind'] =
+    f.type === 'tel' ? 'phone' : f.type === 'textarea' ? 'textarea' : f.type === 'checkbox' ? 'checkbox' : f.type === 'select' || f.type === 'radio' ? 'select' : f.type === 'multiselect' ? 'multi_select' : f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : f.type === 'email' ? 'email' : 'text';
+  return {
+    name: f.key,
+    kind,
+    autoComplete: kind === 'phone' ? 'tel' : kind === 'email' ? 'email' : 'off',
+    secure: false,
+    label: f.label,
+    required: f.required,
+    ...(f.options.length ? { options: f.options } : {}),
+    ...(f.placeholder ? { placeholder: f.placeholder } : {}),
+  };
+};
+
+const screenStep = (step: FlowStep, mode: 'sign_in' | 'sign_up' = 'sign_in'): SignInScreenStep => {
   switch (step.type) {
-    case 'needs_identifier': return 'identifier';
+    case 'needs_identifier': return mode === 'sign_up' ? 'details' : 'identifier';
     case 'needs_first_factor': return 'first_factor';
     case 'needs_second_factor': return 'second_factor';
     case 'needs_captcha': return 'captcha';
@@ -203,13 +263,30 @@ const screenStep = (step: FlowStep): SignInScreenStep => {
   }
 };
 
+/** The sign-in screen view-model: the credentials, then every step a journey or the account policies add. */
 export function createSignInScreen(opts: SignInScreenOptions): SignInScreen {
-  const flow = createSignInFlow(opts);
+  return createScreen(opts, 'sign_in');
+}
+
+/**
+ * The sign-up screen view-model: the same steps as {@link createSignInScreen} after the credentials (verify the
+ * email, policies, second-factor setup, recovery codes, required actions and journey forms), with `details` as
+ * the first step: `fields` are the email, a new password and the instance's sign-up fields, `legal` the consent
+ * links. `submit({ email, password, ...fields, consent: 'true' })`.
+ */
+export function createSignUpScreen(opts: SignInScreenOptions): SignUpScreen {
+  return createScreen(opts, 'sign_up') as unknown as SignUpScreen;
+}
+
+function createScreen(opts: SignInScreenOptions, mode: 'sign_in' | 'sign_up'): SignInScreen {
+  const flow = (mode === 'sign_up' ? createSignUpFlow(opts) : createSignInFlow(opts)) as unknown as SignInFlow & SignUpFlow;
   const native = opts.nativeSignIn ?? {};
   const listeners = new Set<(v: SignInScreenView) => void>();
   let selected: SignInMethod | null = null;
   let sentFor: SignInMethod | null = null;
-  let lastStep: SignInScreenStep = 'identifier';
+  let lastStep: SignInScreenStep = mode === 'sign_up' ? 'details' : 'identifier';
+  // Sign-up: the instance's create-account fields and consent links, read once.
+  let settings: InstanceSettings | null = null;
 
   const alternatives = (): SignInMethod[] => {
     const out: SignInMethod[] = [];
@@ -220,7 +297,7 @@ export function createSignInScreen(opts: SignInScreenOptions): SignInScreen {
   };
 
   const build = (snap: FlowSnapshot): SignInScreenView => {
-    const step = screenStep(snap.step);
+    const step = screenStep(snap.step, mode);
     if (step !== lastStep) {
       lastStep = step;
       selected = null;
@@ -261,7 +338,13 @@ export function createSignInScreen(opts: SignInScreenOptions): SignInScreen {
         : null;
 
     let fields: ScreenField[] = [];
-    if (step === 'identifier') fields = [FIELDS.identifier];
+    if (step === 'details') {
+      fields = [
+        FIELD_EMAIL,
+        FIELD_SIGN_UP_PASSWORD,
+        ...(settings?.signUpFields ?? []).filter((f) => f.key !== 'email' && f.key !== 'password').map(signUpFieldOf),
+      ];
+    } else if (step === 'identifier') fields = [FIELDS.identifier];
     else if (step === 'first_factor' || step === 'second_factor') {
       fields = method === 'password' ? [FIELDS.password] : method === 'backup_code' ? [FIELDS.backup] : method && method !== 'passkey' ? [FIELDS.code] : [];
     } else if (step === 'enroll_second_factor') {
@@ -304,6 +387,7 @@ export function createSignInScreen(opts: SignInScreenOptions): SignInScreen {
       recoveryCodes: fs.type === 'show_recovery_codes' ? fs.codes : null,
       policies: fs.type === 'needs_policy_acceptance' ? fs.policies : [],
       requiredAction,
+      legal: mode === 'sign_up' ? (settings?.legal ?? null) : null,
       flowStep: snap.step,
     };
   };
@@ -318,10 +402,17 @@ export function createSignInScreen(opts: SignInScreenOptions): SignInScreen {
     view = build(flow.getSnapshot());
     for (const l of listeners) l(view);
   };
+  if (mode === 'sign_up') {
+    void fetchInstanceSettings(opts.client).then((loaded) => {
+      settings = loaded;
+      refresh();
+    }, () => undefined);
+  }
   const done = async (p: Promise<unknown>) => void (await p);
 
   const sendCode = async () => {
     const { method, step, requiredAction } = view;
+    if (mode === 'sign_up' && step === 'email_verification') return done(flow.resendEmailCode());
     if (requiredAction?.kind === 'verify_email') {
       sentFor = 'email_code';
       return done(flow.sendEmailVerification());
@@ -360,6 +451,12 @@ export function createSignInScreen(opts: SignInScreenOptions): SignInScreen {
     async submit(values = {}) {
       const { step, method } = view;
       const code = (values.code ?? '').trim();
+      if (step === 'details') {
+        const { email = '', password = '', consent, ...rest } = values;
+        const fields: Record<string, string> = {};
+        for (const [k, v] of Object.entries(rest)) if (v) fields[k] = v;
+        return done(flow.submit({ email: email.trim(), password, fields, ...(consent !== undefined ? { consent: consent === 'true' } : {}) }));
+      }
       if (step === 'identifier') return done(flow.submitIdentifier((values.identifier ?? '').trim()));
       if (step === 'first_factor') {
         if (method === 'password') return done(flow.submitPassword(values.password ?? ''));
@@ -397,6 +494,16 @@ export function createSignInScreen(opts: SignInScreenOptions): SignInScreen {
           return done(flow.submitSecondFactor(code, method, values.remember_device === 'true' ? { rememberDevice: true } : {}));
         }
       }
+    },
+    async uploadFile(field, file) {
+      const out = await flow.uploadJourneyFile(field, file);
+      if (out.ok) return out.id;
+      view = { ...view, error: out.errors[0]?.message ?? 'The file could not be uploaded.', reason: out.errors[0]?.code ?? 'upload_failed' };
+      for (const l of listeners) l(view);
+      return null;
+    },
+    saveDraft(values = {}) {
+      return view.requiredAction?.kind === 'journey_form' ? done(flow.saveRequiredFieldsDraft(values)) : Promise.resolve();
     },
     acknowledgeRecoveryCodes: () => done(flow.acknowledgeRecoveryCodes()),
     acceptPolicies(options = {}) {

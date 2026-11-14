@@ -2,6 +2,14 @@
 
 
 
+## 0.45.0
+
+- `withStepUp(policy, fn)`, `createStepUp(...).withPolicy`, `startStepUpPush`, `startStepUpDuo` and `getStepUpPolicy`; step-up polls push and Duo answers.
+- `getMfaCampaignPrompt` and `reportMfaCampaignEvent` for MFA rollout campaigns.
+- Sign-up journeys: `createSignUpFlow` handles second-factor setup and required actions; new field types (multi-select, phone, date, checkbox with a link, file) with real file upload and saved drafts.
+- `createReconnectController`, `CheckoutController`, `UsageController`, `validatePlanCoupon`, `describeDiscount`.
+- Approval and API key helpers for the new client routes.
+
 ## 0.44.1
 
 - Permission checks are typed from a generated `atlas-types.d.ts` when present (via `@atlasauth/authz`).

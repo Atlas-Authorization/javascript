@@ -27,6 +27,17 @@ import {
 } from '../serialize';
 import { AtlasApiError, DEFAULT_API_URL } from '@atlasauth/backend';
 import { registeredConfigTypes } from './config-types';
+import {
+  applyRequires,
+  fetchConfigLimits,
+  resolveCodeFiles,
+  runPreflight,
+  setKeysOf,
+  sortSets,
+  switchableHttp,
+  validateAgainstLimits,
+  type PreflightReport,
+} from './config-rollout';
 import { configJsonSchema } from './config-types/schema';
 import { envApiUrl, resolveAuth } from './shared';
 import { parseDotenv, productDir, renderDotenv, writeSecretFile } from '../secrets';
@@ -487,14 +498,14 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'resource_servers',
-      fileKeys: [...RESOURCE_SERVER_KEYS, 'publish_resource_metadata', 'access_token_format', 'refresh_token_absolute_ttl_seconds', 'refresh_token_idle_ttl_seconds', 'introspection_client_ids'],
+      fileKeys: [...RESOURCE_SERVER_KEYS, ...RESOURCE_SERVER_SETTINGS],
       keyOf: (c) => String(obj(c).identifier ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/resource_servers');
         return rows.map((r) => ({
           key: String(r.identifier ?? ''),
           id: String(r.id ?? ''),
-          config: pick(r, RESOURCE_SERVER_KEYS),
+          config: pick(r, [...RESOURCE_SERVER_KEYS, ...RESOURCE_SERVER_SETTINGS]),
         }));
       },
       async create(http, config) {
@@ -596,7 +607,7 @@ function registry(): ResourceSpec[] {
       },
       async update(http, live, config) {
         const c = obj(config);
-        await http.patch(`/v1/permissions/${enc(live.id)}`, { name: c.name, description: c.description ?? null });
+        await http.patch(`/v1/permissions/${enc(live.id)}`, { name: c.name, description: c.description ?? null, ...(c.implies !== undefined ? { implies: c.implies } : {}) });
       },
       async remove(http, live) {
         await http.delete(`/v1/permissions/${enc(live.id)}`);
@@ -683,6 +694,8 @@ function registry(): ResourceSpec[] {
           ...(typeof c.active === 'boolean' ? { active: c.active } : {}),
           ...(typeof c.secret === 'string' ? { secret: c.secret } : {}),
           ...(Array.isArray(c.signature_versions) ? { signature_versions: c.signature_versions } : {}),
+          ...(c.filters !== undefined ? { filters: c.filters } : {}),
+          ...(c.max_rps !== undefined ? { max_rps: c.max_rps } : {}),
           ...(typeof c.external_ref === 'string' ? { external_ref: c.external_ref } : {}),
         });
       },
@@ -1254,6 +1267,20 @@ function registry(): ResourceSpec[] {
       },
     },
 
+    // 26b. Hosted reconnect: whether the owner is emailed a reconnect link when a connection needs authorization again.
+    {
+      kind: 'singleton',
+      type: 'connection_reconnect',
+      fileKeys: ['enabled', 'link_ttl_hours', 'return_url', 'providers'],
+      async fetchLive(http) {
+        const v = await orNotFound(http.get<Record<string, unknown>>('/v1/connection_reconnect_settings'), null);
+        return v ? pick(v, ['enabled', 'link_ttl_hours', 'return_url', 'providers']) : null;
+      },
+      async apply(http, config) {
+        await http.put('/v1/connection_reconnect_settings', compact(config));
+      },
+    },
+
     // 26. Connection relay size limits (bytes; defaults 256 KiB request, 1 MiB response, up to 25 MiB).
     {
       kind: 'singleton',
@@ -1292,7 +1319,7 @@ function registry(): ResourceSpec[] {
 }
 
 const HOSTED_PAGES_KEYS = ['sign_in_url', 'sign_up_url', 'user_url', 'device_url'] as const;
-const CONNECTION_CLIENT_KEYS = ['owner', 'provider', 'environment', 'client_id', 'client_secret', 'scopes', 'host_params', 'enabled'] as const;
+const CONNECTION_CLIENT_KEYS = ['owner', 'provider', 'environment', 'client_id', 'client_secret', 'scopes', 'host_params', 'enabled', 'redirect_uri'] as const;
 const BRIDGE_KEYS = ['enabled', 'ends_at', 'mode', 'preset', 'preset_vars', 'issuer', 'jwks_url', 'audience', 'algorithms', 'claim_map', 'expired_grace_seconds', 'cookie_names', 'create_users'] as const;
 const IMPERSONATION_KEYS = ['require_reason', 'reason_codes', 'max_duration_seconds', 'require_approval', 'read_only_default', 'notify_user'] as const;
 const TOKEN_LIMIT_KEYS = ['per_key', 'per_connection', 'per_app', 'providers'] as const;
@@ -1396,8 +1423,10 @@ const RESOURCE_SERVER_KEYS = [
   'token_ttl_seconds',
   'signing_alg',
 ] as const;
+/** What else a resource server carries: the metadata flag, token formats and lifetimes, scope presets and introspecting clients. */
+const RESOURCE_SERVER_SETTINGS = ['scope_presets', 'publish_resource_metadata', 'access_token_format', 'refresh_token_absolute_ttl_seconds', 'refresh_token_idle_ttl_seconds', 'introspection_client_ids'] as const;
 const ROLE_KEYS = ['key', 'name', 'description', 'permissions'] as const;
-const PERMISSION_KEYS = ['key', 'name', 'description'] as const;
+const PERMISSION_KEYS = ['key', 'name', 'description', 'implies'] as const;
 const CUSTOM_PROVIDER_KEYS = [
   'provider_key',
   'display_name',
@@ -1430,10 +1459,11 @@ const CUSTOM_PROVIDER_WRITE_KEYS = [
   'scope_separator',
   'userinfo_auth',
   'client_assertion_audience',
+  'oidc_max_age_seconds',
   'logout',
   'idp_initiated_login',
 ] as const;
-const WEBHOOK_KEYS = ['url', 'enabled_events', 'active', 'signature_versions', 'external_ref'] as const;
+const WEBHOOK_KEYS = ['url', 'enabled_events', 'active', 'signature_versions', 'filters', 'max_rps', 'external_ref'] as const;
 const SSO_KEYS = [
   'type',
   'status',
@@ -1460,6 +1490,7 @@ const SSO_WRITE_KEYS = [
   'saml_idp_slo_binding',
   'saml_idp_slo_soap_url',
   'saml_require_encrypted_assertions',
+  'saml_honor_idp_session_lifetime',
   'saml_acs_path',
   'require_consent_screen',
   'discourse_secret',
@@ -1468,6 +1499,7 @@ const SSO_WRITE_KEYS = [
   'github_access',
   'attribute_mapping',
   'oidc_scopes',
+  'rerole_on_sign_in',
   'profile_mapping',
   'token_endpoint_auth_method',
   'client_assertion_audience',
@@ -1494,6 +1526,9 @@ const BILLING_KEYS = [
   'provider',
   'annual_price_id',
   'kind',
+  'description',
+  'badge',
+  'sort_order',
 ] as const;
 const NOTIFICATION_KEYS = ['name', 'subject', 'body', 'category'] as const;
 const EMAIL_KEYS = ['name', 'subject', 'text'] as const;
@@ -1505,6 +1540,8 @@ const ORG_POLICY_KEYS = [
   'allowedSignInMethods',
   'ipAllowlist',
   'maxSessionAgeSeconds',
+  'maxSessions',
+  'ssoMultiConnection',
 ] as const;
 
 /** Narrow a Config to a plain string-keyed record for field access. */
@@ -1839,6 +1876,10 @@ export interface ConfigPlan {
   warnings: string[];
   /** Secrets in the file that Atlas cannot compare with what it stores. */
   unverifiableSecrets: Array<{ type: string; key: string; path: string }>;
+  /** Each section of the file after `requires:` and `code_file` were resolved (a skipped section is absent): what the limit checks read. */
+  sections: Array<{ type: string; doc: Json }>;
+  /** Dry-run every change against the server (writes only inside its rolled-back dry run). */
+  preflight: () => Promise<PreflightReport>;
 }
 
 const INSTANCE_PLACEHOLDERS = ['fapi_host', 'frontend_api_url', 'id'] as const;
@@ -1868,10 +1909,13 @@ async function instancePlaceholderValues(http: ConfigHttp, text: string): Promis
  * `atlas migrate better-auth` (which shows the plan before applying it).
  */
 export async function planConfigImport(
-  http: ConfigHttp,
-  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; pruneTypes?: readonly string[]; forceHook?: boolean; rotateSecrets?: boolean },
+  rawHttp: ConfigHttp,
+  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; pruneTypes?: readonly string[]; forceHook?: boolean; rotateSecrets?: boolean; baseDir?: string },
 ): Promise<ConfigPlan> {
   const { dir, format } = opts;
+  // Every change's apply runs through `gate`, so the pre-flight pass can turn the same calls into the server's dry run.
+  const gate = switchableHttp(rawHttp);
+  const http = gate.http;
   let env = opts.env;
   const applyOpts: ApplyOpts = { forceHook: opts.forceHook === true };
   const ext = format === 'json' ? 'json' : 'yaml';
@@ -1880,9 +1924,17 @@ export async function planConfigImport(
   }
   const present = new Set(readdirSync(dir));
 
-  const files = registry().flatMap((spec) =>
-    present.has(`${spec.type}.${ext}`) ? [{ spec, doc: deserialize(readFileSync(join(dir, `${spec.type}.${ext}`), 'utf8'), format) }] : [],
-  );
+  // `requires:` first (an unset variable drops the section or entry and is never a deletion), then `code_file`.
+  const requiresNotes: string[] = [];
+  const prepared = new Map<string, { doc: Json; skippedKeys: Set<string>; skippedSection: boolean }>();
+  const files = registry().flatMap((spec) => {
+    if (!present.has(`${spec.type}.${ext}`)) return [];
+    const req = applyRequires(spec.type, deserialize(readFileSync(join(dir, `${spec.type}.${ext}`), 'utf8'), format), env, spec.kind === 'collection' ? (e) => spec.keyOf(e) : undefined);
+    requiresNotes.push(...req.notes);
+    const doc = req.skippedSection ? null : resolveCodeFiles(spec.type, req.doc, opts.baseDir ?? dir);
+    prepared.set(spec.type, { doc, skippedKeys: req.skippedKeys, skippedSection: req.skippedSection });
+    return req.skippedSection ? [] : [{ spec, doc }];
+  });
   env = { ...env, ...(await instancePlaceholderValues(http, JSON.stringify(files.map((f) => f.doc)))) };
   const unknown = files.flatMap(({ spec, doc }) => unknownFileKeys(spec, doc));
   if (unknown.length) throw new CliError(`Unknown key(s) in the config:\n  ${unknown.join('\n  ')}`);
@@ -1890,7 +1942,8 @@ export async function planConfigImport(
   if (invalid.length) throw new CliError(`Invalid value(s) in the config:\n  ${invalid.join('\n  ')}`);
 
   const rotate = opts.rotateSecrets === true;
-  const warnings: string[] = [];
+  const warnings: string[] = [...requiresNotes];
+  const sections: ConfigPlan['sections'] = [];
   const unverifiableSecrets: ConfigPlan['unverifiableSecrets'] = [];
   const changes: PlannedChange[] = [];
   let unchanged = 0;
@@ -1903,8 +1956,11 @@ export async function planConfigImport(
     const file = `${spec.type}.${ext}`;
     // A type with no file is simply NOT MANAGED — leave live untouched.
     if (!present.has(file)) continue;
-    const text = readFileSync(join(dir, file), 'utf8');
-    const parsed = interpolate(deserialize(text, format), env);
+    const prep = prepared.get(spec.type)!;
+    if (prep.skippedSection) continue;
+    const parsed = interpolate(prep.doc, env);
+    sections.push({ type: spec.type, doc: parsed });
+    const setKeys = setKeysOf(spec.type);
 
     if (spec.kind === 'singleton') {
       const desired = parsed;
@@ -1926,11 +1982,14 @@ export async function planConfigImport(
       const r = reconcileSecrets(desiredN, seen, spec.reportsSecrets === true);
       const forced = rotate ? r.unverifiable : [];
       if (!rotate) unverifiableSecrets.push(...r.unverifiable.map((path) => ({ type: spec.type, key: '', path })));
-      if (forced.length === 0 && deepEqual(r.desired, r.live as Json)) {
+      // A set-valued field compares without its order (a re-plan after apply shows nothing).
+      const sortedDesired = sortSets(r.desired, setKeys);
+      const sortedLive = sortSets(r.live as Json, setKeys);
+      if (forced.length === 0 && deepEqual(sortedDesired, sortedLive)) {
         unchanged += 1;
         continue;
       }
-      changes.push({ type: spec.type, action: 'update', key: '', before: r.live as Json, after: r.desired, raw: desiredN, changedSecrets: forced, apply: () => spec.apply(http, desired, applyOpts) });
+      changes.push({ type: spec.type, action: 'update', key: '', before: sortedLive, after: sortedDesired, raw: desiredN, changedSecrets: forced, apply: () => spec.apply(http, desired, applyOpts) });
       continue;
     }
 
@@ -1969,7 +2028,9 @@ export async function planConfigImport(
         }
       }
       unverifiableSecrets.push(...unknownToApi.map((path) => ({ type: spec.type, key, path })));
-      if (forced.length === 0 && deepEqual(r.desired, liveSeen)) {
+      const sortedDesired = sortSets(r.desired, setKeys);
+      const sortedLive = sortSets(liveSeen, setKeys);
+      if (forced.length === 0 && deepEqual(sortedDesired, sortedLive)) {
         unchanged += 1;
         continue;
       }
@@ -1979,11 +2040,13 @@ export async function planConfigImport(
         );
       }
       const upd = spec.update;
-      changes.push({ type: spec.type, action: 'update', key, before: liveSeen, after: r.desired, raw: cfg, changedSecrets: forced, apply: () => upd(http, existing, cfg) });
+      changes.push({ type: spec.type, action: 'update', key, before: sortedLive, after: sortedDesired, raw: cfg, changedSecrets: forced, apply: () => upd(http, existing, cfg) });
     }
 
     for (const entry of live) {
       if (desiredByKey.has(entry.key)) continue;
+      // An entry `requires:` left out is not in the file on purpose: its live counterpart is never a deletion.
+      if (prep.skippedKeys.has(entry.key)) continue;
       const change: Change = { type: spec.type, action: 'delete', key: entry.key, before: entry.config };
       if (!spec.remove) {
         skippedDeletes.push(change);
@@ -1997,7 +2060,9 @@ export async function planConfigImport(
       }
     }
   }
-  return { changes, unchanged, skippedDeletes, managed, warnings, unverifiableSecrets };
+  const typeOrder = new Map(registry().map((s, i) => [s.type, i] as const));
+  const preflight = () => runPreflight(changes, gate, typeOrder, (c) => unresolvedPlaceholders([c]).length > 0);
+  return { changes, unchanged, skippedDeletes, managed, warnings, unverifiableSecrets, sections, preflight };
 }
 
 /** True for a non-empty object whose every leaf is `null` (a file that only clears fields). */
@@ -2169,7 +2234,10 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
   const { dir, format, env } = source;
   const where = source.label ?? dir;
   const prune = values.prune === true;
-  const plan = await planConfigImport(http, { dir, format, env, prune, pruneTypes: list(values, 'prune-type'), rotateSecrets: values['rotate-secret'] === true });
+  const plan = await planConfigImport(http, { dir, format, env, prune, pruneTypes: list(values, 'prune-type'), rotateSecrets: values['rotate-secret'] === true, baseDir: source.baseDir });
+  // The checks apply would hit, so a plan that passes is an apply that will: published limits plus the server's dry run.
+  const validation = await validatePlan(http, plan, values);
+  const invalid = validationErrors(validation);
   const deletes: Change[] = prune ? [] : plan.skippedDeletes;
   const all: Change[] = plan.changes;
   const rows = all.map((c) => ({
@@ -2191,6 +2259,8 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
           managed_by_platform: plan.managed.map((m) => ({ type: m.type, key: m.key, managed_by: m.managedBy })),
           warnings: plan.warnings,
           unverifiable_secrets: plan.unverifiableSecrets.map((u) => ({ type: u.type, key: u.key || null, path: u.path })),
+          validation: validationJson(validation),
+          has_errors: invalid.length > 0,
           has_changes: pending > 0,
         },
         null,
@@ -2220,9 +2290,56 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
     }
     if (plan.warnings.length || plan.unverifiableSecrets.length) ctx.io.out('');
     printPlanNotes(ctx, plan);
+    printValidation(ctx, validation);
     if (pending === 0) ctx.io.out(`No drift: the instance matches ${where}.`);
   }
+  // A file apply would refuse is worse than drift: exit 1, with or without --check.
+  if (invalid.length > 0) return 1;
   return wantsCheck(values) && pending > 0 ? 2 : 0;
+}
+
+/** What validating a plan found: the published-limit errors and the server's dry-run report (null when it was skipped). */
+interface PlanValidation {
+  limitErrors: string[];
+  report: PreflightReport | null;
+}
+
+/**
+ * Check a plan before it is applied: the file against the limits the server publishes
+ * (`GET /v1/config/limits`), then every change against the server's own dry run. `--skip-validate`
+ * leaves out the dry run. An older server with no limits endpoint is simply checked by the dry run.
+ */
+async function validatePlan(http: ConfigHttp, plan: ConfigPlan, values: Values): Promise<PlanValidation> {
+  const limits = await fetchConfigLimits(http).catch(() => null);
+  const limitErrors = limits ? validateAgainstLimits(plan.sections, limits) : [];
+  const report = values['skip-validate'] === true || plan.changes.length === 0 ? null : await plan.preflight();
+  return { limitErrors, report };
+}
+
+const issueLine = (i: { type: string; key: string | null; action: string; message: string }) => `${i.type}${i.key ? ` ${i.key}` : ''} (${i.action}): ${i.message}`;
+const validationErrors = (v: PlanValidation): string[] => [...v.limitErrors, ...(v.report?.errors ?? []).map(issueLine)];
+
+function validationJson(v: PlanValidation) {
+  return {
+    errors: validationErrors(v),
+    limit_errors: v.limitErrors,
+    checked: v.report?.checked ?? 0,
+    deferred: (v.report?.deferred ?? []).map((i) => ({ type: i.type, key: i.key, message: i.message })),
+    skipped: v.report?.skipped ?? [],
+    unavailable: v.report?.unavailable ?? null,
+  };
+}
+
+function printValidation(ctx: RunContext, v: PlanValidation): void {
+  const errors = validationErrors(v);
+  if (errors.length) {
+    ctx.io.out('');
+    ctx.io.out(`Validation: ${errors.length} error(s) apply would hit:`);
+    for (const e of errors) ctx.io.out(`    ${e}`);
+  }
+  for (const i of v.report?.deferred ?? []) ctx.io.out(`note: ${issueLine(i)} (not validated before apply; it depends on something this plan creates)`);
+  for (const s of v.report?.skipped ?? []) ctx.io.out(`note: ${s.type}${s.key ? ` ${s.key}` : ''} was not validated: ${s.reason}.`);
+  if (v.report?.unavailable) ctx.io.out(`note: ${v.report.unavailable}.`);
 }
 
 /** `--check` (CI) and `--exit-code` (Terraform's name) both mean: exit 2 when there is drift. */
@@ -2235,6 +2352,8 @@ interface ConfigSource {
   env: NodeJS.ProcessEnv;
   /** What the user passed (a file or directory as typed); messages name this, never a working directory. */
   label?: string;
+  /** The directory a `code_file` path is relative to: the config file's own directory (or the directory itself). */
+  baseDir?: string;
 }
 
 /**
@@ -2272,6 +2391,11 @@ export function unresolvedPlaceholders(changes: Change[]): string[] {
 /** The resource types a single config file may hold, in the order they are applied. */
 export function configTypes(): string[] {
   return registry().map((s) => s.type);
+}
+
+/** Every registered resource spec (the core types and the registry groups), for the round-trip and coverage guards. */
+export function allConfigSpecs(): ResourceSpec[] {
+  return registry();
 }
 
 /**
@@ -2328,7 +2452,7 @@ async function resolveSource(ctx: RunContext, args: ParsedArgs): Promise<ConfigS
   } catch {
     throw new CliError(`Config not found: ${path}. Pass a config file (atlas.config.ts / atlas.yaml / atlas.json) or a directory from 'atlas config export'.`);
   }
-  if (!isFile) return { dir: path, label: path, format: resolveFormat(args.values), env, cleanup: () => undefined };
+  if (!isFile) return { dir: path, label: path, baseDir: path, format: resolveFormat(args.values), env, cleanup: () => undefined };
 
   const ext = extname(path).toLowerCase();
   const format: Format = ext === '.yaml' || ext === '.yml' ? 'yaml' : ext === '.json' ? 'json' : resolveFormat(args.values);
@@ -2344,7 +2468,7 @@ async function resolveSource(ctx: RunContext, args: ParsedArgs): Promise<ConfigS
   }
   const dir = mkdtempSync(join(tmpdir(), 'atlas-apply-'));
   for (const [type, value] of Object.entries(doc)) writeFileSync(join(dir, `${type}.json`), serialize(value, 'json'));
-  return { dir, label: path, format: 'json', env, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return { dir, label: path, baseDir: dirname(resolve(path)), format: 'json', env, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 /**
@@ -2370,6 +2494,8 @@ export async function planCommand(ctx: RunContext, args: ParsedArgs): Promise<nu
 export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const values = args.values;
   if (values.check === true || values['exit-code'] === true) return planCommand(ctx, args);
+  const json = values.json === true;
+  if (json && values.yes !== true) throw new CliError('--json needs --yes: there is no prompt to answer.');
   const source = await resolveSource(ctx, args);
   try {
     const onUnknownFields = (n: UnknownFieldsNotice) =>
@@ -2378,23 +2504,42 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
     const collected: Record<string, string> = {};
     const kept = keepingSecrets(requireHttp(ctx, values, onUnknownFields), str(values, 'out') || productDir(ctx.env, 'atlas'), secretsOut ? collected : undefined);
     const prune = values.prune === true;
-    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, pruneTypes: list(values, 'prune-type'), forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
-    printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun: false, prune });
-    for (const c of plan.changes) {
-      if (c.action !== 'update') continue;
-      const fields = printedFields(c);
-      if (fields.length) ctx.io.out(`  ~ ${c.key ? `${c.type} ${c.key}` : c.type}:`);
-      for (const f of fields) ctx.io.out(`      ${printedLine(f)}`);
+    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, pruneTypes: list(values, 'prune-type'), forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true, baseDir: source.baseDir });
+    const out = (line: string) => {
+      if (!json) ctx.io.out(line);
+    };
+    if (!json) {
+      printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun: false, prune });
+      for (const c of plan.changes) {
+        if (c.action !== 'update') continue;
+        const fields = printedFields(c);
+        if (fields.length) ctx.io.out(`  ~ ${c.key ? `${c.type} ${c.key}` : c.type}:`);
+        for (const f of fields) ctx.io.out(`      ${printedLine(f)}`);
+      }
+      printPlanNotes(ctx, plan);
     }
-    printPlanNotes(ctx, plan);
+    const refOf = (c: Change) => ({ type: c.type, key: c.key || null, action: c.action });
     if (plan.changes.length === 0) {
-      ctx.io.out('No changes to apply.');
+      if (json) ctx.io.out(JSON.stringify({ object: 'config_apply', applied: [], failed: null, not_applied: [], warnings: plan.warnings }, null, 2));
+      else ctx.io.out('No changes to apply.');
       if (secretsOut) await writeSecretsOut(ctx, kept.http, source, plan, collected, secretsOut);
       return 0;
     }
     const missing = unresolvedPlaceholders(plan.changes);
     if (missing.length) {
       throw new CliError(`Unresolved placeholder(s): ${missing.map((n) => `\${${n}}`).join(', ')}. Set them in the environment or in --secrets-file.`);
+    }
+    // Pre-flight: every change is validated (published limits, then the server's own dry run) before anything is written.
+    const validation = await validatePlan(kept.http, plan, values);
+    const invalid = validationErrors(validation);
+    if (!json) printValidation(ctx, validation);
+    if (invalid.length) {
+      if (json) {
+        ctx.io.out(JSON.stringify({ object: 'config_apply', applied: [], failed: null, not_applied: plan.changes.map(refOf), validation: validationJson(validation), warnings: plan.warnings }, null, 2));
+      } else {
+        ctx.io.out(`Nothing applied: ${invalid.length} change(s) would be refused. Fix them and run again.`);
+      }
+      return 1;
     }
     if (values.yes !== true) {
       const answer = (await ctx.prompt.text(`Apply ${plan.changes.length} change(s)? [y/N]`, { default: 'n' })).trim().toLowerCase();
@@ -2403,11 +2548,48 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
         return 1;
       }
     }
-    for (const change of plan.changes) await change.apply();
-    ctx.io.out(`Applied ${plan.changes.length} change(s).`);
-    for (const path of kept.saved) ctx.io.out(`A new secret was written to ${path} (mode 0600). It is shown only once.`);
+    const applied: Change[] = [];
+    let failed: { change: Change; error: string } | null = null;
+    for (const change of plan.changes) {
+      try {
+        await change.apply();
+        applied.push(change);
+      } catch (err) {
+        failed = { change, error: err instanceof Error ? err.message : String(err) };
+        break;
+      }
+    }
+    const notApplied = plan.changes.slice(applied.length + (failed ? 1 : 0));
+    if (json) {
+      ctx.io.out(
+        JSON.stringify(
+          {
+            object: 'config_apply',
+            applied: applied.map(refOf),
+            failed: failed ? { ...refOf(failed.change), error: failed.error } : null,
+            not_applied: notApplied.map(refOf),
+            validation: validationJson(validation),
+            warnings: plan.warnings,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (failed) {
+      const label = (c: Change) => `${c.action} ${c.key ? `${c.type} ${c.key}` : c.type}`;
+      ctx.io.err(`atlas: ${label(failed.change)} failed: ${failed.error}`);
+      ctx.io.out(`Applied ${applied.length} of ${plan.changes.length} change(s) before it failed:`);
+      for (const c of applied) ctx.io.out(`  applied      ${label(c)}`);
+      ctx.io.out(`  FAILED       ${label(failed.change)} (it may have been partly applied)`);
+      for (const c of notApplied) ctx.io.out(`  not applied  ${label(c)}`);
+      ctx.io.out('Fix the cause and run apply again: what was applied is now a no-op.');
+    } else {
+      ctx.io.out(`Applied ${plan.changes.length} change(s).`);
+    }
+    // Secrets minted before a failure still exist: say where they were kept.
+    for (const path of kept.saved) out(`A new secret was written to ${path} (mode 0600). It is shown only once.`);
     if (secretsOut) await writeSecretsOut(ctx, kept.http, source, plan, collected, secretsOut);
-    return 0;
+    return failed ? 1 : 0;
   } finally {
     source.cleanup();
   }

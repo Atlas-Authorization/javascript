@@ -19,6 +19,9 @@ import type { CursorParams, ListPage, Metadata } from './types';
 /** A machine's lifecycle state. `pending` awaits approval; `revoked` is terminal. */
 export type MachineStatus = 'pending' | 'active' | 'revoked';
 
+/** What a machine's tokens are bound to: a DPoP key, a client certificate, either, or nothing (a plain bearer token). */
+export type MachineTokenBinding = 'none' | 'dpop' | 'mtls' | 'any';
+
 /** Device metadata bag (hostname/os/app_version/last_seen_at/…). */
 export type MachineMetadata = Record<string, unknown>;
 
@@ -35,6 +38,8 @@ export interface Machine {
   status: MachineStatus;
   /** JWK thumbprint of the registered device key, or null for a secret-only machine. */
   public_key_jkt: string | null;
+  /** The sender constraint every token this machine mints must carry. A proof or certificate sent under `none` still binds the token. */
+  token_binding?: MachineTokenBinding;
   metadata: MachineMetadata;
   enrolled_at: number | null;
   /** When the machine last minted a token (epoch ms); null = never. */
@@ -245,6 +250,13 @@ export function machinesResource(request: RequestFn) {
     /** Rename a machine (`PATCH /v1/machines/:id`). */
     rename(id: string, name: string): Promise<Machine> {
       return request({ method: 'PATCH', path: `/v1/machines/${enc(id)}`, body: { name } });
+    },
+    /**
+     * Set the sender constraint the machine's tokens must carry (`PATCH /v1/machines/:id`). Needs a
+     * recent MFA sign-in, and is audited.
+     */
+    setTokenBinding(id: string, tokenBinding: MachineTokenBinding): Promise<Machine> {
+      return request({ method: 'PATCH', path: `/v1/machines/${enc(id)}`, body: { token_binding: tokenBinding } });
     },
     /** Merge device metadata (`PATCH /v1/machines/:id/metadata`). */
     patchMetadata(id: string, metadata: MachineMetadata): Promise<Machine> {

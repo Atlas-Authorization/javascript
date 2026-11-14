@@ -3,7 +3,7 @@
  * `@atlasauth/backend` (`rateLimitRequest`, `requireGrantUsage`) and accept either the limiter /
  * usage options or an already-built check. A limit store or usage call that throws is an error, never an allow.
  */
-import { rateLimitRequest, requireGrantUsage } from '@atlasauth/backend';
+import { rateLimitRequest, requireGrantUsage, requireFeature } from '@atlasauth/backend';
 import type { AtlasCredentials } from './index';
 
 /** Options for the usage gate (`requireGrantUsage` in `@atlasauth/backend`). */
@@ -80,6 +80,17 @@ export function grantUsageGate(options: GrantUsageOptions | GrantUsageCheck): Li
   return (input) => check(neutral(input));
 }
 
+/** Options for the feature gate (`requireFeature` in `@atlasauth/backend`). */
+export type FeatureOptions = Parameters<typeof requireFeature>[0];
+/** The framework-neutral feature check `requireFeature(opts)` returns. */
+export type FeatureCheck = ReturnType<typeof requireFeature>;
+
+/** Turn feature options (or an already-built `requireFeature` check) into a gate: 401 without a subject, 403 `feature_not_entitled` when the plan lacks the feature. */
+export function featureGate(options: FeatureOptions | FeatureCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireFeature(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
 /** The JSON body of a denial. */
 export function denialBody(v: Extract<LimitVerdict, { allowed: false }>): unknown {
   return v.body ?? { errors: [{ code: v.status === 429 ? 'RATE_LIMITED' : 'FORBIDDEN' }] };
@@ -147,6 +158,23 @@ export interface AtlasLimitsPluginOptions {
   grantUsage?: GrantUsageOptions | GrantUsageCheck;
   /** Where the verified claims live. Defaults to the claims `atlasPlugin` put on the credentials. */
   claims?: (request: HapiLimitRequest) => LimitClaims | Promise<LimitClaims>;
+}
+
+/**
+ * Route `pre` method that requires a plan feature (a plugin option would gate every route, so this is per route):
+ * `options: { pre: [{ method: atlasRequireFeature({ cache, feature: 'exports' }) }] }`. Runs after the auth strategy;
+ * answers 401 without a subject and 403 `feature_not_entitled` when the plan lacks the feature.
+ */
+export function atlasRequireFeature(feature: FeatureOptions | FeatureCheck, options: Pick<AtlasLimitsPluginOptions, 'claims'> = {}) {
+  const gate = featureGate(feature);
+  return async (request: HapiLimitRequest, h: HapiLimitToolkit): Promise<unknown> => {
+    const claims = await (options.claims ?? ((r: HapiLimitRequest) => r.auth?.credentials?.auth?.claims))(request);
+    const verdict = await gate({ claims, headers: request.headers, ip: request.info?.remoteAddress });
+    if (verdict.allowed) return h.continue;
+    const res = h.response(denialBody(verdict)).code(verdict.status);
+    for (const [k, v] of Object.entries(verdict.headers ?? {})) res.header(k, v);
+    return res.takeover();
+  };
 }
 
 const HEADERS = 'atlasLimitHeaders';

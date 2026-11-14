@@ -24,13 +24,26 @@ export interface MessageQuery {
  * The universal message sink: everything the engine would have sent (email, SMS, WhatsApp, voice, push)
  * lands here instead. Read it with `GET /__emulator/messages` or `engine.messages`.
  */
+/** What the messaging layer decides for one outgoing message before it is sunk. `done` gets the sunk copy, or null when it was not delivered. */
+export interface MessagePlan {
+  deliver: boolean;
+  done?: (sunk: SunkMessage | null) => void;
+}
+
 export class MessageSink {
   readonly messages: SunkMessage[] = [];
+  /** Suppression, provider failover and the message ledger plug in here (see handlers/messaging.ts); unset, every message is delivered. */
+  route?: (m: Omit<SunkMessage, 'id' | 'at'>) => MessagePlan;
   private waiters: Array<{ q: MessageQuery; resolve: (m: SunkMessage) => void; timer: ReturnType<typeof setTimeout> }> = [];
 
   constructor(private readonly clock: Clock) {}
 
   send(m: Omit<SunkMessage, 'id' | 'at'>): SunkMessage {
+    const plan = this.route?.(m);
+    if (plan && !plan.deliver) {
+      plan.done?.(null);
+      return { id: 0, at: new Date(this.clock.now()).toISOString(), ...m, meta: { ...(m.meta ?? {}), undelivered: true } };
+    }
     const full: SunkMessage = { id: this.messages.length + 1, at: new Date(this.clock.now()).toISOString(), ...m };
     this.messages.push(full);
     for (const w of [...this.waiters]) {
@@ -40,6 +53,7 @@ export class MessageSink {
         w.resolve(full);
       }
     }
+    plan?.done?.(full);
     return full;
   }
 

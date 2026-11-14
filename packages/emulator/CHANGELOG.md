@@ -1,5 +1,9 @@
 # @atlasauth/emulator changelog
 
+## 0.4.0
+
+- Routes the new machine, OAuth provider, SCIM, passkey, journey, billing, messaging and authz endpoints; webhook `*` endpoints skip newer event types as in production.
+
 ## 0.3.0
 
 - `--openapi` serves the whole Backend API from the OpenAPI document, with real signed tokens, signed webhook deliveries, a message sink, clock control and the change feed.

@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/referral-conformance",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Conformance suite for the Atlas referral protocol (the Referalli connection API): recorded signed calls with the answers a server must give, a runner, and recorded inbound events. Run it against your own referral platform in CI.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,7 +19,16 @@
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
-  "keywords": ["atlas", "atlasauth", "referral", "referalli", "conformance", "webhook"],
+  "keywords": [
+    "atlas",
+    "atlasauth",
+    "ci",
+    "conformance",
+    "referalli",
+    "referral",
+    "referral-platform",
+    "webhook"
+  ],
   "devDependencies": {
     "@types/node": "^22.9.0",
     "typescript": "^5.6.3",
@@ -33,5 +42,9 @@
     "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
-  ]
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
 }

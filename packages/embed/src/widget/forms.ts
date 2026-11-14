@@ -7,6 +7,7 @@ import {
   planFirstFactor,
   resetStep,
   signUpProvedByLink,
+  uploadJourneyFile,
   type FieldError,
   type PendingRequiredAction,
   type ProfileCompletionField,
@@ -298,7 +299,43 @@ function addAskedField(
     inputs.set(name, control as HTMLInputElement);
     return;
   }
-  addField(name, label, ['tel', 'email', 'url', 'number', 'date'].includes(f.type) ? f.type : 'text', 'off');
+  if (f.type === 'file') {
+    // The picked file goes up on its own; a hidden input holds the upload id the form submits.
+    const wrap = el(w, 'label', cls(w, 'field', 'atlas-embed-field'));
+    wrap.appendChild(el(w, 'span', cls(w, 'label', 'atlas-embed-label'), label));
+    const picker = doc(w).createElement('input');
+    picker.type = 'file';
+    picker.className = cls(w, 'input', 'atlas-embed-input');
+    picker.accept = f.accept?.join(',') || 'image/png,image/jpeg,image/gif,image/webp,application/pdf';
+    const held = doc(w).createElement('input');
+    held.type = 'hidden';
+    held.name = name;
+    if (typeof f.value === 'string') held.value = f.value;
+    const status = el(w, 'span', 'atlas-embed-help');
+    status.setAttribute('role', 'status');
+    picker.addEventListener('change', () => {
+      const file = picker.files?.[0];
+      if (!file) return;
+      status.textContent = '';
+      void uploadJourneyFile(w.client, w.state, f.key, file).then((out) => {
+        if (out.ok) held.value = out.id;
+        else {
+          held.value = '';
+          status.textContent = out.errors[0]?.message ?? '';
+        }
+      });
+    });
+    wrap.appendChild(picker);
+    wrap.appendChild(held);
+    wrap.appendChild(status);
+    form.appendChild(wrap);
+    inputs.set(name, held);
+    return;
+  }
+  // A phone number is a tel box, and a multi-select is a
+  // comma-separated list of its options, which the server reads.
+  const kind = f.type === 'phone' ? 'tel' : ['tel', 'email', 'url', 'number', 'date'].includes(f.type) ? f.type : 'text';
+  addField(name, f.type === 'multi_select' && f.options.length ? `${label} (${f.options.join(', ')})` : label, kind, f.type === 'phone' ? 'tel' : 'off');
   if (f.placeholder) inputs.get(name)?.setAttribute('placeholder', f.placeholder);
 }
 

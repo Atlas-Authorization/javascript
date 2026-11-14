@@ -48,6 +48,10 @@ export interface DataSubjectRequest {
   requested_at: number;
   updated_at: number;
   completed_at: number | null;
+  /** When a response is owed (epoch ms; null on a closure) and whether it has passed on a request still open. */
+  due_at?: number | null;
+  overdue?: boolean;
+  due_extended_reason?: string | null;
   /** The export package — present on `get` and on a fulfilled export. */
   result?: unknown;
 }
@@ -56,6 +60,8 @@ export interface ListDataSubjectRequestsParams extends CursorParams {
   type?: string;
   status?: string;
   user_id?: string;
+  /** `true`: only open requests whose response deadline has passed. */
+  overdue?: boolean;
 }
 
 /** Identify the subject by `user_id` OR `subject_email` (`user_id` wins if both are given). */
@@ -103,6 +109,27 @@ export function dataSubjectRequestsResource(request: RequestFn) {
     },
     get(id: string): Promise<DataSubjectRequest> {
       return request({ method: 'GET', path: `/v1/data_subject_requests/${enc(id)}` });
+    },
+    /** Move an open request's response deadline later, with the reason recorded on it. */
+    extend(id: string, body: { due_at: number | string; reason: string }, idempotencyKey?: string): Promise<DataSubjectRequest> {
+      return request({ method: 'POST', path: `/v1/data_subject_requests/${enc(id)}/extend`, body, idempotencyKey });
+    },
+    /**
+     * The signed deletion receipt of a completed erasure (claims carry ids and dates only). Verify the
+     * JWS in `receipt` with the keys at `jwks_uri`.
+     */
+    receipt(id: string): Promise<{
+      object: 'deletion_receipt';
+      id: string;
+      request_id: string;
+      subject_id: string;
+      issued_at: number;
+      receipt: string;
+      claims: Record<string, unknown>;
+      kid: string;
+      jwks_uri: string;
+    }> {
+      return request({ method: 'GET', path: `/v1/data_subject_requests/${enc(id)}/receipt` });
     },
     /** Fulfil a request now — build the export package, or run the erasure — ahead of schedule. */
     fulfill(id: string, idempotencyKey?: string): Promise<DataSubjectRequest> {

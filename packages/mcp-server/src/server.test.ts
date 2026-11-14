@@ -149,3 +149,14 @@ describe('createAtlasMcpServer — over a live (in-memory) MCP transport', () =>
     await server.close();
   });
 });
+
+describe('approvals option', () => {
+  it('adds approval_id to held tools in resume mode and not to reads', () => {
+    const gate = { request: async () => ({ id: 'a', expires_at: 0 }) as never, wait: async () => ({}) as never, resume: async () => ({}) as never, redeem: async () => ({}) as never };
+    const { tools } = createAtlasMcpServer({ secretKey: 'sk_test_x', docs: false, scopes: ['users:write'], approvals: { gate, user: 'u', mode: 'resume' } });
+    const held = tools.filter((t) => 'approval_id' in t.shape);
+    const reads = tools.filter((t) => !('approval_id' in t.shape));
+    expect(held.length).toBeGreaterThan(0);
+    expect(reads.length).toBeGreaterThan(0);
+  });
+});

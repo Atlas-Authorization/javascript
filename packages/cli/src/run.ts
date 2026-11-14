@@ -14,6 +14,7 @@ import { csp } from './commands/csp';
 import { fga } from './commands/fga';
 import { dev } from './commands/dev';
 import { listen } from './commands/listen';
+import { logs } from './commands/logs';
 import { migrate } from './commands/migrate';
 import { moveOrigin } from './commands/move-origin';
 import { mcp } from './commands/mcp';
@@ -33,7 +34,7 @@ import { idAccounts } from './commands/id-accounts';
 import { admin } from './commands/admin';
 import { partnerPlatforms } from './commands/partner-platforms';
 import {
-  AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS,
+  AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS,
   resourceCommand,
 } from './commands/resources';
 import { ttyOf, type RunContext } from './context';
@@ -85,12 +86,15 @@ const COMMANDS: Record<string, Handler> = {
   info,
   mcp,
   listen,
+  logs,
   dev,
   'move-origin': moveOrigin,
   csp,
   types,
   fga,
   workflows: resourceCommand('workflows', WORKFLOWS),
+  'app-events': resourceCommand('app-events', APP_EVENTS),
+  diagnostics: resourceCommand('diagnostics', DIAGNOSTICS),
   chat: resourceCommand('chat', CHAT),
   cloud: resourceCommand('cloud', CLOUD),
   'saml-idp': resourceCommand('saml-idp', SAML_IDP),

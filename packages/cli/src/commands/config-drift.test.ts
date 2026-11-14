@@ -62,6 +62,8 @@ class FakeApi implements ConfigHttp {
     throw new AtlasApiError(404, [{ code: 'NOT_FOUND', message: path }]);
   }
   async post<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
     this.writes.push({ method: 'POST', path, body });
     const b = body as Record<string, unknown>;
     if (path === '/v1/oauth_clients') {
@@ -82,6 +84,8 @@ class FakeApi implements ConfigHttp {
     return {} as T;
   }
   async put<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
     this.writes.push({ method: 'PUT', path, body });
     if (path === '/v1/instance/cookie_consent') this.cookie = { object: 'cookie_consent', script_id: null, site_id: null, blocking_mode: null, extra_origins: [], settings_link: null, culture: 'page', ...(body as object) };
     if (path === '/v1/messaging_providers/email' || path === '/v1/messaging_providers/sms' || path === '/v1/messaging_providers/push') {
@@ -111,6 +115,8 @@ class FakeApi implements ConfigHttp {
     return {} as T;
   }
   async patch<T>(path: string, body: unknown): Promise<T> {
+    if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
+   
     this.writes.push({ method: 'PATCH', path, body });
     const b = body as Record<string, unknown>;
     if (path === '/v1/instance') {
@@ -139,6 +145,8 @@ class FakeApi implements ConfigHttp {
     return {} as T;
   }
   async delete(path: string): Promise<void> {
+    if (path.includes('dry_run=true')) return;
+   
     this.writes.push({ method: 'DELETE', path, body: undefined });
   }
 }
@@ -452,7 +460,7 @@ describe('cookie_consent and sso_onboarding_profiles', () => {
 
   it('plan --check shows ~ cookie_consent enabled: false -> true and a profile create', async () => {
     const api = new FakeApi();
-    api.cookie = { object: 'cookie_consent', enabled: false };
+    api.cookie = { object: 'cookie_consent', enabled: false, script_url: 'https://cmp.example.com/c.js' };
     const io = captureIO();
     expect(await run(['plan', file(doc), '--check'], ctx(io, api))).toBe(2);
     expect(io.stdout()).toMatch(/~ cookie_consent \(update\)/);
@@ -490,7 +498,8 @@ describe('cookie_consent and sso_onboarding_profiles', () => {
     const api = new FakeApi();
     const io = captureIO();
     expect(await run(['apply', file(doc), '--yes'], ctx(io, api))).not.toBe(0);
-    expect(io.stderr()).toMatch(/script_url/);
+    // The pre-flight dry run reports it before anything is written.
+    expect(io.stdout() + io.stderr()).toMatch(/script_url/);
   });
 
   it('profiles not in the file are "kept" without --prune and deleted with it', async () => {

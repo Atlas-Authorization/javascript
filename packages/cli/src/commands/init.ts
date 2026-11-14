@@ -483,6 +483,9 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const strict = live.auth_config?.strictRequestBodies;
   if (strict === false) {
     log('This instance opted out of strict request bodies; left as it is.');
+  } else if (strict !== true && !created) {
+    // An existing, still-lenient instance may have callers that send extra fields: flipping it from a tool run could 422 them in production.
+    log('This instance still ignores unknown request-body fields. Run `atlas preflight` (finding lenient_instance), fix any call named in the unknown-fields report, then set auth_config.strictRequestBodies to true.');
   } else if (strict !== true) {
     await api.patch('/v1/instance', { auth_config: { strictRequestBodies: true } });
     log('Turned on strict request bodies: an unknown field is now refused with a 422 instead of being ignored.');

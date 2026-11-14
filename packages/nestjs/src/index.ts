@@ -49,4 +49,4 @@ export {
 } from '@atlasauth/backend';
 
 // Rate limiting and grant usage (see ./limits).
-export { ATLAS_RATE_LIMIT, ATLAS_GRANT_USAGE, AtlasRateLimitGuard, AtlasGrantUsageGuard, AtlasLimitsModule, type AtlasLimitsModuleOptions } from './limits';
+export { ATLAS_RATE_LIMIT, ATLAS_GRANT_USAGE, ATLAS_STEP_UP, ATLAS_FEATURE, AtlasFeatureGuard, AtlasRateLimitGuard, AtlasGrantUsageGuard, AtlasStepUpGuard, AtlasLimitsModule, type AtlasLimitsModuleOptions } from './limits';

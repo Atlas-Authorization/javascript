@@ -44,6 +44,7 @@ export interface SsoConnection {
   saml_idp_slo_soap_url?: string | null;
   /** Assertions that are not encrypted to the connection's key are refused. */
   saml_require_encrypted_assertions?: boolean;
+  saml_honor_idp_session_lifetime?: boolean;
   /** A custom ACS path on your own frontend API domain (SAML migration); null = the standard ACS. */
   saml_acs_path?: string | null;
   /** GitHub as the identity provider: only members of these GitHub orgs / teams ("org/team-slug") sign in. */
@@ -62,10 +63,14 @@ export interface SsoConnection {
   attribute_mapping?: SsoAttributeMapping;
   /** OIDC: extra scopes requested on top of openid email profile. */
   oidc_scopes?: string[];
+  /** Opt-in: on later sign-ins, also re-role members with no recorded role source when their claims map elsewhere. */
+  rerole_on_sign_in?: boolean;
   /** OIDC relying-party settings (see custom OAuth providers). */
   profile_mapping?: Required<ProfileMapping> | null;
   token_endpoint_auth_method?: TokenEndpointAuthMethod | null;
   client_assertion_audience?: string | null;
+  /** The most recent sign-in the IdP may vouch for, in seconds (sent as `max_age`, checked against `auth_time`). */
+  oidc_max_age_seconds?: number | null;
   logout?: Required<UpstreamLogoutSettings>;
   idp_initiated_login?: Required<IdpInitiatedLoginSettings>;
   /** OIDC connections: the URLs to register at the IdP. */
@@ -125,6 +130,7 @@ export interface CreateSsoConnectionBody {
   saml_idp_slo_soap_url?: string | null;
   /** Requires an encryption key (see `createSamlEncryptionKey`). */
   saml_require_encrypted_assertions?: boolean;
+  saml_honor_idp_session_lifetime?: boolean;
   /** A custom ACS path on your own frontend API domain (SAML migration), e.g. /saml/acs/acme; null clears. */
   saml_acs_path?: string | null;
   /** GitHub as the identity provider (oidc type; oidc_issuer may be left out); null removes it. */
@@ -138,11 +144,13 @@ export interface CreateSsoConnectionBody {
   attribute_mapping?: SsoAttributeMapping | null;
   /** OIDC only; null clears them. */
   oidc_scopes?: string[] | null;
+  rerole_on_sign_in?: boolean | null;
   /** OIDC: declarative profile mapping; null clears it. */
   profile_mapping?: ProfileMapping | null;
   /** OIDC: token-endpoint client authentication (private_key_jwt needs no secret). */
   token_endpoint_auth_method?: TokenEndpointAuthMethod | null;
   client_assertion_audience?: string | null;
+  oidc_max_age_seconds?: number | null;
   /** OIDC: RP-initiated and back-channel logout. */
   logout?: UpstreamLogoutSettings | null;
   /** OIDC: third-party initiated login. */

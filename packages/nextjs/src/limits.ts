@@ -3,12 +3,16 @@
  * `@atlasauth/backend` (`rateLimitRequest`, `requireGrantUsage`) and accept either the limiter /
  * usage options or an already-built check. A limit store or usage call that throws is an error, never an allow.
  */
-import { rateLimitRequest, requireGrantUsage } from '@atlasauth/backend';
+import { rateLimitRequest, requireGrantUsage, requireStepUp, requireFeature } from '@atlasauth/backend';
 
 /** Options for the usage gate (`requireGrantUsage` in `@atlasauth/backend`). */
 export type GrantUsageOptions = Parameters<typeof requireGrantUsage>[0];
 /** The framework-neutral usage check `requireGrantUsage(opts)` returns. */
 export type GrantUsageCheck = ReturnType<typeof requireGrantUsage>;
+/** Options for the step-up gate (`requireStepUp` in `@atlasauth/backend`). */
+export type StepUpOptions = Parameters<typeof requireStepUp>[0];
+/** The framework-neutral step-up check `requireStepUp(opts)` returns. */
+export type StepUpCheck = ReturnType<typeof requireStepUp>;
 /** A limiter from `createRateLimiter` in `@atlasauth/backend`. */
 export type RateLimiter = Parameters<typeof rateLimitRequest>[0];
 /** Picks the rate-limit subject (key, user, org, machine, ip) out of a request. */
@@ -76,6 +80,23 @@ export function rateLimitGate(limiter: RateLimiter | RateLimitCheck, subjectFrom
 /** Turn usage-gate options (or an already-built `requireGrantUsage` check) into a gate. */
 export function grantUsageGate(options: GrantUsageOptions | GrantUsageCheck): LimitGate {
   const check = (typeof options === 'function' ? options : requireGrantUsage(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
+/** Turn step-up options (or an already-built `requireStepUp` check) into a gate: 403 STEP_UP_REQUIRED (with the policy and factors) until the session meets the named policy. */
+export function stepUpGate(options: StepUpOptions | StepUpCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireStepUp(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
+/** Options for the feature gate (`requireFeature` in `@atlasauth/backend`). */
+export type FeatureOptions = Parameters<typeof requireFeature>[0];
+/** The framework-neutral feature check `requireFeature(opts)` returns. */
+export type FeatureCheck = ReturnType<typeof requireFeature>;
+
+/** Turn feature options (or an already-built `requireFeature` check) into a gate. */
+export function featureGate(options: FeatureOptions | FeatureCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireFeature(options)) as (req: never) => Promise<LimitVerdict>;
   return (input) => check(neutral(input));
 }
 
@@ -160,6 +181,15 @@ export function withGrantUsage<A extends unknown[] = []>(
   return wrap<A>(grantUsageGate(usage), options)(handler);
 }
 
+/** Wrap a route handler so the session must meet a named step-up policy first: 403 STEP_UP_REQUIRED with the policy and factors otherwise. `claims` must return the verified claims. */
+export function withStepUp<A extends unknown[] = []>(
+  step: StepUpOptions | StepUpCheck,
+  handler: (request: Request, ...rest: A) => Response | Promise<Response>,
+  options: AtlasLimitOptions & { claims: NonNullable<AtlasLimitOptions['claims']> },
+) {
+  return wrap<A>(stepUpGate(step), options)(handler);
+}
+
 /**
  * Middleware helper: returns the 429/403 `Response` to answer with, or `undefined` to carry on.
  * `export async function middleware(req) { return (await limit(req)) ?? NextResponse.next(); }`
@@ -178,6 +208,43 @@ export function atlasGrantUsageMiddleware(
   options: AtlasLimitOptions & { claims: NonNullable<AtlasLimitOptions['claims']> },
 ) {
   const gate = grantUsageGate(usage);
+  return async (request: Request): Promise<Response | undefined> => {
+    const verdict = await verdictFor(gate, request, options);
+    return verdict.allowed ? undefined : denialResponse(verdict);
+  };
+}
+
+/** Middleware helper for the step-up gate. Same contract as {@link atlasRateLimitMiddleware}. */
+export function atlasStepUpMiddleware(
+  step: StepUpOptions | StepUpCheck,
+  options: AtlasLimitOptions & { claims: NonNullable<AtlasLimitOptions['claims']> },
+) {
+  const gate = stepUpGate(step);
+  return async (request: Request): Promise<Response | undefined> => {
+    const verdict = await verdictFor(gate, request, options);
+    return verdict.allowed ? undefined : denialResponse(verdict);
+  };
+}
+
+/**
+ * Wrap a route handler so it answers 401 without a subject and 403 `feature_not_entitled` unless the subject's plan
+ * includes the feature. Reads through an entitlement cache (`createEntitlementCache` in `@atlasauth/backend`).
+ * `claims` must return the verified token claims.
+ */
+export function withFeature<A extends unknown[] = []>(
+  feature: FeatureOptions | FeatureCheck,
+  handler: (request: Request, ...rest: A) => Response | Promise<Response>,
+  options: AtlasLimitOptions & { claims: NonNullable<AtlasLimitOptions['claims']> },
+) {
+  return wrap<A>(featureGate(feature), options)(handler);
+}
+
+/** Middleware helper for the feature gate. Same contract as {@link atlasRateLimitMiddleware}. */
+export function atlasRequireFeatureMiddleware(
+  feature: FeatureOptions | FeatureCheck,
+  options: AtlasLimitOptions & { claims: NonNullable<AtlasLimitOptions['claims']> },
+) {
+  const gate = featureGate(feature);
   return async (request: Request): Promise<Response | undefined> => {
     const verdict = await verdictFor(gate, request, options);
     return verdict.allowed ? undefined : denialResponse(verdict);

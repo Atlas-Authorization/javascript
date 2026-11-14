@@ -5,6 +5,8 @@ export { DiscoveryError, JwksDiscovery, discoveryUrlFor, instanceIdFromPublishab
 export * from './verify';
 export * from './request-auth';
 export * from './recent-auth';
+// Named step-up policies: the guard for your own API and offline verification of the signed receipt.
+export * from './step-up-gate';
 export * from './txn-token';
 export * from './access-control';
 export * from './handshake';
@@ -27,6 +29,8 @@ export * from './framework-bridge';
 
 // Verify a signed policy bundle offline (no call to Atlas).
 export * from './policy-bundle';
+// Verify machine and API-key tokens locally against the instance's published keys.
+export * from './credential-verify';
 
 // OIDC Back-Channel Logout: verify the logout_token Atlas POSTs to your app.
 export {
@@ -91,6 +95,14 @@ export type {
 
 // §12.2 inbound webhook verification for consumers.
 export * from './webhooks';
+export {
+  MESSAGE_DELIVERY_EVENT_TYPES,
+  verifyMessageDelivery,
+  type MessageDeliveryData,
+  type MessageDeliveryEvent,
+  type MessageSuppressionData,
+  type VerifyMessageDeliveryResult,
+} from './message-delivery';
 export * from './webhook-dedupe';
 export * from './webhook-events';
 // Framework-neutral Request -> Response handlers: path mount proxy, domain verify, webhook + hook routes.
@@ -195,9 +207,26 @@ export type {
   IntrospectionOptions,
   ResourceRequestLike,
 } from './oauth-resource';
+export {
+  authorizationDetailsOf,
+  certificateThumbprint,
+  forwardedClientCert,
+  matchAuthorizationDetails,
+  senderConstraintOf,
+  thumbprintsEqual,
+  tokenGrants,
+} from './oauth-resource-sender';
+export type {
+  AuthorizationDetail,
+  AuthorizationDetailRequirement,
+  AuthorizationDetailsMatch,
+  TokenGrant,
+} from './oauth-resource-sender';
 export * from './legacy-verify';
 export * from './uma';
 export type { SidListRevocation } from './sid-revocation';
+export { verifyStatusListToken, createEdgeRevocationChecker, StatusListError } from './status-list';
+export type { VerifiedStatusList, VerifyStatusListOptions, EdgeRevocationOptions, EdgeRevocationVerdict, StatusListKey } from './status-list';
 export type { OAuthTokenRevocationOptions } from './oauth-token-revocation';
 
 // Web Bot Auth (RFC 9421 signed bots): verify a request's signature against the bot's key directory, offline.
@@ -245,6 +274,9 @@ export type {
 } from './rate-limit';
 
 export * from './usage-gate';
+export * from './entitlements';
+export * from './approval-gate';
+export * from './approval-receipt';
 
 // Keep a local copy of Atlas resources in sync from the change feed (stores: memory, Redis, Postgres).
 // The Drizzle and Prisma adapters are subpath exports: `@atlasauth/backend/mirror/drizzle`, `.../prisma`.

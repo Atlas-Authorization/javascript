@@ -64,4 +64,4 @@ export function requireAuth(condition?: ProtectCondition): KoaMiddleware {
 }
 
 // Rate limiting and grant usage (see ./limits).
-export { atlasRateLimit, atlasGrantUsage, type AtlasLimitOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter, type LimitClaims, type LimitVerdict } from './limits';
+export { atlasRateLimit, atlasGrantUsage, atlasStepUp, type StepUpCheck, type StepUpOptions, type AtlasLimitOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter, type LimitClaims, type LimitVerdict, atlasRequireFeature, type FeatureCheck, type FeatureOptions } from './limits';

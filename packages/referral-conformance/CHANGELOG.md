@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+- `--help`, `--version`, documented exit codes and CI notes.
+
 ## 0.2.1 — 2026-10-30
 
 - `partner.with_email` (connection profile) no longer sends `emailHash`: a platform with strict body validation, such as Referalli, rightly refuses fields it does not define, and Atlas does not send it there.

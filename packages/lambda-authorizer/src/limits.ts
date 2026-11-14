@@ -1,5 +1,5 @@
 /** Rate limit and grant-usage gates for the authorizer: the framework-neutral checks from `@atlasauth/backend`. */
-import { rateLimitRequest, requireGrantUsage } from '@atlasauth/backend';
+import { rateLimitRequest, requireGrantUsage, requireFeature } from '@atlasauth/backend';
 
 /** Options for the usage gate (`requireGrantUsage` in `@atlasauth/backend`). */
 export type GrantUsageOptions = Parameters<typeof requireGrantUsage>[0];
@@ -72,6 +72,17 @@ export function rateLimitGate(limiter: RateLimiter | RateLimitCheck, subjectFrom
 /** Turn usage-gate options (or an already-built `requireGrantUsage` check) into a gate. */
 export function grantUsageGate(options: GrantUsageOptions | GrantUsageCheck): LimitGate {
   const check = (typeof options === 'function' ? options : requireGrantUsage(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
+/** Options for the feature gate (`requireFeature` in `@atlasauth/backend`). */
+export type FeatureOptions = Parameters<typeof requireFeature>[0];
+/** The framework-neutral feature check `requireFeature(opts)` returns. */
+export type FeatureCheck = ReturnType<typeof requireFeature>;
+
+/** Turn feature options (or an already-built `requireFeature` check) into a gate: 401 without a subject, 403 `feature_not_entitled` when the plan lacks the feature. */
+export function featureGate(options: FeatureOptions | FeatureCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireFeature(options)) as (req: never) => Promise<LimitVerdict>;
   return (input) => check(neutral(input));
 }
 

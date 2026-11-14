@@ -269,6 +269,10 @@ describe('users: writes', () => {
     expect(last().url).toBe(`${API_URL}/v1/users/user_1/deletion/cancel`);
     expect(last().body).toBeUndefined();
 
+    await atlas.users.deletion.reconfirm('user_1');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/deletion/reconfirm`);
+    expect(last().method).toBe('POST');
+
     await atlas.users.deletion.finalize('user_1', 'idem-f');
     expect(last().url).toBe(`${API_URL}/v1/users/user_1/deletion/finalize`);
     expect(last().headers['idempotency-key']).toBe('idem-f');

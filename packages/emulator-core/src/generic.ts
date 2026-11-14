@@ -22,7 +22,14 @@ export function genericHandler(c: RouteContext): Reply {
   const staticSegs = segs.filter((s) => !s.startsWith('{') && s !== 'v1');
   const collection = staticSegs.join('/');
   const name = singular(staticSegs[staticSegs.length - 1] ?? 'resource');
-  const resp = engine.index.resolve(op.successSchema);
+  // allOf (e.g. an endpoint plus its create-only secret) is read as one object.
+  const flat = (s: Obj | undefined): Obj | undefined => {
+    const r = engine.index.resolve(s);
+    if (!r?.allOf) return r;
+    const parts = (r.allOf as Obj[]).map((p) => flat(p) ?? {});
+    return { ...r, properties: Object.assign({}, ...parts.map((p) => p.properties)), required: parts.flatMap((p) => (p.required as string[]) ?? []) };
+  };
+  const resp = flat(op.successSchema);
   const paramNames = Object.keys(c.params);
   // The parent of a nested collection is the first path parameter; the item id is the last one for item routes.
   const itemId = isItem ? c.params[paramNames[paramNames.length - 1] ?? ''] : undefined;

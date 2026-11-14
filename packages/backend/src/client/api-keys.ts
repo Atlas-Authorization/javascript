@@ -38,12 +38,16 @@ export interface ApiKey {
   last_used_at: number | null;
   expires_at: number | null;
   revoked_at: number | null;
-  /** Why it was revoked when a person did not: `membership_ended`, `creator_departed` or `organization_deleted`. */
+  /** Why it was revoked when a person did not: `membership_ended`, `creator_departed`, `organization_deleted`, `user_banned` (restorable) or `rotated`. */
   revoked_reason?: string | null;
   /** The organization a user key is bound to; null = unbound. */
   organization_id?: string | null;
   /** The member who created an organization key, when recorded. */
   created_by_user_id?: string | null;
+  /** Rotation: the key this one replaced; null for a key that replaced none. */
+  rotated_from_id?: string | null;
+  /** Rotation: the key that replaced this one (this key ends at `expires_at`); null when not rotated. */
+  rotated_to_id?: string | null;
   created_at: number;
 }
 
@@ -163,6 +167,87 @@ export interface ApiKeyUsage {
   usage: ApiKeyLimitState[];
   /** Current-window counters for every unit the key has been debited in, capped or not. */
   counters: ApiKeyUsageCounter[];
+}
+
+/** Body of `POST /v1/api_keys/{id}/rotate`. */
+export interface RotateApiKeyBody {
+  /** How long the old key keeps working, in seconds (default 86400, at most 604800). 0 revokes it at once. */
+  overlap_seconds?: number;
+  /** A new name for the successor (default: the old key's name). */
+  name?: string | null;
+  /** Epoch ms the successor expires. Not with `expires_in_seconds`. */
+  expires_at?: number | null;
+  expires_in_seconds?: number;
+}
+
+/** The rotation answer: the successor with its secret (shown once) and what became of the old key. */
+export interface ApiKeyRotation extends ApiKeyWithSecret {
+  previous_key: {
+    id: string;
+    prefix: string;
+    /** When the old key stops working (epoch ms); null when it was revoked at once. */
+    expires_at: number | null;
+    revoked: boolean;
+  };
+  overlap_seconds: number;
+}
+
+export type ApiKeyPostureIssue = 'never_used' | 'stale' | 'over_scoped' | 'no_expiry' | 'no_ip_allowlist';
+
+export interface ApiKeyPostureQuery {
+  /** Only keys with this finding. */
+  issue?: ApiKeyPostureIssue;
+  /** Unused for this many days is stale (default 90). */
+  stale_days?: number;
+  /** Never used and older than this many days is flagged (default 7). */
+  never_used_days?: number;
+  /** More scopes than this is over-scoped (default 20; a wildcard scope always is). */
+  max_scopes?: number;
+  limit?: number;
+  starting_after?: string;
+}
+
+/** `GET /v1/api_keys/posture`: live keys worth a second look. */
+export interface ApiKeyPosture {
+  object: 'api_key_posture';
+  generated_at: number;
+  thresholds: { stale_days: number; never_used_days: number; max_scopes: number };
+  totals: { live_keys: number; flagged_keys: number };
+  summary: Record<ApiKeyPostureIssue, number>;
+  truncated: boolean;
+  data: Array<{
+    object: 'api_key_posture_finding';
+    key_id: string;
+    prefix: string;
+    name: string | null;
+    subject_type: string;
+    subject_id: string;
+    organization_id: string | null;
+    issues: ApiKeyPostureIssue[];
+    last_used_at: number | null;
+    expires_at: number | null;
+    created_at: number;
+  }>;
+  has_more: boolean;
+  next_cursor: string | null;
+}
+
+export interface ApiKeyCallerCount {
+  value: string;
+  requests: number;
+  last_seen_at: number;
+}
+
+/** `GET /v1/api_keys/{id}/callers`: who uses a key. */
+export interface ApiKeyCallers {
+  object: 'api_key_callers';
+  key_id: string;
+  window_days: number;
+  since_day: string;
+  live: boolean;
+  ip: ApiKeyCallerCount[];
+  user_agent: ApiKeyCallerCount[];
+  route: ApiKeyCallerCount[];
 }
 
 /** The mint response: the key plus its secret, revealed exactly once. */
@@ -310,7 +395,7 @@ export interface RevokedApiKeyRef {
   object: 'api_key';
   id: string;
   revoked_at: number | null;
-  /** Why, when a person did not revoke it: `membership_ended`, `creator_departed` or `organization_deleted`. */
+  /** Why, when a person did not revoke it: `membership_ended`, `creator_departed`, `organization_deleted`, `user_banned` or `rotated`. */
   revoked_reason?: string | null;
   subject_type?: ApiKeySubjectType;
   subject_id?: string;
@@ -332,6 +417,8 @@ export function apiKeysResource(request: RequestFn) {
       subject_type?: ApiKeySubjectType;
       subject_id?: string;
       type?: string;
+      /** Only user keys bound to this organization. */
+      organization_id?: string;
     }): Promise<ListPage<ApiKey>> {
       return request({ method: 'GET', path: '/v1/api_keys', query });
     },
@@ -378,6 +465,22 @@ export function apiKeysResource(request: RequestFn) {
      */
     mintToken(body: MintApiKeyTokenBody): Promise<ApiKeyToken> {
       return request({ method: 'POST', path: '/v1/api_keys/token', body });
+    },
+    /**
+     * Rotate a key with an overlap: the successor (same owner, scopes, limits and controls) comes back
+     * with its secret, and the old key keeps working for `overlap_seconds`. A key rotates once; rotate
+     * the successor next.
+     */
+    rotate(id: string, body: RotateApiKeyBody = {}, idempotencyKey?: string): Promise<ApiKeyRotation> {
+      return request({ method: 'POST', path: `/v1/api_keys/${enc(id)}/rotate`, body, idempotencyKey });
+    },
+    /** Live keys that are never used, stale, over-scoped, without an expiry or without a network allowlist. */
+    posture(query: ApiKeyPostureQuery = {}): Promise<ApiKeyPosture> {
+      return request({ method: 'GET', path: '/v1/api_keys/posture', query: { ...query } });
+    },
+    /** The busiest caller addresses, user agents and route buckets of a key over the last days (1-35). */
+    callers(id: string, query: { window_days?: number; limit?: number } = {}): Promise<ApiKeyCallers> {
+      return request({ method: 'GET', path: `/v1/api_keys/${enc(id)}/callers`, query: { ...query } });
     },
     /**
      * §P1-8 the revocation feed a resource server polls to deny-list revoked keys

@@ -3,7 +3,7 @@
  * `@atlasauth/backend` (`rateLimitRequest`, `requireGrantUsage`) and accept either the limiter /
  * usage options or an already-built check. A limit store or usage call that throws is an error, never an allow.
  */
-import { rateLimitRequest, requireGrantUsage } from '@atlasauth/backend';
+import { rateLimitRequest, requireGrantUsage, requireStepUp, requireFeature } from '@atlasauth/backend';
 import { HttpException, Inject, Injectable, type CanActivate, type DynamicModule, type ExecutionContext } from '@nestjs/common';
 import { getRequest, type AtlasRequest } from './request';
 
@@ -11,6 +11,10 @@ import { getRequest, type AtlasRequest } from './request';
 export type GrantUsageOptions = Parameters<typeof requireGrantUsage>[0];
 /** The framework-neutral usage check `requireGrantUsage(opts)` returns. */
 export type GrantUsageCheck = ReturnType<typeof requireGrantUsage>;
+/** Options for the step-up gate (`requireStepUp` in `@atlasauth/backend`). */
+export type StepUpOptions = Parameters<typeof requireStepUp>[0];
+/** The framework-neutral step-up check `requireStepUp(opts)` returns. */
+export type StepUpCheck = ReturnType<typeof requireStepUp>;
 /** A limiter from `createRateLimiter` in `@atlasauth/backend`. */
 export type RateLimiter = Parameters<typeof rateLimitRequest>[0];
 /** Picks the rate-limit subject (key, user, org, machine, ip) out of a request. */
@@ -81,6 +85,23 @@ export function grantUsageGate(options: GrantUsageOptions | GrantUsageCheck): Li
   return (input) => check(neutral(input));
 }
 
+/** Turn step-up options (or an already-built `requireStepUp` check) into a gate: 403 STEP_UP_REQUIRED (with the policy and factors) until the session meets the named policy. */
+export function stepUpGate(options: StepUpOptions | StepUpCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireStepUp(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
+/** Options for the feature gate (`requireFeature` in `@atlasauth/backend`). */
+export type FeatureOptions = Parameters<typeof requireFeature>[0];
+/** The framework-neutral feature check `requireFeature(opts)` returns. */
+export type FeatureCheck = ReturnType<typeof requireFeature>;
+
+/** Turn feature options (or an already-built `requireFeature` check) into a gate: 401 without a subject, 403 `feature_not_entitled` when the plan lacks the feature. */
+export function featureGate(options: FeatureOptions | FeatureCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireFeature(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
 /** The JSON body of a denial. */
 export function denialBody(v: Extract<LimitVerdict, { allowed: false }>): unknown {
   return v.body ?? { errors: [{ code: v.status === 429 ? 'RATE_LIMITED' : 'FORBIDDEN' }] };
@@ -126,6 +147,11 @@ export interface LimitWrapOptions<Ctx> {
 export const ATLAS_RATE_LIMIT = 'ATLAS_RATE_LIMIT';
 /** Injection token for the grant-usage gate (provide it with {@link AtlasLimitsModule}). */
 export const ATLAS_GRANT_USAGE = 'ATLAS_GRANT_USAGE';
+/** Injection token for the step-up gate (provide it with {@link AtlasLimitsModule}). */
+export const ATLAS_STEP_UP = 'ATLAS_STEP_UP';
+
+/** Injection token for the feature gate (provide it with {@link AtlasLimitsModule}). */
+export const ATLAS_FEATURE = 'ATLAS_FEATURE';
 
 type NestRequest = AtlasRequest & { atlasToken?: { claims?: object }; ip?: string; headers: Record<string, string | string[] | undefined> };
 type NestResponse = { setHeader?(name: string, value: string): unknown; header?(name: string, value: string): unknown };
@@ -158,11 +184,31 @@ export class AtlasGrantUsageGuard implements CanActivate {
   }
 }
 
+/** Guard: the session must meet a named step-up policy, else 403 STEP_UP_REQUIRED with the policy and factors. Use after `AtlasGuard`. */
+@Injectable()
+export class AtlasStepUpGuard implements CanActivate {
+  constructor(@Inject(ATLAS_STEP_UP) private readonly gate: LimitGate) {}
+  canActivate(context: ExecutionContext): Promise<boolean> {
+    return run(this.gate, context);
+  }
+}
+
+/** Guard: the subject's plan must include the feature (401 without a subject, 403 `feature_not_entitled`). Use after `AtlasGuard`. */
+@Injectable()
+export class AtlasFeatureGuard implements CanActivate {
+  constructor(@Inject(ATLAS_FEATURE) private readonly gate: LimitGate) {}
+  canActivate(context: ExecutionContext): Promise<boolean> {
+    return run(this.gate, context);
+  }
+}
+
 /** Options for {@link AtlasLimitsModule.register}. */
 export interface AtlasLimitsModuleOptions {
   rateLimit?: RateLimiter | RateLimitCheck;
   subjectFrom?: RateLimitSubjectFrom;
   grantUsage?: GrantUsageOptions | GrantUsageCheck;
+  stepUp?: StepUpOptions | StepUpCheck;
+  feature?: FeatureOptions | FeatureCheck;
 }
 
 /**
@@ -174,6 +220,8 @@ export class AtlasLimitsModule {
     const providers = [
       ...(options.rateLimit ? [{ provide: ATLAS_RATE_LIMIT, useValue: rateLimitGate(options.rateLimit, options.subjectFrom) }] : []),
       ...(options.grantUsage ? [{ provide: ATLAS_GRANT_USAGE, useValue: grantUsageGate(options.grantUsage) }] : []),
+      ...(options.feature ? [{ provide: ATLAS_FEATURE, useValue: featureGate(options.feature) }] : []),
+      ...(options.stepUp ? [{ provide: ATLAS_STEP_UP, useValue: stepUpGate(options.stepUp) }] : []),
     ];
     return { module: AtlasLimitsModule, global: true, providers, exports: providers.map((p) => p.provide) };
   }

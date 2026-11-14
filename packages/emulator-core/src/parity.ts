@@ -15,7 +15,13 @@ export interface ParityRequest {
   body?: Record<string, unknown>;
   /** Send no Authorization header. */
   anonymous?: boolean;
-  /** variable name -> dotted path into the JSON response */
+  /** Extra request headers; `{{var}}` is substituted (for example `authorization: 'Bearer {{scimToken}}'`). */
+  headers?: Record<string, string>;
+  /** Send this as `application/x-www-form-urlencoded` instead of JSON (the OAuth endpoints). */
+  form?: Record<string, string>;
+  /** The feature group the request needs on the reference instance (`oauth`, `scim`, `agents`, `passkeys`, `device`, `round2`); runParity can select groups. */
+  group?: string;
+  /** variable name -> dotted path into the JSON response; `location#code` reads a query parameter of the Location header */
   capture?: Record<string, string>;
   /** Response keys whose presence is allowed to differ (dotted paths), e.g. optional fields. */
   tolerate?: string[];
@@ -70,10 +76,13 @@ const get = (obj: Json, dotted: string): Json => dotted.split('.').reduce((o, k)
 
 async function runOne(target: ParityTarget, req: ParityRequest, vars: Record<string, string>, f: typeof fetch) {
   const sub = (s: string) => s.replace(/\{\{(\w+)\}\}/g, (_, n: string) => vars[n] ?? '');
+  const extra = Object.fromEntries(Object.entries(req.headers ?? {}).map(([k, v]) => [k, sub(v)]));
+  const form = req.form ? new URLSearchParams(Object.fromEntries(Object.entries(req.form).map(([k, v]) => [k, sub(v)]))).toString() : undefined;
   const res = await f(`${target.baseUrl.replace(/\/+$/, '')}${sub(req.path)}`, {
     method: req.method,
-    headers: { 'content-type': 'application/json', ...(req.anonymous ? {} : { authorization: `Bearer ${target.secretKey}` }) },
-    body: req.body ? sub(JSON.stringify(req.body)) : undefined,
+    redirect: 'manual',
+    headers: { 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json', ...(req.anonymous || extra.authorization ? {} : { authorization: `Bearer ${target.secretKey}` }), ...extra },
+    body: form ?? (req.body ? sub(JSON.stringify(req.body)) : undefined),
   });
   const text = await res.text();
   let json: Json = null;
@@ -83,19 +92,20 @@ async function runOne(target: ParityTarget, req: ParityRequest, vars: Record<str
     json = text;
   }
   for (const [name, p] of Object.entries(req.capture ?? {})) {
-    const v = get(json, p);
+    const [head, param] = p.split('#');
+    const v = param ? (() => { try { return new URL(res.headers.get(head!) ?? '', 'http://x').searchParams.get(param) ?? undefined; } catch { return undefined; } })() : get(json, p);
     if (v !== undefined) vars[name] = String(v);
   }
   return { status: res.status, json };
 }
 
-export async function runParity(opts: { requests: ParityRequest[]; emulator: ParityTarget; reference: ParityTarget; fetchImpl?: typeof fetch }): Promise<ParityResult[]> {
+export async function runParity(opts: { requests: ParityRequest[]; emulator: ParityTarget; reference: ParityTarget; fetchImpl?: typeof fetch; /** Only run these feature groups (requests without a group always run). */ groups?: string[] }): Promise<ParityResult[]> {
   const f = opts.fetchImpl ?? fetch;
   const rand = Math.random().toString(36).slice(2, 10);
   const varsE: Record<string, string> = { rand };
   const varsR: Record<string, string> = { rand };
   const results: ParityResult[] = [];
-  for (const req of opts.requests) {
+  for (const req of opts.requests.filter((q) => !q.group || !opts.groups || opts.groups.includes(q.group))) {
     const [e, r] = [await runOne(opts.emulator, req, varsE, f), await runOne(opts.reference, req, varsR, f)];
     const diffs: string[] = [];
     if (e.status !== r.status) diffs.push(`status: emulator ${e.status}, reference ${r.status}`);
@@ -105,7 +115,7 @@ export async function runParity(opts: { requests: ParityRequest[]; emulator: Par
   return results;
 }
 
-/** A starter request list: the resources the emulator models by hand, plus the error shapes. */
+/** The request list for the first-round resources: the ones the emulator models by hand, plus the error shapes. See `parity-routes.ts` for the rest. */
 export const defaultParityRequests: ParityRequest[] = [
   { id: 'no key', method: 'GET', path: '/v1/users', anonymous: true },
   { id: 'unknown route', method: 'GET', path: '/v1/definitely_not_a_route' },

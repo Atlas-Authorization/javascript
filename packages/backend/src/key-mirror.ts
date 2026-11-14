@@ -15,7 +15,7 @@
  * for tests and single-process apps; back it with a table in production.
  */
 import { createHash } from './edge-crypto';
-import type { ApiKey, ApiKeyImportOutcome, ApiKeyOrganization, ApiKeyWithSecret, CreateApiKeyBody, apiKeysResource } from './client/api-keys';
+import type { ApiKey, ApiKeyImportOutcome, ApiKeyOrganization, ApiKeyRotation, ApiKeyWithSecret, CreateApiKeyBody, RotateApiKeyBody, apiKeysResource } from './client/api-keys';
 
 /** What the mirror keeps per key. Never the secret: only its sha256 (hex). */
 export interface MirroredApiKey {
@@ -37,7 +37,7 @@ export interface MirroredApiKey {
   revoked_at: number | null;
   /** The organization a user key is bound to; null/absent = unbound. */
   organization_id?: string | null;
-  /** Why it was revoked, when Atlas said (`membership_ended`, `creator_departed`, `organization_deleted`). */
+  /** Why it was revoked, when Atlas said (`membership_ended`, `creator_departed`, `organization_deleted`, `user_banned`, `rotated`). */
   revoked_reason?: string | null;
 }
 
@@ -109,7 +109,7 @@ export function memoryKeyMirrorStore(): KeyMirrorStore & { keys: Map<string, Mir
 }
 
 type ApiKeysResource = ReturnType<typeof apiKeysResource>;
-type ApiKeysApi = Pick<ApiKeysResource, 'create' | 'delete' | 'listRevoked'> & Partial<Pick<ApiKeysResource, 'verify' | 'get'>>;
+type ApiKeysApi = Pick<ApiKeysResource, 'create' | 'delete' | 'listRevoked'> & Partial<Pick<ApiKeysResource, 'verify' | 'get' | 'rotate'>>;
 
 export interface KeyMirrorOptions {
   store: KeyMirrorStore;
@@ -139,6 +139,16 @@ export interface KeyMirrorOptions {
    */
   maxStalenessMs?: number;
   /**
+   * Keep answering from the last synced data for this many extra milliseconds after `maxStalenessMs` has passed, instead
+   * of refusing with `code: 'stale'` at once. A valid answer inside this grace carries `stale: true`, and
+   * `onServeStale` fires, so you can alert while traffic keeps flowing through a short Atlas outage. A key revoked at
+   * Atlas during the grace is not seen until the next `sync()`. Default 0: refuse as soon as the mirror is stale.
+   * Needs `maxStalenessMs`.
+   */
+  serveStaleForMs?: number;
+  /** Called (not awaited) each time an answer is served inside the `serveStaleForMs` grace. */
+  onServeStale?: (info: { lastSyncAt: number | null; staleForMs: number }) => void;
+  /**
    * For a key bound to an organization: the user's CURRENT membership, from your own
    * data (return null when they are no longer a member). The key's scopes are narrowed
    * to what the membership's permissions cover, exactly as Atlas verify does. Without
@@ -151,7 +161,7 @@ export interface KeyMirrorOptions {
 }
 
 export type MirrorVerification =
-  | { valid: true; key: MirroredApiKey; effective_scopes: string[]; /** A bound key: the membership the scopes were narrowed by. */ organization?: ApiKeyOrganization }
+  | { valid: true; key: MirroredApiKey; effective_scopes: string[]; /** True when the mirror was past `maxStalenessMs` and this answer came from its last synced data (see `serveStaleForMs`). */ stale?: true; /** A bound key: the membership the scopes were narrowed by. */ organization?: ApiKeyOrganization }
   | { valid: false; code?: 'insufficient_scope' | 'ip_not_allowed' | 'client_ip_required' | 'membership_unresolved'; missing_scopes?: string[] }
   | {
       valid: false;
@@ -302,6 +312,23 @@ export function createKeyMirror(options: KeyMirrorOptions) {
     },
 
     /**
+     * Rotate at Atlas, then mirror both sides: the successor is added, and the old key now ends at the
+     * end of the overlap (or is revoked at once when `overlap_seconds` is 0). Resolves with the successor's
+     * one-time `secret`. Needs `apiKeys.rotate`.
+     */
+    async rotate(id: string, body: RotateApiKeyBody = {}, idempotencyKey?: string): Promise<ApiKeyRotation> {
+      if (!apiKeys.rotate) throw new TypeError('rotate needs an apiKeys client with rotate().');
+      const rotated = await apiKeys.rotate(id, body, idempotencyKey);
+      await store.put(toMirrored(rotated, hashApiKeySecret(rotated.secret)));
+      const old = await store.get(id);
+      if (old) {
+        if (rotated.previous_key.revoked) await store.markRevoked(id, now(), 'rotated');
+        else await store.put({ ...old, expires_at: rotated.previous_key.expires_at ?? old.expires_at });
+      }
+      return rotated;
+    },
+
+    /**
      * Import an existing key by its sha256 (hex) so customers keep their secret:
      * Atlas stores the hash, the mirror stores the same hash.
      */
@@ -357,10 +384,14 @@ export function createKeyMirror(options: KeyMirrorOptions) {
      */
     async verify(secret: string, opts: { requiredScopes?: string[]; clientIp?: string } = {}): Promise<MirrorVerification> {
       if (typeof secret !== 'string' || !secret) return { valid: false };
+      let servedStale = false;
       if (options.maxStalenessMs !== undefined) {
         const lastSyncAt = await readSyncAt();
-        if (lastSyncAt === null || now() - lastSyncAt > options.maxStalenessMs) {
-          return { valid: false, code: 'stale', lastSyncAt };
+        const behind = lastSyncAt === null ? Infinity : now() - lastSyncAt - options.maxStalenessMs;
+        if (behind > 0) {
+          if (lastSyncAt === null || behind > (options.serveStaleForMs ?? 0)) return { valid: false, code: 'stale', lastSyncAt };
+          servedStale = true;
+          options.onServeStale?.({ lastSyncAt, staleForMs: behind });
         }
       }
       const hash = hashApiKeySecret(secret);
@@ -399,7 +430,7 @@ export function createKeyMirror(options: KeyMirrorOptions) {
       }
       const missing = (opts.requiredScopes ?? []).filter((s) => !effective.includes(s));
       if (missing.length > 0) return { valid: false, code: 'insufficient_scope', missing_scopes: missing };
-      return { valid: true, key, effective_scopes: effective, ...(organization ? { organization } : {}) };
+      return { valid: true, key, effective_scopes: effective, ...(organization ? { organization } : {}), ...(servedStale ? { stale: true as const } : {}) };
     },
 
     /**
@@ -430,7 +461,7 @@ export function createKeyMirror(options: KeyMirrorOptions) {
 
     /**
      * Apply a VERIFIED `api_key.*` webhook (check the signature first, e.g. with
-     * `verifyWebhook`). `api_key.revoked` revokes locally; `api_key.updated`
+     * `verifyWebhook`). `api_key.revoked` revokes locally; `api_key.restored` lifts a revocation a ban caused; `api_key.updated`
      * refreshes name, scopes and expiry of a key the mirror holds. The hash never
      * changes, so a key the mirror does not hold is ignored (mint/import adds it).
      * Returns whether the event changed the mirror.
@@ -450,6 +481,17 @@ export function createKeyMirror(options: KeyMirrorOptions) {
       if (!data || typeof data.id !== 'string') return false;
       const held = await store.get(data.id);
       if (!held) return false;
+      // A key a ban had suspended works again: lift the local revocation.
+      if (event.type === 'api_key.restored') {
+        if (held.revoked_at === null) return false;
+        await store.put({
+          ...held,
+          revoked_at: null,
+          revoked_reason: null,
+          expires_at: data.expires_at !== undefined ? data.expires_at ?? null : held.expires_at,
+        });
+        return true;
+      }
       if (event.type === 'api_key.revoked' || (typeof data.revoked_at === 'number' && held.revoked_at === null)) {
         await store.markRevoked(held.id, typeof data.revoked_at === 'number' ? data.revoked_at : now(), data.revoked_reason ?? null);
         return true;

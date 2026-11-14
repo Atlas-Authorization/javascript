@@ -1,6 +1,6 @@
 import { enc, type RequestFn } from './request';
 import { paginate } from './paginate';
-import type { WebhookDelivery, WebhookEndpoint, WebhookEndpointWithSecret } from './webhooks';
+import type { WebhookBulkResult, WebhookDelivery, WebhookDeliveryQueued, WebhookEndpoint, WebhookEndpointWithSecret, WebhookTestResult, WebhookWindow } from './webhooks';
 import type { CursorPage, CursorParams, DataList, DeletedObject, ListPage, Metadata } from './types';
 
 export interface Organization {
@@ -74,7 +74,14 @@ export interface OrganizationMembership {
   permissions?: string[];
   /** Sign-in methods whose sessions mint with this organization's claims; null = any. */
   allowed_sign_in_methods?: string[] | null;
+  /** When the seat ends (epoch ms); it is then removed and `organization_membership.expired` is sent. Null = never. */
+  expires_at?: number | null;
   created_at: number;
+}
+
+/** An end date for a seat: ISO 8601 or epoch ms in the future; null clears it. */
+export interface OrganizationSeatExpiry {
+  expires_at?: string | number | null;
 }
 
 /** The grants a membership or an invitation carries beyond its role. */
@@ -233,6 +240,10 @@ export interface OrganizationPolicySettings {
   ipAllowlist?: string[];
   /** Cap on the absolute session lifetime for members, in seconds (300 … 7776000). */
   maxSessionAgeSeconds?: number;
+  /** Cap on each member's concurrent active sessions (1 to 100). The smallest cap across the user's organizations wins. */
+  maxSessions?: number;
+  /** Allow this organization more than one enterprise SSO connection. */
+  ssoMultiConnection?: boolean;
   endUserPool?: OrganizationEndUserPoolPolicy;
   /** Break-glass: addresses (at most 20) that may still use a password while `ssoRequired` is on. Each use is audited. */
   ssoBypass?: string[];
@@ -265,7 +276,11 @@ export interface OrganizationAuditStream {
   id: string;
   organization_id: string;
   url: string;
-  format: string;
+  /** `json`, `ocsf` or `cef`. */
+  format: 'json' | 'ocsf' | 'cef' | (string & {});
+  /** Where the record goes. */
+  sink_type: 'https' | 'splunk_hec' | 'datadog' | 'elastic' | (string & {});
+  sink_config: Record<string, string> | null;
   active: boolean;
   has_secret: boolean;
   created_at: number;
@@ -274,10 +289,14 @@ export interface OrganizationAuditStream {
 export interface CreateOrganizationAuditStreamBody {
   /** Public HTTPS endpoint of the SIEM/collector. */
   url: string;
-  /** Shared HMAC-SHA256 signing secret (min 16 chars). Write-only. */
+  /** For `https`: the shared HMAC-SHA256 signing secret (min 16 chars). For a vendor sink: its token (Splunk HEC token, Datadog API key, Elastic API key). Write-only. */
   secret: string;
-  /** Shape hint for the collector. Default `json`. */
-  format?: string;
+  /** How each record is written: `json` (default), `ocsf` (OCSF API Activity) or `cef` (ArcSight CEF line). */
+  format?: 'json' | 'ocsf' | 'cef';
+  /** `https` (default, a signed POST), `splunk_hec`, `datadog` or `elastic`. */
+  sink_type?: 'https' | 'splunk_hec' | 'datadog' | 'elastic';
+  /** Non-secret sink settings: Splunk `index`, `source`, `sourcetype`; Datadog `service`, `tags`. */
+  sink_config?: Record<string, string>;
 }
 
 /** The organization's hosted-page branding overlay. Null fields inherit the instance brand. */
@@ -436,6 +455,8 @@ export interface OrganizationPolicyPatch {
   ipAllowlist?: string[] | null;
   /** Absolute session lifetime cap in seconds (300 … 7776000); `null` clears. */
   maxSessionAgeSeconds?: number | null;
+  maxSessions?: number | null;
+  ssoMultiConnection?: boolean | null;
   /** Retired: only `null` is accepted, to clear a stored value. Use `entitlementOverrides.create`. */
   entitlementPlan?: null;
   /** Retired: only `null` is accepted, to clear a stored value. */
@@ -451,6 +472,67 @@ export interface OrganizationWebhookEndpointBody {
   enabled_events?: string[];
   description?: string | null;
   active?: boolean;
+}
+
+export interface OrganizationRolePolicy {
+  object: 'organization_role_policy';
+  organization_id: string;
+  role_set: { id: string; key: string } | null;
+  /** The role keys the organization may assign; null when unrestricted. */
+  allowed_roles: string[] | null;
+  default_role: string;
+  default_role_source: 'organization' | 'role_set' | 'system';
+}
+
+export interface OrganizationSeats {
+  object: 'organization_seats';
+  organization_id: string;
+  /** `max_allowed_memberships`; null = unlimited. */
+  limit: number | null;
+  used: number;
+  pending_invitations: number;
+  /** Seats left after members and pending invitations; null when unlimited. */
+  available: number | null;
+  percent_used: number | null;
+  warn_percent: number | null;
+  state: 'ok' | 'low' | 'full';
+}
+
+export interface OrganizationMembershipImportRow {
+  email?: string;
+  user_id?: string;
+  role?: string;
+  expires_at?: string | number | null;
+  public_metadata?: Record<string, unknown>;
+}
+
+/** Send `memberships` or `csv` (header row: email, user_id, role, expires_at), not both. */
+export type OrganizationMembershipImportBody = (
+  | { memberships: OrganizationMembershipImportRow[]; csv?: never }
+  | { csv: string; memberships?: never }
+) & {
+  /** What to do with someone already a member. Default `skip`. */
+  on_existing?: 'skip' | 'update';
+  /** Invite an email that no account has. */
+  invite_missing?: boolean;
+  default_role?: string;
+};
+
+export interface OrganizationMembershipImportJob {
+  object: 'job';
+  id: string;
+  type: 'org_membership_import';
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  error_count: number;
+  /** Rows by outcome once finished: added, updated, skipped, invited. */
+  results?: Record<string, number> | null;
+  created_at: number;
+  updated_at: number;
+  completed_at: number | null;
 }
 
 export function organizationsResource(request: RequestFn) {
@@ -534,6 +616,34 @@ export function organizationsResource(request: RequestFn) {
       return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/mfa_status`, query: { session_id: opts.sessionId } });
     },
 
+    /** The role set an organization assigns from and its default role. */
+    rolePolicy: {
+      get(orgId: string): Promise<OrganizationRolePolicy> {
+        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/role_policy` });
+      },
+      /** `role_set` (an id or key) and/or `default_role`; null clears. */
+      put(orgId: string, body: { role_set?: string | null; default_role?: string | null }): Promise<OrganizationRolePolicy> {
+        return request({ method: 'PUT', path: `/v1/organizations/${enc(orgId)}/role_policy`, body });
+      },
+    },
+
+    /** Seats used, pending invitations and seats left; set the limit and the warning level. */
+    seats: {
+      get(orgId: string): Promise<OrganizationSeats> {
+        return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/seats` });
+      },
+      put(orgId: string, body: { limit?: number | null; warn_percent?: number | null }): Promise<OrganizationSeats> {
+        return request({ method: 'PUT', path: `/v1/organizations/${enc(orgId)}/seats`, body });
+      },
+    },
+
+    membershipImports: {
+      /** Queue up to 5000 memberships as a background job; poll `jobs.get(job.id)`. */
+      create(orgId: string, body: OrganizationMembershipImportBody, idempotencyKey?: string): Promise<OrganizationMembershipImportJob> {
+        return request({ method: 'POST', path: `/v1/organizations/${enc(orgId)}/membership_imports`, body, idempotencyKey });
+      },
+    },
+
     memberships: {
       list(
         orgId: string,
@@ -564,7 +674,7 @@ export function organizationsResource(request: RequestFn) {
       upsert(
         orgId: string,
         userId: string,
-        body: { role: string; role_source?: string } & OrganizationSeatGrants,
+        body: { role: string; role_source?: string } & OrganizationSeatGrants & OrganizationSeatExpiry,
         idempotencyKey?: string,
       ): Promise<OrganizationMembership & { unchanged: boolean }> {
         return request({
@@ -576,7 +686,7 @@ export function organizationsResource(request: RequestFn) {
       },
       add(
         orgId: string,
-        body: { user_id: string; role?: string } & OrganizationSeatGrants,
+        body: { user_id: string; role?: string } & OrganizationSeatGrants & OrganizationSeatExpiry,
         idempotencyKey?: string,
       ): Promise<{
         object: 'organization_membership';
@@ -603,7 +713,7 @@ export function organizationsResource(request: RequestFn) {
          * `sso:<connection id>` or `ldap:<connection id>` hands it back to that source.
          * A role sent alone counts as `manual`.
          */
-        body: { role?: string; role_source?: string } & OrganizationSeatGrants,
+        body: { role?: string; role_source?: string } & OrganizationSeatGrants & OrganizationSeatExpiry,
       ): Promise<{
         object: 'organization_membership';
         role?: string;
@@ -860,6 +970,22 @@ export function organizationsResource(request: RequestFn) {
           path: `/v1/organizations/${enc(orgId)}/webhook_endpoints/${enc(endpointId)}/deliveries`,
           query,
         });
+      },
+      /** Re-show the signing secret (audited). */
+      revealSecret(orgId: string, endpointId: string): Promise<{ object: 'webhook_secret'; secret: string }> {
+        return request({ method: 'POST', path: `/v1/organizations/${enc(orgId)}/webhook_endpoints/${enc(endpointId)}/reveal_secret` });
+      },
+      /** Send a synthetic `webhook.test` to this endpoint alone; `wait: '10s'` returns the attempt inline. */
+      test(orgId: string, endpointId: string, opts: { wait?: string } = {}): Promise<WebhookTestResult | WebhookDeliveryQueued> {
+        return request({ method: 'POST', path: `/v1/organizations/${enc(orgId)}/webhook_endpoints/${enc(endpointId)}/test`, query: opts });
+      },
+      /** Re-send one delivery's event as a new attempt. */
+      redeliver(orgId: string, endpointId: string, deliveryId: string): Promise<WebhookDeliveryQueued> {
+        return request({ method: 'POST', path: `/v1/organizations/${enc(orgId)}/webhook_endpoints/${enc(endpointId)}/deliveries/${enc(deliveryId)}/redeliver` });
+      },
+      /** Re-send every event of this organization since `since` that the endpoint subscribes to and has not received. */
+      replay(orgId: string, endpointId: string, body: WebhookWindow & { since: number | string; event_type?: string }): Promise<WebhookBulkResult> {
+        return request({ method: 'POST', path: `/v1/organizations/${enc(orgId)}/webhook_endpoints/${enc(endpointId)}/replay`, body });
       },
     },
 

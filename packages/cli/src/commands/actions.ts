@@ -6,6 +6,7 @@ import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { fmtTime, printJson, renderTable, type Column } from '../output';
 import { requireArg, requireClient, wantsJson } from './shared';
+import { actionVersions } from './actions-versions';
 import { gallery, install, installs, publish, show, update } from './actions-gallery';
 
 const COLUMNS: Column<Action>[] = [
@@ -127,12 +128,17 @@ export async function actions(ctx: RunContext, args: ParsedArgs): Promise<number
       return update(ctx, args);
     case 'publish':
       return publish(ctx, args);
+    case 'versions':
+    case 'release':
+    case 'rollout':
+    case 'rollback':
+      return actionVersions(ctx, args);
 
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'actions ${sub}'. Try: list, deploy, test, logs, gallery, show, install, installs, update, publish.`
-          : 'actions needs a subcommand: list, deploy, test, logs, gallery, show, install, installs, update, publish.',
+          ? `Unknown subcommand 'actions ${sub}'. Try: list, deploy, test, logs, versions, release, rollout, rollback, gallery, show, install, installs, update, publish.`
+          : 'actions needs a subcommand: list, deploy, test, logs, versions, release, rollout, rollback, gallery, show, install, installs, update, publish.',
       );
   }
 }

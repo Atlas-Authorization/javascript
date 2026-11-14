@@ -1,7 +1,6 @@
 import { defineComponent, h, onMounted, onUnmounted, reactive, ref, shallowRef, watch, type PropType, type VNode } from 'vue';
 import {
   describeAuditAction,
-  planPriceView,
   submitLead,
   OrganizationProfileController,
   reauthenticate,
@@ -54,12 +53,12 @@ import {
 import { useAtlas } from './context';
 import { FapiClient, type FlowState } from './fapi';
 import { ATLAS_VUE_SDK } from './version';
-import { useAuth, useImpersonation, useOrganization, useOrganizationAuditLog, usePricingPlans, useUser } from './composables';
+import { useAuth, useImpersonation, useOrganization, useOrganizationAuditLog, useUser } from './composables';
 import { useFlow } from './flow';
 import { ManageCiba } from './manage-ciba';
 import { classFor, type ElementKey } from './appearance';
 import { translate } from './i18n';
-import { evaluate } from './protect';
+import { evaluate, type AppPermissionKey, type AppRoleKey, type FeatureKey, type OrgRoleKey, type PermissionKey, type PlanKey } from './protect';
 import { PolicyAcceptStep, PolicyClickwrap, PolicyConsent, usePolicyState } from './policies';
 
 /**
@@ -146,10 +145,17 @@ export const AtlasLoaded = defineComponent({
 export const Protect = defineComponent({
   name: 'Protect',
   props: {
-    permission: { type: String, default: undefined },
-    role: { type: String, default: undefined },
-    anyPermission: { type: Array as PropType<readonly string[]>, default: undefined },
-    allPermissions: { type: Array as PropType<readonly string[]>, default: undefined },
+    // Typed against the generated `Register` keys (plain strings when none is registered).
+    permission: { type: String as PropType<PermissionKey>, default: undefined },
+    role: { type: String as PropType<OrgRoleKey>, default: undefined },
+    anyPermission: { type: Array as PropType<readonly PermissionKey[]>, default: undefined },
+    allPermissions: { type: Array as PropType<readonly PermissionKey[]>, default: undefined },
+    plan: { type: String as PropType<PlanKey>, default: undefined },
+    feature: { type: String as PropType<FeatureKey>, default: undefined },
+    appRole: { type: String as PropType<AppRoleKey>, default: undefined },
+    appPermission: { type: String as PropType<AppPermissionKey>, default: undefined },
+    anyAppPermission: { type: Array as PropType<readonly AppPermissionKey[]>, default: undefined },
+    allAppPermissions: { type: Array as PropType<readonly AppPermissionKey[]>, default: undefined },
   },
   setup(props, { slots }) {
     const { claims, status } = useAtlas();
@@ -160,6 +166,12 @@ export const Protect = defineComponent({
         role: props.role,
         anyPermission: props.anyPermission,
         allPermissions: props.allPermissions,
+        plan: props.plan,
+        feature: props.feature,
+        appRole: props.appRole,
+        appPermission: props.appPermission,
+        anyAppPermission: props.anyAppPermission,
+        allAppPermissions: props.allAppPermissions,
       }).allowed;
       return allowed ? slots.default?.() : (slots.fallback?.() ?? null);
     };
@@ -2264,110 +2276,6 @@ export const OrganizationAuditLog = defineComponent({
               labels.loadMore ?? 'Load more',
             )
           : null,
-      ]);
-    };
-  },
-});
-
-/** The English text `<PricingTable/>` renders; every one is optional. */
-export interface PricingTableLabels {
-  monthly?: string;
-  yearly?: string;
-  perMonth?: string;
-  perYear?: string;
-  free?: string;
-  subscribe?: string;
-  trial?: (days: number) => string;
-  useCode?: (code: string) => string;
-}
-
-/**
- * `<PricingTable/>` — the instance's plans as cards: a locale-formatted price,
- * features, a free-trial badge, a monthly/yearly switch when a plan has an annual
- * price, and a plan's promotion (label, struck-through price, the code to enter at
- * checkout). The subscribe button starts the provider's hosted Checkout and needs
- * a signed-in session. `audience` shows only `user` or `org` plans.
- */
-export const PricingTable = defineComponent({
-  name: 'PricingTable',
-  props: {
-    audience: { type: String as PropType<'user' | 'org'>, default: undefined },
-    orgId: { type: String, default: undefined },
-    locale: { type: String, default: undefined },
-    labels: { type: Object as PropType<PricingTableLabels>, default: () => ({}) },
-  },
-  setup(props) {
-    const { status } = useAuth();
-    const { plans, isLoaded, checkout } = usePricingPlans({ audience: props.audience });
-    const cls = useClass();
-    const interval = shallowRef<'month' | 'year'>('month');
-    const busy = shallowRef<string | null>(null);
-
-    return () => {
-      if (!isLoaded.value) return h('div', { 'data-atlas': 'pricing-table', 'aria-busy': 'true' });
-      const L = {
-        monthly: 'Monthly', yearly: 'Yearly', perMonth: 'month', perYear: 'year', free: 'Free', subscribe: 'Subscribe',
-        trial: (d: number) => `${d}-day free trial`, useCode: (c: string) => `Use code ${c} at checkout`,
-        ...props.labels,
-      };
-      const locale = props.locale ?? (typeof document !== 'undefined' ? document.documentElement.lang || undefined : undefined);
-      const hasAnnual = plans.value.some((p) => p.annual_available);
-      return h('div', { class: cls('pricingTable', 'atlas-pricing-table'), 'data-atlas': 'pricing-table' }, [
-        hasAnnual
-          ? h(
-              'div',
-              { role: 'group', 'aria-label': 'Billing interval', 'data-atlas': 'pricing-interval' },
-              (['month', 'year'] as const).map((i) =>
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    class: cls('formButtonSecondary', 'atlas-button-secondary'),
-                    'aria-pressed': interval.value === i,
-                    onClick: () => {
-                      interval.value = i;
-                    },
-                  },
-                  i === 'month' ? L.monthly : L.yearly,
-                ),
-              ),
-            )
-          : null,
-        ...plans.value.map((plan) => {
-          const view = planPriceView(plan, { interval: interval.value, locale });
-          return h('div', { key: plan.id, class: cls('card', 'atlas-card'), 'data-atlas': 'pricing-plan' }, [
-            h('h3', { class: cls('planName', 'atlas-plan-name') }, plan.name),
-            view.promotionLabel ? h('p', { 'data-atlas': 'pricing-promotion', class: cls('badge', 'atlas-badge') }, view.promotionLabel) : null,
-            h('p', { class: cls('price', 'atlas-price') }, [
-              view.originalPrice ? h('s', { 'data-atlas': 'pricing-original' }, view.originalPrice) : null,
-              ' ',
-              view.free ? L.free : view.price,
-              view.free ? null : h('span', { class: cls('priceInterval', 'atlas-interval') }, ` / ${view.interval === 'year' ? L.perYear : L.perMonth}`),
-            ]),
-            view.trialDays ? h('p', { 'data-atlas': 'pricing-trial', class: cls('badge', 'atlas-badge') }, L.trial(view.trialDays)) : null,
-            view.promotionCode ? h('p', { 'data-atlas': 'pricing-code', class: cls('text', 'atlas-text') }, L.useCode(view.promotionCode)) : null,
-            plan.features.length
-              ? h('ul', { class: cls('list', 'atlas-list') }, plan.features.map((f) => h('li', { key: f, class: cls('listItem', 'atlas-list-item') }, f)))
-              : null,
-            h(
-              'button',
-              {
-                type: 'button',
-                class: cls('formButtonPrimary', 'atlas-button'),
-                disabled: status.value !== 'signed_in' || busy.value === plan.id,
-                onClick: async () => {
-                  busy.value = plan.id;
-                  try {
-                    await checkout({ planId: plan.id, orgId: props.orgId, ...(plan.annual_available ? { interval: interval.value } : {}) });
-                  } finally {
-                    busy.value = null;
-                  }
-                },
-              },
-              L.subscribe,
-            ),
-          ]);
-        }),
       ]);
     };
   },

@@ -1,5 +1,9 @@
 # @atlasauth/mcp changelog
 
+## 0.6.0
+
+- A tool can wait for a human approval before it runs.
+
 ## 0.5.0
 
 - Tool calls can be metered against grant counters through `@atlasauth/backend/usage-gate`. Requires `@atlasauth/backend` 0.51.0 or later.

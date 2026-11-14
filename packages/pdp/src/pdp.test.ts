@@ -148,3 +148,44 @@ describe('PdpSync and DecisionShipper', () => {
     expect(ingested!.pdp.bundle_revision).toBe(b.revision);
   });
 });
+
+describe('PdpSync watching', () => {
+  it('resyncs as soon as the authorization feed reports a change, and backs off on failure', async () => {
+    const b = await signed();
+    const base64 = Buffer.from(b.bundle).toString('base64');
+    let tupleRevision = 7;
+    let polls = 0;
+    const events: string[] = [];
+    const fakeFetch = (async (url: string, init?: { signal?: AbortSignal }) => {
+      const path = url.replace('https://atlas.test', '');
+      const json = (v: unknown) => ({ ok: true, status: 200, json: async () => v });
+      if (path.startsWith('/v1/authz/events')) {
+        events.push(path);
+        polls++;
+        if (polls === 1) return json({ data: [], next_after: 5 });
+        if (polls === 2) {
+          tupleRevision = 8;
+          return json({ data: [{ kind: 'tuples_written' }], next_after: 6 });
+        }
+        await new Promise((_r, reject) => init?.signal?.addEventListener('abort', () => reject(new Error('aborted'))));
+      }
+      if (path === '/v1/policy_bundles/current') return json({ revision: b.revision });
+      if (path.startsWith('/v1/policy_bundles/rev')) return json({ bundle: base64, signature: b.signature, revision: b.revision });
+      if (path === '/v1/fga/stores') return json({ data: [{ id: 'fgas_1', name: 'main' }] });
+      if (path === '/v1/fga/stores/fgas_1/snapshot') return json({ full: true, revision: tupleRevision, tuples: [{ user: 'user:a', relation: 'viewer', object: 'doc:1' }], has_more: false });
+      if (path.startsWith('/v1/fga/stores/fgas_1/snapshot?since=')) return json({ full: false, revision: tupleRevision, changes: [{ operation: 'write', user: 'user:c', relation: 'viewer', object: 'doc:1' }], has_more: false });
+      return { ok: false, status: 404, json: async () => ({}) };
+    }) as unknown as typeof fetch;
+    const pdp = new LocalPdp();
+    const sync = new PdpSync({ pdp, baseUrl: 'https://atlas.test', apiKey: 'sk', jwks: jwks as unknown as { keys: Record<string, unknown>[] }, fetch: fakeFetch, watchWaitMs: 50 });
+    await sync.syncOnce();
+    expect(pdp.storeRevision('main')).toBe(7);
+    sync.startWatching();
+    for (let i = 0; i < 50 && pdp.storeRevision('main') !== 8; i++) await new Promise((r) => setTimeout(r, 20));
+    sync.stop();
+    expect(pdp.storeRevision('main')).toBe(8);
+    expect(events[0]).toContain('after=latest');
+    expect(events[1]).toContain('after=5');
+  });
+});
+

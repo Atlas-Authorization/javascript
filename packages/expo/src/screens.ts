@@ -9,6 +9,7 @@
 import {
   createSecuritySection,
   createSignInScreen,
+  createSignUpScreen,
   type ErrorStrings,
   type FapiClient,
   type FieldError,
@@ -23,14 +24,15 @@ export type {
   ScreenField,
   SectionField,
   SecurityItem,
-  SecuritySection,
+  SecuritySection as SecuritySectionViewModel,
   SecuritySectionKind,
   SecuritySectionStep,
   SecuritySectionView,
   SignInMethod,
-  SignInScreen,
+  SignInScreen as SignInScreenViewModel,
   SignInScreenStep,
   SignInScreenView,
+  SignUpScreen as SignUpScreenViewModel,
 } from '@atlasauth/js';
 
 /** A passkey provider for a phone: `@atlasauth/expo-passkeys`'s `nativePasskeySignIn(Passkey)` and `nativePasskeyAssertion(Passkey)`. */
@@ -61,6 +63,15 @@ export function createExpoSignInScreen(client: FapiClient, setup: SignInScreenSe
       ...(setup.apple ? { apple: appleSignInProvider(setup.apple) } : {}),
       ...(setup.google ? { google: googleSignInProvider(setup.google) } : {}),
     },
+  });
+}
+
+/** The sign-up screen model on a client: the details form, then every step a journey or the policies add. */
+export function createExpoSignUpScreen(client: FapiClient, setup: Pick<SignInScreenSetup, 'localization' | 'passkey'> = {}) {
+  return createSignUpScreen({
+    client,
+    ...(setup.localization !== undefined ? { localization: setup.localization } : {}),
+    ...(setup.passkey?.assertion ? { passkeyAssertion: setup.passkey.assertion } : {}),
   });
 }
 

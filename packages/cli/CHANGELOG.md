@@ -1,5 +1,13 @@
 # @atlasauth/cli changelog
 
+## 0.42.0
+
+- `atlas logs tail --json` prints one JSON object per line.
+- `atlas config` manages step-up policies, MFA campaigns, FGA sync, machine trust policies, write budget, organization role sets and templates, connection reconnect settings, authorization decision settings and marketing settings; sets compare without order; `requires` on sections and entries; `resource_types`, `code_file` and `redirect_uri` in atlas.yaml.
+- `atlas plan` and `atlas apply` validate against `GET /v1/config/limits` and the server dry run first, and apply reports what was and was not applied.
+- New commands: `atlas diagnostics`, `atlas app-events`, `atlas workflows dry-run|cancel|retry|approve|deny`, `atlas actions versions|release|rollout|rollback`, `atlas webhooks dlq`, `atlas doctor rs <url>`.
+- `atlas init` turns on strict request bodies only for apps it creates; preflight reports `lenient_instance`.
+
 ## 0.41.0
 
 - `atlas types generate` writes typed permissions, roles, plans, features, scopes, events and metadata schemas for your instance (`--check` for CI).

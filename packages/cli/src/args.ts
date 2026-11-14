@@ -79,6 +79,8 @@ const OPTIONS = {
   yes: { type: 'boolean', short: 'y' },
   force: { type: 'boolean' },
   'rotate-secret': { type: 'boolean' },
+  // plan / apply: skip the server dry-run pass (the published-limit checks still run).
+  'skip-validate': { type: 'boolean' },
   instance: { type: 'string' },
   'fail-on': { type: 'string' },
   // doctor / csp.
@@ -131,6 +133,27 @@ const OPTIONS = {
   mount: { type: 'string' },
   // resource commands: a JSON request body (or --file).
   data: { type: 'string' },
+  // workflows / app-events / diagnostics / logs flags that fill a body field or a query parameter.
+  'user-id': { type: 'string' },
+  'organization-id': { type: 'string' },
+  'from-step': { type: 'string' },
+  comment: { type: 'string' },
+  type: { type: 'string' },
+  code: { type: 'string' },
+  method: { type: 'string' },
+  path: { type: 'string' },
+  token: { type: 'string' },
+  live: { type: 'boolean' },
+  // actions release / rollout / rollback.
+  percent: { type: 'string' },
+  note: { type: 'string' },
+  'to-version': { type: 'string' },
+  // webhooks update.
+  'max-rps': { type: 'string' },
+  filters: { type: 'string' },
+  // logs tail.
+  source: { type: 'string' },
+  interval: { type: 'string' },
   // csp.
   framework: { type: 'string' },
   manifest: { type: 'string', multiple: true },

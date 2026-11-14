@@ -9,6 +9,10 @@ export type WorkflowTrigger =
   | { type: 'membership_age'; days: number; organization_id?: string }
   | { type: 'trial_end'; days_before?: number }
   | { type: 'webhook_event'; event_type: string; filter?: string }
+  /** An audit-log entry whose action is `action` (or starts with it when it ends in `.*`); `filter` is an expression over `event.*`. Not `workflow.*`. */
+  | { type: 'audit_event'; action: string; filter?: string }
+  /** An application event of `event_type` (optionally for one organization); `filter` is an expression over `event.*`. */
+  | { type: 'app_event'; event_type: string; organization_id?: string; filter?: string }
   /** Started by `invoke` with an input object. */
   | { type: 'manual' };
 
@@ -118,7 +122,11 @@ export interface WorkflowRun {
   subject: string;
   user_id: string | null;
   dry_run: boolean;
-  status: 'running' | 'waiting' | 'succeeded' | 'failed';
+  status: 'running' | 'waiting' | 'succeeded' | 'failed' | 'cancelled';
+  cancelled_at?: number | null;
+  cancelled_by?: string | null;
+  /** How many times the run was retried from a step. */
+  retry_count?: number;
   /** While waiting on a timer or retry: when the run continues (Unix ms). */
   resume_at?: number | null;
   /** While waiting on people: `approval:<id>`. */
@@ -179,6 +187,14 @@ export function workflowsResource(request: RequestFn) {
     /** Retry a failed run from the step that failed. */
     resume(id: string, runId: string): Promise<WorkflowRun> {
       return request({ method: 'POST', path: `/v1/workflows/${enc(id)}/runs/${enc(runId)}/resume`, body: {} });
+    },
+    /** Cancel a run that is running or waiting. The step in flight finishes; nothing after it runs. */
+    cancelRun(id: string, runId: string, idempotencyKey?: string): Promise<WorkflowRun> {
+      return request({ method: 'POST', path: `/v1/workflows/${enc(id)}/runs/${enc(runId)}/cancel`, body: {}, idempotencyKey });
+    },
+    /** Retry a failed or cancelled run from an earlier step (`fromStep`, a step path from the run's step log such as `2` or `1.then.0`). */
+    retryRunFromStep(id: string, runId: string, fromStep: string, idempotencyKey?: string): Promise<WorkflowRun> {
+      return request({ method: 'POST', path: `/v1/workflows/${enc(id)}/runs/${enc(runId)}/retry`, body: { from_step: fromStep }, idempotencyKey });
     },
     /** The events a workflow can start on. */
     triggers(): Promise<ListPage<WorkflowTriggerInfo>> {

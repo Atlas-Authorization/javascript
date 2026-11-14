@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { HttpException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { AtlasGrantUsageGuard, AtlasLimitsModule, AtlasRateLimitGuard, ATLAS_GRANT_USAGE, ATLAS_RATE_LIMIT } from './limits';
-import { grantUsageGate, rateLimitGate } from './limits';
+import { grantUsageGate, rateLimitGate, featureGate, AtlasFeatureGuard, ATLAS_FEATURE } from './limits';
 
 const allow = vi.fn(async (_req: unknown) => ({ allowed: true as const, headers: { 'RateLimit-Remaining': '4' } }));
 const deny = async () => ({ allowed: false as const, status: 429, headers: { 'Retry-After': '3' }, body: { error: 'slow' } });
@@ -33,5 +33,17 @@ describe('nest limit guards', () => {
     const mod = AtlasLimitsModule.register({ rateLimit: allow as never });
     expect(mod.exports).toEqual([ATLAS_RATE_LIMIT]);
     expect(AtlasLimitsModule.register({ grantUsage: allow as never }).exports).toEqual([ATLAS_GRANT_USAGE]);
+  });
+});
+
+describe('nest feature guard', () => {
+  it('allows an entitled subject and 403s otherwise', async () => {
+    const yes = async () => ({ allowed: true as const });
+    const no = async () => ({ allowed: false as const, status: 403, body: { error: { code: 'feature_not_entitled' } } });
+    expect(await new AtlasFeatureGuard(featureGate(yes as never)).canActivate(context({ headers: {} }).ctx)).toBe(true);
+    const err = await new AtlasFeatureGuard(featureGate(no as never)).canActivate(context({ headers: {} }).ctx).catch((e) => e);
+    expect(err.getStatus()).toBe(403);
+    expect(err.getResponse()).toEqual({ error: { code: 'feature_not_entitled' } });
+    expect(AtlasLimitsModule.register({ feature: yes as never }).exports).toEqual([ATLAS_FEATURE]);
   });
 });

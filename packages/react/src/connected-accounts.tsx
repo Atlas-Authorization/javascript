@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  createReconnectController,
   connectMyConnection,
   connectOrganizationConnection,
   listMyConnections,
@@ -189,5 +190,57 @@ export function ConnectedAccounts({ organizationId, redirectUrl, labels }: Conne
         ))}
       </ul>
     </section>
+  );
+}
+
+/**
+ * Headless reconnect for one connection: fetches a fresh provider authorization link and navigates to it.
+ * Stores the new tokens on the same connection; adds no sign-in method.
+ */
+export function useReconnectConnection(options: { connectionId: string; redirectUrl?: string; organizationId?: string }) {
+  const { connectionId, organizationId } = options;
+  const client = useMeClient();
+  const errorText = useErrorText();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const back = options.redirectUrl ?? (typeof window !== 'undefined' ? window.location.href : '');
+  const controller = useMemo(
+    () => createReconnectController(client, { redirectUrl: back, organizationId, open: (url) => navigateTo(url) }),
+    [client, back, organizationId],
+  );
+  const reconnect = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await controller.reconnect(connectionId);
+    } catch (err) {
+      setError(err instanceof Error ? errorText(err) : String(err));
+      setBusy(false);
+    }
+  }, [controller, connectionId, errorText]);
+  return { reconnect, busy, error };
+}
+
+export interface ReconnectConnectionProps {
+  connectionId: string;
+  /** Where the provider returns the browser. Default: the current page. */
+  redirectUrl?: string;
+  /** Reconnect this (active) organization's connection instead of the user's own. */
+  organizationId?: string;
+  /** Button text. Default "Reconnect". */
+  label?: string;
+}
+
+/** A button that sends the user back through the provider consent for a connection that needs authorizing again. */
+export function ReconnectConnection({ connectionId, redirectUrl, organizationId, label = 'Reconnect' }: ReconnectConnectionProps) {
+  const api = useReconnectConnection({ connectionId, redirectUrl, organizationId });
+  const cls = useClasses();
+  return (
+    <span data-atlas="reconnect-connection">
+      <button className={cls('formButtonSecondary', 'atlas-button-secondary')} type="button" disabled={api.busy} onClick={() => void api.reconnect()}>
+        {label}
+      </button>
+      {api.error ? <span className={cls('alert', 'atlas-alert')} role="alert">{api.error}</span> : null}
+    </span>
   );
 }

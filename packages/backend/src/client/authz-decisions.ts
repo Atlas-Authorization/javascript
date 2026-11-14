@@ -7,7 +7,7 @@ import { enc, type RequestFn } from './request';
  * events to your log streams, and queryable here.
  */
 
-export type DecisionSource = 'abac' | 'authzen' | 'fga' | 'access_policy' | 'mcp_gateway';
+export type DecisionSource = 'abac' | 'authzen' | 'fga' | 'access_policy' | 'mcp_gateway' | 'pdp' | 'opa' | 'rbac';
 
 export interface AuthzDecision {
   object: 'authz_decision';

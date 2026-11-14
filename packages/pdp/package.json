@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/pdp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Atlas local policy decision point: verifies a signed policy bundle offline and evaluates ABAC (Cedar-subset) policies and FGA (ReBAC) checks in-process or as a localhost sidecar.",
   "main": "./dist/index.js",
   "types": "./dist/types/pdp/src/index.d.ts",

@@ -38,7 +38,9 @@ export type EmailTemplateName =
   | 'deletion_scheduled'
   | 'deletion_reminder'
   | 'deletion_canceled'
-  | 'deletion_paused';
+  | 'deletion_paused'
+  | 'privacy_request_confirm'
+  | 'connection_reconnect';
 
 /** The customizable body of a template: a subject line and a text body. */
 export interface EmailTemplateBody {

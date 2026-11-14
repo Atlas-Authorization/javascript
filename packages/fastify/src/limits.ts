@@ -3,13 +3,17 @@
  * `@atlasauth/backend` (`rateLimitRequest`, `requireGrantUsage`) and accept either the limiter /
  * usage options or an already-built check. A limit store or usage call that throws is an error, never an allow.
  */
-import { rateLimitRequest, requireGrantUsage } from '@atlasauth/backend';
+import { rateLimitRequest, requireGrantUsage, requireStepUp, requireFeature } from '@atlasauth/backend';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 /** Options for the usage gate (`requireGrantUsage` in `@atlasauth/backend`). */
 export type GrantUsageOptions = Parameters<typeof requireGrantUsage>[0];
 /** The framework-neutral usage check `requireGrantUsage(opts)` returns. */
 export type GrantUsageCheck = ReturnType<typeof requireGrantUsage>;
+/** Options for the step-up gate (`requireStepUp` in `@atlasauth/backend`). */
+export type StepUpOptions = Parameters<typeof requireStepUp>[0];
+/** The framework-neutral step-up check `requireStepUp(opts)` returns. */
+export type StepUpCheck = ReturnType<typeof requireStepUp>;
 /** A limiter from `createRateLimiter` in `@atlasauth/backend`. */
 export type RateLimiter = Parameters<typeof rateLimitRequest>[0];
 /** Picks the rate-limit subject (key, user, org, machine, ip) out of a request. */
@@ -80,6 +84,23 @@ export function grantUsageGate(options: GrantUsageOptions | GrantUsageCheck): Li
   return (input) => check(neutral(input));
 }
 
+/** Turn step-up options (or an already-built `requireStepUp` check) into a gate: 403 STEP_UP_REQUIRED (with the policy and factors) until the session meets the named policy. */
+export function stepUpGate(options: StepUpOptions | StepUpCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireStepUp(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
+/** Options for the feature gate (`requireFeature` in `@atlasauth/backend`). */
+export type FeatureOptions = Parameters<typeof requireFeature>[0];
+/** The framework-neutral feature check `requireFeature(opts)` returns. */
+export type FeatureCheck = ReturnType<typeof requireFeature>;
+
+/** Turn feature options (or an already-built `requireFeature` check) into a gate. */
+export function featureGate(options: FeatureOptions | FeatureCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireFeature(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
 /** The JSON body of a denial. */
 export function denialBody(v: Extract<LimitVerdict, { allowed: false }>): unknown {
   return v.body ?? { errors: [{ code: v.status === 429 ? 'RATE_LIMITED' : 'FORBIDDEN' }] };
@@ -147,6 +168,16 @@ export function atlasRateLimit(limiter: RateLimiter | RateLimitCheck, options: A
 /** A `preHandler` that consumes a grant counter: 429 when spent, 403 when the grant is missing or expired. Use after `requireAccessToken`. */
 export function atlasGrantUsage(usage: GrantUsageOptions | GrantUsageCheck, options: AtlasLimitOptions = {}) {
   return hook(grantUsageGate(usage), options);
+}
+
+/** Require the session to meet a named step-up policy before the route runs: 403 STEP_UP_REQUIRED with the policy and the factors to ask for, so the client can run `withStepUp(policy, fn)`. Use after `atlasMiddleware`. */
+export function atlasStepUp(step: StepUpOptions | StepUpCheck, options: AtlasLimitOptions = {}) {
+  return hook(stepUpGate(step), options);
+}
+
+/** Allow the request only when the subject's plan includes a feature: 401 without a subject, 403 `feature_not_entitled` otherwise. Reads through an entitlement cache (`createEntitlementCache`). */
+export function atlasRequireFeature(feature: FeatureOptions | FeatureCheck, options: AtlasLimitOptions = {}) {
+  return hook(featureGate(feature), options);
 }
 
 function mergeHeaders(base: Headers, extra: LimitHeaders): Headers {

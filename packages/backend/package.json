@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/backend",
-  "version": "0.51.0",
+  "version": "0.52.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -28,6 +28,10 @@
       "types": "./dist/machine-client.d.ts",
       "default": "./dist/machine-client.js"
     },
+    "./pinned-fetch": {
+      "types": "./dist/web-bot-auth-pinned.d.ts",
+      "default": "./dist/web-bot-auth-pinned.js"
+    },
     "./rate-limit": {
       "types": "./dist/rate-limit.d.ts",
       "default": "./dist/rate-limit.js"
@@ -35,6 +39,14 @@
     "./usage-gate": {
       "types": "./dist/usage-gate.d.ts",
       "default": "./dist/usage-gate.js"
+    },
+    "./entitlements": {
+      "types": "./dist/entitlements.d.ts",
+      "default": "./dist/entitlements.js"
+    },
+    "./approval-gate": {
+      "types": "./dist/approval-gate.d.ts",
+      "default": "./dist/approval-gate.js"
     },
     "./mirror": {
       "types": "./dist/mirror/index.d.ts",
@@ -64,11 +76,20 @@
       "machine": [
         "./dist/machine-client.d.ts"
       ],
+      "pinned-fetch": [
+        "./dist/web-bot-auth-pinned.d.ts"
+      ],
       "rate-limit": [
         "./dist/rate-limit.d.ts"
       ],
       "usage-gate": [
         "./dist/usage-gate.d.ts"
+      ],
+      "entitlements": [
+        "./dist/entitlements.d.ts"
+      ],
+      "approval-gate": [
+        "./dist/approval-gate.d.ts"
       ],
       "mirror": [
         "./dist/mirror/index.d.ts"

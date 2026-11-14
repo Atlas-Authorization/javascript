@@ -60,3 +60,13 @@ values. `verifyRequest` implements the check for a receiver.
 a fixed secret, so a platform can pin its clock and replay it without Atlas. `INBOUND_EVENT_CASES`
 are the events a platform sends back (Standard Webhooks, signed with the endpoint's `whsec_` secret)
 and what Atlas must read from each.
+
+## In CI
+
+The command exits 0 when every case passes, 1 when a case fails and 2 for bad usage, and `--json` prints the full report, so a job needs no parsing:
+
+```yaml
+- run: npx @atlasauth/referral-conformance --base-url "$PLATFORM_URL" --connection-id "$CONNECTION_ID" --secret-file <(echo "$CONNECTION_SECRET") --json > conformance.json
+```
+
+Keep the secret in your CI's secret store and pass it through `REFERRAL_CONFORMANCE_SECRET` (or `--secret-file -` on stdin) rather than a file in the repository. `referral-conformance --help` prints the options and `--version` the package version.

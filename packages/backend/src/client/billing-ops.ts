@@ -217,6 +217,11 @@ export type BillingUpdateCouponBody = {
   active?: boolean;
   name?: string;
   max_redemptions?: number | null;
+  /** Epoch milliseconds in the future; null removes the expiry. */
+  expires_at?: number | null;
+  /** Plan ids the code works on; null means every plan. */
+  plan_ids?: string[] | null;
+  first_time_only?: boolean;
 };
 
 export type BillingUpdateCouponResult = {

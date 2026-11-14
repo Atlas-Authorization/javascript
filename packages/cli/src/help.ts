@@ -1,4 +1,4 @@
-import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, type Ops } from './commands/resources';
+import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, type Ops } from './commands/resources';
 /**
  * All help text lives here as plain strings — the CLI's "docs" surface. Kept
  * out of the handlers so the dispatch code stays about control flow and the
@@ -27,7 +27,10 @@ Commands:
   listen --forward-to <url>  Forward live events to your local server, signed (no tunnel)
   dev [proxy]                Local in-memory Atlas (emulator) / one-origin dev proxy
   move-origin --from --to    Move an app to a new domain in one step (--dry-run first)
-  workflows list|run|resume|status|templates|approvals|decide
+  workflows list|get|runs|run|dry-run|status|cancel|retry|resume|templates|approvals|approve|deny
+  app-events types|publish|list|get ...   Application events (publish to one organization, or "*" to all)
+  logs tail                  Live log: refused requests, audit entries, events
+  diagnostics traces|trace|login-readiness|inspect   Why a request was refused, can an origin sign in
   chat list|test|links|interactions   Chat approval integrations
   cloud targets|setup|login <id>      Cloud access portal (AWS, Google Cloud, Azure)
   device-sso list|show|revoke|delete  Native OS single sign-on registrations
@@ -72,7 +75,7 @@ Commands:
   init                       Create or complete an app's setup (idempotent); secrets to 0600 files
   setup-guide                The setup calls in order, with the read-back for each (--json for agents)
   preflight                  Check an instance's setup; non-zero exit on errors (for CI)
-  doctor                     Integration health: webhooks, logout, referrals, email, consent (exit 1 on a failure)
+  doctor                     Integration health: webhooks, logout, referrals, email, consent; 'doctor rs <url>' probes your API (exit 1 on a failure)
   golive --origin <url>      Take an instance live for an app origin, step by step; stops at the first failure
   env                        Print deploy variables: public values + secret file paths
   client rotate              Rotate an OAuth client secret straight into its file
@@ -527,7 +530,7 @@ Usage:
   atlas webhooks list [--json]
   atlas webhooks create --url <https-url> [--events a,b] [--product <name>] [--print-secret] [--json]
   atlas webhooks upsert --url <https-url> [--events a,b]       one endpoint per URL; idempotent
-  atlas webhooks update <id> [--url <u>] [--events a,b] [--active | --inactive]
+  atlas webhooks update <id> [--url <u>] [--events a,b] [--active | --inactive] [--max-rps <n>|none] [--filters '<json>'|none]
   atlas webhooks test <id> [--timeout 10s] [--no-wait] [--json]
   atlas webhooks deliveries <id> [--status failed] [--event-type user.created]
         [--since <iso|2h|7d>] [--until <iso>] [--limit <n>] [--starting-after <id>] [--json]
@@ -536,6 +539,9 @@ Usage:
   atlas webhooks replay <id> [--since failing_since]           re-send what a disabled endpoint missed
   atlas webhooks rotate <id> [--now | --overlap <seconds>]
   atlas webhooks reveal <id>
+  atlas webhooks dlq <id> [--limit <n>]                          deliveries that used every attempt, with payloads
+  atlas webhooks dlq-ack <id> --delivery <id>[,<id>...]          handled: take them out of the queue
+  atlas webhooks dlq-requeue <id> --delivery <id>[,<id>...]      send them again
 
 create, upsert, rotate and reveal write the signing secret to a 0600 file and
 print only its path (--print-secret prints it instead; --force replaces a file).
@@ -797,6 +803,7 @@ checks again and prints the result.`,
 Usage: atlas doctor [--instance <id> | --product <name> [--instance-env <env>]]
                     [--only <source,...>] [--no-probe] [--origin <url>] [--json]
        atlas doctor --scan-dir <path> [--scan-image <ref>] [--json]
+       atlas doctor rs <url> [--json]
 
 Prints every check: setup findings, webhook receivers (with the failing hop:
 dns, tls, http, challenge or auth), back-channel logout, the referral
@@ -807,6 +814,13 @@ fails. --no-probe uses recorded deliveries only (no live calls).
 setup errors (preflight), login readiness (live), the path-mount verification
 state on that host, and whether the consent declaration lists every cookie the
 SDKs read (__session, __atlas_uat, __atlas_rt, __client).
+
+rs <url> needs no key. It probes one of your protected API routes from outside with invalid
+credentials only: an anonymous request, a forged token, a malformed header, a forged DPoP
+proof and a token in the query string must all be refused the way RFC 6750 and RFC 9449 say;
+the 401 should carry a WWW-Authenticate challenge with resource_metadata; the RFC 9728
+protected-resource metadata must be served and name an authorization server whose metadata and
+signing keys are reachable. Prints each check with its fix; exits 1 on a failure.
 
 --scan-dir <path> and --scan-image <ref> need no key. They flag secret keys and
 webhook or hook secrets in Dockerfile ARG / ENV lines, compose build.args, and an
@@ -950,6 +964,11 @@ Usage:
   atlas actions deploy <file> --trigger <trigger> [--name <n>] [--json]
   atlas actions test <file> [--trigger <t>] [--json]
   atlas actions logs <action-id> [--json]
+  atlas actions versions <action-id> [--json]                    every version, which is live, which is staged
+  atlas actions release <action-id> <file> [--percent <1-99>] [--note <text>]
+                                                                  new version: live now, or staged for that share of executions
+  atlas actions rollout <action-id> --percent <0-100>            change a staged share; 100 promotes it, 0 aborts it
+  atlas actions rollback <action-id> --to-version <n> --yes      put an earlier version back live (as a new version)
 
   atlas actions gallery [query] [--trigger <t>] [--json]
   atlas actions show <slug> [--json]
@@ -1016,7 +1035,7 @@ an unknown depends_on or a cycle is an error before anything runs.`,
   apply: `atlas apply — make the instance match a config file (plan, confirm, apply)
 
 Usage:
-  atlas apply [<file|dir>] [--yes] [--prune] [--force-hook] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--out <dir>] [--secrets-out <dotenv>] [--format json|yaml]
+  atlas apply [<file|dir>] [--yes] [--prune] [--force-hook] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--out <dir>] [--secrets-out <dotenv>] [--format json|yaml] [--skip-validate] [--json]
   atlas apply [<file|dir>] --check
 
 <file>  One JSON or YAML document keyed by resource type, for example:
@@ -1033,18 +1052,22 @@ Usage:
         or a directory from 'atlas config export' (default ./atlas-config).
 
 Shows the plan, asks before applying (--yes skips the question; needed without a
-terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance,
-org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers,
-custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles,
-webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans,
-notification_templates, email_templates, organization_policies, branding, cookie_consent,
-sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator,
-proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges,
-impersonation_policy, connection_token_limits, connection_provider_topics, connection_relay_limits, web_bot_auth,
-notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules,
-abac_policies, abac_schema, access_policies, fga_stores, fga_settings, groups, group_rules, app_roles, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies. Re-running is a no-op.
+terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, write_budget. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
+  --skip-validate leave out the server dry-run pass (the published-limit checks still run)
+  --json          with --yes: print what was applied, what failed and what was not applied, as JSON
+Before anything is written every change is validated: the file against the limits the server
+publishes (roles per resource type, permissions per role, implied permissions), then each change
+against the server's own dry run. Any refusal is listed and nothing is applied (exit 1). If a change
+fails while applying, the output names which changes were applied and which were not; run it again
+and what was applied is a no-op.
+Set-valued fields (a role's permissions, scopes, redirect URIs, event lists, allowed origins and so
+on) compare without their order, so a re-plan right after apply shows no changes.
+requires: [VAR, ...] on a section (an object section as a key; a list section as
+{ requires: [...], items: [...] }) or on a list entry skips it with a warning
+"skipped <type> <key>: VAR unset" when VAR is unset or empty, and a skipped entry's live copy is
+never pruned. An action takes code_file: <path relative to the config> in place of code.
   --prune         also delete live resources missing from the config, and compare every live key
   --force-hook    enable the before_user_create hook even when its test call fails (409)
   --rotate-secret send again each secret Atlas cannot compare (it never returns them)
@@ -1071,11 +1094,27 @@ overlap: the old one stops signing at once.`,
   plan: `atlas plan — read-only drift diff of a config file or directory
 
 Usage:
-  atlas plan [<file|dir>] [--check|--exit-code] [--json] [--prune] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>]
+  atlas plan [<file|dir>] [--check|--exit-code] [--json] [--prune] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--skip-validate]
 
 The same diff as 'atlas config plan', also for a single config file (see 'atlas
-apply --help'). --check exits 2 when there is drift; nothing is ever written.`,
-  workflows: resHelp('workflows', 'workflow runs, templates and approvals', WORKFLOWS),
+apply --help'). --check exits 2 when there is drift; nothing is ever written.
+It also runs the checks apply would hit: the file against the server's published limits, then
+each change against the server's own dry run (validated, then rolled back: nothing is saved).
+Errors are listed (and under "validation" in --json) and the exit code is 1. A key without write
+scope cannot dry-run: that is noted and only the limit checks run. --skip-validate omits the dry run.`,
+  workflows: resHelp('workflows', 'workflow runs, templates and approvals (run takes --data with input; dry-run, retry --from-step <path>, approve|deny --comment)', WORKFLOWS),
+  'app-events': resHelp('app-events', 'application events: the type catalog, publishing (publish --organization-id "*" reaches every organization with an endpoint) and the log (list needs --organization-id)', APP_EVENTS),
+  diagnostics: resHelp('diagnostics', 'why requests are refused (traces; --since takes an ISO time or epoch ms), whether an origin can sign in (login-readiness --origin), and what a browser request would hit (inspect --origin [--method --path --token])', DIAGNOSTICS),
+  logs: `atlas logs — a live log of what the instance is doing
+
+Usage:
+  atlas logs tail [--source traces,audit,events] [--user-id <id>] [--code <code>] [--count <n>] [--timeout <dur>] [--interval <dur>] [--json]
+
+traces  requests Atlas refused, and the step that decided it (diagnostics:read)
+audit   audit log entries as they are written (audit:read)
+events  the live event stream (webhooks:write); a listen session, nothing is forwarded
+The default is traces and audit. They are polled every --interval (default 2s) and printed oldest
+first; nothing from before the command started is shown. Ctrl-C stops it.`,
   chat: resHelp('chat', 'chat approval integrations (test a bot, list user links)', CHAT),
   'saml-idp': resHelp('saml-idp', 'SAML identity provider service providers (import-metadata takes --data with url, entity_id, mdq_base_url)', SAML_IDP),
   provisioning: resHelp('provisioning', 'outbound provisioning connectors, preview, logs and the failure inbox', PROVISIONING),

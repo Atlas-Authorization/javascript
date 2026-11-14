@@ -63,4 +63,4 @@ export function guard<P, A, C extends AtlasContext, R>(
 }
 
 // Rate limiting and grant usage (see ./limits).
-export { withRateLimit, withGrantUsage, type AtlasLimitOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter, type LimitClaims, type LimitVerdict } from './limits';
+export { withRateLimit, withGrantUsage, withFeature, type FeatureCheck, type FeatureOptions, type AtlasLimitOptions, type GrantUsageCheck, type GrantUsageOptions, type RateLimitCheck, type RateLimiter, type LimitClaims, type LimitVerdict } from './limits';

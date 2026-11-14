@@ -1,7 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Engine } from './engine';
 import type { Obj } from './openapi';
+import { GATED_EVENTS, WILDCARD_GATE_DATE } from './event-gate';
 import { newId } from './store';
+import { chargeBudget } from './handlers/platform';
+import { deliveryHeaders, evictToken, filtersMatch, takeRate } from './webhook-ext';
+
+const gated = new Set(GATED_EVENTS);
+export const INCLUDE_NEW_EVENT_TYPES = 'include_new_event_types';
+
+/** Whether an endpoint subscribed to `type`: naming it always delivers; `*` skips events added after the endpoint (see `GATED_EVENTS`) unless it opted in. */
+export function subscribed(enabled: string[], type: string, endpointCreatedAt: number): boolean {
+  if (enabled.includes(type)) return true;
+  if (!enabled.includes('*')) return false;
+  if (!gated.has(type) || enabled.includes(INCLUDE_NEW_EVENT_TYPES)) return true;
+  return endpointCreatedAt >= Date.parse(`${WILDCARD_GATE_DATE}T00:00:00.000Z`);
+}
 
 export interface EmittedEvent {
   id: string;
@@ -90,10 +104,15 @@ export class WebhookService {
     const payload: Obj = { id, type, timestamp: now, instance_id: this.engine.instanceId, actor, idempotency_key: id, data };
     const event: EmittedEvent = { id, type, created_at: now, payload };
     this.events.push(event);
+    // Events and fan-out are counted against the write budget and announced when over; never dropped.
+    if (type !== 'write_budget.exceeded') chargeBudget(this.engine, 'events');
     for (const ep of this.engine.db.endpoints.all()) {
       if (ep.active === false) continue;
       const wanted: string[] = ep.enabled_events ?? ['*'];
-      if (wanted.includes('*') || wanted.includes(type)) this.dispatch(ep.id, event, 1);
+      if (subscribed(wanted, type, ep.created_at ?? 0) && filtersMatch(ep.filters, data)) {
+        if (type !== 'write_budget.exceeded') chargeBudget(this.engine, 'webhook_fanout');
+        this.dispatch(ep.id, event, 1);
+      }
     }
     return event;
   }
@@ -123,6 +142,16 @@ export class WebhookService {
   private async deliver(endpointId: string, event: EmittedEvent, attempt: number): Promise<void> {
     const ep = this.engine.db.endpoints.get(endpointId);
     if (!ep || ep.active === false) return;
+    // Over the endpoint's max_rps: wait for the next window; the attempt is not consumed.
+    if (!takeRate(this.engine, ep)) {
+      const t = setTimeout(() => {
+        this.timers.delete(t);
+        this.dispatch(endpointId, event, attempt);
+      }, 1000);
+      (t as { unref?: () => void }).unref?.();
+      this.timers.add(t);
+      return;
+    }
     const body = JSON.stringify(event.payload);
     const now = this.engine.clock.now();
     const deliveryId = newId('whdl', now);
@@ -134,9 +163,10 @@ export class WebhookService {
       else status = fault.status;
     } else {
       try {
-        const headers = { 'content-type': 'application/json', 'user-agent': 'Atlas-Emulator/1', ...(await signDelivery({ secret: ep.secret, id: event.id, timestampMs: now, body })) };
+        const headers = { 'content-type': 'application/json', 'user-agent': 'Atlas-Emulator/1', ...(await deliveryHeaders(this.engine, ep)), ...(await signDelivery({ secret: ep.secret, id: event.id, timestampMs: now, body })) };
         const res = await (this.engine.options.fetch ?? fetch)(ep.url, { method: 'POST', headers, body });
         status = res.status;
+        if (status === 401) evictToken(this.engine, endpointId);
       } catch (e) {
         error = (e as Error).message;
       }

@@ -1,5 +1,9 @@
 # @atlasauth/nextjs changelog
 
+## 0.17.0
+
+- `withStepUp` and `atlasStepUpMiddleware`; session revocation and back-channel logout helper; plan feature gate wrapper.
+
 ## 0.16.0
 
 - New `atlasRateLimit` and `atlasGrantUsage` helpers: enforce Atlas rate-limit policies and metered grant usage (consume/refund with idempotency) in your routes. Requires `@atlasauth/backend` 0.51.0 or later.

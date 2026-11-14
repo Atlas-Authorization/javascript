@@ -1,6 +1,10 @@
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign as cryptoSign } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { createDpopProof, dpopThumbprint, generateDpopKey } from './machine-dpop';
+
+export * from './machine-dpop';
+export * from './machine-workload';
 
 /**
  * The device side of machine enrolment, for a service or device of your own:
@@ -87,6 +91,12 @@ export interface MachineClientOptions {
   now?: () => number;
   /** Fetch a new token this long before the cached one expires. Default 60 seconds. */
   refreshSkewSeconds?: number;
+  /**
+   * Bind every token to a DPoP key (RFC 9449): pass the key (PKCS#8 PEM, Ed25519 or P-256), or
+   * `true` for a key made in memory for this client. Needed when the machine's token_binding is
+   * `dpop`. Send `dpopProof()` with each call to your API.
+   */
+  dpopKey?: string | true;
 }
 
 export interface MachineEnrolOptions {
@@ -111,6 +121,8 @@ export interface MachineTokenRequest {
 
 export interface MachineToken {
   token: string;
+  /** `DPoP` when the token is bound to this client's key: send it as `Authorization: DPoP <token>` with a `dpopProof()`. */
+  tokenType: 'Bearer' | 'DPoP';
   /** Epoch ms when the token stops being valid. */
   expiresAt: number;
   audience?: string;
@@ -142,9 +154,15 @@ export function createMachineClient(options: MachineClientOptions) {
   const skewMs = (options.refreshSkewSeconds ?? 60) * 1000;
   const cache = new Map<string, MachineToken>();
   const inflight = new Map<string, Promise<MachineToken>>();
+  const dpopKey = options.dpopKey === true ? generateDpopKey() : options.dpopKey;
 
-  async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
-    const res = await f(`${issuer}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  async function post<T>(path: string, body: Record<string, unknown>, proof = false): Promise<T> {
+    const url = `${issuer}${path}`;
+    const res = await f(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(proof && dpopKey ? { dpop: createDpopProof({ privateKeyPem: dpopKey, method: 'POST', url, now }) } : {}) },
+      body: JSON.stringify(body),
+    });
     const text = await res.text();
     let json: Record<string, unknown> = {};
     try {
@@ -169,7 +187,7 @@ export function createMachineClient(options: MachineClientOptions) {
     const id = await identity();
     if (!id) throw new MachineClientError(0, 'not_enrolled', 'This machine is not enrolled. Call enroll() first.');
     const challenge = await post<{ nonce: string }>('/v1/machines/challenge', { machine_id: id.machine_id });
-    const res = await post<{ token: string; expires_in: number; audience?: string; scope?: string; constraints?: Record<string, unknown>; organization_id?: string }>('/v1/machines/token', {
+    const res = await post<{ token: string; token_type?: string; expires_in: number; audience?: string; scope?: string; constraints?: Record<string, unknown>; organization_id?: string }>('/v1/machines/token', {
       machine_id: id.machine_id,
       nonce: challenge.nonce,
       signature: signMachineChallenge(id.private_key_pem, challenge.nonce),
@@ -177,8 +195,8 @@ export function createMachineClient(options: MachineClientOptions) {
       ...(req.scopes ? { scopes: req.scopes } : {}),
       ...(req.scopePresets ? { scope_presets: req.scopePresets } : {}),
       ...(req.organizationId ? { organization_id: req.organizationId } : {}),
-    });
-    return { token: res.token, expiresAt: now() + res.expires_in * 1000, audience: res.audience, scope: res.scope, constraints: res.constraints, organizationId: res.organization_id };
+    }, true);
+    return { token: res.token, tokenType: res.token_type === 'DPoP' ? 'DPoP' : 'Bearer', expiresAt: now() + res.expires_in * 1000, audience: res.audience, scope: res.scope, constraints: res.constraints, organizationId: res.organization_id };
   }
 
   return {
@@ -228,6 +246,21 @@ export function createMachineClient(options: MachineClientOptions) {
         .finally(() => inflight.delete(key));
       inflight.set(key, run);
       return run;
+    },
+
+    /**
+     * A DPoP proof for one call to your API with a token this client minted:
+     * `Authorization: DPoP <token>` plus `DPoP: <proof>`. Pass `nonce` when the API answered
+     * `use_dpop_nonce`. Needs the `dpopKey` option.
+     */
+    dpopProof(req: { token: string; method: string; url: string; nonce?: string }): string {
+      if (!dpopKey) throw new MachineClientError(0, 'dpop_not_configured', 'Create the client with the `dpopKey` option to sign DPoP proofs.');
+      return createDpopProof({ privateKeyPem: dpopKey, method: req.method, url: req.url, accessToken: req.token, nonce: req.nonce, now });
+    },
+
+    /** The thumbprint (`cnf.jkt`) tokens minted by this client carry, or null without a `dpopKey`. */
+    dpopThumbprint(): string | null {
+      return dpopKey ? dpopThumbprint(dpopKey) : null;
     },
 
     /** Forget cached tokens (the stored identity stays). */

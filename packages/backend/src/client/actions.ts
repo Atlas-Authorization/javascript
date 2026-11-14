@@ -19,6 +19,7 @@ export type ActionTrigger =
   | 'password_verification_attempt'
   | 'account_link_decision'
   | 'billing_plan_selected'
+  | 'pre_message_send'
   | 'post_change_password'
   | 'post_password_reset'
   | 'post_user_update'
@@ -50,6 +51,12 @@ export interface Action {
   http_target: ActionHttpTarget | null;
   enabled: boolean;
   secret_names: string[];
+  /** The version `code` holds (see `versions`). */
+  current_version?: number;
+  /** Hosts `api.http` calls may reach (`api.example.com`, `*.example.com`); empty = any public host. */
+  egress_allowlist?: string[];
+  /** A staged version running for a share of executions; null = none. */
+  rollout?: { version: number; percent: number } | null;
   created_at: number;
   updated_at: number;
 }
@@ -77,6 +84,8 @@ export interface CreateActionBody {
   enabled?: boolean;
   /** Write-only, encrypted at rest, never read back. */
   secrets?: Record<string, string>;
+  /** Hosts the Action's `api.http` calls may reach; empty or omitted = any public host. */
+  egress_allowlist?: string[];
 }
 
 /** The create/update response of an `http` Action carries a generated signing secret once. */
@@ -93,6 +102,41 @@ export interface UpdateActionBody {
   rotate_signing_secret?: boolean;
   enabled?: boolean;
   secrets?: Record<string, string>;
+  egress_allowlist?: string[];
+}
+
+/** An immutable snapshot of an Action's code (or HTTP target). */
+export interface ActionVersion {
+  object: 'action_version';
+  action_id: string;
+  version: number;
+  name: string;
+  code: string;
+  runtime: string;
+  http_target: { url: string; timeout_ms: number; failure_mode: 'open' | 'closed' } | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: number;
+  /** The version the Action runs for everyone outside a staged rollout. */
+  current: boolean;
+  /** The version running for a share of executions. */
+  staged: boolean;
+}
+
+export interface ActionVersionList {
+  object: 'list';
+  data: ActionVersion[];
+  has_more: boolean;
+  current_version: number;
+  rollout: { version: number; percent: number } | null;
+}
+
+/** Publish new code as the next version: live at once (default), or staged for `rollout_percent` (1-99) of executions. */
+export interface PublishActionVersionBody {
+  code?: string;
+  http_target?: { url?: string; timeout_ms?: number; failure_mode?: 'open' | 'closed' };
+  note?: string;
+  rollout_percent?: number;
 }
 
 /** One call to an `http` Action's endpoint. */
@@ -240,6 +284,26 @@ export function actionsResource(request: RequestFn) {
       query: { limit?: number; status?: 'ok' | 'denied' | 'failed' | 'timeout' | 'error' | 'invalid_response'; test?: boolean; starting_after?: string } = {},
     ): Promise<ActionHttpCallList> {
       return request({ method: 'GET', path: `/v1/actions/${enc(id)}/calls`, query });
+    },
+    /** Every kept version (up to 50, newest first), with which is live and which is staged. */
+    versions(id: string): Promise<ActionVersionList> {
+      return request({ method: 'GET', path: `/v1/actions/${enc(id)}/versions` });
+    },
+    /** One version, with its code. */
+    getVersion(id: string, version: number): Promise<ActionVersion> {
+      return request({ method: 'GET', path: `/v1/actions/${enc(id)}/versions/${version}` });
+    },
+    /** Publish new code as the next version, live at once or staged for a share of executions. */
+    publishVersion(id: string, body: PublishActionVersionBody, idempotencyKey?: string): Promise<ActionVersion & { action: Action }> {
+      return request({ method: 'POST', path: `/v1/actions/${enc(id)}/versions`, body, idempotencyKey });
+    },
+    /** Move a staged rollout: 1-99 changes the share, 100 promotes it, 0 aborts it. */
+    setRollout(id: string, percent: number): Promise<Action> {
+      return request({ method: 'PATCH', path: `/v1/actions/${enc(id)}/rollout`, body: { percent } });
+    },
+    /** Put an earlier version back live as a new version. */
+    rollback(id: string, version: number, idempotencyKey?: string): Promise<ActionVersion & { action: Action }> {
+      return request({ method: 'POST', path: `/v1/actions/${enc(id)}/rollback`, body: { version }, idempotencyKey });
     },
     /** The actions bound to a trigger, in run order. */
     getBindings(trigger: ActionTrigger): Promise<ActionBindingList> {

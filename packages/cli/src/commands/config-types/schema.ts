@@ -2,7 +2,10 @@ import type { ResourceSpec } from '../config';
 
 type Schema = Record<string, unknown>;
 
-const keys = (known: readonly string[]): Schema => ({ type: 'object', properties: Object.fromEntries(known.map((k) => [k, {}])), additionalProperties: false });
+/** `requires`: variable names that must be set; when one is unset the entry (or section) is skipped with a warning and never pruned. */
+const REQUIRES: Schema = { description: 'Variable names that must be set (environment or --secrets-file). When one is unset the entry or section is skipped with a warning and is never read as a deletion.', oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] };
+
+const keys = (known: readonly string[]): Schema => ({ type: 'object', properties: { ...Object.fromEntries(known.map((k) => [k, {}])), requires: REQUIRES }, additionalProperties: false });
 
 /** A JSON Schema (draft 2020-12) for atlas.yaml / atlas.json, one section per registered resource type. */
 export function configJsonSchema(specs: readonly ResourceSpec[]): Schema {

@@ -291,7 +291,7 @@ describe('step-up helpers', () => {
   const refused = { code: 'STEP_UP_REQUIRED', message: 'x', meta: { action: 'api_key_create', accepted_factors: ['password', 'totp'], max_age_seconds: 600 } };
 
   it('reads the requirement off a refusal alone', () => {
-    expect(stepUpRequirement([refused])).toEqual({ action: 'api_key_create', acceptedFactors: ['password', 'totp'], maxAgeSeconds: 600 });
+    expect(stepUpRequirement([refused])).toEqual({ action: 'api_key_create', acceptedFactors: ['password', 'totp'], maxAgeSeconds: 600, policy: null });
     expect(stepUpRequirement([{ code: 'FORBIDDEN', message: 'x' }])).toBeNull();
   });
 

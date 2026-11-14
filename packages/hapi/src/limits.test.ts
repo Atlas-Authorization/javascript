@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { atlasLimitsPlugin } from './limits';
+import { atlasLimitsPlugin, atlasRequireFeature } from './limits';
 
 const allow = vi.fn(async (_req: unknown) => ({ allowed: true as const, headers: { 'RateLimit-Remaining': '4' } }));
 const deny = async () => ({ allowed: false as const, status: 403, headers: { 'X-Why': 'spent' }, body: { error: 'usage' } });
@@ -36,5 +36,18 @@ describe('hapi limits plugin', () => {
   it('skips a route that opts out', async () => {
     const ext = register({ grantUsage: deny });
     expect(await ext.onPreHandler!({ headers: {}, app: {}, route: { settings: { plugins: { atlasLimits: false } } } } as never, toolkit().h)).toBe('CONTINUE');
+  });
+});
+
+describe('hapi feature pre method', () => {
+  it('continues when entitled', async () => {
+    const yes = async () => ({ allowed: true as const });
+    expect(await atlasRequireFeature(yes as never)({ headers: {}, app: {} } as never, toolkit().h)).toBe('CONTINUE');
+  });
+  it('takes over with 403 when the plan lacks the feature', async () => {
+    const no = async () => ({ allowed: false as const, status: 403, body: { error: { code: 'feature_not_entitled' } } });
+    const { sent, h } = toolkit();
+    expect(await atlasRequireFeature(no as never)({ headers: {}, app: {} } as never, h)).toBe('TAKEOVER');
+    expect(sent).toMatchObject({ status: 403, body: { error: { code: 'feature_not_entitled' } } });
   });
 });

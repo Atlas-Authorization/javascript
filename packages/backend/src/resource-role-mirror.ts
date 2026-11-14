@@ -138,6 +138,15 @@ export interface ResourceRoleMirrorOptions {
    * revoked assignment may not have reached it. Unset turns the check off (webhook-only mirrors).
    */
   maxStalenessMs?: number;
+  /**
+   * Keep answering from the last synced data for this many extra milliseconds after `maxStalenessMs` has passed, instead
+   * of refusing with `code: 'stale'` at once. An answer inside the grace carries `stale: true` and fires
+   * `onServeStale`. A role revoked at Atlas during the grace is not seen until the next `sync()`. Default 0: refuse
+   * as soon as the mirror is stale. Needs `maxStalenessMs`.
+   */
+  serveStaleForMs?: number;
+  /** Called (not awaited) each time an answer is served inside the `serveStaleForMs` grace. */
+  onServeStale?: (info: { lastSyncAt: number | null; staleForMs: number }) => void;
   /** Re-pull the types and the resource tree on a `sync()` only when this long has passed since the last pull (default 0 = every sync). */
   treeRefreshMs?: number;
   /** Clock, for tests. */
@@ -157,6 +166,8 @@ export interface ResourceRoleMirrorCheck {
   grants: Array<{ resource_id: string; role: string; subject: string; inherited: boolean }>;
   /** `unknown_resource`: the mirror does not hold that resource. `stale`: see `maxStalenessMs`. */
   code?: 'unknown_resource' | 'stale';
+  /** True when the mirror was past `maxStalenessMs` and this answer came from its last synced data (see `serveStaleForMs`). */
+  stale?: true;
 }
 
 // Same cap as the server's ancestor walk.
@@ -237,9 +248,15 @@ export function createResourceRoleMirror(options: ResourceRoleMirrorOptions) {
   }
 
   async function check(subject: MirrorSubject, permission: string, resource: MirrorResourceRef, opts: ResourceRoleCheckOptions = {}): Promise<ResourceRoleMirrorCheck> {
+    let servedStale = false;
     if (options.maxStalenessMs !== undefined) {
       const at = await readSyncAt();
-      if (at === null || now() - at > options.maxStalenessMs) return { allowed: false, resource_id: null, grants: [], code: 'stale' };
+      const behind = at === null ? Infinity : now() - at - options.maxStalenessMs;
+      if (behind > 0) {
+        if (at === null || behind > (options.serveStaleForMs ?? 0)) return { allowed: false, resource_id: null, grants: [], code: 'stale' };
+        servedStale = true;
+        options.onServeStale?.({ lastSyncAt: at, staleForMs: behind });
+      }
     }
     const row = await store.getResource(resource);
     if (!row || typeof permission !== 'string' || !permission) return { allowed: false, resource_id: row?.id ?? null, grants: [], code: row ? undefined : 'unknown_resource' };
@@ -251,6 +268,7 @@ export function createResourceRoleMirror(options: ResourceRoleMirrorOptions) {
       allowed: grants.length > 0,
       resource_id: row.id,
       grants: grants.map((g) => ({ resource_id: g.resourceId, role: g.role, subject: g.subject, inherited: g.inherited })),
+      ...(servedStale ? { stale: true as const } : {}),
     };
   }
 

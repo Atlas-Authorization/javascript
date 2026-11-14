@@ -166,6 +166,15 @@ export interface WebBotAuthLists {
   block: Array<{ directory: string; name: string | null }>;
 }
 
+export interface WebBotDirectory {
+  object: 'web_bot_directory';
+  /** The directory, base64url: pass it to `directories.delete`. */
+  id: string;
+  directory: string;
+  name: string | null;
+  list: 'allow' | 'block';
+}
+
 export interface WebBotAuthVerification {
   object: 'web_bot_auth_verification';
   verified: boolean;
@@ -191,6 +200,18 @@ export function webBotAuthResource(request: RequestFn) {
         return request({ method: 'PUT', path: '/v1/web_bot_auth', body });
       },
     },
+    /** One row per listed directory; adding one to a list takes it off the other. */
+    directories: {
+      list(): Promise<ListPage<WebBotDirectory>> {
+        return request({ method: 'GET', path: '/v1/web_bot_auth/directories' });
+      },
+      add(body: { directory: string; list: 'allow' | 'block'; name?: string }): Promise<WebBotDirectory> {
+        return request({ method: 'POST', path: '/v1/web_bot_auth/directories', body });
+      },
+      delete(id: string): Promise<{ object: 'web_bot_directory'; id: string; deleted: true }> {
+        return request({ method: 'DELETE', path: `/v1/web_bot_auth/directories/${enc(id)}` });
+      },
+    },
   };
 }
 
@@ -207,7 +228,7 @@ export function agentGovernanceResource(request: RequestFn) {
         return request({ method: 'POST', path: `/v1/agents/${enc(agentId)}/renew`, body: { extend_days: extendDays } });
       },
     },
-    activity(agentId: string, query: { since?: string | number; before?: string | number; limit?: number } = {}): Promise<ListPage<{ object: 'agent_activity'; id: string; action: string; target_type: string | null; target_id: string | null; metadata: Record<string, unknown>; at: number }>> {
+    activity(agentId: string, query: { since?: string | number; before?: string | number; limit?: number; starting_after?: string } = {}): Promise<ListPage<{ object: 'agent_activity'; id: string; action: string; target_type: string | null; target_id: string | null; metadata: Record<string, unknown>; at: number }>> {
       return request({ method: 'GET', path: `/v1/agents/${enc(agentId)}/activity`, query: { ...query } });
     },
     reviews: {

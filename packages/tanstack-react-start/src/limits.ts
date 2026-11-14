@@ -3,7 +3,7 @@
  * `@atlasauth/backend` (`rateLimitRequest`, `requireGrantUsage`) and accept either the limiter /
  * usage options or an already-built check. A limit store or usage call that throws is an error, never an allow.
  */
-import { rateLimitRequest, requireGrantUsage } from '@atlasauth/backend';
+import { rateLimitRequest, requireGrantUsage, requireFeature } from '@atlasauth/backend';
 
 /** Options for the usage gate (`requireGrantUsage` in `@atlasauth/backend`). */
 export type GrantUsageOptions = Parameters<typeof requireGrantUsage>[0];
@@ -76,6 +76,17 @@ export function rateLimitGate(limiter: RateLimiter | RateLimitCheck, subjectFrom
 /** Turn usage-gate options (or an already-built `requireGrantUsage` check) into a gate. */
 export function grantUsageGate(options: GrantUsageOptions | GrantUsageCheck): LimitGate {
   const check = (typeof options === 'function' ? options : requireGrantUsage(options)) as (req: never) => Promise<LimitVerdict>;
+  return (input) => check(neutral(input));
+}
+
+/** Options for the feature gate (`requireFeature` in `@atlasauth/backend`). */
+export type FeatureOptions = Parameters<typeof requireFeature>[0];
+/** The framework-neutral feature check `requireFeature(opts)` returns. */
+export type FeatureCheck = ReturnType<typeof requireFeature>;
+
+/** Turn feature options (or an already-built `requireFeature` check) into a gate: 401 without a subject, 403 `feature_not_entitled` when the plan lacks the feature. */
+export function featureGate(options: FeatureOptions | FeatureCheck): LimitGate {
+  const check = (typeof options === 'function' ? options : requireFeature(options)) as (req: never) => Promise<LimitVerdict>;
   return (input) => check(neutral(input));
 }
 
@@ -157,6 +168,14 @@ export function atlasGrantUsage<Args extends LimitArgs = LimitArgs>(
   options: AtlasLimitOptions<Args> & { claims: NonNullable<AtlasLimitOptions<Args>['claims']> },
 ) {
   return guard<Args>(grantUsageGate(usage), options);
+}
+
+/** Call first in a loader/action to require a plan feature: throws a 401 `Response` without a subject, 403 `feature_not_entitled` when the plan lacks it. `claims` must return the verified token claims. */
+export function atlasRequireFeature<Args extends LimitArgs = LimitArgs>(
+  feature: FeatureOptions | FeatureCheck,
+  options: AtlasLimitOptions<Args> & { claims: NonNullable<AtlasLimitOptions<Args>['claims']> },
+) {
+  return guard<Args>(featureGate(feature), options);
 }
 
 function mergeHeaders(base: Headers, extra: LimitHeaders): Headers {

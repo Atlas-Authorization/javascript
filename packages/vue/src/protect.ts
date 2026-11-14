@@ -16,6 +16,12 @@
  * `auth().has()` on the server judge a condition identically.
  */
 export {
+  type AppPermissionKey,
+  type AppRoleKey,
+  type FeatureKey,
+  type OrgRoleKey,
+  type PermissionKey,
+  type PlanKey,
   type ProtectCondition,
   type ProtectOutcome,
   type ProtectReason,

@@ -160,6 +160,15 @@ describe('createLambdaAuthorizer limits', () => {
     expect(effect(await handler(rest(await issuer.mintSession({ sub: 'user_1' }))))).toBe('Deny');
   });
 
+  it('feature: allows an entitled subject, denies otherwise and when the check throws', async () => {
+    const yes = await setup({ feature: async () => ({ allowed: true as const }) });
+    expect(effect(await yes.handler(rest(await yes.issuer.mintSession({ sub: 'user_1' }))))).toBe('Allow');
+    const no = await setup({ feature: async () => ({ allowed: false as const, status: 403 }) });
+    expect(effect(await no.handler(rest(await no.issuer.mintSession({ sub: 'user_1' }))))).toBe('Deny');
+    const down = await setup({ feature: async () => { throw new Error('down'); } });
+    expect(effect(await down.handler(rest(await down.issuer.mintSession({ sub: 'user_1' }))))).toBe('Deny');
+  });
+
   it('answers isAuthorized false on a simple HTTP API response, and fails closed when a check throws', async () => {
     const a = await setup({ grantUsage: deny, httpApiResponse: 'simple' });
     expect((await a.handler(v2({ authorization: `Bearer ${await a.issuer.mintSession({ sub: 'user_1' })}` }))) as SimpleResponse).toEqual({ isAuthorized: false });

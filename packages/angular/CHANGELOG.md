@@ -2,6 +2,10 @@
 
 
 
+## 0.22.0
+
+- API keys, billing (pricing table, invoices, checkout with discount codes, `injectUsage`) and device authorization components, matching React.
+
 ## 0.21.1
 
 - Permission checks are typed from a generated `atlas-types.d.ts` when present (via `@atlasauth/authz`).

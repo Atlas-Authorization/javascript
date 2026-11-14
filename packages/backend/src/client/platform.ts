@@ -108,6 +108,50 @@ export interface PlatformApp extends ProvisioningFields {
 /** An app plus its secret key (`sk_...`), revealed exactly once. */
 export interface PlatformAppWithSecret extends PlatformApp {
   secret: string;
+  /** What `secret` may do (`['*']` = every scope). */
+  secret_key_scopes?: string[];
+  /** With `provisioning_key: true`: a full-scope setup key, shown once, that expires at `onboarding_secret_expires_at`. */
+  onboarding_secret?: string;
+  onboarding_key_id?: string;
+  /** Epoch ms the setup key stops working (24 hours after the create). */
+  onboarding_secret_expires_at?: number;
+  /** `full_scope_secret_key` when `secret` holds every scope: narrow it before it reaches a running server. */
+  warnings?: Array<{ code: string; message: string }>;
+  note?: string;
+}
+
+/** `POST /v1/platform/apps/{id}/narrow_secret_keys`: body. */
+export interface NarrowSecretKeysBody {
+  /** The scope set a runtime key needs (default). Not with `scopes`. */
+  preset?: 'app-runtime';
+  scopes?: string[];
+  /** Narrow this instance of the app instead of the primary one. */
+  instance_id?: string;
+}
+
+export interface NarrowedSecretKeys {
+  object: 'app_secret_keys_narrowed';
+  app_id: string;
+  instance_id: string;
+  scopes: string[];
+  narrowed: Array<{ key_id: string; prefix: string; before: string[]; after: string[] }>;
+  unchanged: number;
+  note: string;
+}
+
+/** `POST /v1/platform/atlas_id_apps/{id}/adoption_codes`. */
+export interface AtlasIdAdoptionCode {
+  object: 'atlas_id_app_adoption_code';
+  id: string;
+  app_id: string;
+  /** Present only in the issue response. */
+  code?: string;
+  target_instance_id: string | null;
+  status?: 'open' | 'redeemed' | 'expired';
+  expires_at: number;
+  redeemed_at?: number | null;
+  redeemed_by_instance_id?: string | null;
+  created_at?: number;
   note?: string;
 }
 
@@ -145,6 +189,10 @@ export interface CreatePlatformAppBody {
   allowed_origins?: AllowedOriginInput[];
   /** Default true: also provision a test-mode sibling instance. */
   create_development_sibling?: boolean;
+  /** Scopes of the secret key: `full` (default, every scope; the response warns) or `app-runtime`. */
+  secret_key_preset?: 'full' | 'app-runtime';
+  /** Two-key provisioning: `secret` is the app-runtime key and `onboarding_secret` a full-scope setup key that expires in 24 hours. */
+  provisioning_key?: boolean;
   tags?: string[];
   metadata?: ProvisioningMetadata;
   /** A stable key of your own: a repeat create with it returns the existing app (200, no secret). */
@@ -183,6 +231,9 @@ export interface ListPlatformAppsParams {
 
 export interface CreatePlatformInstanceBody extends ProvisioningInput {
   environment?: 'production' | 'development';
+  secret_key_preset?: 'full' | 'app-runtime';
+  /** Two-key provisioning, as on app create. */
+  provisioning_key?: boolean;
   /** Origin strings, or `{ origin, integration }` entries (`redirect` | `embedded` | `auto`). */
   allowed_origins?: AllowedOriginInput[];
 }
@@ -767,6 +818,13 @@ function platformNamespaces(request: RequestFn) {
           idempotencyKey,
         });
       },
+      /**
+       * Narrow the app's secret keys after onboarding: a full-scope key becomes a runtime key (or
+       * `scopes`), with no new secret. Never widens.
+       */
+      narrowSecretKeys(id: string, body: NarrowSecretKeysBody = {}): Promise<NarrowedSecretKeys> {
+        return request({ method: 'POST', path: `/v1/platform/apps/${enc(id)}/narrow_secret_keys`, body });
+      },
       /** Currently-valid secret keys (metadata only). */
       secretKeys(id: string, params: { metadata?: ProvisioningMetadata } = {}): Promise<ListPage<PlatformSecretKey>> {
         return request({ method: 'GET', path: `/v1/platform/apps/${enc(id)}/secret_keys`, query: metadataQuery(params.metadata) });
@@ -885,6 +943,24 @@ function platformNamespaces(request: RequestFn) {
           path: `/v1/platform/atlas_id_apps/${enc(id)}/rotate_secret`,
           body,
         });
+      },
+      /**
+       * Issue a one-time code that lets an instance of the account adopt this app with its own
+       * secret key (`atlasIdApps.adopt` on the instance client). The code is returned once.
+       */
+      issueAdoptionCode(
+        id: string,
+        body: { instance_id?: string | null; expires_in_seconds?: number } = {},
+      ): Promise<AtlasIdAdoptionCode> {
+        return request({ method: 'POST', path: `/v1/platform/atlas_id_apps/${enc(id)}/adoption_codes`, body });
+      },
+      /** The codes issued for an app and what became of them (never the code itself). */
+      listAdoptionCodes(id: string): Promise<ListPage<AtlasIdAdoptionCode>> {
+        return request({ method: 'GET', path: `/v1/platform/atlas_id_apps/${enc(id)}/adoption_codes` });
+      },
+      /** Withdraw a code that has not been redeemed. */
+      revokeAdoptionCode(id: string, codeId: string): Promise<{ object: 'atlas_id_app_adoption_code'; id: string; revoked: true }> {
+        return request({ method: 'DELETE', path: `/v1/platform/atlas_id_apps/${enc(id)}/adoption_codes/${enc(codeId)}` });
       },
       /** The app's back-channel logout delivery log, newest first. */
       listBackchannelDeliveries(

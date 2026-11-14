@@ -1,12 +1,13 @@
 import { createAtlasToolkit, type CreateAtlasToolkitOptions } from '@atlasauth/agent-toolkit';
 import type { AtlasClient } from '@atlasauth/backend';
+import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toMcpToolSpecs, type McpToolSpec } from './tools';
 import { DOCS_TOOL_NAMES, createDocsSource, docsToolSpecs, type DocsSourceOptions } from './docs';
 
 /** This package's own identity, surfaced to MCP clients during the handshake. */
 export const SERVER_NAME = '@atlasauth/mcp';
-export const SERVER_VERSION = '0.5.0';
+export const SERVER_VERSION = '0.6.0';
 
 /**
  * Options for {@link createAtlasMcpServer}. The tool-selection fields
@@ -47,6 +48,12 @@ export interface AtlasMcpServerOptions {
   docs?: boolean | DocsSourceOptions;
   /** Meter the instance tools against a grant counter (spend before acting, refund on error). Same contract as the toolkit's `grantUsage`. */
   grantUsage?: CreateAtlasToolkitOptions['grantUsage'];
+  /**
+   * Hold write and delete tools for a human approval (same contract as the toolkit's `approvals`). With
+   * `mode: 'resume'` each held tool also takes an optional `approval_id`: the model calls it again with the id it was
+   * given once the approver has answered.
+   */
+  approvals?: CreateAtlasToolkitOptions['approvals'];
 }
 
 /** An {@link McpServer} plus the specs it was built from, for embedding/testing. */
@@ -88,8 +95,17 @@ export function createAtlasMcpServer(options: AtlasMcpServerOptions): AtlasMcpSe
       allowedTools: options.allowedTools,
       scopes: options.scopes,
       grantUsage: options.grantUsage,
+      approvals: options.approvals,
     });
-    specs.push(...toMcpToolSpecs(toolkit));
+    const instanceSpecs = toMcpToolSpecs(toolkit);
+    if (options.approvals?.mode === 'resume') {
+      // The resume token must be a declared parameter, or the SDK strips it before the handler sees it.
+      for (const spec of instanceSpecs) {
+        if (toolkit.tools[spec.name]?.readOnly) continue;
+        spec.shape = { ...spec.shape, approval_id: z.string().optional().describe('The approval id returned earlier for this exact call, once the approver has answered.') };
+      }
+    }
+    specs.push(...instanceSpecs);
   }
 
   if (options.docs !== false) {

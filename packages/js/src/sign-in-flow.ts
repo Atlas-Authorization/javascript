@@ -11,6 +11,7 @@
  * Errors carry a stable `reason` (`form_password_incorrect`, `captcha_wrong_flow`,
  * …). Turn it into a sentence in the app's language with `reasonMessage`.
  */
+import { uploadJourneyFile, type JourneyUploadResult } from './journey-upload';
 import { nextStep, type AttemptView, type FieldError, type PendingPolicy, type PendingRequiredAction, type ProfileCompletionField } from './attempt';
 import { fetchInstanceSettings, type InstanceSettings } from './instance-settings';
 import { acknowledgeRecoveryCodes, mfaChoicesFrom, pendingRecoveryCodes, prepareMfaEnrollment, type MfaEnrollment } from './mfa-enrollment';
@@ -219,6 +220,13 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
     return out;
   };
 
+  const enrollStep = async (attempt: AttemptView): Promise<FlowStep> => {
+    const choices = mfaChoicesFrom((await loadSettings())?.account);
+    const methods: EnrollableMethod[] = [...(choices.totp ? (['totp'] as const) : []), ...(choices.sms ? (['phone_code'] as const) : [])];
+    if (!methods.length) return { type: 'needs_other', status: attempt.status };
+    return { type: 'needs_mfa_enrollment', methods, totpCodes: choices.totpCodes, enrollment };
+  };
+
   const stepFor = async (attempt: AttemptView | null): Promise<FlowStep> => {
     if (redirect) return { type: 'redirect', url: redirect };
     if (!attempt) return { type: 'needs_identifier' };
@@ -241,14 +249,12 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
         const codes = pendingRecoveryCodes(flow);
         return codes ? { type: 'show_recovery_codes', codes } : { type: 'complete', sessionId: next.sessionId };
       }
-      case 'enroll_second_factor': {
-        const choices = mfaChoicesFrom((await loadSettings())?.account);
-        const methods: EnrollableMethod[] = [...(choices.totp ? (['totp'] as const) : []), ...(choices.sms ? (['phone_code'] as const) : [])];
-        if (!methods.length) return { type: 'needs_other', status: attempt.status };
-        return { type: 'needs_mfa_enrollment', methods, totpCodes: choices.totpCodes, enrollment };
-      }
+      case 'enroll_second_factor':
+        return enrollStep(attempt);
       case 'complete_required_action': {
         const [owed, ...rest] = next.actions;
+        // A journey that asks for a second factor besides other steps: setting it up is its own typed step.
+        if (owed?.action === 'configure_mfa') return enrollStep(attempt);
         const action = owed && requiredActionStep(owed, attempt.identity_verification);
         return action ? { type: 'needs_required_action', action, remaining: rest.length } : { type: 'needs_other', status: attempt.status };
       }
@@ -359,7 +365,41 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
   };
 }
 
-export interface SignInFlow extends Core {
+/**
+ * What follows the credentials: setting up a second factor, saving recovery codes, and the required actions a
+ * sign-in or a new account owes (a new password, a verified email, profile fields, a journey form, an identity
+ * check). The same methods on the sign-in and the sign-up flow: a journey can hold either.
+ */
+export interface AttemptStepActions {
+  /** `needs_mfa_enrollment`: begin the authenticator app. The step's `enrollment` then holds `secret` and `uri` (and `qrCode` when sent). */
+  startTotpEnrollment(): Promise<FlowSnapshot>;
+  /** `needs_mfa_enrollment`: text a code to `phone` (E.164). The step's `enrollment.phone` is the masked number. */
+  sendEnrollmentPhone(phone: string): Promise<FlowSnapshot>;
+  /** `needs_mfa_enrollment`: confirm with the code the app shows (and `secondCode`, the next one, when the step's `totpCodes` is 2) or the texted code. */
+  submitEnrollmentCode(code: string, secondCode?: string): Promise<FlowSnapshot>;
+  /** `show_recovery_codes`: the person saved the codes; the step becomes `complete`. */
+  acknowledgeRecoveryCodes(): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `update_password`. */
+  updatePassword(password: string): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `verify_email`: mail a code. */
+  sendEmailVerification(): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `verify_email`: the mailed code. */
+  submitEmailVerificationCode(code: string): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `update_profile`. */
+  updateProfile(input: { firstName?: string; lastName?: string; username?: string }): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `complete_profile` or `journey_form`: values by field key (a multi-select is a list, a checkbox a boolean). */
+  submitRequiredFields(values: Record<string, string | string[] | boolean>, options?: { skip?: boolean }): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `journey_form`: upload the file for a `file` field; on success put the answered `id` in that field's value. */
+  uploadJourneyFile(field: string, file: Blob): Promise<JourneyUploadResult>;
+  /** `needs_required_action` / `journey_form`: keep the answers so far without finishing the step; they come back as each field's `value` when the person returns. */
+  saveRequiredFieldsDraft(values: Record<string, string | string[] | boolean>): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `identity_verification`: open the check; the step's `url` is where the person goes. */
+  startIdentityVerification(redirectUrl?: string): Promise<FlowSnapshot>;
+  /** `needs_required_action` / `identity_verification`: read the verdict after the person came back. */
+  checkIdentityVerification(): Promise<FlowSnapshot>;
+}
+
+export interface SignInFlow extends Core, AttemptStepActions {
   /** `needs_identifier`: start with an email, username or phone number. */
   submitIdentifier(identifier: string): Promise<FlowSnapshot>;
   /** `needs_first_factor`: the password. */
@@ -387,28 +427,49 @@ export interface SignInFlow extends Core {
   startRecovery(redirectUrl?: string): Promise<FlowSnapshot>;
   /** `needs_second_factor` after `startRecovery()`: read the verdict. Pass `newPassword` when the app asks for one (error reason `new_password_required`); the step becomes `complete` once the factors were reset. */
   checkRecovery(newPassword?: string): Promise<FlowSnapshot>;
-  /** `needs_mfa_enrollment`: begin the authenticator app. The step's `enrollment` then holds `secret` and `uri` (and `qrCode` when sent). */
-  startTotpEnrollment(): Promise<FlowSnapshot>;
-  /** `needs_mfa_enrollment`: text a code to `phone` (E.164). The step's `enrollment.phone` is the masked number. */
-  sendEnrollmentPhone(phone: string): Promise<FlowSnapshot>;
-  /** `needs_mfa_enrollment`: confirm with the code the app shows (and `secondCode`, the next one, when the step's `totpCodes` is 2) or the texted code. */
-  submitEnrollmentCode(code: string, secondCode?: string): Promise<FlowSnapshot>;
-  /** `show_recovery_codes`: the person saved the codes; the step becomes `complete`. */
-  acknowledgeRecoveryCodes(): Promise<FlowSnapshot>;
-  /** `needs_required_action` / `update_password`. */
-  updatePassword(password: string): Promise<FlowSnapshot>;
-  /** `needs_required_action` / `verify_email`: mail a code. */
-  sendEmailVerification(): Promise<FlowSnapshot>;
-  /** `needs_required_action` / `verify_email`: the mailed code. */
-  submitEmailVerificationCode(code: string): Promise<FlowSnapshot>;
-  /** `needs_required_action` / `update_profile`. */
-  updateProfile(input: { firstName?: string; lastName?: string; username?: string }): Promise<FlowSnapshot>;
-  /** `needs_required_action` / `complete_profile` or `journey_form`: values by field key. */
-  submitRequiredFields(values: Record<string, string>, options?: { skip?: boolean }): Promise<FlowSnapshot>;
-  /** `needs_required_action` / `identity_verification`: open the check; the step's `url` is where the person goes. */
-  startIdentityVerification(redirectUrl?: string): Promise<FlowSnapshot>;
-  /** `needs_required_action` / `identity_verification`: read the verdict after the person came back. */
-  checkIdentityVerification(): Promise<FlowSnapshot>;
+}
+
+/** The steps after the credentials, shared by the sign-in and the sign-up flow. */
+function attemptStepActions(core: ReturnType<typeof makeCore>, client: FapiClient, getSnapshot: () => FlowSnapshot): AttemptStepActions {
+  const attemptId = () => core.flow.attempt?.id ?? '';
+  const prepareEnrollment = (input: Parameters<typeof prepareMfaEnrollment>[2]) =>
+    core.run(async () => {
+      const out = await prepareMfaEnrollment(client, attemptId(), input);
+      if (out.enrollment) core.enrollment = out.enrollment;
+      return { ...core.flow, errors: out.errors };
+    });
+
+  return {
+    startTotpEnrollment: () => prepareEnrollment({ strategy: 'totp' }),
+    sendEnrollmentPhone: (phone) => prepareEnrollment({ strategy: 'phone_code', phone: phone.trim() }),
+    submitEnrollmentCode: (code, secondCode = '') => {
+      const e = core.enrollment;
+      if (!e) return Promise.resolve(getSnapshot());
+      return core.run(() =>
+        advance(client, core.flow, e.strategy === 'phone_code' ? { factorId: e.factorId, enrollStrategy: 'phone_code', code } : { factorId: e.factorId, code, secondCode }),
+      );
+    },
+    acknowledgeRecoveryCodes: () => core.acknowledgeCodes(),
+    updatePassword: (password) => core.run(() => completeRequiredAction(client, core.flow, { action: 'update_password', password })),
+    sendEmailVerification: () => core.run(() => completeRequiredAction(client, core.flow, { action: 'verify_email', step: 'send' })),
+    submitEmailVerificationCode: (code) => core.run(() => completeRequiredAction(client, core.flow, { action: 'verify_email', step: 'verify', code })),
+    updateProfile: ({ firstName, lastName, username }) =>
+      core.run(() =>
+        completeRequiredAction(client, core.flow, {
+          action: 'update_profile',
+          ...(firstName !== undefined ? { first_name: firstName } : {}),
+          ...(lastName !== undefined ? { last_name: lastName } : {}),
+          ...(username !== undefined ? { username } : {}),
+        }),
+      ),
+    submitRequiredFields: (values, options = {}) =>
+      core.run(() => completeRequiredAction(client, core.flow, { fields: values, ...(options.skip ? { skip: true } : {}) })),
+    uploadJourneyFile: (field, file) => uploadJourneyFile(client, core.flow, field, file),
+    saveRequiredFieldsDraft: (values) => core.run(() => completeRequiredAction(client, core.flow, { fields: values, saveDraft: true })),
+    startIdentityVerification: (redirectUrl) =>
+      core.run(() => completeRequiredAction(client, core.flow, { action: 'identity_verification', step: 'start', ...(redirectUrl ? { redirect_url: redirectUrl } : {}) })),
+    checkIdentityVerification: () => core.run(() => completeRequiredAction(client, core.flow, { action: 'identity_verification' })),
+  };
 }
 
 export function createSignInFlow(opts: FlowOptions): SignInFlow {
@@ -447,15 +508,9 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
   };
   const api = core.api({ submitCaptcha });
 
-  const prepareEnrollment = (input: Parameters<typeof prepareMfaEnrollment>[2]) =>
-    core.run(async () => {
-      const out = await prepareMfaEnrollment(client, attemptId(), input);
-      if (out.enrollment) core.enrollment = out.enrollment;
-      return { ...core.flow, errors: out.errors };
-    });
-
   return {
     ...api,
+    ...attemptStepActions(core, client, api.getSnapshot),
     submitIdentifier: (id) => {
       viaPasskey = false;
       return start(id);
@@ -508,33 +563,6 @@ export function createSignInFlow(opts: FlowOptions): SignInFlow {
       }
     },
     checkRecovery: (newPassword) => core.run(() => advance(client, core.flow, { strategy: 'identity_verification', ...(newPassword ? { new_password: newPassword } : {}) })),
-    startTotpEnrollment: () => prepareEnrollment({ strategy: 'totp' }),
-    sendEnrollmentPhone: (phone) => prepareEnrollment({ strategy: 'phone_code', phone: phone.trim() }),
-    submitEnrollmentCode: (code, secondCode = '') => {
-      const e = core.enrollment;
-      if (!e) return Promise.resolve(api.getSnapshot());
-      return core.run(() =>
-        advance(client, core.flow, e.strategy === 'phone_code' ? { factorId: e.factorId, enrollStrategy: 'phone_code', code } : { factorId: e.factorId, code, secondCode }),
-      );
-    },
-    acknowledgeRecoveryCodes: () => core.acknowledgeCodes(),
-    updatePassword: (password) => core.run(() => completeRequiredAction(client, core.flow, { action: 'update_password', password })),
-    sendEmailVerification: () => core.run(() => completeRequiredAction(client, core.flow, { action: 'verify_email', step: 'send' })),
-    submitEmailVerificationCode: (code) => core.run(() => completeRequiredAction(client, core.flow, { action: 'verify_email', step: 'verify', code })),
-    updateProfile: ({ firstName, lastName, username }) =>
-      core.run(() =>
-        completeRequiredAction(client, core.flow, {
-          action: 'update_profile',
-          ...(firstName !== undefined ? { first_name: firstName } : {}),
-          ...(lastName !== undefined ? { last_name: lastName } : {}),
-          ...(username !== undefined ? { username } : {}),
-        }),
-      ),
-    submitRequiredFields: (values, options = {}) =>
-      core.run(() => completeRequiredAction(client, core.flow, { fields: values, ...(options.skip ? { skip: true } : {}) })),
-    startIdentityVerification: (redirectUrl) =>
-      core.run(() => completeRequiredAction(client, core.flow, { action: 'identity_verification', step: 'start', ...(redirectUrl ? { redirect_url: redirectUrl } : {}) })),
-    checkIdentityVerification: () => core.run(() => completeRequiredAction(client, core.flow, { action: 'identity_verification' })),
   };
 }
 
@@ -550,7 +578,7 @@ export interface SignUpInput {
   policyAcceptances?: PolicyAcceptance[];
 }
 
-export interface SignUpFlow extends Core {
+export interface SignUpFlow extends Core, AttemptStepActions {
   /** `needs_identifier`: create the account. */
   submit(input: SignUpInput): Promise<FlowSnapshot>;
   /** `needs_email_verification`: the emailed code. */
@@ -581,6 +609,7 @@ export function createSignUpFlow(opts: FlowOptions): SignUpFlow {
   const api = core.api({ submitCaptcha });
   return {
     ...api,
+    ...attemptStepActions(core, client, api.getSnapshot),
     submit,
     submitEmailCode: (code) => core.run(() => advance(client, core.flow, { code })),
     resendEmailCode: () => core.run(() => resendSignUpVerification(client, core.flow)),

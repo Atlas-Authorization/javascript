@@ -9,6 +9,7 @@ import {
 import { JwksCache, readKid, type Jwks } from './jwks-cache';
 import { ATLAS_SIGNING_ALGS } from './algs';
 import { OAuthTokenRevocationList, type OAuthTokenRevocationOptions } from './oauth-token-revocation';
+import { matchAuthorizationDetails, senderConstraintOf, thumbprintsEqual, type AuthorizationDetailRequirement } from './oauth-resource-sender';
 
 /**
  * Protecting YOUR API — or your own MCP server — with access tokens Atlas
@@ -21,7 +22,12 @@ import { OAuthTokenRevocationList, type OAuthTokenRevocationOptions } from './oa
  *  - enforces required scopes;
  *  - enforces sender constraint: a DPoP-bound token (`cnf.jkt`) must arrive
  *    with a valid DPoP proof for the same key (RFC 9449), and is never accepted
- *    as a plain Bearer token;
+ *    as a plain Bearer token; a certificate-bound token (`cnf.x5t#S256`) must
+ *    arrive over a connection whose client certificate has that thumbprint
+ *    (RFC 8705, through `clientCertThumbprint`); `requireSenderConstrained`
+ *    refuses a token that is bound to neither;
+ *  - checks rich authorization requests: `requireAuthorizationDetails` demands
+ *    that the token's `authorization_details` cover what the call needs (RFC 9396);
  *  - answers failures with the RFC 6750 / RFC 9728 `WWW-Authenticate`
  *    challenge (`resource_metadata`, `insufficient_scope` + the scopes needed),
  *    which is exactly what an MCP client needs to discover how to sign in;
@@ -204,6 +210,20 @@ export interface AccessTokenVerifierOptions {
   resourceMetadataUrl?: string;
   /** Require a DPoP-bound token on every request (never accept plain Bearer). */
   requireDpop?: boolean;
+  /**
+   * Refuse a token that is not sender-constrained, so a stolen token is useless on its own.
+   * `true`: bound to a DPoP key or a client certificate; `'dpop'` / `'mtls'`: that kind only.
+   */
+  requireSenderConstrained?: boolean | 'dpop' | 'mtls';
+  /**
+   * How to read the thumbprint (`x5t#S256`) of the client certificate this request's TLS
+   * connection presented. A token with `cnf['x5t#S256']` is accepted only when it equals this;
+   * without the function such a token is refused (this server cannot check it). See
+   * `forwardedClientCert` for a proxy that forwards the certificate in a header.
+   */
+  clientCertThumbprint?: (request: ResourceRequestLike) => string | undefined | Promise<string | undefined>;
+  /** Authorization details (RFC 9396) every request's token must cover. Missing: 403 `insufficient_authorization_details`. */
+  requireAuthorizationDetails?: AuthorizationDetailRequirement | readonly AuthorizationDetailRequirement[];
   /** The public origin of this API, for DPoP `htu` when `request.url` is a path. */
   publicOrigin?: string;
   dpopReplayStore?: DpopReplayStore;
@@ -326,7 +346,8 @@ export type AccessTokenErrorCode =
   | 'invalid_dpop_proof'
   | 'use_dpop_nonce'
   | 'insufficient_user_authentication'
-  | 'insufficient_entitlement';
+  | 'insufficient_entitlement'
+  | 'insufficient_authorization_details';
 
 export type AccessTokenResult =
   | {
@@ -336,6 +357,8 @@ export type AccessTokenResult =
       subject: string;
       clientId: string | null;
       dpopBound: boolean;
+      /** The token is bound to a client certificate, which this request presented. */
+      mtlsBound: boolean;
       /** With `dpopNonces`: send as the `DPoP-Nonce` response header. */
       dpopNonce?: string;
     }
@@ -417,6 +440,10 @@ export interface AccessTokenCallOptions {
   requireFeature?: string | readonly string[];
   /** Billing plan slug(s) the token must carry (`pla`; any one), on top of the verifier's. */
   requirePlan?: string | readonly string[];
+  /** Refuse a token that is not sender-constrained (DPoP or certificate bound), on top of the verifier's option. */
+  requireSenderConstrained?: boolean | 'dpop' | 'mtls';
+  /** Authorization details (RFC 9396) this call needs, on top of the verifier's. Missing: 403 `insufficient_authorization_details`. */
+  requireAuthorizationDetails?: AuthorizationDetailRequirement | readonly AuthorizationDetailRequirement[];
   /** Accept only these `acr` values; otherwise answer `insufficient_user_authentication`. */
   requireAcr?: readonly string[];
   /** Require `auth_time` within this many seconds; otherwise answer `insufficient_user_authentication`. */
@@ -575,7 +602,26 @@ export function createAccessTokenVerifier(
       if (revocationList.unavailable()) return fail(401, 'invalid_token', 'Token revocation status is unavailable right now.');
     }
 
-    // Sender constraint (RFC 9449). A bound token is only ever a DPoP token.
+    // A token that is bound to nobody is refused where the resource demands a sender constraint.
+    const bound = senderConstraintOf(claims);
+    const demand = extra?.requireSenderConstrained ?? options.requireSenderConstrained;
+    if (demand && !(demand === 'dpop' ? bound.dpop : demand === 'mtls' ? bound.mtls : bound.dpop || bound.mtls)) {
+      return fail(401, 'invalid_token', demand === 'mtls' ? 'This resource requires a certificate-bound access token.' : demand === 'dpop' ? 'This resource requires a DPoP-bound access token.' : 'This resource requires a sender-constrained access token.', demand === 'mtls' ? 'Bearer' : 'DPoP');
+    }
+    // Certificate-bound token (RFC 8705): the TLS client certificate must be the one the token names.
+    if (bound.mtls) {
+      let presented: string | undefined;
+      try {
+        presented = await options.clientCertThumbprint?.(request);
+      } catch {
+        presented = undefined;
+      }
+      if (!presented || !thumbprintsEqual(presented, claims.cnf!['x5t#S256']!)) {
+        return fail(401, 'invalid_token', 'A certificate-bound access token must be used over a connection that presents its client certificate.', 'Bearer');
+      }
+    }
+
+    // Sender constraint (RFC 9449). A DPoP-bound token is only ever a DPoP token.
     const jkt = claims.cnf?.jkt;
     if (jkt || options.requireDpop || presentedScheme === 'DPoP') {
       if (!jkt) return fail(401, 'invalid_token', 'This resource requires a DPoP-bound access token.', 'DPoP');
@@ -618,6 +664,13 @@ export function createAccessTokenVerifier(
         );
       }
     }
+    const rar = [options.requireAuthorizationDetails, extra?.requireAuthorizationDetails].flat().filter((r): r is AuthorizationDetailRequirement => !!r);
+    if (rar.length > 0) {
+      const result = matchAuthorizationDetails(claims, rar);
+      if (!result.ok) {
+        return fail(403, 'insufficient_authorization_details', `The access token's authorization details do not cover this request: ${result.missing.map((m) => m.type).join(', ')}.`);
+      }
+    }
     if (extra?.requireAcr?.length || extra?.maxAge !== undefined) {
       const step = requireAcr(claims, {
         acrValues: extra.requireAcr,
@@ -638,6 +691,7 @@ export function createAccessTokenVerifier(
       subject: claims.sub,
       clientId: (claims.client_id ?? claims.azp ?? null) as string | null,
       dpopBound: !!jkt,
+      mtlsBound: bound.mtls,
       ...(nonce ? { dpopNonce: nonce } : {}),
     };
   };
@@ -733,6 +787,8 @@ export function protectedResourceMetadata(opts: {
   resourceDocumentation?: string;
   /** Advertise that tokens must be DPoP-bound. */
   dpopBoundAccessTokensRequired?: boolean;
+  /** Advertise that this resource accepts certificate-bound access tokens (RFC 8705). */
+  tlsClientCertificateBoundAccessTokens?: boolean;
 }): Record<string, unknown> {
   return {
     resource: opts.resource,
@@ -743,6 +799,7 @@ export function protectedResourceMetadata(opts: {
     ...(opts.resourceDocumentation ? { resource_documentation: opts.resourceDocumentation } : {}),
     dpop_signing_alg_values_supported: DPOP_ALGS,
     ...(opts.dpopBoundAccessTokensRequired ? { dpop_bound_access_tokens_required: true } : {}),
+    ...(opts.tlsClientCertificateBoundAccessTokens ? { tls_client_certificate_bound_access_tokens: true } : {}),
   };
 }
 

@@ -3,6 +3,8 @@ import {
   actorFromClaims,
   listPublicPlans,
   startPlanCheckout,
+  validatePlanCoupon,
+  type CouponCheck,
   type PublicBillingPlan,
   createOrganizationAuditLog,
   FapiClient,
@@ -164,7 +166,9 @@ export function useOrganizationAuditLog(options: OrganizationAuditLogOptions = {
 export function usePricingPlans(options: { audience?: 'user' | 'org' } = {}): {
   isLoaded: ShallowRef<boolean>;
   plans: ShallowRef<PublicBillingPlan[]>;
-  checkout(input: { planId: string; interval?: 'month' | 'year'; orgId?: string; successUrl?: string }): Promise<string | null>;
+  checkout(input: { planId: string; interval?: 'month' | 'year'; orgId?: string; successUrl?: string; couponCode?: string }): Promise<string | null>;
+  /** Would this discount code work for this plan? Needs a signed-in session. */
+  validateCoupon(input: { planId: string; code: string; orgId?: string }): Promise<CouponCheck>;
 } {
   const atlas = useAtlas();
   const client = new FapiClient({ publishableKey: atlas.publishableKey, baseUrl: atlas.frontendApi, locale: atlas.locale, sdk: ATLAS_VUE_SDK });
@@ -177,6 +181,7 @@ export function usePricingPlans(options: { audience?: 'user' | 'org' } = {}): {
   return {
     isLoaded,
     plans,
+    validateCoupon: (input) => validatePlanCoupon(client, input),
     async checkout(input) {
       const here = typeof window === 'undefined' ? '/' : window.location.href;
       const out = await startPlanCheckout(client, { ...input, successUrl: input.successUrl ?? here });

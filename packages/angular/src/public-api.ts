@@ -26,6 +26,20 @@ export { OrganizationSwitcherComponent } from './lib/components/organization-swi
 export { UserProfileComponent } from './lib/components/user-profile.component';
 export { OrganizationProfileComponent } from './lib/components/organization-profile.component';
 export { ManageCibaComponent } from './lib/components/manage-ciba.component';
+// API keys, billing and device authorization.
+export { ApiKeysComponent } from './lib/components/api-keys.component';
+export { DeviceAuthorizationComponent } from './lib/components/device-authorization.component';
+export { PricingTableComponent, InvoicesComponent, EmbeddedCheckoutComponent, CheckoutComponent, type PricingTableLabels } from './lib/components/billing.component';
+export { controllerSignal, injectUsage } from './lib/components/managed';
+export {
+  API_KEYS_LABELS,
+  BILLING_LABELS,
+  CHECKOUT_LABELS,
+  DEVICE_AUTH_LABELS,
+  type ApiKeysState,
+  type BillingState,
+  type DeviceAuthorizationState,
+} from '@atlasauth/js';
 export { OrganizationAuditLogComponent } from './lib/components/organization-audit-log.component';
 export { AtlasOrganizationAuditLog } from './lib/components/organization-audit-log';
 export type { OrganizationAuditLogEntry, OrganizationAuditLogState, OrganizationAuditLogOptions } from '@atlasauth/js';

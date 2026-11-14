@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FapiClient, initialFlow } from './fapi';
-import { createSignInScreen } from './sign-in-screen';
+import { createSignInScreen, createSignUpScreen } from './sign-in-screen';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -141,3 +141,65 @@ describe('createSignInScreen: the steps after the credentials', () => {
   });
 });
 
+
+describe('createSignUpScreen: a journey after the account is created', () => {
+  const form = {
+    id: 'rq_1',
+    action: 'journey_form',
+    url: null,
+    reason: null,
+    title: 'Welcome',
+    intro: 'Two quick questions',
+    fields: [
+      { key: 'plan', label: 'Plan', type: 'select', required: true, placeholder: null, options: ['a', 'b'], option_labels: { a: 'Un', b: 'Deux' } },
+      { key: 'topics', label: 'Topics', type: 'multi_select', required: false, placeholder: null, options: ['x', 'y'], value: ['x'] },
+      { key: 'terms', label: 'I agree to the', type: 'checkbox', required: true, placeholder: null, options: [], link: { text: 'Terms', url: 'https://example.com/t' } },
+    ],
+  };
+
+  it('starts at details, holds at a journey form with typed fields, keeps a draft and finishes', async () => {
+    const { client, calls } = clientWith({
+      '/v1/appearance': [json(200, { appearance: { signUpFields: [{ key: 'first_name', label: 'First name', type: 'text', required: false, placeholder: null, options: [], builtin: true }] } })],
+      '/v1/client/sign_ups': [json(201, { id: 'sia_u', status: 'needs_required_action', pending_required_actions: [form], required_action_token: 'tok' })],
+      '/v1/client/sign_ins/sia_u/required_actions': [
+        json(200, { id: 'sia_u', status: 'needs_required_action', pending_required_actions: [form] }),
+        json(200, { id: 'sia_u', status: 'complete', created_session_id: 's', ticket: 't' }),
+      ],
+      '/v1/client/tickets/exchange': [json(200, {})],
+    });
+    const screen = createSignUpScreen({ client });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getView().step).toBe('details');
+    expect(screen.getView().fields.map((f) => f.name)).toEqual(['email', 'password', 'first_name']);
+
+    await screen.submit({ email: ' a@b.co ', password: 'pw-pw-pw-1', first_name: 'Ada', consent: 'true' });
+    expect(calls.find((c) => c.path === '/v1/client/sign_ups')!.body).toMatchObject({ email: 'a@b.co' });
+    const view = screen.getView();
+    expect(view).toMatchObject({ step: 'required_action', requiredAction: { kind: 'journey_form', title: 'Welcome', intro: 'Two quick questions' } });
+    expect(view.fields.map((f) => f.kind)).toEqual(['select', 'multi_select', 'checkbox']);
+    expect(view.fields[0]).toMatchObject({ optionLabels: { a: 'Un', b: 'Deux' } });
+    expect(view.fields[1]).toMatchObject({ value: ['x'] });
+    expect(view.fields[2]).toMatchObject({ link: { text: 'Terms', url: 'https://example.com/t' } });
+
+    await screen.saveDraft({ plan: 'a', topics: 'x,y' });
+    const draft = calls.filter((c) => c.path === '/v1/client/sign_ins/sia_u/required_actions')[0]!;
+    expect(draft.body).toMatchObject({ action: 'journey_form', save_draft: true, fields: { plan: 'a', topics: 'x,y' } });
+    expect(screen.getView().step).toBe('required_action');
+
+    await screen.submit({ plan: 'a', topics: 'x,y', terms: 'true' });
+    const done = calls.filter((c) => c.path === '/v1/client/sign_ins/sia_u/required_actions')[1]!;
+    expect(done.body.save_draft).toBeUndefined();
+    expect(done.body.fields).toEqual({ plan: 'a', topics: 'x,y', terms: 'true' });
+    expect(screen.getView().step).toBe('complete');
+  });
+
+  it('shows a configure_mfa action at the head of the list as the second-factor setup step', async () => {
+    const { client } = clientWith({
+      '/v1/appearance': [json(200, { account: { mfa: { totp: true, sms: false, totp_codes: 1 } } }), json(200, { account: { mfa: { totp: true, sms: false, totp_codes: 1 } } })],
+      '/v1/client/sign_ups': [json(201, { id: 'sia_v', status: 'needs_required_action', pending_required_actions: [{ id: 'rq_m', action: 'configure_mfa', url: null, reason: null }] })],
+    });
+    const screen = createSignUpScreen({ client });
+    await screen.submit({ email: 'a@b.co', password: 'pw-pw-pw-1' });
+    expect(screen.getView()).toMatchObject({ step: 'enroll_second_factor', methods: ['totp'] });
+  });
+});

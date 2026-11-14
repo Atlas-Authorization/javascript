@@ -728,6 +728,10 @@ export function usersResource(request: RequestFn) {
         delete(id: string): Promise<{ object: 'user_search_view'; id: string; deleted: true }> {
           return request({ method: 'DELETE', path: `/v1/users/search/views/${enc(id)}` });
         },
+        /** `POST /v1/users/search/views/:id/count` — count the segment's members now; the number is kept on it. */
+        count(id: string): Promise<UserSearchView> {
+          return request({ method: 'POST', path: `/v1/users/search/views/${enc(id)}/count` });
+        },
       },
     },
 
@@ -827,6 +831,14 @@ export function usersResource(request: RequestFn) {
         return request({
           method: 'POST',
           path: `/v1/users/${enc(id)}/deletion/cancel`,
+          idempotencyKey,
+        });
+      },
+      /** `POST /v1/users/:id/deletion/reconfirm` — resume a PAUSED scheduled deletion on its original schedule; sends no mail; 409 unless paused. */
+      reconfirm(id: string, idempotencyKey?: string): Promise<User> {
+        return request({
+          method: 'POST',
+          path: `/v1/users/${enc(id)}/deletion/reconfirm`,
           idempotencyKey,
         });
       },
@@ -1140,15 +1152,23 @@ export interface CreateUserApprovalRequestBody {
   description: string;
   /** Extra key/value details shown under the description. Strings only. */
   context?: Record<string, string>;
+  /** 10 to 604800 seconds. Default 120. */
+  ttl_seconds?: number;
+  /** Named approvers (N of M); see `client.approvals.create`. */
+  approvers?: { user_ids?: string[]; organization_id?: string; role?: string; required?: number };
+  require_signature?: boolean;
+  binding?: string;
+  reference?: string;
 }
 
 export interface UserApprovalRequestCreated {
   object: 'approval_request';
   id: string;
   status: 'pending';
-  /** Show this to the user; they confirm the matching number on their device. */
-  match_number: string;
+  /** Show this to the user; they confirm the matching number on their device. Null when the request names its own approvers. */
+  match_number: string | null;
   expires_at: number;
+  digest?: string | null;
 }
 
 export interface UserApprovalRequest {
@@ -1161,6 +1181,9 @@ export interface UserApprovalRequest {
   created_at: number;
   expires_at: number;
   resolved_at: number | null;
+  /** Present on requests created with approvals v2 fields. */
+  receipt?: string | null;
+  digest?: string | null;
 }
 
 export interface UserNotificationPreference {
@@ -1279,6 +1302,8 @@ export interface UserSearchExportBody extends Omit<UserSearchBody, 'limit' | 'st
 
 export interface UserSearchViewBody {
   name?: string;
+  /** What the segment is for. */
+  description?: string | null;
   filter?: UserSearchFilter;
   order_by?: string | null;
 }
@@ -1287,6 +1312,10 @@ export interface UserSearchView {
   object: 'user_search_view';
   id: string;
   name: string;
+  description?: string | null;
+  /** Members at the last count, and when (`users.search.views.count`). */
+  member_count?: number | null;
+  counted_at?: number | null;
   filter: UserSearchFilter;
   order_by: string | null;
   created_by: string | null;
@@ -1294,7 +1323,7 @@ export interface UserSearchView {
   updated_at: number;
 }
 
-export type RequiredActionName = 'update_password' | 'verify_email' | 'accept_policy' | 'configure_mfa' | 'update_profile' | 'identity_verification' | 'custom';
+export type RequiredActionName = 'update_password' | 'verify_email' | 'accept_policy' | 'configure_mfa' | 'update_profile' | 'identity_verification' | 'custom' | 'transfer_ownership';
 
 export interface RequiredActionBody {
   action: RequiredActionName;

@@ -1,5 +1,10 @@
 # @atlasauth/expo changelog
 
+## 0.11.0
+
+- Default React Native sign-in, sign-up, second-factor and security screens; the sign-up screen view-model handles second-factor setup and required actions.
+- Breaking for type imports: the exported types are now named `SecuritySectionViewModel`, `SignInScreenViewModel` and `SignUpScreenViewModel`.
+
 ## 0.9.0 — 2026-11-14
 
 - `useSignInScreen()` and `useSecuritySection(kind)` drive your own native sign-in and account-security screens, with step-up handled inside.

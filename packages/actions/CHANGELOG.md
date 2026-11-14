@@ -1,5 +1,9 @@
 # @atlasauth/actions changelog
 
+## 0.7.0
+
+- `pre_message_send` trigger types and test harness; `egress_allowlist` for `api.http`.
+
 ## 0.6.1 — 2026-11-14
 
 - The published package now carries the release notes for every version.

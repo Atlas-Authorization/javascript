@@ -9,6 +9,20 @@ export * from './flow';
 export * from './fapi';
 export * from './components';
 export { ManageCiba } from './manage-ciba';
+// API keys, billing and device authorization: the components and the composables behind them.
+export { ApiKeys } from './api-keys';
+export { DeviceAuthorization } from './device-authorization';
+export { PricingTable, Invoices, EmbeddedCheckout, Checkout, type PricingTableLabels } from './billing';
+export { useApiKeys, useBilling, useCheckoutStep, useDeviceAuthorization, useUsage } from './managed-components';
+export {
+  API_KEYS_LABELS,
+  BILLING_LABELS,
+  CHECKOUT_LABELS,
+  DEVICE_AUTH_LABELS,
+  type ApiKeysState,
+  type BillingState,
+  type DeviceAuthorizationState,
+} from '@atlasauth/js';
 export { PolicyAcceptStep, PolicyClickwrap, PolicyConsent, PolicyGate, usePolicies, usePolicyState } from './policies';
 
 // The instance's public sign-in / sign-up settings the prebuilt forms read

@@ -1,5 +1,5 @@
 import { component$, Slot } from '@builder.io/qwik';
-import { evaluate } from '@atlasauth/js';
+import { evaluate, type ProtectCondition } from '@atlasauth/js';
 import { useAtlas } from './context';
 import { isLoaded, isSignedIn } from './store';
 
@@ -32,12 +32,8 @@ export const AtlasLoaded = component$(() => {
   return <>{isLoaded(store) ? <Slot /> : null}</>;
 });
 
-export interface ProtectProps {
-  permission?: string;
-  role?: string;
-  anyPermission?: readonly string[];
-  allPermissions?: readonly string[];
-}
+/** The shared condition: its key fields narrow to the generated `Register` keys (plain strings when none is registered). */
+export type ProtectProps = ProtectCondition;
 
 /**
  * `<Protect permission="org:sys_memberships:manage">` — conditional rendering.
@@ -60,6 +56,12 @@ export const Protect = component$<ProtectProps>((props) => {
     role: props.role,
     anyPermission: props.anyPermission,
     allPermissions: props.allPermissions,
+    plan: props.plan,
+    feature: props.feature,
+    appRole: props.appRole,
+    appPermission: props.appPermission,
+    anyAppPermission: props.anyAppPermission,
+    allAppPermissions: props.allAppPermissions,
   }).allowed;
   return <>{allowed ? <Slot /> : <Slot name="fallback" />}</>;
 });

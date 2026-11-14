@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { formatMoney, planPriceView, type PublicBillingPlan } from '@atlasauth/js';
+import { describeDiscount, formatMoney, planPriceView, validatePlanCoupon, type CouponCheck, type PublicBillingPlan } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { currentUrl, navigateTo, useClass, useClasses, useErrorText, useMeClient, useText } from './components-shared';
 import type {
@@ -34,6 +34,8 @@ export interface CheckoutParams {
   redirect?: boolean;
   /** Start on the plan's yearly price (when it has one). */
   interval?: 'month' | 'year';
+  /** A discount code the buyer entered (see `validateCoupon`). */
+  couponCode?: string;
 }
 
 export interface ChangePlanParams {
@@ -136,10 +138,18 @@ export function useBilling(opts: { orgId?: string } = {}) {
         success_url: params.successUrl ?? currentUrl(),
         cancel_url: params.cancelUrl ?? currentUrl(),
         ...(params.interval ? { interval: params.interval } : {}),
+        ...(params.couponCode ? { coupon_code: params.couponCode } : {}),
       });
       if (res.ok && res.data?.url && params.redirect !== false) navigateTo(res.data.url);
       return res;
     },
+    [client, orgId],
+  );
+
+  /** Would this discount code work for this plan? For an "apply" button; needs a signed-in session. */
+  const validateCoupon = useCallback(
+    (planId: string, code: string, params: { orgId?: string } = {}): Promise<CouponCheck> =>
+      validatePlanCoupon(client, { planId, code, orgId: params.orgId ?? orgId }),
     [client, orgId],
   );
 
@@ -225,6 +235,7 @@ export function useBilling(opts: { orgId?: string } = {}) {
     invoices,
     paymentMethod,
     checkout,
+    validateCoupon,
     openPortal,
     changePlan,
     cancel,
@@ -236,8 +247,8 @@ export function useBilling(opts: { orgId?: string } = {}) {
 
 /** §commerce Clerk-parity alias — just the `checkout` action from {@link useBilling}. */
 export function useCheckout(opts: { orgId?: string } = {}) {
-  const { checkout } = useBilling(opts);
-  return { checkout };
+  const { checkout, validateCoupon } = useBilling(opts);
+  return { checkout, validateCoupon };
 }
 
 /** §commerce Clerk-parity alias — the subject's subscription from {@link useBilling}. */
@@ -256,6 +267,42 @@ export function useInvoices(opts: { orgId?: string } = {}) {
 export function usePaymentMethods(opts: { orgId?: string } = {}) {
   const { isLoaded, paymentMethod, openPortal, reload } = useBilling(opts);
   return { isLoaded, paymentMethod, openPortal, reload };
+}
+
+/**
+ * The subject's metered usage this billing period, for a "you have used N" display. `feature` narrows to one
+ * feature. Reads what Atlas recorded (reports and consumes); for UI only, since enforcement belongs on your server.
+ */
+export function useUsage(opts: { orgId?: string; feature?: string } = {}) {
+  const { status } = useAtlas();
+  const client = useMeClient();
+  const [total, setTotal] = useState<number | null>(null);
+  const [since, setSince] = useState<number | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const { orgId, feature } = opts;
+
+  const reload = useCallback(async () => {
+    if (status !== 'signed_in') {
+      setTotal(null);
+      setIsLoaded(true);
+      return;
+    }
+    const q = new URLSearchParams();
+    if (orgId) q.set('org_id', orgId);
+    if (feature) q.set('feature', feature);
+    const res = await client.get<{ total: number; since: number | null }>(`/v1/client/billing/usage${q.size ? `?${q.toString()}` : ''}`);
+    if (res.ok && res.data) {
+      setTotal(res.data.total);
+      setSince(res.data.since);
+    }
+    setIsLoaded(true);
+  }, [client, status, orgId, feature]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  return { isLoaded, total, since, reload };
 }
 
 /** Format a minor-unit amount (cents) as a currency string, best-effort. */
@@ -343,8 +390,11 @@ export function PricingTable({
             data-atlas="pricing-plan"
             data-current={isCurrent}
             data-kind={isAddon ? 'addon' : 'base'}
+            data-highlight={Boolean(plan.badge)}
           >
             <h3 className={cls('planName', 'atlas-plan-name')}>{plan.name}</h3>
+            {plan.badge ? <p data-atlas="pricing-badge" className={cls('badge', 'atlas-badge')}>{plan.badge}</p> : null}
+            {plan.description ? <p data-atlas="pricing-description" className={cls('text', 'atlas-text')}>{plan.description}</p> : null}
             {view.promotionLabel ? <p data-atlas="pricing-promotion" className={cls('badge', 'atlas-badge')}>{view.promotionLabel}</p> : null}
             <p className={cls('price', 'atlas-price')}>
               {view.originalPrice ? <s data-atlas="pricing-original">{view.originalPrice}</s> : null}{' '}
@@ -463,9 +513,15 @@ export function EmbeddedCheckout({
   orgId,
   returnUrl,
   fallback,
+  couponCode,
+  interval,
 }: {
   planId: string;
   orgId?: string;
+  /** A discount code the buyer entered; applied to the session. */
+  couponCode?: string;
+  /** Start on the plan's yearly price (when it has one). */
+  interval?: 'month' | 'year';
   /** Where Stripe returns after the in-page flow (defaults to the current URL). */
   returnUrl?: string;
   /** Rendered when embedded checkout is unavailable (no publishable key). */
@@ -501,6 +557,8 @@ export function EmbeddedCheckout({
           org_id: orgId,
           ui_mode: 'embedded',
           return_url: returnUrl ?? currentUrl(),
+          ...(couponCode ? { coupon_code: couponCode } : {}),
+          ...(interval ? { interval } : {}),
         },
       );
       if (!res.ok || !res.data?.client_secret) {
@@ -535,7 +593,7 @@ export function EmbeddedCheckout({
       }
     };
     // planId/orgId/returnUrl identify the session to create; client is stable.
-  }, [client, planId, orgId, returnUrl, t, errorText]);
+  }, [client, planId, orgId, returnUrl, couponCode, interval, t, errorText]);
 
   if (unavailable) {
     return (
@@ -544,7 +602,7 @@ export function EmbeddedCheckout({
           <button
             type="button"
             data-atlas="checkout-fallback"
-            onClick={() => void checkout({ planId, orgId })}
+            onClick={() => void checkout({ planId, orgId, couponCode, interval })}
           >
             {t('commerce.subscribe')}
           </button>
@@ -557,6 +615,138 @@ export function EmbeddedCheckout({
     <div data-atlas="embedded-checkout">
       {error ? <p role="alert">{error}</p> : null}
       <div ref={containerRef} />
+    </div>
+  );
+}
+
+/** English defaults for the strings `<Checkout>` renders; override any through `labels`. */
+const CHECKOUT_LABELS = {
+  code: 'Discount code',
+  apply: 'Apply',
+  applied: (what: string) => `Code applied: ${what}`,
+  invalid: 'That code is not valid.',
+  expired: 'That code has expired.',
+  exhausted: 'That code has been used up.',
+  notForPlan: 'That code does not work on this plan.',
+  firstTimeOnly: 'That code is for first-time customers only.',
+  alreadyUsed: 'You have already used that code.',
+  continue: 'Continue to payment',
+  signIn: 'Sign in to subscribe.',
+  planGone: 'That plan is not available.',
+};
+export type CheckoutLabels = Partial<typeof CHECKOUT_LABELS>;
+
+const COUPON_REASON: Record<string, keyof typeof CHECKOUT_LABELS> = {
+  expired: 'expired',
+  exhausted: 'exhausted',
+  plan_not_eligible: 'notForPlan',
+  first_time_only: 'firstTimeOnly',
+  already_used: 'alreadyUsed',
+};
+
+/**
+ * The step before payment for one plan: the plan and its price, a billing-interval choice when it has an annual
+ * price, an optional discount code with an "apply" check, and the way on to payment. `embedded` mounts Stripe's
+ * in-page checkout after "Continue"; otherwise the button redirects to the provider's hosted page. The code is
+ * validated by the server and applied by the server at checkout, so nothing here decides a price.
+ */
+export function Checkout({
+  planId,
+  orgId,
+  embedded = false,
+  returnUrl,
+  locale,
+  labels = {},
+  onStarted,
+}: {
+  planId: string;
+  orgId?: string;
+  embedded?: boolean;
+  returnUrl?: string;
+  locale?: string;
+  labels?: CheckoutLabels;
+  /** Called when the buyer continues to payment (the redirect or the embedded frame follows). */
+  onStarted?: (info: { planId: string; couponCode?: string; interval: 'month' | 'year' }) => void;
+}) {
+  const { isLoaded, plans, checkout, validateCoupon } = useBilling({ orgId });
+  const { status } = useAtlas();
+  const L = { ...CHECKOUT_LABELS, ...labels };
+  const cls = useClasses();
+  const cardClass = useClass('card', 'atlas-card');
+  const buttonClass = useClass('formButtonPrimary', 'atlas-button');
+  const t = useText();
+
+  const [interval, setIntervalChoice] = useState<'month' | 'year'>('month');
+  const [code, setCode] = useState('');
+  const [applied, setApplied] = useState<{ code: string; text: string } | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [started, setStarted] = useState(false);
+
+  if (!isLoaded) return <div data-atlas="checkout" aria-busy="true" />;
+  const plan = plans.find((p) => p.id === planId);
+  if (!plan) return <div data-atlas="checkout" role="alert">{L.planGone}</div>;
+  const pageLocale = locale ?? (typeof document !== 'undefined' ? document.documentElement.lang || undefined : undefined);
+  const view = planPriceView(plan as PublicBillingPlan, { interval, locale: pageLocale });
+
+  const apply = async () => {
+    const entered = code.trim();
+    if (!entered) return;
+    setBusy(true);
+    setProblem(null);
+    const res = await validateCoupon(planId, entered);
+    setBusy(false);
+    if (res.valid) setApplied({ code: entered, text: describeDiscount(res.discount, pageLocale) });
+    else {
+      setApplied(null);
+      const key = COUPON_REASON[res.reason];
+      setProblem(key ? (L[key] as string) : L.invalid);
+    }
+  };
+
+  const proceed = () => {
+    const info = { planId, ...(applied ? { couponCode: applied.code } : {}), interval };
+    onStarted?.(info);
+    if (embedded) setStarted(true);
+    else void checkout({ planId, orgId, interval: plan.annual_available ? interval : undefined, couponCode: applied?.code });
+  };
+
+  return (
+    <div className={cardClass} data-atlas="checkout">
+      <h3 className={cls('planName', 'atlas-plan-name')}>{plan.name}</h3>
+      {plan.description ? <p className={cls('text', 'atlas-text')}>{plan.description}</p> : null}
+      {plan.annual_available ? (
+        <div role="group" aria-label="Billing interval" data-atlas="checkout-interval">
+          {(['month', 'year'] as const).map((i) => (
+            <button key={i} type="button" className={cls('formButtonSecondary', 'atlas-button-secondary')} aria-pressed={interval === i} disabled={started} onClick={() => setIntervalChoice(i)}>
+              {i === 'month' ? 'Monthly' : 'Yearly'}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <p className={cls('price', 'atlas-price')} data-atlas="checkout-price">
+        {view.originalPrice ? <s>{view.originalPrice}</s> : null} {view.price}
+      </p>
+      {started ? null : (
+        <>
+          <div data-atlas="checkout-coupon">
+            <label>
+              {L.code}{' '}
+              <input value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" spellCheck={false} />
+            </label>{' '}
+            <button type="button" className={cls('formButtonSecondary', 'atlas-button-secondary')} disabled={busy || status !== 'signed_in' || !code.trim()} onClick={() => void apply()}>
+              {L.apply}
+            </button>
+            {applied ? <p role="status" data-atlas="checkout-coupon-applied">{L.applied(applied.text)}</p> : null}
+            {problem ? <p role="alert" data-atlas="checkout-coupon-problem">{problem}</p> : null}
+          </div>
+          {status !== 'signed_in' ? <p className={cls('text', 'atlas-text')}>{L.signIn}</p> : null}
+          <button type="button" className={buttonClass} disabled={status !== 'signed_in'} onClick={proceed}>
+            {embedded ? L.continue : t('commerce.subscribe')}
+          </button>
+        </>
+      )}
+      {started ? <EmbeddedCheckout planId={planId} orgId={orgId} returnUrl={returnUrl} couponCode={applied?.code} interval={plan.annual_available ? interval : undefined} /> : null}
     </div>
   );
 }

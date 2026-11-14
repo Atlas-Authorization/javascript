@@ -322,6 +322,9 @@ export function OrganizationLogStreams({ labels = {} }: { labels?: Labels } = {}
   const cls = useClasses();
   const [url, setUrl] = useState('');
   const [secret, setSecret] = useState<string | null>(null);
+  const [sink, setSink] = useState<'https' | 'splunk_hec' | 'datadog' | 'elastic'>('https');
+  const [format, setFormat] = useState<'json' | 'ocsf' | 'cef'>('json');
+  const [token, setToken] = useState('');
   if (!organization) return null;
   return (
     <Section name="organization-log-streams" title={labels.title ?? 'Log streams'} admin={admin}>
@@ -338,12 +341,32 @@ export function OrganizationLogStreams({ labels = {} }: { labels?: Labels } = {}
       <Field label={labels.url ?? 'HTTPS endpoint'}>
         <input className={cls('formFieldInput', 'atlas-input')} type="url" placeholder="https://siem.example.com/ingest" value={url} onChange={(e) => setUrl(e.target.value)} />
       </Field>
+      <Field label={labels.sink ?? 'Send to'}>
+        <select className={cls('formFieldInput', 'atlas-input')} value={sink} onChange={(e) => setSink(e.target.value as typeof sink)}>
+          <option value="https">Any HTTPS collector (signed)</option>
+          <option value="splunk_hec">Splunk HTTP Event Collector</option>
+          <option value="datadog">Datadog Logs</option>
+          <option value="elastic">Elasticsearch / OpenSearch</option>
+        </select>
+      </Field>
+      <Field label={labels.format ?? 'Format'}>
+        <select className={cls('formFieldInput', 'atlas-input')} value={format} onChange={(e) => setFormat(e.target.value as typeof format)}>
+          <option value="json">JSON</option>
+          <option value="ocsf">OCSF</option>
+          <option value="cef">CEF</option>
+        </select>
+      </Field>
+      {sink !== 'https' ? (
+        <Field label={labels.token ?? 'Token or API key'}>
+          <input className={cls('formFieldInput', 'atlas-input')} type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} />
+        </Field>
+      ) : null}
       <OneTimeSecret value={secret} note={labels.copyNow ?? 'Copy the signing secret now — it will not be shown again.'} />
       <button
         type="button"
         className={cls('formButtonPrimary', 'atlas-button')}
-        disabled={!url.trim()}
-        onClick={() => void admin.act(() => organizationAdmin.addLogStream(client, organization.id, { url: url.trim() })).then((r) => { if (r) { setUrl(''); setSecret(r.secret); } })}
+        disabled={!url.trim() || (sink !== 'https' && token.length < 16)}
+        onClick={() => void admin.act(() => organizationAdmin.addLogStream(client, organization.id, { url: url.trim(), format, sink_type: sink, ...(sink !== 'https' ? { secret: token } : {}) })).then((r) => { if (r) { setUrl(''); setToken(''); setSecret(r.secret ?? null); } })}
       >
         {labels.add ?? 'Add destination'}
       </button>

@@ -101,12 +101,52 @@ export class TokenService {
     return { jwt: await this.current().mintSession(claims as any), claims, expiresIn: ttl };
   }
 
+  /**
+   * Sign any claim set with the current key: `iss`, `iat`, `exp` and `atlas_emulator` are filled in, everything else is yours.
+   * `idToken` uses the OIDC ID-token minting path (aud, nonce, auth_time stay as given).
+   */
+  async signClaims(claims: Obj, ttlSeconds = 60): Promise<string> {
+    await this.ensure();
+    const nowS = Math.floor(this.engine.clock.now() / 1000);
+    const body: Obj = { iss: this.issuerUrl, iat: nowS, exp: nowS + ttlSeconds, atlas_emulator: true, sid: undefined, azp: undefined, sv: undefined, mfa: undefined, ...claims };
+    return this.current().mintSession(body as any);
+  }
+
   /** Verify as a resource server would: against the engine JWKS, issuer and clock. */
   async verify(token: string): Promise<{ ok: true; claims: Obj } | { ok: false; reason: string }> {
     await this.ensure();
     const backend = new AtlasBackend({ jwks: await this.jwks(), issuer: this.issuerUrl, now: this.engine.clock.now } as any);
     const r = await backend.verify(token);
     return r.ok ? { ok: true, claims: r.claims as Obj } : { ok: false, reason: r.reason };
+  }
+
+  /**
+   * Verify any token this engine signed, whatever its `token_use` (session, machine, access, id): signature against
+   * the JWKS, issuer, `exp` and `nbf`. `verify` is the session-only check a resource server would run; this one is
+   * for the engine's own routes (machine verify, introspection, token exchange).
+   */
+  async verifyAny(token: string): Promise<{ ok: true; claims: Obj } | { ok: false; reason: string }> {
+    try {
+      const [h, p, sig] = token.split('.');
+      if (!h || !p || !sig) return { ok: false, reason: 'malformed' };
+      const dec = (x: string): Uint8Array => Uint8Array.from(atob(x.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (x.length % 4)) % 4)), (c) => c.charCodeAt(0));
+      const header = JSON.parse(new TextDecoder().decode(dec(h)));
+      const jwk = (await this.jwks()).keys.find((k) => k.kid === header.kid);
+      if (!jwk) return { ok: false, reason: 'unknown_key' };
+      const rsa = header.alg === 'RS256';
+      if (!rsa && header.alg !== 'ES256') return { ok: false, reason: 'unsupported_alg' };
+      const key = await crypto.subtle.importKey('jwk', jwk as JsonWebKey, rsa ? { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' } : { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+      const ok = await crypto.subtle.verify(rsa ? { name: 'RSASSA-PKCS1-v1_5' } : { name: 'ECDSA', hash: 'SHA-256' }, key, dec(sig) as BufferSource, new TextEncoder().encode(`${h}.${p}`) as BufferSource);
+      if (!ok) return { ok: false, reason: 'bad_signature' };
+      const claims = JSON.parse(new TextDecoder().decode(dec(p))) as Obj;
+      const nowS = this.engine.clock.now() / 1000;
+      if (claims.iss !== this.issuerUrl) return { ok: false, reason: 'wrong_issuer' };
+      if (typeof claims.exp === 'number' && claims.exp <= nowS) return { ok: false, reason: 'expired' };
+      if (typeof claims.nbf === 'number' && claims.nbf > nowS + 60) return { ok: false, reason: 'not_yet_valid' };
+      return { ok: true, claims };
+    } catch {
+      return { ok: false, reason: 'malformed' };
+    }
   }
 
   secret(prefix: string): string {

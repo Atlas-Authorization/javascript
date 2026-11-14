@@ -824,6 +824,8 @@ export function requestForStep(
       for (const [k, v] of Object.entries(values)) if (k.startsWith('field:')) fields[k.slice(6)] = v;
       if (Object.keys(fields).length > 0) body.fields = fields;
       if (values.skip === 'true') body.skip = true;
+      // journey_form: keep partial answers without finishing the step.
+      if (values.save_draft === 'true') body.save_draft = true;
       return { path: `/v1/client/sign_ins/${id}/required_actions`, body };
     }
 
@@ -1235,15 +1237,19 @@ export function completeRequiredAction(
     code?: string;
     /** `identity_verification` with `step: 'start'`: where the person returns to. */
     redirect_url?: string;
-    /** `complete_profile`: values by field key. */
-    fields?: Record<string, string>;
+    /** `complete_profile` / `journey_form`: values by field key (a multi-select is a list, a checkbox a boolean). */
+    fields?: Record<string, string | string[] | boolean>;
     /** `complete_profile`: ask again later (optional fields only). */
     skip?: boolean;
+    /** `journey_form`: keep these answers for later instead of finishing the step. */
+    saveDraft?: boolean;
   },
 ): Promise<FlowState> {
   const values: Record<string, string> = {};
   for (const [k, v] of Object.entries(input)) if (typeof v === 'string') values[k] = v;
-  for (const [k, v] of Object.entries(input.fields ?? {})) values[`field:${k}`] = v;
+  // A list travels comma-joined (a journey option never contains a comma), a checkbox as true / false.
+  for (const [k, v] of Object.entries(input.fields ?? {})) values[`field:${k}`] = Array.isArray(v) ? v.join(',') : typeof v === 'boolean' ? String(v) : v;
   if (input.skip) values.skip = 'true';
+  if (input.saveDraft) values.save_draft = 'true';
   return advance(client, state, values);
 }

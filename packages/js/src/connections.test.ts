@@ -3,6 +3,9 @@ import { FapiClient } from './fapi';
 import {
   ConnectionRequestError,
   connectMyConnection,
+  connectionsNeedingReconnect,
+  createReconnectController,
+  type AppConnection,
   connectOrganizationConnection,
   deleteOrganizationOAuthClient,
   listMyConnections,
@@ -81,5 +84,36 @@ describe('connected accounts client', () => {
     const out = await reauthorizeExternalAccount('eac_1', { api: 'https://fapi.example', publishableKey: 'pk', redirectUrl: 'https://app.example/back', fetchImpl });
     expect(out.authorizationUrl).toBe('https://github.com/login');
     expect(String((fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]![0])).toBe('https://fapi.example/v1/client/me/external_accounts/eac_1/reauthorize');
+  });
+});
+
+describe('reconnect controller', () => {
+  it('fetches the consent link for the user\'s or the organization\'s connection and opens it', async () => {
+    const { client, calls } = clientWith(() => json(200, { object: 'connection_authorization', connection_id: 'cnx_1', authorization_url: 'https://provider.example/consent?x=1', attempt_id: 'a1' }));
+    const opened: string[] = [];
+    const mine = createReconnectController(client, { redirectUrl: 'https://app.example/back', open: (u) => opened.push(u) });
+    expect((await mine.reconnect('cnx_1')).attempt_id).toBe('a1');
+    const org = createReconnectController(client, { redirectUrl: 'https://app.example/back', organizationId: 'org_1', open: (u) => opened.push(u) });
+    await org.link('cnx_2');
+    expect(opened).toEqual(['https://provider.example/consent?x=1']);
+    expect(calls[0]!.url).toBe('https://fapi.example/v1/client/me/connections/cnx_1/connect');
+    expect(calls[1]!.url).toBe('https://fapi.example/v1/client/organizations/org_1/connections/cnx_2/connect');
+    expect(JSON.parse(String(calls[0]!.init.body)).redirect_url).toBe('https://app.example/back');
+  });
+
+  it('opens nothing when the link cannot be fetched', async () => {
+    const { client } = clientWith(() => json(409, { errors: [{ code: 'CONFLICT', message: 'no' }] }));
+    const opened: string[] = [];
+    await expect(createReconnectController(client, { redirectUrl: 'https://app.example/b', open: (u) => opened.push(u) }).reconnect('cnx_1')).rejects.toBeInstanceOf(ConnectionRequestError);
+    expect(opened).toEqual([]);
+  });
+
+  it('picks only oauth connections that need authorizing again', () => {
+    const list = [
+      { id: 'a', kind: 'oauth', status: 'needs_reauth' },
+      { id: 'b', kind: 'oauth', status: 'connected' },
+      { id: 'c', kind: 'api_key', status: 'needs_reauth' },
+    ] as AppConnection[];
+    expect(connectionsNeedingReconnect(list).map((c) => c.id)).toEqual(['a']);
   });
 });

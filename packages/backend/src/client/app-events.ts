@@ -75,6 +75,15 @@ export interface PublishedAppEvent extends AppEvent {
   endpoint_ids?: string[];
 }
 
+/** The answer to a broadcast (`organization_id: '*'`): one event per organization that has an active endpoint. */
+export interface AppEventBroadcast {
+  object: 'app_event_broadcast';
+  type: string;
+  organizations: number;
+  deliveries_queued: number;
+  events: Array<{ organization_id: string; event_id: string; created: boolean; deliveries_queued: number }>;
+}
+
 export interface AppWebhookEndpointBody {
   url?: string;
   /** Types from your catalog, or `['*']` (the default) for all of them. */
@@ -89,6 +98,13 @@ export function appEventsResource(request: RequestFn) {
     /** Publish one event to one organization's subscribed endpoints. */
     publish(body: PublishAppEventBody): Promise<PublishedAppEvent> {
       return request({ method: 'POST', path: '/v1/app_events', body });
+    },
+    /**
+     * Publish one event to EVERY organization that has an active app webhook endpoint (at most 500): one event
+     * per organization, each with its own id. An `idempotency_key` applies per organization, so a retry sends nothing twice.
+     */
+    broadcast(body: Omit<PublishAppEventBody, 'organization_id' | 'org'>): Promise<AppEventBroadcast> {
+      return request({ method: 'POST', path: '/v1/app_events', body: { ...body, organization_id: '*' } });
     },
     /** One organization's published events, newest first. */
     list(query: { organization_id: string; type?: string; limit?: number; starting_after?: string }): Promise<ListPage<AppEvent>> {

@@ -1,5 +1,9 @@
 # @atlasauth/agent-toolkit changelog
 
+## 0.5.0
+
+- A tool can wait for a human approval before it runs (same options as `@atlasauth/mcp`, `@atlasauth/langchain` and `@atlasauth/llamaindex`).
+
 ## 0.4.0
 
 - Grant usage metering through `@atlasauth/backend/usage-gate` (consume and refund per tool call). Requires `@atlasauth/backend` 0.51.0 or later.

@@ -5,5 +5,7 @@ describe('connected accounts', () => {
   it('is exported', () => {
     expect(typeof react.ConnectedAccounts).toBe('function');
     expect(typeof react.useConnectedAccounts).toBe('function');
+    expect(typeof react.ReconnectConnection).toBe('function');
+    expect(typeof react.useReconnectConnection).toBe('function');
   });
 });

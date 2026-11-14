@@ -150,7 +150,18 @@ export async function webhooks(ctx: RunContext, args: ParsedArgs): Promise<numbe
       if (events.length) body.enabled_events = events;
       if (v.active === true) body.active = true;
       if (v.inactive === true) body.active = false;
-      if (Object.keys(body).length === 0) throw new CliError('webhooks update needs at least one of --url, --events, --active, --inactive.');
+      const maxRps = str(v, 'max-rps');
+      if (maxRps !== undefined) body.max_rps = maxRps === 'none' ? null : Number(maxRps);
+      if (typeof body.max_rps === 'number' && !Number.isInteger(body.max_rps)) throw new CliError("--max-rps must be a whole number of deliveries per second, or 'none'.");
+      const filters = str(v, 'filters');
+      if (filters !== undefined) {
+        try {
+          body.filters = filters === 'none' ? null : (JSON.parse(filters) as unknown);
+        } catch {
+          throw new CliError(`--filters must be JSON such as '{"organization_ids":["org_..."]}', or 'none' (got '${filters}').`);
+        }
+      }
+      if (Object.keys(body).length === 0) throw new CliError('webhooks update needs at least one of --url, --events, --active, --inactive, --max-rps, --filters.');
       const updated = await api().patch<WebhookEndpoint>(endpointPath(id), body);
       if (json) printJson(ctx.io, updated);
       else ctx.io.out(`Updated webhook endpoint ${updated.id ?? id}: ${Object.keys(body).join(', ')}.`);
@@ -291,11 +302,34 @@ export async function webhooks(ctx: RunContext, args: ParsedArgs): Promise<numbe
       return 0;
     }
 
+    // The dead-letter queue: deliveries that used every attempt. Pull, handle, then acknowledge or requeue.
+    case 'dlq': {
+      const id = requireArg(args.positionals, 2, 'endpoint-id');
+      const res = await api().get<{ data: Delivery[]; depth: number; has_more: boolean }>(`${endpointPath(id)}/dlq${query({ limit: str(v, 'limit'), starting_after: str(v, 'starting-after') })}`);
+      if (json) printJson(ctx.io, res);
+      else {
+        ctx.io.out(`${res.depth} undelivered in the dead-letter queue.`);
+        if (res.data.length) ctx.io.out(renderTable(DELIVERY_COLUMNS, res.data));
+      }
+      return 0;
+    }
+
+    case 'dlq-ack':
+    case 'dlq-requeue': {
+      const id = requireArg(args.positionals, 2, 'endpoint-id');
+      const ids = list(v, 'delivery');
+      if (ids.length === 0) throw new CliError(`webhooks ${sub} needs --delivery <id>[,<id>...].`);
+      const res = await api().post<{ acknowledged?: number; queued?: number }>(`${endpointPath(id)}/dlq/${sub === 'dlq-ack' ? 'ack' : 'requeue'}`, { delivery_ids: ids });
+      if (json) printJson(ctx.io, res);
+      else ctx.io.out(sub === 'dlq-ack' ? `Acknowledged ${res.acknowledged ?? 0} of ${ids.length}.` : `Requeued ${res.queued ?? 0} of ${ids.length}.`);
+      return 0;
+    }
+
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'webhooks ${sub}'. Try: list, create, upsert, update, test, deliveries, redeliver, replay, rotate, reveal.`
-          : 'webhooks needs a subcommand: list, create, upsert, update, test, deliveries, redeliver, replay, rotate, reveal.',
+          ? `Unknown subcommand 'webhooks ${sub}'. Try: list, create, upsert, update, test, deliveries, redeliver, replay, rotate, reveal, dlq, dlq-ack, dlq-requeue.`
+          : 'webhooks needs a subcommand: list, create, upsert, update, test, deliveries, redeliver, replay, rotate, reveal, dlq, dlq-ack, dlq-requeue.',
       );
   }
 }

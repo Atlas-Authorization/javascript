@@ -60,7 +60,11 @@ export type ElementKey =
   | 'menuItem'
   | 'list'
   | 'listItem'
-  | 'badge';
+  | 'badge'
+  | 'pricingTable'
+  | 'planName'
+  | 'price'
+  | 'priceInterval';
 
 export interface Appearance extends DesignAppearance {
   /** A prebuilt token theme to start from (pre-design-system themes). */

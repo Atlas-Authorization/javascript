@@ -21,6 +21,7 @@ import {
   startSignUp,
   type FieldError,
   type PolicyAcceptancePayload,
+  uploadJourneyFile,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { FapiClient, type FlowState } from './fapi';
@@ -200,6 +201,12 @@ function SignUpFlow(props: FlowProps) {
         }
         recoveryCodes={pendingRecoveryCodes(state)}
         onRecoveryCodesSaved={saveRecoveryCodes}
+        onUploadFile={async (field, file) => {
+          const out = await uploadJourneyFile(client, state, field, file);
+          if (out.ok) return out.id;
+          setState((cur) => ({ ...cur, errors: out.errors.map((e) => ({ code: e.code ?? 'upload_failed', message: e.message })) }));
+          return null;
+        }}
         signInHref={signInAfterProofUrl({ url: props.signInUrl, frontendApi, redirectUrl: props.afterUrl })}
       />
     );

@@ -2,6 +2,12 @@
 
 
 
+## 0.36.0
+
+- `<Checkout>` with discount codes, `useUsage`, coupon support and plan badges and descriptions in the pricing table.
+- `<ReconnectConnection>` and `useReconnectConnection`.
+- Journey file fields upload for real; `OrganizationLogStreams` shows the new sink options.
+
 ## 0.35.1
 
 - Permission checks are typed from a generated `atlas-types.d.ts` when present (via `@atlasauth/authz`).
