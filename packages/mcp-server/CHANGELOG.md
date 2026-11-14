@@ -1,5 +1,9 @@
 # @atlasauth/mcp changelog
 
+## 0.4.1 — 2026-11-14
+
+- Takes `@atlasauth/backend` as a peer dependency (`>=0.49.0 <1.0.0`) instead of pinning one exact version, so an app has a single copy of it.
+
 ## 0.4.0 — 2026-11-12
 
 - Uses zod 4 (4.6.6 or later), which fixes a memory-exhaustion advisory in zod 3. Tool schemas are zod 4.

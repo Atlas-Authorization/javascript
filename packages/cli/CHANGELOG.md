@@ -1,5 +1,19 @@
 # @atlasauth/cli changelog
 
+## 0.40.1 — 2026-11-14
+
+- `atlas apply --help` lists the full apply order (adds `domains`, `integrations`, `referrals`, `privacy_orchestrator` and `proxy_secret`).
+
+## 0.40.0 — 2026-11-14
+
+- `push_provider` in atlas.yaml (`apns_fcm` or `expo`; secrets write-only).
+- `web_bot_auth` in atlas.yaml (allowed and blocked key directories).
+
+## 0.39.0 — 2026-11-14
+
+- `sms_provider` in atlas.yaml: plan, apply, `plan --check` drift on transport and sender, `--rotate-secret`; Twilio `messaging_service_sid`.
+- `oauth_providers[].settings.native_client_ids` (a string or a list) is applied and compared in plan.
+
 ## 0.38.0 — 2026-11-13
 
 - Plans read `hosted_pages.device_url` and flag scope descriptions over 500 characters before apply.

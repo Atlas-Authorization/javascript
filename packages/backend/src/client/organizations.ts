@@ -158,6 +158,8 @@ export interface OrganizationInvitation {
   accept_token?: string;
   /** Link delivery with `redirect_url`, on create only, shown once: that URL with `?invitation_token=` appended. */
   accept_url?: string | null;
+  /** With the instance setting `organizations.invitationEmail: "atlas"` on an email invitation: whether Atlas mailed it (false: no email provider could deliver; a resend tries again). */
+  email_sent?: boolean;
 }
 
 export interface OrgDomain {
@@ -642,7 +644,7 @@ export function organizationsResource(request: RequestFn) {
           /** `link`: no mail; `accept_token` (and `accept_url` with `redirect_url`) come back once. Default `email`. */
           delivery?: 'email' | 'link';
           accept_by?: 'link' | 'verified_email';
-          /** A page in your app on one of the instance's allowed origins; `accept_url` is this URL with `?invitation_token=` appended. */
+          /** A page in your app on one of the instance's allowed origins; `accept_url` is this URL with `?invitation_token=` appended. Required for an email invitation when the instance has `organizations.invitationEmail: "atlas"`. */
           redirect_url?: string;
         } & OrganizationSeatGrants,
         idempotencyKey?: string,
@@ -663,11 +665,15 @@ export function organizationsResource(request: RequestFn) {
           path: `/v1/organizations/${enc(orgId)}/invitations/${enc(invitationId)}/revoke`,
         });
       },
-      /** Same id, a fresh expiry; a link invitation gets a NEW `accept_token` (the old link stops working). */
-      resend(orgId: string, invitationId: string): Promise<OrganizationInvitation> {
+      /**
+       * Same id, a fresh expiry; a link invitation gets a NEW `accept_token` (the old link stops working).
+       * With `organizations.invitationEmail: "atlas"`, pass `redirect_url`: Atlas mails an email invitation again.
+       */
+      resend(orgId: string, invitationId: string, body?: { redirect_url?: string }): Promise<OrganizationInvitation> {
         return request({
           method: 'POST',
           path: `/v1/organizations/${enc(orgId)}/invitations/${enc(invitationId)}/resend`,
+          ...(body ? { body } : {}),
         });
       },
       /**

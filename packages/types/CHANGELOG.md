@@ -1,5 +1,18 @@
 # @atlasauth/types changelog
 
+## 0.17.1 — 2026-11-14
+
+- The published package now carries the release notes for every version.
+
+## 0.17.0 — 2026-11-14
+
+- Webhook events `oauth_tokens.revoked`, `resource_role_assignment.created`, `resource_role_assignment.deleted` and `user.deletion_paused`.
+- Organization memberships carry `public_metadata`, `private_metadata`, `permissions` and `allowed_sign_in_methods`.
+
+## 0.16.0 — 2026-11-14
+
+- Webhook event `user.sessions_revoked`.
+
 ## 0.15.0 — 2026-11-12
 
 - New webhook events (connection.provider_event, connection.owner_changed, impersonation.started/ended, risk.elevated), session device fields, has_passkey.

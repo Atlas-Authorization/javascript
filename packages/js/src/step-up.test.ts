@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FapiClient } from './fapi';
-import { authenticatedWithin, sendStepUpEmailCode, stepUp } from './step-up';
+import { authenticatedWithin, sendStepUpEmailCode, sendStepUpPhoneCode, stepUp } from './step-up';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -37,6 +37,12 @@ describe('step-up', () => {
     const { client, calls } = clientWith(() => json(201, { object: 'step_up_email_code' }));
     await sendStepUpEmailCode(client);
     expect(calls[0]!.url).toBe('https://fapi.example/v1/client/me/step_up/email_code');
+  });
+
+  it('texts the phone code through the step-up endpoint', async () => {
+    const { client, calls } = clientWith(() => json(201, { object: 'step_up_challenge' }));
+    await sendStepUpPhoneCode(client);
+    expect(calls[0]!.url).toBe('https://fapi.example/v1/client/me/step_up/phone_code');
   });
 
   it('authenticatedWithin compares auth_time with the window', () => {

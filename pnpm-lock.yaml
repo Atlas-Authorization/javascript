@@ -32,9 +32,6 @@ importers:
 
   packages/agent-toolkit:
     dependencies:
-      '@atlasauth/backend':
-        specifier: workspace:*
-        version: link:../backend
       ai:
         specifier: '>=4.0.0'
         version: 7.0.173(zod@4.6.7)
@@ -42,6 +39,9 @@ importers:
         specifier: ^4.6.6
         version: 4.6.7
     devDependencies:
+      '@atlasauth/backend':
+        specifier: workspace:*
+        version: link:../backend
       '@langchain/core':
         specifier: ^0.3.0
         version: 0.3.80
@@ -97,13 +97,13 @@ importers:
 
   packages/astro:
     dependencies:
-      '@atlasauth/backend':
-        specifier: workspace:*
-        version: link:../backend
       astro:
         specifier: '>=4'
         version: 7.4.12(@capacitor/preferences@6.0.4(@capacitor/core@6.2.3))(@types/node@24.19.2)(db0@0.3.4)(esbuild@0.28.2)(ioredis@5.11.1)(jiti@2.7.0)(less@4.9.1)(sass@1.108.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
     devDependencies:
+      '@atlasauth/backend':
+        specifier: workspace:*
+        version: link:../backend
       jose:
         specifier: ^5.9.6
         version: 5.10.0
@@ -526,11 +526,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@24.19.2)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/express:
-    dependencies:
+    devDependencies:
       '@atlasauth/backend':
         specifier: workspace:*
         version: link:../backend
-    devDependencies:
       '@types/express':
         specifier: ^5.0.0
         version: 5.0.6
@@ -548,11 +547,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@24.19.2)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/fastify:
-    dependencies:
+    devDependencies:
       '@atlasauth/backend':
         specifier: workspace:*
         version: link:../backend
-    devDependencies:
       fastify:
         specifier: ^5.1.0
         version: 5.12.8
@@ -613,11 +611,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@20.19.43)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@20.19.43)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/graphql:
-    dependencies:
+    devDependencies:
       '@atlasauth/backend':
         specifier: workspace:*
         version: link:../backend
-    devDependencies:
       '@types/node':
         specifier: ^22.9.0
         version: 22.20.5
@@ -632,11 +629,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@22.20.5)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/hapi:
-    dependencies:
+    devDependencies:
       '@atlasauth/backend':
         specifier: workspace:*
         version: link:../backend
-    devDependencies:
       '@types/node':
         specifier: ^22.9.0
         version: 22.20.5
@@ -651,11 +647,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@22.20.5)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/hono:
-    dependencies:
+    devDependencies:
       '@atlasauth/backend':
         specifier: workspace:*
         version: link:../backend
-    devDependencies:
       hono:
         specifier: ^4.12.34
         version: 4.13.18
@@ -698,11 +693,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@24.19.2)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/koa:
-    dependencies:
+    devDependencies:
       '@atlasauth/backend':
         specifier: workspace:*
         version: link:../backend
-    devDependencies:
       '@types/node':
         specifier: ^22.9.0
         version: 22.20.5
@@ -717,11 +711,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@22.20.5)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/lambda-authorizer:
-    dependencies:
+    devDependencies:
       '@atlasauth/backend':
         specifier: workspace:*
         version: link:../backend
-    devDependencies:
       jose:
         specifier: ^5.9.6
         version: 5.10.0
@@ -825,9 +818,6 @@ importers:
       '@atlasauth/agent-toolkit':
         specifier: workspace:*
         version: link:../agent-toolkit
-      '@atlasauth/backend':
-        specifier: workspace:*
-        version: link:../backend
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.0
         version: 1.32.2(@cfworker/json-schema@4.1.6)(zod@4.6.7)
@@ -835,6 +825,9 @@ importers:
         specifier: ^4.6.6
         version: 4.6.7
     devDependencies:
+      '@atlasauth/backend':
+        specifier: workspace:*
+        version: link:../backend
       '@types/node':
         specifier: ^22.9.0
         version: 22.20.5
@@ -870,11 +863,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@24.19.2)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/nestjs:
-    dependencies:
+    devDependencies:
       '@atlasauth/backend':
         specifier: workspace:*
         version: link:../backend
-    devDependencies:
       '@nestjs/common':
         specifier: ^10.4.4
         version: 10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -895,11 +887,10 @@ importers:
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(happy-dom@21.0.4)(jsdom@25.0.1)(less@4.9.1)(lightningcss@1.33.0)(msw@2.15.0(@types/node@24.19.2)(typescript@5.9.3))(sass@1.108.2)(terser@5.51.2)
 
   packages/nextjs:
-    dependencies:
+    devDependencies:
       '@atlasauth/backend':
         specifier: workspace:*
         version: link:../backend
-    devDependencies:
       esbuild:
         specifier: ^0.25.12
         version: 0.25.12
@@ -921,9 +912,6 @@ importers:
       '@atlasauth/authz':
         specifier: workspace:*
         version: link:../authz
-      '@atlasauth/backend':
-        specifier: workspace:*
-        version: link:../backend
       '@atlasauth/vue':
         specifier: workspace:*
         version: link:../vue
@@ -931,6 +919,9 @@ importers:
         specifier: ^3.13.0
         version: 3.21.11(magicast@0.5.5)
     devDependencies:
+      '@atlasauth/backend':
+        specifier: workspace:*
+        version: link:../backend
       '@atlasauth/js':
         specifier: workspace:*
         version: link:../js
@@ -961,9 +952,6 @@ importers:
 
   packages/passport-atlas:
     dependencies:
-      '@atlasauth/backend':
-        specifier: workspace:*
-        version: link:../backend
       jose:
         specifier: ^5.9.6
         version: 5.10.0
@@ -974,6 +962,9 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
     devDependencies:
+      '@atlasauth/backend':
+        specifier: workspace:*
+        version: link:../backend
       '@types/passport-strategy':
         specifier: ^0.2.38
         version: 0.2.38
@@ -1132,13 +1123,13 @@ importers:
 
   packages/react-router:
     dependencies:
-      '@atlasauth/backend':
-        specifier: workspace:*
-        version: link:../backend
       '@atlasauth/react':
         specifier: workspace:^
         version: link:../react
     devDependencies:
+      '@atlasauth/backend':
+        specifier: workspace:*
+        version: link:../backend
       jose:
         specifier: ^5.9.6
         version: 5.10.0
@@ -1216,9 +1207,6 @@ importers:
       '@atlasauth/authz':
         specifier: workspace:*
         version: link:../authz
-      '@atlasauth/backend':
-        specifier: workspace:*
-        version: link:../backend
       '@atlasauth/design':
         specifier: workspace:*
         version: link:../design
@@ -1226,6 +1214,9 @@ importers:
         specifier: '>=1'
         version: 3.2.0(@sveltejs/vite-plugin-svelte@3.1.2(svelte@4.2.20)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.2)(terser@5.51.2)))(svelte@4.2.20)(typescript@5.9.3)(vite@5.4.21(@types/node@24.19.2)(less@4.9.1)(lightningcss@1.33.0)(sass@1.108.2)(terser@5.51.2))
     devDependencies:
+      '@atlasauth/backend':
+        specifier: workspace:*
+        version: link:../backend
       '@atlasauth/js':
         specifier: workspace:*
         version: link:../js
@@ -1262,13 +1253,13 @@ importers:
 
   packages/tanstack-react-start:
     dependencies:
-      '@atlasauth/backend':
-        specifier: workspace:*
-        version: link:../backend
       '@atlasauth/react':
         specifier: workspace:^
         version: link:../react
     devDependencies:
+      '@atlasauth/backend':
+        specifier: workspace:*
+        version: link:../backend
       jose:
         specifier: ^5.9.6
         version: 5.10.0
@@ -1281,9 +1272,6 @@ importers:
 
   packages/testing:
     dependencies:
-      '@atlasauth/backend':
-        specifier: workspace:*
-        version: link:../backend
       '@playwright/test':
         specifier: '>=1.40'
         version: 1.65.1
@@ -1291,6 +1279,9 @@ importers:
         specifier: '>=12'
         version: 16.3.0
     devDependencies:
+      '@atlasauth/backend':
+        specifier: workspace:*
+        version: link:../backend
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

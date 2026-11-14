@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/mcp",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Public Model Context Protocol (MCP) server for Atlas — exposes Atlas backend operations as MCP tools for Claude Desktop, Cursor, and other MCP clients.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,14 +21,14 @@
   },
   "dependencies": {
     "@atlasauth/agent-toolkit": "workspace:*",
-    "@atlasauth/backend": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.0",
     "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
     "typescript": "^5.6.3",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "@atlasauth/backend": "workspace:*"
   },
   "publishConfig": {
     "access": "public"
@@ -38,5 +38,8 @@
     "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
-  ]
+  ],
+  "peerDependencies": {
+    "@atlasauth/backend": ">=0.49.0 <1.0.0"
+  }
 }

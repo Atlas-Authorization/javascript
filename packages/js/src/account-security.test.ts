@@ -75,12 +75,14 @@ describe('security page helpers', () => {
   it('lists sessions with the current one marked, and revokes', async () => {
     const { client, calls } = clientWith((path) =>
       path === '/v1/client/sessions'
-        ? json(200, { object: 'list', data: [{ id: 'sess_1', status: 'active', current: true, last_active_at: 3, expire_at: 9, created_at: 1, device_label: 'Chrome on macOS', ip_address: '1.2.3.4' }, { id: 'sess_2', status: 'active', current: false, last_active_at: 2, expire_at: 8, created_at: 1 }] })
+        ? json(200, { object: 'list', data: [{ id: 'sess_1', status: 'active', current: true, last_active_at: 3, expire_at: 9, created_at: 1, device_label: 'Chrome on macOS', ip_address: '1.2.3.4', sign_in_method: 'oauth', provider: 'google', amr: ['ext'] }, { id: 'sess_2', status: 'active', current: false, last_active_at: 2, expire_at: 8, created_at: 1 }] })
         : path.endsWith('/revoke_all') ? json(200, { object: 'client', sessions_revoked: 3 }) : json(200, { object: 'session', id: 'sess_2', status: 'revoked' }),
     );
     const list = await listSessions(client);
     expect(list.ok && list.sessions.map((s) => [s.id, s.current])).toEqual([['sess_1', true], ['sess_2', false]]);
     expect(list.ok && list.sessions[0]).toMatchObject({ deviceLabel: 'Chrome on macOS', ipAddress: '1.2.3.4', location: null });
+    expect(list.ok && list.sessions[0]).toMatchObject({ signInMethod: 'oauth', provider: 'google', amr: ['ext'] });
+    expect(list.ok && list.sessions[1]).toMatchObject({ signInMethod: null, provider: null, amr: null });
     expect(await revokeAccountSession(client, 'sess_2')).toEqual({ ok: true });
     expect(await revokeAllSessions(client)).toEqual({ ok: true, count: 3 });
     expect(calls.map((c) => `${c.method ?? 'GET'} ${c.path}`)).toEqual(['GET /v1/client/sessions', 'POST /v1/client/sessions/sess_2/revoke', 'POST /v1/client/sessions/revoke_all']);

@@ -28,6 +28,20 @@ describe('heldStepUpFactors', () => {
     const { client } = clientWith(held({ password: false, totp: true, codes: 0, passkeys: 1 }));
     expect(await heldStepUpFactors(client)).toEqual(['passkey', 'totp', 'email_code']);
   });
+  it('offers phone_code with a verified phone number or a verified SMS factor', async () => {
+    const withPhone = clientWith({
+      '/v1/client/me': [json(200, { has_password: false, phone_numbers: [{ verified: true }] })],
+      '/v1/client/me/mfa': [json(200, { data: [] })],
+      '/v1/client/me/passkeys': [json(200, { data: [] })],
+    });
+    expect(await heldStepUpFactors(withPhone.client)).toEqual(['email_code', 'phone_code']);
+    const withSms = clientWith({
+      '/v1/client/me': [json(200, { has_password: false, phone_numbers: [{ verified: false }] })],
+      '/v1/client/me/mfa': [json(200, { data: [{ type: 'sms', verified: true }] })],
+      '/v1/client/me/passkeys': [json(200, { data: [] })],
+    });
+    expect(await heldStepUpFactors(withSms.client)).toEqual(['email_code', 'phone_code']);
+  });
   it('is null when the account cannot be read', async () => {
     const { client } = clientWith({});
     expect(await heldStepUpFactors(client)).toBeNull();

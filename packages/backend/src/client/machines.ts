@@ -183,6 +183,11 @@ export interface MachineGrant {
   machine_id: string;
   resource_server_id: string;
   scopes: string[];
+  /** Limits carried in the `constraints` claim of the machine's tokens for this resource server. */
+  constraints: Record<string, unknown> | null;
+  /** Epoch ms after which the grant mints no tokens, or null. */
+  expires_at: number | null;
+  expired: boolean;
   created_at: number;
   updated_at: number;
 }
@@ -193,6 +198,12 @@ export interface CreateMachineGrantBody {
   scopes?: string[];
   /** Names from the resource server's `scope_presets`, unioned with `scopes`. The expanded list is stored. */
   scope_presets?: string[];
+  /** A JSON object of at most 2 KB, carried as the `constraints` claim of the machine's tokens. */
+  constraints?: Record<string, unknown>;
+  /** The grant stops minting after this many seconds (60 to 31536000). */
+  expires_in_seconds?: number;
+  /** Or at this time (epoch ms or ISO 8601). Not both. */
+  expires_at?: number | string;
 }
 
 /** A machine as an organization member with a role. Holds no seat. */

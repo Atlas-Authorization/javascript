@@ -14,12 +14,12 @@ import type { FapiClient, FapiResponse } from './fapi';
 import { passkeySecondFactorAssertion, type PasskeyAssertionProvider } from './passkey-second-factor';
 import { requireStepUp, retryWithStepUp, type StepUpInput, type StepUpPrompt, type StepUpResult } from './step-up';
 
-export type StepUpFactor = 'password' | 'passkey' | 'totp' | 'backup_code' | 'email_code';
+export type StepUpFactor = 'password' | 'passkey' | 'totp' | 'backup_code' | 'email_code' | 'phone_code';
 
 /** What the person picked. A passkey needs no input here: the platform prompt runs next. */
 export type StepUpChoice =
   | { strategy: 'password'; password: string }
-  | { strategy: 'totp' | 'backup_code' | 'email_code'; code: string }
+  | { strategy: 'totp' | 'backup_code' | 'email_code' | 'phone_code'; code: string }
   | { strategy: 'passkey' };
 
 /** What `choose` is asked for. */
@@ -33,6 +33,8 @@ export interface StepUpRequest {
   error: FieldError | null;
   /** Email the step-up code (for the `email_code` factor). */
   sendEmailCode(): Promise<FapiResponse<unknown>>;
+  /** Text the step-up code (for the `phone_code` factor). */
+  sendPhoneCode(): Promise<FapiResponse<unknown>>;
 }
 
 export interface StepUpFlowOptions {
@@ -48,11 +50,11 @@ export interface StepUpFlowOptions {
 /**
  * The step-up factors the signed-in account holds, or null when that cannot be
  * read (the caller then offers everything the refusal accepts).
- * `email_code` is always held: it goes to the primary address.
+ * `email_code` is always held: it goes to the primary address. `phone_code` is held with a verified phone.
  */
 export async function heldStepUpFactors(client: FapiClient): Promise<StepUpFactor[] | null> {
   const [me, mfa, passkeys] = await Promise.all([
-    client.get<{ has_password?: unknown }>('/v1/client/me'),
+    client.get<{ has_password?: unknown; phone_numbers?: Array<{ verified?: boolean }> }>('/v1/client/me'),
     client.get<{ data?: Array<{ type?: string; verified?: boolean }>; backup_codes_remaining?: number }>('/v1/client/me/mfa'),
     client.get<{ data?: unknown[] }>('/v1/client/me/passkeys'),
   ]);
@@ -63,10 +65,12 @@ export async function heldStepUpFactors(client: FapiClient): Promise<StepUpFacto
   if (mfa.data?.data?.some((f) => f.type === 'totp' && f.verified !== false)) held.push('totp');
   if ((mfa.data?.backup_codes_remaining ?? 0) > 0) held.push('backup_code');
   held.push('email_code');
+  // A texted code needs a verified SMS factor or a verified phone number.
+  if (mfa.data?.data?.some((f) => f.type === 'sms' && f.verified !== false) || me.data?.phone_numbers?.some((n) => n.verified === true)) held.push('phone_code');
   return held;
 }
 
-const KNOWN: StepUpFactor[] = ['password', 'passkey', 'totp', 'backup_code', 'email_code'];
+const KNOWN: StepUpFactor[] = ['password', 'passkey', 'totp', 'backup_code', 'email_code', 'phone_code'];
 
 export function createStepUp(opts: StepUpFlowOptions) {
   const { client } = opts;
@@ -95,7 +99,7 @@ export function createStepUp(opts: StepUpFlowOptions) {
       const factors = narrowed.length ? narrowed : accepted;
       let error = p.error;
       for (;;) {
-        const choice = await opts.choose({ action: p.action, factors, maxAgeSeconds: p.maxAgeSeconds, error, sendEmailCode: p.sendEmailCode });
+        const choice = await opts.choose({ action: p.action, factors, maxAgeSeconds: p.maxAgeSeconds, error, sendEmailCode: p.sendEmailCode, sendPhoneCode: p.sendPhoneCode });
         if (!choice) return null;
         if (choice.strategy !== 'passkey') return choice;
         const input = await passkeyInput();

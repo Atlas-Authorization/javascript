@@ -1,5 +1,17 @@
 # @atlasauth/expo-passkeys changelog
 
+## 0.6.1 — 2026-11-14
+
+- The published package now carries the release notes for every version.
+
+## 0.6.0 — 2026-11-14
+
+- `nativePasskeySignIn(Passkey)`: passkey sign-in as a `nativeSignIn` provider for `createSignInFlow` / `createSignInScreen`; a passkey that owes a second factor continues in the same flow, and a dismissed prompt is the error `passkey_cancelled`.
+
+## 0.5.0 — 2026-11-14
+
+- `authenticateWithPasskey({ remember: false })` signs in without a persistent session.
+
 ## 0.4.0 — 2026-11-13
 
 - `authenticatePasskeySecondFactor` finishes a sign-in at `needs_second_factor` with a passkey on the phone; `nativePasskeyAssertion(Passkey)` plugs the native prompt into `createSignInFlow`.

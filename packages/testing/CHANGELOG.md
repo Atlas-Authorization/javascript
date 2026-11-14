@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+## 0.5.1 — 2026-11-14
+
+- Takes `@atlasauth/backend` as a peer dependency (`>=0.49.0 <1.0.0`) instead of pinning one exact version, so an app has a single copy of it.
+
 ### Added
 
 - `@atlasauth/testing/e2e`: Playwright fixtures. `base.extend<AtlasFixtures>(atlasFixtures({ secretKey }))` adds `newUser` (throwaway users on a development instance, deleted when the test ends), `atlasPage` (testing token installed, so the captcha is waived) and `passkeyDevice` (WebAuthn virtual authenticator). Also `createTestUser` (optionally with a known TOTP secret), `deleteTestUser`, `totpCode`, `signInViaPage` and `addVirtualAuthenticator`. A production key is refused.

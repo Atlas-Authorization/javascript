@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/svelte",
-  "version": "0.21.0",
+  "version": "0.21.1",
   "type": "module",
   "svelte": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,13 +28,13 @@
   },
   "dependencies": {
     "@atlasauth/design": "workspace:*",
-    "@atlasauth/authz": "workspace:*",
-    "@atlasauth/backend": "workspace:*"
+    "@atlasauth/authz": "workspace:*"
   },
   "peerDependencies": {
     "@atlasauth/js": ">=0.39.0 <1.0.0",
     "svelte": ">=4",
-    "@sveltejs/kit": ">=1"
+    "@sveltejs/kit": ">=1",
+    "@atlasauth/backend": ">=0.49.0 <1.0.0"
   },
   "peerDependenciesMeta": {
     "@sveltejs/kit": {
@@ -52,7 +52,8 @@
     "svelte-check": "^4.0.5",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "@atlasauth/backend": "workspace:*"
   },
   "publishConfig": {
     "access": "public"

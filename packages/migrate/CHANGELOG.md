@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.3.1 — 2026-11-14
+
+- The published package now carries the release notes for every version.
+
+## 0.3.0 — 2026-11-14
+
+- Bundle invitation records take `token_sha256` and `expires_at`, so link invitations import with their existing token; memberships take metadata, permissions and allowed sign-in methods.
+
 ## 0.2.0 — 2026-10-26
 
 ### Changed

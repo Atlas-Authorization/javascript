@@ -58,6 +58,8 @@ export interface OrganizationInvitation {
   accept_token?: string;
   /** Link delivery, on create only, shown once: `redirectUrl` with `?invitation_token=` appended. */
   accept_url?: string | null;
+  /** With the instance setting `organizations.invitationEmail: "atlas"` on an email invitation: whether Atlas mailed it (false: no email provider could deliver; a resend tries again). */
+  email_sent?: boolean;
 }
 
 /** What an accept page shows before the invitee signs in. */
@@ -383,7 +385,7 @@ export async function inviteMember(
     delivery?: 'email' | 'link';
     /** Link delivery: who may accept by link. Default: the instance setting. */
     acceptBy?: 'link' | 'verified_email';
-    /** Link delivery: a page in your app (an allowed origin) that reads `invitation_token`. */
+    /** A page in your app (an allowed origin) that reads `invitation_token`. Required for an email invitation when the instance has `organizations.invitationEmail: "atlas"`. */
     redirectUrl?: string;
     /** Extra permissions on top of the role; only ones you hold yourself. */
     permissions?: string[];
@@ -417,8 +419,14 @@ export async function resendInvitation(
   client: FapiClient,
   organizationId: string,
   invitationId: string,
+  /** `redirectUrl` is required when the instance has `organizations.invitationEmail: "atlas"` (the page the mailed link opens). */
+  options: { redirectUrl?: string } = {},
 ): Promise<OrganizationInvitation> {
-  return call(client, `${ORGS}/${enc(organizationId)}/invitations/${enc(invitationId)}/resend`, json('POST'));
+  return call(
+    client,
+    `${ORGS}/${enc(organizationId)}/invitations/${enc(invitationId)}/resend`,
+    json('POST', options.redirectUrl ? { redirect_url: options.redirectUrl } : undefined),
+  );
 }
 
 /** The public view of an invitation, for an accept page (no sign-in needed). */
@@ -695,8 +703,8 @@ export class OrganizationProfileController {
     return this.run(`revoke:${invitationId}`, () => revokeInvitation(this.client, this.organizationId, invitationId));
   }
 
-  resendInvitation(invitationId: string) {
-    return this.run(`resend:${invitationId}`, () => resendInvitation(this.client, this.organizationId, invitationId));
+  resendInvitation(invitationId: string, options?: { redirectUrl?: string }) {
+    return this.run(`resend:${invitationId}`, () => resendInvitation(this.client, this.organizationId, invitationId, options));
   }
 
   /** The organization's own custom roles (a subset of `roles`). */

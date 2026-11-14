@@ -1,5 +1,9 @@
 # @atlasauth/nuxt changelog
 
+## 0.3.1 — 2026-11-14
+
+- Takes `@atlasauth/backend` as a peer dependency (`>=0.49.0 <1.0.0`) instead of pinning one exact version, so an app has a single copy of it.
+
 ## 0.3.0 — 2026-11-13
 
 - `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.

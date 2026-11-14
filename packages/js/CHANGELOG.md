@@ -2,6 +2,26 @@
 
 
 
+## 0.44.0 — 2026-11-14
+
+- `listSessions` returns each session's `signInMethod`, `provider` and `amr`.
+- Step-up with a texted code: `phone_code` in `StepUpFactor`, `sendStepUpPhoneCode`, and `heldStepUpFactors` / `createStepUp` offer it when the account has a verified phone.
+- Approvals-only push devices: `registerApprovalDevice`, `respondToPushDevice`, `listPushDevices`, `removePushDevice`.
+- `resendInvitation` takes `redirectUrl`, and invitations carry `email_sent` when Atlas mails them.
+
+## 0.43.0 — 2026-11-14
+
+- `createSignInScreen` and `createSecuritySection`: framework-free view-models for your own sign-in and account-security screens (every sign-in step, second-factor setup, policies, required actions; sessions, factors, passkeys, phones, recovery codes, connected accounts, password), with step-up and readable error messages handled.
+- `createMachineEnrolmentCode` mints a short single-use enrolment code for a device from the signed-in session.
+- Organization invitations: accept a link invitation with `acceptOrganizationInvitationByToken`, and pass `delivery`, `acceptBy`, metadata, permissions and allowed sign-in methods when inviting.
+
+## 0.42.0 — 2026-11-14
+
+- Typed helpers for a signed-in security page: `listSessions`, `revokeAccountSession`, `revokeAllSessions`, `listMfaFactors`, `startTotp`/`verifyTotp` (with `qrSvg`), `startSms`/`verifySms`, `removeMfaFactor`, `regenerateBackupCodes`, `listPasskeys`/`removePasskey`, `unlinkExternalAccount`, `getNotificationPreferences`/`updateNotificationPreferences`. Each failure reports `stepUpRequired`.
+- `createStepUp` re-verifies a session-token (bearer) session with the factors the account holds and retries the refused call.
+- `createSignInFlow` lists only the second factors the account holds, and its snapshots carry `attemptId` and, after a code is sent, `sentTo`.
+- `signInWithPasskey({ remember: false })` leaves a browser-session cookie instead of a persistent one.
+
 ## 0.41.0 — 2026-11-13
 
 - `completePasskeySecondFactor(client, attemptId, opts)` finishes the passkey second factor of an attempt your own code started.

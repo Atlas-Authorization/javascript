@@ -38,6 +38,7 @@ export * from './policies';
 export * from './social';
 export * from './bridge';
 export * from './app-approval';
+export * from './push-devices';
 export * from './account-security';
 
 // Captcha with no browser: the proof-of-work solver for Hermes/JSC. Importing this

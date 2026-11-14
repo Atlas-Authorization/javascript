@@ -1,5 +1,14 @@
 # @atlasauth/actions changelog
 
+## 0.6.1 — 2026-11-14
+
+- The published package now carries the release notes for every version.
+
+## 0.6.0 — 2026-11-14
+
+- `pre_user_deletion` trigger: allow, `api.access.deny(reason)` or `api.access.pause(reason)`.
+- `pre_invitation_create`, `pre_member_add` and `pre_organization_create` events carry the organization's public metadata and entitlements, and the invitation or seat about to be created (metadata, permissions, allowed sign-in methods, accept rules).
+
 ## 0.5.0 — 2026-10-28
 
 - `custom_token_exchange` and `workflow_step` triggers

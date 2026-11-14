@@ -1,5 +1,9 @@
 # @atlasauth/react-router changelog
 
+## 0.1.5 — 2026-11-14
+
+- Takes `@atlasauth/backend` as a peer dependency (`>=0.49.0 <1.0.0`) instead of pinning one exact version, so an app has a single copy of it.
+
 ## 0.1.4 — 2026-11-12
 
 - Picks up `@atlasauth/design` 0.4.0 (zod 4, fixes a zod 3 memory-exhaustion advisory). No API change.

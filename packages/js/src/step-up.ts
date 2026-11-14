@@ -11,6 +11,7 @@
  *   totp          POST /v1/client/me/step_up { strategy: 'totp', code }
  *   backup_code   POST /v1/client/me/step_up { strategy: 'backup_code', code }
  *   email_code    POST /v1/client/me/step_up/email_code, then { strategy: 'email_code', code }
+ *   phone_code    POST /v1/client/me/step_up/phone_code, then { strategy: 'phone_code', code }
  *   passkey       POST /v1/client/me/step_up/passkey (challenge), then the assertion
  */
 import type { FieldError } from './attempt';
@@ -18,7 +19,7 @@ import type { FapiClient, FapiResponse } from './fapi';
 
 export type StepUpInput =
   | { strategy: 'password'; password: string }
-  | { strategy: 'totp' | 'backup_code' | 'email_code'; code: string }
+  | { strategy: 'totp' | 'backup_code' | 'email_code' | 'phone_code'; code: string }
   | {
       strategy: 'passkey';
       challenge: string;
@@ -50,6 +51,11 @@ export function sendStepUpEmailCode(client: FapiClient): Promise<FapiResponse<un
   return client.post('/v1/client/me/step_up/email_code', {});
 }
 
+/** Text a one-time step-up code to the user's verified SMS factor or primary verified phone (then `stepUp({ strategy: 'phone_code', code })`). */
+export function sendStepUpPhoneCode(client: FapiClient): Promise<FapiResponse<unknown>> {
+  return client.post('/v1/client/me/step_up/phone_code', {});
+}
+
 /**
  * Whether the token's `auth_time` (first-factor sign-in or the last step-up)
  * is within `maxAgeSeconds` of now. A token without `auth_time` never is.
@@ -70,7 +76,7 @@ export interface StepUpRequirement {
   maxAgeSeconds: number | null;
 }
 
-const DEFAULT_FACTORS = ['password', 'passkey', 'totp', 'backup_code', 'email_code'] as const;
+const DEFAULT_FACTORS = ['password', 'passkey', 'totp', 'backup_code', 'email_code', 'phone_code'] as const;
 
 /** The step-up a refusal asks for, or null when `errors` holds no STEP_UP_REQUIRED. */
 export function stepUpRequirement(errors: readonly FieldError[]): StepUpRequirement | null {
@@ -91,6 +97,8 @@ export interface StepUpPrompt extends StepUpRequirement {
   error: FieldError | null;
   /** Email the step-up code (for the `email_code` factor). */
   sendEmailCode(): Promise<FapiResponse<unknown>>;
+  /** Text the step-up code (for the `phone_code` factor). */
+  sendPhoneCode(): Promise<FapiResponse<unknown>>;
 }
 
 /** Thrown by {@link requireStepUp} when the prompt gives up (returns null). */
@@ -122,7 +130,7 @@ export async function requireStepUp(action: string, opts: RequireStepUpOptions):
   const base: StepUpRequirement = opts.requirement ?? { action, acceptedFactors: [...DEFAULT_FACTORS], maxAgeSeconds: null };
   let error: FieldError | null = null;
   for (let attempt = 0; attempt < (opts.maxAttempts ?? 3); attempt++) {
-    const input = await opts.prompt({ ...base, action: base.action ?? action, error, sendEmailCode: () => sendStepUpEmailCode(opts.client) });
+    const input = await opts.prompt({ ...base, action: base.action ?? action, error, sendEmailCode: () => sendStepUpEmailCode(opts.client), sendPhoneCode: () => sendStepUpPhoneCode(opts.client) });
     if (!input) throw new StepUpCancelledError();
     const res = await stepUp(opts.client, input);
     if (res.ok && res.data) return res.data;

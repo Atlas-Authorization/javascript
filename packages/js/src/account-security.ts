@@ -133,6 +133,12 @@ export interface AccountSession {
   os: string | null;
   deviceType: string | null;
   location: string | null;
+  /** First-factor strategy the session signed in with (e.g. `password`, `passkey`, `oauth`). Null for sessions from before it was recorded. */
+  signInMethod: string | null;
+  /** The social or enterprise provider when `signInMethod` is one (e.g. `google`). */
+  provider: string | null;
+  /** Authentication methods references (RFC 8176), e.g. `['pwd', 'otp']`. */
+  amr: string[] | null;
 }
 
 interface SessionView {
@@ -148,6 +154,9 @@ interface SessionView {
   os?: string | null;
   device_type?: string | null;
   location?: string | null;
+  sign_in_method?: string | null;
+  provider?: string | null;
+  amr?: string[] | null;
 }
 
 export type AccountSessionsResult = { ok: true; sessions: AccountSession[] } | SecurityFailure;
@@ -171,6 +180,9 @@ export async function listSessions(client: FapiClient): Promise<AccountSessionsR
       os: s.os ?? null,
       deviceType: s.device_type ?? null,
       location: s.location ?? null,
+      signInMethod: s.sign_in_method ?? null,
+      provider: s.provider ?? null,
+      amr: s.amr ?? null,
     })),
   };
 }

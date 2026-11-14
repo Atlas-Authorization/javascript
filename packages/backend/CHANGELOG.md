@@ -1,5 +1,19 @@
 # @atlasauth/backend changelog
 
+## 0.49.0 — 2026-11-14
+
+- `createAccessTokenVerifier({ revocation: true })` polls the revoked-token feed and rejects tokens whose family or `jti` was revoked, with no per-request call.
+- `createCliLogin`: `mode` (`auto`, `loopback` with PKCE on 127.0.0.1, `device`), `resource` on every request, `extraAuthorizeParams`.
+- `createMachineClient` (`@atlasauth/backend/machine`): device-side Ed25519 enrolment, challenge and cached machine tokens.
+- `createResourceRoleMirror` answers `can()` locally from the resource-role change feed, with inheritance.
+- Web Bot Auth: a local RFC 9421 request verifier with a key-directory cache, and `agents.verifyRequest`.
+- API key verify results carry `organization` and `effective_scopes` for organization-bound keys, and `created_by_user_id`.
+
+## 0.48.0 — 2026-11-14
+
+- `createKeyMirror` reports `lastSyncAt`, takes `maxStalenessMs`, and answers `stale` instead of `unknown` when the mirror is out of date.
+- End-user API key import returns its outcome (`created` or `already_present`) and accepts an idempotency key.
+
 ## 0.47.0 — 2026-11-13
 
 - Types for end-user API key `allowed_ips` (`verify({ clientIp })`), dev email sink and identity-verified MFA recovery settings.
@@ -73,6 +87,11 @@
 - Machine grants, machine organization memberships, scope presets on resource servers, and `acceptMachineTokens` on `createAccessTokenVerifier`.
 
 ## Unreleased
+
+## 0.50.0 — 2026-11-14
+
+- Machine grants: `machines.createGrant` takes `constraints` and `expires_in_seconds` / `expires_at`; grants return `constraints`, `expires_at` and `expired`, and machine token results carry `constraints`.
+- `organizations.invitations.resend` takes a body (`redirect_url`), and invitation objects carry `email_sent`.
 
 ## 0.37.0 — 2026-11-04
 

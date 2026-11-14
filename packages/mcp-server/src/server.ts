@@ -6,7 +6,7 @@ import { DOCS_TOOL_NAMES, createDocsSource, docsToolSpecs, type DocsSourceOption
 
 /** This package's own identity, surfaced to MCP clients during the handshake. */
 export const SERVER_NAME = '@atlasauth/mcp';
-export const SERVER_VERSION = '0.4.0';
+export const SERVER_VERSION = '0.4.1';
 
 /**
  * Options for {@link createAtlasMcpServer}. The tool-selection fields

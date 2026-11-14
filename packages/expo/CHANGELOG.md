@@ -1,5 +1,15 @@
 # @atlasauth/expo changelog
 
+## 0.9.0 — 2026-11-14
+
+- `useSignInScreen()` and `useSecuritySection(kind)` drive your own native sign-in and account-security screens, with step-up handled inside.
+
+## 0.8.0 — 2026-11-14
+
+- `useStepUp()` / `withStepUp(fn)` re-verify the bearer session with the factors the account holds (passkey through `@atlasauth/expo-passkeys`) and retry the wrapped call.
+- `useAccountSecurity` / `createAccountSecurityActions` carry the security-page helpers from `@atlasauth/js`.
+- New entry `@atlasauth/expo/account-security`: no React Native import, `sideEffects: false`, usable in plain Node.
+
 ## 0.7.0 — 2026-11-13
 
 - `useAccountSecurity` / `createAccountSecurityActions` add `revokeAllTrustedDevices`.
@@ -19,6 +29,12 @@
 - `useAppApproval`, `exchangeLegacyToken` (upgrade bridge), `signInWithApple` / `signInWithGoogle` / `signInWithIdToken`.
 
 ## Unreleased
+
+## 0.10.0 — 2026-11-14
+
+- `usePushDevices()` registers a phone for "Approve in your app" without enrolling push as a second factor.
+- `useStepUp` offers a texted code (`phone_code`) when the account has a verified phone.
+- Requires `@atlasauth/js` 0.44.0 or later.
 
 ### Added
 

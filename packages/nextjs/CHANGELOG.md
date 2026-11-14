@@ -24,6 +24,10 @@
 
 ## Unreleased
 
+## 0.15.1 — 2026-11-14
+
+- Takes `@atlasauth/backend` as a peer dependency (`>=0.49.0 <1.0.0`) instead of pinning one exact version, so an app has a single copy of it.
+
 ## 0.11.0 — 2026-11-04
 
 ### Changed (behaviour-changing)

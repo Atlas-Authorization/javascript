@@ -115,6 +115,8 @@ export interface MachineToken {
   expiresAt: number;
   audience?: string;
   scope?: string;
+  /** The grant's `constraints`, as the token carries them. Your API enforces them. */
+  constraints?: Record<string, unknown>;
   organizationId?: string;
 }
 
@@ -167,7 +169,7 @@ export function createMachineClient(options: MachineClientOptions) {
     const id = await identity();
     if (!id) throw new MachineClientError(0, 'not_enrolled', 'This machine is not enrolled. Call enroll() first.');
     const challenge = await post<{ nonce: string }>('/v1/machines/challenge', { machine_id: id.machine_id });
-    const res = await post<{ token: string; expires_in: number; audience?: string; scope?: string; organization_id?: string }>('/v1/machines/token', {
+    const res = await post<{ token: string; expires_in: number; audience?: string; scope?: string; constraints?: Record<string, unknown>; organization_id?: string }>('/v1/machines/token', {
       machine_id: id.machine_id,
       nonce: challenge.nonce,
       signature: signMachineChallenge(id.private_key_pem, challenge.nonce),
@@ -176,7 +178,7 @@ export function createMachineClient(options: MachineClientOptions) {
       ...(req.scopePresets ? { scope_presets: req.scopePresets } : {}),
       ...(req.organizationId ? { organization_id: req.organizationId } : {}),
     });
-    return { token: res.token, expiresAt: now() + res.expires_in * 1000, audience: res.audience, scope: res.scope, organizationId: res.organization_id };
+    return { token: res.token, expiresAt: now() + res.expires_in * 1000, audience: res.audience, scope: res.scope, constraints: res.constraints, organizationId: res.organization_id };
   }
 
   return {
