@@ -24,6 +24,16 @@ for (const dir of fs.readdirSync('packages')) {
   if (res.status === 404) { out.push(pkg.name); continue; }
   if (!res.ok) throw new Error(`registry answered ${res.status} for ${pkg.name}`);
   const { version: latest } = await res.json();
-  if (newer(pkg.version, latest)) out.push(pkg.name);
+  if (newer(pkg.version, latest)) {
+    // Integrators read CHANGELOG.md in the tarball: never publish a version it does not describe.
+    const log = path.join('packages', dir, 'CHANGELOG.md');
+    const heading = new RegExp(`^## ${pkg.version.replace(/\./g, '\\.')}\\b`, 'm');
+    if (!fs.existsSync(log) || !heading.test(fs.readFileSync(log, 'utf8'))) {
+      console.error(`${pkg.name}@${pkg.version}: CHANGELOG.md has no "## ${pkg.version}" heading`);
+      process.exitCode = 1;
+      continue;
+    }
+    out.push(pkg.name);
+  }
 }
 console.log(out.join(' '));
