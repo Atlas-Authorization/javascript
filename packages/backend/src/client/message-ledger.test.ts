@@ -37,6 +37,19 @@ describe('messages (the ledger)', () => {
   });
 });
 
+describe('messages.send', () => {
+  it('posts the body with the idempotency key', async () => {
+    const calls: Array<{ method: string; body: unknown; key: string | null }> = [];
+    const fetchImpl = vi.fn(async (_u: string | URL, init?: RequestInit) => {
+      calls.push({ method: init?.method ?? 'GET', body: JSON.parse(String(init?.body)), key: new Headers(init?.headers).get('idempotency-key') });
+      return new Response(JSON.stringify({ object: 'message', id: 'msg_1' }), { status: 201 });
+    }) as unknown as typeof fetch;
+    const c = createAtlasClient({ secretKey: 'sk_test_x', apiUrl: API_URL, fetch: fetchImpl });
+    await c.messages.send({ to: 'jo@example.com', subject: 'Hi', text: 'Hello', tags: { a: 'b' } }, 'key-1');
+    expect(calls[0]).toEqual({ method: 'POST', body: { to: 'jo@example.com', subject: 'Hi', text: 'Hello', tags: { a: 'b' } }, key: 'key-1' });
+  });
+});
+
 describe('suppressions', () => {
   it('adds one or many addresses with the body as given', async () => {
     const { c, calls } = setup();

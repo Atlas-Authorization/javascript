@@ -2389,14 +2389,16 @@ export type WebhookDataUserReferral = {
   [key: string]: unknown;
 };
 
-/** All of a user's sessions ended together. */
+/** All of a user's sessions ended together, or all but one (`kept_session_id`). */
 export type WebhookDataUserSessionsRevoked = {
   object: "user_sessions_revoked";
   user_id: string;
   /** When all of the user's sessions ended together; the same value as `sessions_revoked_at` on the user (epoch ms). */
   sessions_revoked_at: number;
-  /** Why: revoked_by_api, revoked_by_admin, signed_out_everywhere, password_reset, password_changed, banned, contained, mfa_reset, account_recovered, merged, user_deleted, policy_directive, ssf, ... */
+  /** Why: revoked_by_api, revoked_by_admin, signed_out_everywhere, password_reset, password_changed, others_revoked (every session but one ended; `kept_session_id` names the one kept), banned, contained, mfa_reset, account_recovered, merged, user_deleted, policy_directive, ssf, ... */
   reason: string;
+  /** Present only when `reason` is `others_revoked` (or another revoke that spared one session): the session that stayed signed in. */
+  kept_session_id?: string;
   /** How many sessions this ended (0 when the user had none; a spared current session is not counted). */
   sessions_revoked: number;
   [key: string]: unknown;

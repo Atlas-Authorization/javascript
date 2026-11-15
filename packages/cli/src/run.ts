@@ -24,6 +24,8 @@ import { orgs } from './commands/orgs';
 import { referrals } from './commands/referrals';
 import { sessions } from './commands/sessions';
 import { grants } from './commands/grants';
+import { oauthClients } from './commands/oauth-clients';
+import { messages } from './commands/messages';
 import { status } from './commands/status';
 import { suite } from './commands/suite';
 import { types } from './commands/types';
@@ -69,6 +71,7 @@ const COMMANDS: Record<string, Handler> = {
   admin,
   sessions,
   grants,
+  messages,
   config,
   plan: planCommand,
   apply: applyCommand,

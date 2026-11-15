@@ -1,5 +1,15 @@
 # @atlasauth/backend changelog
 
+## 0.56.0
+
+- `safeFetch(url, init, opts)` and `SafeFetchError` (code `ssrf_refused`): https only by default, refuses private, loopback, link-local, unique-local, CGNAT and unspecified destinations, re-checks every redirect hop, pins the checked address on Node. `createWebBotAuthVerifier({ fetch })` applies the same guard before your fetch.
+- `apiKeys.rotate()` accepts `secret` and `prefix`.
+- `messages.send()` for `POST /v1/messages`; messages carry `category` and `tags`.
+- `oauthClients.listConsents()` and `oauthClients.revokeConsents()`; client usage has `errors_by_code` and `latest_error`.
+- Approvals: `note` on decisions, `exclude_requester` and `step_up_policy` on create.
+- **type-widening:** the approval decision method gains `step_up`, and approval receipt verification can report the proof level `attested`.
+- **type-widening:** `user.sessions_revoked` reason gains `others_revoked`; the event carries `kept_session_id` when a session is spared.
+
 ## 0.55.0
 
 - **type-widening:** `IdentityVerificationOutcome` gains `processing` (a check the verification service is still reviewing). Identity verification checks carry `last_error` (`{ code, reason }` of the last failed attempt) and `attempts`; a failed attempt the person can retry keeps the check `pending`.

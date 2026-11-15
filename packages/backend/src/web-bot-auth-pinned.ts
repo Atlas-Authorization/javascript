@@ -1,5 +1,6 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { request as httpsRequest } from 'node:https';
+import { request as httpRequest } from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import type { LookupFunction } from 'node:net';
 import { classifySpecialAddress, isIpLiteral } from './net-address';
@@ -18,6 +19,8 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_MAX_BYTES = 64 * 1024;
 
 export class PinnedFetchError extends Error {
+  /** Stable machine code for every refusal. */
+  readonly code = 'ssrf_refused';
   constructor(
     readonly reason: string,
   ) {
@@ -26,51 +29,75 @@ export class PinnedFetchError extends Error {
   }
 }
 
+const defaultResolve = async (h: string) => (await dnsLookup(h, { all: true, verbatim: true })).map((a) => a.address);
+
+/**
+ * Check a URL is safe to connect to and return the one vetted address to pin to. Throws
+ * PinnedFetchError (code `ssrf_refused`). Exported so a caller-supplied fetch can be guarded too.
+ */
+export async function vetPublicUrl(
+  input: string | URL,
+  opts: { allowHttp?: boolean; resolve?: (hostname: string) => Promise<string[]>; signal?: AbortSignal } = {},
+): Promise<{ url: URL; address: string; family: 4 | 6 }> {
+  let url: URL;
+  try {
+    url = new URL(input);
+  } catch {
+    throw new PinnedFetchError('malformed_url');
+  }
+  const plain = url.protocol === 'http:' && opts.allowHttp === true;
+  if (url.protocol !== 'https:' && !plain) throw new PinnedFetchError('not_https');
+  if (url.username || url.password) throw new PinnedFetchError('credentials_in_url');
+  if (url.port && url.port !== (plain ? '80' : '443')) throw new PinnedFetchError('disallowed_port');
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  const lower = host.toLowerCase();
+  if (lower === 'localhost' || lower.endsWith('.localhost')) throw new PinnedFetchError('loopback');
+  const resolve = opts.resolve ?? defaultResolve;
+  const signal = opts.signal;
+  let addresses: string[];
+  if (isIpLiteral(host)) addresses = [host];
+  else {
+    try {
+      addresses = await Promise.race([
+        resolve(host),
+        ...(signal ? [new Promise<never>((_, rej) => signal.addEventListener('abort', () => rej(new PinnedFetchError('timeout')), { once: true }))] : []),
+      ]);
+    } catch (e) {
+      throw e instanceof PinnedFetchError ? e : new PinnedFetchError('dns_failure');
+    }
+    if (addresses.length === 0) throw new PinnedFetchError('dns_failure');
+  }
+  // EVERY address must be public: one public and one private record would be a coin flip an attacker can win.
+  for (const address of addresses) {
+    const verdict = classifySpecialAddress(address);
+    if (verdict) throw new PinnedFetchError(verdict);
+    if (!isIpLiteral(address)) throw new PinnedFetchError('dns_failure');
+  }
+  const address = addresses[0]!;
+  return { url, address, family: address.includes(':') ? 6 : 4 };
+}
+
 export function createPinnedFetch(
   opts: {
     timeoutMs?: number;
     maxBytes?: number;
+    /** Allow plain http (port 80). Off by default. */
+    allowHttp?: boolean;
     /** Tests only: resolve a hostname to its addresses instead of asking the OS. */
     resolve?: (hostname: string) => Promise<string[]>;
   } = {},
 ): typeof fetch {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
-  const resolve = opts.resolve ?? (async (h: string) => (await dnsLookup(h, { all: true, verbatim: true })).map((a) => a.address));
 
   return (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    let url: URL;
-    try {
-      url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
-    } catch {
-      throw new PinnedFetchError('malformed_url');
-    }
-    if (url.protocol !== 'https:') throw new PinnedFetchError('not_https');
-    if (url.username || url.password) throw new PinnedFetchError('credentials_in_url');
-    if (url.port && url.port !== '443') throw new PinnedFetchError('disallowed_port');
-    const host = url.hostname.replace(/^\[|\]$/g, '');
-    const lower = host.toLowerCase();
-    if (lower === 'localhost' || lower.endsWith('.localhost')) throw new PinnedFetchError('loopback');
-
     const signal = AbortSignal.timeout(timeoutMs);
-    let addresses: string[];
-    if (isIpLiteral(host)) addresses = [host];
-    else {
-      try {
-        addresses = await Promise.race([resolve(host), new Promise<never>((_, rej) => signal.addEventListener('abort', () => rej(new PinnedFetchError('timeout')), { once: true }))]);
-      } catch (e) {
-        throw e instanceof PinnedFetchError ? e : new PinnedFetchError('dns_failure');
-      }
-      if (addresses.length === 0) throw new PinnedFetchError('dns_failure');
-    }
-    // EVERY address must be public: one public and one private record would be a coin flip an attacker can win.
-    for (const address of addresses) {
-      const verdict = classifySpecialAddress(address);
-      if (verdict) throw new PinnedFetchError(verdict);
-      if (!isIpLiteral(address)) throw new PinnedFetchError('dns_failure');
-    }
-    const address = addresses[0]!;
-    const family = address.includes(':') ? 6 : 4;
+    const { url, address, family } = await vetPublicUrl(typeof input === 'string' || input instanceof URL ? input : input.url, {
+      allowHttp: opts.allowHttp,
+      resolve: opts.resolve,
+      signal,
+    });
+    const host = url.hostname.replace(/^\[|\]$/g, '');
     // Whatever the socket layer asks for, it gets the vetted address: never a second DNS answer.
     const pinned: LookupFunction = (_h, options, callback) => {
       if ((options as { all?: boolean } | undefined)?.all) {
@@ -92,7 +119,7 @@ export function createPinnedFetch(
         req.destroy();
         reject(err);
       };
-      const req = httpsRequest(
+      const req = (url.protocol === 'http:' ? httpRequest : httpsRequest)(
         url,
         { method: (init?.method ?? 'GET').toUpperCase(), headers, lookup: pinned, servername: isIpLiteral(host) ? undefined : url.hostname, agent: false },
         (res: IncomingMessage) => {

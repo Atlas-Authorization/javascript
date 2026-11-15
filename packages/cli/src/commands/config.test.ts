@@ -742,3 +742,35 @@ describe('branding aliases', () => {
     expect(brandingAliases({ favicon: 'https://x.test/a.png', faviconUrl: 'https://x.test/b.png' })).toEqual({ faviconUrl: 'https://x.test/b.png' });
   });
 });
+
+describe('config plan: owned clients', () => {
+  const live = (over: Record<string, unknown>) => ({
+    id: 'oc_u', client_id: 'cid_u', name: 'Dev App', redirect_uris: ['https://dev.example.com/cb'], allowed_scopes: ['openid'],
+    grant_types: ['authorization_code'], token_endpoint_auth_method: 'none', first_party: false, ...over,
+  });
+  const plan = async (clients: unknown[], file: unknown[], extra: string[] = []) => {
+    writeFileSync(join(dir, 'oauth_clients.json'), JSON.stringify(file) + '\n');
+    const io = captureIO();
+    const api = new MockApi({ ...seedState(), oauth_clients: clients });
+    await run(['config', 'plan', '--dir', dir, '--json', ...extra], ctx(io, api));
+    return JSON.parse(io.stdout());
+  };
+
+  it('leaves user-owned clients out of the plan', async () => {
+    const out = await plan([live({ owner: 'user_dev_1' })], []);
+    expect(out.unmanaged_live.filter((u: { type: string }) => u.type === 'oauth_clients')).toEqual([]);
+    expect(out.skipped_owned).toBe(1);
+  });
+
+  it('--include-owned lists them again', async () => {
+    const out = await plan([live({ owner: 'user_dev_1' })], [], ['--include-owned']);
+    expect(out.unmanaged_live.map((u: { key: string }) => u.key)).toContain('Dev App');
+    expect(out.skipped_owned).toBe(0);
+  });
+
+  it('matches by id first, so a rename is an update', async () => {
+    const out = await plan([live({ owner: null })], [{ id: 'oc_u', name: 'Renamed', redirect_uris: ['https://dev.example.com/cb'] }]);
+    const rows = out.changes.filter((c: { type: string }) => c.type === 'oauth_clients');
+    expect(rows.map((c: { action: string }) => c.action)).toEqual(['update']);
+  });
+});

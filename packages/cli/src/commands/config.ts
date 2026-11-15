@@ -70,6 +70,8 @@ export interface LiveEntry {
   id: string;
   /** Owned by a connected platform (its id): listed apart, never diffed, pruned or exported. */
   managedBy?: string;
+  /** Created by a developer's own Atlas user (owner `user_…`) or by code at runtime (an external ref): left out of the diff unless declared or `--include-owned`. */
+  owned?: boolean;
 }
 
 /**
@@ -82,6 +84,8 @@ export interface CollectionSpec {
   type: string;
   /** Natural key of a desired config read from a file (must match LiveEntry.key). */
   keyOf(config: Config): string;
+  /** A file entry's `id` matches the live entry with that id before the key does (a rename is an update); the `id` is not part of the config. */
+  matchById?: boolean;
   fetchLive(http: ConfigHttp): Promise<LiveEntry[]>;
   create(http: ConfigHttp, config: Config): Promise<void>;
   /** Apply an update to an existing resource; omit when the resource is immutable. */
@@ -176,6 +180,11 @@ function compact(config: Config, keepNull = false): Record<string, Json> {
     }
   }
   return out;
+}
+
+/** `owner` is an Atlas user id for a developer's own app; `external_ref` marks one a customer's code created. */
+export function isOwnedClient(r: Record<string, unknown>): boolean {
+  return (typeof r.owner === 'string' && r.owner.startsWith('user_')) || (typeof r.external_ref === 'string' && r.external_ref !== '');
 }
 
 function enc(segment: string): string {
@@ -330,13 +339,15 @@ function registry(): ResourceSpec[] {
     {
       kind: 'collection',
       type: 'oauth_clients',
-      fileKeys: [...OAUTH_CLIENT_KEYS, ...OAUTH_CLIENT_WRITE_KEYS],
+      fileKeys: ['id', ...OAUTH_CLIENT_KEYS, ...OAUTH_CLIENT_WRITE_KEYS],
+      matchById: true,
       keyOf: (c) => String(obj(c).name ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/oauth_clients');
         return rows.map((r) => ({
           key: String(r.name ?? ''),
           id: String(r.id ?? ''),
+          owned: isOwnedClient(r),
           config: pick(r, OAUTH_CLIENT_KEYS),
         }));
       },
@@ -1895,6 +1906,8 @@ export interface ConfigPlan {
   changes: PlannedChange[];
   unchanged: number;
   skippedDeletes: Change[];
+  /** Live user-owned / external entries left out of the diff (see --include-owned). */
+  skippedOwned: Change[];
   /** Live resources owned by a connected platform: shown for information, never changed. */
   managed: Array<{ type: string; key: string; managedBy: string }>;
   /** Advice about the file (a secret unused in native mode, …). */
@@ -1935,7 +1948,7 @@ async function instancePlaceholderValues(http: ConfigHttp, text: string): Promis
  */
 export async function planConfigImport(
   rawHttp: ConfigHttp,
-  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; pruneTypes?: readonly string[]; forceHook?: boolean; rotateSecrets?: boolean; baseDir?: string },
+  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; pruneTypes?: readonly string[]; forceHook?: boolean; rotateSecrets?: boolean; baseDir?: string; includeOwned?: boolean },
 ): Promise<ConfigPlan> {
   const { dir, format } = opts;
   // Every change's apply runs through `gate`, so the pre-flight pass can turn the same calls into the server's dry run.
@@ -1973,6 +1986,7 @@ export async function planConfigImport(
   const changes: PlannedChange[] = [];
   let unchanged = 0;
   const skippedDeletes: Change[] = [];
+  const skippedOwned: Change[] = [];
   const managed: ConfigPlan['managed'] = [];
 
   for (const spec of registry()) {
@@ -2021,14 +2035,37 @@ export async function planConfigImport(
     // Collection: diff desired-by-key against live-by-key.
     const desiredList = asArray(parsed);
     const desiredByKey = new Map<string, Config>();
-    for (const cfg of desiredList) desiredByKey.set(spec.keyOf(cfg), cfg);
+    const wantedIds = new Set<string>();
+    for (const raw of desiredList) {
+      // The id only picks the live entry; it is not a field to diff or send.
+      const id = spec.matchById ? obj(raw).id : undefined;
+      if (typeof id === 'string' && id) wantedIds.add(id);
+    }
+    const desiredId = new Map<string, string>();
+    for (const raw of desiredList) {
+      // Only types that match by id drop it; elsewhere `id` is a real field (an integration's id is its key).
+      const { id, ...rest } = obj(raw);
+      const cfg = spec.matchById ? rest : raw;
+      if (spec.matchById && typeof id === 'string' && id) desiredId.set(spec.keyOf(cfg), id);
+      desiredByKey.set(spec.keyOf(cfg), cfg);
+    }
     const all = await spec.fetchLive(http);
     for (const e of all) if (e.managedBy) managed.push({ type: spec.type, key: e.key, managedBy: e.managedBy });
-    const live = all.filter((e) => !e.managedBy);
+    // Owned entries stay out unless declared (by id or name) or asked for.
+    const live = all.filter((e) => {
+      if (e.managedBy) return false;
+      if (!e.owned || opts.includeOwned || wantedIds.has(e.id) || desiredByKey.has(e.key)) return true;
+      skippedOwned.push({ type: spec.type, action: 'delete', key: e.key, before: e.config });
+      return false;
+    });
     const liveByKey = new Map(live.map((e) => [e.key, e]));
+    const liveById = new Map(live.map((e) => [e.id, e]));
+    const matched = new Set<LiveEntry>();
 
     for (const [key, cfg] of desiredByKey) {
-      const existing = liveByKey.get(key);
+      const wantId = desiredId.get(key);
+      const existing = (wantId ? liveById.get(wantId) : undefined) ?? liveByKey.get(key);
+      if (existing) matched.add(existing);
       warnings.push(...(spec.warnings?.(cfg, existing?.config) ?? []));
       if (!existing) {
         changes.push({ type: spec.type, action: 'create', key, after: reconcileSecrets(cfg, undefined, true).desired, raw: cfg, apply: () => spec.create(http, cfg) });
@@ -2069,7 +2106,7 @@ export async function planConfigImport(
     }
 
     for (const entry of live) {
-      if (desiredByKey.has(entry.key)) continue;
+      if (matched.has(entry)) continue;
       // An entry `requires:` left out is not in the file on purpose: its live counterpart is never a deletion.
       if (prep.skippedKeys.has(entry.key)) continue;
       const change: Change = { type: spec.type, action: 'delete', key: entry.key, before: entry.config };
@@ -2087,7 +2124,7 @@ export async function planConfigImport(
   }
   const typeOrder = new Map(registry().map((s, i) => [s.type, i] as const));
   const preflight = () => runPreflight(changes, gate, typeOrder, (c) => unresolvedPlaceholders([c]).length > 0);
-  return { changes, unchanged, skippedDeletes, managed, warnings, unverifiableSecrets, sections, preflight };
+  return { changes, unchanged, skippedDeletes, skippedOwned, managed, warnings, unverifiableSecrets, sections, preflight };
 }
 
 /** True for a non-empty object whose every leaf is `null` (a file that only clears fields). */
@@ -2163,7 +2200,7 @@ async function promoteConfig(ctx: RunContext, values: Values): Promise<number> {
   const dir = mkdtempSync(join(tmpdir(), 'atlas-promote-'));
   try {
     await writeExport(source.http, dir, format);
-    const plan = await planConfigImport(target.http, { dir, format, env: ctx.env, prune, pruneTypes: list(values, 'prune-type') });
+    const plan = await planConfigImport(target.http, { dir, format, env: ctx.env, prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true });
     ctx.io.out(`Promoting ${from} -> ${to}`);
     printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
     printPlanNotes(ctx, plan);
@@ -2190,7 +2227,7 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
   const dryRun = values['dry-run'] === true;
   const prune = values.prune === true;
 
-  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune, pruneTypes: list(values, 'prune-type'), forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
+  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
   printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
   printPlanNotes(ctx, plan);
 
@@ -2278,7 +2315,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
   const { dir, format, env } = source;
   const where = source.label ?? dir;
   const prune = values.prune === true;
-  const plan = await planConfigImport(http, { dir, format, env, prune, pruneTypes: list(values, 'prune-type'), rotateSecrets: values['rotate-secret'] === true, baseDir: source.baseDir });
+  const plan = await planConfigImport(http, { dir, format, env, prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true, rotateSecrets: values['rotate-secret'] === true, baseDir: source.baseDir });
   // The checks apply would hit, so a plan that passes is an apply that will: published limits plus the server's dry run.
   const validation = await validatePlan(http, plan, values);
   const invalid = validationErrors(validation);
@@ -2299,6 +2336,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
           object: 'config_plan',
           changes: rows,
           unchanged: plan.unchanged,
+          skipped_owned: plan.skippedOwned.length,
           unmanaged_live: deletes.map((d) => ({ type: d.type, key: d.key || null })),
           managed_by_platform: plan.managed.map((m) => ({ type: m.type, key: m.key, managed_by: m.managedBy })),
           warnings: plan.warnings,
@@ -2326,6 +2364,10 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
       ctx.io.out('');
       ctx.io.out(`Live but not in ${where} (kept; pass --prune to plan their deletion, or --prune-type <type> for a type that needs it named):`);
       for (const d of deletes) ctx.io.out(`    ${d.type}${d.key ? ` ${d.key}` : ''}`);
+    }
+    if (plan.skippedOwned.length) {
+      ctx.io.out('');
+      ctx.io.out(`Skipped ${plan.skippedOwned.length} live object(s) owned by a user or created by code (pass --include-owned to include them).`);
     }
     if (plan.managed.length) {
       ctx.io.out('');
@@ -2576,7 +2618,7 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
     const collected: Record<string, string> = {};
     const kept = keepingSecrets(requireHttp(ctx, values, onUnknownFields), str(values, 'out') || productDir(ctx.env, 'atlas'), secretsOut ? collected : undefined);
     const prune = values.prune === true;
-    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, pruneTypes: list(values, 'prune-type'), forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true, baseDir: source.baseDir });
+    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true, baseDir: source.baseDir });
     const out = (line: string) => {
       if (!json) ctx.io.out(line);
     };

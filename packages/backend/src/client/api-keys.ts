@@ -178,6 +178,10 @@ export interface RotateApiKeyBody {
   /** Epoch ms the successor expires. Not with `expires_in_seconds`. */
   expires_at?: number | null;
   expires_in_seconds?: number;
+  /** Your own secret for the successor (16-256 printable characters). Needs `prefix`; it must start with it. */
+  secret?: string;
+  /** With `secret`: the public head of the secret, shown in listings. Alone: the brand for a generated secret. */
+  prefix?: string;
 }
 
 /** The rotation answer: the successor with its secret (shown once) and what became of the old key. */

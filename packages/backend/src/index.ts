@@ -247,10 +247,13 @@ export {
   ed25519JwkThumbprint,
   normalizeDirectory,
   parseSignatureAgent,
+  safeFetch,
+  SafeFetchError,
   signWebBotAuthRequest,
   verifyWebBotAuth,
 } from './web-bot-auth';
 export type {
+  SafeFetchOptions,
   SignWebBotAuthInput,
   WebBotAuthDecision,
   WebBotAuthDecisionKind,

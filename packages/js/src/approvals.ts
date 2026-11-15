@@ -21,6 +21,10 @@ export interface ApprovalForApprover {
   signatureRequired: boolean;
   /** True when only an approval from a trusted device counts; trust this device first with `trustApprovalDevice`. */
   requireTrustedDevice: boolean;
+  /** The user the request is about cannot decide it. */
+  excludeRequester: boolean;
+  /** When set, `approveWithStepUp` can approve after a fresh step-up for this policy. */
+  stepUpPolicy: string | null;
   expiresAt: number;
   createdAt: number;
 }
@@ -36,6 +40,8 @@ interface ApprovalWire {
   digest: string | null;
   signature_required: boolean;
   require_trusted_device?: boolean;
+  exclude_requester?: boolean;
+  step_up_policy?: string | null;
   expires_at: number;
   created_at: number;
 }
@@ -51,6 +57,8 @@ const toApproval = (w: ApprovalWire): ApprovalForApprover => ({
   digest: w.digest,
   signatureRequired: w.signature_required,
   requireTrustedDevice: w.require_trusted_device === true,
+  excludeRequester: w.exclude_requester === true,
+  stepUpPolicy: w.step_up_policy ?? null,
   expiresAt: w.expires_at,
   createdAt: w.created_at,
 });
@@ -117,14 +125,14 @@ async function decide(client: FapiClient, id: string, body: Record<string, unkno
 }
 
 /** Approve by signing the request digest with the registered device key. `selectedNumber` is for the default number-matching flow. */
-export async function approveRequest(client: FapiClient, approval: Pick<ApprovalForApprover, 'id' | 'digest'>, key: ApprovalKey & { keyId: string }, opts: { selectedNumber?: string } = {}) {
+export async function approveRequest(client: FapiClient, approval: Pick<ApprovalForApprover, 'id' | 'digest'>, key: ApprovalKey & { keyId: string }, opts: { selectedNumber?: string; note?: string } = {}) {
   if (!approval.digest) throw new Error('This approval has no digest to sign.');
   const jws = await signJws(key.privateKey, { typ: 'atlas-approval-decision+jws', kid: key.keyId }, { approval_id: approval.id, digest: approval.digest, decision: 'approve', iat: Math.floor(Date.now() / 1000) });
-  return decide(client, approval.id, { decision: 'approve', signature: { type: 'device_key', key_id: key.keyId, jws }, ...(opts.selectedNumber ? { selected_number: opts.selectedNumber } : {}) });
+  return decide(client, approval.id, { decision: 'approve', signature: { type: 'device_key', key_id: key.keyId, jws }, ...(opts.selectedNumber ? { selected_number: opts.selectedNumber } : {}), ...(opts.note ? { note: opts.note } : {}) });
 }
 
 /** Approve with a passkey: the assertion's challenge is the request digest (a base64url string). */
-export async function approveWithPasskey(client: FapiClient, approval: Pick<ApprovalForApprover, 'id' | 'digest'>, opts: { selectedNumber?: string } = {}) {
+export async function approveWithPasskey(client: FapiClient, approval: Pick<ApprovalForApprover, 'id' | 'digest'>, opts: { selectedNumber?: string; note?: string } = {}) {
   if (!approval.digest) throw new Error('This approval has no digest to sign.');
   const padded = approval.digest.replace(/-/g, '+').replace(/_/g, '/');
   const challenge = Uint8Array.from(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4)), (c) => c.charCodeAt(0));
@@ -141,12 +149,18 @@ export async function approveWithPasskey(client: FapiClient, approval: Pick<Appr
       signature: b64u(r.signature),
     },
     ...(opts.selectedNumber ? { selected_number: opts.selectedNumber } : {}),
+    ...(opts.note ? { note: opts.note } : {}),
   });
 }
 
+/** Approve from this session after a fresh step-up for the request's `stepUpPolicy` (re-authenticate first), instead of signing. */
+export function approveWithStepUp(client: FapiClient, id: string, opts: { selectedNumber?: string; note?: string } = {}) {
+  return decide(client, id, { decision: 'approve', signature: { type: 'step_up' }, ...(opts.selectedNumber ? { selected_number: opts.selectedNumber } : {}), ...(opts.note ? { note: opts.note } : {}) });
+}
+
 /** Refuse. A denial needs no signature and ends the request. */
-export function denyRequest(client: FapiClient, id: string) {
-  return decide(client, id, { decision: 'deny' });
+export function denyRequest(client: FapiClient, id: string, opts: { note?: string } = {}) {
+  return decide(client, id, { decision: 'deny', ...(opts.note ? { note: opts.note } : {}) });
 }
 
 /** A device you can approve from, marked trusted or not. */

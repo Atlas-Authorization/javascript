@@ -13,7 +13,7 @@ import { defaultPrompter, type Prompter } from './prompt';
  */
 export type ManagementClient = Pick<
   AtlasClient,
-  'users' | 'organizations' | 'apiKeys' | 'webhooks' | 'sessions' | 'grantUsage' | 'sessionBindings' | 'actions' | 'actionGallery' | 'actionTemplates' | 'pageTemplates'
+  'users' | 'organizations' | 'apiKeys' | 'webhooks' | 'sessions' | 'grantUsage' | 'sessionBindings' | 'actions' | 'actionGallery' | 'actionTemplates' | 'pageTemplates' | 'messages' | 'oauthClients'
 >;
 
 /**

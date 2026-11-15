@@ -179,6 +179,8 @@ export const extraParityRequests: ParityRequest[] = [
   q('oauth revoke', 'POST', '/oauth2/revoke', { anonymous: true, form: { token: '{{xort2}}', client_id: '{{xc}}', client_secret: '{{xcs}}' }, group: 'oauth' }),
   q('oauth introspect revoked', 'POST', '/oauth2/introspect', { anonymous: true, form: { token: '{{xort2}}', client_id: '{{xc}}', client_secret: '{{xcs}}' }, group: 'oauth' }),
   q('oauth client rotate', 'POST', '/v1/oauth_clients/{{xc}}/rotate_secret', { tolerate: ['client_secret'], group: 'oauth' }),
+  q('oauth client consents', 'GET', '/v1/oauth_clients/{{xc}}/consents', { group: 'oauth' }),
+  q('oauth client consents revoke', 'POST', '/v1/oauth_clients/{{xc}}/consents/revoke', { group: 'oauth' }),
   q('oauth client delete', 'DELETE', '/v1/oauth_clients/{{xc}}', { group: 'oauth' }),
   // ── SCIM ──
   q('scim token', 'POST', '/v1/scim_tokens', { body: { organization_id: '{{xo}}', name: 'parity' }, capture: { xst: 'id', xsts: 'token' }, tolerate: ['token', 'prefix'], group: 'scim' }),

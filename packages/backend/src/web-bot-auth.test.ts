@@ -238,6 +238,7 @@ describe('WebBotAuthDirectoryCache', () => {
 });
 
 describe('createWebBotAuthVerifier (local)', () => {
+  const publicResolve = async () => ['93.184.216.34'];
   const fakeFetch = (calls: string[]) =>
     (async (url: string) => {
       calls.push(url);
@@ -246,7 +247,7 @@ describe('createWebBotAuthVerifier (local)', () => {
 
   it('verifies against the fetched directory, applies lists and caches', async () => {
     const calls: string[] = [];
-    const v = createWebBotAuthVerifier({ fetch: fakeFetch(calls), allow: [{ directory: AGENT, name: 'Example' }], now: () => NOW * 1000 });
+    const v = createWebBotAuthVerifier({ resolve: publicResolve, fetch: fakeFetch(calls), allow: [{ directory: AGENT, name: 'Example' }], now: () => NOW * 1000 });
     const a = await v.verify(req(sign()));
     expect(a).toMatchObject({ verified: true, decision: 'allow', agent: { name: 'Example', key_id: KEYID } });
     await v.verify(req(sign()));
@@ -256,19 +257,29 @@ describe('createWebBotAuthVerifier (local)', () => {
 
   it('refuses replays only when asked, and never fetches a private or plain-http directory', async () => {
     const calls: string[] = [];
-    const strict = createWebBotAuthVerifier({ fetch: fakeFetch(calls), rejectReplays: true, now: () => NOW * 1000 });
+    const strict = createWebBotAuthVerifier({ resolve: publicResolve, fetch: fakeFetch(calls), rejectReplays: true, now: () => NOW * 1000 });
     const h = sign({ nonce: 'abc' });
     expect((await strict.verify(req(h))).verified).toBe(true);
     expect((await strict.verify(req(h))).reason).toBe('replayed');
-    const lax = createWebBotAuthVerifier({ fetch: fakeFetch(calls), now: () => NOW * 1000 });
+    const lax = createWebBotAuthVerifier({ resolve: publicResolve, fetch: fakeFetch(calls), now: () => NOW * 1000 });
     expect((await lax.verify(req(h))).verified).toBe(true);
     expect((await lax.verify(req(h))).verified).toBe(true);
 
     const none: string[] = [];
-    const guarded = createWebBotAuthVerifier({ fetch: fakeFetch(none), now: () => NOW * 1000 });
+    const guarded = createWebBotAuthVerifier({ resolve: publicResolve, fetch: fakeFetch(none), now: () => NOW * 1000 });
     for (const agent of ['https://localhost', 'https://10.0.0.1', 'https://internal', 'https://x.localhost']) {
       expect((await guarded.verify(req(sign({ signatureAgent: agent })))).verified).toBe(false);
     }
     expect(none).toEqual([]);
+  });
+});
+
+describe('createWebBotAuthVerifier fetch guard', () => {
+  it('does not call a supplied fetch for a directory that resolves to a private address', async () => {
+    // exercised through safeFetch: see safe-fetch.test.ts. A literal-host directory never reaches the fetch.
+    let calls = 0;
+    const v = createWebBotAuthVerifier({ fetch: (() => (calls++, Promise.resolve(new Response('{}')))) as typeof fetch });
+    await v.verify({ method: 'GET', url: 'https://example.com/', headers: { 'signature-agent': '"https://127.0.0.1"', signature: 'x', 'signature-input': 'x' } });
+    expect(calls).toBe(0);
   });
 });

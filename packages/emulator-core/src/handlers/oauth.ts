@@ -403,6 +403,65 @@ export function oauthHandlers(): RouteDef[] {
       },
     },
     {
+      // The users who authorized the client, derived from its grants: active while any grant is live.
+      method: 'GET',
+      pattern: '/v1/oauth_clients/:id/consents',
+      handler: (c) => {
+        const e = c.engine;
+        const row = liveClient(e, c.params.id);
+        const status = c.query.get('status') ?? 'active';
+        if (!['active', 'revoked', 'all'].includes(status)) throw new EmulatorError('VALIDATION_FAILED', 'status must be active, revoked or all.', 'status');
+        const limit = Math.min(100, Math.max(1, Number(c.query.get('limit') ?? 50) || 50));
+        const after = c.query.get('starting_after') ?? '';
+        const byUser = new Map<string, Grant[]>();
+        for (const g of st(e).grants.values()) if (g.clientId === row.id && g.userId) byUser.set(g.userId, [...(byUser.get(g.userId) ?? []), g]);
+        const rows = [...byUser.entries()]
+          .filter(([u]) => u > after)
+          .sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([userId, gs]) => ({ userId, gs, active: gs.some((g) => !g.revoked) }))
+          .filter((r) => status === 'all' || (status === 'active') === r.active);
+        const page = rows.slice(0, limit);
+        const hasMore = rows.length > page.length;
+        return {
+          body: {
+            object: 'list',
+            client_id: row.id,
+            data: page.map((r) => ({
+              object: 'oauth_client_consent',
+              user_id: r.userId,
+              scopes: [...new Set(r.gs.flatMap((g) => g.scope))],
+              status: r.active ? 'active' : 'revoked',
+              created_at: row.created_at,
+              last_used_at: null,
+              revoked_at: r.active ? null : row.updated_at,
+            })),
+            has_more: hasMore,
+            next_cursor: hasMore ? page[page.length - 1]!.userId : null,
+          },
+        };
+      },
+    },
+    {
+      method: 'POST',
+      pattern: '/v1/oauth_clients/:id/consents/revoke',
+      handler: (c) => {
+        const e = c.engine;
+        const row = liveClient(e, c.params.id);
+        const only = c.body.user_ids;
+        if (only !== undefined && (!Array.isArray(only) || only.length === 0 || !only.every((u) => typeof u === 'string'))) throw new EmulatorError('VALIDATION_FAILED', 'user_ids must be a list of user ids.', 'user_ids');
+        const users = new Set<string>();
+        let tokens = 0;
+        for (const g of st(e).grants.values()) {
+          if (g.clientId !== row.id || g.revoked || !g.userId || (only && !(only as string[]).includes(g.userId))) continue;
+          g.revoked = true;
+          tokens++;
+          users.add(g.userId);
+          e.changed({ type: 'grant.revoked', data: { object: 'grant', id: g.id, client_id: row.id, user_id: g.userId } });
+        }
+        return { body: { object: 'oauth_client_consents_revocation', client_id: row.id, consents_revoked: users.size, tokens_revoked: tokens } };
+      },
+    },
+    {
       method: 'POST',
       pattern: '/v1/oauth_clients/:id/rotate_secret',
       handler: (c) => {

@@ -1,5 +1,10 @@
 # @atlasauth/cli changelog
 
+## 0.46.0
+
+- `atlas plan` / `atlas apply` skip OAuth clients owned by a user or created by code unless the file declares them, and report how many were skipped; `--include-owned` includes them.
+- An `oauth_clients` entry with an `id` matches by id, so renaming it updates the client.
+
 ## 0.45.0
 
 - `atlas plan` validates the whole plan as one unit: an item that references something the same plan creates (an action bound under `action_bindings`, a journey experiment) gets real validation at plan time, a typo is an error at plan time, and a reference to something the plan deletes is an error too.

@@ -147,7 +147,34 @@ export interface OAuthClientUsage {
   since?: string;
   until?: string;
   totals?: { calls?: number; token_issuances?: number; errors?: number; rate_limited?: number };
-  data?: Array<{ day?: string; calls?: number; token_issuances?: number; active_users?: number; errors?: number; rate_limited?: number }>;
+  /** The most recent failed token request in the window; null when there was none. */
+  latest_error?: { code: string; endpoint: string; at: number } | null;
+  data?: Array<{ day?: string; calls?: number; token_issuances?: number; active_users?: number; errors?: number; errors_by_code?: Record<string, number>; rate_limited?: number }>;
+}
+
+export interface OAuthClientConsent {
+  object?: string;
+  user_id: string;
+  scopes: string[];
+  status: 'active' | 'revoked';
+  created_at: number;
+  last_used_at: number | null;
+  revoked_at?: number | null;
+}
+
+export interface OAuthClientConsentsPage {
+  object?: string;
+  client_id?: string;
+  data: OAuthClientConsent[];
+  has_more: boolean;
+  next_cursor: string | null;
+}
+
+export interface OAuthClientConsentsRevocation {
+  object?: string;
+  client_id?: string;
+  consents_revoked: number;
+  tokens_revoked: number;
 }
 
 export type OAuthClientWebhookEvent =
@@ -400,6 +427,14 @@ export function gapOpsResources(request: RequestFn) {
     oauthClients: {
       getUsage(id: string, params: GapPageParams & { days?: number } = {}): Promise<OAuthClientUsage> {
         return request({ method: 'GET', path: `/v1/oauth_clients/${enc(id)}/usage`, query: { ...params } });
+      },
+      /** The users who authorized the client; `status` is active (default), revoked or all. */
+      listConsents(id: string, params: GapPageParams & { status?: 'active' | 'revoked' | 'all' } = {}): Promise<OAuthClientConsentsPage> {
+        return request({ method: 'GET', path: `/v1/oauth_clients/${enc(id)}/consents`, query: { ...params } });
+      },
+      /** Revoke every active consent of the client (and their tokens), or only `user_ids`. */
+      revokeConsents(id: string, body: { user_ids?: string[] } = {}): Promise<OAuthClientConsentsRevocation> {
+        return request({ method: 'POST', path: `/v1/oauth_clients/${enc(id)}/consents/revoke`, body });
       },
       getWebhook(id: string): Promise<OAuthClientWebhook> {
         return request({ method: 'GET', path: `/v1/oauth_clients/${enc(id)}/webhook` });

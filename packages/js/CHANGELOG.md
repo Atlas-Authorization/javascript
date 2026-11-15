@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.48.0
+
+- Approvals: decide with a `note`, `approveWithStepUp()` for requests that name a step-up policy, and `excludeRequester` / `stepUpPolicy` on the approval type.
+
 ## 0.47.0
 
 - `stepUpFactorInfo(factor)` returns `{ factor, label, needsInput, inputKind }` for any step-up factor, including ones this version does not know yet, and `STEP_UP_FACTORS` lists the known ones. Render factors from it instead of switching over `StepUpFactor`, and new factors appear without an app release.

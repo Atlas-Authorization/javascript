@@ -883,10 +883,13 @@ export interface WebBotAuthVerifierOptions extends WebBotAuthPolicy {
    * IPv4 address), connects to the vetted address only, never follows a redirect, and caps time
    * and size. On an edge runtime (no DNS access) the default is the global fetch, 5 seconds,
    * https only, no redirects, a 64 KB cap and a refusal of literal and single-label hosts: those
-   * runtimes sandbox outbound traffic themselves. A `fetch` you pass is used as given, behind the
-   * same literal-host refusal, so it must refuse private addresses itself.
+   * runtimes sandbox outbound traffic themselves. A `fetch` you pass makes the actual request (so your
+   * logging sees it) but only after the same guard as `safeFetch` has passed; on Node that includes
+   * resolving the host and refusing private addresses.
    */
   fetch?: typeof fetch;
+  /** Tests only: resolve a directory host to its addresses instead of asking the OS. */
+  resolve?: (hostname: string) => Promise<string[]>;
   ttlMs?: number;
   refreshCooldownMs?: number;
   skewSeconds?: number;
@@ -906,20 +909,87 @@ const isPrivateHostLiteral = (host: string): boolean => {
   );
 };
 
-/** A verifier that runs inside your own server: no call to Atlas, directories cached in memory. */
-/** The pinned transport on Node (loaded lazily so edge bundles never see `node:dns`); null elsewhere. */
-let defaultPinned: Promise<typeof fetch | null> | undefined;
-function pinnedFetchOnNode(): Promise<typeof fetch | null> {
-  defaultPinned ??=
+/** Thrown by `safeFetch` when a request is refused. `code` is always `ssrf_refused`. */
+export class SafeFetchError extends Error {
+  readonly code = 'ssrf_refused';
+  constructor(readonly reason: string) {
+    super(`Outbound request refused: ${reason}.`);
+    this.name = 'SafeFetchError';
+  }
+}
+
+export interface SafeFetchOptions {
+  /** Allow plain http (port 80). Off by default: https only. */
+  allowHttp?: boolean;
+  /** Redirect hops followed, each re-checked. Default 3; one more throws. */
+  maxRedirects?: number;
+  /** Performs the real request after the guard passes (for your logging). Default: a pinned transport on Node, global fetch elsewhere. */
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+  /** Body cap for the default Node transport. Default 1 MB. */
+  maxBytes?: number;
+  /** Tests only: resolve a hostname to its addresses instead of asking the OS. */
+  resolve?: (hostname: string) => Promise<string[]>;
+}
+
+type PinnedMod = typeof import('./web-bot-auth-pinned');
+let pinnedMod: Promise<PinnedMod | null> | undefined;
+function loadPinned(): Promise<PinnedMod | null> {
+  pinnedMod ??=
     typeof process !== 'undefined' && !!process.versions?.node
       ? (async () => {
           const spec = './web-bot-auth-pinned';
-          return ((await import(/* webpackIgnore: true */ spec)) as { createPinnedFetch: () => typeof fetch }).createPinnedFetch();
+          return (await import(/* webpackIgnore: true */ spec)) as PinnedMod;
         })().catch(() => null)
       : Promise.resolve(null);
-  return defaultPinned;
+  return pinnedMod;
 }
 
+/**
+ * fetch that refuses, before connecting, any host that is or resolves to a private, loopback,
+ * link-local, unique-local, CGNAT, unspecified, multicast or reserved address (IPv4, IPv6 and
+ * IPv4-mapped IPv6). Redirects are followed by hand, up to `maxRedirects`, and every hop is
+ * checked again. Throws `SafeFetchError` (code `ssrf_refused`).
+ *
+ * With the default transport on Node the connection is pinned to the checked address, so a second
+ * DNS answer cannot bypass the check. With your own `fetch`, the host is checked first and your
+ * fetch resolves it again.
+ * shortcut: that second resolution is a DNS-rebinding window, pass no `fetch` for pinning.
+ * shortcut: on edge runtimes (no node:dns) hostnames cannot be resolved, so only IP-literal,
+ * single-label and localhost hosts are refused; rely on the runtime's own egress sandbox.
+ */
+export async function safeFetch(url: string | URL, init: RequestInit = {}, opts: SafeFetchOptions = {}): Promise<Response> {
+  const max = opts.maxRedirects ?? 3;
+  const timeoutMs = opts.timeoutMs ?? 10_000;
+  const node = await loadPinned();
+  const pinned = !opts.fetch && node ? node.createPinnedFetch({ timeoutMs, maxBytes: opts.maxBytes ?? 1024 * 1024, allowHttp: opts.allowHttp, resolve: opts.resolve }) : null;
+  const actual = opts.fetch ?? pinned ?? globalThis.fetch;
+  let cur = new URL(url);
+  let req: RequestInit = { ...init, redirect: 'manual' };
+  for (let hop = 0; ; hop++) {
+    try {
+      if (node) {
+        if (!pinned) await node.vetPublicUrl(cur, { allowHttp: opts.allowHttp, resolve: opts.resolve, signal: AbortSignal.timeout(timeoutMs) });
+      } else if ((cur.protocol !== 'https:' && !(opts.allowHttp && cur.protocol === 'http:')) || isPrivateHostLiteral(cur.hostname)) {
+        throw new SafeFetchError('not_public');
+      }
+      const res = await actual(cur.href, req);
+      const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (!loc) return res;
+      if (hop >= max) throw new SafeFetchError('too_many_redirects');
+      cur = new URL(loc, cur);
+      if (res.status === 303 || ((res.status === 301 || res.status === 302) && (req.method ?? 'GET').toUpperCase() === 'POST')) {
+        req = { ...req, method: 'GET', body: undefined };
+      }
+    } catch (e) {
+      if (e instanceof SafeFetchError) throw e;
+      if ((e as { code?: string } | null)?.code === 'ssrf_refused') throw new SafeFetchError((e as { reason?: string }).reason ?? 'refused');
+      throw e;
+    }
+  }
+}
+
+/** A verifier that runs inside your own server: no call to Atlas, directories cached in memory. */
 export function createWebBotAuthVerifier(options: WebBotAuthVerifierOptions = {}) {
   const now = options.now ?? Date.now;
   const cache = new WebBotAuthDirectoryCache({
@@ -929,12 +999,11 @@ export function createWebBotAuthVerifier(options: WebBotAuthVerifierOptions = {}
     fetchJson: async (url) => {
       const u = new URL(url);
       if (u.protocol !== 'https:' || isPrivateHostLiteral(u.hostname)) return null;
-      const f = options.fetch ?? (await pinnedFetchOnNode()) ?? globalThis.fetch;
-      const res = await f(url, {
-        headers: { accept: WEB_BOT_AUTH_DIRECTORY_MEDIA_TYPE },
-        redirect: 'manual',
-        signal: AbortSignal.timeout(5000),
-      });
+      const res = await safeFetch(
+        url,
+        { headers: { accept: WEB_BOT_AUTH_DIRECTORY_MEDIA_TYPE }, signal: AbortSignal.timeout(5000) },
+        { fetch: options.fetch, resolve: options.resolve, maxRedirects: 0, maxBytes: DIRECTORY_MAX_BYTES },
+      );
       if (!res.ok) return null;
       const text = await res.text();
       if (text.length > DIRECTORY_MAX_BYTES) return null;

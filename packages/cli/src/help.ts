@@ -78,7 +78,10 @@ Commands:
                              (operator sign-in with a recent second factor; passwords to 0600 files)
   sessions revoke|binding|unbind
   grants usage <machine|agent> <grant-id>
+  messages send --to <address[,address]> (--template <name> | --subject <text> --html-file <f> / --text-file <f>)
                              Live usage counters and open leases of a machine or agent grant
+  oauth-clients consents|revoke-consents <client-id>
+                             Who authorized an app (active or revoked); revoke them and their tokens in bulk
   config export|import|plan|promote|schema|snapshot|snapshots|diff|restore
                              Config-as-code: round-trip the instance's config; plan = drift diff;
                              promote = copy one environment's config to another
@@ -958,6 +961,27 @@ Usage:
 Shows each counter the grant defines (used, limit, remaining, window, when it resets)
 and any lease still holding an amount.`,
 
+  messages: `atlas messages — send transactional email through your own provider
+
+Usage:
+  atlas messages send --to <address[,address...]> --template <name-or-id> [--data '{"order":"1042"}']
+                      [--tag key=value ...] [--idempotency-key <key>] [--json]
+  atlas messages send --to <address> --subject <text> [--html-file <file>] [--text-file <file>] [--tag key=value ...]
+
+POST /v1/messages: the mail goes out through the instance's own email provider and failover, is recorded in the
+message ledger as a transactional message, and is not sent to suppressed addresses (it is returned as 'suppressed').
+Use --html-file - to read the html from stdin. A retry with the same --idempotency-key does not send twice.`,
+
+  'oauth-clients': `atlas oauth-clients — who authorized an OAuth app
+
+Usage:
+  atlas oauth-clients consents <client-id> [--status active|revoked|all] [--limit <n>] [--starting-after <cursor>] [--json]
+  atlas oauth-clients revoke-consents <client-id> [<user-id>...] --yes [--json]
+
+consents lists each user's scopes, when they authorized the app and when it was last used.
+revoke-consents revokes every active consent (or only the listed users) together with their tokens
+(POST /v1/oauth_clients/{id}/consents/revoke); consents reads GET /v1/oauth_clients/{id}/consents.`,
+
   config: `atlas config — config-as-code for an Atlas instance (the Auth0 deploy-cli peer)
 
 Usage:
@@ -990,6 +1014,7 @@ import  Diff the directory against live config and apply creates/updates
           --dry-run   print the plan and apply nothing
           --prune     also delete live resources absent from the config
           --prune-type <type>  also delete live resources of one opt-in type (repeatable); a bare --prune skips those
+          --include-owned  also diff clients owned by a user or created by code (skipped by default)
           --force-hook  enable a before_user_create hook even if its test call fails
           --dir       config directory (default: ./atlas-config)
           --format    json (default) or yaml
@@ -1139,6 +1164,7 @@ requires: [VAR, ...] on a section (an object section as a key; a list section as
 "skipped <type> <key>: VAR unset" when VAR is unset or empty, and a skipped entry's live copy is
 never pruned. An action takes code_file: <path relative to the config> in place of code.
   --prune         also delete live resources missing from the config, and compare every live key
+  --include-owned also diff OAuth clients owned by an Atlas user or created by code (left out by default, with a count)
   --force-hook    enable the before_user_create hook even when its test call fails (409)
   --rotate-secret send again each secret Atlas cannot compare (it never returns them)
   --show-secrets  print secret values in the diff; refused without a terminal or when CI is set

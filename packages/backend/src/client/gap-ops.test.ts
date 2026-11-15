@@ -23,6 +23,8 @@ const CASES: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
   ['DELETE', '/v1/users/user_1', { audit_actor_emails: ['ops@example.com'] }, (c) => c.users.delete('user_1', { audit_actor_emails: ['ops@example.com'] })],
   ['GET', '/v1/organizations/org_1/audit_logs?action=org.&limit=10', undefined, (c) => c.organizations.listAuditLogs('org_1', { action: 'org.', limit: 10 })],
   ['GET', '/v1/sessions/sess_1/risk', undefined, (c) => c.sessions.getRisk('sess_1')],
+  ['GET', '/v1/oauth_clients/oac_1/consents?status=revoked', undefined, (c) => c.oauthClients.listConsents('oac_1', { status: 'revoked' })],
+  ['POST', '/v1/oauth_clients/oac_1/consents/revoke', { user_ids: ['user_1'] }, (c) => c.oauthClients.revokeConsents('oac_1', { user_ids: ['user_1'] })],
   ['GET', '/v1/oauth_clients/oac_1/usage?days=7', undefined, (c) => c.oauthClients.getUsage('oac_1', { days: 7 })],
   ['GET', '/v1/oauth_clients/oac_1/webhook', undefined, (c) => c.oauthClients.getWebhook('oac_1')],
   ['PUT', '/v1/oauth_clients/oac_1/webhook', { url: 'https://app.example/hook', enabled_events: ['user.updated'] }, (c) => c.oauthClients.putWebhook('oac_1', { url: 'https://app.example/hook', enabled_events: ['user.updated'] })],

@@ -55,6 +55,7 @@ const OPTIONS = {
   format: { type: 'string' },
   'dry-run': { type: 'boolean' },
   prune: { type: 'boolean' },
+  'include-owned': { type: 'boolean' },
   // config import / apply / plan: delete live resources of just these `prune: false` types.
   'prune-type': { type: 'string', multiple: true },
   // apply / config import: enable a before_user_create hook even if its test call fails.
@@ -110,8 +111,14 @@ const OPTIONS = {
   inactive: { type: 'boolean' },
   timeout: { type: 'string' },
   'no-wait': { type: 'boolean' },
-  // move-origin.
+  // move-origin; messages send (comma-separate several addresses).
   to: { type: 'string' },
+  // messages send.
+  subject: { type: 'string' },
+  'html-file': { type: 'string' },
+  'text-file': { type: 'string' },
+  tag: { type: 'string', multiple: true },
+  'idempotency-key': { type: 'string' },
   // listen.
   'forward-to': { type: 'string' },
   count: { type: 'string' },

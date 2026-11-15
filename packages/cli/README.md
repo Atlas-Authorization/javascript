@@ -208,7 +208,10 @@ the resource types above (or a directory from `config export`), shows the plan,
 asks before applying (`--yes` skips the question; needed without a terminal),
 and applies. Re-running it is a no-op. `atlas plan atlas.yaml` shows the
 field-level diff without writing; without `--prune` it compares only the keys
-the file sets. `--force-hook` applies a `before_user_create` change (enabling it, or
+the file sets. OAuth clients owned by an Atlas user, or created by code with an
+external ref, are left out of plan and apply (the plan counts them) unless the file
+declares them or you pass `--include-owned`. An `oauth_clients` entry with an `id`
+matches that live client first, so renaming it is an update; without one it matches by name. `--force-hook` applies a `before_user_create` change (enabling it, or
 re-pointing / re-keying an enabled fail-closed hook) whose test call fails (otherwise the server refuses with 409 `HOOK_TEST_FAILED`).
 
 ```yaml

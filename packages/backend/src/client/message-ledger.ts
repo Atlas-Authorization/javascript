@@ -27,6 +27,10 @@ export interface Message {
   id: string;
   channel: MessageLedgerChannel;
   template: string | null;
+  /** `auth` for sign-in mail, `transactional` for mail sent with `messages.send`. */
+  category: 'auth' | 'transactional';
+  /** The tags sent with a transactional message. */
+  tags: Record<string, string>;
   /** `jo***@ex***.com`, `+1•••••0123`. */
   recipient_masked: string;
   /** A keyed hash, stable within the instance; search with `list({ recipient })`. */
@@ -55,6 +59,7 @@ export interface ListMessagesQuery {
   channel?: MessageLedgerChannel;
   status?: MessageLedgerStatus;
   template?: string;
+  category?: 'auth' | 'transactional';
   provider?: string;
   /** An address or E.164 number: found by its keyed hash. */
   recipient?: string;
@@ -65,6 +70,22 @@ export interface ListMessagesQuery {
   limit?: number;
   /** A message id: the ones after it (older). */
   starting_after?: string;
+}
+
+export interface SendMessageBody {
+  /** One address, or up to 10 (each is sent separately). */
+  to: string | string[];
+  /** A template name or id (see `notifications`); send this or `subject` with `html`/`text`. */
+  template?: string;
+  /** Variables for the template's `{{placeholders}}`. */
+  data?: Record<string, string | number | boolean>;
+  subject?: string;
+  /** Up to 512 KB, sent as written. */
+  html?: string;
+  /** Up to 256 KB. */
+  text?: string;
+  /** Up to 10 labels; keys are 1-40 letters, digits, `_ . : -`, values up to 100 characters. */
+  tags?: Record<string, string>;
 }
 
 export interface MessageSummary {
@@ -201,6 +222,14 @@ export function messageLedgerResource(request: RequestFn) {
     /** The ledger, newest first. */
     list(query: ListMessagesQuery = {}): Promise<MessageList> {
       return request({ method: 'GET', path: '/v1/messages', query: query as Record<string, string | number | boolean | undefined> });
+    },
+    /**
+     * Send a transactional email through your own email provider and its failover. One address returns the message
+     * (status `suppressed` when the address is on your suppression list: nothing is sent); several return a list.
+     * Pass an idempotency key to make a retry safe.
+     */
+    send<B extends SendMessageBody>(body: B, idempotencyKey?: string): Promise<B['to'] extends string[] ? MessageList : Message> {
+      return request({ method: 'POST', path: '/v1/messages', body, idempotencyKey });
     },
     /** Counts per status over the last `hours` (default 24, up to 720). */
     summary(query: { hours?: number } = {}): Promise<MessageSummary> {

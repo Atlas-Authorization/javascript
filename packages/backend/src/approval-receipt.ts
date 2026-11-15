@@ -13,6 +13,8 @@ import { compactVerify, createLocalJWKSet, decodeProtectedHeader, importJWK, typ
  *                  public key stored in the receipt, so the receipt is evidence even apart from Atlas's signature;
  *  - `passkey`     the WebAuthn assertion's challenge is checked to be the digest (the authenticator's signature
  *                  itself is not re-verified offline; Atlas verified it before signing the receipt);
+ *  - `step_up`     the approver re-authenticated for a named step-up policy; Atlas verified it and the receipt records the policy
+ *                  and the authentication it met (`attested`);
  *  - `number_match` the approver answered on their own device by matching the number; there is no signature.
  */
 
@@ -21,11 +23,13 @@ export const APPROVAL_DECISION_TYP = 'atlas-approval-decision+jws';
 
 export interface ApprovalReceiptApproval {
   approver_user_id: string;
-  method: 'device_key' | 'passkey' | 'number_match';
+  method: 'device_key' | 'passkey' | 'step_up' | 'number_match';
   key_id: string | null;
   public_key: unknown;
   proof: Record<string, unknown>;
   signed_at: number;
+  /** The approver's free-text note; absent when none was given. */
+  note?: string;
 }
 
 export interface ApprovalReceiptClaims {
@@ -45,7 +49,8 @@ export interface ApprovalReceiptClaims {
   approvals: ApprovalReceiptApproval[];
 }
 
-export type ApproverProof = 'verified' | 'challenge_bound' | 'none';
+/** `attested`: a step-up approval, vouched for by Atlas's own signature on the receipt (the proof records the policy and the authentication it met). */
+export type ApproverProof = 'verified' | 'challenge_bound' | 'attested' | 'none';
 
 export interface VerifiedApprovalReceipt {
   claims: ApprovalReceiptClaims;
@@ -137,6 +142,7 @@ export async function verifyApprovalReceipt(receipt: string, opts: VerifyApprova
 
 async function checkProof(a: ApprovalReceiptApproval, claims: ApprovalReceiptClaims): Promise<ApproverProof> {
   if (a.method === 'number_match') return 'none';
+  if (a.method === 'step_up') return typeof a.proof?.policy === 'string' ? 'attested' : fail('bad_proof', 'A step-up approval names no policy.');
   if (a.method === 'device_key') {
     const jws = a.proof?.jws;
     if (typeof jws !== 'string' || !a.public_key) return fail('bad_proof', 'A device-key approval carries no signature.');

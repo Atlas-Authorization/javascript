@@ -28,12 +28,18 @@ export interface CreateApprovalRequestBody {
   reference?: string;
   /** Only an approval from a device the approver trusted counts (see `approvals.trustDevice`). The instance setting approvals.requireTrustedDevice makes this the rule for every request. */
   require_trusted_device?: boolean;
+  /** The user the request is about can never approve or reject it, even holding the approver role. Needs `approvers`. Default false. */
+  exclude_requester?: boolean;
+  /** Name of a step-up policy: an approver may approve from a session that just met it instead of signing with a device key. */
+  step_up_policy?: string;
 }
 
 export interface ApprovalDecision {
   approver_user_id: string;
   decision: 'approve' | 'deny';
-  method: 'device_key' | 'passkey' | 'number_match';
+  method: 'device_key' | 'passkey' | 'step_up' | 'number_match';
+  /** The free-text note the approver left with this decision. */
+  note?: string | null;
   key_id: string | null;
   /** The trusted device the decision came from, when it came from one. */
   trusted_device_id?: string | null;
@@ -55,6 +61,8 @@ export interface ApprovalRequest {
   binding: string | null;
   require_signature: boolean;
   require_trusted_device?: boolean;
+  exclude_requester?: boolean;
+  step_up_policy?: string | null;
   approvers: { mode: 'subject' | 'users' | 'role'; user_ids: string[]; organization_id: string | null; role: string | null; required: number };
   /** SHA-256 of `canonical`, base64url: what an approver signs. */
   digest: string | null;
@@ -77,6 +85,8 @@ export interface ApprovalRequestCreated {
   approvers: ApprovalRequest['approvers'];
   require_signature: boolean;
   require_trusted_device?: boolean;
+  exclude_requester?: boolean;
+  step_up_policy?: string | null;
   digest: string | null;
   reference: string | null;
   binding: string | null;
