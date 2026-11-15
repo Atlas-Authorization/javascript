@@ -8,6 +8,7 @@ import {
   type UnknownFieldsEvent,
 } from './request';
 import type { ListPage } from './types';
+import { instanceClonesResource } from './devex';
 import type {
   BackchannelDeliveriesQuery,
   BackchannelLogoutDeliveryPage,
@@ -866,6 +867,8 @@ function platformNamespaces(request: RequestFn) {
             idempotencyKey: legacyKey ? bodyOrIdempotencyKey : idempotencyKey,
           });
         },
+        /** Environment clones and per-PR preview instances of one instance. */
+        clones: instanceClonesResource(request),
       },
       /** Start a transfer: a one-time token the receiving platform accepts. */
       transfer(id: string, idempotencyKey?: string): Promise<PlatformAppTransfer> {

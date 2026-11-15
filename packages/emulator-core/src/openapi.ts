@@ -41,16 +41,48 @@ function compile(path: string): { pattern: RegExp; paramNames: string[]; statics
   return { pattern: new RegExp(`^${src}/?$`), paramNames, statics };
 }
 
+/**
+ * The checked-in spec is the live one, and the live one trails the code: it lists two instance signing algorithms where the
+ * API accepts five, and no delay / send_message / branch journey steps, and no external connection owner. Widen those enums so the emulator accepts what the
+ * API does; once the spec carries them the entries are no-ops.
+ */
+const ENUM_LAGS: Array<{ path: RegExp; method: string; at: string[]; add: string[] }> = [
+  { path: /^\/v1\/instance\/signing_keys\/rotate$/, method: 'post', at: ['properties', 'alg'], add: ['ES384', 'PS256', 'EdDSA'] },
+  { path: /^\/v1\/connections$/, method: 'post', at: ['properties', 'owner', 'properties', 'type'], add: ['external'] },
+  { path: /^\/v1\/flows(\/\{[^/]+\})?$/, method: 'post', at: ['properties', 'definition', 'properties', 'steps', 'items', 'properties', 'type'], add: ['branch', 'delay', 'send_message'] },
+  { path: /^\/v1\/flows(\/\{[^/]+\})?$/, method: 'patch', at: ['properties', 'definition', 'properties', 'steps', 'items', 'properties', 'type'], add: ['branch', 'delay', 'send_message'] },
+];
+function widenLaggingEnums(path: string, method: string, body: Obj | undefined): void {
+  for (const lag of ENUM_LAGS) {
+    if (lag.method !== method || !lag.path.test(path)) continue;
+    let node: any = body;
+    for (const k of lag.at) node = node?.[k];
+    if (Array.isArray(node?.enum)) for (const v of lag.add) if (!node.enum.includes(v)) node.enum.push(v);
+  }
+}
+
+/** Plan fields the API accepts that the published plan body does not list yet. */
+const PLAN_LAG_PROPS = ['grace_days', 'stripe_meter_id', 'usage_unit', 'provider', 'provider_price_id', 'annual_price_id', 'annual_amount', 'kind', 'seat_feature_id', 'promotion', 'description', 'badge', 'sort_order'];
+function addLaggingProps(path: string, method: string, body: Obj | undefined): void {
+  if (!/^\/v1\/billing\/plans(\/\{[^/]+\})?$/.test(path) || (method !== 'post' && method !== 'patch') || !body?.properties) return;
+  for (const k of PLAN_LAG_PROPS) if (!(k in body.properties)) body.properties[k] = {};
+}
+
 export class OpenApiIndex {
   readonly ops: Operation[] = [];
   private readonly byMethod = new Map<string, Operation[]>();
 
   constructor(readonly doc: Obj) {
+    // A tuple's expires_at is documented as a string and read as an ISO timestamp or epoch milliseconds.
+    const expires = doc.components?.schemas?.FgaTupleKey?.properties?.expires_at;
+    if (expires?.type === 'string') expires.type = ['string', 'integer'];
     for (const [path, item] of Object.entries<Obj>(doc.paths ?? {})) {
       for (const method of METHODS) {
         const op = item[method] as Obj | undefined;
         if (!op) continue;
         const body = op.requestBody?.content?.['application/json']?.schema;
+        widenLaggingEnums(path, method, body);
+        addLaggingProps(path, method, body);
         const codes = Object.keys(op.responses ?? {}).filter((c) => /^2\d\d$/.test(c)).sort();
         const code = codes[0];
         const resp = code ? op.responses[code]?.content?.['application/json']?.schema : undefined;
@@ -150,7 +182,8 @@ function walk(index: OpenApiIndex, raw: Obj | undefined, value: unknown, path: s
     return;
   }
   const types = schema.type === undefined ? undefined : ([] as string[]).concat(schema.type);
-  if (types && !typeOk(types, value)) {
+  // A null-only property is a retired field: the real route answers 422 itself, so the handler gets the value.
+  if (types && !(types.length === 1 && types[0] === 'null') && !typeOk(types, value)) {
     fail(`${path || 'body'} must be ${types.join(' or ')}.`);
     return;
   }

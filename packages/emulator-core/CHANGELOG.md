@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Models FGA model rewrites with batch check, list and expand, Cedar templates, access conditions, agent delegations, sandboxed Action code, encrypted request objects, `private_key_jwt`, form_post and JARM, billing proration and provider webhooks, journey experiments and scheduled messages, the audit chain, device-bound sessions, age assurance, erasure connectors, region pinning, SAML artifact binding, config snapshots and clones, and more of the advanced OAuth flows.
+- Breaking: `time/advance` and some helpers (client authentication, client requirement and consent checks) are now async and return promises; `await` them.
+- Workflows created without `enabled` are now enabled, like the real API.
+
 ## 0.2.0
 
 - Models machine device-key enrolment, federation, DPoP and mTLS binding, agent grants, an OAuth/OIDC provider (PKCE, refresh rotation, token exchange, introspection, revocation, consent, PAR, device and CIBA), SCIM, a virtual WebAuthn authenticator (`createVirtualAuthenticator`) and the real session refresh route.

@@ -115,6 +115,34 @@ const launch = (r: Record<string, unknown>): string => {
   return u;
 };
 
+/** `atlas compliance ...`: posture and signed reports, the data rights board, downstream erasure, cookie consent counts, translation review and its CI check. */
+const checkOut = (res: Record<string, unknown>): string => {
+  if (res.ok === true) return `ok: ${String(res.checked)} translation${res.checked === 1 ? '' : 's'} checked.`;
+  const lines = ((res.results as Array<{ index: number; ok: boolean; problems: Array<{ code: string; message: string }> }>) ?? [])
+    .filter((r) => !r.ok)
+    .flatMap((r) => r.problems.map((p) => `item ${r.index}: ${p.code}: ${p.message}`));
+  throw new CliError(`${String(res.failed)} of ${String(res.checked)} translations failed:\n${lines.join('\n')}`);
+};
+export const COMPLIANCE: Ops = {
+  posture: { m: 'GET', p: '/v1/compliance/posture' },
+  ropa: { m: 'GET', p: '/v1/compliance/ropa' },
+  reports: { m: 'GET', p: '/v1/compliance/reports', f: 'q', query: ['kind'] },
+  report: { m: 'GET', p: '/v1/compliance/reports/{}' },
+  sign: { m: 'POST', p: '/v1/compliance/reports', f: 'b', bodyFlags: ['kind'] },
+  'inactive-preview': { m: 'GET', p: '/v1/compliance/inactive_users/preview', query: ['limit'] },
+  board: { m: 'GET', p: '/v1/dsr_console/summary' },
+  requests: { m: 'GET', p: '/v1/dsr_console/requests', f: 'q', query: ['type', 'assignee', 'priority', 'label', 'overdue', 'unassigned', 'due-within-days'] },
+  triage: { m: 'PATCH', p: '/v1/data_subject_requests/{}/triage', f: 'b', bodyFlags: ['assignee', 'priority'] },
+  note: { m: 'POST', p: '/v1/data_subject_requests/{}/notes', f: 'b', bodyFlags: ['body'] },
+  downstream: { m: 'GET', p: '/v1/data_subject_requests/{}/downstream' },
+  'downstream-done': { m: 'POST', p: '/v1/data_subject_requests/{}/downstream/{}', f: 'b', bodyFlags: ['status', 'note'] },
+  'erasure-catalog': { m: 'GET', p: '/v1/erasure_connector_catalog' },
+  'cookie-summary': { m: 'GET', p: '/v1/cookie_consents/summary' },
+  'i18n-summary': { m: 'GET', p: '/v1/localizations/review_summary' },
+  'i18n-review': { m: 'POST', p: '/v1/localizations/{}/review', f: 'b', bodyFlags: ['action', 'note'] },
+  // CI: `--file translations.json` holds { items: [...], require_approved?: true }; a failing check exits 1 with the problems.
+  'i18n-check': { m: 'POST', p: '/v1/localizations/check', f: 'b', out: checkOut },
+};
 export const WORKFLOWS: Ops = {
   list: { m: 'GET', p: '/v1/workflows', f: 'q' },
   get: { m: 'GET', p: '/v1/workflows/{}' },
@@ -240,6 +268,13 @@ export const AGENTS: Ops = {
   'review-start': { m: 'POST', p: '/v1/agent_access_reviews', f: 'b' },
   'review-decide': { m: 'POST', p: '/v1/agent_access_reviews/{}/items/{}/decide', f: 'by' },
   'review-close': { m: 'POST', p: '/v1/agent_access_reviews/{}/close', f: 'y' },
+  delegations: { m: 'GET', p: '/v1/agent_delegations', f: 'q', query: ['machine-id', 'delegator-user-id', 'root-id'] },
+  delegation: { m: 'GET', p: '/v1/agent_delegations/{}' },
+  'delegation-graph': { m: 'GET', p: '/v1/agent_delegations/{}/graph' },
+  delegate: { m: 'POST', p: '/v1/agent_delegations', f: 'b' },
+  'delegation-revoke': { m: 'POST', p: '/v1/agent_delegations/{}/revoke', f: 'by' },
+  'delegation-revoke-user': { m: 'POST', p: '/v1/agent_delegations/revoke_for_user', f: 'by' },
+  'delegation-evaluate': { m: 'POST', p: '/v1/agent_delegations/{}/evaluate', f: 'b' },
 };
 export const TELEMETRY: Ops = {
   show: { m: 'GET', p: '/v1/telemetry_export' },
@@ -261,6 +296,10 @@ export const BILLING: Ops = {
 export const AUDIT: Ops = {
   retention: { m: 'GET', p: '/v1/audit_retention' },
   'set-retention': { m: 'PUT', p: '/v1/audit_retention', f: 'by' },
+  chain: { m: 'GET', p: '/v1/audit/chain' },
+  'chain-enable': { m: 'PUT', p: '/v1/audit/chain', f: 'b', fixed: { enabled: true }, bodyFlags: ['checkpoint-interval-seconds'] },
+  'chain-checkpoint': { m: 'POST', p: '/v1/audit/chain/checkpoints' },
+  'chain-links': { m: 'GET', p: '/v1/audit/chain/links', query: ['after-seq', 'limit'] },
 };
 export const FEDERATION: Ops = {
   show: { m: 'GET', p: '/v1/federation' },

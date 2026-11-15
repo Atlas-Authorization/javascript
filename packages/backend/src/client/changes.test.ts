@@ -35,6 +35,8 @@ describe('changes', () => {
     expect(last().method).toBe('PUT');
     expect(last().url).toBe(`${API_URL}/v1/changes/consumers/mirror/ack`);
     expect(JSON.parse(last().body!)).toEqual({ seq: 7 });
+    await atlas.changes.consumers.list();
+    expect(last().url).toBe(`${API_URL}/v1/changes/consumers`);
     await atlas.changes.consumers.get('mirror');
     expect(last().url).toBe(`${API_URL}/v1/changes/consumers/mirror`);
   });

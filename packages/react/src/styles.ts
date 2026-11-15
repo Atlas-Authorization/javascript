@@ -185,6 +185,11 @@ export const ATLAS_FLOW_CSS = `.atlas-captcha{display:flex;justify-content:cente
 .atlas-consent{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;font-size:.875rem;}
 .atlas-choices{display:flex;flex-direction:column;gap:6px;}
 .atlas-choice{display:flex;gap:6px;align-items:center;font-weight:400;}
+.atlas-referral-rewards{display:flex;flex-direction:column;gap:8px;font-size:.875rem;}
+.atlas-referral-link{display:flex;gap:8px;margin:0;}
+.atlas-referral-link input{flex:1;min-width:0;}
+.atlas-referral-terms,.atlas-referral-totals{margin:0;}
+.atlas-referral-list{margin:0;padding-left:1.25rem;}
 ${POLICY_CSS}`;
 
 export const ATLAS_STYLES_CSS = `${ATLAS_BASE_CSS}\n${ATLAS_DESIGN_CSS}\n${ATLAS_FLOW_CSS}`;

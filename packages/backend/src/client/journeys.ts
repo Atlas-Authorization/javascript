@@ -1,6 +1,6 @@
 import { enc, type RequestFn } from './request';
 
-export type JourneyStepType = 'require_method' | 'require_mfa' | 'required_action' | 'profile_prompt' | 'policy_acceptance' | 'action' | 'set_claim' | 'redirect' | 'deny' | 'form' | 'subflow';
+export type JourneyStepType = 'require_method' | 'require_mfa' | 'required_action' | 'profile_prompt' | 'policy_acceptance' | 'action' | 'set_claim' | 'redirect' | 'deny' | 'form' | 'subflow' | 'branch' | 'delay' | 'send_message';
 
 /** Where a step runs: when an existing account signs in, or right after an account is created. */
 export type JourneyStage = 'sign_in' | 'sign_up';
@@ -64,6 +64,18 @@ export interface JourneyStep {
   once?: boolean;
   /** subflow: the journey to run here. */
   flow_id?: string;
+  /** branch: the conditions (same language as `when`) picking the `then` steps; when they do not match the `else` steps run. Branches nest at most three deep and every nested step counts toward the 50-step limit. */
+  if?: Record<string, unknown>;
+  then?: JourneyStep[];
+  else?: JourneyStep[];
+  /** delay: seconds every send_message after it on the same path waits (all waits on a path add up, at most 30 days). */
+  delay_seconds?: number;
+  /** send_message: the email, sent once per user to their verified primary address through your own email provider. `{{first_name}}`, `{{last_name}}`, `{{email}}` and `{{user_id}}` are filled in. */
+  subject?: string;
+  body?: string;
+  channel?: 'email';
+  /** send_message: also text the user (at most 320 characters, same placeholders) to a verified phone number through your own SMS provider, once per user per step. */
+  sms_body?: string;
 }
 
 export interface JourneyDefinition {
@@ -104,7 +116,7 @@ export interface JourneySimulation {
   version: number;
   outcome: 'allowed' | 'held' | 'refused';
   effects: Array<Record<string, unknown>>;
-  trace: Array<{ step: string; type: JourneyStepType; matched: boolean; outcome: 'skipped' | 'passed' | 'effect' | 'stopped' }>;
+  trace: Array<{ step: string; type: JourneyStepType; matched: boolean; outcome: 'skipped' | 'passed' | 'effect' | 'stopped'; branch?: 'then' | 'else' }>;
 }
 
 /** A user's run through a journey: started when a step was first held for them, completed when every held step was finished, abandoned when untouched past the journey's window. */
@@ -123,6 +135,83 @@ export interface JourneyRun {
   updated_at: number;
   completed_at: number | null;
   abandoned_at: number | null;
+}
+
+export interface JourneyExperimentVariant {
+  /** 1-32 lowercase letters, digits, _ or -. */
+  key: string;
+  /** A saved version of the journey. */
+  version: number;
+  /** Percent of users; all weights add up to 100. */
+  weight: number;
+}
+
+/** An A/B experiment on a journey. Draft, then running (users are split between the variants), then stopped. */
+export interface JourneyExperiment {
+  object: 'journey_experiment';
+  id: string;
+  journey_id: string;
+  name: string;
+  hypothesis: string | null;
+  status: 'draft' | 'running' | 'stopped';
+  variants: JourneyExperimentVariant[];
+  promoted_variant: string | null;
+  started_at: number | null;
+  stopped_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface JourneyExperimentReadout {
+  object: 'journey_experiment_readout';
+  experiment_id: string;
+  journey_id: string;
+  status: 'draft' | 'running' | 'stopped';
+  metric: 'completion';
+  /** The first variant, which the others are compared with. */
+  control: string | null;
+  significance_level: number;
+  started_at: number | null;
+  stopped_at: number | null;
+  variants: Array<{
+    key: string;
+    version: number | null;
+    weight: number | null;
+    /** Users who reached the journey while the experiment ran. */
+    assigned: number;
+    /** Of those, how many the journey held (a run started). Completion is measured among them. */
+    started: number;
+    completed: number;
+    abandoned: number;
+    in_progress: number;
+    completion_rate: number | null;
+    abandon_rate: number | null;
+    avg_duration_ms: number | null;
+    /** 95% interval of the completion rate. */
+    completion_interval: [number, number] | null;
+    /** Relative change against the control (0.2 = 20% higher). */
+    lift: number | null;
+    /** Two-sided p-value of a two-proportion z-test against the control. */
+    p_value: number | null;
+    significant: boolean;
+  }>;
+}
+
+/** A message a journey's `send_message` step scheduled for a user. The text is not returned. */
+export interface JourneyMessage {
+  object: 'journey_message';
+  id: string;
+  journey_id: string;
+  step: string;
+  user_id: string;
+  channel: 'email' | 'sms';
+  subject: string;
+  status: 'pending' | 'sending' | 'sent' | 'failed' | 'canceled';
+  send_at: number;
+  attempts: number;
+  last_error: string | null;
+  sent_at: number | null;
+  created_at: number;
 }
 
 /** Sign-in and sign-up journeys (`/v1/flows`): versioned steps run before a session is issued. */
@@ -156,6 +245,46 @@ export function journeysResource(request: RequestFn) {
      /** Users' runs through one journey, newest first. */
     runs(id: string, params: { status?: JourneyRun['status']; limit?: number } = {}): Promise<{ object: 'list'; data: JourneyRun[]; has_more: boolean }> {
       return request({ method: 'GET', path: `/v1/flows/${enc(id)}/runs`, query: params });
+    },
+    /** A/B experiments on a journey: `create` a draft, `start` it, read the `readout`, `stop` it (optionally promoting a variant). */
+    experiments: {
+      list(id: string): Promise<{ object: 'list'; data: JourneyExperiment[]; has_more: boolean }> {
+        return request({ method: 'GET', path: `/v1/flows/${enc(id)}/experiments` });
+      },
+      create(id: string, body: { name: string; hypothesis?: string | null; variants: JourneyExperimentVariant[] }, idempotencyKey?: string): Promise<JourneyExperiment> {
+        return request({ method: 'POST', path: `/v1/flows/${enc(id)}/experiments`, body, idempotencyKey });
+      },
+      get(id: string, experimentId: string): Promise<JourneyExperiment> {
+        return request({ method: 'GET', path: `/v1/flows/${enc(id)}/experiments/${enc(experimentId)}` });
+      },
+      /** A draft only; a started experiment keeps its variants so nobody is moved. */
+      update(id: string, experimentId: string, body: { name?: string; hypothesis?: string | null; variants?: JourneyExperimentVariant[] }, idempotencyKey?: string): Promise<JourneyExperiment> {
+        return request({ method: 'PATCH', path: `/v1/flows/${enc(id)}/experiments/${enc(experimentId)}`, body, idempotencyKey });
+      },
+      delete(id: string, experimentId: string): Promise<{ object: 'journey_experiment'; id: string; deleted: true }> {
+        return request({ method: 'DELETE', path: `/v1/flows/${enc(id)}/experiments/${enc(experimentId)}` });
+      },
+      /** One experiment runs per journey at a time. */
+      start(id: string, experimentId: string, idempotencyKey?: string): Promise<JourneyExperiment> {
+        return request({ method: 'POST', path: `/v1/flows/${enc(id)}/experiments/${enc(experimentId)}/start`, idempotencyKey });
+      },
+      /** `promoteVariant` makes that variant's version the journey's active version. */
+      stop(id: string, experimentId: string, opts: { promoteVariant?: string | null } = {}, idempotencyKey?: string): Promise<JourneyExperiment> {
+        return request({ method: 'POST', path: `/v1/flows/${enc(id)}/experiments/${enc(experimentId)}/stop`, body: { promote_variant: opts.promoteVariant ?? null }, idempotencyKey });
+      },
+      readout(id: string, experimentId: string): Promise<JourneyExperimentReadout> {
+        return request({ method: 'GET', path: `/v1/flows/${enc(id)}/experiments/${enc(experimentId)}/readout` });
+      },
+    },
+    /** The messages a journey's `send_message` steps scheduled. */
+    messages: {
+      list(id: string, params: { status?: JourneyMessage['status']; user_id?: string; limit?: number } = {}): Promise<{ object: 'list'; data: JourneyMessage[]; has_more: boolean }> {
+        return request({ method: 'GET', path: `/v1/flows/${enc(id)}/messages`, query: params });
+      },
+      /** Cancel one that has not gone out (pending or failed). */
+      cancel(id: string, messageId: string): Promise<JourneyMessage> {
+        return request({ method: 'POST', path: `/v1/flows/${enc(id)}/messages/${enc(messageId)}/cancel` });
+      },
     },
     /** One user's journey runs with what they saved so far. */
     userRuns(userId: string): Promise<{ object: 'list'; data: JourneyRun[]; has_more: boolean }> {

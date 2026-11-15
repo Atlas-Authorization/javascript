@@ -1,6 +1,8 @@
 # @atlasauth/react changelog
 
+## 0.37.0
 
+- `<ReferralRewards />` and `useReferralRewards`: a referrer's link, the reward terms and what they have been credited.
 
 ## 0.36.0
 

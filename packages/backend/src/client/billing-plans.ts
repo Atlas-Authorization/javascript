@@ -38,7 +38,7 @@ export interface BillingPlan {
   updated_at: number;
 }
 
-export type BillingProviderName = 'stripe' | 'polar' | 'dodo' | 'creem' | 'chargebee' | 'autumn' | 'commet';
+export type BillingProviderName = 'stripe' | 'polar' | 'dodo' | 'creem' | 'chargebee' | 'autumn' | 'commet' | 'paddle' | 'lemonsqueezy' | 'revenuecat' | 'appstore' | 'googleplay';
 
 /**
  * A read view of who is subscribed. `status` is written ONLY by the verified

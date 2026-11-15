@@ -1,5 +1,9 @@
 # @atlasauth/msw changelog
 
+## 0.4.1
+
+- Picks up `@atlasauth/emulator-core` 0.3.0: async clock advance and the new emulated routes.
+
 ## 0.4.0
 
 - `coreHandlers` re-exports the full-API emulator engine as MSW handlers.

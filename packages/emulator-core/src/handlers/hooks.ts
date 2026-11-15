@@ -253,6 +253,19 @@ export function hooksHandlers(): RouteDef[] {
     },
     {
       method: 'GET',
+      pattern: '/v1/changes/consumers',
+      scope: 'events:read',
+      handler: (c) => {
+        const e = c.engine;
+        const data = [...consumerMap(e).entries()].map(([k, v]) => {
+          const i = k.indexOf('|');
+          return { object: 'change_consumer', name: k.slice(i + 1), key_id: k.slice(0, i), seq: v.seq, updated_at: v.updated_at, head_seq: e.feed.head, lag: Math.max(0, e.feed.head - (v.seq ?? 0)) };
+        });
+        return { body: { object: 'list', data, has_more: false } };
+      },
+    },
+    {
+      method: 'GET',
       pattern: '/v1/changes/consumers/:name',
       scope: 'events:read',
       handler: (c) => {

@@ -2,135 +2,212 @@
 import type { Engine, RouteDef } from '../engine';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
-import { Table } from '../store';
-import { engineState, intIn } from './support';
+import { firstOf, headerSignals } from './access-signals';
+import { CedarParseError, type CedarRequest, parseCedar } from './cedar';
+import { type RoleEdit, abacDecide, candidatePdp, explainAccess, fgaCheck, latestModel, loadPdp, parseExplainBody, rbacCheck, recordRbacCheck, replayRoleDecision } from './authz-layers';
+import { type Tuple, applyTuples, pushEvent, reconcileManaged, st, storeExists } from './authz-state';
+import { intIn } from './support';
 import { listReply } from './util';
 
 /**
  * Authorization introspection on the engine's own state: `POST /v1/authz/explain` (why a user has or lacks a permission,
- * with every contributing role), `POST /v1/authz/rbac/check` (the same check, written to the decision log),
- * `POST /v1/authz/what_if` (replay the logged decisions under a candidate role edit and see what flips), managed FGA sync
- * (memberships and org roles become tuples in one store, with backfill, runs and purge) and the authorization event feed.
- * Layers the emulator has no data for (groups, resource roles, ABAC, access policies, FGA checks) are reported as
- * `skipped` with a reason and never decide, exactly as a layer that errored would not.
+ * asked of all seven layers: organization and app roles, groups, resource roles, ABAC, access policies and FGA tuples),
+ * `POST /v1/authz/rbac/check` (the role check, written to the decision log), `POST /v1/authz/what_if` (replay the logged
+ * role, ABAC and FGA decisions under a candidate change and see what flips), managed FGA sync (memberships, org roles and
+ * groups become tuples in one store, live on every change, with backfill, runs and purge) and the authorization event feed.
+ * The data the layers read is written by the routes in authz-data.
  */
-const LAYERS = ['rbac', 'org_roles', 'groups', 'resource_roles', 'abac', 'access_policies', 'fga'] as const;
 const MAX_WAIT_MS = 25_000;
 const REPLAY_LIMIT_DEFAULT = 2000;
 const REPLAY_LIMIT_MAX = 10_000;
+const SAMPLE_CAP = 50;
 
 const bad = (message: string, param: string) => new EmulatorError('VALIDATION_FAILED', message, param);
 
-interface Tuple {
-  user: string;
-  relation: string;
-  object: string;
-}
-interface AuthzState {
-  decisions: Table;
-  whatIf: Table;
-  runs: Table;
-  events: Obj[];
-  seq: number;
-  config: { enabled: boolean; store_id: string | null; memberships: boolean; org_roles: boolean; groups: boolean; updated_at: number | null };
-  managed: Map<string, Tuple>;
-}
-const st = engineState((e: Engine): AuthzState => ({
-  decisions: new Table('authz_decisions', e.clock.now, 'azd'),
-  whatIf: new Table('authz_what_if_runs', e.clock.now, 'wif'),
-  runs: new Table('fga_sync_runs', e.clock.now, 'fsr'),
-  events: [],
-  seq: 0,
-  config: { enabled: false, store_id: null, memberships: true, org_roles: true, groups: true, updated_at: null },
-  managed: new Map(),
-}));
-
-const permMatches = (have: string, want: string): boolean => have === want || have === '*' || (have.endsWith(':*') && want.startsWith(have.slice(0, -1)));
-
-/** What a user's organization roles grant for one permission, optionally under role edits (`edits`: role key -> { add, remove }). */
-function rbac(e: Engine, userId: string, permission: string, organizationId?: string, edits?: Map<string, { add: string[]; remove: string[] }>): { allowed: boolean; contributions: Obj[] } {
-  const contributions: Obj[] = [];
-  for (const m of e.db.memberships.filter((x) => x.user_id === userId && (!organizationId || x.organization_id === organizationId))) {
-    const role = e.db.roles.find((r) => r.key === m.role);
-    const edit = edits?.get(m.role);
-    const perms = ((role?.permissions as string[] | undefined) ?? []).filter((p) => !edit?.remove.includes(p)).concat(edit?.add ?? []);
-    const matched = perms.some((p) => permMatches(p, permission));
-    contributions.push({ layer: 'rbac', effect: 'allow', matched, permission, via: { kind: 'org_role', key: m.role, organization_id: m.organization_id } });
-  }
-  return { allowed: contributions.some((c) => c.matched), contributions };
-}
-
-function explain(e: Engine, userId: string, permission: string, organizationId: string | undefined): Obj {
-  if (!e.db.users.get(userId)) throw notFound('User');
-  const r = rbac(e, userId, permission, organizationId);
-  const skipped = (reason: string): Obj => ({ status: 'skipped', effect: 'none', reason, contributions: [] });
-  const layers: Obj = { rbac: { status: 'evaluated', effect: r.allowed ? 'allow' : 'none', contributions: r.contributions }, org_roles: skipped('No delegated roles in the emulator.') };
-  for (const l of LAYERS.slice(2)) layers[l] = skipped(`The emulator holds no ${l.replace('_', ' ')} data.`);
-  const deciding = r.contributions.filter((c) => c.matched);
-  const decision = r.allowed ? 'allow' : 'deny';
-  return { object: 'authz_explanation', subject: { id: userId }, permission, organization_id: organizationId ?? null, decision, combination: 'deny_overrides', summary: r.allowed ? `Allowed by ${deciding.map((c) => c.via.key).join(', ')}.` : 'No layer allows this: denied by default.', deciding, layers, evaluated_at: e.clock.now() };
-}
-
-function pushEvent(e: Engine, kind: string, storeId: string | null, source: string, data: Obj): void {
-  const s = st(e);
-  s.events.push({ object: 'authz_event', id: e.db.newId('azev'), seq: ++s.seq, kind, store_id: storeId, store_revision: s.seq, source, data, created_at: e.clock.now() });
-}
-
-const parseEdits = (body: Obj): Map<string, { add: string[]; remove: string[] }> | undefined => {
-  const roles = body.candidate?.rbac?.roles;
-  if (roles === undefined) return undefined;
-  if (!Array.isArray(roles) || !roles.length || roles.length > 200) throw bad('candidate.rbac.roles must list 1-200 role edits.', 'candidate.rbac.roles');
-  const out = new Map<string, { add: string[]; remove: string[] }>();
-  roles.forEach((r: Obj, i: number) => {
-    if (!r || typeof r !== 'object' || (r.type !== 'org_role' && r.type !== 'app_role')) throw bad('type must be org_role or app_role.', `candidate.rbac.roles[${i}].type`);
-    if (typeof r.key !== 'string' || !r.key) throw bad('key is required.', `candidate.rbac.roles[${i}].key`);
-    const list = (v: unknown, f: string): string[] => {
-      if (v === undefined) return [];
-      if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw bad(`${f} must be a list of permissions.`, `candidate.rbac.roles[${i}].${f}`);
-      return v as string[];
-    };
-    const prev = out.get(r.key) ?? { add: [], remove: [] };
-    out.set(r.key, { add: [...prev.add, ...list(r.add_permissions, 'add_permissions')], remove: [...prev.remove, ...list(r.remove_permissions, 'remove_permissions')] });
+const obj = (v: unknown, field: string): Obj => {
+  if (v === undefined || v === null) return {};
+  if (typeof v !== 'object' || Array.isArray(v)) throw bad(`${field} must be an object.`, field);
+  return v as Obj;
+};
+const strList = (v: unknown, field: string): string[] => {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.some((x) => typeof x !== 'string' || !x)) throw bad(`${field} must be a list of strings.`, field);
+  return v as string[];
+};
+const tupleList = (v: unknown, field: string): Tuple[] => {
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) throw bad(`${field} must be a list of tuples.`, field);
+  return v.map((t, i) => {
+    const o = obj(t, `${field}[${i}]`);
+    if (typeof o.user !== 'string' || typeof o.relation !== 'string' || typeof (o.object ?? o.target) !== 'string') throw bad(`${field}[${i}] requires user, relation and object.`, field);
+    if (!/^[^:#]+:[^#]+(#[^#]+)?$/.test(o.user)) throw bad(`${field}[${i}].user is malformed.`, field);
+    return { user: o.user, relation: o.relation, object: (o.object ?? o.target) as string };
   });
-  return out;
+};
+const policySources = (v: unknown, field: string): Array<{ name: string; source: string }> => {
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) throw bad(`${field} must be a list.`, field);
+  return v.map((p, i) => {
+    const o = obj(p, `${field}[${i}]`);
+    if (typeof o.name !== 'string' || !o.name || typeof o.source !== 'string' || !o.source) throw bad(`${field}[${i}] needs name and source.`, field);
+    try {
+      parseCedar(o.source);
+    } catch (err) {
+      if (err instanceof CedarParseError) throw bad(`${field}[${i}].source: ${err.message} (at character ${err.position})`, field);
+      throw err;
+    }
+    return { name: o.name, source: o.source };
+  });
+};
+const time = (v: unknown, field: string): number | undefined => {
+  if (v === undefined || v === null) return undefined;
+  const t = typeof v === 'number' ? v : typeof v === 'string' ? Date.parse(v) : NaN;
+  if (Number.isNaN(t)) throw bad(`${field} must be a millisecond timestamp or an ISO date.`, field);
+  return t;
 };
 
-const desiredTuples = (e: Engine): Tuple[] => {
-  const cfg = st(e).config;
-  const out: Tuple[] = [];
-  for (const m of e.db.memberships.all()) {
-    const u = e.db.users.get(m.user_id);
-    if (!u || u.deleted) continue;
-    if (cfg.memberships) out.push({ user: `user:${m.user_id}`, relation: 'member', object: `organization:${m.organization_id}` });
-    if (cfg.org_roles && m.role) out.push({ user: `user:${m.user_id}`, relation: String(m.role).replace(/^org:/, ''), object: `organization:${m.organization_id}` });
+interface Candidate {
+  abac?: { add: Array<{ name: string; source: string }>; replace: Array<{ name: string; source: string }>; remove: string[] };
+  rbac?: { roles: RoleEdit[] };
+  fga?: { storeId: string; writes: Tuple[]; deletes: Tuple[] };
+  accessPolicy?: Obj;
+}
+function parseCandidate(cand: Obj): Candidate {
+  const out: Candidate = {};
+  if (cand.abac !== undefined) {
+    const a = obj(cand.abac, 'candidate.abac');
+    out.abac = { add: policySources(a.add, 'candidate.abac.add'), replace: policySources(a.replace, 'candidate.abac.replace'), remove: strList(a.remove, 'candidate.abac.remove') };
   }
+  if (cand.rbac !== undefined) {
+    const r = obj(cand.rbac, 'candidate.rbac');
+    if (!Array.isArray(r.roles) || r.roles.length === 0 || r.roles.length > 200) throw bad('candidate.rbac.roles must list 1-200 role edits.', 'candidate.rbac.roles');
+    out.rbac = {
+      roles: r.roles.map((x: unknown, i: number) => {
+        const o = obj(x, `candidate.rbac.roles[${i}]`);
+        if (o.type !== 'org_role' && o.type !== 'app_role') throw bad('type must be org_role or app_role.', `candidate.rbac.roles[${i}].type`);
+        if (typeof o.key !== 'string' || !o.key) throw bad('key is required.', `candidate.rbac.roles[${i}].key`);
+        return { type: o.type, key: o.key, organizationId: typeof o.organization_id === 'string' ? o.organization_id : undefined, addPermissions: strList(o.add_permissions, 'add_permissions'), removePermissions: strList(o.remove_permissions, 'remove_permissions') };
+      }),
+    };
+  }
+  if (cand.fga !== undefined) {
+    const f = obj(cand.fga, 'candidate.fga');
+    if (typeof f.store_id !== 'string' || !f.store_id) throw bad('candidate.fga.store_id is required.', 'candidate.fga.store_id');
+    out.fga = { storeId: f.store_id, writes: tupleList(f.writes, 'candidate.fga.writes'), deletes: tupleList(f.deletes, 'candidate.fga.deletes') };
+  }
+  if (cand.access_policy !== undefined) out.accessPolicy = obj(obj(cand.access_policy, 'candidate.access_policy').draft ?? cand.access_policy, 'candidate.access_policy.draft');
+  if (!out.abac && !out.rbac && !out.fga && !out.accessPolicy) throw bad('candidate needs at least one of abac, rbac, fga, access_policy.', 'candidate');
   return out;
-};
-const tupleKey = (t: Tuple) => `${t.user}|${t.relation}|${t.object}`;
+}
+
+interface SourceStats {
+  replayed: number;
+  unchanged: number;
+  allow_to_deny: number;
+  deny_to_allow: number;
+  baseline_mismatch: number;
+}
+
+function runWhatIf(e: Engine, body: Obj): Obj {
+  const c = parseCandidate(obj(body.candidate, 'candidate'));
+  const until = time(body.until, 'until') ?? e.clock.now();
+  let since = time(body.since, 'since');
+  if (since === undefined) {
+    const days = body.days === undefined ? 7 : body.days;
+    if (!Number.isInteger(days) || (days as number) < 1 || (days as number) > 30) throw bad('days must be an integer from 1 to 30.', 'days');
+    since = until - (days as number) * 86_400_000;
+  }
+  if (since >= until) throw bad('since must be before until.', 'since');
+  if (until - since > 31 * 86_400_000) throw bad('The window can be at most 31 days.', 'since');
+  const limit = body.limit === undefined ? REPLAY_LIMIT_DEFAULT : body.limit;
+  if (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > REPLAY_LIMIT_MAX) throw bad(`limit must be an integer from 1 to ${REPLAY_LIMIT_MAX}.`, 'limit');
+  if (body.name !== undefined && (typeof body.name !== 'string' || body.name.length > 200)) throw bad('name must be a string of at most 200 characters.', 'name');
+  if (body.save !== undefined && typeof body.save !== 'boolean') throw bad('save must be a boolean.', 'save');
+  if (c.fga && !storeExists(e, c.fga.storeId)) throw bad('Unknown FGA store.', 'candidate.fga.store_id');
+  if (c.fga && !latestModel(e, c.fga.storeId)) throw bad('The FGA store has no authorization model.', 'candidate.fga.store_id');
+
+  const by: Record<string, SourceStats> = {};
+  const skippedBy: Record<string, number> = {};
+  const skip = (reason: string) => void (skippedBy[reason] = (skippedBy[reason] ?? 0) + 1);
+  const flips: Obj[] = [];
+  const principals = new Set<string>();
+  let replayed = 0;
+  const note = (row: Obj, before: 'allow' | 'deny', after: 'allow' | 'deny', mismatch: boolean) => {
+    replayed++;
+    const s = (by[row.source] ??= { replayed: 0, unchanged: 0, allow_to_deny: 0, deny_to_allow: 0, baseline_mismatch: 0 });
+    s.replayed++;
+    if (mismatch) s.baseline_mismatch++;
+    if (before === after) return void s.unchanged++;
+    if (before === 'allow') s.allow_to_deny++;
+    else s.deny_to_allow++;
+    if (row.principal) principals.add(row.principal);
+    if (flips.length < SAMPLE_CAP) flips.push({ decision_id: row.id, source: row.source, principal: row.principal, action: row.action, resource: row.resource, before, after, at: row.at });
+  };
+  const pdp = c.abac ? loadPdp(e) : null;
+  const cpdp = c.abac && pdp ? candidatePdp(pdp, c.abac) : null;
+  const all = st(e).decisions.all().filter((d) => d.at >= since! && d.at <= until);
+  const rows = all.slice(0, limit as number);
+  for (const row of rows) {
+    try {
+      if (['abac', 'authzen', 'mcp_gateway', 'pdp'].includes(row.source) && pdp && cpdp) {
+        const req = row.input as CedarRequest | null;
+        if (!req || typeof req !== 'object' || !req.principal || !req.resource) {
+          skip('no_input');
+          continue;
+        }
+        const now = abacDecide(pdp, req).decision;
+        note(row, now, abacDecide(cpdp, req).decision, now !== row.decision);
+      } else if (row.source === 'rbac' && c.rbac) {
+        if (row.result?.kind !== 'role' || !row.action) {
+          skip('rbac_not_role_based');
+          continue;
+        }
+        note(row, row.decision, replayRoleDecision(row.result, c.rbac.roles, row.action) ? 'allow' : 'deny', false);
+      } else if (row.source === 'fga' && c.fga) {
+        if (row.policyVersion?.store_id !== c.fga.storeId) {
+          skip('other_store');
+          continue;
+        }
+        const i = row.input ?? {};
+        if (!i.user || !i.relation || !i.object) {
+          skip('no_input');
+          continue;
+        }
+        const req = { user: i.user, relation: i.relation, object: i.object, contextual: i.contextual_tuples };
+        const now = fgaCheck(e, c.fga.storeId, req) ? 'allow' : 'deny';
+        note(row, now, fgaCheck(e, c.fga.storeId, req, { writes: c.fga.writes, deletes: c.fga.deletes }) ? 'allow' : 'deny', now !== row.decision);
+      } else skip(row.source === 'access_policy' ? 'access_policy_replayed_separately' : 'no_matching_candidate');
+    } catch {
+      skip('replay_error');
+    }
+  }
+  // shortcut: the emulator keeps no sampled sign-ins, so an access-policy candidate has nothing to replay against.
+  if (c.accessPolicy) skip('access_policy_no_sampled_sign_ins');
+  const totals = { unchanged: 0, allow_to_deny: 0, deny_to_allow: 0 };
+  for (const s of Object.values(by)) {
+    totals.unchanged += s.unchanged;
+    totals.allow_to_deny += s.allow_to_deny;
+    totals.deny_to_allow += s.deny_to_allow;
+  }
+  const result: Obj = { object: 'authz_what_if', name: body.name ?? null, window: { since, until }, evaluated: rows.length, replayed, truncated: all.length > rows.length, skipped: skippedBy, by_source: by, totals, affected_principals: principals.size, samples: flips };
+  if (body.save === false) return { ...result, status: 200 };
+  const describe = {
+    ...(c.abac ? { abac: c.abac } : {}),
+    ...(c.rbac ? { rbac: { roles: c.rbac.roles.map((r) => ({ type: r.type, key: r.key, organization_id: r.organizationId ?? null, add_permissions: r.addPermissions, remove_permissions: r.removePermissions })) } } : {}),
+    ...(c.fga ? { fga: { store_id: c.fga.storeId, writes: c.fga.writes, deletes: c.fga.deletes } } : {}),
+    ...(c.accessPolicy ? { access_policy: { draft: c.accessPolicy } } : {}),
+  };
+  const saved = st(e).whatIf.insert({ name: body.name ?? null, candidate: describe, window_start: since, window_end: until, summary: { evaluated: rows.length, replayed, truncated: result.truncated, totals, affected_principals: principals.size, by_source: by }, result, created_at: e.clock.now() });
+  return { ...result, id: saved.id, created_at: saved.created_at, status: 201 };
+}
+
+const whatIfView = (r: Obj, full: boolean): Obj => ({ object: 'authz_what_if_run', id: r.id, name: r.name, candidate: r.candidate, window: { since: r.window_start, until: r.window_end }, summary: r.summary, ...(full ? { result: r.result } : {}), created_by: null, created_at: r.created_at });
 
 /** One sync run: write what should exist; with `repair`, also delete managed tuples that no longer should. Only managed tuples are ever touched. */
 function runSync(e: Engine, kind: 'backfill' | 'initial', repair: boolean): Obj {
   const s = st(e);
   const now = e.clock.now();
-  const want = new Map(desiredTuples(e).map((t) => [tupleKey(t), t]));
-  let written = 0;
-  let deleted = 0;
-  for (const [k, t] of want) {
-    if (s.managed.has(k)) continue;
-    s.managed.set(k, t);
-    written++;
-    pushEvent(e, 'tuple_written', s.config.store_id, 'sync', { ...t });
-    e.webhooks.emit('fga.tuple_written', { object: 'fga_tuple_batch', store_id: s.config.store_id, store_revision: null, source: 'sync', count: 1, tuples: [{ ...t }] });
-  }
-  if (repair) {
-    for (const [k, t] of [...s.managed]) {
-      if (want.has(k)) continue;
-      s.managed.delete(k);
-      deleted++;
-      pushEvent(e, 'tuple_deleted', s.config.store_id, 'sync', { ...t });
-      e.webhooks.emit('fga.tuple_deleted', { object: 'fga_tuple_batch', store_id: s.config.store_id, store_revision: null, source: 'sync', count: 1, tuples: [{ ...t }] });
-    }
-  }
+  const { written, deleted } = reconcileManaged(e, repair);
   const run = s.runs.insert({ kind, status: 'completed', store_id: s.config.store_id, repair, written, deleted, managed: s.managed.size, error: null, created_at: now, completed_at: now });
   pushEvent(e, 'sync_run', s.config.store_id, 'sync', { run_id: run.id, written, deleted });
   e.webhooks.emit('fga_sync.completed', { object: 'fga_sync_run', id: run.id, store_id: s.config.store_id, written, deleted });
@@ -143,22 +220,18 @@ const statusView = (e: Engine): Obj => {
   const last = s.runs.all()[0];
   return { object: 'fga_sync', enabled: s.config.enabled, store_id: s.config.store_id, memberships: s.config.memberships, org_roles: s.config.org_roles, groups: s.config.groups, managed_tuples: s.managed.size, last_run: last ? runView(last) : null, updated_at: s.config.updated_at };
 };
-const storeExists = (e: Engine, id: string): boolean => !!e.generic.get('fga/stores')?.get(id);
 
 export function authzHandlers(): RouteDef[] {
-  const whatIfView = (r: Obj, full: boolean): Obj => ({ object: 'authz_what_if_run', id: r.id, status: 'completed', created_at: r.created_at, window: r.window, evaluated: r.evaluated, changed: r.changed, flipped_to_allow: r.flipped_to_allow, flipped_to_deny: r.flipped_to_deny, truncated: r.truncated, not_evaluated: r.not_evaluated, ...(full ? { samples: r.samples } : {}) });
   return [
     {
       method: 'POST',
       pattern: '/v1/authz/explain',
       scope: 'authz_decisions:read',
       handler: (c) => {
-        const id = c.body.subject?.id;
-        if (typeof id !== 'string' || !id) throw bad('subject.id is required.', 'subject.id');
-        const permission = c.body.permission ?? c.body.action;
-        if (typeof permission !== 'string' || !permission) throw bad('permission (or action) is required.', 'permission');
-        if (c.body.organization_id !== undefined && typeof c.body.organization_id !== 'string') throw bad('organization_id must be a string.', 'organization_id');
-        return { body: explain(c.engine, id, permission, c.body.organization_id) };
+        const input = parseExplainBody(c.body);
+        // Signals a caller proxies in headers (country, risk level, device trust) apply when the body does not say.
+        input.access = { ...input.access, signals: firstOf(input.access?.signals, headerSignals(c.request.headers)) };
+        return { body: explainAccess(c.engine, input) };
       },
     },
     {
@@ -168,14 +241,15 @@ export function authzHandlers(): RouteDef[] {
       scope: 'authz_decisions:read',
       handler: (c) => {
         const e = c.engine;
-        const id = c.body.subject?.id;
-        if (typeof id !== 'string' || !id) throw bad('subject.id is required.', 'subject.id');
+        const subject = (c.body.subject ?? {}) as Obj;
+        if (typeof subject.id !== 'string' || !subject.id) throw bad('subject.id is required.', 'subject.id');
         if (typeof c.body.permission !== 'string' || !c.body.permission) throw bad('permission is required.', 'permission');
-        if (!e.db.users.get(id)) throw notFound('User');
-        const r = rbac(e, id, c.body.permission, c.body.organization_id);
-        const held = r.contributions.filter((x) => x.matched);
-        st(e).decisions.insert({ source: 'rbac', user_id: id, permission: c.body.permission, organization_id: c.body.organization_id ?? null, allowed: r.allowed, at: e.clock.now() });
-        return { body: { object: 'rbac_check', allowed: r.allowed, decision: r.allowed ? 'allow' : 'deny', grants: held.map((h) => h.via.key), rules: held } };
+        if (c.body.organization_id !== undefined && typeof c.body.organization_id !== 'string') throw bad('organization_id must be a string.', 'organization_id');
+        const input = { userId: subject.id, permission: c.body.permission, organizationId: c.body.organization_id as string | undefined };
+        const r = rbacCheck(e, input);
+        recordRbacCheck(e, input, r);
+        const rules = [...r.layers.rbac.contributions, ...r.layers.org_roles.contributions, ...r.layers.groups.contributions].filter((x: Obj) => x.matched);
+        return { body: { object: 'rbac_check', allowed: r.allowed, decision: r.allowed ? 'allow' : 'deny', grants: r.grants, rules } };
       },
     },
     {
@@ -183,37 +257,8 @@ export function authzHandlers(): RouteDef[] {
       pattern: '/v1/authz/what_if',
       scope: 'authz_decisions:read',
       handler: (c) => {
-        const e = c.engine;
-        const cand = c.body.candidate;
-        if (!cand || typeof cand !== 'object' || Array.isArray(cand)) throw bad('candidate is required.', 'candidate');
-        const edits = parseEdits(c.body);
-        const notEvaluated: string[] = [];
-        for (const k of ['abac', 'fga', 'access_policy']) if (cand[k] !== undefined) notEvaluated.push(k);
-        if (cand.fga !== undefined && (!cand.fga || typeof cand.fga.store_id !== 'string' || !cand.fga.store_id)) throw bad('candidate.fga.store_id is required.', 'candidate.fga.store_id');
-        if (!edits && !notEvaluated.length) throw bad('candidate needs at least one of abac, rbac, fga, access_policy.', 'candidate');
-        const until = c.body.until === undefined ? e.clock.now() : Date.parse(String(c.body.until));
-        const days = intIn(c.body.days, 'days', 1, 30, 7);
-        const since = c.body.since === undefined ? until - days * 86_400_000 : Date.parse(String(c.body.since));
-        if (Number.isNaN(until) || Number.isNaN(since)) throw bad('since and until must be ISO 8601 times.', 'since');
-        if (since >= until) throw bad('since must be before until.', 'since');
-        if (until - since > 31 * 86_400_000) throw bad('The window can be at most 31 days.', 'since');
-        const limit = intIn(c.body.limit, 'limit', 1, REPLAY_LIMIT_MAX, REPLAY_LIMIT_DEFAULT);
-        const all = st(e).decisions.all().filter((d) => d.at >= since && d.at <= until);
-        const rows = all.slice(0, limit);
-        const flips: Obj[] = [];
-        let toAllow = 0;
-        let toDeny = 0;
-        for (const d of rows) {
-          if (!edits) break;
-          const next = rbac(e, d.user_id, d.permission, d.organization_id ?? undefined, edits).allowed;
-          if (next === d.allowed) continue;
-          next ? toAllow++ : toDeny++;
-          flips.push({ decision_id: d.id, user_id: d.user_id, permission: d.permission, organization_id: d.organization_id, before: d.allowed ? 'allow' : 'deny', after: next ? 'allow' : 'deny' });
-        }
-        const result = { evaluated: rows.length, changed: flips.length, flipped_to_allow: toAllow, flipped_to_deny: toDeny, truncated: all.length > rows.length, not_evaluated: notEvaluated, samples: flips.slice(0, 25), window: { since, until } };
-        if (c.body.save === false) return { body: { object: 'authz_what_if_run', id: null, status: 'completed', created_at: e.clock.now(), ...result } };
-        const row = st(e).whatIf.insert({ ...result, created_at: e.clock.now() });
-        return { status: 201, body: whatIfView(row, true) };
+        const { status, ...body } = runWhatIf(c.engine, c.body) as Obj;
+        return { status, body };
       },
     },
     { method: 'GET', pattern: '/v1/authz/what_if', scope: 'authz_decisions:read', handler: (c) => listReply(c, st(c.engine).whatIf.all(), (r) => whatIfView(r, false)) },
@@ -293,8 +338,9 @@ export function authzHandlers(): RouteDef[] {
         if (!s.config.store_id) throw notFound('Sync store');
         if (s.config.enabled) throw new EmulatorError('CONFLICT', 'Disable sync before purging.');
         const n = s.managed.size;
-        for (const t of s.managed.values()) pushEvent(e, 'tuple_deleted', s.config.store_id, 'sync', { ...t });
+        const owned = [...s.managed.values()];
         s.managed.clear();
+        if (owned.length) applyTuples(e, s.config.store_id, [], owned, 'sync');
         return { body: { object: 'fga.sync_purge', store_id: s.config.store_id, deleted: n, released: 0 } };
       },
     },

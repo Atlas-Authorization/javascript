@@ -24,6 +24,14 @@ export const ERROR_CATALOG: Record<string, { status: number; title: string }> = 
     "status": 409,
     "title": "Path mount not verified"
   },
+  "WRONG_REGION": {
+    "status": 421,
+    "title": "Instance is served from another region"
+  },
+  "FAPI_HOST_ISOLATED": {
+    "status": 421,
+    "title": "Use the instance's own Frontend API host"
+  },
   "IMPERSONATION_READ_ONLY": {
     "status": 403,
     "title": "Read-only support session"

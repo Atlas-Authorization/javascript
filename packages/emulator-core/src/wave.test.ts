@@ -370,7 +370,7 @@ describe('billing: invoices, usage, consume, trials', () => {
     expect((await call('GET', `/v1/billing/usage?subject_type=user&subject_id=${u.id}&period=current&events=true`)).json).toMatchObject({ total: 3, by_feature: { api: 3 } });
     const consume = (key: string, quantity = 1) => call('POST', '/v1/entitlements/consume', { subject_type: 'user', subject_id: u.id, feature: 'seats', key, quantity });
     expect((await consume('k1')).json).toMatchObject({ allowed: true, remaining: 1 });
-    expect((await consume('k1')).json.duplicate).toBe(true);
+    expect((await consume('k1')).json.replayed).toBe(true);
     expect((await consume('k2')).json).toMatchObject({ allowed: true, remaining: 0 });
     expect((await consume('k3')).json).toMatchObject({ allowed: false, reason: 'limit_reached' });
     expect(e.webhooks.events.filter((x) => x.type === 'entitlement.limit_reached')).toHaveLength(1);
@@ -467,8 +467,8 @@ describe('governance: legal hold, export and import, sessions export, authz', ()
     expect(ex).toMatchObject({ decision: 'deny', layers: { rbac: { status: 'evaluated' }, abac: { status: 'skipped' } } });
     for (let i = 0; i < 3; i++) await call('POST', '/v1/authz/rbac/check', { subject: { id: u.id }, permission: 'billing:manage', organization_id: org.id });
     const run = (await call('POST', '/v1/authz/what_if', { candidate: { rbac: { roles: [{ type: 'org_role', key: 'org:member', add_permissions: ['billing:manage'] }] } } })).json;
-    expect(run).toMatchObject({ evaluated: 3, changed: 3, flipped_to_allow: 3, flipped_to_deny: 0 });
-    expect((await call('GET', `/v1/authz/what_if/${run.id}`)).json.samples).toHaveLength(3);
+    expect(run).toMatchObject({ object: 'authz_what_if', evaluated: 3, replayed: 3, totals: { deny_to_allow: 3, allow_to_deny: 0 } });
+    expect((await call('GET', `/v1/authz/what_if/${run.id}`)).json.result.samples).toHaveLength(3);
     expect((await call('POST', '/v1/authz/what_if', { candidate: {} })).status).toBe(400);
     expect((await call('DELETE', `/v1/authz/what_if/${run.id}`)).json.deleted).toBe(true);
   });
@@ -483,11 +483,12 @@ describe('governance: legal hold, export and import, sessions export, authz', ()
     expect((await call('PUT', '/v1/fga/sync', { enabled: true })).status).toBe(400);
     const on = (await call('PUT', '/v1/fga/sync', { enabled: true, store_id: store.id })).json;
     expect(on).toMatchObject({ enabled: true, managed_tuples: 2 }); // member + admin
-    await call('DELETE', `/v1/organizations/${org.id}/memberships/${u.id}`);
-    expect((await call('POST', '/v1/fga/sync/backfill', {})).json.tuples_deleted).toBe(0); // without repair nothing is removed
-    expect((await call('POST', '/v1/fga/sync/backfill', { repair: true })).json.tuples_deleted).toBe(2);
+    await call('DELETE', `/v1/organizations/${org.id}/memberships/${u.id}`); // live sync: the tuples go right away
+    expect((await call('GET', '/v1/fga/sync')).json.managed_tuples).toBe(0);
+    expect((await call('POST', '/v1/fga/sync/backfill', {})).json.tuples_deleted).toBe(0);
+    expect((await call('POST', '/v1/fga/sync/backfill', { repair: true })).json.tuples_deleted).toBe(0);
     const feed = (await call('GET', '/v1/authz/events?after=0')).json;
-    expect(feed.data.map((x: any) => x.kind)).toEqual(expect.arrayContaining(['tuple_written', 'tuple_deleted', 'sync_run']));
+    expect(feed.data.map((x: any) => x.kind)).toEqual(expect.arrayContaining(['tuples_written', 'tuples_deleted', 'sync_run']));
     expect((await call('GET', `/v1/authz/events?after=${feed.next_after}&wait_ms=30`)).json.data).toEqual([]);
     expect((await call('POST', '/v1/fga/sync/purge', { confirm: true })).status).toBe(409); // sync is still on
     await call('PUT', '/v1/fga/sync', { enabled: false });
@@ -556,6 +557,13 @@ describe('hooks: endpoint filters, headers and caps, dead letters, action versio
     expect((await call('POST', `/v1/actions/${a.id}/rollback`, {})).json.live_version).toBe(1);
     expect((await call('PATCH', `/v1/actions/${a.id}`, { egress_allowlist: ['bad host'] })).status).toBe(400);
     expect((await call('PATCH', `/v1/actions/${a.id}`, { egress_allowlist: ['*.example.com'] })).status).toBe(200);
+  });
+
+  it('creates workflows enabled unless told otherwise', async () => {
+    const call = client(makeEngine());
+    const body = { name: 'w', trigger: { type: 'manual' }, steps: [] };
+    expect((await call('POST', '/v1/workflows', body)).json.enabled).toBe(true);
+    expect((await call('POST', '/v1/workflows', { ...body, enabled: false })).json.enabled).toBe(false);
   });
 
   it('cancels a waiting workflow run and retries a failed one from a step, keeping variables', async () => {

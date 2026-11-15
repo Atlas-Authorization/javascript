@@ -1,5 +1,9 @@
 # @atlasauth/emulator changelog
 
+## 0.5.0
+
+- Breaking: the `time/advance` route and helpers that depend on it are now async; `await` them. Routes the new federation, trust, compliance, commerce and journey endpoints. Requires `@atlasauth/emulator-core` 0.3.0.
+
 ## 0.4.0
 
 - Routes the new machine, OAuth provider, SCIM, passkey, journey, billing, messaging and authz endpoints; webhook `*` endpoints skip newer event types as in production.

@@ -76,7 +76,7 @@ export interface InstanceSecurityResult extends InstanceSecurity {
 export interface SigningKey {
   object: 'signing_key';
   kid: string;
-  alg: 'RS256' | 'ES256' | string;
+  alg: 'RS256' | 'ES256' | 'ES384' | 'PS256' | 'EdDSA' | string;
   status: 'current' | 'previous';
   /** `main` signs every token; `secondary` signs access tokens for APIs set to the other algorithm. */
   role: 'main' | 'secondary';
@@ -130,7 +130,7 @@ export interface RotateSigningKeyBody {
   /** Publish only the new key now (suspected compromise). */
   emergency?: boolean;
   /** The new main key's algorithm; omit to keep the current one. */
-  alg?: 'RS256' | 'ES256';
+  alg?: 'RS256' | 'ES256' | 'ES384' | 'PS256' | 'EdDSA';
   /** With keys in a key management service: rotate only the `main` or the `secondary` key (default both). */
   key?: 'main' | 'secondary';
 }
@@ -138,7 +138,7 @@ export interface RotateSigningKeyBody {
 export interface SigningKeyRotation {
   object: 'signing_key_rotation';
   kid: string;
-  alg: 'RS256' | 'ES256';
+  alg: 'RS256' | 'ES256' | 'ES384' | 'PS256' | 'EdDSA';
   previous_kid: string | null;
   previous_retires_at: number | null;
   emergency: boolean;

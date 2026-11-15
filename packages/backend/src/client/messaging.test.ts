@@ -104,8 +104,6 @@ describe('messaging providers: compile-time contract', () => {
       void c.messaging.setEmail({ transport: 'mailgun', config: { region: 'ap' } });
       // @ts-expect-error — unknown transport literal
       void c.messaging.setEmail({ transport: 'sendgrid', config: {} });
-      // @ts-expect-error — `whatsapp_from` is Twilio-only
-      void c.messaging.setSms({ transport: 'vonage', config: { whatsapp_from: '+1' } });
     };
     void typeOnly;
 

@@ -22,6 +22,7 @@ export * from './popup-channel';
 export * from './fapi';
 // Policy acceptance (ToS / privacy / any policy): read, build, accept.
 export * from './policies';
+export * from './cookie-consent';
 // An organization's audit trail for its admins (`<OrganizationAuditLog/>` in every framework SDK).
 export * from './organization-audit-log';
 // Policy acceptance (terms, privacy, any policy) at sign-up and sign-in: state machine, FAPI calls, DOM UI.
@@ -90,6 +91,7 @@ export * from './connector-directory';
 export * from './organizations';
 export * from './organization-admin';
 export * from './pricing';
+export * from './referral-rewards';
 export * from './marketing';
 export { configureAttribution, type AttributionOptions, type AttributionSource } from './attribution-fields';
 export * from './phone-numbers';
@@ -175,3 +177,5 @@ export * from './security-section';
 export * from './machine-enrolment';
 // Framework-neutral controllers behind the API keys, billing and device authorization components.
 export * from './component-controllers';
+export * from './wallet-verifier';
+export * from './session-binding';

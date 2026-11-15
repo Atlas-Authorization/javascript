@@ -63,6 +63,8 @@ import { pageTemplatesResource } from './page-templates';
 import { actionGalleryResource, actionTemplatesResource } from './action-gallery';
 import { billingResource } from './billing-plans';
 import { billingDepthResource, entitlementConsumeResource } from './billing-depth';
+import { connectionActionsDepthResource, connectionAccessRulesResource, connectionProviderChangesResource } from './connections-depth';
+import { billingConnectResource, commerceBillingResource, referralRewardsResource } from './commerce';
 import { messagingResource } from './messaging';
 import { messageLedgerResource, messageReceiversResource, messagingRoutingResource, suppressionsResource } from './message-ledger';
 import { importExportResource } from './import-export';
@@ -88,6 +90,7 @@ import { entitlementOverridesResource, entitlementsResource } from './entitlemen
 import { rateLimitPoliciesResource } from './rate-limit-policies';
 import { abuseSignalsResource, orgRoleSetsResource, orgTemplatesResource } from './org-depth';
 import { machineTrustPoliciesResource } from './machine-trust-policies';
+import { agentDelegationsResource, auditChainResource, sessionBindingsResource, signingKeyScheduleResource } from './trust';
 import { orgLdapConnectionsResource } from './org-ldap-connections';
 import { organizationSettingsSchemaResource } from './organization-settings-schema';
 import { emailAddressesResource } from './email-addresses';
@@ -116,7 +119,10 @@ import { changesResource } from './changes';
 import { stepUpResource } from './step-up';
 import { mfaCampaignsResource } from './mfa-campaigns';
 import { riskSignalsResource } from './risk-signals';
+import { oauthPublishersResource } from './oauth-publishers';
 import { usersDepthResource } from './users-depth';
+import { complianceDepthResource } from './compliance-depth';
+import { configSnapshotsResource } from './devex';
 import { dataKeyDrillsResource, deprecationsResource, writeBudgetResource } from './platform-resilience';
 import { analyticsResource } from './analytics-reports';
 import { appCatalogResource } from './app-catalog';
@@ -167,6 +173,7 @@ import { connectionsOpsResource } from './connections-ops';
 import { connectionLimitsResource, connectionReconnectResource, connectionsActivityResource, providerEventsResource, providerPolicyResource, providerSubscriptionsResource, relayResource } from './connections-extras';
 import { fgaOpsResource } from './fga-ops';
 import { auditRetentionOpsResource } from './audit-retention-ops';
+import { regionOpsResource } from './region-ops';
 import { opaOpsResource } from './opa-ops';
 import { ssfOpsResource } from './ssf-ops';
 import { orgRoleGrantsOpsResource } from './org-role-grants-ops';
@@ -289,7 +296,9 @@ function buildNamespaces(request: RequestFn) {
     messages: messageLedgerResource(request),
     suppressions: suppressionsResource(request),
     messageReceivers: messageReceiversResource(request),
-    billing: { ...billingResource(request), ...billingOpsResource(request), ...billingDepthResource(request) },
+    billing: { ...billingResource(request), ...billingOpsResource(request), ...billingDepthResource(request), ...commerceBillingResource(request) },
+    billingConnect: billingConnectResource(request),
+    referralRewards: referralRewardsResource(request),
     messaging: { ...messagingResource(request), ...messagingRoutingResource(request) },
     importExport: importExportResource(request),
     // Migrate from Better Auth: sealed-bundle upload, dry run and resumable apply.
@@ -303,7 +312,9 @@ function buildNamespaces(request: RequestFn) {
     /** MCP tool gateway: per-tool policy in front of an MCP server. */
     mcpGateways: mcpGatewaysResource(request),
     /** Typed actions over connections, provider event triggers, scoped relay tokens, usage records. */
-    connectionActions: connectionActionsResource(request),
+    connectionActions: { ...connectionActionsResource(request), ...connectionActionsDepthResource(request) },
+    connectionProviderChanges: connectionProviderChangesResource(request),
+    connectionAccessRules: connectionAccessRulesResource(request),
     /** Agent sponsors, expiry and renewal, activity log, access reviews. */
     agentGovernance: agentGovernanceResource(request),
     webBotAuth: webBotAuthResource(request),
@@ -337,6 +348,10 @@ function buildNamespaces(request: RequestFn) {
     orgTemplates: orgTemplatesResource(request),
     abuseSignals: abuseSignalsResource(request),
     machineTrustPolicies: machineTrustPoliciesResource(request),
+    signingKeySchedule: signingKeyScheduleResource(request),
+    auditChain: auditChainResource(request),
+    sessionBindings: sessionBindingsResource(request),
+    agentDelegations: agentDelegationsResource(request),
     entitlements: { ...entitlementsResource(request), ...entitlementConsumeResource(request) },
     orgLdapConnections: { ...orgLdapConnectionsResource(request), ...orgLdapConnectionsOpsResource(request) },
     organizationSettingsSchema: organizationSettingsSchemaResource(request),
@@ -393,6 +408,10 @@ function buildNamespaces(request: RequestFn) {
     riskSignals: riskSignalsResource(request),
     /** Bulk user actions, legal holds, deletion receipts and deadlines, deleted-address import, tenant export and import. */
     ...usersDepthResource(request),
+    /** Age assurance, signed compliance reports, the data rights console, downstream erasure connectors, the cookie consent store, policy audience and translations, and translation review. */
+    ...complianceDepthResource(request),
+    /** Config time travel: save, list, diff and restore snapshots of the instance's configuration. */
+    configSnapshots: configSnapshotsResource(request),
     /** Per-instance write budgets: limits, observe/enforce mode, and recent overruns. */
     writeBudget: writeBudgetResource(request),
     /** Deprecated routes and fields with their sunset dates, and which ones this instance still uses. */
@@ -437,8 +456,10 @@ function buildNamespaces(request: RequestFn) {
     organizationConnections: organizationConnectionsOpsResource(request),
     scimProvisioningPresets: scimProvisioningPresetsOpsResource(request),
     auditRetention: auditRetentionOpsResource(request),
+    region: regionOpsResource(request),
     opa: opaOpsResource(request),
     proxyApps: proxyAppsOpsResource(request),
+    oauthPublishers: oauthPublishersResource(request),
   };
 }
 
@@ -512,6 +533,7 @@ export * from './api-keys';
 export * from './atlas-id-apps';
 export * from './machines';
 export * from './machine-trust-policies';
+export * from './trust';
 export * from './grant-usage';
 export * from './approvals';
 export * from './oauth-providers';
@@ -606,6 +628,8 @@ export * from './step-up';
 export * from './mfa-campaigns';
 export * from './risk-signals';
 export * from './users-depth';
+export * from './compliance-depth';
+export * from './devex';
 export * from './platform-resilience';
 export * from './app-catalog-ops';
 export * from './ldap-server-clients-ops';
@@ -637,13 +661,17 @@ export * from './iga-ops';
 export * from './scim-provisioning-presets-ops';
 export * from './billing-ops';
 export * from './billing-depth';
+export * from './commerce';
+export * from './connections-depth';
 export * from './connections-ops';
 export * from './connections-extras';
 export * from './fga-ops';
 export * from './audit-retention-ops';
+export * from './region-ops';
 export * from './opa-ops';
 export * from './ssf-ops';
 export * from './org-role-grants-ops';
 export * from './policy-bundles-ops';
 export * from './proxy-apps-ops';
 export * from './integrations-ops';
+export * from './oauth-publishers';

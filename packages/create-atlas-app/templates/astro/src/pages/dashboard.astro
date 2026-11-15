@@ -1,0 +1,19 @@
+---
+import { getAuth } from '@atlasauth/astro';
+
+// A protected page: the server checks the session before anything renders.
+const auth = getAuth(Astro);
+if (!auth.isSignedIn) return Astro.redirect('/');
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dashboard</title>
+  </head>
+  <body style="max-width: 420px; margin: 4rem auto; font-family: system-ui, sans-serif">
+    <h1>Dashboard</h1>
+    <p>User {auth.userId}.</p>
+    <p><a href="/">Back</a></p>
+  </body>
+</html>

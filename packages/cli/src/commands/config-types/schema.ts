@@ -12,7 +12,9 @@ export function configJsonSchema(specs: readonly ResourceSpec[]): Schema {
   const properties: Record<string, Schema> = {};
   for (const s of specs) {
     if (s.kind === 'collection') {
-      properties[s.type] = { type: 'array', items: keys(s.fileKeys) };
+      const entries: Schema = { type: 'array', items: keys(s.fileKeys) };
+      // A list section may also be written `{ requires, items }` so one variable gates the whole section.
+      properties[s.type] = { oneOf: [entries, { type: 'object', properties: { requires: REQUIRES, items: entries }, required: ['items'], additionalProperties: false }] };
     } else if (s.fileKeys) {
       const base = keys(s.fileKeys) as { properties: Record<string, Schema> };
       for (const [k, nested] of Object.entries(s.nestedKeys ?? {})) base.properties[k] = keys(nested);

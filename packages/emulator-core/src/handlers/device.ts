@@ -5,6 +5,8 @@ import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
 import { randomToken } from '../store';
 import { DPOP_IAT_WINDOW_S, forwardedCertThumbprint, verifyDpopProof } from '../jws';
+import { delegationForMint } from './emu4-authz-trust';
+import { machineRateLimitClaim, runActionTrigger } from './emu3-misc';
 import { listReply, need } from './util';
 
 const CHALLENGE_TTL_MS = 5 * 60_000;
@@ -522,6 +524,13 @@ export async function issueMachineToken(
     bound = { rs, grant, scopes };
   } else if (req.scopes || req.scope_presets) throw new EmulatorError('VALIDATION_FAILED', '`scopes` needs an `audience`.', 'audience');
 
+  // A machine that holds agent delegations mints only under a live one, narrowed to its scopes.
+  const del = delegationForMint(e, m.id, req);
+  if (del && bound) {
+    bound.scopes = bound.scopes.filter((x) => del.scopes.includes(x));
+    if (!bound.scopes.length) throw new EmulatorError('FORBIDDEN', 'The delegation does not include any of the requested scopes.', 'scopes');
+  }
+
   let orgId: string | null = m.organization_id ?? null;
   const orgClaims: Obj = {};
   if (req.organization_id) {
@@ -532,7 +541,10 @@ export async function issueMachineToken(
     if (org) Object.assign(orgClaims, { org_slug: org.slug, ...(mm?.role ? { org_role: mm.role } : {}) });
   }
   opts.beforeIssue?.();
-  const ttl = Math.min(MACHINE_TOKEN_TTL_S, opts.maxTtlSeconds ?? MACHINE_TOKEN_TTL_S);
+  // After the credential is spent: the bound pre_token Actions run (a deny refuses the mint), and only for a token bound to an API.
+  const preToken = bound ? runActionTrigger(e, 'pre_token', { tokenType: 'machine', machineId: m.id, audience: bound.rs.identifier, scope: bound.scopes.join(' '), organizationId: orgId }).claims : {};
+  const rl = machineRateLimitClaim(e, m.id);
+  const ttl = Math.min(MACHINE_TOKEN_TTL_S, opts.maxTtlSeconds ?? MACHINE_TOKEN_TTL_S, del?.ttlSeconds ?? MACHINE_TOKEN_TTL_S);
   const cnf = cnfOf(opts.proved ?? {});
   const token = await e.tokens.signClaims(
     {
@@ -543,6 +555,9 @@ export async function issueMachineToken(
       ...orgClaims,
       ...(cnf ? { cnf } : {}),
       ...(opts.extraClaims ?? {}),
+      ...(del?.claims ?? {}),
+      ...preToken,
+      ...orgClaims,
       ...(bound
         ? {
             aud: bound.rs.identifier,
@@ -553,6 +568,8 @@ export async function issueMachineToken(
             ...(bound.grant.constraints ? { constraints: bound.grant.constraints } : {}),
           }
         : {}),
+      // The limit the API should apply to this machine, when a policy or override covers it.
+      ...(rl ? { rl } : {}),
     },
     ttl,
   );

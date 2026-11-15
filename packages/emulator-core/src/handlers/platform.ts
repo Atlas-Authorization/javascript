@@ -5,6 +5,8 @@ import type { Obj } from '../openapi';
 import { Table } from '../store';
 import { engineState, intIn, sessionFromBearer } from './support';
 import { listReply } from './util';
+import { parseCustomComponent } from '../custom-html';
+import { journeyEntry, scheduleJourneyMessages } from './emu4-messaging';
 
 /**
  * Platform and onboarding surfaces on the engine's own state: write budgets (per-instance caps with an observe or enforce
@@ -115,7 +117,7 @@ const POLICY = { window_months: 12, headers: ['Deprecation', 'Sunset', 'Link (re
 interface Journeys {
   runs: Table;
 }
-const journeys = engineState((e: Engine): Journeys => ({ runs: new Table('journey_runs', e.clock.now, 'jrun') }));
+export const journeys = engineState((e: Engine): Journeys => ({ runs: new Table('journey_runs', e.clock.now, 'jrun') }));
 const flowOf = (e: Engine, id: string | undefined): Obj => {
   const f = e.generic.get('flows')?.get(id);
   if (!f) throw notFound('Flow');
@@ -128,7 +130,7 @@ const journeyEvent = (e: Engine, type: string, r: Obj, extra: Obj = {}): void =>
 
 const PAGES = ['sign-in', 'sign-up', 'user-profile', 'mfa', 'reset', 'verify', 'consent', 'device'];
 const REGIONS = ['header', 'above_form', 'below_form', 'footer'];
-const COMPONENTS = ['heading', 'text', 'image', 'link', 'button_link', 'list', 'divider', 'spacer', 'columns'];
+const COMPONENTS = ['heading', 'text', 'image', 'link', 'button_link', 'list', 'divider', 'spacer', 'columns', 'custom'];
 interface Template {
   page: string;
   scope_type: 'instance' | 'client' | 'organization';
@@ -165,10 +167,16 @@ function checkDefinition(def: unknown): Obj {
   for (const [name, list] of Object.entries(regions)) {
     if (!REGIONS.includes(name)) throw bad(`Unknown region ${name}. Use ${REGIONS.join(', ')}.`, `definition.regions.${name}`);
     if (!Array.isArray(list)) throw bad(`Region ${name} must be a list of components.`, `definition.regions.${name}`);
-    for (const c of list) {
+    // A custom block (author HTML and CSS) is refused or sanitized exactly as the API does; the stored value is the sanitized form.
+    const kept: Obj[] = [];
+    for (const [i, c] of (list as any[]).entries()) {
       if (!c || typeof c !== 'object' || !COMPONENTS.includes(c.type)) throw bad(`A component type is one of: ${COMPONENTS.join(', ')}.`, `definition.regions.${name}`);
       count++;
+      if (c.type === 'columns' && Array.isArray(c.columns)) for (const [ci, col] of c.columns.entries()) for (const [k, child] of (Array.isArray(col) ? col : []).entries()) if (child?.type === 'custom') parseCustomComponent(child, `definition.regions.${name}[${i}].columns[${ci}][${k}]`, 1);
+      kept.push(c.type === 'custom' ? parseCustomComponent(c, `definition.regions.${name}[${i}]`, 0) : c);
     }
+    if (kept.filter((x) => x.type === 'custom').length > 1) throw bad(`definition.regions.${name}: holds at most one custom block.`, `definition.regions.${name}`);
+    (regions as Obj)[name] = kept;
   }
   if (count > 60) throw bad('A template holds at most 60 components.', 'definition');
   return { version: 1, ...d, regions };
@@ -283,21 +291,24 @@ export function platformHandlers(): RouteDef[] {
       method: 'POST',
       pattern: '/__emulator/journeys/:flowId/start',
       public: true,
-      handler: (c) => {
+      handler: async (c) => {
         const e = c.engine;
         const f = flowOf(e, c.params.flowId);
         const userId = c.body.user_id;
         if (typeof userId !== 'string' || !e.db.users.get(userId)) throw notFound('User');
         const stage = c.body.stage === 'sign_up' ? 'sign_up' : 'sign_in';
+        // A running A/B experiment decides which saved version of the journey this user runs (sticky from the first visit).
+        const entry = await journeyEntry(e, f, userId);
         const have = journeys(e).runs.find((r) => r.flow_id === f.id && r.user_id === userId && r.status !== 'completed');
         const now = e.clock.now();
         if (have) {
           if (have.status === 'abandoned') Object.assign(have, { status: 'in_progress', abandoned_at: null, updated_at: now });
           return { body: runView(have) };
         }
-        const steps = ((Array.isArray(f.definition?.steps) ? f.definition.steps : f.steps) ?? []).filter((s: Obj) => (Array.isArray(s.on) ? s.on : ['sign_in']).includes(stage));
+        // send_message and delay steps never hold the user: they only schedule messages when the journey completes.
+        const steps = entry.steps.filter((s: Obj) => s.type !== 'send_message' && s.type !== 'delay' && (Array.isArray(s.on) ? s.on : ['sign_in']).includes(stage));
         if (!steps.length) throw new EmulatorError('CONFLICT', `This flow has no step for the ${stage} stage.`);
-        const r = journeys(e).runs.insert({ flow_id: f.id, user_id: userId, stage, status: 'in_progress', open_steps: steps.map((s: Obj, i: number) => String(s.id ?? s.name ?? `step_${i}`)), completed_steps: [], drafts: {}, started_at: now, updated_at: now });
+        const r = journeys(e).runs.insert({ flow_id: f.id, user_id: userId, stage, status: 'in_progress', open_steps: steps.map((s: Obj, i: number) => String(s.id ?? s.name ?? `step_${i}`)), completed_steps: [], drafts: {}, started_at: now, updated_at: now, journey_version: entry.version, experiment_id: entry.experiment_id, variant: entry.variant });
         journeyEvent(e, 'journey.started', r, { stage });
         return { status: 201, body: runView(r) };
       },
@@ -337,6 +348,7 @@ export function platformHandlers(): RouteDef[] {
           r.status = 'completed';
           r.completed_at = r.updated_at;
           journeyEvent(e, 'journey.completed', r);
+          scheduleJourneyMessages(e, r);
         }
         return { body: runView(r) };
       },

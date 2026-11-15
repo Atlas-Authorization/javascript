@@ -26,6 +26,8 @@ export interface CreateApprovalRequestBody {
   /** An opaque value the receipt can only be consumed against (for example a hash of the tool and its arguments). */
   binding?: string;
   reference?: string;
+  /** Only an approval from a device the approver trusted counts (see `approvals.trustDevice`). The instance setting approvals.requireTrustedDevice makes this the rule for every request. */
+  require_trusted_device?: boolean;
 }
 
 export interface ApprovalDecision {
@@ -33,6 +35,8 @@ export interface ApprovalDecision {
   decision: 'approve' | 'deny';
   method: 'device_key' | 'passkey' | 'number_match';
   key_id: string | null;
+  /** The trusted device the decision came from, when it came from one. */
+  trusted_device_id?: string | null;
   decided_at: number;
 }
 
@@ -50,6 +54,7 @@ export interface ApprovalRequest {
   reference: string | null;
   binding: string | null;
   require_signature: boolean;
+  require_trusted_device?: boolean;
   approvers: { mode: 'subject' | 'users' | 'role'; user_ids: string[]; organization_id: string | null; role: string | null; required: number };
   /** SHA-256 of `canonical`, base64url: what an approver signs. */
   digest: string | null;
@@ -71,9 +76,29 @@ export interface ApprovalRequestCreated {
   expires_at: number;
   approvers: ApprovalRequest['approvers'];
   require_signature: boolean;
+  require_trusted_device?: boolean;
   digest: string | null;
   reference: string | null;
   binding: string | null;
+}
+
+export type ApprovalDeviceKind = 'device_key' | 'passkey' | 'push_device';
+
+/** A device a user can approve from, marked trusted or not. */
+export interface ApprovalDevice {
+  object: 'approval_device';
+  kind: ApprovalDeviceKind;
+  /** The id within its kind: the signing key id, the passkey credential id or the push device id. */
+  ref: string;
+  label: string | null;
+  platform: string | null;
+  created_at: number | null;
+  last_used_at: number | null;
+  trusted: boolean;
+  /** Present while trusted: the id to revoke, and the one decisions record. */
+  trusted_device_id: string | null;
+  trusted_at: number | null;
+  trusted_by: { type: 'user' | 'api_key' | 'dashboard_user'; id: string | null } | null;
 }
 
 export interface ListApprovalRequestsParams {
@@ -107,6 +132,18 @@ export function approvalsResource(request: RequestFn) {
     },
     cancel(id: string): Promise<ApprovalRequest> {
       return request({ method: 'POST', path: `/v1/approval_requests/${enc(id)}/cancel` });
+    },
+    /** Every device the user can approve from, each marked trusted or not. */
+    listDevices(userId: string): Promise<{ object: 'list'; data: ApprovalDevice[]; has_more: boolean }> {
+      return request({ method: 'GET', path: `/v1/users/${enc(userId)}/approval_devices` });
+    },
+    /** Trust one of the user's devices for approvals that require a trusted device. Trusting a trusted device changes nothing. */
+    trustDevice(userId: string, body: { kind: ApprovalDeviceKind; ref: string; label?: string }, opts: { idempotencyKey?: string } = {}): Promise<ApprovalDevice> {
+      return request({ method: 'POST', path: `/v1/users/${enc(userId)}/approval_devices/trust`, body, ...(opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}) });
+    },
+    /** Stop trusting a device by its `trusted_device_id`. */
+    revokeDevice(userId: string, trustedDeviceId: string): Promise<{ object: 'approval_trusted_device'; id: string; kind: string; ref: string; revoked: boolean; revoked_at: number }> {
+      return request({ method: 'DELETE', path: `/v1/users/${enc(userId)}/approval_devices/${enc(trustedDeviceId)}` });
     },
   };
 }

@@ -1,5 +1,9 @@
 # @atlasauth/eslint-plugin changelog
 
+## 0.2.0
+
+- New rules: `require-webhook-verify`, `no-unverified-jwt-decode` and `no-public-env-secret`.
+
 ## 0.1.0
 
 First published release.

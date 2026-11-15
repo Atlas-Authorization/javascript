@@ -263,6 +263,30 @@ describe('pre-flight and apply reporting', () => {
     expect(api.real().length).toBe(3);
   });
 
+  it('config import runs the same pre-flight and writes nothing when the server refuses a change', async () => {
+    const api = new Api();
+    api.lists = { '/v1/permissions': [] };
+    api.fail['POST /v1/permissions'] = { status: 422, message: 'name is too long', dry: true };
+    writeFileSync(join(dir, 'permissions.json'), JSON.stringify([{ key: 'org:one:read', name: 'One' }]));
+    const io = captureIO();
+    expect(await run(['config', 'import', '--dir', dir], ctx(io, api))).toBe(1);
+    expect(api.real()).toEqual([]);
+    expect(io.stdout()).toContain('permissions org:one:read (create): name is too long');
+  });
+
+  it('config import applies a clean plan after dry-running it, and --skip-validate omits the dry run', async () => {
+    writeFileSync(join(dir, 'permissions.json'), JSON.stringify([{ key: 'org:one:read', name: 'One' }]));
+    const api = new Api();
+    api.lists = { '/v1/permissions': [] };
+    expect(await run(['config', 'import', '--dir', dir], ctx(captureIO(), api))).toBe(0);
+    expect(api.dry().length).toBe(1);
+    expect(api.real().length).toBe(1);
+    const api2 = new Api();
+    api2.lists = { '/v1/permissions': [] };
+    expect(await run(['config', 'import', '--dir', dir, '--skip-validate'], ctx(captureIO(), api2))).toBe(0);
+    expect(api2.dry()).toEqual([]);
+  });
+
   it('--skip-validate leaves out the dry run', async () => {
     const api = new Api();
     api.lists = { '/v1/redirect_urls': [], '/v1/permissions': [] };

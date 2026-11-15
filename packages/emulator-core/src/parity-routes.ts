@@ -1,5 +1,18 @@
 import { defaultParityRequests, type ParityRequest } from './parity';
 import type { Engine } from './engine';
+import { emu3AuthzParityRequests } from './parity-emu3-authz';
+import { emu3BillingParityRequests } from './parity-emu3-billing';
+import { emu3MessagingParityRequests } from './parity-emu3-messaging';
+import { emu3MiscParityRequests } from './parity-emu3-misc';
+import { emu3OauthParityRequests } from './parity-emu3-oauth';
+import { emu4FederationParityRequests } from './parity-emu4-federation';
+import { emu4ComplianceParityRequests } from './parity-emu4-compliance';
+import { emu4TrustParityRequests } from './parity-emu4-trust';
+import { emu4MessagingParityRequests } from './parity-emu4-messaging';
+import { emu4BillingParityRequests } from './parity-emu4-billing';
+import { emu4ActionsParityRequests } from './parity-emu4-actions';
+import { emu4OauthParityRequests } from './parity-emu4-oauth';
+import { emu4AuthzParityRequests } from './parity-emu4-authz';
 
 /**
  * The rest of the parity contract: one or more requests for every other hand-written route (access, webhooks, the change
@@ -57,6 +70,7 @@ export const extraParityRequests: ParityRequest[] = [
   q('changes snapshot', 'GET', '/v1/changes/snapshot/user?limit=1'),
   q('consumer ack', 'PUT', '/v1/changes/consumers/parity-{{rand}}/ack', { body: { seq: 0 } }),
   q('consumer get', 'GET', '/v1/changes/consumers/parity-{{rand}}'),
+  q('consumers list', 'GET', '/v1/changes/consumers', { tolerate: ['data'] }),
   // ── API keys ──
   q('key create', 'POST', '/v1/api_keys', { body: { subject_type: 'user', subject_id: '{{xu}}', name: 'x', scopes: ['read'], expires_in_seconds: 86400 }, capture: { xk: 'id', xks: 'secret' }, tolerate: ['secret'] }),
   q('key list', 'GET', '/v1/api_keys?subject_id={{xu}}'),
@@ -255,6 +269,10 @@ export const waveParityRequests: ParityRequest[] = [
   q('approval create', 'POST', '/v1/approval_requests', { body: { user_id: '{{wu}}', description: 'Wire 100 to Acme', reference: 'ref-{{rand}}', binding: 'bind-{{rand}}' }, capture: { wap: 'id', wapn: 'match_number' }, tolerate: ['match_number'], group: 'approvals' }),
   q('approval user create', 'POST', '/v1/users/{{wu}}/approval_requests', { body: { description: 'Second request' }, capture: { wap2: 'id' }, tolerate: ['match_number'], group: 'approvals' }),
   q('approval list', 'GET', '/v1/approval_requests?status=pending&limit=5', { group: 'approvals' }),
+  q('approval devices', 'GET', '/v1/users/{{wu}}/approval_devices', { group: 'approvals' }),
+  q('approval device trust unknown', 'POST', '/v1/users/{{wu}}/approval_devices/trust', { body: { kind: 'device_key', ref: 'apk_unknown_{{rand}}' }, group: 'approvals' }),
+  q('approval device trust invalid', 'POST', '/v1/users/{{wu}}/approval_devices/trust', { body: { kind: 'nope', ref: 'x' }, group: 'approvals' }),
+  q('approval device untrust unknown', 'DELETE', '/v1/users/{{wu}}/approval_devices/atd_unknown_{{rand}}', { group: 'approvals' }),
   q('approval get', 'GET', '/v1/approval_requests/{{wap}}', { group: 'approvals' }),
   q('approval user get', 'GET', '/v1/users/{{wu}}/approval_requests/{{wap2}}', { group: 'approvals' }),
   q('approval user cancel', 'POST', '/v1/users/{{wu}}/approval_requests/{{wap2}}/cancel', { group: 'approvals' }),
@@ -402,7 +420,7 @@ export const waveParityRequests: ParityRequest[] = [
 ];
 
 /** Every request: the first-round list, then the rest. */
-export const fullParityRequests: ParityRequest[] = [...defaultParityRequests, ...extraParityRequests, ...waveParityRequests];
+export const fullParityRequests: ParityRequest[] = [...defaultParityRequests, ...extraParityRequests, ...waveParityRequests, ...emu3AuthzParityRequests, ...emu3BillingParityRequests, ...emu3MessagingParityRequests, ...emu3MiscParityRequests, ...emu3OauthParityRequests, ...emu4AuthzParityRequests, ...emu4OauthParityRequests, ...emu4ActionsParityRequests, ...emu4BillingParityRequests, ...emu4MessagingParityRequests, ...emu4TrustParityRequests, ...emu4ComplianceParityRequests, ...emu4FederationParityRequests];
 
 /** Hand-written routes parity deliberately does not send to a real instance, each with the reason. */
 export const PARITY_EXEMPT: Record<string, string> = {

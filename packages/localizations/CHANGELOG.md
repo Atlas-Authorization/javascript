@@ -1,5 +1,9 @@
 # @atlasauth/localizations changelog
 
+## 0.20.0
+
+- `checkBundle` checks a translation bundle for missing, extra, empty and placeholder-mismatched strings, and warns about untranslated text, for use in CI.
+
 ## 0.19.0 — 2026-11-12
 
 - `captcha_wrong_flow` error reason in every locale.

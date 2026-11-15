@@ -87,6 +87,10 @@ export function changesResource(request: RequestFn) {
       return request({ method: 'GET', path: `/v1/changes/snapshot/${encodeURIComponent(resourceType)}`, query: { ...params } });
     },
     consumers: {
+      /** Every named consumer of the instance across keys, behind-most first. */
+      list(): Promise<{ object: 'list'; data: Array<ChangeConsumer & { key_id: string }>; has_more: boolean }> {
+        return request({ method: 'GET', path: '/v1/changes/consumers' });
+      },
       /** A named consumer's server-held position and lag. */
       get(name: string): Promise<ChangeConsumer> {
         return request({ method: 'GET', path: `/v1/changes/consumers/${encodeURIComponent(name)}` });

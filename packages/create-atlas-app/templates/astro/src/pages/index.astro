@@ -1,0 +1,29 @@
+---
+import { getAuth } from '@atlasauth/astro';
+
+const auth = getAuth(Astro);
+const signInUrl = import.meta.env.ATLAS_SIGN_IN_URL;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>{{PROJECT_NAME}}</title>
+  </head>
+  <body style="max-width: 420px; margin: 4rem auto; font-family: system-ui, sans-serif">
+    <h1>{{PROJECT_NAME}}</h1>
+    <p>A starter app wired up with Atlas auth.</p>
+    {
+      auth.isSignedIn ? (
+        <p>
+          Signed in as {auth.userId}. <a href="/dashboard">Open the protected dashboard</a>
+        </p>
+      ) : signInUrl ? (
+        <p><a href={signInUrl}>Sign in</a></p>
+      ) : (
+        <p>Signed out. Set ATLAS_SIGN_IN_URL to the page that signs people in.</p>
+      )
+    }
+  </body>
+</html>

@@ -24,8 +24,9 @@ const DECISION_TYP = 'atlas-approval-decision+jws';
 interface ApprovalState {
   requests: Table;
   keys: Table;
+  trusted: Table;
 }
-const st = engineState((e: Engine): ApprovalState => ({ requests: new Table('approval_requests', e.clock.now, 'apr'), keys: new Table('approval_keys', e.clock.now, 'apk') }));
+const st = engineState((e: Engine): ApprovalState => ({ requests: new Table('approval_requests', e.clock.now, 'apr'), keys: new Table('approval_keys', e.clock.now, 'apk'), trusted: new Table('approval_trusted_devices', e.clock.now, 'atd') }));
 
 const canonical = (v: unknown): string => (Array.isArray(v) ? `[${v.map(canonical).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v as Obj).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Obj)[k])}`).join(',')}}` : JSON.stringify(v ?? null));
 
@@ -189,6 +190,21 @@ async function decide(c: RouteContext): Promise<{ body: Obj }> {
   return { body: { object: 'approval_decision', approval_id: r.id, status: r.status, decision } };
 }
 
+/** The approval signing keys of a user as devices, each marked trusted or not (the emulator models device keys only). */
+function deviceViews(e: Engine, userId: string): Obj[] {
+  const s = st(e);
+  return s.keys
+    .filter((k) => k.user_id === userId)
+    .map((k) => {
+      const t = s.trusted.find((x) => x.user_id === userId && x.kind === 'device_key' && x.ref === k.id && !x.revoked_at);
+      return { object: 'approval_device', kind: 'device_key', ref: k.id, label: t?.label ?? k.label, platform: null, created_at: k.created_at, last_used_at: null, trusted: !!t, trusted_device_id: t?.id ?? null, trusted_at: t?.trusted_at ?? null, trusted_by: t ? { type: 'api_key', id: null } : null };
+    });
+}
+const userOr404 = (e: Engine, id: string | undefined): string => {
+  if (!id || !e.db.users.get(id)) throw notFound('User');
+  return id;
+};
+
 export function approvalsHandlers(): RouteDef[] {
   const createFor = (pattern: string, userOf: (c: RouteContext) => string): RouteDef => ({ method: 'POST', pattern, handler: (c) => create(c, userOf(c)) });
   return [
@@ -288,6 +304,39 @@ export function approvalsHandlers(): RouteDef[] {
       },
     },
     { method: 'POST', pattern: '/v1/client/me/approvals/:id/decision', public: true, handler: (c) => decide(c) },
+    { method: 'GET', pattern: '/v1/users/:id/approval_devices', handler: (c) => ({ body: { object: 'list', data: deviceViews(c.engine, userOr404(c.engine, c.params.id)), has_more: false } }) },
+    {
+      method: 'POST',
+      pattern: '/v1/users/:id/approval_devices/trust',
+      handler: (c) => {
+        const e = c.engine;
+        const userId = userOr404(e, c.params.id);
+        const { kind, ref, label } = c.body;
+        if (kind !== 'device_key' && kind !== 'passkey' && kind !== 'push_device') throw bad('kind must be device_key, passkey or push_device.', 'kind');
+        if (typeof ref !== 'string' || !ref || ref.length > 300) throw bad('ref is required.', 'ref');
+        if (label !== undefined && label !== null && (typeof label !== 'string' || label.length > 80)) throw bad('label must be at most 80 characters.', 'label');
+        const found = deviceViews(e, userId).find((d) => d.kind === kind && d.ref === ref);
+        if (!found) throw notFound('Device');
+        if (!found.trusted) {
+          const row = st(e).trusted.insert({ user_id: userId, kind, ref, label: label ?? found.label, trusted_at: e.clock.now(), revoked_at: null });
+          e.webhooks.emit('approval_trusted_device.added', { object: 'approval_trusted_device', id: row.id, user_id: userId, kind, label: row.label, trusted_by: 'api_key', at: row.trusted_at });
+        }
+        return { status: 201, body: deviceViews(e, userId).find((d) => d.ref === ref) };
+      },
+    },
+    {
+      method: 'DELETE',
+      pattern: '/v1/users/:id/approval_devices/:deviceId',
+      handler: (c) => {
+        const e = c.engine;
+        const userId = userOr404(e, c.params.id);
+        const row = st(e).trusted.find((x) => x.id === c.params.deviceId && x.user_id === userId && !x.revoked_at);
+        if (!row) throw notFound('Trusted device');
+        row.revoked_at = e.clock.now();
+        e.webhooks.emit('approval_trusted_device.revoked', { object: 'approval_trusted_device', id: row.id, user_id: userId, kind: row.kind, label: row.label, revoked_by: 'api_key', at: row.revoked_at });
+        return { body: { object: 'approval_trusted_device', id: row.id, kind: row.kind, ref: row.ref, revoked: true, revoked_at: row.revoked_at } };
+      },
+    },
     {
       method: 'GET',
       pattern: '/v1/client/me/approval_keys',

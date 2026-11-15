@@ -63,6 +63,7 @@ describe('config as code: everything', () => {
       connection_token_limits: { per_key: 1000, per_app: 200, providers: { ebay: 50 } },
       connection_provider_topics: { topics: { shopify: ['orders/create'], ebay: ['ItemSold'] } },
       connection_reconnect: { enabled: true, link_ttl_hours: 72, return_url: 'https://app.example.com/connections', providers: ['shopify'] },
+      referral_reward_rules: { enabled: true, trigger: 'first_payment', referrer_amount: 500, referee_amount: 500, currency: 'usd', hold_days: 14, max_rewards_per_referrer: 20 },
       connection_relay_limits: { request_bytes: 524288, response_bytes: 2097152 },
     });
     expect(await run(['apply', p, '--yes'], ctx(api, { EBAY_SECRET: 'es' }))).toBe(0);
@@ -76,6 +77,7 @@ describe('config as code: everything', () => {
     expect(write(api, '/v1/instance/impersonation_policy')!.body).toMatchObject({ require_reason: true, max_duration_seconds: 900 });
     expect(write(api, '/v1/connections/token_limits')!.body).toEqual({ per_key: 1000, per_app: 200, providers: { ebay: 50 } });
     expect(write(api, '/v1/connections/relay_limits')!.body).toEqual({ request_bytes: 524288, response_bytes: 2097152 });
+    expect(write(api, '/v1/referral_reward_rules')).toMatchObject({ method: 'PUT', body: { enabled: true, trigger: 'first_payment', referrer_amount: 500, referee_amount: 500, hold_days: 14, max_rewards_per_referrer: 20 } });
     expect(write(api, '/v1/connection_reconnect_settings')).toMatchObject({ method: 'PUT', body: { enabled: true, link_ttl_hours: 72, return_url: 'https://app.example.com/connections', providers: ['shopify'] } });
   });
 

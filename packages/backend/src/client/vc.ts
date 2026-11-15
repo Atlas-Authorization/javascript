@@ -120,6 +120,61 @@ export interface VcDcApiRequest {
   response_endpoint: string;
 }
 
+export interface CreateVcPresentationRequestBody {
+  vct: string;
+  format?: VcFormat;
+  /** mso_mdoc: PEM IACA roots for this request. */
+  iaca_roots?: string[];
+  /** mso_mdoc: overrides the credential type's revocation policy. */
+  revocation_policy?: VcRevocationPolicy;
+  claims?: string[];
+  trusted_issuers?: Array<{ issuer: string; jwks: { keys: Record<string, unknown>[] } }>;
+  /** A DCQL query; replaces vct and claims. */
+  dcql_query?: Record<string, unknown>;
+  client_id_prefix?: VcClientIdPrefix;
+  /** PEM certificate chain for the x509 client id prefixes; must match the instance ES256 key. */
+  verifier_chain?: string[];
+  response_mode?: VcResponseMode;
+  /** Web origins allowed to post a Digital Credentials API response. */
+  expected_origins?: string[];
+  expires_in_seconds?: number;
+}
+
+export interface VcWaitOptions {
+  /** Give up after this long. Default 120000. */
+  timeoutMs?: number;
+  /** Poll interval, at least 250. Default 1500. */
+  intervalMs?: number;
+  signal?: AbortSignal;
+  /** Injectable for tests. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Injectable clock for tests, epoch ms. */
+  now?: () => number;
+}
+
+/** The wallet did not answer in time. The request stays pending until it expires. */
+export class VcWaitTimeoutError extends Error {
+  constructor(readonly requestId: string) {
+    super(`The wallet did not answer presentation request ${requestId} in time.`);
+    this.name = 'VcWaitTimeoutError';
+  }
+}
+
+async function waitForPresentation(request: RequestFn, id: string, options: VcWaitOptions): Promise<VcPresentationRequest> {
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  const intervalMs = Math.max(250, options.intervalMs ?? 1_500);
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const now = options.now ?? Date.now;
+  const deadline = now() + timeoutMs;
+  for (;;) {
+    if (options.signal?.aborted) throw Object.assign(new Error('Waiting for the wallet was aborted.'), { name: 'AbortError' });
+    const current = await request<VcPresentationRequest>({ method: 'GET', path: `/v1/vc/presentation_requests/${enc(id)}` });
+    if (current.status !== 'pending') return current;
+    if (now() >= Math.min(deadline, current.expires_at)) throw new VcWaitTimeoutError(id);
+    await sleep(intervalMs);
+  }
+}
+
 /** Issue verifiable credentials to wallets (OpenID4VCI) and verify presentations (OpenID4VP), SD-JWT VC. */
 export function vcResource(request: RequestFn) {
   return {
@@ -160,25 +215,7 @@ export function vcResource(request: RequestFn) {
       },
     },
     presentationRequests: {
-      create(body: {
-        vct: string;
-        format?: VcFormat;
-        /** mso_mdoc: PEM IACA roots for this request. */
-        iaca_roots?: string[];
-        /** mso_mdoc: overrides the credential type's revocation policy. */
-        revocation_policy?: VcRevocationPolicy;
-        claims?: string[];
-        trusted_issuers?: Array<{ issuer: string; jwks: { keys: Record<string, unknown>[] } }>;
-        /** A DCQL query; replaces vct and claims. */
-        dcql_query?: Record<string, unknown>;
-        client_id_prefix?: VcClientIdPrefix;
-        /** PEM certificate chain for the x509 client id prefixes; must match the instance ES256 key. */
-        verifier_chain?: string[];
-        response_mode?: VcResponseMode;
-        /** Web origins allowed to post a Digital Credentials API response. */
-        expected_origins?: string[];
-        expires_in_seconds?: number;
-      }): Promise<VcPresentationRequest> {
+      create(body: CreateVcPresentationRequestBody): Promise<VcPresentationRequest> {
         return request({ method: 'POST', path: '/v1/vc/presentation_requests', body });
       },
       get(id: string): Promise<VcPresentationRequest> {
@@ -187,6 +224,28 @@ export function vcResource(request: RequestFn) {
       /** The request for the Digital Credentials API, for a request created with a dc_api response mode. */
       dcApiRequest(id: string): Promise<VcDcApiRequest> {
         return request({ method: 'GET', path: `/v1/vc/presentation_requests/${enc(id)}/dc_api_request` });
+      },
+      /**
+       * Wait until the wallet has answered: polls the request until it is no longer `pending` and returns it, with
+       * `status` `verified` (read `result.claims`) or `failed` (read `error`). Rejects with {@link VcWaitTimeoutError}
+       * when `timeoutMs` (default 120 s, capped at the request's expiry) passes first, and with an `AbortError` when
+       * the signal aborts.
+       */
+      waitForResult(id: string, options: VcWaitOptions = {}): Promise<VcPresentationRequest> {
+        return waitForPresentation(request, id, options);
+      },
+      /**
+       * Ask for a credential and wait for the answer: creates the request, hands it to `onRequest` (show the
+       * `authorization_request_uri` as a QR code, or fetch `dcApiRequest` for the browser), then waits. Returns the
+       * finished request; check `status` before trusting `result`.
+       */
+      async verify(
+        body: CreateVcPresentationRequestBody,
+        options: VcWaitOptions & { onRequest?: (created: VcPresentationRequest) => void | Promise<void> } = {},
+      ): Promise<VcPresentationRequest> {
+        const created = await request<VcPresentationRequest>({ method: 'POST', path: '/v1/vc/presentation_requests', body });
+        await options.onRequest?.(created);
+        return waitForPresentation(request, created.id, options);
       },
     },
     deferred: {

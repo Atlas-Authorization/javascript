@@ -40,6 +40,7 @@ export type EmailTemplateName =
   | 'deletion_canceled'
   | 'deletion_paused'
   | 'privacy_request_confirm'
+  | 'inactivity_notice'
   | 'connection_reconnect';
 
 /** The customizable body of a template: a subject line and a text body. */

@@ -8,6 +8,8 @@ export interface ConnectionAction {
   name: string;
   description: string;
   input_schema: Record<string, unknown>;
+  /** What the action returns; every successful answer is checked against it (a mismatch is a provider change). */
+  output_schema?: Record<string, unknown> | null;
   method: string;
   mutating: boolean;
   scopes: string[];
@@ -24,6 +26,8 @@ export interface ConnectionActionResult {
   error: string | null;
   truncated: boolean;
   attempts: number;
+  /** true: the answer matches the declared output; false: it does not (see the provider change radar); null: nothing to check. */
+  output_valid?: boolean | null;
   dry_run?: Record<string, unknown>;
 }
 
@@ -31,6 +35,8 @@ export interface ConnectionActionResult {
 export interface ConnectionActionDefinition {
   description: string;
   input?: Record<string, unknown>;
+  /** JSON Schema of what the action returns (after `response.path`). */
+  output?: Record<string, unknown>;
   request: { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; base_url: string; path: string; query?: Record<string, string>; body?: unknown; headers?: Record<string, string> };
   response?: { path?: string; ok_field?: string; error_field?: string };
   scopes?: string[];

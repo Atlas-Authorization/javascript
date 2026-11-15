@@ -1,9 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Engine, RouteDef } from '../engine';
+import { ensureRegisteredEncryptionKeys } from './emu4-oauth-auth';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
 import { randomToken } from '../store';
+import { enforceOrgSessionCap } from './emu3-misc';
 import { discoveryDocument } from './oauth';
+import { dbscRegistrationHeaders, enforceSessionBinding, sessionBindingClaims } from './emu4-trust-binding';
 import { revokeSession } from './round2';
 import { listReply, need } from './util';
 
@@ -43,6 +46,11 @@ const refreshMap = (e: Engine) => {
   return m;
 };
 export const resetSessions = (e: Engine): void => void refreshTokens.delete(e);
+/** The session a presented refresh token belongs to (also a spent one); `live` only answers for a token not yet rotated. */
+export const sessionIdOfRefresh = (e: Engine, token: string, live = false): string | undefined => {
+  const rec = refreshMap(e).get(token);
+  return rec && (!live || rec.rotatedAt === undefined) ? rec.sessionId : undefined;
+};
 
 export function issueRefreshToken(e: Engine, sessionId: string, token?: string): string {
   const t = token ?? `rt_${randomToken(32)}`;
@@ -62,7 +70,7 @@ export async function refreshSession(e: Engine, token: string): Promise<{ jwt: s
   if (!s || s.status === 'revoked') throw new EmulatorError('SESSION_REVOKED', 'The session is no longer active.');
   const now = e.clock.now();
   if (s.expires_at <= now) throw new EmulatorError('SESSION_EXPIRED', 'The session has expired.');
-  const mint = async () => (await e.tokens.mintSession({ userId: s.user_id, sessionId: s.id, organizationId: s.organization_id, claims: memberOrgRole(e, s.user_id, s.organization_id) }));
+  const mint = async () => (await e.tokens.mintSession({ userId: s.user_id, sessionId: s.id, organizationId: s.organization_id, claims: { ...memberOrgRole(e, s.user_id, s.organization_id), ...sessionBindingClaims(e, s.id) } }));
   if (rec.rotatedAt !== undefined) {
     if (now - rec.rotatedAt <= REFRESH_GRACE_MS && rec.successor) {
       const minted = await mint();
@@ -86,7 +94,11 @@ export function sessionsHandlers(): RouteDef[] {
       method: 'GET',
       pattern: '/.well-known/jwks.json',
       public: true,
-      handler: async (c) => ({ body: await c.engine.tokens.jwks() }),
+      handler: async (c) => {
+        // A client that registered encrypted request objects needs the key to encrypt to: it is published once one did.
+        await ensureRegisteredEncryptionKeys(c.engine);
+        return { body: await c.engine.tokens.publishedJwks() };
+      },
     },
     { method: 'GET', pattern: '/.well-known/openid-configuration', public: true, handler: (c) => ({ body: discoveryDocument(c.engine) }) },
     {
@@ -102,12 +114,15 @@ export function sessionsHandlers(): RouteDef[] {
         const bodyToken = typeof c.body.refresh_token === 'string' ? c.body.refresh_token : undefined;
         const presented = cookie ? decodeURIComponent(cookie) : (header ?? bodyToken);
         if (!presented) throw new EmulatorError('UNAUTHENTICATED', 'No refresh token was presented.');
+        // A session bound to a key or device (sender-constrained sessions, device-bound sessions) refreshes only next to its proof.
+        const boundSid = sessionIdOfRefresh(c.engine, presented);
+        if (boundSid) await enforceSessionBinding(c, boundSid);
         const out = await refreshSession(c.engine, presented);
         if (out.session_id !== c.params.id) throw notFound('Session');
         const attrs = 'Path=/; HttpOnly; SameSite=Lax';
         return {
           body: { object: 'session_tokens', jwt: out.jwt, session_id: out.session_id, expires_in: out.expires_in, ...(cookie ? {} : { refresh_token: out.refresh_token }) },
-          headers: { 'set-cookie': [`__session=${out.jwt}; ${attrs}; Max-Age=${out.expires_in}`, `__atlas_rt=${encodeURIComponent(out.refresh_token)}; ${attrs}`] },
+          headers: { 'set-cookie': [`__session=${out.jwt}; ${attrs}; Max-Age=${out.expires_in}`, `__atlas_rt=${encodeURIComponent(out.refresh_token)}; ${attrs}`], ...(cookie ? await dbscRegistrationHeaders(c.engine, out.session_id) : {}) },
         };
       },
     },
@@ -124,6 +139,8 @@ export function sessionsHandlers(): RouteDef[] {
         const orgClaims = memberOrgRole(e, userId, orgId);
         const now = e.clock.now();
         const s = e.db.sessions.insert({ user_id: userId, organization_id: orgId, status: 'active', created_at: now, expires_at: now + SESSION_TTL, last_active_at: now });
+        // An organization's maxSessions ends the member's least recently active sessions (reason org_max_sessions_exceeded); the new one is kept.
+        enforceOrgSessionCap(e, s);
         const minted = await e.tokens.mintSession({ userId, sessionId: s.id, organizationId: orgId, claims: { ...orgClaims, ...(c.body.actor?.sub ? { act: { sub: c.body.actor.sub } } : {}) } });
         return { status: 200, body: { ...presentSession(s), jwt: minted.jwt, refresh_token: issueRefreshToken(e, s.id), expires_in: minted.expiresIn } };
       },
@@ -160,7 +177,7 @@ export function sessionsHandlers(): RouteDef[] {
         const s = e.db.sessions.get(c.params.id);
         if (!s || s.status !== 'active') throw notFound('Session');
         const name = c.params.template ?? 'session';
-        let claims: Obj = memberOrgRole(e, s.user_id, s.organization_id);
+        let claims: Obj = { ...memberOrgRole(e, s.user_id, s.organization_id), ...sessionBindingClaims(e, s.id) };
         let ttl = 60;
         if (name !== 'session') {
           const t = e.generic.get('jwt_templates')?.find((r) => r.name === name);
@@ -185,17 +202,6 @@ export function sessionsHandlers(): RouteDef[] {
         const s = e.db.sessions.get(sid);
         if (s && s.status !== 'active') return { body: { object: 'token_verification', verified: false, reason: 'revoked' } };
         return { body: { object: 'token_verification', verified: true, user_id: r.claims.sub, session_id: sid, organization_id: r.claims.org_id ?? null, organization_role: r.claims.org_role ?? null } };
-      },
-    },
-    { method: 'GET', pattern: '/v1/instance/signing_keys', handler: async (c) => ({ body: { object: 'list', data: await c.engine.tokens.signingKeys() } }) },
-    {
-      method: 'POST',
-      pattern: '/v1/instance/signing_keys/rotate',
-      handler: async (c) => {
-        const alg = c.body.alg === 'ES256' ? 'ES256' : 'RS256';
-        const r = await c.engine.tokens.rotate(alg);
-        c.engine.webhooks.emit('signing_key.rotated', { kid: r.kid, previous_kid: r.previous_kid, emergency: false, retires_at: null });
-        return { body: { object: 'signing_key_rotation', ...r } };
       },
     },
   ];

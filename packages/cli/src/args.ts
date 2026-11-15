@@ -26,6 +26,13 @@ const OPTIONS = {
   // changes tail / mirror init.
   types: { type: 'string', multiple: true },
   after: { type: 'string' },
+  // audit chain-enable / chain-links.
+  'checkpoint-interval-seconds': { type: 'string' },
+  'after-seq': { type: 'string' },
+  // agents delegations.
+  'machine-id': { type: 'string' },
+  'delegator-user-id': { type: 'string' },
+  'root-id': { type: 'string' },
   adapter: { type: 'string' },
   once: { type: 'boolean' },
   // keys create / rotate.
@@ -113,6 +120,14 @@ const OPTIONS = {
   port: { type: 'string' },
   seed: { type: 'string' },
   api: { type: 'string' },
+  // proxy.
+  target: { type: 'string' },
+  public: { type: 'string', multiple: true },
+  cache: { type: 'string' },
+  bind: { type: 'string' },
+  'allow-api-keys': { type: 'boolean' },
+  'strip-credentials': { type: 'boolean' },
+  'revocation-interval': { type: 'string' },
   // fga test.
   store: { type: 'string' },
   // plan / apply: print secret values (a terminal only, never under CI).
@@ -138,6 +153,15 @@ const OPTIONS = {
   'organization-id': { type: 'string' },
   'from-step': { type: 'string' },
   comment: { type: 'string' },
+  // compliance (data rights board, translation review).
+  assignee: { type: 'string' },
+  priority: { type: 'string' },
+  label: { type: 'string' },
+  overdue: { type: 'string' },
+  unassigned: { type: 'string' },
+  'due-within-days': { type: 'string' },
+  action: { type: 'string' },
+  body: { type: 'string' },
   type: { type: 'string' },
   code: { type: 'string' },
   method: { type: 'string' },
@@ -245,7 +269,13 @@ const OPTIONS = {
   rotate: { type: 'boolean' },
   // id-accounts provision / list / rotate / remove.
   app: { type: 'string' },
-  label: { type: 'string' },
+  // config snapshot / preview.
+  snapshot: { type: 'boolean' },
+  ref: { type: 'string' },
+  'ttl-hours': { type: 'string' },
+  include: { type: 'string', multiple: true },
+  'unmask-emails': { type: 'boolean' },
+  refresh: { type: 'boolean' },
   'password-file': { type: 'string' },
   'two-factor-exempt': { type: 'boolean' },
   unverified: { type: 'boolean' },

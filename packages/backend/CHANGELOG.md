@@ -1,5 +1,12 @@
 # @atlasauth/backend changelog
 
+## 0.53.0
+
+- New clients and helpers: `signingKeySchedule` (ES384, PS256 and EdDSA keys with automatic rotation), `auditChain` with offline `verifyAuditChain`, `sessionBindings` with `verifyBoundSession`, `agentDelegations`, `oauthPublishers`, `billing.createStoreLink`, `billingConnect`, `referralRewards`, `connectionActions.types`, `connectionProviderChanges`, `connectionAccessRules` and `registerOAuthClient`, config snapshots and environment clones.
+- Journey experiments and the new journey step types, compliance depth (age assurance, reports, cookie consent, data rights board, erasure connectors, translation review), approval trusted devices and change feed consumers.
+- `presentationRequests.verify` and `waitForResult` for wallet verifiers.
+- Token verification accepts ES384, PS256 and EdDSA signatures.
+
 ## 0.52.0
 
 - Step-up: `client.stepUp` (policy CRUD and `assert`), `requireStepUp` gate and offline `verifyStepUpReceipt`.

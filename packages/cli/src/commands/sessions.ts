@@ -19,11 +19,29 @@ export async function sessions(ctx: RunContext, args: ParsedArgs): Promise<numbe
       return 0;
     }
 
+    case 'binding': {
+      const id = requireArg(args.positionals, 2, 'session-id');
+      const { client } = requireClient(ctx, args.values);
+      const b = await client.sessionBindings.get(id);
+      if (json) printJson(ctx.io, b);
+      else ctx.io.out(b.bound ? `Session ${id} is bound to key ${b.jkt} (${b.alg}${b.attested ? `, attested by ${b.attestation_provider ?? 'the app'}` : ''}).` : `Session ${id} is not bound to a key.`);
+      return 0;
+    }
+
+    case 'unbind': {
+      const id = requireArg(args.positionals, 2, 'session-id');
+      const { client } = requireClient(ctx, args.values);
+      const result = await client.sessionBindings.remove(id);
+      if (json) printJson(ctx.io, result);
+      else ctx.io.out(`Removed the key binding of session ${id}: it can bind a new key.`);
+      return 0;
+    }
+
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'sessions ${sub}'. Try: revoke.`
-          : 'sessions needs a subcommand: revoke.',
+          ? `Unknown subcommand 'sessions ${sub}'. Try: revoke, binding, unbind.`
+          : 'sessions needs a subcommand: revoke, binding, unbind.',
       );
   }
 }

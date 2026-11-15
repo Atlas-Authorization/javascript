@@ -1,5 +1,9 @@
 # @atlasauth/chrome-extension changelog
 
+## 0.6.1
+
+- Re-exports `exchangeGoogleTokenForSession` from `@atlasauth/js`. Needs `@atlasauth/js` 0.46.0 or later (peer range raised).
+
 ## 0.6.0 — 2026-11-13
 
 - `interactive: false` runs a silent sign-in (`prompt=none`) and throws `AtlasWebAuthFlowError` when interaction is needed.

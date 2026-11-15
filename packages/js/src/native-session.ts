@@ -93,15 +93,48 @@ export async function exchangeForSession(opts: {
   accessToken: string;
   fetchImpl?: typeof fetch;
 }): Promise<NativeSession | null> {
+  return postSessionExchange(opts, ACCESS_TOKEN_TYPE, opts.accessToken);
+}
+
+/** The subject token type of a Google access token traded for an Atlas session. */
+const GOOGLE_ACCESS_TOKEN_TYPE = 'urn:atlas:token-type:google_access_token';
+
+/**
+ * Exchange a GOOGLE access token for an Atlas session (an RFC 8693 profile), for a first-party app such as a browser
+ * extension that signed the user in with Google (`chrome.identity.getAuthToken`). Atlas checks the token with Google:
+ * it must have been issued to a Google client id the instance named, and the client must be allowed to do this
+ * (`oauthProvider.advanced.googleTokenExchange` on the instance). Same contract as {@link exchangeForSession}:
+ * returns `null`, never throws, so a failure is the cue to show a sign-in rather than crash.
+ */
+export async function exchangeGoogleTokenForSession(opts: {
+  baseUrl: string;
+  /** The first-party Atlas OAuth client id the instance allowed for this exchange. */
+  clientId: string;
+  /** The Google access token. */
+  googleAccessToken: string;
+  /** A label for the device list. */
+  deviceName?: string;
+  fetchImpl?: typeof fetch;
+}): Promise<NativeSession | null> {
+  return postSessionExchange(opts, GOOGLE_ACCESS_TOKEN_TYPE, opts.googleAccessToken, opts.deviceName);
+}
+
+async function postSessionExchange(
+  opts: { baseUrl: string; clientId: string; fetchImpl?: typeof fetch },
+  subjectTokenType: string,
+  subjectToken: string,
+  deviceName?: string,
+): Promise<NativeSession | null> {
   const doFetch = opts.fetchImpl ?? fetch;
 
   // Form-urlencoded, per the grant. `URLSearchParams` escapes the token values.
   const form = new URLSearchParams({
     grant_type: TOKEN_EXCHANGE_GRANT,
     client_id: opts.clientId,
-    subject_token: opts.accessToken,
-    subject_token_type: ACCESS_TOKEN_TYPE,
+    subject_token: subjectToken,
+    subject_token_type: subjectTokenType,
     requested_token_type: SESSION_TOKEN_TYPE,
+    ...(deviceName ? { device_name: deviceName } : {}),
   });
 
   let response: Response;

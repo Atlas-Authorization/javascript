@@ -1,5 +1,9 @@
 # @atlasauth/types changelog
 
+## 0.18.1
+
+- `WebhookEvent` now covers the full webhook event catalog.
+
 ## 0.18.0
 
 - New `Register` interface: a generated `atlas-types.d.ts` narrows permission, role, plan, feature and metadata types. Without it everything stays `string`.

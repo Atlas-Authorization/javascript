@@ -23,10 +23,14 @@ Commands:
   api-keys list|create|revoke
   webhooks list|create|upsert|update|test|deliveries|redeliver|replay|rotate|reveal
   changes tail               Watch the change feed (users, orgs, memberships, keys, machines)
+  compliance posture|ropa|sign|board|requests|triage|i18n-check ...   Compliance reports, data rights board, translation checks
   mirror init                Print a starter schema + code to mirror Atlas data into your database
   listen --forward-to <url>  Forward live events to your local server, signed (no tunnel)
+  proxy --target <url>       Put sign-in in front of any app: only valid Atlas sessions get through
   dev [proxy]                Local in-memory Atlas (emulator) / one-origin dev proxy
   move-origin --from --to    Move an app to a new domain in one step (--dry-run first)
+  preview create|clone|list|delete   Per-PR preview instances and environment clones (platform key)
+  config snapshot|snapshots|diff|restore   Config time travel: save, compare and put back configuration
   workflows list|get|runs|run|dry-run|status|cancel|retry|resume|templates|approvals|approve|deny
   app-events types|publish|list|get ...   Application events (publish to one organization, or "*" to all)
   logs tail                  Live log: refused requests, audit entries, events
@@ -42,6 +46,9 @@ Commands:
   pdp list|remove                     Local decision points
   billing coupons|credits ...         Discount codes and account credit
   audit retention|set-retention       Audit log retention
+  audit verify                        Verify the tamper-evident audit chain on this machine
+  audit chain|chain-enable|chain-checkpoint|chain-links
+                                      The audit chain: status, turn on, sign a checkpoint, list links
   federation show|resolve             OpenID federation
   vc deferred|approve|deny            Deferred credential issuance
   csp --framework next|express|nginx
@@ -60,10 +67,10 @@ Commands:
   admin developer-accounts provision|revoke
                              Atlas staff: accounts for other platforms' integration teams
                              (operator sign-in with a recent second factor; passwords to 0600 files)
-  sessions revoke
+  sessions revoke|binding|unbind
   grants usage <machine|agent> <grant-id>
                              Live usage counters and open leases of a machine or agent grant
-  config export|import|plan|promote|schema
+  config export|import|plan|promote|schema|snapshot|snapshots|diff|restore
                              Config-as-code: round-trip the instance's config; plan = drift diff;
                              promote = copy one environment's config to another
   plan [<file|dir>]          Drift diff of a config file or directory; --check exits 2 on drift
@@ -507,6 +514,25 @@ Usage:
                         [--product <name>] [--force] [--print-secret] [--json]
   atlas api-keys revoke <api-key-id> [--json]`,
 
+  compliance: `atlas compliance — compliance reports, the data rights board and translation checks
+
+Usage:
+  atlas compliance posture | ropa                      the live posture / record of processing
+  atlas compliance sign --kind posture|ropa            sign and keep a report (reports lists them, report <id> fetches one)
+  atlas compliance inactive-preview                    who the inactive-user policy would act on now
+  atlas compliance board                               open / overdue / due soon / unassigned
+  atlas compliance requests [--status s] [--assignee a] [--priority p] [--label l] [--overdue true] [--unassigned true]
+  atlas compliance triage <request-id> [--assignee a] [--priority low|normal|high|urgent]
+  atlas compliance note <request-id> --body <text>
+  atlas compliance downstream <request-id>             erasure progress per tracked system
+  atlas compliance downstream-done <request-id> <connector-id> [--status done|not_applicable] [--note n]
+  atlas compliance erasure-catalog | cookie-summary
+  atlas compliance i18n-summary | i18n-review <id> --action submit|approve|request_changes|reopen [--note n]
+  atlas compliance i18n-check --file translations.json   exit 1 when a translation fails (CI)
+
+translations.json: { "items": [{ "resource_type", "resource_name", "locale", "content" }], "require_approved": true }.
+The check never writes.`,
+
   changes: `atlas changes — watch the change feed
 
 Usage:
@@ -561,6 +587,25 @@ and no second endpoint. The signing secret belongs to this session only and is
 written to a 0600 file (webhook-listen.env): point your verifier at it. --events
 takes names or patterns (user.*, *.created). The session lasts up to an hour;
 Ctrl-C stops it. --count n exits after n events (exit 1 if any forward failed).`,
+  proxy: `atlas proxy — an authenticating reverse proxy for any app
+
+Usage:
+  atlas proxy --target <url> [--port 4500] [--public /health,/static] [--allow-api-keys]
+              [--cache <seconds>] [--strip-credentials] [--bind <address>]
+              [--revocation-interval <seconds>]
+
+Listens locally and forwards to --target. A request must carry a valid Atlas session
+(Authorization: Bearer <session token>, or the __session cookie), otherwise it is
+answered 401 and never reaches your app. A valid one is forwarded with x-atlas-user-id,
+x-atlas-session-id, x-atlas-org-id, x-atlas-org-role and x-atlas-auth-method headers.
+Any x-atlas-* header the client sent is removed first, so your app can trust them.
+--public lets listed path prefixes through without a credential. --allow-api-keys also
+accepts ak_ API keys (x-atlas-key-id, x-atlas-subject-*, x-atlas-scopes). Answers are
+cached --cache seconds (default 10, 0 = off): a session revoked just now still works for
+that long, except that the session revocation feed is polled every --revocation-interval
+seconds (default 5, 0 = off) and a session it lists is dropped at once. If Atlas cannot be
+reached the request is refused (503). The secret key needs
+sessions:read (and api_keys:read with --allow-api-keys). WebSocket upgrades are refused.`,
   dev: `atlas dev — a local, in-memory Atlas
 
 Usage:
@@ -905,10 +950,21 @@ and any lease still holding an amount.`,
 
 Usage:
   atlas config export [--dir <path>] [--format json|yaml]
-  atlas config import [--dir <path>] [--format json|yaml] [--dry-run] [--prune] [--force-hook]
+  atlas config import [--dir <path>] [--format json|yaml] [--dry-run] [--prune] [--force-hook] [--skip-validate]
   atlas config plan   [--dir <path>] [--format json|yaml] [--prune] [--check|--exit-code] [--json]
   atlas config schema [--out <file>]
-  atlas config promote --from <profile> --to <profile> [--dry-run] [--prune] [--yes] [--format json|yaml]
+  atlas config promote --from <profile> --to <profile> [--dry-run] [--prune] [--yes] [--format json|yaml] [--skip-validate]
+  atlas config snapshot [--label <text>]
+  atlas config snapshots [--limit <n>]
+  atlas config diff <from> [<to>]
+  atlas config restore <id> [--dry-run] [--yes]
+
+snapshot  Save the instance's configuration as it is now (secrets are never in it).
+          'config import --snapshot' saves one first, so an apply can be undone.
+snapshots List the saved copies, newest first (the worker also saves one after config changes).
+diff      What changed between two snapshots, or one and the live config ("current").
+restore   Put a snapshot back. Shows the changes, asks (--yes skips), saves the
+          state it replaces first, and refuses if the config moved since the preview.
 
 export  Read the instance's current config (instance/auth config, OAuth clients
         and providers, SSO connections, resource servers, JWT templates, roles,
@@ -952,9 +1008,11 @@ Usage:
   atlas pages discard --page <page> --status <draft|live> [--json]
 
 A template is a JSON file of components (heading, text, image, link, button_link,
-list, divider, spacer, columns) in four regions around the sign-in card: header,
-above_form, below_form and footer. There is no raw HTML, CSS or script; Atlas
-validates the file and renders it. push saves a draft only; the live page does not
+list, divider, spacer, columns, custom) in four regions around the sign-in card:
+header, above_form, below_form and footer. There is never script. A custom
+component carries your own html and css (plus a frame height); Atlas accepts only
+an allowlisted subset, refuses anything else with the reason, and draws it in a
+sandboxed frame. Atlas validates the file and renders it. push saves a draft only; the live page does not
 change until promote (or push --promote). preview prints a signed link, valid for an
 hour, that shows the draft with a preview banner.`,
   actions: `atlas actions — manage Actions (tenant code run in the auth pipeline)
@@ -1052,7 +1110,7 @@ Usage:
         or a directory from 'atlas config export' (default ./atlas-config).
 
 Shows the plan, asks before applying (--yes skips the question; needed without a
-terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, write_budget. Re-running is a no-op.
+terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, referral_reward_rules, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, journey_experiments, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, write_budget, oauth_publishers, erasure_connectors, signing_key_schedule, audit_chain. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --skip-validate leave out the server dry-run pass (the published-limit checks still run)
@@ -1128,7 +1186,14 @@ first; nothing from before the command started is shown. Ctrl-C stops it.`,
   telemetry: resHelp('telemetry', 'OTLP export of gateway and relay calls', TELEMETRY),
   pdp: resHelp('pdp', 'local decision points', PDP),
   billing: resHelp('billing', 'discount codes and account credit', BILLING),
-  audit: resHelp('audit', 'audit log retention (shortening needs confirm_deletion in --data)', AUDIT),
+  audit: `${resHelp('audit', 'audit log retention (shortening needs confirm_deletion in --data) and the tamper-evident audit chain', AUDIT)}
+
+atlas audit verify [--after <seq>] [--jwks-url <url>] [--json]
+  Recompute the audit chain on this machine: every row hash and link hash from the exported links,
+  and every signed checkpoint against the instance's published signing keys. Nothing is taken on
+  Atlas's word. --after <seq> starts after that link (the link before it is trusted as given);
+  --jwks-url overrides where the signing keys are read from. Exit 0 when intact, 1 when any row,
+  link or checkpoint does not match. Needs the chain on: atlas audit chain-enable.`,
   federation: resHelp('federation', 'OpenID federation', FEDERATION),
   vc: resHelp('vc', 'deferred verifiable credential issuance', VC),
 });

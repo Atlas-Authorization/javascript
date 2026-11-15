@@ -40,6 +40,8 @@ export interface PublicPolicy {
   locale: string | null;
   published_at: number | null;
   effective_at: number | null;
+  /** Languages this version has a translation in. Pass `locale` to `getPolicies` to get one; its `content_sha256` is the hash to send back. */
+  available_locales?: string[];
 }
 
 export interface PublicPolicies {

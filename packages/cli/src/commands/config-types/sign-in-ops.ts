@@ -203,6 +203,69 @@ const journeys = simpleResourceSpec({
   fileKeys: ['name', 'description', 'is_default', 'applications', 'enabled', 'abandon_after_hours', 'definition'],
 });
 
+/**
+ * A/B experiments on journeys, keyed `journey` (the journey's name) + `name`. `variants` is a list of
+ * `{ key, version, weight }` (the first is the control). `status` is draft, running or stopped: apply creates
+ * a draft and starts it when the file says running, and stops a running one when the file says stopped. A
+ * started experiment keeps its variants, so changing them in the file is refused (add a new experiment).
+ * Stopping never promotes a variant; do that with `POST /v1/flows/{id}/experiments/{experimentId}/stop`.
+ */
+const journeyExperiments: CollectionSpec = {
+  kind: 'collection',
+  type: 'journey_experiments',
+  prune: false,
+  fileKeys: ['journey', 'name', 'hypothesis', 'variants', 'status'],
+  defaulted: ['hypothesis', 'status'],
+  keyOf: (c) => (isObj(c) ? `${String(c.journey ?? '')}/${String(c.name ?? '')}` : ''),
+  async fetchLive(http: ConfigHttp): Promise<LiveEntry[]> {
+    const flows = await http.get<{ data?: Array<{ id: string; name: string }> }>('/v1/flows');
+    const out: LiveEntry[] = [];
+    for (const f of Array.isArray(flows?.data) ? flows.data : []) {
+      const res = await http.get<{ data?: Array<Record<string, Json>> }>(`/v1/flows/${enc(f.id)}/experiments`);
+      for (const x of Array.isArray(res?.data) ? res.data : []) {
+        const name = String(x.name ?? '');
+        out.push({ key: `${f.name}/${name}`, id: `${f.id}/${String(x.id)}`, config: { journey: f.name, name, hypothesis: (x.hypothesis as Json) ?? null, variants: (x.variants as Json) ?? [], status: (x.status as Json) ?? 'draft' } });
+      }
+    }
+    return out;
+  },
+  async create(http, config) {
+    const c = isObj(config) ? config : {};
+    const flowId = await journeyIdByName(http, String(c.journey ?? ''));
+    const status = String(c.status ?? 'draft');
+    if (status === 'stopped') throw new CliError(`journey_experiments ${String(c.journey)}/${String(c.name)}: create it as draft or running; an experiment is stopped after it has run`);
+    const made = await http.post<{ id: string }>(`/v1/flows/${enc(flowId)}/experiments`, { name: c.name, ...(c.hypothesis !== undefined ? { hypothesis: c.hypothesis } : {}), variants: c.variants });
+    if (status === 'running') await http.post(`/v1/flows/${enc(flowId)}/experiments/${enc(made.id)}/start`, {});
+  },
+  async update(http, live, config) {
+    const c = isObj(config) ? config : {};
+    const l = isObj(live.config) ? live.config : {};
+    const [flowId, id] = live.id.split('/') as [string, string];
+    const wanted = String(c.status ?? l.status ?? 'draft');
+    const have = String(l.status ?? 'draft');
+    const same = JSON.stringify(c.variants ?? l.variants) === JSON.stringify(l.variants) && (c.name ?? l.name) === l.name && (c.hypothesis ?? null) === (l.hypothesis ?? null);
+    if (!same) {
+      if (have !== 'draft') throw new CliError(`journey_experiments ${live.key}: a ${have} experiment keeps its name and variants; add a new experiment instead`);
+      await http.patch(`/v1/flows/${enc(flowId)}/experiments/${enc(id)}`, { name: c.name, hypothesis: c.hypothesis ?? null, variants: c.variants });
+    }
+    if (wanted === have) return;
+    if (have === 'draft' && wanted === 'running') await http.post(`/v1/flows/${enc(flowId)}/experiments/${enc(id)}/start`, {});
+    else if (have === 'running' && wanted === 'stopped') await http.post(`/v1/flows/${enc(flowId)}/experiments/${enc(id)}/stop`, {});
+    else throw new CliError(`journey_experiments ${live.key}: cannot go from ${have} to ${wanted}`);
+  },
+  async remove(http, live) {
+    const [flowId, id] = live.id.split('/') as [string, string];
+    await http.delete(`/v1/flows/${enc(flowId)}/experiments/${enc(id)}`);
+  },
+};
+
+async function journeyIdByName(http: ConfigHttp, name: string): Promise<string> {
+  const res = await http.get<{ data?: Array<{ id: string; name: string }> }>('/v1/flows');
+  const row = (Array.isArray(res?.data) ? res.data : []).find((f) => f.name === name);
+  if (!row) throw new CliError(`journey_experiments: no journey named "${name}" (add it to journeys first)`);
+  return row.id;
+}
+
 const workflows = simpleResourceSpec({
   type: 'workflows',
   path: '/v1/workflows',
@@ -309,6 +372,7 @@ export function signInOpsTypes(): ResourceSpec[] {
     actions,
     actionBindings,
     journeys,
+    journeyExperiments,
     workflows,
     appEventTypes,
     auditEventSchemas,

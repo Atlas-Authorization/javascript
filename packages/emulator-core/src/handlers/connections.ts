@@ -6,6 +6,7 @@ import type { Obj } from '../openapi';
 import { Table, paginate, randomToken } from '../store';
 import { engineState, intIn, oneOf } from './support';
 import { pageOf } from './util';
+import { assertConnectionAccess, matchProviderStub } from './emu4-actions-access';
 
 /**
  * Connection history and recovery on the engine's own state: the per-connection activity log (what happened, never what was
@@ -52,6 +53,117 @@ function announce(e: Engine, ev: Obj, replayed: boolean): void {
   e.webhooks.emit('connection.provider_event', { object: 'connection_provider_event', id: ev.id, connection_id: ev.connection_id, provider: ev.provider, topic: ev.topic, kind: ev.kind, ...(replayed ? { replayed: true, event_id: ev.id } : {}), received_at: ev.received_at });
 }
 
+
+// ── bulk import ──
+const IMPORT_MAX_ROWS = 500;
+const OWNER_TYPES = ['organization', 'user', 'external'];
+const CREDENTIAL_KINDS = ['api_key', 'client_credentials', 'bearer', 'basic', 'custom_header', 'hmac_secret', 'jwt_bearer', 'oauth1', 'github_app_installation', 'admin_consent'];
+class RowError extends Error {
+  constructor(readonly code: string, message: string, readonly field?: string) {
+    super(message);
+  }
+}
+const rowStr = (v: unknown, field: string, max = 4096): string | undefined => {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'string' || !v.trim() || v.length > max) throw new RowError('invalid', `${field} must be a non-empty string of at most ${max} characters.`, field);
+  return v.trim();
+};
+const rowTime = (v: unknown, field: string): number | null => {
+  if (v === undefined || v === null) return null;
+  const t = typeof v === 'number' ? v : Date.parse(String(v));
+  if (!Number.isFinite(t)) throw new RowError('invalid', `${field} must be epoch milliseconds or an ISO 8601 time.`, field);
+  return t;
+};
+
+/** One import row, checked the way the real import checks it. */
+function parseRow(row: Obj): Obj {
+  const provider = rowStr(row.provider, 'provider', 64);
+  if (!provider || !/^[a-z0-9][a-z0-9_.-]{0,63}$/.test(provider)) throw new RowError('invalid', 'provider must be a provider key.', 'provider');
+  const o = (row.owner ?? {}) as Obj;
+  if (!OWNER_TYPES.includes(o.type) || typeof o.id !== 'string' || !o.id) throw new RowError('invalid', 'owner must be {type: "organization" | "user" | "external", id}.', 'owner');
+  const externalId = rowStr(row.external_id, 'external_id', 255);
+  if (!externalId) throw new RowError('external_id_required', 'external_id (the provider-side account id) is required: it is how a re-import finds the same connection.', 'external_id');
+  const kind = row.kind ?? 'oauth';
+  if (typeof kind !== 'string' || (kind !== 'oauth' && !CREDENTIAL_KINDS.includes(kind))) throw new RowError('invalid', `kind must be one of oauth, ${CREDENTIAL_KINDS.join(', ')}.`, 'kind');
+  const refreshToken = rowStr(row.refresh_token, 'refresh_token');
+  const accessToken = rowStr(row.access_token, 'access_token', 16384);
+  if (kind !== 'oauth') {
+    if (refreshToken || accessToken || row.token_family !== undefined) throw new RowError('invalid', `A ${kind} row takes credentials, not refresh_token, access_token or token_family.`, 'credentials');
+    if (!row.credentials || typeof row.credentials !== 'object' || Array.isArray(row.credentials)) throw new RowError('invalid', `credentials (the ${kind} secret fields) is required.`, 'credentials');
+  } else if (!refreshToken && !accessToken) throw new RowError('invalid', 'refresh_token (or at least an access_token) is required.', 'refresh_token');
+  else if (row.credentials !== undefined) throw new RowError('invalid', 'credentials apply to a non-oauth kind; set kind.', 'credentials');
+  const expiresAt = rowTime(row.expires_at, 'expires_at');
+  const refreshExpiresAt = rowTime(row.refresh_token_expires_at, 'refresh_token_expires_at');
+  let configScopes: string[] | undefined;
+  if (kind === 'oauth' && row.config !== undefined && row.config !== null) {
+    if (typeof row.config !== 'object' || Array.isArray(row.config)) throw new RowError('invalid', 'config must be an object with scopes.', 'config');
+    const cs = (row.config as Obj).scopes;
+    if (cs !== undefined) {
+      if (!Array.isArray(cs) || cs.length > 50 || cs.some((x) => typeof x !== 'string' || !x || /\s/.test(x) || x.length > 200)) throw new RowError('invalid', 'config.scopes must be a list of scope strings.', 'config.scopes');
+      configScopes = cs;
+    }
+  }
+  let scopes: string[] | undefined;
+  if (row.scopes !== undefined) {
+    const raw = typeof row.scopes === 'string' ? row.scopes.split(/[\s,]+/).filter(Boolean) : row.scopes;
+    if (!Array.isArray(raw) || raw.length > 200 || raw.some((x) => typeof x !== 'string' || !x || /\s/.test(x) || x.length > 300)) throw new RowError('invalid', 'scopes must be a list of scope strings.', 'scopes');
+    scopes = raw;
+  }
+  const metadata: Record<string, string> = {};
+  if (row.metadata !== undefined && row.metadata !== null) {
+    if (typeof row.metadata !== 'object' || Array.isArray(row.metadata)) throw new RowError('invalid', 'metadata must be an object of strings.', 'metadata');
+    for (const [k, v] of Object.entries(row.metadata as Obj)) {
+      if (!/^[A-Za-z0-9_.-]{1,64}$/.test(k) || (typeof v !== 'string' && typeof v !== 'number' && typeof v !== 'boolean') || String(v).length > 1024) throw new RowError('invalid', `metadata.${k} must be a short scalar.`, `metadata.${k}`);
+      metadata[k] = String(v);
+    }
+  }
+  const environment = row.environment ?? 'production';
+  if (environment !== 'production' && environment !== 'sandbox') throw new RowError('invalid', 'environment must be production or sandbox.', 'environment');
+  if (row.host_params !== undefined && (typeof row.host_params !== 'object' || row.host_params === null || Array.isArray(row.host_params) || Object.values(row.host_params).some((v) => typeof v !== 'string'))) throw new RowError('invalid', 'host_params must be an object of strings.', 'host_params');
+  return { kind, provider, owner: { type: o.type, id: o.id }, externalId, refreshToken, accessToken, expiresAt, refreshExpiresAt, configScopes, scopes, metadata, environment, hostParams: row.host_params ?? {}, name: rowStr(row.name, 'name', 200) ?? provider, nameGiven: row.name != null, allowedHosts: Array.isArray(row.allowed_hosts) ? row.allowed_hosts.filter((h: unknown) => typeof h === 'string') : [], tokenFamily: rowStr(row.token_family, 'token_family', 128) };
+}
+
+const failedRow = (index: number, err: unknown): Obj => {
+  const e = err as RowError & { errors?: Array<{ message?: string; param?: string }> };
+  const code = e instanceof RowError ? e.code : 'invalid';
+  return { index, status: 'failed', connection_id: null, validated: false, refreshed: false, error: { code, message: e.message || 'Could not import this row.', ...(e instanceof RowError && e.field ? { field: e.field } : {}) } };
+};
+
+/** One relayed provider call: allowed method and host only, answered through the engine's `fetch`; also the path action runs take. */
+export async function relayCall(e: Engine, conn: Obj, body: Obj): Promise<Obj> {
+  const method = oneOf(body, 'method', ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'], 'GET');
+  let url: URL;
+  try {
+    url = new URL(String(body.url));
+  } catch {
+    throw bad('url must be an absolute https URL.', 'url');
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) throw bad('url must be an https URL without credentials.', 'url');
+  const methods: string[] = conn.allowed_methods ?? ['GET'];
+  const refuse = (detail: string, param: string): never => {
+    record(e, conn.id, 'relay', 'blocked', { method, host: url.host, detail });
+    throw new EmulatorError('FORBIDDEN', detail, param);
+  };
+  if (conn.status === 'revoked') refuse('This connection is revoked.', 'url');
+  if (!methods.includes(method)) refuse(`${method} is not in this connection's allowed_methods.`, 'method');
+  if (!hostAllowed(url.hostname, conn.allowed_hosts ?? [])) refuse('That host is not in this connection\'s allowed_hosts.', 'url');
+  const stubbed = matchProviderStub(e, url.toString(), method);
+  if (!stubbed && !e.options.fetch) {
+    record(e, conn.id, 'relay', 'error', { method, host: url.host, status: null, duration_ms: 0, attempts: 1, detail: 'no fetch configured' });
+    throw new EmulatorError('CONNECTION_UPSTREAM_ERROR', 'The emulator has no outbound fetch: pass the `fetch` option to answer relayed calls.');
+  }
+  const started = e.clock.now();
+  let res: Response;
+  try {
+    res = stubbed ?? (await e.options.fetch!(url.toString(), { method, headers: body.headers ?? {}, body: ['GET', 'HEAD'].includes(method) ? undefined : typeof body.body === 'string' ? body.body : body.body === undefined ? undefined : JSON.stringify(body.body) }));
+  } catch (err) {
+    record(e, conn.id, 'relay', 'error', { method, host: url.host, status: null, duration_ms: e.clock.now() - started, attempts: 1, detail: 'network error' });
+    throw new EmulatorError('CONNECTION_UPSTREAM_ERROR', `The provider could not be reached: ${(err as Error).message}`);
+  }
+  record(e, conn.id, 'relay', res.status < 400 ? 'ok' : 'error', { method, host: url.host, status: res.status, duration_ms: e.clock.now() - started, attempts: 1 });
+  return { object: 'connection_relay_response', connection_id: conn.id, status: res.status, headers: Object.fromEntries(res.headers), body: await res.text() };
+}
+
 export function connectionsHandlers(): RouteDef[] {
   const eventOf = (e: Engine, connectionId: string, id: string | undefined): Obj => {
     const ev = st(e).events.get(id);
@@ -90,38 +202,9 @@ export function connectionsHandlers(): RouteDef[] {
       pattern: '/v1/connections/:id/relay',
       scope: 'connections:relay',
       handler: async (c) => {
-        const e = c.engine;
-        const conn = connOf(e, c.params.id);
-        const method = oneOf(c.body, 'method', ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'], 'GET');
-        let url: URL;
-        try {
-          url = new URL(String(c.body.url));
-        } catch {
-          throw bad('url must be an absolute https URL.', 'url');
-        }
-        if (url.protocol !== 'https:' || url.username || url.password) throw bad('url must be an https URL without credentials.', 'url');
-        const methods: string[] = conn.allowed_methods ?? ['GET'];
-        const refuse = (detail: string, param: string): never => {
-          record(e, conn.id, 'relay', 'blocked', { method, host: url.host, detail });
-          throw new EmulatorError('FORBIDDEN', detail, param);
-        };
-        if (conn.status === 'revoked') refuse('This connection is revoked.', 'url');
-        if (!methods.includes(method)) refuse(`${method} is not in this connection's allowed_methods.`, 'method');
-        if (!hostAllowed(url.hostname, conn.allowed_hosts ?? [])) refuse('That host is not in this connection\'s allowed_hosts.', 'url');
-        if (!e.options.fetch) {
-          record(e, conn.id, 'relay', 'error', { method, host: url.host, status: null, duration_ms: 0, attempts: 1, detail: 'no fetch configured' });
-          throw new EmulatorError('CONNECTION_UPSTREAM_ERROR', 'The emulator has no outbound fetch: pass the `fetch` option to answer relayed calls.');
-        }
-        const started = e.clock.now();
-        let res: Response;
-        try {
-          res = await e.options.fetch(url.toString(), { method, headers: c.body.headers ?? {}, body: ['GET', 'HEAD'].includes(method) ? undefined : typeof c.body.body === 'string' ? c.body.body : c.body.body === undefined ? undefined : JSON.stringify(c.body.body) });
-        } catch (err) {
-          record(e, conn.id, 'relay', 'error', { method, host: url.host, status: null, duration_ms: e.clock.now() - started, attempts: 1, detail: 'network error' });
-          throw new EmulatorError('CONNECTION_UPSTREAM_ERROR', `The provider could not be reached: ${(err as Error).message}`);
-        }
-        record(e, conn.id, 'relay', res.status < 400 ? 'ok' : 'error', { method, host: url.host, status: res.status, duration_ms: e.clock.now() - started, attempts: 1 });
-        return { body: { object: 'connection_relay_response', connection_id: conn.id, status: res.status, headers: Object.fromEntries(res.headers), body: await res.text() } };
+        const conn = connOf(c.engine, c.params.id);
+        assertConnectionAccess(c.engine, conn.id, c.key, 'relay');
+        return { body: await relayCall(c.engine, conn, c.body) };
       },
     },
     // ── persisted provider events ──
@@ -268,6 +351,111 @@ export function connectionsHandlers(): RouteDef[] {
       },
     },
     { method: 'GET', pattern: '/v1/connection_reconnect_done', public: true, handler: () => ({ headers: { 'cache-control': 'no-store' }, body: { object: 'connection_reconnect_done', ok: true } }) },
+    // ── bulk import: tokens a customer already holds, so no one reconnects ──
+    {
+      method: 'POST',
+      pattern: '/v1/connections/import',
+      scope: 'connections:import',
+      handler: async (c) => {
+        const e = c.engine;
+        const b = c.body;
+        if (!Array.isArray(b.connections) || b.connections.length === 0 || b.connections.length > IMPORT_MAX_ROWS) throw bad(`connections must be 1 to ${IMPORT_MAX_ROWS} rows.`, 'connections');
+        for (const k of ['validate', 'dry_run', 'verify', 'exchange_expiring']) if (b[k] !== undefined && typeof b[k] !== 'boolean') throw bad(`${k} must be a boolean.`, k);
+        for (const k of ['dry_run', 'verify']) {
+          const qv = c.query.get(k);
+          if (qv !== null && qv !== 'true' && qv !== 'false') throw bad(`${k} must be true or false.`, k);
+        }
+        const validate = b.validate !== false;
+        const exchange = b.exchange_expiring === true;
+        const dryRun = b.dry_run === true || c.query.get('dry_run') === 'true';
+        const table = (): Table => {
+          let t = e.generic.get('connections');
+          if (!t) e.generic.set('connections', (t = new Table('connections', e.clock.now, 'connection')));
+          return t;
+        };
+        const seen = new Map<string, number>();
+        const leaders = new Map<string, number>();
+        const out: Obj[] = [];
+        for (const [index, raw] of (b.connections as unknown[]).entries()) {
+          try {
+            const p = parseRow(raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Obj) : {});
+            const key = [p.owner.type, p.owner.id, p.provider, p.environment, p.externalId].join('|');
+            if (seen.has(key)) throw new RowError('duplicate_in_batch', `The same account appears in row ${seen.get(key)}.`, 'external_id');
+            seen.set(key, index);
+            if (p.owner.type === 'organization' && !e.db.organizations.get(p.owner.id)) throw new RowError('owner_not_found', 'Unknown organization.', 'owner');
+            if (p.owner.type === 'user' && !e.db.users.get(p.owner.id)) throw new RowError('owner_not_found', 'Unknown user.', 'owner');
+            // Rows of one token family share the leader's grant; a follower needs a leader that imported.
+            const famKey = p.tokenFamily ? [p.owner.type, p.owner.id, p.provider, p.environment, p.tokenFamily].join('|') : undefined;
+            const leader = famKey ? leaders.get(famKey) : undefined;
+            if (famKey && leader === undefined) leaders.set(famKey, index);
+            if (leader !== undefined && out[leader]?.status === 'failed') throw new RowError('family_leader_failed', `The row sharing this token set (row ${leader}) did not import.`, 'token_family');
+            const all = table().all();
+            const prior = all.find((x) => x.owner?.type === p.owner.type && x.owner?.id === p.owner.id && x.provider === p.provider && (x.environment ?? 'production') === p.environment && x.external_id === p.externalId);
+            const taken = all.find((x) => x.provider === p.provider && (x.environment ?? 'production') === p.environment && x.external_id === p.externalId && !(x.owner?.type === p.owner.type && x.owner?.id === p.owner.id));
+            if (taken) throw new RowError('external_id_taken', `That provider account is already connected under another owner (connection ${taken.id}).`, 'external_id');
+            // shortcut: the emulator holds no provider clients, so a refresh token is never spent at a provider: validated and refreshed stay false and a dry run reports ok_unverified.
+            const base: Obj = { index, validated: false, refreshed: false, error: null };
+            if (dryRun) {
+              out.push({ ...base, status: prior ? 'would_update' : 'would_create', connection_id: prior?.id ?? null, check: 'ok_unverified' });
+              continue;
+            }
+            let tokens = { access: p.accessToken as string | undefined, refresh: p.refreshToken as string | undefined, expiresAt: p.expiresAt as number | null, expiring: false };
+            let exchanged: boolean | undefined;
+            let exchangeError: string | undefined;
+            // A non-expiring Shopify offline token (an access token and no refresh token) is swapped for an expiring pair. Opt in; a refusal keeps the original token.
+            if (exchange && p.kind === 'oauth' && p.provider === 'shopify' && tokens.access && !tokens.refresh) {
+              const shop = String(p.hostParams.shop ?? '');
+              const host = shop.includes('.') ? shop : `${shop}.myshopify.com`;
+              if (!shop || !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(host) || !e.options.fetch) {
+                exchanged = false;
+                exchangeError = 'exchange_unavailable';
+              } else {
+                try {
+                  const res = await e.options.fetch(`https://${host}/admin/oauth/access_token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange', expiring: 1 }) });
+                  const json: any = await res.json().catch(() => null);
+                  if (res.ok && json && typeof json.access_token === 'string') {
+                    tokens = { access: json.access_token, refresh: typeof json.refresh_token === 'string' ? json.refresh_token : undefined, expiresAt: e.clock.now() + (Number(json.expires_in) || 3600) * 1000, expiring: true };
+                    exchanged = true;
+                  } else {
+                    exchanged = false;
+                    exchangeError = typeof json?.error === 'string' ? json.error : 'exchange_unavailable';
+                  }
+                } catch {
+                  exchanged = false;
+                  exchangeError = 'exchange_unavailable';
+                }
+              }
+            }
+            const now = e.clock.now();
+            let row = prior;
+            if (!row) {
+              const made = await e.handle(new Request(`${e.issuer}/v1/connections`, { method: 'POST', headers: { authorization: c.request.headers.get('authorization') ?? '', 'content-type': 'application/json' }, body: JSON.stringify({ owner: { type: p.owner.type, id: p.owner.id }, kind: p.kind, provider: p.provider, name: p.name, allowed_hosts: p.allowedHosts, config: p.configScopes ? { scopes: p.configScopes } : {}, environment: p.environment, host_params: p.hostParams }) }));
+              const created: any = await made.json().catch(() => null);
+              if (made.status !== 201 || !created?.id) throw new RowError('invalid', created?.errors?.[0]?.message ?? 'Could not import this row.', created?.errors?.[0]?.param);
+              row = table().get(created.id)!;
+            } else {
+              if (p.nameGiven) row.name = p.name;
+              if (p.configScopes) row.config = { ...(row.config ?? {}), scopes: p.configScopes };
+              row.host_params = p.hostParams;
+            }
+            Object.assign(row, {
+              external_id: p.externalId,
+              metadata: { ...(prior?.metadata ?? {}), ...p.metadata },
+              status: 'connected',
+              connected_at: row.connected_at ?? now,
+              updated_at: now,
+              ...(p.kind === 'oauth' ? { scopes: p.scopes ?? row.scopes ?? [], expires_at: tokens.access ? tokens.expiresAt : 0, has_refresh_token: tokens.refresh !== undefined || (leader !== undefined && table().get(String(out[leader]?.connection_id))?.has_refresh_token === true), expiring: tokens.expiring, refresh_token_expires_at: p.refreshExpiresAt ?? null, ...(p.tokenFamily ? { token_family: p.tokenFamily } : {}) } : { has_secret: true }),
+            });
+            out.push({ ...base, status: prior ? 'updated' : 'created', connection_id: row.id, ...(exchanged !== undefined ? { exchanged, ...(exchangeError ? { exchange_error: exchangeError } : {}) } : {}) });
+          } catch (err) {
+            out.push(failedRow(index, err));
+          }
+        }
+        if (dryRun) for (const r of out) r.check ??= r.error?.code === 'refresh_token_rejected' ? 'refresh_refused' : r.error?.code === 'provider_unavailable' ? 'provider_unavailable' : r.error ? 'invalid_row' : 'ok_unverified';
+        const count = (x: string) => out.filter((r) => r.status === x).length;
+        return { body: { object: 'connection_import', total: out.length, dry_run: dryRun, validated: validate, created: count('created'), updated: count('updated'), would_create: count('would_create'), would_update: count('would_update'), failed: count('failed'), data: out } };
+      },
+    },
     // ── Shopify: non-expiring offline token to an expiring one ──
     {
       method: 'POST',

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { onMembershipChanged } from './authz-state';
 import type { Engine, RouteDef } from '../engine';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
@@ -153,6 +154,7 @@ export function usersHandlers(): RouteDef[] {
           e.db.memberships.delete(m.id);
           e.changed({ type: 'organization_membership.deleted', data: { id: m.id, organization_id: m.organization_id, user_id: u.id }, resource: 'membership', id: m.id, op: 'delete' });
         }
+        onMembershipChanged(e);
         emit(e, 'user.deleted', u, 'delete', { id: u.id, object: 'user', deleted: true });
         return { body: { object: 'user', id: u.id, deleted: true } };
       },

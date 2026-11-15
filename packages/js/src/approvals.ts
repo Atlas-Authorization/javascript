@@ -19,6 +19,8 @@ export interface ApprovalForApprover {
   canonical: string | null;
   digest: string | null;
   signatureRequired: boolean;
+  /** True when only an approval from a trusted device counts; trust this device first with `trustApprovalDevice`. */
+  requireTrustedDevice: boolean;
   expiresAt: number;
   createdAt: number;
 }
@@ -33,6 +35,7 @@ interface ApprovalWire {
   canonical: string | null;
   digest: string | null;
   signature_required: boolean;
+  require_trusted_device?: boolean;
   expires_at: number;
   created_at: number;
 }
@@ -47,6 +50,7 @@ const toApproval = (w: ApprovalWire): ApprovalForApprover => ({
   canonical: w.canonical,
   digest: w.digest,
   signatureRequired: w.signature_required,
+  requireTrustedDevice: w.require_trusted_device === true,
   expiresAt: w.expires_at,
   createdAt: w.created_at,
 });
@@ -143,4 +147,40 @@ export async function approveWithPasskey(client: FapiClient, approval: Pick<Appr
 /** Refuse. A denial needs no signature and ends the request. */
 export function denyRequest(client: FapiClient, id: string) {
   return decide(client, id, { decision: 'deny' });
+}
+
+/** A device you can approve from, marked trusted or not. */
+export interface ApprovalDevice {
+  kind: 'device_key' | 'passkey' | 'push_device';
+  ref: string;
+  label: string | null;
+  trusted: boolean;
+  /** Present while trusted: pass it to `revokeApprovalDeviceTrust`. */
+  trustedDeviceId: string | null;
+}
+
+interface ApprovalDeviceWire {
+  kind: ApprovalDevice['kind'];
+  ref: string;
+  label: string | null;
+  trusted: boolean;
+  trusted_device_id: string | null;
+}
+
+const toDevice = (w: ApprovalDeviceWire): ApprovalDevice => ({ kind: w.kind, ref: w.ref, label: w.label, trusted: w.trusted, trustedDeviceId: w.trusted_device_id });
+
+/** Your devices that can approve (signing keys, passkeys, verified push devices). */
+export async function listApprovalDevices(client: FapiClient): Promise<ApprovalDevice[]> {
+  const r = await client.get<{ data: ApprovalDeviceWire[] }>('/v1/client/me/approval_devices');
+  return r.ok && r.data ? r.data.data.map(toDevice) : [];
+}
+
+/** Trust one of your devices for approvals that require a trusted device. Needs a recent sign-in. */
+export async function trustApprovalDevice(client: FapiClient, device: Pick<ApprovalDevice, 'kind' | 'ref'>, opts: { label?: string } = {}): Promise<FapiResponse<ApprovalDeviceWire>> {
+  return client.post('/v1/client/me/approval_devices/trust', { kind: device.kind, ref: device.ref, ...(opts.label ? { label: opts.label } : {}) });
+}
+
+/** Stop trusting a device, by its `trustedDeviceId`. */
+export function revokeApprovalDeviceTrust(client: FapiClient, trustedDeviceId: string): Promise<FapiResponse<{ revoked: boolean }>> {
+  return client.request(`/v1/client/me/approval_devices/${encodeURIComponent(trustedDeviceId)}`, { method: 'DELETE' });
 }

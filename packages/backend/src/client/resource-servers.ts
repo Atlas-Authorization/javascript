@@ -16,7 +16,7 @@ export interface ResourceServer {
   scope_presets: Record<string, string[]>;
   token_ttl_seconds: number;
   /** RS256 (default) or ES256: the algorithm of this API's access tokens. */
-  signing_alg: 'RS256' | 'ES256' | string;
+  signing_alg: 'RS256' | 'ES256' | 'ES384' | 'PS256' | 'EdDSA' | string;
   /** RFC 9728: Atlas serves protected-resource metadata for this API. */
   publish_resource_metadata?: boolean;
   /** `jwt` or `opaque` access tokens for this API; null = inherited from the client / instance. */
@@ -53,7 +53,7 @@ export interface CreateResourceServerBody extends ResourceServerTokenFields {
   scope_presets?: Record<string, string[]>;
   token_ttl_seconds?: number;
   /** RS256 (default) or ES256. */
-  signing_alg?: 'RS256' | 'ES256';
+  signing_alg?: 'RS256' | 'ES256' | 'ES384' | 'PS256' | 'EdDSA';
   /** RFC 9728: serve protected-resource metadata for this API. */
   publish_resource_metadata?: boolean;
 }
@@ -65,7 +65,7 @@ export interface UpdateResourceServerBody extends ResourceServerTokenFields {
   scope_presets?: Record<string, string[]>;
   token_ttl_seconds?: number;
   /** RS256 (default) or ES256. */
-  signing_alg?: 'RS256' | 'ES256';
+  signing_alg?: 'RS256' | 'ES256' | 'ES384' | 'PS256' | 'EdDSA';
   /** RFC 9728: serve protected-resource metadata for this API. */
   publish_resource_metadata?: boolean;
   /** Immutable — supplying a different value is rejected. */

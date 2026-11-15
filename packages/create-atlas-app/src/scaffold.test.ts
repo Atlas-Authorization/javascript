@@ -33,6 +33,12 @@ const EXPECTED_DEP: Record<Template, string> = {
   next: '@atlasauth/nextjs',
   'react-vite': '@atlasauth/react',
   'nextjs-local-users': '@atlasauth/nextjs',
+  nuxt: '@atlasauth/nuxt',
+  sveltekit: '@atlasauth/svelte',
+  astro: '@atlasauth/astro',
+  expo: '@atlasauth/expo',
+  hono: '@atlasauth/hono',
+  express: '@atlasauth/express',
 };
 
 describe.each(TEMPLATES)('scaffold(%s)', (template) => {
@@ -166,6 +172,38 @@ describe('CLI argument resolution', () => {
   it('a TTY with no template signals a prompt', () => {
     const args = parseCliArgs([]);
     expect(chooseTemplate(args, true)).toBeNull();
+  });
+});
+
+describe('framework templates', () => {
+  const read = (template: string, rel: string) => readFileSync(join(TEMPLATES_DIR, template, rel), 'utf8');
+
+  it('every framework template reads the session on the server (or, for expo, carries it in the token cache)', () => {
+    expect(read('nuxt', 'server/api/me.get.ts')).toContain('getAtlasAuth');
+    expect(read('sveltekit', 'src/hooks.server.ts')).toContain('handleAtlas');
+    expect(read('astro', 'src/middleware.ts')).toContain('atlasMiddleware');
+    expect(read('hono', 'src/index.ts')).toContain('atlasMiddleware');
+    expect(read('express', 'src/index.ts')).toContain('requireAuth');
+    expect(read('expo', 'lib/tokenCache.ts')).toContain('createSecureStoreTokenCache');
+  });
+
+  it('never puts a secret key in a template or in a browser-visible variable', () => {
+    for (const template of ['nuxt', 'sveltekit', 'astro', 'expo', 'hono', 'express']) {
+      const walk = (dir: string): string[] =>
+        readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
+      for (const file of walk(join(TEMPLATES_DIR, template))) {
+        const text = readFileSync(file, 'utf8');
+        // A real-looking secret key, or a secret behind a public prefix.
+        expect(text, file).not.toMatch(/\bsk_(live|test)_[A-Za-z0-9]{8,}/);
+        expect(text, file).not.toMatch(/(NEXT_PUBLIC|PUBLIC|VITE|EXPO_PUBLIC|NUXT_PUBLIC)_[A-Z_]*(SECRET|SK)\b/);
+      }
+    }
+  });
+
+  it('expo is a client: its env file holds the publishable key and no server settings', () => {
+    const env = read('expo', '.env.example');
+    expect(env).toContain('EXPO_PUBLIC_ATLAS_PUBLISHABLE_KEY');
+    expect(env).not.toContain('JWKS');
   });
 });
 

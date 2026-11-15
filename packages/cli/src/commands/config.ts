@@ -40,6 +40,7 @@ import {
 } from './config-rollout';
 import { configJsonSchema } from './config-types/schema';
 import { envApiUrl, resolveAuth } from './shared';
+import { configHistory } from './config-history';
 import { parseDotenv, productDir, renderDotenv, writeSecretFile } from '../secrets';
 import { REDACTED, isPlaceholder, isSecretKey, redactDeep, rememberResolved, revealingSecrets } from '../redact';
 
@@ -1156,14 +1157,17 @@ function registry(): ResourceSpec[] {
       kind: 'collection',
       type: 'connection_oauth_clients',
       fileKeys: CONNECTION_CLIENT_KEYS,
-      defaulted: ['environment', 'scopes', 'host_params', 'enabled'],
+      defaulted: ['environment', 'scopes', 'host_params', 'enabled', 'auth_method'],
       keyOf: (c) => connectionClientKey(obj(c).owner, obj(c).provider, obj(c).environment),
       async fetchLive(http) {
         const rows = await orNotFound(listData<Record<string, unknown>>(http, '/v1/connections/oauth_clients'), []);
         return rows.map((r) => {
           const o = obj((r.owner ?? null) as Json);
           const owner = o.type && o.type !== 'instance' ? { type: o.type, id: o.id ?? null } : undefined;
-          return { key: connectionClientKey(o, r.provider, r.environment), id: String(r.id ?? ''), config: { ...obj(pick(r as Record<string, Json>, CONNECTION_CLIENT_KEYS.filter((k) => k !== 'owner' && k !== 'client_secret')) as Config), ...(owner ? { owner } : {}) } as Config };
+          // key_alg and mtls_cert are null unless the auth method uses them: absent, so a plain client has nothing to differ on.
+          const live = obj(pick(r as Record<string, Json>, CONNECTION_CLIENT_KEYS.filter((k) => k !== 'owner' && k !== 'client_secret')) as Config);
+          for (const k of ['key_alg', 'mtls_cert']) if (live[k] === null) delete live[k];
+          return { key: connectionClientKey(o, r.provider, r.environment), id: String(r.id ?? ''), config: { ...live, ...(owner ? { owner } : {}) } as Config };
         });
       },
       validate: (c) => (typeof obj(c).provider === 'string' && obj(c).provider ? [] : ['connection_oauth_clients: every client needs a provider.']),
@@ -1281,6 +1285,20 @@ function registry(): ResourceSpec[] {
       },
     },
 
+    // 26c. Referral rewards: the terms for the credits a referral earns (off by default).
+    {
+      kind: 'singleton',
+      type: 'referral_reward_rules',
+      fileKeys: ['enabled', 'trigger', 'referrer_amount', 'referee_amount', 'currency', 'hold_days', 'max_rewards_per_referrer'],
+      async fetchLive(http) {
+        const v = await orNotFound(http.get<Record<string, unknown>>('/v1/referral_reward_rules'), null);
+        return v ? pick(v, ['enabled', 'trigger', 'referrer_amount', 'referee_amount', 'currency', 'hold_days', 'max_rewards_per_referrer']) : null;
+      },
+      async apply(http, config) {
+        await http.put('/v1/referral_reward_rules', compact(config, true));
+      },
+    },
+
     // 26. Connection relay size limits (bytes; defaults 256 KiB request, 1 MiB response, up to 25 MiB).
     {
       kind: 'singleton',
@@ -1319,7 +1337,7 @@ function registry(): ResourceSpec[] {
 }
 
 const HOSTED_PAGES_KEYS = ['sign_in_url', 'sign_up_url', 'user_url', 'device_url'] as const;
-const CONNECTION_CLIENT_KEYS = ['owner', 'provider', 'environment', 'client_id', 'client_secret', 'scopes', 'host_params', 'enabled', 'redirect_uri'] as const;
+const CONNECTION_CLIENT_KEYS = ['owner', 'provider', 'environment', 'client_id', 'client_secret', 'scopes', 'host_params', 'enabled', 'redirect_uri', 'auth_method', 'key_alg', 'mtls_cert'] as const;
 const BRIDGE_KEYS = ['enabled', 'ends_at', 'mode', 'preset', 'preset_vars', 'issuer', 'jwks_url', 'audience', 'algorithms', 'claim_map', 'expired_grace_seconds', 'cookie_names', 'create_users'] as const;
 const IMPERSONATION_KEYS = ['require_reason', 'reason_codes', 'max_duration_seconds', 'require_approval', 'read_only_default', 'notify_user'] as const;
 const TOKEN_LIMIT_KEYS = ['per_key', 'per_connection', 'per_app', 'providers'] as const;
@@ -1492,6 +1510,8 @@ const SSO_WRITE_KEYS = [
   'saml_require_encrypted_assertions',
   'saml_honor_idp_session_lifetime',
   'saml_acs_path',
+  'saml_artifact_resolution_url',
+  'saml_artifact_mtls',
   'require_consent_screen',
   'discourse_secret',
   'provisioning_mode',
@@ -1782,11 +1802,16 @@ export async function config(ctx: RunContext, args: ParsedArgs): Promise<number>
       return promoteConfig(ctx, args.values);
     case 'schema':
       return schemaConfig(ctx, args.values);
+    case 'snapshot':
+    case 'snapshots':
+    case 'diff':
+    case 'restore':
+      return configHistory(ctx, args);
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'config ${sub}'. Try: export, import, plan, promote, schema.`
-          : 'config needs a subcommand: export, import, plan, promote, schema.',
+          ? `Unknown subcommand 'config ${sub}'. Try: export, import, plan, promote, schema, snapshot, snapshots, diff, restore.`
+          : 'config needs a subcommand: export, import, plan, promote, schema, snapshot, snapshots, diff, restore.',
       );
   }
 }
@@ -2142,6 +2167,13 @@ async function promoteConfig(ctx: RunContext, values: Values): Promise<number> {
     ctx.io.out(`Promoting ${from} -> ${to}`);
     printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
     printPlanNotes(ctx, plan);
+    // Same pre-flight as plan/apply, against the target: nothing is written when it would refuse a change.
+    const validation = await validatePlan(target.http, plan, values);
+    printValidation(ctx, validation);
+    if (validationErrors(validation).length) {
+      ctx.io.out(`Nothing applied: ${validationErrors(validation).length} change(s) would be refused.`);
+      return 1;
+    }
     if (dryRun) return 0;
     for (const change of plan.changes) await change.apply();
     ctx.io.out(plan.changes.length ? `Applied ${plan.changes.length} change(s) to ${to}.` : 'No changes to apply.');
@@ -2162,7 +2194,19 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
   printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
   printPlanNotes(ctx, plan);
 
+  // Same pre-flight as plan/apply: nothing is written when the server would refuse a change.
+  const validation = await validatePlan(http, plan, values);
+  printValidation(ctx, validation);
+  if (validationErrors(validation).length) {
+    ctx.io.out(`Nothing applied: ${validationErrors(validation).length} change(s) would be refused. Fix them and run again.`);
+    return 1;
+  }
   if (dryRun) return 0;
+  // --snapshot: save the live configuration first, so `atlas config restore` can undo this apply.
+  if (values.snapshot === true && plan.changes.length) {
+    const snap = await http.post<{ version: number }>('/v1/instance/config_snapshots', { label: 'Before atlas config import' });
+    ctx.io.out(`Saved the current configuration as version ${snap.version}.`);
+  }
   for (const change of plan.changes) await change.apply();
   if (plan.changes.length) ctx.io.out(`Applied ${plan.changes.length} change(s).`);
   else ctx.io.out('No changes to apply.');

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FapiClient } from './fapi';
-import { approveRequest, denyRequest, generateApprovalKey, getApproval, listApprovals, registerApprovalKey } from './approvals';
+import { approveRequest, denyRequest, generateApprovalKey, getApproval, listApprovalDevices, listApprovals, registerApprovalKey, revokeApprovalDeviceTrust, trustApprovalDevice } from './approvals';
 
 function setup(body: unknown, status = 200) {
   const calls: { url: string; init?: RequestInit }[] = [];
@@ -47,5 +47,19 @@ describe('approvals (approver side)', () => {
     const d = setup({ status: 'denied', approvals_received: 0, required: 1 });
     await denyRequest(d.client, 'appr_1');
     expect(JSON.parse(String(d.calls[0]!.init?.body))).toEqual({ decision: 'deny' });
+  });
+
+  it('lists, trusts and revokes trusted devices', async () => {
+    const list = setup({ data: [{ kind: 'device_key', ref: 'apprk_1', label: 'Phone', trusted: true, trusted_device_id: 'apprtd_1' }] });
+    expect(await listApprovalDevices(list.client)).toEqual([{ kind: 'device_key', ref: 'apprk_1', label: 'Phone', trusted: true, trustedDeviceId: 'apprtd_1' }]);
+    expect(list.calls[0]!.url).toBe('https://fapi.example/v1/client/me/approval_devices');
+    const trust = setup({ kind: 'device_key', ref: 'apprk_1', trusted: true }, 201);
+    await trustApprovalDevice(trust.client, { kind: 'device_key', ref: 'apprk_1' }, { label: 'Phone' });
+    expect(trust.calls[0]!.url).toBe('https://fapi.example/v1/client/me/approval_devices/trust');
+    expect(JSON.parse(String(trust.calls[0]!.init?.body))).toEqual({ kind: 'device_key', ref: 'apprk_1', label: 'Phone' });
+    const revoke = setup({ revoked: true });
+    await revokeApprovalDeviceTrust(revoke.client, 'apprtd_1');
+    expect(revoke.calls[0]!.init?.method).toBe('DELETE');
+    expect(revoke.calls[0]!.url).toBe('https://fapi.example/v1/client/me/approval_devices/apprtd_1');
   });
 });

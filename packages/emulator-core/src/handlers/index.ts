@@ -22,9 +22,20 @@ import { sessionsHandlers } from './sessions';
 import { resetSupport } from './support';
 import { usersHandlers } from './users';
 import { workflowHandlers } from './workflows';
+import { authzDataHandlers } from './authz-data';
+import { emu3MiscHandlers } from './emu3-misc';
+import { oauthAdvHandlers } from './oauth-adv';
+import { emu4FederationHandlers, installSaml } from './emu4-federation';
+import { emu4ComplianceHandlers } from './emu4-compliance';
+import { emu4TrustHandlers } from './emu4-trust';
+import { emu4MessagingHandlers } from './emu4-messaging';
+import { emu4BillingHandlers, installBillingWebhooks } from './emu4-billing';
+import { emu4ActionsHandlers } from './emu4-actions';
+import { emu4OauthHandlers } from './emu4-oauth';
+import { emu4AuthzHandlers } from './emu4-authz';
 
 export function allHandlers(): RouteDef[] {
-  return [...usersHandlers(), ...orgsHandlers(), ...accessHandlers(), ...keysHandlers(), ...machinesHandlers(), ...hooksHandlers(), ...sessionsHandlers(), ...controlHandlers(), ...deviceHandlers(), ...oauthHandlers(), ...scimHandlers(), ...passkeyHandlers(), ...round2Handlers(), ...federationHandlers(), ...oauthFlowHandlers(), ...approvalsHandlers(), ...governanceHandlers(), ...messagingHandlers(), ...billingHandlers(), ...workflowHandlers(), ...platformHandlers(), ...connectionsHandlers()];
+  return [...usersHandlers(), ...orgsHandlers(), ...accessHandlers(), ...keysHandlers(), ...machinesHandlers(), ...hooksHandlers(), ...sessionsHandlers(), ...controlHandlers(), ...deviceHandlers(), ...oauthHandlers(), ...scimHandlers(), ...passkeyHandlers(), ...round2Handlers(), ...federationHandlers(), ...oauthFlowHandlers(), ...approvalsHandlers(), ...governanceHandlers(), ...messagingHandlers(), ...billingHandlers(), ...workflowHandlers(), ...platformHandlers(), ...connectionsHandlers(), ...authzDataHandlers(), ...oauthAdvHandlers(), ...emu3MiscHandlers(), ...emu4AuthzHandlers(), ...emu4ActionsHandlers(), ...emu4MessagingHandlers(), ...emu4BillingHandlers(), ...emu4OauthHandlers(), ...emu4ComplianceHandlers(), ...emu4FederationHandlers(), ...emu4TrustHandlers()];
 }
 
 export { seedAccess } from './access';
@@ -34,6 +45,8 @@ export { resetConsumers } from './hooks';
 export function installPresenters(e: import('../engine').Engine): void {
   installFeedPresenters(e);
   installMessaging(e);
+  installSaml(e);
+  installBillingWebhooks(e);
 }
 export { resetUsage } from './machines';
 export { resetSessions } from './sessions';

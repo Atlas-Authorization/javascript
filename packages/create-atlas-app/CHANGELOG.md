@@ -1,5 +1,9 @@
 # @atlasauth/create-atlas-app changelog
 
+## 0.5.0
+
+- New templates: Nuxt, SvelteKit, Astro, Expo, Hono and Express.
+
 ## 0.4.1 — 2026-11-12
 
 - The templates pin the current SDKs (`@atlasauth/react` ^0.34.0, `@atlasauth/nextjs` ^0.15.0, `@atlasauth/backend` ^0.45.0) and Vite 6.4; new projects no longer start on months-old SDKs.

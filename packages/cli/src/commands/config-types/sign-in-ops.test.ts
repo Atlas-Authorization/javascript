@@ -304,3 +304,47 @@ describe('telemetry_export', () => {
     expect(summary).toEqual([]);
   });
 });
+
+describe('journey_experiments', () => {
+  const V = [{ key: 'control', version: 1, weight: 50 }, { key: 'short', version: 2, weight: 50 }];
+  const flows = { '/v1/flows': [{ id: 'jrny_1', name: 'main' }] };
+  class ExpHttp extends Http {
+    override async post<T>(path: string, body: unknown): Promise<T> {
+      this.calls.push({ method: 'POST', path, body });
+      return { id: 'jexp_9' } as T;
+    }
+  }
+
+  it('creates a draft, and starts it when the file says running', async () => {
+    const http = new ExpHttp(flows);
+    const { summary } = await run('journey_experiments', [{ journey: 'main', name: 'short form', variants: V, status: 'running' }], http);
+    expect(summary).toEqual(['create journey_experiments main/short form']);
+    expect(http.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['POST /v1/flows/jrny_1/experiments', 'POST /v1/flows/jrny_1/experiments/jexp_9/start']);
+    expect(http.calls[0]!.body).toEqual({ name: 'short form', variants: V });
+  });
+
+  it('refuses a journey that does not exist and creating a stopped experiment', async () => {
+    await expect(run('journey_experiments', [{ journey: 'nope', name: 'x', variants: V }], new ExpHttp(flows))).rejects.toThrow(/no journey named "nope"/);
+    await expect(run('journey_experiments', [{ journey: 'main', name: 'x', variants: V, status: 'stopped' }], new ExpHttp(flows))).rejects.toThrow(/create it as draft or running/);
+  });
+
+  it('moves a draft to running and a running one to stopped, and is a no-op when nothing changed', async () => {
+    const live = (status: string) => new ExpHttp(flows, { '/v1/flows/jrny_1/experiments': { data: [{ id: 'jexp_1', name: 't', hypothesis: null, status, variants: V }] } });
+    const a = live('draft');
+    expect((await run('journey_experiments', [{ journey: 'main', name: 't', variants: V, status: 'running' }], a)).summary).toEqual(['update journey_experiments main/t']);
+    expect(a.calls).toEqual([{ method: 'POST', path: '/v1/flows/jrny_1/experiments/jexp_1/start', body: {} }]);
+    const b = live('running');
+    await run('journey_experiments', [{ journey: 'main', name: 't', variants: V, status: 'stopped' }], b);
+    expect(b.calls).toEqual([{ method: 'POST', path: '/v1/flows/jrny_1/experiments/jexp_1/stop', body: {} }]);
+    expect((await run('journey_experiments', [{ journey: 'main', name: 't', variants: V, status: 'running' }], live('running'))).summary).toEqual([]);
+  });
+
+  it('changes a draft in place and refuses to change a started experiment', async () => {
+    const live = (status: string) => new ExpHttp(flows, { '/v1/flows/jrny_1/experiments': { data: [{ id: 'jexp_1', name: 't', hypothesis: null, status, variants: V }] } });
+    const next = [{ key: 'control', version: 1, weight: 70 }, { key: 'short', version: 2, weight: 30 }];
+    const d = live('draft');
+    await run('journey_experiments', [{ journey: 'main', name: 't', variants: next, status: 'draft' }], d);
+    expect(d.calls).toEqual([{ method: 'PATCH', path: '/v1/flows/jrny_1/experiments/jexp_1', body: { name: 't', hypothesis: null, variants: next } }]);
+    await expect(run('journey_experiments', [{ journey: 'main', name: 't', variants: next, status: 'running' }], live('running'))).rejects.toThrow(/keeps its name and variants/);
+  });
+});

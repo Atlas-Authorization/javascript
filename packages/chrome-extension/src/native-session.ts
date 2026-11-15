@@ -85,4 +85,4 @@ export async function clearNativeSession(store: TokenStore): Promise<void> {
 }
 
 export { NativeSessionManager, type NativeSession } from '@atlasauth/js';
-export { exchangeForSession, refreshNativeSession } from '@atlasauth/js';
+export { exchangeForSession, exchangeGoogleTokenForSession, refreshNativeSession } from '@atlasauth/js';

@@ -799,11 +799,25 @@ export function usersResource(request: RequestFn) {
     },
     guardians: {
       /** `POST /v1/users/:id/guardians` — a pending link with a one-time `consent_url`; `send_email` mails it. */
-      request(id: string, body: { email?: string; guardian_user_id?: string; relationship?: string; send_email?: boolean }, idempotencyKey?: string): Promise<GuardianLink & { consent_url: string; emailed: boolean }> {
+      request(id: string, body: { email?: string; guardian_user_id?: string; relationship?: string; send_email?: boolean }, idempotencyKey?: string): Promise<GuardianLink & { consent_url: string | null; emailed: boolean }> {
         return request({ method: 'POST', path: `/v1/users/${enc(id)}/guardians`, body, idempotencyKey });
       },
       /** Record consent obtained another way (a signed form, a call). */
-      approve(id: string, linkId: string, body: { note?: string } = {}): Promise<GuardianLink> {
+      approve(
+        id: string,
+        linkId: string,
+        body: {
+          note?: string;
+          /** How consent was obtained (default `admin`). Must be in `compliance.minors.consentMethods` and reach `minAssuranceLevel`. */
+          method?: 'admin' | 'signed_form' | 'payment_card' | 'video_call' | 'id_document' | 'third_party';
+          /** `third_party` only: the weight of the method you used. */
+          assurance_level?: 'low' | 'medium' | 'high';
+          /** An opaque reference to the evidence you keep. */
+          reference?: string;
+          /** `id_document` only: the guardian's approved identity verification. */
+          verification_id?: string;
+        } = {},
+      ): Promise<GuardianLink> {
         return request({ method: 'POST', path: `/v1/users/${enc(id)}/guardians/${enc(linkId)}/approve`, body });
       },
       /** Withdraw a guardian link. */
@@ -1157,6 +1171,8 @@ export interface CreateUserApprovalRequestBody {
   /** Named approvers (N of M); see `client.approvals.create`. */
   approvers?: { user_ids?: string[]; organization_id?: string; role?: string; required?: number };
   require_signature?: boolean;
+  /** Only an approval from a device the approver trusted counts. */
+  require_trusted_device?: boolean;
   binding?: string;
   reference?: string;
 }
@@ -1414,7 +1430,11 @@ export interface GuardianLink {
   relationship: string | null;
   status: 'pending' | 'active' | 'declined' | 'revoked' | 'expired';
   expires_at: number | null;
-  consent_method: 'email_link' | 'admin' | null;
+  consent_method: 'email_link' | 'admin' | 'signed_form' | 'payment_card' | 'video_call' | 'id_document' | 'third_party' | null;
+  /** How strongly the consent method establishes the guardian. */
+  assurance_level?: 'low' | 'medium' | 'high' | null;
+  consent_reference?: string | null;
+  verification_id?: string | null;
   consented_at: number | null;
   created_at: number;
 }

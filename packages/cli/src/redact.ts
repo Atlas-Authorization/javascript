@@ -18,7 +18,7 @@ import type { IO } from './io';
 
 export const REDACTED = '<redacted>';
 
-const SECRET_WORD = /secret|token|password|passwd|api_?key|private_?key|signing_?key|encryption_?key|access_?key|credential|authorization/;
+const SECRET_WORD = /secret|token|password|passwd|api_?key|private_?key|signing_?key|encryption_?key|access_?key|credential|authorization|service_account_json/;
 /** The name describes the secret rather than holding it. */
 const DESCRIBES_IT = /_(endpoint|url|uri|method|policy|prefix|format|ttl|seconds|lifetimes?|params|set|file|files|at|type|name|id|ref|hint|hasher|alg|algorithm|enabled|required|source|length|mode|count|version)$/;
 

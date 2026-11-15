@@ -1,6 +1,10 @@
 # @atlasauth/js changelog
 
+## 0.46.0
 
+- `bindSession` and the `sessionBinding` option bind a session to a DPoP key; native navigation tickets let a bound session open hosted pages.
+- `exchangeGoogleTokenForSession` trades a Google access token for an Atlas session.
+- `presentToVerifier` for the Digital Credentials API; cookie consent helpers; `getReferralRewards` and `describeReferralTerms`.
 
 ## 0.45.0
 

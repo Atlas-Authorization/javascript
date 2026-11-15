@@ -5,6 +5,7 @@ import { createDpopProof, dpopThumbprint, generateDpopKey } from './machine-dpop
 
 export * from './machine-dpop';
 export * from './machine-workload';
+export * from './machine-delegation';
 
 /**
  * The device side of machine enrolment, for a service or device of your own:

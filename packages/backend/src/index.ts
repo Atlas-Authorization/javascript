@@ -227,6 +227,10 @@ export * from './uma';
 export type { SidListRevocation } from './sid-revocation';
 export { verifyStatusListToken, createEdgeRevocationChecker, StatusListError } from './status-list';
 export type { VerifiedStatusList, VerifyStatusListOptions, EdgeRevocationOptions, EdgeRevocationVerdict, StatusListKey } from './status-list';
+export { sessionBindingOf, verifyBoundSession } from './session-binding';
+export type { VerifyBoundSessionInput, VerifyBoundSessionResult } from './session-binding';
+export { auditChainGenesis, auditLinkHash, auditRowHash, canonicalJson, verifyAuditChain, AUDIT_CHECKPOINT_TYP } from './audit-chain';
+export type { AuditChainCheckpoint, AuditChainLink, AuditChainProblem, ChainedAuditRow, VerifyAuditChainInput, VerifyAuditChainResult } from './audit-chain';
 export type { OAuthTokenRevocationOptions } from './oauth-token-revocation';
 
 // Web Bot Auth (RFC 9421 signed bots): verify a request's signature against the bot's key directory, offline.

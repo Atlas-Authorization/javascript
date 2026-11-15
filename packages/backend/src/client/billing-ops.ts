@@ -327,7 +327,7 @@ export type BillingCreateCreditResult = {
 /** Operations on `/v1/billing` (13). */
 export function billingOpsResource(request: RequestFn) {
   return {
-    /** The billing providers this instance has credentials for (stripe, polar, dodo, creem, chargebee, autumn, commet). End-user billing runs on the instance's OWN provider account; secrets are reported as *_set markers only, never returned. Each entry carries the webhook URL to register with the provider. */
+    /** The billing providers this instance has credentials for (stripe, polar, dodo, creem, chargebee, autumn, commet, paddle, lemonsqueezy, revenuecat, appstore, googleplay). End-user billing runs on the instance's OWN provider account; secrets are reported as *_set markers only, never returned. Each entry carries the webhook URL to register with the provider. */
     listProviders(query?: BillingListProvidersQuery): Promise<BillingListProvidersResult> {
       return request({ method: 'GET', path: '/v1/billing/providers', query: { ...query } });
     },

@@ -27,6 +27,8 @@
 export type { LocalizationResource, Localization, DeepPartial } from './types';
 export type { CanonicalLocale, LocalizationKey, SupportedLocale } from './coverage';
 export { LOCALES, LOCALIZATION_KEYS, localeDirection, missingKeys, resolveLocale } from './coverage';
+export { checkBundle } from './guard';
+export type { GuardIssue, GuardIssueKind, GuardResult } from './guard';
 
 export { enUS } from './en-US';
 export { frFR } from './fr-FR';

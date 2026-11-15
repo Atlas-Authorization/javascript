@@ -2,6 +2,7 @@
 import type { Engine, RouteDef } from '../engine';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
+import { delegationOfToken } from './emu4-authz-trust';
 import { agentGrant, resourceServerOf } from './device';
 import { bump, listReply, need } from './util';
 
@@ -409,7 +410,11 @@ export function machinesHandlers(): RouteDef[] {
             const rs = resourceServerOf(e, audience);
             if (!e.db.grants.find((g) => g.machine_id === m!.id && (g.resource_server_id === rs.id || g.resource_server_id === rs.identifier))) return invalid;
           }
+          // A token minted under an agent delegation stops verifying the moment the delegation (or any ancestor) is revoked or expires.
+          const dg = delegationOfToken(e, r.claims);
+          if (dg && !dg.live) return invalid;
           fields = {
+            ...(dg ? { delegation: dg.delegation } : {}),
             audience,
             scopes: typeof r.claims.scope === 'string' ? r.claims.scope.split(' ').filter(Boolean) : [],
             organization_id: r.claims.org_id ?? null,

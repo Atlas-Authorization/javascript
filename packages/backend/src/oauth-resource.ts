@@ -697,7 +697,7 @@ export function createAccessTokenVerifier(
   };
 }
 
-async function checkDpopProof(
+export async function checkDpopProof(
   proof: string,
   ctx: {
     token: string;

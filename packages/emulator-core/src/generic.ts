@@ -43,10 +43,12 @@ export function genericHandler(c: RouteContext): Reply {
     return t;
   };
   const props: Obj = resp?.properties ?? {};
+  const reqProps: Obj = engine.index.resolve(op.requestSchema)?.properties ?? {};
   const known = (body: Obj): Obj => {
     if (!resp?.properties) return body;
     const out: Obj = {};
-    for (const [k, v] of Object.entries(body)) if (k in props) out[k] = v;
+    // A field the request documents is stored even when the response schema omits it (a plan's amount, interval, currency).
+    for (const [k, v] of Object.entries(body)) if (k in props || k in reqProps) out[k] = v;
     return out;
   };
   const stamp = (key: 'created_at' | 'updated_at'): Obj => {
@@ -88,6 +90,7 @@ export function genericHandler(c: RouteContext): Reply {
     const t = table();
     const seed = base();
     delete seed.id; // the synthesized id is a placeholder; the table assigns the real one
+    if (collection === 'workflows') seed.enabled = true; // the real API creates workflows enabled unless told otherwise
     const row = t.insert({ ...seed, ...known(c.body), ...stamp('created_at'), ...stamp('updated_at'), _parent: parent } as any);
     const objectConst = engine.index.resolve(props.object)?.const;
     t.update(row.id, { object: objectConst ?? name } as any);

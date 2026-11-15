@@ -66,8 +66,12 @@ describe('registry', () => {
   });
 
   it('publishes a JSON Schema section per type', () => {
-    const schema = configJsonSchema([spec]) as { properties: Record<string, { type: string }> };
-    expect(schema.properties.widgets!.type).toBe('array');
+    const schema = configJsonSchema([spec]) as { properties: Record<string, { oneOf: Array<{ type: string; properties?: Record<string, unknown> }> }> };
+    const [plain, wrapped] = schema.properties.widgets!.oneOf;
+    expect(plain!.type).toBe('array');
+    // the `{ requires, items }` wrapper is accepted too
+    expect(wrapped!.type).toBe('object');
+    expect(Object.keys(wrapped!.properties!).sort()).toEqual(['items', 'requires']);
   });
 });
 

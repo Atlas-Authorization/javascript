@@ -287,6 +287,16 @@ export interface ConnectionOAuthClient {
   callback_url: string;
   /** Where your `redirect_uri` page can 302 the browser (keeping code and state) to let Atlas finish the connect. */
   forward_url?: string;
+  auth_method?: 'client_secret' | 'private_key_jwt' | 'tls_client_auth';
+  key_id?: string | null;
+  key_alg?: string | null;
+  /** private_key_jwt: the public key (the private half never leaves Atlas). */
+  public_jwk?: Record<string, unknown> | null;
+  /** private_key_jwt: a public URL serving the key set, to register as the client's jwks_uri. */
+  jwks_url?: string | null;
+  mtls_cert?: string | null;
+  registered_via?: 'dcr' | null;
+  registration_client_uri?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -304,6 +314,14 @@ export interface SetConnectionOAuthClientBody {
   enabled?: boolean;
   /** An https redirect URI on your own domain, registered at the provider as this app's redirect URI; `null` clears it. */
   redirect_uri?: string | null;
+  /** client_secret (default), private_key_jwt (RFC 7523: send `generate_key` or your key in `client_secret`) or tls_client_auth (mutual TLS: `mtls_cert` plus its key in `client_secret`). */
+  auth_method?: 'client_secret' | 'private_key_jwt' | 'tls_client_auth';
+  /** private_key_jwt: have Atlas generate the key pair. */
+  generate_key?: boolean;
+  /** private_key_jwt signing algorithm (default RS256). */
+  key_alg?: 'RS256' | 'PS256' | 'ES256';
+  /** tls_client_auth: the client certificate, PEM. */
+  mtls_cert?: string;
 }
 
 /** Forward what your own redirect page received: finishes a connect started with a client that has a `redirect_uri`. */

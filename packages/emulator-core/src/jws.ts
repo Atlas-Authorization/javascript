@@ -40,7 +40,9 @@ const ALGS: Record<string, AlgSpec> = {
   RS256: { import: { name: 'RSASSA-PKCS1-v1_5', hash: hashOf('256') }, verify: { name: 'RSASSA-PKCS1-v1_5' } },
   RS384: { import: { name: 'RSASSA-PKCS1-v1_5', hash: hashOf('384') }, verify: { name: 'RSASSA-PKCS1-v1_5' } },
   RS512: { import: { name: 'RSASSA-PKCS1-v1_5', hash: hashOf('512') }, verify: { name: 'RSASSA-PKCS1-v1_5' } },
+  ES512: { import: { name: 'ECDSA', namedCurve: 'P-521' }, verify: { name: 'ECDSA', hash: hashOf('512') } },
   PS256: { import: { name: 'RSA-PSS', hash: hashOf('256') }, verify: { name: 'RSA-PSS', saltLength: 32 } },
+  PS384: { import: { name: 'RSA-PSS', hash: hashOf('384') }, verify: { name: 'RSA-PSS', saltLength: 48 } },
   EdDSA: { import: { name: 'Ed25519' }, verify: { name: 'Ed25519' } },
 };
 export const SUPPORTED_ALGS = Object.keys(ALGS);

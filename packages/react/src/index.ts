@@ -80,3 +80,6 @@ export type { GetTokenOptions } from './active-atlas';
 // The "refer a friend" panel from a referral platform's widget, authenticated with the Atlas session.
 export { ReferralPanel, useReferral, referralFromUser, referralWidgetSrc, DEFAULT_REFERRAL_WIDGET_BASE } from './referral-panel';
 export type { ReferralPanelProps, UserReferral } from './referral-panel';
+// A referrer's earnings: their link, the reward terms and what they have been credited.
+export { ReferralRewards, useReferralRewards } from './referral-rewards';
+export type { ReferralRewardsProps } from './referral-rewards';

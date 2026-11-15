@@ -177,7 +177,7 @@ export interface MessagingSettings {
   updated_at: number | null;
 }
 
-export type MessageReceiverProvider = 'ses' | 'brevo' | 'mailgun' | 'smtp2go' | 'postmark' | 'sendgrid' | 'resend' | 'twilio' | 'vonage' | 'messagebird';
+export type MessageReceiverProvider = 'ses' | 'brevo' | 'mailgun' | 'smtp2go' | 'postmark' | 'sendgrid' | 'resend' | 'twilio' | 'vonage' | 'messagebird' | 'plivo';
 
 export interface MessageReceiver {
   object: 'message_receiver';

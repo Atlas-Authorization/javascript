@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { RouteDef } from '../engine';
+import { runOAuthClockWork } from './emu4-oauth';
 import { EmulatorError } from '../errors';
 import { runScenario } from '../scenario';
 import { refreshSession } from './sessions';
+import { deliverDueJourneyMessages } from './emu4-messaging';
 
 /** The emulator's own control surface. None of it exists on a real Atlas; the parity suite skips `/__emulator`. */
 export function controlHandlers(): RouteDef[] {
@@ -32,9 +34,12 @@ export function controlHandlers(): RouteDef[] {
       method: 'POST',
       pattern: '/__emulator/time/advance',
       public: true,
-      handler: (c) => {
+      handler: async (c) => {
         if (typeof c.body.ms !== 'number') throw new EmulatorError('VALIDATION_FAILED', 'ms must be a number.', 'ms');
         c.engine.clock.advance(c.body.ms);
+        // Whatever the OAuth provider had waiting for this moment: key rotation schedule, retried deliveries.
+        await runOAuthClockWork(c.engine);
+        deliverDueJourneyMessages(c.engine);
         return { body: { now: c.engine.clock.now() } };
       },
     },

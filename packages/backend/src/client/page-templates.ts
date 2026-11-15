@@ -20,7 +20,7 @@ export interface PageTemplateAudience {
 export type TemplateTone = 'default' | 'muted' | 'accent' | 'success' | 'danger';
 type Align = 'left' | 'center' | 'right';
 
-/** One component. Strings are escaped; links are https, mailto: or a path; there is no raw HTML, CSS or script. */
+/** One component. Strings are escaped; links are https, mailto: or a path. The only component that takes markup is `custom`, which is sanitized and sandboxed: there is never script. */
 export type TemplateNode =
   | { type: 'heading'; text: string; level?: 2 | 3; align?: Align }
   | { type: 'text'; text: string; tone?: TemplateTone; size?: 'sm' | 'md'; align?: Align }
@@ -30,7 +30,9 @@ export type TemplateNode =
   | { type: 'list'; items: string[] }
   | { type: 'divider' }
   | { type: 'spacer'; size?: 'sm' | 'md' | 'lg' }
-  | { type: 'columns'; columns: TemplateNode[][] };
+  | { type: 'columns'; columns: TemplateNode[][] }
+  /** Your own HTML and CSS, reduced to a safe subset and drawn in a sandboxed frame `height` pixels tall (40 to 1200). One per region, never inside columns. A write with anything outside the subset is refused with the reason. */
+  | { type: 'custom'; html: string; css?: string; height: number; title?: string };
 
 export interface PageTemplateDefinition {
   version?: 1;

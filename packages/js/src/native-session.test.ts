@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   exchangeForSession,
+  exchangeGoogleTokenForSession,
   NativeSessionManager,
   parseNativeSession,
   refreshNativeSession,
@@ -31,6 +32,37 @@ function router(
   }) as typeof fetch;
   return { fetchImpl, calls };
 }
+
+// ── exchangeGoogleTokenForSession ────────────────────────────────────────────
+
+describe('exchangeGoogleTokenForSession', () => {
+  const ok = { access_token: 'sess.jwt.g', expires_in: 60, refresh_token: 'refr_g', session_id: 'sess_g' };
+
+  it('POSTs the Google token with its own subject_token_type and asks for a session', async () => {
+    const { fetchImpl, calls } = router({ 'POST /oauth2/token': { body: ok } });
+    const session = await exchangeGoogleTokenForSession({ baseUrl: BASE, clientId: 'client_ext', googleAccessToken: 'ya29.token', deviceName: 'Chrome on Mac', fetchImpl });
+    expect(session).toEqual<NativeSession>({ sessionToken: 'sess.jwt.g', refreshToken: 'refr_g', sessionId: 'sess_g', expiresInSeconds: 60 });
+    const form = new URLSearchParams(String(calls[0]!.init?.body));
+    expect(Object.fromEntries(form)).toEqual({
+      grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+      client_id: 'client_ext',
+      subject_token: 'ya29.token',
+      subject_token_type: 'urn:atlas:token-type:google_access_token',
+      requested_token_type: 'urn:atlas:token-type:session',
+      device_name: 'Chrome on Mac',
+    });
+  });
+
+  it('sends no device_name when none is given, and returns null on a refusal or a network failure', async () => {
+    const { fetchImpl, calls } = router({ 'POST /oauth2/token': { status: 400, body: { error: 'invalid_grant' } } });
+    expect(await exchangeGoogleTokenForSession({ baseUrl: BASE, clientId: 'c', googleAccessToken: 't', fetchImpl })).toBeNull();
+    expect(new URLSearchParams(String(calls[0]!.init?.body)).has('device_name')).toBe(false);
+    const down = (async () => {
+      throw new Error('offline');
+    }) as typeof fetch;
+    expect(await exchangeGoogleTokenForSession({ baseUrl: BASE, clientId: 'c', googleAccessToken: 't', fetchImpl: down })).toBeNull();
+  });
+});
 
 // ── exchangeForSession ───────────────────────────────────────────────────────
 

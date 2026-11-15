@@ -1,0 +1,60 @@
+import type { ParityRequest } from './parity';
+
+const q = (id: string, method: ParityRequest['method'], path: string, rest: Partial<ParityRequest> = {}): ParityRequest => ({ id, method, path, ...rest });
+
+/** Group membership, direct app roles, resources with assignments and checks, ABAC evaluate and FGA tuple writes: self-contained, each run makes its own users, roles, groups, types and a store. */
+export const emu3AuthzParityRequests: ParityRequest[] = [
+  q('a3 user', 'POST', '/v1/users', { body: { email_address: 'a3-{{rand}}@example.com' }, capture: { a3u: 'id' } }),
+  q('a3 org', 'POST', '/v1/organizations', { body: { name: 'A3 {{rand}}' }, capture: { a3o: 'id' } }),
+  // ── app roles and groups ──
+  q('a3 app role', 'POST', '/v1/app_roles', { body: { key: 'a3_{{rand}}', name: 'A3 role', permissions: ['docs:read'] }, capture: { a3r: 'id', a3rk: 'key' } }),
+  q('a3 user app roles add', 'POST', '/v1/users/{{a3u}}/app_roles', { body: { add: ['{{a3rk}}'] } }),
+  q('a3 user app roles unknown', 'POST', '/v1/users/{{a3u}}/app_roles', { body: { add: ['nope_{{rand}}'] } }),
+  q('a3 user app roles empty', 'POST', '/v1/users/{{a3u}}/app_roles', { body: {} }),
+  q('a3 user app roles', 'GET', '/v1/users/{{a3u}}/app_roles'),
+  q('a3 user app roles unknown user', 'GET', '/v1/users/user_unknown_{{rand}}/app_roles'),
+  q('a3 user app role remove', 'DELETE', '/v1/users/{{a3u}}/app_roles/{{a3rk}}'),
+  q('a3 group', 'POST', '/v1/groups', { body: { slug: 'a3-{{rand}}', name: 'A3 group', app_role_keys: ['{{a3rk}}'] }, capture: { a3g: 'id' }, tolerate: ['member_count'] }),
+  q('a3 group member add', 'POST', '/v1/groups/{{a3g}}/members', { body: { user_ids: ['{{a3u}}'] } }),
+  q('a3 group member add invalid', 'POST', '/v1/groups/{{a3g}}/members', { body: { user_ids: [] } }),
+  q('a3 group member add unknown group', 'POST', '/v1/groups/igp_unknown_{{rand}}/members', { body: { user_ids: ['{{a3u}}'] } }),
+  q('a3 group members', 'GET', '/v1/groups/{{a3g}}/members'),
+  q('a3 user groups', 'GET', '/v1/users/{{a3u}}/groups', { tolerate: ['data'] }),
+  q('a3 group member remove', 'POST', '/v1/groups/{{a3g}}/members/remove', { body: { user_ids: ['{{a3u}}'] } }),
+  // ── resources ──
+  q('a3 resource type', 'POST', '/v1/resource_types', { body: { key: 'a3doc_{{rand}}', name: 'Doc', roles: [{ key: 'viewer', permissions: ['read'] }, { key: 'editor', permissions: ['write'], includes: ['viewer'] }] }, capture: { a3t: 'key' } }),
+  q('a3 resource type duplicate', 'POST', '/v1/resource_types', { body: { key: '{{a3t}}', name: 'Doc' } }),
+  q('a3 resource type bad key', 'POST', '/v1/resource_types', { body: { key: 'Bad Key' } }),
+  q('a3 resource', 'PUT', '/v1/resources', { body: { type: '{{a3t}}', external_id: 'doc-{{rand}}', name: 'Doc one' }, capture: { a3res: 'id' } }),
+  q('a3 resource unknown type', 'PUT', '/v1/resources', { body: { type: 'nope_{{rand}}', external_id: 'x' } }),
+  q('a3 resources sync', 'POST', '/v1/resources/sync', { body: { resources: [{ type: '{{a3t}}', external_id: 'doc-sync-{{rand}}' }] } }),
+  q('a3 resources sync empty', 'POST', '/v1/resources/sync', { body: { resources: [] } }),
+  q('a3 assignment', 'POST', '/v1/resource_role_assignments', { body: { resource: { id: '{{a3res}}' }, subject: { type: 'user', id: '{{a3u}}' }, role: 'editor' }, capture: { a3as: 'id' } }),
+  q('a3 assignment unknown role', 'POST', '/v1/resource_role_assignments', { body: { resource: { id: '{{a3res}}' }, subject: { type: 'user', id: '{{a3u}}' }, role: 'nope' } }),
+  q('a3 assignment bad subject', 'POST', '/v1/resource_role_assignments', { body: { resource: { id: '{{a3res}}' }, subject: { type: 'robot', id: 'x' }, role: 'viewer' } }),
+  q('a3 check allowed', 'POST', '/v1/resource_checks', { body: { subject: { type: 'user', id: '{{a3u}}' }, permission: 'read', resource: { id: '{{a3res}}' } } }),
+  q('a3 check unknown resource', 'POST', '/v1/resource_checks', { body: { subject: { type: 'user', id: '{{a3u}}' }, permission: 'read', resource: { id: 'res_unknown_{{rand}}' } } }),
+  q('a3 check batch', 'POST', '/v1/resource_checks/batch', { body: { checks: [{ subject: { type: 'user', id: '{{a3u}}' }, permission: 'write', resource: { id: '{{a3res}}' } }] } }),
+  q('a3 check batch empty', 'POST', '/v1/resource_checks/batch', { body: { checks: [] } }),
+  q('a3 check list', 'POST', '/v1/resource_checks/list', { body: { subject: { type: 'user', id: '{{a3u}}' }, permission: 'read', type: '{{a3t}}' } }),
+  q('a3 check list no permission', 'POST', '/v1/resource_checks/list', { body: { subject: { type: 'user', id: '{{a3u}}' } } }),
+  q('a3 assignment delete', 'DELETE', '/v1/resource_role_assignments/{{a3as}}'),
+  q('a3 assignment delete again', 'DELETE', '/v1/resource_role_assignments/{{a3as}}'),
+  // ── ABAC and access policies ──
+  q('a3 abac policy', 'POST', '/v1/abac_policies', { body: { name: 'a3-{{rand}}', source: 'permit (principal, action == Action::"read", resource) when { resource.owner == principal.id };' }, capture: { a3p: 'id' }, tolerate: ['tests'] }),
+  q('a3 abac policy bad source', 'POST', '/v1/abac_policies', { body: { name: 'a3bad-{{rand}}', source: 'permit (' } }),
+  q('a3 abac evaluate', 'POST', '/v1/abac/evaluate', { body: { principal: { type: 'User', id: 'u1' }, action: 'read', resource: { type: 'Doc', id: 'd1', attributes: { owner: 'u1' } }, policy_ids: ['{{a3p}}'] } }),
+  q('a3 abac evaluate no action', 'POST', '/v1/abac/evaluate', { body: { principal: { type: 'User', id: 'u1' }, resource: { type: 'Doc', id: 'd1' } } }),
+  q('a3 access policy', 'POST', '/v1/access_policies', { body: { name: 'a3-{{rand}}', grants: [{ type: 'require_mfa' }], conditions: { roles: ['org:admin'] } }, capture: { a3ap: 'id' } }),
+  q('a3 access policy no grants', 'POST', '/v1/access_policies', { body: { name: 'a3none-{{rand}}', grants: [] } }),
+  q('a3 explain', 'POST', '/v1/authz/explain', { body: { subject: { id: '{{a3u}}' }, action: 'read', resource: { resource_id: '{{a3res}}' } }, tolerate: ['layers', 'deciding', 'contributions'], group: 'governance' }),
+  // ── FGA tuples ──
+  q('a3 fga store', 'POST', '/v1/fga/stores', { body: { name: 'a3-{{rand}}' }, capture: { a3s: 'id' } }),
+  q('a3 fga write', 'POST', '/v1/fga/stores/{{a3s}}/write', { body: { writes: [{ user: 'user:{{a3u}}', relation: 'viewer', object: 'doc:readme' }] } }),
+  q('a3 fga write empty', 'POST', '/v1/fga/stores/{{a3s}}/write', { body: {} }),
+  q('a3 fga write malformed', 'POST', '/v1/fga/stores/{{a3s}}/write', { body: { writes: [{ user: 'nope', relation: 'viewer', object: 'doc:readme' }] } }),
+  q('a3 fga write unknown store', 'POST', '/v1/fga/stores/fga_unknown_{{rand}}/write', { body: { writes: [{ user: 'user:a', relation: 'viewer', object: 'doc:b' }] } }),
+  q('a3 fga read', 'POST', '/v1/fga/stores/{{a3s}}/read', { body: { object: 'doc:readme' }, tolerate: ['next_cursor'] }),
+  q('a3 fga check no model', 'POST', '/v1/fga/stores/{{a3s}}/check', { body: { user: 'user:{{a3u}}', relation: 'viewer', object: 'doc:readme' } }),
+  q('a3 fga delete', 'POST', '/v1/fga/stores/{{a3s}}/write', { body: { deletes: [{ user: 'user:{{a3u}}', relation: 'viewer', object: 'doc:readme' }] } }),
+];

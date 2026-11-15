@@ -1,5 +1,11 @@
 # @atlasauth/cli changelog
 
+## 0.43.0
+
+- New commands: `atlas audit verify|chain|chain-enable|chain-checkpoint|chain-links`, `atlas sessions binding|unbind`, `atlas agents delegations`, `atlas preview` and `atlas proxy` (with `--revocation-interval`).
+- `atlas config` manages signing key schedules, the audit chain, OAuth publishers, referral reward rules, erasure connectors and connection OAuth clients; `import` and `promote` validate against the server before writing.
+- The atlas.yaml JSON schema accepts a `requires` wrapper on list sections.
+
 ## 0.42.0
 
 - `atlas logs tail --json` prints one JSON object per line.

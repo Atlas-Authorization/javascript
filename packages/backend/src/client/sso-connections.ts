@@ -42,6 +42,10 @@ export interface SsoConnection {
   saml_idp_slo_binding?: 'redirect' | 'post';
   /** The IdP SOAP SingleLogoutService — the back channel for sessions ended server-side. */
   saml_idp_slo_soap_url?: string | null;
+  /** The identity provider ArtifactResolutionService (https): enables the SAML HTTP-Artifact binding. */
+  saml_artifact_resolution_url?: string | null;
+  /** Present the SAML signing certificate as a TLS client certificate on the artifact call. */
+  saml_artifact_mtls?: boolean;
   /** Assertions that are not encrypted to the connection's key are refused. */
   saml_require_encrypted_assertions?: boolean;
   saml_honor_idp_session_lifetime?: boolean;
@@ -128,6 +132,10 @@ export interface CreateSsoConnectionBody {
   saml_idp_slo_binding?: 'redirect' | 'post' | null;
   /** https; null clears it. The back channel for sessions ended server-side. */
   saml_idp_slo_soap_url?: string | null;
+  /** The identity provider ArtifactResolutionService (https): enables the SAML HTTP-Artifact binding. */
+  saml_artifact_resolution_url?: string | null;
+  /** Present the SAML signing certificate as a TLS client certificate on the artifact call. */
+  saml_artifact_mtls?: boolean;
   /** Requires an encryption key (see `createSamlEncryptionKey`). */
   saml_require_encrypted_assertions?: boolean;
   saml_honor_idp_session_lifetime?: boolean;

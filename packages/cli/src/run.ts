@@ -14,6 +14,7 @@ import { csp } from './commands/csp';
 import { fga } from './commands/fga';
 import { dev } from './commands/dev';
 import { listen } from './commands/listen';
+import { proxy } from './commands/proxy';
 import { logs } from './commands/logs';
 import { migrate } from './commands/migrate';
 import { moveOrigin } from './commands/move-origin';
@@ -29,12 +30,14 @@ import { types } from './commands/types';
 import { users } from './commands/users';
 import { webhooks } from './commands/webhooks';
 import { changes, mirrorCommand } from './commands/changes';
+import { auditCommand } from './commands/audit-chain';
+import { preview } from './commands/preview';
 import { integrations } from './commands/integrations';
 import { idAccounts } from './commands/id-accounts';
 import { admin } from './commands/admin';
 import { partnerPlatforms } from './commands/partner-platforms';
 import {
-  AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS,
+  AGENTS, AUDIT, BILLING, COMPLIANCE, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS,
   resourceCommand,
 } from './commands/resources';
 import { ttyOf, type RunContext } from './context';
@@ -86,9 +89,11 @@ const COMMANDS: Record<string, Handler> = {
   info,
   mcp,
   listen,
+  proxy,
   logs,
   dev,
   'move-origin': moveOrigin,
+  preview,
   csp,
   types,
   fga,
@@ -108,7 +113,8 @@ const COMMANDS: Record<string, Handler> = {
   telemetry: resourceCommand('telemetry', TELEMETRY),
   pdp: resourceCommand('pdp', PDP),
   billing: resourceCommand('billing', BILLING),
-  audit: resourceCommand('audit', AUDIT),
+  compliance: resourceCommand('compliance', COMPLIANCE),
+  audit: auditCommand(resourceCommand('audit', AUDIT)),
   federation: resourceCommand('federation', FEDERATION),
   vc: resourceCommand('vc', VC),
 };

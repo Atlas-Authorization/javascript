@@ -82,30 +82,37 @@ function compareAt(list: Uint8Array, offset: number, needle: Uint8Array): number
 }
 
 /** Verify the signed list and return a lookup. Throws {@link StatusListError} on any problem; never returns a half-trusted list. */
+/** The JWS algorithms an instance key can use, with the Web Crypto parameters that verify each. */
+const WEBCRYPTO_ALGS: Record<string, { kty: string; crv?: string; importParams: unknown; verifyParams: unknown }> = {
+  RS256: { kty: 'RSA', importParams: { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, verifyParams: { name: 'RSASSA-PKCS1-v1_5' } },
+  PS256: { kty: 'RSA', importParams: { name: 'RSA-PSS', hash: 'SHA-256' }, verifyParams: { name: 'RSA-PSS', saltLength: 32 } },
+  ES256: { kty: 'EC', crv: 'P-256', importParams: { name: 'ECDSA', namedCurve: 'P-256' }, verifyParams: { name: 'ECDSA', hash: 'SHA-256' } },
+  ES384: { kty: 'EC', crv: 'P-384', importParams: { name: 'ECDSA', namedCurve: 'P-384' }, verifyParams: { name: 'ECDSA', hash: 'SHA-384' } },
+  EdDSA: { kty: 'OKP', crv: 'Ed25519', importParams: { name: 'Ed25519' }, verifyParams: { name: 'Ed25519' } },
+};
+
 export async function verifyStatusListToken(token: string, options: VerifyStatusListOptions): Promise<VerifiedStatusList> {
   const parts = token.split('.');
   if (parts.length !== 3 || token.length > 4_000_000) throw new StatusListError('malformed');
   const header = parseJson(b64urlToBytes(parts[0]!));
   if (header.typ !== 'statuslist+jwt') throw new StatusListError('unsupported');
   const alg = header.alg;
-  if (alg !== 'RS256' && alg !== 'ES256') throw new StatusListError('unsupported');
+  const spec = typeof alg === 'string' ? WEBCRYPTO_ALGS[alg] : undefined;
+  if (!spec) throw new StatusListError('unsupported');
   const kid = typeof header.kid === 'string' ? header.kid : undefined;
 
   const set = typeof options.jwks === 'function' ? await options.jwks(kid) : options.jwks;
-  const jwk = set?.keys.find((k) => (kid ? k.kid === kid : true) && k.kty === (alg === 'RS256' ? 'RSA' : 'EC'));
+  const jwk = set?.keys.find((k) => (kid ? k.kid === kid : true) && k.kty === spec.kty && (spec.crv === undefined || k.crv === spec.crv));
   if (!jwk) throw new StatusListError('no_key');
 
   const subtle = globalThis.crypto.subtle;
   let valid: boolean;
   try {
     const { kid: _kid, use: _use, key_ops: _ops, alg: _alg, ...material } = jwk as Record<string, unknown>;
-    const key =
-      alg === 'RS256'
-        ? await subtle.importKey('jwk', material as never, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify'])
-        : await subtle.importKey('jwk', material as never, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    const key = await subtle.importKey('jwk', material as never, spec.importParams as never, false, ['verify']);
     const data = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
     const sig = b64urlToBytes(parts[2]!);
-    valid = await subtle.verify(alg === 'RS256' ? { name: 'RSASSA-PKCS1-v1_5' } : { name: 'ECDSA', hash: 'SHA-256' }, key, sig, data);
+    valid = await subtle.verify(spec.verifyParams as never, key, sig, data);
   } catch {
     throw new StatusListError('bad_signature');
   }

@@ -18,6 +18,7 @@ import {
 import { captureAttributionFields, pageAttribution, type AttributionOptions } from './attribution-fields';
 import { deviceId } from './telemetry';
 import { attestationHeaderFor, isAttestationGuarded, type AttestationProvider } from './attestation';
+import type { DpopClient } from './dpop';
 import { parsePolicyAcceptances } from './policy-acceptance';
 import { registerClientSession } from './session-global';
 
@@ -38,6 +39,12 @@ import { registerClientSession } from './session-global';
 
 export interface FapiClientOptions {
   publishableKey: string;
+  /**
+   * Sender-constrained sessions: a DPoP client (see `createDpopClient`) whose key the session is bound to. With
+   * it set, every request carries a fresh `DPoP` proof, so a session the instance binds (`bindSession`) keeps
+   * working and a copied cookie does not.
+   */
+  sessionBinding?: DpopClient;
   /** The instance's FAPI origin. Empty for same-origin. */
   baseUrl?: string;
   fetchImpl?: typeof fetch;
@@ -219,6 +226,9 @@ export class FapiClient {
     const language = this.locale;
     const sdk = this.options.sdk ?? ATLAS_JS_SDK;
     let response: Response;
+    const dpopProof = this.options.sessionBinding
+      ? await this.options.sessionBinding.proof(init.method ?? 'GET', this.urlFor(path))
+      : null;
     const provider = this.options.attestation;
     const attestation =
       provider && isAttestationGuarded(path, (init.method ?? 'GET').toUpperCase())
@@ -236,6 +246,7 @@ export class FapiClient {
           [SDK_HEADER]: sdkHeaderValue(sdk),
           ...(language ? { 'accept-language': language } : {}),
           ...(attestation ? { 'atlas-attestation': attestation } : {}),
+          ...(dpopProof ? { dpop: dpopProof } : {}),
           ...(init.body ? { 'content-type': 'application/json' } : {}),
           ...init.headers,
         },

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { onMembershipChanged } from './authz-state';
 import type { Engine, RouteDef } from '../engine';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
@@ -122,6 +123,7 @@ export function orgsHandlers(): RouteDef[] {
           e.db.memberships.delete(m.id);
           e.changed({ type: 'organization_membership.deleted', data: { id: m.id, organization_id: o.id, user_id: m.user_id }, resource: 'membership', id: m.id, op: 'delete' });
         }
+        onMembershipChanged(e);
         orgEvent(e, 'organization.deleted', o, 'delete', { object: 'organization', id: o.id, deleted: true });
         return { body: { object: 'organization', id: o.id, deleted: true } };
       },
@@ -173,6 +175,7 @@ export function orgsHandlers(): RouteDef[] {
         if (!m) throw notFound('Membership');
         if (typeof c.body.role === 'string') m.role = c.body.role;
         e.changed({ type: 'organization_membership.updated', data: presentMembership(e, m), resource: 'membership', id: m.id, op: 'update' });
+        onMembershipChanged(e);
         return { body: presentMembership(e, m) };
       },
     },
@@ -186,6 +189,7 @@ export function orgsHandlers(): RouteDef[] {
         if (!m) throw notFound('Membership');
         e.db.memberships.delete(m.id);
         e.changed({ type: 'organization_membership.deleted', data: { id: m.id, organization_id: o.id, user_id: m.user_id }, resource: 'membership', id: m.id, op: 'delete' });
+        onMembershipChanged(e);
         return { body: { object: 'organization_membership', id: m.id, deleted: true } };
       },
     },
@@ -260,5 +264,6 @@ export function orgsHandlers(): RouteDef[] {
 export function addMember(e: Engine, orgId: string, userId: string, role: string): Obj {
   const m = e.db.memberships.insert({ organization_id: orgId, user_id: userId, role, role_source: 'direct', created_at: e.clock.now() });
   e.changed({ type: 'organization_membership.created', data: presentMembership(e, m), resource: 'membership', id: m.id, op: 'create' });
+  onMembershipChanged(e);
   return m;
 }

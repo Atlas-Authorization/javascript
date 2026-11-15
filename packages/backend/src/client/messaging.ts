@@ -124,12 +124,26 @@ export interface VonageConfig extends SmsFrom {
   api_key: string;
   /** Vonage API secret. Required on first setup. Write-only: never returned. */
   api_secret: string;
+  /** WhatsApp-enabled sender number, for the WhatsApp channel (Messages API). */
+  whatsapp_from?: string;
+  /** Voice-capable number, for the voice channel. */
+  voice_from?: string;
+  /** Id of your Vonage application with Voice enabled; the voice channel uses the Voice API with it and `private_key`. */
+  application_id?: string;
+  /** The application's private key (PEM). Write-only: never returned. */
+  private_key?: string;
+  /** Optional HTTPS URL for call events; leave empty when the application already has one. */
+  voice_event_url?: string;
 }
 
 /** MessageBird (Bird). */
 export interface MessagebirdConfig extends SmsFrom {
   /** MessageBird (Bird) access key. Required on first setup. Write-only: never returned. */
   access_key: string;
+  /** Id of your MessageBird WhatsApp channel; WhatsApp sends from it. Without it the WhatsApp channel is unavailable on this provider. */
+  whatsapp_channel_id?: string;
+  /** Voice-capable number, for the voice channel. */
+  voice_from?: string;
 }
 
 /** Plivo. */
@@ -138,6 +152,16 @@ export interface PlivoConfig extends SmsFrom {
   auth_id: string;
   /** Plivo auth token. Required on first setup. Write-only: never returned. */
   auth_token: string;
+  /** WhatsApp-enabled sender number, for the WhatsApp channel. */
+  whatsapp_from?: string;
+  /** Voice-capable number, for the voice channel. */
+  voice_from?: string;
+  /** Name of an approved WhatsApp template that carries the code (its body takes the code as the one parameter). */
+  whatsapp_template?: string;
+  /** Language code of that template. Default `en_US`. */
+  whatsapp_template_language?: string;
+  /** The template is an authentication template with a copy-code button. */
+  whatsapp_template_otp_button?: boolean;
 }
 
 /** Telnyx. */

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Engine, Reply, RouteContext, RouteDef } from '../engine';
+import { bytesToB64url, sha256 } from '../crypto-util';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
 import { randomToken } from '../store';
@@ -10,7 +11,8 @@ import { presentUser } from './users';
  * SCIM 2.0 server (RFC 7643/7644) over the engine's users: `/scim/v2/{ServiceProviderConfig,ResourceTypes,Schemas,Users,Groups}`
  * (and the `/scim/v2/d/:directoryId` alias), authenticated with a SCIM token minted at `POST /v1/scim_tokens`, which names the
  * organization it provisions into. A read-only token (`scopes: ["read"]`) refuses every write with 403. Errors use the SCIM
- * error schema (`urn:ietf:params:scim:api:messages:2.0:Error`).
+ * error schema (`urn:ietf:params:scim:api:messages:2.0:Error`). Bulk (RFC 7644 3.7), `sortBy`/`sortOrder` on the Users and Groups lists and weak ETags with
+ * `If-Match` / `If-None-Match` preconditions (3.14) are served too, with the limits ServiceProviderConfig states.
  */
 const USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
 const GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
@@ -18,6 +20,63 @@ const LIST = 'urn:ietf:params:scim:api:messages:2.0:ListResponse';
 const PATCH_OP = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
 const ERR = 'urn:ietf:params:scim:api:messages:2.0:Error';
 const JSON_SCIM = { 'content-type': 'application/scim+json' };
+
+
+const BULK_REQUEST = 'urn:ietf:params:scim:api:messages:2.0:BulkRequest';
+const BULK_RESPONSE = 'urn:ietf:params:scim:api:messages:2.0:BulkResponse';
+export const BULK_MAX_OPERATIONS = 100;
+export const BULK_MAX_PAYLOAD = 1_048_576;
+
+/** The weak ETag of a resource: a hash of its body without `meta.version`, so the tag changes exactly when the resource does. */
+const etagOf = async (resource: Obj): Promise<string> => {
+  const copy = JSON.parse(JSON.stringify(resource));
+  if (copy.meta) delete copy.meta.version;
+  return `W/"${bytesToB64url(await sha256(JSON.stringify(copy))).slice(0, 27)}"`;
+};
+const weakEquals = (a: string, b: string): boolean => a.replace(/^W\//, '') === b.replace(/^W\//, '');
+
+/** Attributes a list may be sorted by, per resource (lower-case paths). A complex attribute sorts by a sub-attribute; `emails` sorts by its primary value. */
+const SORTABLE: Record<'User' | 'Group', string[]> = {
+  User: ['id', 'externalid', 'username', 'displayname', 'active', 'name.givenname', 'name.familyname', 'name.formatted', 'emails', 'emails.value', 'meta.created', 'meta.lastmodified'],
+  Group: ['id', 'externalid', 'displayname', 'meta.created', 'meta.lastmodified'],
+};
+function sortValue(resource: Obj, path: string): unknown {
+  let cur: any = resource;
+  for (const seg of path.split('.')) {
+    if (Array.isArray(cur)) cur = (cur.find((x: Obj) => x.primary === true) ?? cur[0]) ?? undefined;
+    if (cur == null || typeof cur !== 'object') return null;
+    const key = Object.keys(cur).find((k) => k.toLowerCase() === seg.toLowerCase());
+    cur = key === undefined ? null : cur[key];
+  }
+  if (Array.isArray(cur)) cur = (cur.find((x: Obj) => x.primary === true) ?? cur[0])?.value ?? null;
+  return cur ?? null;
+}
+/** Sort presented resources like the real list: case-insensitive text, nulls last ascending and first descending, ties by id in the same direction. */
+function sortResources(by: string | null, order: string | null, rows: Obj[], kind: 'User' | 'Group'): Obj[] | Reply {
+  const dir = order === null || order === '' ? 'ascending' : order.toLowerCase();
+  if (dir !== 'ascending' && dir !== 'descending') return scimError(400, 'sortOrder must be "ascending" or "descending".', 'invalidValue');
+  if (by === null || by === '') return rows;
+  const path = by.trim();
+  if (!path || path.length > 512 || /[\s()[\]"]/.test(path)) return scimError(400, `Invalid sortBy "${by}".`, 'invalidValue');
+  const norm = path.toLowerCase();
+  if (norm === 'name' || norm === 'meta') return scimError(400, `Sort by a sub-attribute of ${path}.`, 'invalidValue');
+  if (!SORTABLE[kind].includes(norm)) return scimError(400, `Sorting by ${path} is not supported.`, 'invalidValue');
+  const key = (r: Obj): string | number | null => {
+    const v = sortValue(r, path);
+    return v === null ? null : typeof v === 'string' ? v.toLowerCase() : typeof v === 'boolean' ? Number(v) : (v as number);
+  };
+  const sign = dir === 'descending' ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    if (ka !== kb) {
+      if (ka === null) return sign;
+      if (kb === null) return -sign;
+      return (ka < kb ? -1 : 1) * sign;
+    }
+    return (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0) * sign;
+  });
+}
 
 const scimError = (status: number, detail: string, scimType?: string): Reply => ({ status, headers: JSON_SCIM, body: { schemas: [ERR], status: String(status), ...(scimType ? { scimType } : {}), detail } });
 
@@ -94,11 +153,13 @@ export function scimHandlers(): RouteDef[] {
     if (write && !a.canWrite) return scimError(403, 'This SCIM token is read-only.');
     return fn(c, a, base(c));
   };
-  const page = (c: RouteContext, items: Obj[], present: (o: Obj) => Obj): Reply => {
+  const page = (c: RouteContext, items: Obj[], present: (o: Obj) => Obj, kind: 'User' | 'Group'): Reply => {
+    const sorted = sortResources(c.query.get('sortBy'), c.query.get('sortOrder'), items.map(present), kind);
+    if (!Array.isArray(sorted)) return sorted;
     const start = Math.max(Number(c.query.get('startIndex') ?? 1) || 1, 1);
     const count = Math.min(Math.max(Number(c.query.get('count') ?? 100) || 0, 0), 200);
-    const slice = items.slice(start - 1, start - 1 + count);
-    return { headers: JSON_SCIM, body: { schemas: [LIST], totalResults: items.length, startIndex: start, itemsPerPage: slice.length, Resources: slice.map(present) } };
+    const slice = sorted.slice(start - 1, start - 1 + count);
+    return { headers: JSON_SCIM, body: { schemas: [LIST], totalResults: sorted.length, startIndex: start, itemsPerPage: slice.length, Resources: slice } };
   };
   const memberUsers = (e: Engine, orgId: string): Obj[] =>
     e.db.memberships
@@ -117,7 +178,7 @@ export function scimHandlers(): RouteDef[] {
         const m = matcher(c.query.get('filter'));
         if (typeof m !== 'function') return m;
         const flat = (u: Obj): Obj => ({ ...u, userName: primaryEmail(u)?.email_address, externalId: u.external_id, id: u.id, active: u.scim_active !== false });
-        return page(c, memberUsers(c.engine, a.orgId).filter((u) => m(flat(u))), (u) => scimUser(c.engine, u, b));
+        return page(c, memberUsers(c.engine, a.orgId).filter((u) => m(flat(u))), (u) => scimUser(c.engine, u, b), 'User');
       }),
     },
     {
@@ -230,7 +291,7 @@ export function scimHandlers(): RouteDef[] {
       handler: guard(false, (c, a, b) => {
         const m = matcher(c.query.get('filter'));
         if (typeof m !== 'function') return m;
-        return page(c, c.engine.db.scimGroups.filter((g) => g.organization_id === a.orgId && m({ displayName: g.display_name, externalId: g.external_id, id: g.id })), (g) => scimGroup(c.engine, g, b));
+        return page(c, c.engine.db.scimGroups.filter((g) => g.organization_id === a.orgId && m({ displayName: g.display_name, externalId: g.external_id, id: g.id })), (g) => scimGroup(c.engine, g, b), 'Group');
       }),
     },
     {
@@ -303,6 +364,75 @@ export function scimHandlers(): RouteDef[] {
         return { status: 204 };
       }),
     },
+    // ── Bulk (RFC 7644 3.7): each operation runs through the server's own routes, so auth, read-only and validation rules are the same as a direct call ──
+    {
+      method: 'POST',
+      pattern: `${prefix}/Bulk`,
+      public: true,
+      handler: guard(true, async (c) => {
+        const e = c.engine;
+        const body = c.body as { schemas?: string[]; failOnErrors?: number; Operations?: Array<{ method?: string; bulkId?: string; version?: string; path?: string; data?: unknown }> };
+        if (JSON.stringify(body).length > BULK_MAX_PAYLOAD) return scimError(413, `A bulk request is at most ${BULK_MAX_PAYLOAD} bytes.`, 'tooLarge');
+        if (!Array.isArray(body.schemas) || !body.schemas.includes(BULK_REQUEST)) return scimError(400, `A bulk request must declare the ${BULK_REQUEST} schema.`, 'invalidSyntax');
+        const ops = body.Operations;
+        if (!Array.isArray(ops) || ops.length === 0) return scimError(400, 'Operations is required.', 'invalidSyntax');
+        if (ops.length > BULK_MAX_OPERATIONS) return scimError(413, `At most ${BULK_MAX_OPERATIONS} operations per request.`, 'tooMany');
+        const failOn = Number.isInteger(body.failOnErrors) && body.failOnErrors! > 0 ? body.failOnErrors! : Infinity;
+        const root = new URL(c.request.url).pathname.replace(/\/Bulk\/?$/, '');
+        const created = new Map<string, string>(); // bulkId -> location
+        const bulkIds = new Set<string>();
+        const results: Obj[] = [];
+        let errors = 0;
+        const refs = (text: string) => text.replace(/bulkId:([A-Za-z0-9_-]+)/g, (m, id: string) => created.get(id)?.split('/').pop() ?? m);
+        for (const op of ops) {
+          if (errors >= failOn) break;
+          const method = String(op.method ?? '').toUpperCase();
+          const result: Obj = { method, ...(op.bulkId ? { bulkId: op.bulkId } : {}) };
+          const fail = (status: number, detail: string, scimType?: string) => {
+            errors += 1;
+            results.push({ ...result, status: String(status), response: { schemas: [ERR], ...(scimType ? { scimType } : {}), detail, status: String(status) } });
+          };
+          if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+            fail(400, 'method must be POST, PUT, PATCH or DELETE.', 'invalidValue');
+            continue;
+          }
+          if (method === 'POST') {
+            if (!op.bulkId || !/^[A-Za-z0-9_-]{1,64}$/.test(op.bulkId) || bulkIds.has(op.bulkId)) {
+              fail(400, 'A POST needs a unique bulkId.', 'invalidValue');
+              continue;
+            }
+            bulkIds.add(op.bulkId);
+          }
+          if (typeof op.path !== 'string' || !op.path.startsWith('/') || op.path.includes('..') || /^\/(Bulk|ServiceProviderConfig|Schemas|ResourceTypes)\b/.test(op.path)) {
+            fail(400, 'path must name a resource endpoint.', 'invalidPath');
+            continue;
+          }
+          const path = refs(op.path);
+          if (/bulkId:/.test(path)) {
+            fail(409, 'A bulkId reference points at an operation that did not create a resource.', 'invalidValue');
+            continue;
+          }
+          const data = op.data === undefined ? undefined : refs(JSON.stringify(op.data));
+          const res = await e.handle(new Request(`${e.issuer}${root}${path}`, { method, headers: { authorization: c.request.headers.get('authorization') ?? '', 'content-type': 'application/scim+json', ...(op.version ? { 'if-match': op.version } : {}) }, ...(data !== undefined && method !== 'DELETE' ? { body: data } : {}) }));
+          const text = await res.text();
+          let json: any = null;
+          try {
+            json = text ? JSON.parse(text) : null;
+          } catch {
+            json = null;
+          }
+          const location = res.headers.get('location') ?? json?.meta?.location;
+          if (res.status >= 400) {
+            errors += 1;
+            results.push({ ...result, status: String(res.status), response: json ?? {} });
+            continue;
+          }
+          if (method === 'POST' && op.bulkId && location) created.set(op.bulkId, location);
+          results.push({ ...result, ...(location ? { location } : {}), ...(res.headers.get('etag') ? { version: res.headers.get('etag') } : {}), status: String(res.status) });
+        }
+        return { headers: JSON_SCIM, body: { schemas: [BULK_RESPONSE], Operations: results } };
+      }),
+    },
     // ── discovery ──
     {
       method: 'GET',
@@ -313,11 +443,11 @@ export function scimHandlers(): RouteDef[] {
         body: {
           schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
           patch: { supported: true },
-          bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
+          bulk: { supported: true, maxOperations: BULK_MAX_OPERATIONS, maxPayloadSize: BULK_MAX_PAYLOAD },
           filter: { supported: true, maxResults: 200 },
           changePassword: { supported: false },
-          sort: { supported: false },
-          etag: { supported: false },
+          sort: { supported: true },
+          etag: { supported: true },
           authenticationSchemes: [{ type: 'oauthbearertoken', name: 'Bearer token', description: 'A SCIM token from the Backend API.' }],
         },
       })),
@@ -338,6 +468,45 @@ export function scimHandlers(): RouteDef[] {
       handler: guard(false, () => ({ headers: JSON_SCIM, body: { schemas: [LIST], totalResults: 2, Resources: [{ id: USER_SCHEMA, name: 'User' }, { id: GROUP_SCHEMA, name: 'Group' }] } })),
     },
   ];
+
+  /**
+   * ETag on every single-resource answer (`meta.version` and the `ETag` header), 304 for a matching `If-None-Match` on a GET, and 412
+   * `invalidVers` for an `If-Match` that no longer names the resource on a PUT, PATCH or DELETE (checked before the write, `*` always passes).
+   */
+  const withEtag = (routes: RouteDef[]): RouteDef[] =>
+    routes.map((r) => {
+      if (!/\/(Users|Groups)(\/:\w+)?$/.test(r.pattern)) return r;
+      const isItem = /\/:\w+$/.test(r.pattern);
+      const kind = /\/Users/.test(r.pattern) ? 'User' : 'Group';
+      return {
+        ...r,
+        handler: async (c: RouteContext): Promise<Reply> => {
+          const ifMatch = c.request.headers.get('if-match');
+          if (isItem && ifMatch !== null && (r.method === 'PUT' || r.method === 'PATCH' || r.method === 'DELETE')) {
+            const a = authenticate(c.engine, c);
+            if ('orgId' in a) {
+              const id = c.params.uid ?? c.params.gid;
+              const b = base(c);
+              const current = kind === 'User' ? memberUsers(c.engine, a.orgId).filter((u) => u.id === id).map((u) => scimUser(c.engine, u, b))[0] : c.engine.db.scimGroups.filter((g) => g.id === id && g.organization_id === a.orgId).map((g) => scimGroup(c.engine, g, b))[0];
+              if (current) {
+                const tag = await etagOf(current);
+                if (ifMatch.trim() !== '*' && !ifMatch.split(',').some((t) => weakEquals(t.trim(), tag))) return scimError(412, 'The resource changed since the version in If-Match.', 'invalidVers');
+              }
+            }
+          }
+          const out = await r.handler(c);
+          const status = out.status ?? 200;
+          const body = out.body as Obj | undefined;
+          if (status < 200 || status > 201 || !body || typeof body !== 'object' || !body.meta || typeof body.id !== 'string') return out;
+          const tag = await etagOf(body);
+          body.meta.version = tag;
+          const headers = { ...(out.headers ?? {}), etag: tag };
+          const inm = c.request.headers.get('if-none-match');
+          if (r.method === 'GET' && inm !== null && inm.split(',').some((t) => t.trim() === '*' || weakEquals(t.trim(), tag))) return { status: 304, headers };
+          return { ...out, headers };
+        },
+      };
+    });
 
   return [
     // ── token management (Backend API) ──
@@ -383,7 +552,7 @@ export function scimHandlers(): RouteDef[] {
         return { body: { object: 'scim_token', id: t.id, revoked: true, note: 'Requests with this token now answer 401.' } };
       },
     },
-    ...userRoutes('/scim/v2'),
-    ...userRoutes('/scim/v2/d/:directoryId'),
+    ...withEtag(userRoutes('/scim/v2')),
+    ...withEtag(userRoutes('/scim/v2/d/:directoryId')),
   ];
 }

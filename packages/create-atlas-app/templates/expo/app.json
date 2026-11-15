@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "{{PROJECT_NAME}}",
+    "slug": "{{PROJECT_NAME}}",
+    "scheme": "{{PROJECT_NAME}}",
+    "version": "0.1.0",
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}

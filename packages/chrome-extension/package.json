@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/chrome-extension",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -26,7 +26,7 @@
     "@atlasauth/react": "workspace:^"
   },
   "peerDependencies": {
-    "@atlasauth/js": ">=0.39.0 <1.0.0",
+    "@atlasauth/js": ">=0.46.0 <1.0.0",
     "react": ">=18"
   },
   "peerDependenciesMeta": {
