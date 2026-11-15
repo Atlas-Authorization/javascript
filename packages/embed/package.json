@@ -13,10 +13,11 @@
     "@atlasauth/js": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.9.0",
     "esbuild": "^0.25.12",
     "happy-dom": "^21.0.4",
     "typescript": "^5.6.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   },
   "publishConfig": {
     "access": "public"

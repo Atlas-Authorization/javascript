@@ -25,7 +25,7 @@
     "esbuild": "^0.25.12",
     "jose": "^5.9.6",
     "typescript": "^5.6.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   },
   "keywords": ["atlas", "atlasauth", "authorization", "pdp", "cedar", "fga", "openfga", "authzen", "policy"],
   "publishConfig": {

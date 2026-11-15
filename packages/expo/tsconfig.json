@@ -19,7 +19,7 @@
      * and `types` stays empty.
      */
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": []
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": []

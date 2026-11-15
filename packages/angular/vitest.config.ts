@@ -5,16 +5,16 @@ import { defineConfig } from 'vitest/config';
  * directly: `AtlasService` is constructed inside an injection context, and the
  * prebuilt components are JIT-compiled (each suite loads `@angular/compiler`).
  * Angular's JIT field decorators (`@Input`) need TypeScript's legacy decorator
- * emit, so the test transform turns it on (the build goes through ng-packagr).
+ * emit, so the test transform turns it on (oxc `decorator.legacy`) (the build goes through ng-packagr).
  * Suites that need a DOM opt into happy-dom per file. `atlas.service.spec.ts` is
  * the TestBed starter spec for an Angular CLI runner (Karma/Jasmine), so it is
  * left out here.
  */
 export default defineConfig({
-  esbuild: {
-    tsconfigRaw: {
-      compilerOptions: { experimentalDecorators: true, useDefineForClassFields: false },
-    },
+  // Vite 8 transforms with oxc (the `esbuild` option is ignored).
+  oxc: {
+    decorator: { legacy: true },
+    typescript: { removeClassFieldsWithoutInitializer: true },
   },
   test: {
     include: ['src/**/*.spec.ts'],

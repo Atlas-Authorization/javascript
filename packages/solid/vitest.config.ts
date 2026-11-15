@@ -18,5 +18,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // vitest 4 externalizes node_modules deps, so Node (not Vite) would resolve
+    // solid-js to its server build; inlining makes `resolve.conditions` apply.
+    server: { deps: { inline: [/solid-js/, /@solidjs\//] } },
   },
 });

@@ -12,7 +12,7 @@
     // therefore ESM, which `"type": "module"` in package.json declares.
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "types": []
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": []

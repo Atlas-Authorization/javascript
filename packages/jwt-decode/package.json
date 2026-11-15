@@ -22,11 +22,20 @@
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
-  "keywords": ["atlas", "atlasauth", "jwt", "jwt-decode", "decode", "token", "auth"],
+  "keywords": [
+    "atlas",
+    "atlasauth",
+    "jwt",
+    "jwt-decode",
+    "decode",
+    "token",
+    "auth"
+  ],
   "devDependencies": {
+    "@types/node": "^22.9.0",
     "esbuild": "^0.25.12",
     "typescript": "^5.6.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   },
   "publishConfig": {
     "access": "public"

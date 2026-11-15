@@ -13,7 +13,7 @@
      * not a cookie, precisely because RN has neither.
      */
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": []
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": []

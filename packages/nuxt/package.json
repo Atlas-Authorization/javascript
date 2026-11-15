@@ -46,7 +46,7 @@
     "jose": "^5.9.6",
     "nuxt": "^4.6.4",
     "typescript": "^5.6.3",
-    "vitest": "^3.2.7",
+    "vitest": "^4.1.12",
     "vue": "^3.4.0",
     "@atlasauth/backend": "workspace:*"
   },

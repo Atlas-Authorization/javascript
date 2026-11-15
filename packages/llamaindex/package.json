@@ -16,7 +16,7 @@
   "keywords": ["atlas", "atlasauth", "llamaindex", "rag", "authorization", "fga"],
   "devDependencies": {
     "typescript": "^5.6.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   },
   "publishConfig": {
     "access": "public"

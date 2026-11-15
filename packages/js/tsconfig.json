@@ -10,7 +10,7 @@
      * point of the fallback logic being checked at all.
      */
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": []
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": []

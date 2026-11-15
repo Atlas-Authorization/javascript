@@ -18,10 +18,11 @@
   },
   "devDependencies": {
     "@atlasauth/js": "workspace:*",
+    "@types/node": "^22.9.0",
     "@vue/test-utils": "^2.4.6",
     "happy-dom": "^21.0.4",
     "typescript": "^5.6.3",
-    "vitest": "^3.2.7",
+    "vitest": "^4.1.12",
     "vue": "^3.4.0"
   },
   "publishConfig": {
