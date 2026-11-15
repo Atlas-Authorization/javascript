@@ -111,7 +111,7 @@ export interface PendingPolicy {
 
 /** The identity check an `identity_verification` required action started (`step: 'start'`) or read. */
 export interface AttemptIdentityVerification {
-  status: 'pending' | 'approved' | 'declined' | 'needs_review';
+  status: 'pending' | 'processing' | 'approved' | 'declined' | 'needs_review';
   /** The verification service's hosted page, while pending. */
   url: string | null;
   reason: string | null;

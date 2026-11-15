@@ -14,6 +14,10 @@ export interface ServiceConnector {
   enabled: boolean;
   last_used_at: number | null;
   last_status: 'ok' | 'error' | null;
+  /** Identity verification kinds only: give this URL to the service as its webhook endpoint (present before checks are enabled). */
+  webhook_url?: string;
+  /** Identity verification kinds only: the events to subscribe to at the service. */
+  webhook_events?: string[];
   created_at: number;
   updated_at: number;
 }

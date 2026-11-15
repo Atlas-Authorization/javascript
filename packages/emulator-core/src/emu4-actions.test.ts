@@ -384,3 +384,27 @@ describe('provider stubs', () => {
     expect((await call('GET', '/__emulator/connections/provider_stubs')).json.data).toEqual([]);
   });
 });
+
+describe('connection OAuth clients (PUT/GET/DELETE)', () => {
+  const put = (call: ReturnType<typeof client>, extra: Record<string, unknown> = {}) => call('PUT', '/v1/connections/oauth_clients', { provider: 'tiktok_shop', client_id: 'app-key', client_secret: 'app-secret', ...extra });
+
+  it('requires the provider extra, refuses unknown keys and bad values, and never returns the secret', async () => {
+    const call = client(makeEngine());
+    const missing = await put(call);
+    expect(missing.status).toBe(400);
+    expect(JSON.stringify(missing.json)).toContain('host_params.service_id');
+    expect((await put(call, { host_params: { service_id: '777', shop: 'x' } })).status).toBe(400);
+    expect((await put(call, { host_params: { service_id: 'a/b' } })).status).toBe(400);
+    const redirect = 'https://app.example.com/api/auth/oauth/tiktok_shop/callback';
+    const ok = await put(call, { host_params: { service_id: '777' }, redirect_uri: redirect });
+    expect(ok.status).toBe(200);
+    expect(ok.json).toMatchObject({ object: 'connection_oauth_client', host_params: { service_id: '777' }, redirect_uri: redirect, callback_url: redirect, has_secret: true });
+    expect(JSON.stringify(ok.json)).not.toContain('app-secret');
+    // A second PUT replaces the same client and keeps the stored extra when host_params is left out.
+    const again = await call('PUT', '/v1/connections/oauth_clients', { provider: 'tiktok_shop', client_id: 'app-key-2' });
+    expect(again.json).toMatchObject({ id: ok.json.id, client_id: 'app-key-2', host_params: { service_id: '777' } });
+    expect(((await call('GET', '/v1/connections/oauth_clients?provider=tiktok_shop')).json as any).data).toHaveLength(1);
+    expect((await call('DELETE', `/v1/connections/oauth_clients/${ok.json.id}`)).status).toBe(204);
+    expect(((await call('GET', '/v1/connections/oauth_clients')).json as any).data).toHaveLength(0);
+  });
+});

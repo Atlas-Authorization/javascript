@@ -48,3 +48,5 @@ export function useStepUp(options: UseStepUpOptions) {
     [client],
   );
 }
+export { STEP_UP_FACTORS, stepUpFactorInfo } from '@atlasauth/js';
+export type { StepUpFactorInfo, StepUpInputKind } from '@atlasauth/js';

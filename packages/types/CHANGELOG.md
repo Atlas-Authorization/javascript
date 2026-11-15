@@ -1,5 +1,9 @@
 # @atlasauth/types changelog
 
+## 0.19.0
+
+- **type-widening:** `WebhookEvent` gains `identity_verification.updated`.
+
 ## 0.18.1
 
 - `WebhookEvent` now covers the full webhook event catalog.

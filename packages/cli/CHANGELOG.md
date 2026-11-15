@@ -1,5 +1,10 @@
 # @atlasauth/cli changelog
 
+## 0.45.0
+
+- `atlas plan` validates the whole plan as one unit: an item that references something the same plan creates (an action bound under `action_bindings`, a journey experiment) gets real validation at plan time, a typo is an error at plan time, and a reference to something the plan deletes is an error too.
+- `atlas plan` reports a `connection_oauth_clients` entry missing a provider's required `host_params` extra (for example TikTok Shop `service_id`).
+
 ## 0.44.0
 
 - New commands: `atlas provider-changes`, `flows messages|message-cancel|readout`, `referral-rewards`, `policies` (audience and translations), `region`, `oauth-publishers`, `age-assurance` and `approval-devices`; `atlas changes consumers`; `atlas compliance` gains `erasure-probe`, `downstream-run`, cookie consent record commands and `i18n-reviews`; connection access rules and `register-client`; billing Connect accounts, transfers and store links; `atlas audit chain-verify`.

@@ -4,11 +4,11 @@ import { join } from 'node:path';
 import { AtlasApiError } from '@atlasauth/backend';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MemoryConfigStore } from '../config';
-import type { ConfigHttp } from '../config-http';
+import type { ConfigHttp, ConfigRequestInit } from '../config-http';
 import type { ManagementClient, RunContext } from '../context';
 import { captureIO } from '../io';
 import { run } from '../run';
-import { planConfigImport } from './config';
+import { connectionClientExtraErrors, planConfigImport } from './config';
 import { applyRequires, resolveCodeFiles, sortSets, validateAgainstLimits, type ConfigLimits } from './config-rollout';
 
 type Call = { method: string; path: string; body?: unknown };
@@ -359,5 +359,96 @@ describe('resource_types and implied permissions in config', () => {
     };
     const p = write('atlas.json', JSON.stringify({ resource_types: [{ key: 'folder', name: 'Folder', roles: [{ key: 'a', permissions: ['x'] }, { key: 'b', permissions: ['x', 'y'] }] }] }));
     expect(await run(['plan', p, '--check', '--skip-validate'], ctx(captureIO(), api))).toBe(0);
+  });
+});
+
+/** A server that scopes dry runs to a session the way the real one does: dry writes of a session are replayed before the next read or write. */
+class ScopedApi implements ConfigHttp {
+  calls: Call[] = [];
+  private seq = 0;
+  constructor(public actions: Array<{ id: string; name: string; trigger: string }> = []) {}
+  private overlay: Array<{ id: string; name: string; trigger: string }> | null = null;
+  private session: string | null = null;
+  private view(init?: ConfigRequestInit) {
+    const s = init?.headers?.['atlas-dry-run-session'] ?? null;
+    if (s !== this.session) {
+      this.session = s;
+      this.overlay = s ? [...this.actions] : null;
+    }
+    return this.overlay ?? this.actions;
+  }
+  async get<T>(path: string, init?: ConfigRequestInit): Promise<T> {
+    if (path === '/v1/config/limits') throw new AtlasApiError(404, [{ code: 'NOT_FOUND', message: 'none' }]);
+    if (path.split('?')[0] === '/v1/actions') return { data: this.view(init) } as T;
+    if (path.startsWith('/v1/actions/bindings/')) return { action_ids: [] } as T;
+    throw new AtlasApiError(404, [{ code: 'NOT_FOUND', message: `no route ${path}` }]);
+  }
+  private write(method: string, path: string, body: unknown, init?: ConfigRequestInit) {
+    const dry = path.includes('dry_run=true');
+    const bare = path.split('?')[0]!;
+    this.calls.push({ method, path, body });
+    const rows = this.view(dry ? init : undefined);
+    if (method === 'POST' && bare === '/v1/actions') {
+      const b = body as { name: string; trigger: string };
+      rows.push({ id: `act_${++this.seq}`, name: b.name, trigger: b.trigger });
+    } else if (method === 'DELETE' && bare.startsWith('/v1/actions/')) {
+      const i = rows.findIndex((r) => r.id === bare.split('/').pop());
+      if (i >= 0) rows.splice(i, 1);
+    } else if (method === 'PUT' && bare.startsWith('/v1/actions/bindings/')) {
+      const ids = (body as { action_ids: string[] }).action_ids;
+      for (const id of ids) if (!rows.some((r) => r.id === id)) throw new AtlasApiError(422, [{ code: 'VALIDATION', message: `Unknown action: ${id}.` }]);
+    }
+    return dry ? { object: 'dry_run', validated: true, plan_session: { replayed: 0 } } : {};
+  }
+  async post<T>(path: string, body: unknown, init?: ConfigRequestInit): Promise<T> { return this.write('POST', path, body, init) as T; }
+  async put<T>(path: string, body: unknown, init?: ConfigRequestInit): Promise<T> { return this.write('PUT', path, body, init) as T; }
+  async patch<T>(path: string, body: unknown, init?: ConfigRequestInit): Promise<T> { return this.write('PATCH', path, body, init) as T; }
+  async delete(path: string, _body?: unknown, init?: ConfigRequestInit): Promise<void> { this.write('DELETE', path, undefined, init); }
+}
+
+describe('plan-scoped validation', () => {
+  const plan = (cfg: unknown, api: ScopedApi, extra: string[] = []) => {
+    const io = captureIO();
+    return run(['plan', write('atlas.json', JSON.stringify(cfg)), '--json', ...extra], ctx(io, api)).then((code) => ({ code, out: JSON.parse(io.stdout()) as { validation: { errors: string[]; deferred: unknown[] } } }));
+  };
+  const action = { name: 'guard', trigger: 'pre_user_deletion', code: 'export default () => {}' };
+
+  it('a binding to an action the same plan creates is validated, and passes', async () => {
+    const { code, out } = await plan({ actions: [action], action_bindings: [{ trigger: 'pre_user_deletion', actions: ['guard'] }] }, new ScopedApi());
+    expect(out.validation.errors).toEqual([]);
+    expect(out.validation.deferred).toEqual([]);
+    expect(code).toBe(0);
+  });
+
+  it('a binding to a name that is neither live nor in the plan is an error at plan time', async () => {
+    const { code, out } = await plan({ actions: [action], action_bindings: [{ trigger: 'pre_user_deletion', actions: ['gaurd'] }] }, new ScopedApi());
+    expect(out.validation.deferred).toEqual([]);
+    expect(out.validation.errors.join('\n')).toContain('no pre_user_deletion action named "gaurd"');
+    expect(code).toBe(1);
+  });
+
+  it('a binding to an action the same plan deletes is an error at plan time', async () => {
+    const api = new ScopedApi([{ id: 'act_live', name: 'guard', trigger: 'pre_user_deletion' }]);
+    const { code, out } = await plan({ actions: [{ ...action, name: 'other' }], action_bindings: [{ trigger: 'pre_user_deletion', actions: ['guard'] }] }, api, ['--prune', '--prune-type', 'actions']);
+    expect(out.validation.deferred).toEqual([]);
+    expect(out.validation.errors.join('\n')).toContain('no pre_user_deletion action named "guard"');
+    expect(code).toBe(1);
+  });
+});
+
+describe('connection client extras at plan time', () => {
+  const http = { get: async () => ({ data: [{ provider: 'tiktok_shop', connection_extras: [{ key: 'service_id', label: 'Service ID', required: true }] }, { provider: 'ebay', connection_extras: [{ key: 'ru_name', label: 'RuName', required: false }] }] }) } as unknown as ConfigHttp;
+  const sec = (doc: unknown) => [{ type: 'connection_oauth_clients', doc: doc as never }];
+
+  it('flags a client that lacks a required extra, even with a ${VAR} secret, and passes one that has it', async () => {
+    const bad = await connectionClientExtraErrors(http, sec([{ provider: 'tiktok_shop', client_id: 'k', client_secret: '${SECRET}' }]));
+    expect(bad).toEqual(['connection_oauth_clients tiktok_shop: host_params.service_id (Service ID) is required for this provider.']);
+    expect(await connectionClientExtraErrors(http, sec([{ provider: 'tiktok_shop', client_id: 'k', host_params: { service_id: '7' } }, { provider: 'ebay', client_id: 'k' }]))).toEqual([]);
+  });
+
+  it('does nothing without clients or when the catalog is unavailable', async () => {
+    expect(await connectionClientExtraErrors(http, [])).toEqual([]);
+    const down = { get: async () => { throw new Error('boom'); } } as unknown as ConfigHttp;
+    expect(await connectionClientExtraErrors(down, sec([{ provider: 'tiktok_shop' }]))).toEqual([]);
   });
 });

@@ -1,5 +1,9 @@
 # @atlasauth/emulator changelog
 
+## 0.5.2
+
+- Uses @atlasauth/emulator-core 0.4.0.
+
 ## 0.5.1
 
 - Uses @atlasauth/emulator-core 0.3.1: success statuses and required request fields now match the latest API description.

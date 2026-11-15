@@ -237,6 +237,7 @@ export type WebhookEvent =
   | 'jwt_template.created'
   | 'jwt_template.updated'
   | 'jwt_template.deleted'
+  | 'identity_verification.updated'
   | 'oauth_client.created'
   | 'oauth_client.updated'
   | 'oauth_client.deleted'

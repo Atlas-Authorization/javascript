@@ -212,6 +212,14 @@ export const ERROR_CATALOG: Record<string, { status: number; title: string }> = 
     "status": 409,
     "title": "Already a member"
   },
+  "ROLE_NOT_IN_ROLE_SET": {
+    "status": 422,
+    "title": "Role not in the role set"
+  },
+  "SIGN_UP_BLOCKED": {
+    "status": 403,
+    "title": "Sign-up blocked"
+  },
   "ROLE_IN_USE": {
     "status": 409,
     "title": "Role in use"

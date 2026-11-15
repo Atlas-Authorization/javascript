@@ -1,5 +1,9 @@
 # @atlasauth/authz changelog
 
+## 0.4.1
+
+- Uses @atlasauth/types 0.19.0.
+
 ## 0.4.0
 
 - `ProtectCondition` reads the `Register` types from `@atlasauth/types`, so `has()` and `<Protect>` checks are typed when you generate `atlas-types.d.ts`.

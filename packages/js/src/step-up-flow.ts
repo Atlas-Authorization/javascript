@@ -16,6 +16,39 @@ import { requireStepUp, retryWithStepUp, startStepUpDuo, startStepUpPush, withSt
 
 export type StepUpFactor = 'password' | 'passkey' | 'totp' | 'backup_code' | 'email_code' | 'phone_code' | 'push' | 'duo' | 'yubikey';
 
+/** What a factor needs from the person: a typed secret, a typed code, nothing (a prompt elsewhere), a browser redirect, a device push, or a WebAuthn prompt. */
+export type StepUpInputKind = 'password' | 'otp' | 'none' | 'redirect' | 'push' | 'webauthn';
+
+export interface StepUpFactorInfo {
+  factor: string;
+  label: string;
+  needsInput: boolean;
+  inputKind: StepUpInputKind;
+}
+
+const INFO: Record<StepUpFactor, Omit<StepUpFactorInfo, 'factor'>> = {
+  password: { label: 'Password', needsInput: true, inputKind: 'password' },
+  passkey: { label: 'Passkey', needsInput: false, inputKind: 'webauthn' },
+  totp: { label: 'Authenticator app code', needsInput: true, inputKind: 'otp' },
+  backup_code: { label: 'Backup code', needsInput: true, inputKind: 'otp' },
+  email_code: { label: 'Code sent by email', needsInput: true, inputKind: 'otp' },
+  phone_code: { label: 'Code sent by text message', needsInput: true, inputKind: 'otp' },
+  push: { label: 'Approve on your device', needsInput: false, inputKind: 'push' },
+  duo: { label: 'Duo', needsInput: false, inputKind: 'redirect' },
+  yubikey: { label: 'Security key code', needsInput: true, inputKind: 'otp' },
+};
+
+/** Every factor this version knows. A future server may offer more: use `stepUpFactorInfo` for any string. */
+export const STEP_UP_FACTORS: readonly StepUpFactor[] = Object.keys(INFO) as StepUpFactor[];
+
+/** How to render a factor. An unknown (newer) factor gets a generic label and a typed-code input rather than failing. */
+export function stepUpFactorInfo(factor: StepUpFactor | (string & {})): StepUpFactorInfo {
+  const known = Object.hasOwn(INFO, factor) ? INFO[factor as StepUpFactor] : undefined;
+  if (known) return { factor, ...known };
+  const words = String(factor).replace(/[_-]+/g, ' ').trim();
+  return { factor, label: words ? words[0]!.toUpperCase() + words.slice(1) : 'Verification', needsInput: true, inputKind: 'otp' };
+}
+
 /** What the person picked. A passkey needs no input here: the platform prompt runs next. */
 export type StepUpChoice =
   | { strategy: 'password'; password: string }

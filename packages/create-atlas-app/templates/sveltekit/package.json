@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@atlasauth/svelte": "^0.23.0",
-    "@atlasauth/js": "^0.46.0"
+    "@atlasauth/js": "^0.47.0"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^8.0.1",

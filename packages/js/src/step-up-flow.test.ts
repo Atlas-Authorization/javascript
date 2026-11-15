@@ -102,3 +102,21 @@ describe('createStepUp', () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+describe('stepUpFactorInfo', () => {
+  it('describes every known factor', async () => {
+    const { STEP_UP_FACTORS, stepUpFactorInfo } = await import('./step-up-flow');
+    expect(STEP_UP_FACTORS).toHaveLength(9);
+    for (const f of STEP_UP_FACTORS) expect(stepUpFactorInfo(f)).toMatchObject({ factor: f, label: expect.any(String) });
+    expect(stepUpFactorInfo('password')).toMatchObject({ needsInput: true, inputKind: 'password' });
+    expect(stepUpFactorInfo('passkey')).toMatchObject({ needsInput: false, inputKind: 'webauthn' });
+    expect(stepUpFactorInfo('duo').inputKind).toBe('redirect');
+    expect(stepUpFactorInfo('push').inputKind).toBe('push');
+  });
+
+  it('falls back for a factor it does not know', async () => {
+    const { stepUpFactorInfo } = await import('./step-up-flow');
+    expect(stepUpFactorInfo('smart_card')).toEqual({ factor: 'smart_card', label: 'Smart card', needsInput: true, inputKind: 'otp' });
+    expect(stepUpFactorInfo('constructor').label).toBe('Constructor');
+  });
+});

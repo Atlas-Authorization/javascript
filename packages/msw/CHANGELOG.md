@@ -1,5 +1,9 @@
 # @atlasauth/msw changelog
 
+## 0.4.3
+
+- Uses @atlasauth/emulator-core 0.4.0.
+
 ## 0.4.2
 
 - Uses @atlasauth/emulator-core 0.3.1: success statuses and required request fields now match the latest API description.

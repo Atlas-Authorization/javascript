@@ -1,6 +1,7 @@
 import { enc, type RequestFn } from './request';
 
-export type IdentityVerificationOutcome = 'pending' | 'approved' | 'declined' | 'needs_review';
+/** `processing`: submitted and being checked. `pending` stays open for the person, including after a failed attempt they can retry. */
+export type IdentityVerificationOutcome = 'pending' | 'processing' | 'approved' | 'declined' | 'needs_review';
 
 export interface IdentityVerification {
   object: 'identity_verification';
@@ -9,6 +10,10 @@ export interface IdentityVerification {
   provider: 'persona' | 'onfido' | 'veriff' | 'stripe_identity';
   status: IdentityVerificationOutcome;
   reason: string | null;
+  /** The latest failed attempt the person can retry (the check stays `pending`); null when none failed. */
+  last_error: { code: string; reason: string | null } | null;
+  /** How many failed attempts the service reported. */
+  attempts: number;
   /** True when the check was recorded from an existing session with `import`. */
   imported: boolean;
   /** When the verification service verified the person (epoch ms); an imported check keeps the service's own time. */

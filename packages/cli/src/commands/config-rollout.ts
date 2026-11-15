@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 import { AtlasApiError } from '@atlasauth/backend';
 import { isNotFound, type ConfigHttp } from '../config-http';
@@ -289,18 +290,69 @@ export function validateAgainstLimits(sections: ReadonlyArray<{ type: string; do
 
 // ───────────────────────────── dry-run pre-flight ─────────────────────────────
 
-/** An http client whose writes can be switched to the server's own dry run (`?dry_run=true`: validated exactly as written, then rolled back). */
-export function switchableHttp(inner: ConfigHttp): { http: ConfigHttp; setDryRun(on: boolean): void } {
+/** What a plan-scoped dry run needs from the http seam (see {@link switchableHttp}). */
+export interface PreflightGate {
+  setDryRun(on: boolean): void;
+  /** Start a new plan-scoped session (the server forgets nothing it was told, so each pass needs its own). */
+  begin?(): void;
+  /** The server could not find the session: carry on with per-change checks. */
+  dropSession?(): void;
+  /** Whether every dry write of the current change was validated inside the plan's session (so its references saw the plan's earlier changes). */
+  scoped?(): boolean;
+}
+
+/**
+ * An http client whose writes can be switched to the server's own dry run (`?dry_run=true`: validated exactly as
+ * written, then rolled back). All dry writes of one pass share a session id: the server replays the writes it
+ * already validated before checking the next, so a change that refers to something an earlier change creates (or
+ * deletes) is validated against the plan as a whole.
+ */
+export function switchableHttp(inner: ConfigHttp): { http: ConfigHttp; setDryRun(on: boolean): void } & Required<Omit<PreflightGate, 'setDryRun'>> {
   let dry = false;
+  let session: string | null = null;
+  let prior = 0;
+  let writes = 0;
+  let unscoped = false;
   const url = (path: string) => (dry ? `${path}${path.includes('?') ? '&' : '?'}dry_run=true` : path);
+  const init = () => (dry && session ? { headers: { 'atlas-dry-run-session': session, ...(prior > 0 ? { 'atlas-dry-run-prior': String(prior) } : {}) } } : undefined);
+  const watch = <T>(p: Promise<T>): Promise<T> =>
+    dry
+      ? p.then((r) => {
+          const res = r as { object?: string; validated?: boolean; plan_session?: unknown } | undefined;
+          if (res?.object === 'dry_run' && res.validated !== false && res.plan_session !== undefined) {
+            writes += 1;
+            prior += 1;
+          } else unscoped = true;
+          return r;
+        })
+      : p;
   const http: ConfigHttp = {
-    get: (path) => inner.get(path),
-    post: (path, body) => inner.post(url(path), body),
-    put: (path, body) => inner.put(url(path), body),
-    patch: (path, body) => inner.patch(url(path), body),
-    delete: (path, body) => inner.delete(url(path), body),
+    // A read during a dry run sees the plan's earlier changes too (the server replays them before answering it).
+    get: (path) => inner.get(path, init()),
+    post: (path, body) => watch(inner.post(url(path), body, init())),
+    put: (path, body) => watch(inner.put(url(path), body, init())),
+    patch: (path, body) => watch(inner.patch(url(path), body, init())),
+    delete: (path, body) => inner.delete(url(path), body, init()),
   };
-  return { http, setDryRun: (on) => void (dry = on) };
+  return {
+    http,
+    setDryRun(on) {
+      dry = on;
+      if (on) {
+        writes = 0;
+        unscoped = false;
+      }
+    },
+    begin() {
+      session = randomUUID();
+      prior = 0;
+    },
+    dropSession() {
+      session = null;
+      prior = 0;
+    },
+    scoped: () => session !== null && !unscoped && writes > 0,
+  };
 }
 
 export interface PreflightIssue {
@@ -334,54 +386,75 @@ interface PreflightChange {
 
 const MISSING_DEPENDENCY = /unknown|not found|does not exist|no such|must exist|no [a-z_ ]+ named/i;
 
+const sessionLost = (err: unknown) => err instanceof AtlasApiError && err.status === 409 && /dry-run session/i.test(err.message);
+
 /**
- * Run every change against the server's dry run before anything is written. A change the server
- * would refuse is an error. A change that fails on a resource an earlier change of this plan creates
- * (the dry run rolled that creation back) is deferred, not an error. A key without write scope, or
- * a server error, makes the pass unavailable rather than failing the plan.
+ * Run the whole plan against the server's dry run before anything is written, as one unit: the server replays the
+ * changes it already validated before checking the next, so a reference to something an earlier change creates
+ * counts as present, a reference to something an earlier change deletes counts as gone, and a name that is in
+ * neither the plan nor the instance is a real error here. Only a change that could not be checked inside the
+ * session (a server that does not scope dry runs, a lost session, an endpoint that answered with a plan instead of
+ * a validation) and that fails on something an earlier create might have provided is deferred. A key without
+ * write scope, or a server error, makes the pass unavailable rather than failing the plan.
  */
 export async function runPreflight(
   changes: readonly PreflightChange[],
-  gate: { setDryRun(on: boolean): void },
+  gate: PreflightGate,
   typeOrder: ReadonlyMap<string, number>,
   hasPlaceholders: (c: PreflightChange) => boolean,
 ): Promise<PreflightReport> {
   const report: PreflightReport = { checked: 0, errors: [], deferred: [], skipped: [], unavailable: null };
-  for (const [i, change] of changes.entries()) {
+  gate.begin?.();
+  /** Earlier creates whose dry run did not join the session: what a dependent change may be waiting on. */
+  const unscopedCreates: Array<{ order: number }> = [];
+  for (const change of changes) {
     const key = change.key || null;
     if (hasPlaceholders(change)) {
       report.skipped.push({ type: change.type, key, reason: 'a ${VAR} placeholder is unresolved' });
       continue;
     }
     const order = typeOrder.get(change.type) ?? 0;
-    const dependent = changes.slice(0, i).some((c) => c.action === 'create' && (typeOrder.get(c.type) ?? 0) <= order);
-    gate.setDryRun(true);
-    try {
-      await change.apply();
-      report.checked += 1;
-    } catch (err) {
-      report.checked += 1;
-      const issue: PreflightIssue = {
-        type: change.type,
-        key,
-        action: change.action,
-        message: err instanceof Error ? err.message : String(err),
-        ...(err instanceof AtlasApiError ? { status: err.status } : {}),
-      };
-      const status = err instanceof AtlasApiError ? err.status : undefined;
-      if (status === 401 || status === 403) {
-        report.unavailable = `the key cannot dry-run writes (${status}); the changes were not validated against the server`;
+    const dependent = unscopedCreates.some((c) => c.order <= order);
+    let failed = false;
+    let retried = false;
+    for (;;) {
+      gate.setDryRun(true);
+      try {
+        await change.apply();
+        report.checked += 1;
         break;
-      }
-      if (status === 429) {
-        report.unavailable = 'rate limited during validation; the remaining changes were not validated';
+      } catch (err) {
+        if (sessionLost(err) && !retried && gate.dropSession) {
+          retried = true;
+          gate.dropSession();
+          continue;
+        }
+        failed = true;
+        report.checked += 1;
+        const issue: PreflightIssue = {
+          type: change.type,
+          key,
+          action: change.action,
+          message: err instanceof Error ? err.message : String(err),
+          ...(err instanceof AtlasApiError ? { status: err.status } : {}),
+        };
+        const status = err instanceof AtlasApiError ? err.status : undefined;
+        if (status === 401 || status === 403) {
+          report.unavailable = `the key cannot dry-run writes (${status}); the changes were not validated against the server`;
+          return report;
+        }
+        if (status === 429) {
+          report.unavailable = 'rate limited during validation; the remaining changes were not validated';
+          return report;
+        }
+        if ((status !== undefined && status >= 500) || (dependent && (status === 404 || MISSING_DEPENDENCY.test(issue.message)))) report.deferred.push(issue);
+        else report.errors.push(issue);
         break;
+      } finally {
+        gate.setDryRun(false);
       }
-      if (status === 404 || (status !== undefined && status >= 500) || (dependent && MISSING_DEPENDENCY.test(issue.message))) report.deferred.push(issue);
-      else report.errors.push(issue);
-    } finally {
-      gate.setDryRun(false);
     }
+    if (change.action === 'create' && (failed || !gate.scoped?.())) unscopedCreates.push({ order });
   }
   return report;
 }

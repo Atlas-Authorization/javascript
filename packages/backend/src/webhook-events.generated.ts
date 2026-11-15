@@ -987,6 +987,26 @@ export type WebhookDataIdentityVerification = {
   [key: string]: unknown;
 };
 
+/** An identity check that made progress without a verdict. */
+export type WebhookDataIdentityVerificationUpdated = {
+  object: "identity_verification";
+  id: string;
+  user_id: string;
+  provider: string;
+  status: "pending" | "processing" | "approved" | "declined" | "needs_review";
+  /** What changed: the check moved to processing, the service reported a failed attempt the person can retry, or the service erased its copy. */
+  change: "processing" | "attempt_failed" | "redacted";
+  /** The latest failed attempt, or null. */
+  last_error?: {
+    code?: string;
+    reason?: string | null;
+    [key: string]: unknown;
+  } | null;
+  /** Failed attempts reported so far. */
+  attempts?: number;
+  [key: string]: unknown;
+};
+
 /** An identity-governance event: a request, grant, access-review campaign, separation-of-duties violation or joiner/mover/leaver change. */
 export type WebhookDataIga = {
   object: "iga_request" | "iga_grant" | "iga_campaign" | "iga_sod_violation" | "iga_jml" | "iga_activation";
@@ -2550,6 +2570,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"group.member_removed", WebhookDataGroupMember>
   | AtlasWebhookEnvelope<"group.updated", WebhookDataGroup>
   | AtlasWebhookEnvelope<"identity_verification.completed", WebhookDataIdentityVerification>
+  | AtlasWebhookEnvelope<"identity_verification.updated", WebhookDataIdentityVerificationUpdated>
   | AtlasWebhookEnvelope<"iga_activation.started", WebhookDataIga>
   | AtlasWebhookEnvelope<"iga_campaign.closed", WebhookDataIga>
   | AtlasWebhookEnvelope<"iga_campaign.launched", WebhookDataIga>
@@ -2865,6 +2886,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "group.member_removed",
   "group.updated",
   "identity_verification.completed",
+  "identity_verification.updated",
   "iga_activation.started",
   "iga_campaign.closed",
   "iga_campaign.launched",

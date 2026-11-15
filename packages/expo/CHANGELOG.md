@@ -1,5 +1,9 @@
 # @atlasauth/expo changelog
 
+## 0.12.0
+
+- Re-exports `stepUpFactorInfo`, `STEP_UP_FACTORS` and their types from `@atlasauth/js`.
+
 ## 0.11.0
 
 - Default React Native sign-in, sign-up, second-factor and security screens; the sign-up screen view-model handles second-factor setup and required actions.

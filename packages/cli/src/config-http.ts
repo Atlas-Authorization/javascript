@@ -14,11 +14,16 @@ import { redactDeep } from './redact';
  * interface so tests inject an in-memory fake with no network.
  */
 export interface ConfigHttp {
-  get<T>(path: string): Promise<T>;
-  post<T>(path: string, body: unknown): Promise<T>;
-  put<T>(path: string, body: unknown): Promise<T>;
-  patch<T>(path: string, body: unknown): Promise<T>;
-  delete(path: string, body?: unknown): Promise<void>;
+  get<T>(path: string, init?: ConfigRequestInit): Promise<T>;
+  post<T>(path: string, body: unknown, init?: ConfigRequestInit): Promise<T>;
+  put<T>(path: string, body: unknown, init?: ConfigRequestInit): Promise<T>;
+  patch<T>(path: string, body: unknown, init?: ConfigRequestInit): Promise<T>;
+  delete(path: string, body?: unknown, init?: ConfigRequestInit): Promise<void>;
+}
+
+/** Per-call extras: request headers (the plan-scoped dry-run session rides here). */
+export interface ConfigRequestInit {
+  headers?: Record<string, string>;
 }
 
 /** The fields a write sent that the endpoint ignored, as the response headers name them. */
@@ -45,9 +50,10 @@ export function createConfigHttp(opts: {
     throw new Error('No fetch implementation found for the Atlas config client.');
   }
 
-  async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async function send<T>(method: string, path: string, body?: unknown, init?: ConfigRequestInit): Promise<T> {
     const headers: Record<string, string> = {
       ...opts.headers,
+      ...init?.headers,
       authorization: `Bearer ${opts.secretKey}`,
       accept: 'application/json',
     };
@@ -68,12 +74,12 @@ export function createConfigHttp(opts: {
   }
 
   return {
-    get: (path) => send('GET', path),
-    post: (path, body) => send('POST', path, body),
-    put: (path, body) => send('PUT', path, body),
-    patch: (path, body) => send('PATCH', path, body),
-    delete: async (path, body) => {
-      await send<void>('DELETE', path, body);
+    get: (path, init) => send('GET', path, undefined, init),
+    post: (path, body, init) => send('POST', path, body, init),
+    put: (path, body, init) => send('PUT', path, body, init),
+    patch: (path, body, init) => send('PATCH', path, body, init),
+    delete: async (path, body, init) => {
+      await send<void>('DELETE', path, body, init);
     },
   };
 }

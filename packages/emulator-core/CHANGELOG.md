@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- Models `PUT`, `GET` and `DELETE /v1/connections/oauth_clients`, with `host_params` validation for providers with connection extras.
+- Knows the `identity_verification.updated` event.
+
 ## 0.3.1
 
 - Validates requests against the latest API description: operations that the real API documents with more than one success status now answer with the same status (for example 201 on create), and newly required request fields are enforced.

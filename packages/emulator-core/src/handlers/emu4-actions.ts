@@ -173,6 +173,42 @@ const clientsTable = (e: Engine): Table => {
   return t;
 };
 
+/**
+ * The non-secret settings a connection OAuth client of a provider carries in `host_params` (the live catalog's `connection_extras`).
+ * `strict` providers take nothing else; the emulator has no provider catalog, so any other provider's host values pass unchecked.
+ * Keep in step with the TikTok Shop and eBay entries of the provider catalog.
+ */
+const CLIENT_EXTRAS: Record<string, { strict: boolean; extras: Array<{ key: string; label: string; required: boolean; pattern: string }> }> = {
+  tiktok_shop: { strict: true, extras: [{ key: 'service_id', label: 'Service ID', required: true, pattern: '[A-Za-z0-9_-]{1,64}' }] },
+  ebay: { strict: false, extras: [{ key: 'ru_name', label: 'RuName', required: false, pattern: '[A-Za-z0-9_.-]{1,128}' }] },
+};
+const HOST_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,40}$/;
+const HOST_VALUE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$/;
+
+function checkClientHostParams(provider: string, raw: unknown): Record<string, string> {
+  if (raw === undefined || raw === null) raw = {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw bad('host_params must be an object.', 'host_params');
+  const spec = CLIENT_EXTRAS[provider];
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Obj)) {
+    const extra = spec?.extras.find((x) => x.key === k);
+    if (spec?.strict && !extra) throw bad(`${provider} does not take host_params.${k}.`, `host_params.${k}`);
+    if (!HOST_KEY.test(k)) throw bad(`host_params.${k} is not a valid name.`, `host_params.${k}`);
+    if (typeof v !== 'string' || !v.trim() || v.length > 253) throw bad(`host_params.${k} must be a non-empty string.`, `host_params.${k}`);
+    if (!HOST_VALUE.test(v.trim()) || (extra && !new RegExp(`^(?:${extra.pattern})$`).test(v.trim()))) throw bad(`host_params.${k} is not an accepted value.`, `host_params.${k}`);
+    out[k] = v.trim();
+  }
+  for (const x of spec?.extras ?? []) if (x.required && !out[x.key]) throw bad(`host_params.${x.key} is required for ${provider} (${x.label}).`, `host_params.${x.key}`);
+  return out;
+}
+
+const clientView = (e: Engine, row: Obj): Obj => ({
+  object: 'connection_oauth_client', id: row.id, owner: row.owner_type === 'instance' ? { type: 'instance' } : { type: row.owner_type, id: row.owner_id }, provider: row.provider, environment: row.environment, client_id: row.client_id, has_secret: true,
+  auth_method: row.auth_method, key_id: row.key_id ?? null, key_alg: row.key_alg ?? null, public_jwk: row.public_jwk ?? null, jwks_url: null, mtls_cert: null, registered_via: row.registered_via ?? null, registration_client_uri: row.registration_client_uri ?? null,
+  scopes: row.scopes ?? [], host_params: row.host_params ?? {}, enabled: row.enabled !== false, redirect_uri: row.redirect_uri ?? null, callback_url: row.redirect_uri ?? `${e.issuer}/v1/oauth/callback/${row.provider}`, forward_url: `${e.issuer}/v1/oauth/callback/${row.provider}`,
+  created_at: row.created_at, updated_at: row.updated_at ?? row.created_at,
+});
+
 export function emu4ActionsHandlers(): RouteDef[] {
   const openAction = (e: Engine, id: string | undefined): Obj => {
     const a = e.generic.get('actions')?.get(id);
@@ -468,6 +504,70 @@ export function emu4ActionsHandlers(): RouteDef[] {
             object: 'connection_oauth_client', id: row.id, owner: instanceWide ? { type: 'instance' } : { type: ownerType, id: ownerId }, provider: row.provider, environment, client_id: clientId, has_secret: true, auth_method: row.auth_method, key_id: row.key_id, key_alg: row.key_alg, public_jwk: publicJwk, jwks_url: publicJwk ? `${e.issuer}/v1/connection_client_jwks/${e.instanceId}/${row.id}` : null, mtls_cert: null, registered_via: 'dcr', registration_client_uri: row.registration_client_uri, scopes: row.scopes, host_params: {}, enabled: true, redirect_uri: row.redirect_uri, callback_url: row.redirect_uri ?? `${e.issuer}/v1/oauth/callback/${b.provider}`, forward_url: `${e.issuer}/v1/oauth/callback/${b.provider}`, created_at: now, updated_at: now, secret_expires_at: expires ? expires * 1000 : null,
           },
         };
+      },
+    },
+    {
+      // Set (create or replace) the owner's own client, or the instance-wide one, for a provider and environment.
+      method: 'PUT',
+      pattern: '/v1/connections/oauth_clients',
+      scope: 'organizations:write',
+      handler: (c) => {
+        const e = c.engine;
+        const b = c.body;
+        const owner = (b.owner ?? {}) as Obj;
+        const instanceWide = b.owner === undefined || b.owner === null || owner.type === 'instance';
+        if (!instanceWide && (!OWNER_TYPES.includes(owner.type) || typeof owner.id !== 'string' || !owner.id)) throw bad('owner must be omitted, {type: "instance"}, or {type: "organization" | "user" | "external", id}.', 'owner');
+        if (typeof b.provider !== 'string' || !PROVIDER.test(b.provider)) throw bad('provider must be a short lowercase key.', 'provider');
+        if (!instanceWide && owner.type === 'organization' && !e.db.organizations.get(owner.id)) throw notFound('Organization');
+        if (!instanceWide && owner.type === 'user' && !e.db.users.get(owner.id)) throw notFound('User');
+        if (b.environment !== undefined && b.environment !== 'production' && b.environment !== 'sandbox') throw bad('environment must be production or sandbox.', 'environment');
+        const environment = b.environment ?? 'production';
+        if (typeof b.client_id !== 'string' || !b.client_id || b.client_id.length > 512) throw bad('client_id is required (up to 512 characters).', 'client_id');
+        if (b.client_secret !== undefined && (typeof b.client_secret !== 'string' || !b.client_secret || b.client_secret.length > 8192)) throw bad('client_secret must be 1 to 8192 characters.', 'client_secret');
+        if (b.redirect_uri !== undefined && b.redirect_uri !== null) {
+          let u: URL | undefined;
+          try {
+            u = typeof b.redirect_uri === 'string' && b.redirect_uri.length <= 2048 ? new URL(b.redirect_uri) : undefined;
+          } catch {
+            /* refused below */
+          }
+          if (!u || u.protocol !== 'https:' || u.username || u.password || u.hash) throw bad('redirect_uri must be an https URL with no credentials and no fragment.', 'redirect_uri');
+        }
+        const ownerType = instanceWide ? 'instance' : owner.type;
+        const ownerId = instanceWide ? 'instance' : owner.id;
+        const clients = clientsTable(e);
+        const existing = clients.find((r) => r.owner_type === ownerType && r.owner_id === ownerId && r.provider === b.provider && r.environment === environment);
+        if (!existing && !b.client_secret) throw bad('client_secret is required.', 'client_secret');
+        const hostParams = checkClientHostParams(b.provider, b.host_params === undefined ? (existing?.host_params ?? {}) : b.host_params);
+        const redirectUri = b.redirect_uri === undefined ? (existing?.redirect_uri ?? null) : b.redirect_uri;
+        const fields = { client_id: b.client_id, scopes: Array.isArray(b.scopes) ? b.scopes.filter((x: unknown) => typeof x === 'string') : (existing?.scopes ?? []), host_params: hostParams, enabled: typeof b.enabled === 'boolean' ? b.enabled : (existing?.enabled ?? true), redirect_uri: redirectUri, auth_method: existing?.auth_method ?? 'client_secret' };
+        const row = existing ? (clients.update(existing.id, { ...fields, updated_at: e.clock.now() }) as Obj) : clients.insert({ owner_type: ownerType, owner_id: ownerId, provider: b.provider, environment, key_id: null, key_alg: null, public_jwk: null, registration_client_uri: null, created_at: e.clock.now(), updated_at: e.clock.now(), ...fields });
+        // The secret is never stored in the row, the audit log or the answer.
+        audit(e, 'oauth_client_set', 'connection', row.id, { provider: row.provider, owner_type: ownerType, owner_id: ownerId, environment, auth_method: row.auth_method, ...(row.redirect_uri ? { redirect_uri: row.redirect_uri } : {}) });
+        return { body: clientView(e, row) };
+      },
+    },
+    {
+      method: 'GET',
+      pattern: '/v1/connections/oauth_clients',
+      scope: 'organizations:read',
+      handler: (c) => {
+        const q = c.query;
+        const rows = clientsTable(c.engine).all().filter((r) => (!q.get('owner_type') || r.owner_type === q.get('owner_type')) && (!q.get('owner_id') || r.owner_id === q.get('owner_id')) && (!q.get('provider') || r.provider === q.get('provider')));
+        return { body: { object: 'list', data: rows.map((r) => clientView(c.engine, r)), has_more: false, next_cursor: null } };
+      },
+    },
+    {
+      method: 'DELETE',
+      pattern: '/v1/connections/oauth_clients/:id',
+      scope: 'organizations:write',
+      handler: (c) => {
+        const row = clientsTable(c.engine).get(c.params.id);
+        if (!row) throw notFound('Client');
+        if (c.engine.generic.get('connections')?.find((x) => x.oauth_client_id === row.id)) throw new EmulatorError('CONFLICT', 'Connections still use this client; disconnect or delete them first.');
+        clientsTable(c.engine).delete(row.id);
+        audit(c.engine, 'oauth_client_deleted', 'connection', row.id, { provider: row.provider });
+        return { status: 204 };
       },
     },
     {

@@ -34,4 +34,8 @@ export const emu4ActionsParityRequests: ParityRequest[] = [
   // ── dynamic client registration and the public key ──
   q('a4 register refused', 'POST', '/v1/connections/oauth_clients/register', { body: { provider: 'acme', registration_endpoint: 'http://registrar.example/register' }, group: 'connections' }),
   q('a4 client jwks', 'GET', '/v1/connection_client_jwks/ins_missing/oac_missing', { anonymous: true, group: 'connections' }),
+  // ── per-owner OAuth clients ──
+  q('a4 client set', 'PUT', '/v1/connections/oauth_clients', { body: { owner: { type: 'user', id: '{{a4u}}' }, provider: 'github', client_id: 'parity-{{rand}}', client_secret: 'parity-secret' }, capture: { a4oc: 'id' }, group: 'connections' }),
+  q('a4 clients list', 'GET', '/v1/connections/oauth_clients?provider=github', { group: 'connections', tolerate: ['data'] }),
+  q('a4 client delete', 'DELETE', '/v1/connections/oauth_clients/{{a4oc}}', { group: 'connections' }),
 ];

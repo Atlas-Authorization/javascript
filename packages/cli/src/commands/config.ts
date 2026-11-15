@@ -2349,13 +2349,41 @@ interface PlanValidation {
 }
 
 /**
+ * A connection OAuth client in the file that lacks a setting its provider requires (TikTok Shop's service_id in `host_params`),
+ * read from the provider catalog. The server's dry run refuses the same, but skips an entry that still has a `${VAR}`.
+ * Unknown keys and malformed values are left to that dry run.
+ */
+export async function connectionClientExtraErrors(http: ConfigHttp, sections: Array<{ type: string; doc: Json }>): Promise<string[]> {
+  const clients = sections.filter((s) => s.type === 'connection_oauth_clients').flatMap((s) => asArray(s.doc));
+  if (!clients.length) return [];
+  let catalog: Array<{ provider: string; connection_extras?: Array<{ key: string; label: string; required: boolean }> }>;
+  try {
+    catalog = (await http.get<{ data?: typeof catalog }>('/v1/oauth_providers'))?.data ?? [];
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const c of clients) {
+    const o = obj(c);
+    const required = catalog.find((p) => p.provider === o.provider)?.connection_extras?.filter((x) => x.required) ?? [];
+    const given = obj((o.host_params ?? {}) as Json);
+    for (const x of required) {
+      if (given[x.key] === undefined || given[x.key] === null || given[x.key] === '') {
+        out.push(`connection_oauth_clients ${String(o.provider)}: host_params.${x.key} (${x.label}) is required for this provider.`);
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Check a plan before it is applied: the file against the limits the server publishes
  * (`GET /v1/config/limits`), then every change against the server's own dry run. `--skip-validate`
  * leaves out the dry run. An older server with no limits endpoint is simply checked by the dry run.
  */
 async function validatePlan(http: ConfigHttp, plan: ConfigPlan, values: Values): Promise<PlanValidation> {
   const limits = await fetchConfigLimits(http).catch(() => null);
-  const limitErrors = limits ? validateAgainstLimits(plan.sections, limits) : [];
+  const limitErrors = [...(limits ? validateAgainstLimits(plan.sections, limits) : []), ...(await connectionClientExtraErrors(http, plan.sections))];
   const report = values['skip-validate'] === true || plan.changes.length === 0 ? null : await plan.preflight();
   return { limitErrors, report };
 }
@@ -2381,7 +2409,7 @@ function printValidation(ctx: RunContext, v: PlanValidation): void {
     ctx.io.out(`Validation: ${errors.length} error(s) apply would hit:`);
     for (const e of errors) ctx.io.out(`    ${e}`);
   }
-  for (const i of v.report?.deferred ?? []) ctx.io.out(`note: ${issueLine(i)} (not validated before apply; it depends on something this plan creates)`);
+  for (const i of v.report?.deferred ?? []) ctx.io.out(`note: ${issueLine(i)} (not validated before apply: it could not be checked against the other changes of this plan)`);
   for (const s of v.report?.skipped ?? []) ctx.io.out(`note: ${s.type}${s.key ? ` ${s.key}` : ''} was not validated: ${s.reason}.`);
   if (v.report?.unavailable) ctx.io.out(`note: ${v.report.unavailable}.`);
 }

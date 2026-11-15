@@ -2,6 +2,10 @@
 
 
 
+## 0.20.1
+
+- Uses @atlasauth/js 0.47.0.
+
 ## 0.20.0
 
 - Journey file fields upload for real in the widget (images and PDF, up to 5 MB); sign-up journeys and page templates per audience.

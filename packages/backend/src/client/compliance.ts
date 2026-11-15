@@ -36,7 +36,7 @@ export interface InstanceNotice {
   id: string;
   date: string;
   type: 'behavior_change' | 'deprecation' | 'new';
-  tags: Array<'breaking' | 'behaviour' | 'security'>;
+  tags: Array<'breaking' | 'behaviour' | 'security' | 'type_widening'>;
   title: string;
   summary: string;
   affects: string[];

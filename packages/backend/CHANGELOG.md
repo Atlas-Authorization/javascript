@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.55.0
+
+- **type-widening:** `IdentityVerificationOutcome` gains `processing` (a check the verification service is still reviewing). Identity verification checks carry `last_error` (`{ code, reason }` of the last failed attempt) and `attempts`; a failed attempt the person can retry keeps the check `pending`.
+- **type-widening:** `AtlasWebhookEvent` gains `identity_verification.updated` (a check moved to processing, recorded a failed attempt, or was redacted by the service). Changelog notice `tags` can include `type_widening`.
+- Service connectors of an identity verification kind carry `webhook_url` and `webhook_events` from the moment they are created.
+
 ## 0.54.0
 
 - Resilience: requests that get a 429 (any method) or 503 (GET, PUT, DELETE, or a write with an idempotency key) are retried up to twice, waiting for `Retry-After` or an exponential backoff with jitter. Configure with `retry: { maxRetries, baseDelayMs, maxDelayMs }` or turn off with `retry: false`. `AtlasApiError.retryAfterMs` carries the server's `Retry-After`.

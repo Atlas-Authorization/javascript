@@ -4,10 +4,13 @@ import type { FapiClient, FlowState } from './fapi';
 export interface IdentityVerificationStatus {
   object: 'identity_verification';
   /** `none` until the user starts a check. `needs_review` waits for an operator. */
-  status: 'none' | 'pending' | 'approved' | 'declined' | 'needs_review';
+  status: 'none' | 'pending' | 'processing' | 'approved' | 'declined' | 'needs_review';
   id?: string;
   provider?: string;
   reason?: string | null;
+  /** The latest failed attempt the person can retry on the same page (the check stays `pending`). */
+  last_error?: { code: string; reason: string | null } | null;
+  attempts?: number;
   /** The service's hosted verification page, while `pending`. */
   url?: string | null;
   created_at?: number;
@@ -19,7 +22,7 @@ export type IdentityVerificationResult = { ok: true; data: IdentityVerificationS
 /**
  * Start (or resume) the signed-in user's identity check. Send the person to
  * `data.url`; they come back to `redirectUrl` (https) when done. Then call
- * {@link getIdentityVerification} until `status` is no longer `pending`.
+ * {@link getIdentityVerification} until `status` is no longer `pending` or `processing`.
  */
 export async function startIdentityVerification(client: FapiClient, redirectUrl?: string): Promise<IdentityVerificationResult> {
   const res = await client.post<IdentityVerificationStatus>('/v1/client/me/identity_verification', redirectUrl ? { redirect_url: redirectUrl } : {});

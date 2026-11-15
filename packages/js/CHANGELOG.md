@@ -1,5 +1,10 @@
 # @atlasauth/js changelog
 
+## 0.47.0
+
+- `stepUpFactorInfo(factor)` returns `{ factor, label, needsInput, inputKind }` for any step-up factor, including ones this version does not know yet, and `STEP_UP_FACTORS` lists the known ones. Render factors from it instead of switching over `StepUpFactor`, and new factors appear without an app release.
+- **type-widening:** identity verification statuses gain `processing`; checks carry `last_error` and `attempts`.
+
 ## 0.46.0
 
 - `bindSession` and the `sessionBinding` option bind a session to a DPoP key; native navigation tickets let a bound session open hosted pages.
