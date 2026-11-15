@@ -44,6 +44,7 @@
   "devDependencies": {
     "@atlasauth/backend": "workspace:*",
     "@atlasauth/js": "workspace:*",
+    "@sveltejs/kit": "2.70.3",
     "@sveltejs/package": "^2.3.7",
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@testing-library/jest-dom": "^6.6.3",

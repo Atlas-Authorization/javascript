@@ -60,10 +60,11 @@
     }
   },
   "devDependencies": {
+    "@atlasauth/backend": "workspace:*",
     "@langchain/core": "^1.4.1",
+    "ai": "7.0.127",
     "typescript": "^5.6.3",
-    "vitest": "^4.1.12",
-    "@atlasauth/backend": "workspace:*"
+    "vitest": "^4.1.12"
   },
   "publishConfig": {
     "access": "public"
