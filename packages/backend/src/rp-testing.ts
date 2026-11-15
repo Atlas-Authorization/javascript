@@ -7,7 +7,8 @@
  *   const started = await rp.start(new Request('https://app.test/auth/sign-in'));
  *   const callbackUrl = issuer.authorize(started.headers.get('location')!); // the user signs in
  *
- * Web standards and `jose` only, like the relying party itself.
+ * `signAtlasWebhook` / `signStandardWebhook` produce correctly signed webhook deliveries for
+ * testing your receiver. Web standards and `jose` only, like the relying party itself.
  */
 import { SignJWT, exportJWK, generateKeyPair, type KeyLike } from 'jose';
 import { BACKCHANNEL_LOGOUT_EVENT } from './logout-token';
@@ -180,4 +181,46 @@ async function s256(value: string): Promise<string> {
   let bin = '';
   for (const b of digest) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** A signed webhook delivery: the raw `body` to POST and the `headers` to send with it. */
+export interface SignedWebhook {
+  body: string;
+  headers: Record<string, string>;
+}
+
+async function hmacBase64(keyBytes: Uint8Array, material: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(material)));
+  let bin = '';
+  for (const b of mac) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+/**
+ * Sign an Atlas event the way Atlas delivers it (`atlas-id`, `atlas-timestamp` in ms,
+ * `atlas-signature: v1,<base64>`), for exercising `verifyAtlasWebhook` and your receiver.
+ * `secret` is the endpoint secret as a string; `payload` is serialized as the body.
+ */
+export async function signAtlasWebhook(options: { secret: string; payload: unknown; id?: string; timestamp?: number }): Promise<SignedWebhook> {
+  const body = typeof options.payload === 'string' ? options.payload : JSON.stringify(options.payload);
+  const id = options.id ?? `msg_${randomId()}`;
+  const timestamp = options.timestamp ?? Date.now();
+  const mac = await hmacBase64(new TextEncoder().encode(options.secret), `${id}.${timestamp}.${body}`);
+  return { body, headers: { 'atlas-id': id, 'atlas-timestamp': String(timestamp), 'atlas-signature': `v1,${mac}` } };
+}
+
+/**
+ * Sign an application event the Standard Webhooks way (`webhook-id`, `webhook-timestamp` in
+ * seconds, `webhook-signature: v1,<base64>`, keyed with the base64 part of `whsec_...`), for
+ * exercising `verifyStandardWebhookWeb` and your receiver.
+ */
+export async function signStandardWebhook(options: { secret: string; payload: unknown; id?: string; timestamp?: number }): Promise<SignedWebhook> {
+  const body = typeof options.payload === 'string' ? options.payload : JSON.stringify(options.payload);
+  const id = options.id ?? `msg_${randomId()}`;
+  const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+  const b64 = options.secret.startsWith('whsec_') ? options.secret.slice('whsec_'.length) : options.secret;
+  const keyBytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const mac = await hmacBase64(keyBytes, `${id}.${timestamp}.${body}`);
+  return { body, headers: { 'webhook-id': id, 'webhook-timestamp': String(timestamp), 'webhook-signature': `v1,${mac}` } };
 }

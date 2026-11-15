@@ -1,7 +1,10 @@
 {
   "name": "@atlasauth/backend",
-  "version": "0.53.0",
+  "version": "0.54.0",
   "main": "./dist/index.js",
+  "bin": {
+    "atlas-doctor": "./dist/doctor-cli.js"
+  },
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
@@ -138,9 +141,13 @@
     "url": "https://github.com/alphajew420/ssoly/issues"
   },
   "peerDependencies": {
-    "@atlasauth/pca": "^0.4.3"
+    "@atlasauth/pca": "^0.4.3",
+    "@opentelemetry/api": "^1.9.0"
   },
   "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    },
     "@atlasauth/pca": {
       "optional": true
     }

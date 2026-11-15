@@ -155,6 +155,9 @@ const OPTIONS = {
   comment: { type: 'string' },
   // compliance (data rights board, translation review).
   assignee: { type: 'string' },
+  // region set.
+  'failover-region': { type: 'string' },
+  'fapi-isolation': { type: 'string' },
   priority: { type: 'string' },
   label: { type: 'string' },
   overdue: { type: 'string' },

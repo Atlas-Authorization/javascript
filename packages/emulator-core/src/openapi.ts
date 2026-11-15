@@ -14,6 +14,7 @@ export interface Operation {
   requestRequired: boolean;
   /** Lowest 2xx response code, and its JSON schema. */
   successStatus: number;
+  successStatuses: number[];
   successSchema?: Obj;
   parameters: Obj[];
   pattern: RegExp;
@@ -93,9 +94,11 @@ export class OpenApiIndex {
           operationId: op.operationId,
           scope: op['x-required-scope'],
           needsSecretKey: Array.isArray(op.security) && op.security.some((s: Obj) => 'secretKey' in s),
-          requestSchema: body,
+          // The org policy PATCH is checked by the policy validator (422), not by the schema (400).
+          requestSchema: path === '/v1/organizations/{id}/policy' && method === 'patch' ? undefined : body,
           requestRequired: op.requestBody?.required === true,
           successStatus: code ? Number(code) : 200,
+          successStatuses: codes.map(Number),
           successSchema: resp,
           parameters: op.parameters ?? [],
           ...c,

@@ -13,8 +13,8 @@ import {
 export { ATLAS_WEBHOOK_HEADERS } from './webhook-common';
 export type { WebhookVerifyFailure, WebhookVerifyOptions, WebhookVerifyResult } from './webhook-common';
 // The Web-standards verifier lives in its own module (the rp entry loads only that one).
-export { verifyAtlasWebhook, verifyAtlasWebhookRequest } from './webhooks-web';
-export type { VerifyAtlasWebhookInput } from './webhooks-web';
+export { verifyAtlasWebhook, verifyAtlasWebhookRequest, verifyStandardWebhookWeb, verifyStandardWebhookRequest } from './webhooks-web';
+export type { VerifyAtlasWebhookInput, VerifyStandardWebhookWebInput } from './webhooks-web';
 
 /**
  * §12.2 — verify an inbound Atlas webhook, for the CUSTOMER consuming events.

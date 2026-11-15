@@ -9,9 +9,9 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "@astrojs/node": "^9.0.0",
+    "@astrojs/node": "^11.1.13",
     "@atlasauth/astro": "^0.3.0",
-    "astro": "^5.1.0"
+    "astro": "^7.4.12"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

@@ -329,7 +329,8 @@ export function governanceHandlers(): RouteDef[] {
         else if (c.body.bundle && typeof c.body.bundle === 'object') text = JSON.stringify(c.body.bundle);
         else throw bad('bundle is required: the object or the exact string an export returned.', 'bundle');
         // A digest or signature that was sent must match: a tampered bundle never loads.
-        if (c.body.bundle_sha256 !== undefined && c.body.bundle_sha256 !== hex(await sha256(text))) throw bad('bundle_sha256 does not match the bundle.', 'bundle_sha256');
+        const wantSha = c.body.sha256 ?? c.body.bundle_sha256;
+        if (wantSha !== undefined && wantSha !== hex(await sha256(text))) throw bad('sha256 does not match the bundle.', c.body.sha256 !== undefined ? 'sha256' : 'bundle_sha256');
         if (c.body.signature !== undefined) {
           const v = await e.tokens.verifyAny(String(c.body.signature));
           if (!v.ok || v.claims.token_use !== 'instance_export' || v.claims.sha256 !== hex(await sha256(text))) throw bad('signature does not verify for this bundle.', 'signature');

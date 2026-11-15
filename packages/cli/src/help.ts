@@ -1,4 +1,4 @@
-import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, type Ops } from './commands/resources';
+import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, PROVIDER_CHANGES, FLOWS, REFERRAL_REWARDS, POLICIES, REGION, OAUTH_PUBLISHERS, AGE_ASSURANCE, APPROVAL_DEVICES, type Ops } from './commands/resources';
 /**
  * All help text lives here as plain strings — the CLI's "docs" surface. Kept
  * out of the handlers so the dispatch code stays about control flow and the
@@ -22,7 +22,7 @@ Commands:
   orgs list|get|members
   api-keys list|create|revoke
   webhooks list|create|upsert|update|test|deliveries|redeliver|replay|rotate|reveal
-  changes tail               Watch the change feed (users, orgs, memberships, keys, machines)
+  changes tail|consumers     Watch the change feed (users, orgs, memberships, keys, machines); consumers lists its readers
   compliance posture|ropa|sign|board|requests|triage|i18n-check ...   Compliance reports, data rights board, translation checks
   mirror init                Print a starter schema + code to mirror Atlas data into your database
   listen --forward-to <url>  Forward live events to your local server, signed (no tunnel)
@@ -51,6 +51,15 @@ Commands:
                                       The audit chain: status, turn on, sign a checkpoint, list links
   federation show|resolve             OpenID federation
   vc deferred|approve|deny            Deferred credential issuance
+  provider-changes list|get|acknowledge|resolve   Provider scope or terms changes awaiting a decision
+  flows messages|message-cancel|readout   Journey message queue and experiment readouts
+  referral-rewards list|get|void|run  Referral reward ledger
+  policies audience|set-audience|translations|translation-set|translation-delete
+                                      Who a policy is asked of, and its per-language text
+  region show|set|pin|failover        Region pin, failover region, Frontend API isolation
+  oauth-publishers list|verify|attach|detach   Verified publishers of your OAuth apps
+  age-assurance list|record|revoke <user-id>   A user's age checks
+  approval-devices list|trust|remove <user-id>  A user's trusted approval devices
   csp --framework next|express|nginx
                              Print the Content Security Policy sources Atlas needs
   types generate [--out atlas-types.d.ts] [--check] [--from-config <atlas.yaml>]
@@ -526,7 +535,10 @@ Usage:
   atlas compliance note <request-id> --body <text>
   atlas compliance downstream <request-id>             erasure progress per tracked system
   atlas compliance downstream-done <request-id> <connector-id> [--status done|not_applicable] [--note n]
-  atlas compliance erasure-catalog | cookie-summary
+  atlas compliance erasure-catalog | cookie-summary | erasure-probe <connector-id>
+  atlas compliance downstream-run <request-id> <connector-id>   run one tracked system's erasure now (--yes)
+  atlas compliance cookie-consents | cookie-subject <subject> | cookie-subject-erase <subject> | cookie-user-erase <user-id>
+  atlas compliance i18n-reviews <localization-id>      the review history of one translation
   atlas compliance i18n-summary | i18n-review <id> --action submit|approve|request_changes|reopen [--note n]
   atlas compliance i18n-check --file translations.json   exit 1 when a translation fails (CI)
 
@@ -1110,7 +1122,7 @@ Usage:
         or a directory from 'atlas config export' (default ./atlas-config).
 
 Shows the plan, asks before applying (--yes skips the question; needed without a
-terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, referral_reward_rules, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, journey_experiments, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, write_budget, oauth_publishers, erasure_connectors, signing_key_schedule, audit_chain. Re-running is a no-op.
+terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, referral_reward_rules, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, journey_experiments, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, write_budget, oauth_publishers, erasure_connectors, signing_key_schedule, audit_chain, policy_audiences, oauth_publisher_clients, region. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --skip-validate leave out the server dry-run pass (the published-limit checks still run)
@@ -1196,4 +1208,12 @@ atlas audit verify [--after <seq>] [--jwks-url <url>] [--json]
   link or checkpoint does not match. Needs the chain on: atlas audit chain-enable.`,
   federation: resHelp('federation', 'OpenID federation', FEDERATION),
   vc: resHelp('vc', 'deferred verifiable credential issuance', VC),
+  'provider-changes': resHelp('provider-changes', 'changes a provider made to its scopes or terms: each affected connection is acknowledged or resolved', PROVIDER_CHANGES),
+  flows: resHelp('flows', 'journey message queue (list, cancel one) and experiment readouts', FLOWS),
+  'referral-rewards': resHelp('referral-rewards', 'the referral reward ledger; run applies the reward rules now (--data \'{"dry_run":true}\' to preview)', REFERRAL_REWARDS),
+  policies: resHelp('policies', 'policy audience (everyone, or members of listed organizations) and per-language text of a version (set takes --data with title and content_markdown)', POLICIES),
+  region: resHelp('region', 'where the instance lives; pin is one-way, set takes --failover-region and --fapi-isolation off|enforce', REGION),
+  'oauth-publishers': resHelp('oauth-publishers', 'verified publishers; attach takes the app\'s public client_id (--data \'{"allow_subject_change":true}\' to confirm a subject change)', OAUTH_PUBLISHERS),
+  'age-assurance': resHelp('age-assurance', 'age checks on record for a user, recording one and revoking one', AGE_ASSURANCE),
+  'approval-devices': resHelp('approval-devices', 'a user\'s trusted approval devices', APPROVAL_DEVICES),
 });

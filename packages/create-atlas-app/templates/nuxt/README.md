@@ -6,7 +6,7 @@ A minimal Nuxt 3 app pre-wired with [Atlas](https://atlasauth.net) auth, generat
 
 - `nuxt.config.ts` — the `@atlasauth/nuxt` module and its config. Verification values live in the
   server-only `runtimeConfig.atlas`; only the publishable key and Frontend API reach the browser.
-- `app.vue` — `<SignedIn>` / `<SignedOut>`, `<SignIn>` and `<UserButton>` (all auto-imported).
+- `app/app.vue` — `<SignedIn>` / `<SignedOut>`, `<SignIn>` and `<UserButton>` (all auto-imported).
 - `server/api/me.get.ts` — a protected Nitro route using `getAtlasAuth(event).protect()`.
 
 ## Getting started

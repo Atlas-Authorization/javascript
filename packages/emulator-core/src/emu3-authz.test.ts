@@ -24,7 +24,7 @@ async function world() {
 }
 
 describe('authz: explain shape', () => {
-  it('takes action (or the permission alias), validates the body and answers every layer', async () => {
+  it('takes action, validates the body and answers every layer', async () => {
     const { call, user, explain } = await world();
     const u = await user('shape');
     const ex = await explain({ subject: { id: u.id }, action: 'docs:read' });
@@ -32,7 +32,6 @@ describe('authz: explain shape', () => {
     expect(Object.keys(ex.layers)).toEqual(['rbac', 'org_roles', 'groups', 'resource_roles', 'abac', 'access_policies', 'fga']);
     expect(ex.layers.org_roles.status).toBe('evaluated');
     expect(ex.layers.resource_roles.status).toBe('skipped');
-    expect((await explain({ subject: { id: u.id }, permission: 'docs:read' })).action).toBe('docs:read');
     expect((await call('POST', '/v1/authz/explain', { subject: { id: u.id } })).status).toBe(400);
     expect((await call('POST', '/v1/authz/explain', { subject: { id: u.id }, action: 'x', layers: ['nope'] })).status).toBe(400);
     expect((await call('POST', '/v1/authz/explain', { subject: { id: u.id, type: 'machine' }, action: 'x' })).status).toBe(400);
@@ -133,7 +132,7 @@ describe('authz: resource roles', () => {
     expect((await call('POST', '/v1/resource_role_assignments', { resource: { id: folder.id }, subject: { type: 'robot', id: 'x' }, role: 'editor' })).status).toBe(400);
     expect((await call('POST', '/v1/resource_role_assignments', { resource: { id: 'res_none' }, subject, role: 'editor' })).status).toBe(404);
     const a = await call('POST', '/v1/resource_role_assignments', { resource: { type: 'folder', external_id: 'root' }, subject, role: 'editor' });
-    expect(a.status).toBe(200);
+    expect(a.status).toBe(201);
     expect(a.json).toMatchObject({ object: 'resource_role_assignment', resource_id: folder.id, subject, role: 'editor', inherit: true });
     expect(events(e, 'resource_role_assignment.created')[0]?.payload.data).toMatchObject({ resource_type: 'folder', resource_external_id: 'root' });
     // editor includes viewer; the file inherits the folder assignment and the role resolves against the folder's own type

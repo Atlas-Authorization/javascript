@@ -1,5 +1,12 @@
 # @atlasauth/rp changelog
 
+## 0.3.0
+
+### Added
+
+- `verifyStandardWebhookWeb` and `verifyStandardWebhookRequest`: Standard Webhooks verification (`webhook-id`, `webhook-timestamp`, `webhook-signature`, `whsec_` secrets) on Web Crypto only, for Workers, Deno, Bun and browsers.
+- `@atlasauth/rp/testing`: `signAtlasWebhook` and `signStandardWebhook` produce correctly signed webhook deliveries for testing your receiver.
+
 ## 0.2.0 — 2026-11-03
 
 ### Added

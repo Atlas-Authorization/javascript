@@ -1,6 +1,6 @@
 # @atlasauth/nuxt
 
-The official **Nuxt 3** module for [Atlas](https://atlasauth.net). A thin Nuxt
+The official **Nuxt 3 and 4** module for [Atlas](https://atlasauth.net). A thin Nuxt
 binding: the client half is [`@atlasauth/vue`](../vue) (the `createAtlas()` plugin,
 its composables and components), the server half mirrors
 [`@atlasauth/nextjs`](../nextjs) — it verifies the `__session` JWT **locally** with

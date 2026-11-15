@@ -166,9 +166,9 @@ async function mount(claims: Record<string, unknown>) {
         useValue: { publishableKey: 'pk_test_x', frontendApi: FAPI, fetchImpl, appearance: { instanceDesign: false } },
       },
       { provide: PLATFORM_ID, useValue: 'browser' },
-      // A root-scoped injector, as an application's is: the component's
-      // effect() resolves its scheduler from a `providedIn: 'root'` token.
-      { provide: (ng as unknown as Record<string, unknown>)['ɵINJECTOR_SCOPE'] as ng.InjectionToken<string>, useValue: 'root' },
+      // effect() asks for the change-detection scheduler; Angular 20 no longer provides it in a bare
+      // injector. The spec drives detectChanges() itself, so a scheduler that does nothing is enough.
+      { provide: ng.ɵChangeDetectionScheduler, useValue: { notify() {}, runningTick: false } },
     ],
   });
   const atlas = runInInjectionContext(base, () => new AtlasService());

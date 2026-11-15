@@ -406,7 +406,7 @@ describe('round-two routes', () => {
     const u = (await call('POST', '/v1/users', { email_address: 'k@example.com' })).json;
     const k = (await call('POST', '/v1/api_keys', { subject_type: 'user', subject_id: u.id, name: 'wide', scopes: ['*'] })).json;
     const rot = await call('POST', `/v1/api_keys/${k.id}/rotate`, { overlap_seconds: 600 });
-    expect(rot.status).toBe(201);
+    expect(rot.status).toBe(200);
     expect(rot.json.secret).not.toBe(k.secret);
     expect(rot.json.previous_key).toMatchObject({ id: k.id, revoked: false });
     // both secrets verify during the overlap, only the new one after it

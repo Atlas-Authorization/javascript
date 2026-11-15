@@ -37,7 +37,7 @@ import { idAccounts } from './commands/id-accounts';
 import { admin } from './commands/admin';
 import { partnerPlatforms } from './commands/partner-platforms';
 import {
-  AGENTS, AUDIT, BILLING, COMPLIANCE, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS,
+  AGENTS, AUDIT, BILLING, COMPLIANCE, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, PROVIDER_CHANGES, FLOWS, REFERRAL_REWARDS, POLICIES, REGION, OAUTH_PUBLISHERS, AGE_ASSURANCE, APPROVAL_DEVICES,
   resourceCommand,
 } from './commands/resources';
 import { ttyOf, type RunContext } from './context';
@@ -117,6 +117,14 @@ const COMMANDS: Record<string, Handler> = {
   audit: auditCommand(resourceCommand('audit', AUDIT)),
   federation: resourceCommand('federation', FEDERATION),
   vc: resourceCommand('vc', VC),
+  'provider-changes': resourceCommand('provider-changes', PROVIDER_CHANGES),
+  flows: resourceCommand('flows', FLOWS),
+  'referral-rewards': resourceCommand('referral-rewards', REFERRAL_REWARDS),
+  policies: resourceCommand('policies', POLICIES),
+  region: resourceCommand('region', REGION),
+  'oauth-publishers': resourceCommand('oauth-publishers', OAUTH_PUBLISHERS),
+  'age-assurance': resourceCommand('age-assurance', AGE_ASSURANCE),
+  'approval-devices': resourceCommand('approval-devices', APPROVAL_DEVICES),
 };
 
 /**

@@ -24,7 +24,7 @@ import { ATLAS_SIGNING_ALGS } from './algs';
  *    minute so a burst of callbacks cannot become an outbound request flood),
  *    the code exchange with the client's authentication method, and the JWKS
  *    (the package's rate-limited kid-miss cache).
- *  - ID-token verification with the algorithm PINNED to RS256 or ES256 (so `alg: none`
+ *  - ID-token verification with the algorithm PINNED to the five instance algorithms (so `alg: none`
  *    and HS* confusion are refused), `iss` exact, `aud` containing the client id
  *    (and `azp` equal to it when there are several audiences or an `azp` at all),
  *    `nonce` equal to the cookie's, `exp`/`iat` with a small tolerance, and
@@ -655,7 +655,7 @@ async function verifyIdToken(
   if (!header) throw invalid('it is not a JWT');
   // Pinned before any key lookup, so `none` and HS* never get near a key.
   if (typeof header.alg !== 'string' || !ATLAS_SIGNING_ALGS.includes(header.alg)) {
-    throw invalid(`its algorithm is ${String(header.alg)}, not RS256 or ES256`);
+    throw invalid(`its algorithm is ${String(header.alg)}, not one of RS256, ES256, ES384, PS256 or EdDSA`);
   }
 
   const keys = await jwksFor(discovery.jwks_uri, opts).get(typeof header.kid === 'string' ? header.kid : undefined);

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Validates requests against the latest API description: operations that the real API documents with more than one success status now answer with the same status (for example 201 on create), and newly required request fields are enforced.
+- Instance import accepts the bundle digest as `sha256` (the older `bundle_sha256` still works).
+
 ## 0.3.0
 
 - Models FGA model rewrites with batch check, list and expand, Cedar templates, access conditions, agent delegations, sandboxed Action code, encrypted request objects, `private_key_jwt`, form_post and JARM, billing proration and provider webhooks, journey experiments and scheduled messages, the audit chain, device-bound sessions, age assurance, erasure connectors, region pinning, SAML artifact binding, config snapshots and clones, and more of the advanced OAuth flows.

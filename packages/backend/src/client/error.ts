@@ -30,6 +30,8 @@ export class AtlasApiError extends Error {
   readonly status: number;
   /** The full §9.1 error envelope, in order. */
   readonly errors: AtlasErrorItem[];
+  /** The server's `Retry-After` in milliseconds (429/503), when it sent one. */
+  retryAfterMs?: number;
 
   constructor(status: number, errors: AtlasErrorItem[], message?: string) {
     super(message ?? errors[0]?.message ?? `Atlas API request failed with status ${status}`);

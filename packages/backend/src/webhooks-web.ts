@@ -8,6 +8,9 @@ import {
 } from './webhook-common';
 import type { AtlasWebhookEvent } from './webhook-events';
 
+/** Standard Webhooks header names (as application webhooks send them). Same values as `STANDARD_WEBHOOK_HEADERS` in `./webhooks`. */
+const STANDARD_HEADERS = { id: 'webhook-id', timestamp: 'webhook-timestamp', signature: 'webhook-signature' } as const;
+
 // ── Web-standards variant ──────────────────────────────────────────────────
 
 export interface VerifyAtlasWebhookInput extends WebhookVerifyOptions {
@@ -81,6 +84,67 @@ export async function verifyAtlasWebhookRequest<T = AtlasWebhookEvent>(
   options: Omit<VerifyAtlasWebhookInput, 'body' | 'headers'>,
 ): Promise<WebhookVerifyResult<T>> {
   return verifyAtlasWebhook<T>({ ...options, body: await request.text(), headers: request.headers });
+}
+
+export interface VerifyStandardWebhookWebInput {
+  /** The RAW request body as received (string or bytes), never a parsed object. */
+  body: string | Uint8Array | ArrayBuffer;
+  headers: import('./webhook-common').HeadersLike;
+  /** The endpoint's `whsec_...` secret. */
+  secret: string;
+  now?: Date;
+  /** Replay tolerance in seconds (default 300). */
+  toleranceSec?: number;
+}
+
+/**
+ * {@link verifyStandardWebhook} (application webhooks, Standard Webhooks: `webhook-id`,
+ * `webhook-timestamp` in seconds, `webhook-signature: v1,<base64>` keyed with the base64
+ * part of `whsec_...`) on Web Crypto only: no `Buffer`, no `node:crypto`, so it runs on
+ * Workers, Deno, Bun, Node 18+ and browsers. Never throws on a bad delivery.
+ */
+export async function verifyStandardWebhookWeb<T = unknown>(input: VerifyStandardWebhookWebInput): Promise<WebhookVerifyResult<T>> {
+  const raw = typeof input.body === 'string' ? input.body : new TextDecoder().decode(input.body);
+  const id = readHeader(input.headers, STANDARD_HEADERS.id);
+  const timestampRaw = readHeader(input.headers, STANDARD_HEADERS.timestamp);
+  const signature = readHeader(input.headers, STANDARD_HEADERS.signature);
+  if (!id || !timestampRaw || !signature) return { verified: false, reason: 'missing_headers' };
+  const provided = parseSignatures(signature);
+  if (provided.length === 0) return { verified: false, reason: 'malformed_signature' };
+  const timestamp = /^\d+$/.test(timestampRaw) ? Number(timestampRaw) : NaN;
+  const nowSec = Math.floor((input.now ?? new Date()).getTime() / 1000);
+  if (!Number.isFinite(timestamp) || Math.abs(nowSec - timestamp) > (input.toleranceSec ?? REPLAY_TOLERANCE_MS / 1000)) {
+    return { verified: false, reason: 'stale_timestamp' };
+  }
+  let keyBytes: Uint8Array;
+  try {
+    keyBytes = fromBase64(input.secret.startsWith('whsec_') ? input.secret.slice('whsec_'.length) : input.secret);
+  } catch {
+    return { verified: false, reason: 'signature_mismatch' };
+  }
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const expected = toBase64(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${id}.${timestamp}.${raw}`))));
+  let matched = false;
+  for (const candidate of provided) if (constantTimeEqual(candidate, expected)) matched = true;
+  if (!matched) return { verified: false, reason: 'signature_mismatch' };
+  try {
+    return { verified: true, event: JSON.parse(raw) as T, deliveryId: id, timestamp };
+  } catch {
+    return { verified: true, deliveryId: id, timestamp };
+  }
+}
+
+/** {@link verifyStandardWebhookWeb} straight from a Fetch `Request`. Reads the body once, as text. */
+export async function verifyStandardWebhookRequest<T = unknown>(
+  request: Request,
+  options: Omit<VerifyStandardWebhookWebInput, 'body' | 'headers'>,
+): Promise<WebhookVerifyResult<T>> {
+  return verifyStandardWebhookWeb<T>({ ...options, body: await request.text(), headers: request.headers });
+}
+
+function fromBase64(value: string): Uint8Array {
+  const bin = atob(value.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
 
 function toBase64(bytes: Uint8Array): string {

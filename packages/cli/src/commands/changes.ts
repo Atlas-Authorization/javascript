@@ -27,9 +27,17 @@ function checkTypes(types: string[]): string[] {
  */
 export async function changes(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const sub = args.positionals[1];
-  if (sub !== 'tail') throw new CliError(sub ? `Unknown subcommand 'changes ${sub}'. Try: tail.` : 'changes needs a subcommand: tail.');
+  if (sub !== 'tail' && sub !== 'consumers') throw new CliError(sub ? `Unknown subcommand 'changes ${sub}'. Try: tail, consumers.` : 'changes needs a subcommand: tail, consumers.');
   const v = args.values;
   const json = wantsJson(v);
+  if (sub === 'consumers') {
+    // Who reads the feed and how far behind each one is.
+    const auth = resolveAuth(ctx, v);
+    const res = await httpFor(ctx, { secretKey: auth.secretKey, apiUrl: auth.apiUrl }).get<{ data?: Array<Record<string, unknown>> }>('/v1/changes/consumers');
+    if (json || !Array.isArray(res.data)) printJson(ctx.io, res);
+    else for (const c of res.data) ctx.io.out(Object.entries(c).filter(([k]) => k !== 'object').map(([k, x]) => `${k}=${String(x)}`).join('\t'));
+    return 0;
+  }
   const types = checkTypes(list(v, 'types'));
   const auth = resolveAuth(ctx, v);
   const http = httpFor(ctx, { secretKey: auth.secretKey, apiUrl: auth.apiUrl });

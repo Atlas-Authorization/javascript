@@ -1,5 +1,6 @@
 import { ATLAS_BACKEND_VERSION } from '../version';
 import { AtlasApiError, type AtlasErrorItem } from './error';
+import { createInstrumentation, parseRetryAfter, resolveRetry, retryDelay, type OtelOption, type RetryOptions } from './resilience';
 
 /**
  * The shared HTTP core every resource namespace calls. One place decides how a
@@ -62,6 +63,21 @@ export interface AtlasClientConfig {
    * Nothing else is sent. Default true; `false` turns it off.
    */
   telemetry?: boolean;
+  /**
+   * Status-aware retries: a 429 (any method) or 503 (GET, PUT, DELETE or a write with an
+   * idempotency key) is retried up to `maxRetries` times (default 2), waiting for the
+   * server's `Retry-After` or an exponential backoff with jitter. A `Retry-After` longer than
+   * `maxDelayMs` (default 30 s) is not waited for: the error is thrown, with `retryAfterMs` set.
+   * `false` turns retries off.
+   */
+  retry?: false | RetryOptions;
+  /**
+   * OpenTelemetry: one client span per request and the `atlas.client.requests`,
+   * `atlas.client.retries` and `atlas.client.request.duration` metrics. `true` uses the global
+   * tracer and meter of `@opentelemetry/api` (an optional peer dependency: nothing is loaded and
+   * nothing is paid when this is unset); or pass `{ tracer, meter }`.
+   */
+  otel?: OtelOption;
 }
 
 /** One change a write would make (or made), in the config-changelog shape. */
@@ -187,6 +203,8 @@ export interface KeyedRequestConfig extends AtlasRequestSettings {
   fetch?: typeof fetch;
   secretRecipient?: string;
   telemetry?: boolean;
+  retry?: false | RetryOptions;
+  otel?: OtelOption;
 }
 
 /**
@@ -201,6 +219,9 @@ export function createKeyedRequest(key: string, config: KeyedRequestConfig): Req
       'No fetch implementation found. Pass { fetch } to createAtlasClient on a runtime without a global fetch.',
     );
   }
+
+  const retryPolicy = resolveRetry(config.retry);
+  const instrumentation = createInstrumentation(config.otel);
 
   return async function request<T>(options: RequestOptions): Promise<T> {
     const dryRun = config.dryRun === true && options.method !== 'GET';
@@ -235,11 +256,27 @@ export function createKeyedRequest(key: string, config: KeyedRequestConfig): Req
       headers['atlas-strict'] = strict ? 'true' : 'false';
     }
 
-    const response = await fetchImpl(url, { method: options.method, headers, body });
-
-    if (!response.ok) {
-      throw await toApiError(response);
+    const observer = await instrumentation?.start(options.method, options.path);
+    let response: Response;
+    try {
+      for (let attempt = 0; ; attempt++) {
+        response = await fetchImpl(url, { method: options.method, headers, body });
+        if (response.ok) break;
+        const wait = retryDelay(retryPolicy, attempt, response.status, options.method, Boolean(options.idempotencyKey), response.headers?.get?.('retry-after'));
+        if (wait === undefined) {
+          const err = await toApiError(response);
+          observer?.finish({ status: response.status, error: err });
+          throw err;
+        }
+        observer?.retry(response.status, wait);
+        await response.text().catch(() => ''); // release the connection before waiting
+        await retryPolicy.sleep(wait);
+      }
+    } catch (e) {
+      if (!(e instanceof AtlasApiError)) observer?.finish({ error: e });
+      throw e;
     }
+    observer?.finish({ status: response.status });
 
     if (config.onUnknownFields) {
       const ignored = response.headers?.get?.('atlas-unknown-fields');
@@ -296,5 +333,8 @@ async function toApiError(response: Response): Promise<AtlasApiError> {
       },
     ];
   }
-  return new AtlasApiError(response.status, errors);
+  const err = new AtlasApiError(response.status, errors);
+  const asked = parseRetryAfter(response.headers?.get?.('retry-after'));
+  if (asked !== undefined) err.retryAfterMs = asked;
+  return err;
 }

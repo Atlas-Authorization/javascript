@@ -184,7 +184,7 @@ describe('billing: consume on Atlas and on an entitlement provider', () => {
     const conflict = await consume({ idempotency_key: 'a', amount: 2 });
     expect(conflict.status).toBe(409);
     expect(err(conflict).code).toBe('IDEMPOTENCY_CONFLICT');
-    expect((await consume({ key: 'b', quantity: 1 })).json).toMatchObject({ allowed: true, remaining: 0 }); // the older spellings still work
+    expect((await consume({ idempotency_key: 'b', amount: 1 })).json).toMatchObject({ allowed: true, remaining: 0 });
     expect(types(e, 'entitlement.limit_reached')).toHaveLength(1);
     expect((await consume({ idempotency_key: 'c' })).json).toMatchObject({ allowed: false, reason: 'limit_reached', used: 2 });
     expect((await consume({ feature: 'other', idempotency_key: 'd' })).json).toMatchObject({ allowed: false, reason: 'not_entitled' });

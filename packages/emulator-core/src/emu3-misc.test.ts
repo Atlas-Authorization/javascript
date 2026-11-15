@@ -278,7 +278,7 @@ describe('data-subject requests', () => {
     await call('POST', `/v1/users/${user.id}/legal_hold`, { reason: 'case 7' });
     const held = await call('POST', `/v1/data_subject_requests/${r.id}/fulfill`);
     expect(held.json.errors[0].code).toBe('LEGAL_HOLD');
-    await call('POST', `/v1/users/${user.id}/legal_hold/release`);
+    await call('POST', `/v1/users/${user.id}/legal_hold/release`, {});
     const done = await call('POST', `/v1/data_subject_requests/${r.id}/fulfill`);
     expect(done.json).toMatchObject({ status: 'completed' });
     expect(done.json.result.erased_at).toBeTruthy();

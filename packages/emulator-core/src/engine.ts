@@ -315,7 +315,7 @@ export class Engine {
 
     const reply = await handler({ engine: this, request, params, query: url.searchParams, body, key, op });
     // A handler says "success" with 200 or 201; the document decides which one (a create is 201 only where the API says so).
-    const status = op && (reply.status === undefined || reply.status === 200 || reply.status === 201) ? op.successStatus : (reply.status ?? 200);
+    const status = op && !(reply.status !== undefined && op.successStatuses.includes(reply.status)) && (reply.status === undefined || reply.status === 200 || reply.status === 201) ? op.successStatus : (reply.status ?? 200);
     // Every successful write leaves an audit row (the tamper-evident audit chain covers these rows).
     if (status < 400) auditMutation(this, { method, path, params, key, body: reply.body });
     const headers: Record<string, string | string[]> = { ...budgetHeaders, ...(reply.headers ?? {}) };

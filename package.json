@@ -17,7 +17,17 @@
   },
   "pnpm": {
     "overrides": {
-      "rimraf@5>glob": "^14.0.2"
+      "rimraf@5>glob": "^14.0.2",
+      "gatsby": "-",
+      "next>postcss": "^8.5.23",
+      "sharp@<0.35.5": "^0.35.5",
+      "ldapts>uuid": "^11.1.1",
+      "underscore@<1.13.8": "^1.13.8",
+      "minimatch@>=7.0.0 <11.0.1": "^11.0.1",
+      "glob@>=9.0.0 <14.0.2": "^14.0.2",
+      "unbuild>esbuild": "^0.25.12",
+      "mkdist>esbuild": "^0.25.12",
+      "@builder.io/qwik-city": "-"
     }
   }
 }

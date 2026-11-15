@@ -240,6 +240,19 @@ const report = await atlas.instance.preflight();
 for (const f of report.findings) console.log(f.severity, f.message, '→', f.fix);
 ```
 
+`atlas.doctor()` (or `npx atlas-doctor` with `ATLAS_SECRET_KEY` set) checks the secret key, clock skew against Atlas, the Backend API, the JWKS, the service status and the instance configuration, and never throws:
+
+```ts
+const report = await atlas.doctor();
+if (!report.ok) console.error(formatDoctorReport(report));
+```
+
+### Retries and observability
+
+A 429 (any method) or a 503 (GET, PUT, DELETE, or a write with an idempotency key) is retried twice, waiting for `Retry-After` or an exponential backoff with jitter. Tune it with `retry: { maxRetries, baseDelayMs, maxDelayMs }` or pass `retry: false`; when the server asks for a longer wait than `maxDelayMs`, the `AtlasApiError` is thrown with `retryAfterMs` set.
+
+`createAtlasClient({ secretKey, otel: true })` records one client span per request plus `atlas.client.requests`, `atlas.client.retries` and `atlas.client.request.duration`, through the global `@opentelemetry/api` (an optional peer dependency; unset, nothing is loaded). Pass `otel: { tracer, meter }` to use your own.
+
 ### Design the sign-in page
 
 ```ts
@@ -463,6 +476,10 @@ To check the route end to end, `oauthClients.testBackchannelLogout(id)` sends a 
 `verifyWebhook` checks the signature on events Atlas sends to your webhook endpoints. You manage endpoints with `atlas.webhooks.endpoints`: create, update, reveal or rotate a secret, send a test event, and redeliver a past delivery.
 
 The `atlas-signature` header can carry more than one signature, separated by spaces (`v1,<sig> v1,<sig>`). While an endpoint secret rotates, Atlas may sign each delivery with the old and the new secret. `verifyWebhook` accepts the delivery when any one signature matches your secret.
+
+### Standard Webhooks on Web Crypto
+
+Events your app publishes through Atlas follow Standard Webhooks. `verifyStandardWebhookWeb({ body, headers, secret })` (and `verifyStandardWebhookRequest(request, { secret })`) verify them with Web Crypto only, so they run on Workers, Deno, Bun and in browsers as well as Node. `signAtlasWebhook` and `signStandardWebhook` from `@atlasauth/rp/testing` produce correctly signed deliveries for your receiver's tests.
 
 ### Typed events
 

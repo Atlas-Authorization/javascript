@@ -93,6 +93,7 @@ export type {
   VerifyIdTokenOptions,
 } from './oidc';
 
+export * from './doctor';
 // §12.2 inbound webhook verification for consumers.
 export * from './webhooks';
 export {

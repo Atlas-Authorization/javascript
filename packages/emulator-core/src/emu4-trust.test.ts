@@ -109,7 +109,7 @@ describe('audit chain', () => {
     expect(cp.json).toMatchObject({ object: 'audit_chain_checkpoint', alg: 'RS256', seq: 7 });
     // asking again with nothing new returns the same checkpoint
     const again = await call('POST', '/v1/audit/chain/checkpoints');
-    expect(again.status).toBe(200);
+    expect(again.status).toBe(201);
     expect(again.json.id).toBe(cp.json.id);
     const status = (await call('GET', '/v1/audit/chain')).json;
     expect(status).toMatchObject({ head_seq: 7, last_checkpoint_seq: 7, head_hash: cp.json.link_hash, unchained_rows: 0 });

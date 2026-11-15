@@ -28,8 +28,8 @@ import {
 
 /** Options for {@link createTestIssuer}. All optional — the defaults are usable as-is. */
 export interface CreateTestIssuerOptions {
-  /** Signing algorithm of the test key: RS256 (default) or ES256, like an Atlas instance. */
-  alg?: 'RS256' | 'ES256';
+  /** Signing algorithm of the test key, like an Atlas instance: RS256 (default), ES256, ES384, PS256 or EdDSA. */
+  alg?: 'RS256' | 'ES256' | 'ES384' | 'PS256' | 'EdDSA';
   /** The `iss` the fixture stamps on every token. Defaults to a local test URL. */
   issuer?: string;
   /** The `kid` on the signing key and in the published JWKS. */

@@ -142,6 +142,13 @@ export const COMPLIANCE: Ops = {
   'i18n-review': { m: 'POST', p: '/v1/localizations/{}/review', f: 'b', bodyFlags: ['action', 'note'] },
   // CI: `--file translations.json` holds { items: [...], require_approved?: true }; a failing check exits 1 with the problems.
   'i18n-check': { m: 'POST', p: '/v1/localizations/check', f: 'b', out: checkOut },
+  'downstream-run': { m: 'POST', p: '/v1/data_subject_requests/{}/downstream/{}/run', f: 'y' },
+  'erasure-probe': { m: 'POST', p: '/v1/erasure_connectors/{}/probe' },
+  'cookie-consents': { m: 'GET', p: '/v1/cookie_consents', f: 'q' },
+  'cookie-subject': { m: 'GET', p: '/v1/cookie_consents/subjects/{}' },
+  'cookie-subject-erase': { m: 'DELETE', p: '/v1/cookie_consents/subjects/{}', f: 'y' },
+  'cookie-user-erase': { m: 'DELETE', p: '/v1/users/{}/cookie_consents', f: 'y' },
+  'i18n-reviews': { m: 'GET', p: '/v1/localizations/{}/reviews' },
 };
 export const WORKFLOWS: Ops = {
   list: { m: 'GET', p: '/v1/workflows', f: 'q' },
@@ -241,6 +248,11 @@ export const CONNECTION_ACTIONS: Ops = {
   run: { m: 'POST', p: '/v1/connections/{}/actions/{}', f: 'b' },
   define: { m: 'PUT', p: '/v1/connection_actions/{}/{}', f: 'b' },
   remove: { m: 'DELETE', p: '/v1/connection_actions/{}/{}', f: 'y' },
+  types: { m: 'GET', p: '/v1/connection_actions/types' },
+  rules: { m: 'GET', p: '/v1/connections/{}/access_rules' },
+  'rules-set': { m: 'PUT', p: '/v1/connections/{}/access_rules', f: 'by' },
+  'rules-clear': { m: 'DELETE', p: '/v1/connections/{}/access_rules', f: 'y' },
+  'register-client': { m: 'POST', p: '/v1/connections/oauth_clients/register', f: 'b' },
 };
 export const CONNECTION_LIMITS: Ops = {
   get: { m: 'GET', p: '/v1/connections/token_limits' },
@@ -292,6 +304,15 @@ export const BILLING: Ops = {
   'coupon-validate': { m: 'POST', p: '/v1/billing/coupons/validate', f: 'b' },
   credits: { m: 'GET', p: '/v1/billing/credits', f: 'q' },
   'credit-grant': { m: 'POST', p: '/v1/billing/credits', f: 'by' },
+  'connect-accounts': { m: 'GET', p: '/v1/billing/connect/accounts', f: 'q' },
+  'connect-account': { m: 'GET', p: '/v1/billing/connect/accounts/{}' },
+  'connect-account-create': { m: 'POST', p: '/v1/billing/connect/accounts', f: 'by' },
+  'connect-onboarding-link': { m: 'POST', p: '/v1/billing/connect/accounts/{}/onboarding_link', f: 'b' },
+  'connect-refresh': { m: 'POST', p: '/v1/billing/connect/accounts/{}/refresh' },
+  'connect-transfers': { m: 'GET', p: '/v1/billing/connect/transfers', f: 'q' },
+  'connect-transfer': { m: 'GET', p: '/v1/billing/connect/transfers/{}' },
+  'connect-transfer-create': { m: 'POST', p: '/v1/billing/connect/transfers', f: 'by' },
+  'store-link': { m: 'POST', p: '/v1/billing/store_links', f: 'by' },
 };
 export const AUDIT: Ops = {
   retention: { m: 'GET', p: '/v1/audit_retention' },
@@ -300,6 +321,7 @@ export const AUDIT: Ops = {
   'chain-enable': { m: 'PUT', p: '/v1/audit/chain', f: 'b', fixed: { enabled: true }, bodyFlags: ['checkpoint-interval-seconds'] },
   'chain-checkpoint': { m: 'POST', p: '/v1/audit/chain/checkpoints' },
   'chain-links': { m: 'GET', p: '/v1/audit/chain/links', query: ['after-seq', 'limit'] },
+  'chain-verify': { m: 'POST', p: '/v1/audit/chain/verify', f: 'b' },
 };
 export const FEDERATION: Ops = {
   show: { m: 'GET', p: '/v1/federation' },
@@ -329,6 +351,62 @@ export const FGA_STORE: Ops = {
   materialize: { m: 'POST', p: '/v1/fga/stores/{}/materializations', f: 'by' },
   rebuild: { m: 'POST', p: '/v1/fga/stores/{}/materializations/{}/rebuild', f: 'y' },
   unmaterialize: { m: 'DELETE', p: '/v1/fga/stores/{}/materializations/{}', f: 'y' },
+};
+
+/** Provider changes: a connected provider's scopes or terms changed, and each connection awaits an acknowledgement. */
+export const PROVIDER_CHANGES: Ops = {
+  list: { m: 'GET', p: '/v1/connection_provider_changes', f: 'q' },
+  get: { m: 'GET', p: '/v1/connection_provider_changes/{}' },
+  acknowledge: { m: 'POST', p: '/v1/connection_provider_changes/{}/acknowledge', f: 'by' },
+  resolve: { m: 'POST', p: '/v1/connection_provider_changes/{}/resolve', f: 'by' },
+};
+/** Journeys: queued messages (and cancelling one) and an experiment's readout. */
+export const FLOWS: Ops = {
+  messages: { m: 'GET', p: '/v1/flows/{}/messages', f: 'q' },
+  'message-cancel': { m: 'POST', p: '/v1/flows/{}/messages/{}/cancel', f: 'y' },
+  readout: { m: 'GET', p: '/v1/flows/{}/experiments/{}/readout' },
+};
+/** Referral rewards: the ledger, voiding one, and running the reward rules now. */
+export const REFERRAL_REWARDS: Ops = {
+  list: { m: 'GET', p: '/v1/referral_rewards', f: 'q' },
+  get: { m: 'GET', p: '/v1/referral_rewards/{}' },
+  void: { m: 'POST', p: '/v1/referral_rewards/{}/void', f: 'by' },
+  run: { m: 'POST', p: '/v1/referral_rewards/run', f: 'by' },
+};
+/** Policies: who a policy is asked of and its per-language text. */
+export const POLICIES: Ops = {
+  audience: { m: 'GET', p: '/v1/policies/{}/audience' },
+  'set-audience': { m: 'PUT', p: '/v1/policies/{}/audience', f: 'by' },
+  translations: { m: 'GET', p: '/v1/policies/{}/versions/{}/translations' },
+  'translation-set': { m: 'PUT', p: '/v1/policies/{}/versions/{}/translations/{}', f: 'by' },
+  'translation-delete': { m: 'DELETE', p: '/v1/policies/{}/versions/{}/translations/{}', f: 'y' },
+};
+/** Where the instance lives: region pin, failover region, Frontend API origin isolation. */
+export const REGION: Ops = {
+  show: { m: 'GET', p: '/v1/region' },
+  set: { m: 'PUT', p: '/v1/region', f: 'by', bodyFlags: ['failover-region', 'fapi-isolation'] },
+  // Pinning is one-way (the data lives in the region): it needs --yes.
+  pin: { m: 'PUT', p: '/v1/region', f: 'y', fixed: { pin: true } },
+  failover: { m: 'GET', p: '/v1/region/failover' },
+};
+/** OAuth app publishers: verify the domain, attach or detach an app by its public client_id. */
+export const OAUTH_PUBLISHERS: Ops = {
+  list: { m: 'GET', p: '/v1/oauth_publishers' },
+  verify: { m: 'POST', p: '/v1/oauth_publishers/{}/verify' },
+  attach: { m: 'PUT', p: '/v1/oauth_publishers/{}/clients/{}', f: 'b' },
+  detach: { m: 'DELETE', p: '/v1/oauth_publishers/{}/clients/{}', f: 'y' },
+};
+/** Age assurance of a user: the checks on record, recording one, and revoking one. */
+export const AGE_ASSURANCE: Ops = {
+  list: { m: 'GET', p: '/v1/users/{}/age_assurance' },
+  record: { m: 'POST', p: '/v1/users/{}/age_assurance', f: 'by' },
+  revoke: { m: 'POST', p: '/v1/users/{}/age_assurance/{}/revoke', f: 'by' },
+};
+/** A user's trusted approval devices. */
+export const APPROVAL_DEVICES: Ops = {
+  list: { m: 'GET', p: '/v1/users/{}/approval_devices' },
+  trust: { m: 'POST', p: '/v1/users/{}/approval_devices/trust', f: 'by' },
+  remove: { m: 'DELETE', p: '/v1/users/{}/approval_devices/{}', f: 'y' },
 };
 
 /** The same handler seen from one positional deeper: `atlas keys data status` → sub `status`. */

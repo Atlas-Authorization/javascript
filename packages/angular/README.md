@@ -2,7 +2,7 @@
 
 The official **Angular** SDK for Atlas — the Angular peer of [`@atlasauth/react`](../react). It wraps the framework-agnostic [`@atlasauth/js`](../js) client and exposes Atlas's reactive auth state, sign-in/up flows, prebuilt UI, authorization directives, and route guards as idiomatic modern Angular (standalone APIs, RxJS **and** Signals, DI).
 
-Requires **Angular 17+**.
+Requires **Angular 20+** (0.22.x supports Angular 17 to 19).
 
 ---
 
@@ -10,12 +10,12 @@ Requires **Angular 17+**.
 
 ```bash
 pnpm add @atlasauth/angular @atlasauth/js
-# peers: @angular/core, @angular/common (>=17), rxjs (>=7); @angular/router if you use the guards
+# peers: @angular/core, @angular/common (>=20), rxjs (>=7); @angular/router if you use the guards
 ```
 
 ## Setup
 
-### Standalone (recommended, Angular 17+)
+### Standalone (recommended)
 
 `provideAtlas` is the analogue of wrapping your tree in React's `<AtlasProvider>`. Register it once at the application root:
 

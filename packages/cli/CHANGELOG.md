@@ -1,5 +1,10 @@
 # @atlasauth/cli changelog
 
+## 0.44.0
+
+- New commands: `atlas provider-changes`, `flows messages|message-cancel|readout`, `referral-rewards`, `policies` (audience and translations), `region`, `oauth-publishers`, `age-assurance` and `approval-devices`; `atlas changes consumers`; `atlas compliance` gains `erasure-probe`, `downstream-run`, cookie consent record commands and `i18n-reviews`; connection access rules and `register-client`; billing Connect accounts, transfers and store links; `atlas audit chain-verify`.
+- `atlas config` manages `policy_audiences`, `publisher_clients` and `region` as atlas.yaml types.
+
 ## 0.43.0
 
 - New commands: `atlas audit verify|chain|chain-enable|chain-checkpoint|chain-links`, `atlas sessions binding|unbind`, `atlas agents delegations`, `atlas preview` and `atlas proxy` (with `--revocation-interval`).

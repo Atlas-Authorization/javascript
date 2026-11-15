@@ -7,6 +7,7 @@ import {
   addServerHandler,
   addServerImports,
 } from '@nuxt/kit';
+import type { NuxtModule } from '@nuxt/schema';
 import { VUE_COMPONENTS, VUE_COMPOSABLES } from './surface';
 
 /**
@@ -62,7 +63,7 @@ export interface ModuleOptions {
   authorizedParties?: string[];
 }
 
-export default defineNuxtModule<ModuleOptions>({
+const atlasModule: NuxtModule<ModuleOptions> = defineNuxtModule<ModuleOptions>({
   meta: {
     name: '@atlasauth/nuxt',
     configKey: 'atlas',
@@ -154,3 +155,5 @@ export default defineNuxtModule<ModuleOptions>({
     ]);
   },
 });
+
+export default atlasModule;

@@ -53,9 +53,12 @@ async function setup(actorSessionId: string | null, impersonating = true) {
   }) as unknown as typeof fetch;
   const client = createAtlasClient({ publishableKey: 'pk_test', frontendApi: 'https://fapi.example', fetchImpl, manualBoot: true });
   await client.reload();
-  const view = render(ImpersonationBanner, { context: new Map([[ATLAS_KEY, client]]) });
   const ended = vi.fn();
-  view.component.$on('ended', (e: CustomEvent) => ended(e.detail));
+  // `events` reaches createEventDispatcher on Svelte 4 and 5; `component.$on` is gone in Svelte 5.
+  const view = render(ImpersonationBanner, {
+    context: new Map([[ATLAS_KEY, client]]),
+    events: { ended: (e: CustomEvent) => ended(e.detail) },
+  } as Parameters<typeof render>[1]);
   return { ...view, calls, ended };
 }
 

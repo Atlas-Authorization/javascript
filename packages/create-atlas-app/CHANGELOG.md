@@ -1,5 +1,10 @@
 # @atlasauth/create-atlas-app changelog
 
+## 0.5.1
+
+- The templates that use `@atlasauth/backend` pin `^0.54.0`.
+- The Astro, Nuxt and SvelteKit templates move to patched majors: Astro 7 with `@astrojs/node` 11, Nuxt 4 (`app.vue` now lives in `app/`) and SvelteKit 3 with Vite 8 and TypeScript 6 (its configuration moves from `svelte.config.js` into `vite.config.ts`). These need Node 22.23 or later.
+
 ## 0.5.0
 
 - New templates: Nuxt, SvelteKit, Astro, Expo, Hono and Express.

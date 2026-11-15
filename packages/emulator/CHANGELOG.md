@@ -1,5 +1,9 @@
 # @atlasauth/emulator changelog
 
+## 0.5.1
+
+- Uses @atlasauth/emulator-core 0.3.1: success statuses and required request fields now match the latest API description.
+
 ## 0.5.0
 
 - Breaking: the `time/advance` route and helpers that depend on it are now async; `await` them. Routes the new federation, trust, compliance, commerce and journey endpoints. Requires `@atlasauth/emulator-core` 0.3.0.

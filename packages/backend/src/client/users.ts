@@ -420,8 +420,9 @@ export function usersResource(request: RequestFn) {
         });
       },
     },
-    delete(id: string): Promise<DeletedObject> {
-      return request({ method: 'DELETE', path: `/v1/users/${enc(id)}` });
+    /** `body.audit_actor_ids` / `audit_actor_emails`: the people on your side who asked for the deletion, recorded on the audit row. */
+    delete(id: string, body?: { audit_actor_ids?: string[]; audit_actor_emails?: string[] }): Promise<DeletedObject> {
+      return request({ method: 'DELETE', path: `/v1/users/${enc(id)}`, ...(body ? { body } : {}) });
     },
     resetMfa(id: string): Promise<{ object: 'user'; id: string; mfa_enabled: false }> {
       return request({ method: 'POST', path: `/v1/users/${enc(id)}/reset_mfa` });

@@ -1,5 +1,9 @@
 # @atlasauth/nuxt changelog
 
+## 0.4.1
+
+- Nuxt 4 is now a supported peer (`nuxt` `^3 || ^4`); the module is built and tested against Nuxt 4.6, which carries the current Nuxt security fixes (Nuxt 3 has none). No API change.
+
 ## 0.4.0
 
 - New `atlasRateLimit` and `atlasGrantUsage` helpers: enforce Atlas rate-limit policies and metered grant usage (consume/refund with idempotency) in your routes. Requires `@atlasauth/backend` 0.51.0 or later.

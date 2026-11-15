@@ -87,6 +87,8 @@ import { tokensResource } from './tokens';
 import { captchaResource } from './captcha';
 import { designResource } from './design';
 import { entitlementOverridesResource, entitlementsResource } from './entitlement-overrides';
+import { gapOpsResources } from './gap-ops';
+import { doctor, type DoctorOptions, type DoctorReport } from '../doctor';
 import { rateLimitPoliciesResource } from './rate-limit-policies';
 import { abuseSignalsResource, orgRoleSetsResource, orgTemplatesResource } from './org-depth';
 import { machineTrustPoliciesResource } from './machine-trust-policies';
@@ -197,6 +199,9 @@ export function createAtlasClient(config: AtlasClientConfig): AtlasClient {
     withOptions(overrides: AtlasRequestSettings): AtlasClient {
       return createAtlasClient({ ...config, ...overrides });
     },
+    doctor(options: Partial<Omit<DoctorOptions, 'secretKey'>> = {}): Promise<DoctorReport> {
+      return doctor({ secretKey: config.secretKey, apiUrl: config.apiUrl, fetch: config.fetch, ...options });
+    },
     async dryRun(run: (client: AtlasClient) => Promise<unknown>): Promise<DryRunResult> {
       // Every typed method keeps its own signature; the dry run swaps the answer's type, not the call.
       return (await run(createAtlasClient({ ...config, dryRun: true }))) as DryRunResult;
@@ -205,13 +210,14 @@ export function createAtlasClient(config: AtlasClientConfig): AtlasClient {
 }
 
 function buildNamespaces(request: RequestFn) {
+  const gap = gapOpsResources(request);
   return {
-    users: { ...usersResource(request), ...usersOpsResource(request) },
-    sessions: { ...sessionsResource(request), ...sessionsOpsResource(request), ...sessionsFeedResource(request) },
-    organizations: { ...organizationsResource(request), ...organizationsOpsResource(request), ...organizationItAdminResource(request) },
+    users: { ...usersResource(request), ...usersOpsResource(request), ...gap.users },
+    sessions: { ...sessionsResource(request), ...sessionsOpsResource(request), ...sessionsFeedResource(request), ...gap.sessions },
+    organizations: { ...organizationsResource(request), ...organizationsOpsResource(request), ...organizationItAdminResource(request), ...gap.organizations },
     roles: rolesResource(request),
     permissions: permissionsResource(request),
-    oauthClients: { ...oauthClientsResource(request), ...oauthClientsOpsResource(request) },
+    oauthClients: { ...oauthClientsResource(request), ...oauthClientsOpsResource(request), ...gap.oauthClients },
     passkeyApi: passkeyApiResource(request),
     vc: vcResource(request),
     resourceServers: resourceServersResource(request),
@@ -281,7 +287,10 @@ function buildNamespaces(request: RequestFn) {
     auditExports: auditExportsResource(request),
     // Behaviour changes that affect this instance, and security advisories.
     notices: noticesResource(request),
-    securityAdvisories: securityAdvisoriesResource(request),
+    securityAdvisories: { ...securityAdvisoriesResource(request), ...gap.securityAdvisories },
+    oauthGrants: gap.oauthGrants,
+    passkeyCampaigns: gap.passkeyCampaigns,
+    dev: gap.dev,
     // Who processes this instance's end-user data, in which role.
     subProcessors: subProcessorsResource(request),
     branding: brandingResource(request),
@@ -304,7 +313,7 @@ function buildNamespaces(request: RequestFn) {
     // Migrate from Better Auth: sealed-bundle upload, dry run and resumable apply.
     betterAuthImports: betterAuthImportsResource(request),
     // Migrate from any source: /v1/migrations/{source}/imports, the zero-logout bridge, the source catalog.
-    migrations: { ...migrationsResource(request), ...migrationsOpsResource(request) },
+    migrations: { ...migrationsResource(request), ...migrationsOpsResource(request), ...gap.migrations },
     dataSubjectRequests: dataSubjectRequestsResource(request),
     /** The data-rights executor protocol and the instance's orchestrator. */
     privacy: privacyResource(request),
@@ -323,9 +332,9 @@ function buildNamespaces(request: RequestFn) {
     /** OTLP export of gateway and relay calls. */
     telemetryExport: telemetryExportResource(request),
     ltiPlatforms: ltiPlatformsResource(request),
-    instance: { ...instanceResource(request), ...instanceOpsResource(request) },
+    instance: { ...instanceResource(request), ...instanceOpsResource(request), ...gap.instance },
     // Identity integrations, the integration-facing side: verify-error reports, sidebar cards, public metadata.
-    integrations: { ...integrationsResource(request), ...integrationsOpsResource(request) },
+    integrations: { ...integrationsResource(request), ...integrationsOpsResource(request), ...gap.integrations },
     instanceSecurity: instanceSecurityResource(request),
     // Referral attribution: the instance's referral platform connection and call log.
     referrals: referralsResource(request),
@@ -360,7 +369,7 @@ function buildNamespaces(request: RequestFn) {
     openfga: openfgaResource(request),
     connectors: connectorsResource(request),
     // Org- or user-owned provider connections that own their tokens, per-owner OAuth clients, token reads.
-    connections: { ...connectionsResource(request), ...connectionsOpsResource(request), ...connectionsActivityResource(request) },
+    connections: { ...connectionsResource(request), ...connectionsOpsResource(request), ...connectionsActivityResource(request), ...gap.connections },
     /** `POST /v1/connections/{id}/relay`, its size limits and the on-prem relay agents. */
     relay: relayResource(request),
     /** Business topics and per-connection provider subscriptions. */
@@ -437,7 +446,7 @@ function buildNamespaces(request: RequestFn) {
     tickets: ticketsResource(request),
     // Development-instance helpers: the paired test instance, test users, testing tokens.
     testMode: testModeResource(request),
-    diagnostics: diagnosticsResource(request),
+    diagnostics: { ...diagnosticsResource(request), ...gap.diagnostics },
     // Downstream services that get the same logout_token as your OIDC apps.
     logoutNotifyEndpoints: logoutNotifyEndpointsResource(request),
     // Operations added for full Backend API coverage (new areas; existing areas gained methods in place).
@@ -479,6 +488,8 @@ export interface AtlasClient extends AtlasClientNamespaces {
    * Nothing changes; `plan.changes` lists what would, and `plan.would_return` is what the real call returns.
    */
   dryRun(run: (client: AtlasClient) => Promise<unknown>): Promise<DryRunResult>;
+  /** Check the key, the clock, the Backend API, the JWKS, the service status and the configuration. Never throws. */
+  doctor(options?: Partial<Omit<DoctorOptions, 'secretKey'>>): Promise<DoctorReport>;
 }
 
 export type {
@@ -675,3 +686,6 @@ export * from './policy-bundles-ops';
 export * from './proxy-apps-ops';
 export * from './integrations-ops';
 export * from './oauth-publishers';
+export * from './gap-ops';
+export * from './gap-fields';
+export * from './resilience';

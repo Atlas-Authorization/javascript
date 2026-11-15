@@ -439,7 +439,7 @@ describe('environment clones and previews', () => {
     await fail({ mode: 'preview', ref: 'pr-1', name: 'x' }, 'name');
     await fail({ mode: 'clone', name: 'Bad Name' }, 'name');
     await fail({ mode: 'clone', name: 'preview-1' }, 'name');
-    await fail({ mode: 'clone', name: 'qa', include: ['secrets'] }, 'include');
+    await fail({ mode: 'clone', name: 'qa', include: ['secrets'] }, 'include[0]');
     await fail({ mode: 'clone', name: 'qa', include: ['memberships'] }, 'include');
     await fail({ mode: 'clone', name: 'qa', ttl_hours: 5 }, 'ttl_hours');
     await fail({ mode: 'preview', ref: 'pr-1', ttl_hours: 0 }, 'ttl_hours');

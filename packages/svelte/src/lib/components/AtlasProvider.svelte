@@ -41,8 +41,10 @@
 
   // The compiled design stylesheet: custom properties only, from validated
   // settings; the compiler refuses any output containing `<`.
+  // Spelled via a constant so the Svelte preprocessor does not mistake it for a real <style> block.
+  const STYLE = 'style';
   $: designStyle = rendered.css
-    ? `<style data-atlas-design="${rendered.key}">${rendered.css}</style>`
+    ? `<${STYLE} data-atlas-design="${rendered.key}">${rendered.css}</${STYLE}>`
     : '';
 
   // initAtlas already boots in the browser; this is the belt-and-braces mount

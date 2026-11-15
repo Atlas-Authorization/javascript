@@ -349,7 +349,7 @@ describe('billing: invoices, usage, consume, trials', () => {
     const inv = (await anon('POST', '/__emulator/billing/invoices', { subject_type: 'user', subject_id: u.id, amount_paid: 1000 })).json;
     expect((await call('POST', `/v1/billing/invoices/${inv.id}/refund`, {})).status).toBe(400); // key required
     const r1 = await call('POST', `/v1/billing/invoices/${inv.id}/refund`, { amount: 400, idempotency_key: 'a' });
-    expect(r1.status).toBe(201);
+    expect(r1.status).toBe(200);
     expect((await call('POST', `/v1/billing/invoices/${inv.id}/refund`, { amount: 400, idempotency_key: 'a' })).json.id).toBe(r1.json.id);
     expect((await call('POST', `/v1/billing/invoices/${inv.id}/refund`, { amount: 700, idempotency_key: 'b' })).status).toBe(400);
     expect((await call('POST', `/v1/billing/invoices/${inv.id}/refund`, { idempotency_key: 'c' })).json.amount).toBe(600);
@@ -365,18 +365,18 @@ describe('billing: invoices, usage, consume, trials', () => {
     const plan = (await call('POST', '/v1/billing/plans', { name: 'Pro', slug: 'pro', limits: { seats: 2 } })).json;
     const sub = await call('POST', '/v1/billing/subscriptions/import', { subject_type: 'user', subject_id: u.id, plan_id: plan.id });
     expect(sub.status).toBe(200);
-    const batch = (await call('POST', '/v1/billing/usage/batch', { events: [{ subject_type: 'user', subject_id: u.id, feature: 'api', quantity: 3, idempotency_key: 'e1' }, { subject_type: 'user', subject_id: u.id, feature: 'api', quantity: 3, idempotency_key: 'e1' }, { subject_type: 'user', subject_id: 'missing', feature: 'api', quantity: 1 }] })).json;
+    const batch = (await call('POST', '/v1/billing/usage/batch', { events: [{ subject_type: 'user', subject_id: u.id, feature: 'api', quantity: 3, idempotency_key: 'e1' }, { subject_type: 'user', subject_id: u.id, feature: 'api', quantity: 3, idempotency_key: 'e1' }, { subject_type: 'user', subject_id: 'missing', feature: 'api', quantity: 1, idempotency_key: 'e2' }] })).json;
     expect(batch).toMatchObject({ recorded: 1, duplicates: 1, failed: 1 });
     expect((await call('GET', `/v1/billing/usage?subject_type=user&subject_id=${u.id}&period=current&events=true`)).json).toMatchObject({ total: 3, by_feature: { api: 3 } });
-    const consume = (key: string, quantity = 1) => call('POST', '/v1/entitlements/consume', { subject_type: 'user', subject_id: u.id, feature: 'seats', key, quantity });
+    const consume = (key: string, quantity = 1) => call('POST', '/v1/entitlements/consume', { subject_type: 'user', subject_id: u.id, feature: 'seats', idempotency_key: key, amount: quantity });
     expect((await consume('k1')).json).toMatchObject({ allowed: true, remaining: 1 });
     expect((await consume('k1')).json.replayed).toBe(true);
     expect((await consume('k2')).json).toMatchObject({ allowed: true, remaining: 0 });
     expect((await consume('k3')).json).toMatchObject({ allowed: false, reason: 'limit_reached' });
     expect(e.webhooks.events.filter((x) => x.type === 'entitlement.limit_reached')).toHaveLength(1);
-    const refund = await call('POST', '/v1/entitlements/consume/refund', { subject_type: 'user', subject_id: u.id, feature: 'seats', key: 'k2' });
+    const refund = await call('POST', '/v1/entitlements/consume/refund', { subject_type: 'user', subject_id: u.id, feature: 'seats', consume_idempotency_key: 'k2', idempotency_key: 'rf1' });
     expect(refund.json.refunded).toBe(1);
-    expect((await call('POST', '/v1/entitlements/consume/refund', { subject_type: 'user', subject_id: u.id, feature: 'seats', key: 'k2' })).status).toBe(409);
+    expect((await call('POST', '/v1/entitlements/consume/refund', { subject_type: 'user', subject_id: u.id, feature: 'seats', consume_idempotency_key: 'k2', idempotency_key: 'rf2' })).status).toBe(409);
     expect((await consume('k4')).json.allowed).toBe(true);
   });
 
@@ -429,17 +429,17 @@ describe('governance: legal hold, export and import, sessions export, authz', ()
 
     const b = makeEngine();
     const cb = client(b);
-    expect((await cb('POST', '/v1/instance/imports', { bundle: text, bundle_sha256: 'tampered' })).status).toBe(400);
+    expect((await cb('POST', '/v1/instance/imports', { bundle: JSON.parse(text), bundle_sha256: 'tampered' })).status).toBe(400);
     // a signature is checked against the exporting instance's own keys: valid there, refused for an altered bundle
-    expect((await ca('POST', '/v1/instance/imports', { bundle: `${text} `, signature: job.signature, dry_run: true })).status).toBe(400);
-    expect((await ca('POST', '/v1/instance/imports', { bundle: text, signature: job.signature, dry_run: true })).status).toBe(202);
-    const dry = (await cb('POST', '/v1/instance/imports', { bundle: text, dry_run: true })).json;
+    expect((await ca('POST', '/v1/instance/imports', { bundle: { ...JSON.parse(text), tampered: true }, signature: job.signature, dry_run: true })).status).toBe(400);
+    expect((await ca('POST', '/v1/instance/imports', { bundle: JSON.parse(text), signature: job.signature, dry_run: true })).status).toBe(202);
+    const dry = (await cb('POST', '/v1/instance/imports', { bundle: JSON.parse(text), dry_run: true })).json;
     expect(dry.counts.users.created).toBe(1);
     expect(b.db.users.size).toBe(0);
-    const done = (await cb('POST', '/v1/instance/imports', { bundle: text })).json;
+    const done = (await cb('POST', '/v1/instance/imports', { bundle: JSON.parse(text) })).json;
     expect(done.counts).toMatchObject({ users: { created: 1 }, organizations: { created: 1 }, memberships: { created: 1 } });
     expect((await cb('GET', `/v1/users/${u.id}`)).json).toMatchObject({ first_name: 'Mo', public_metadata: { plan: 'pro' } });
-    expect((await cb('POST', '/v1/instance/imports', { bundle: text })).json.counts.users).toMatchObject({ created: 0, skipped: 1 });
+    expect((await cb('POST', '/v1/instance/imports', { bundle: JSON.parse(text) })).json.counts.users).toMatchObject({ created: 0, skipped: 1 });
   });
 
   it('exports sessions as CSV with the same filters as the list, neutralising spreadsheet formulas', async () => {
@@ -463,7 +463,7 @@ describe('governance: legal hold, export and import, sessions export, authz', ()
     const u = (await call('POST', '/v1/users', { email_address: 'rbac@example.com' })).json;
     const org = (await call('POST', '/v1/organizations', { name: 'R' })).json;
     await call('POST', `/v1/organizations/${org.id}/memberships`, { user_id: u.id, role: 'org:member' });
-    const ex = (await call('POST', '/v1/authz/explain', { subject: { id: u.id }, permission: 'billing:manage', organization_id: org.id })).json;
+    const ex = (await call('POST', '/v1/authz/explain', { subject: { id: u.id }, action: 'billing:manage', organization_id: org.id })).json;
     expect(ex).toMatchObject({ decision: 'deny', layers: { rbac: { status: 'evaluated' }, abac: { status: 'skipped' } } });
     for (let i = 0; i < 3; i++) await call('POST', '/v1/authz/rbac/check', { subject: { id: u.id }, permission: 'billing:manage', organization_id: org.id });
     const run = (await call('POST', '/v1/authz/what_if', { candidate: { rbac: { roles: [{ type: 'org_role', key: 'org:member', add_permissions: ['billing:manage'] }] } } })).json;
@@ -554,7 +554,7 @@ describe('hooks: endpoint filters, headers and caps, dead letters, action versio
     expect((await call('PATCH', `/v1/actions/${a.id}/rollout`, { percent: 0 })).json.staged).toBeNull();
     await call('PATCH', `/v1/actions/${a.id}/rollout`, { percent: 100 });
     expect((await call('GET', `/v1/actions/${a.id}/versions`)).json.data[0]).toMatchObject({ version: 2, live: true });
-    expect((await call('POST', `/v1/actions/${a.id}/rollback`, {})).json.live_version).toBe(1);
+    expect((await call('POST', `/v1/actions/${a.id}/rollback`, { version: 1 })).json.live_version).toBe(1);
     expect((await call('PATCH', `/v1/actions/${a.id}`, { egress_allowlist: ['bad host'] })).status).toBe(400);
     expect((await call('PATCH', `/v1/actions/${a.id}`, { egress_allowlist: ['*.example.com'] })).status).toBe(200);
   });
@@ -572,7 +572,7 @@ describe('hooks: endpoint filters, headers and caps, dead letters, action versio
     const w = (await call('POST', '/v1/workflows', { name: 'w', enabled: true, trigger: { type: 'manual' }, steps: [{ id: 'a', type: 'set_variable', name: 'x', value: 1 }, { id: 'gate', type: 'approval' }, { id: 'z', type: 'set_variable', name: 'y', value: 2 }] })).json;
     const run = (await call('POST', `/v1/workflows/${w.id}/run`, {})).json;
     expect(run).toMatchObject({ status: 'waiting_approval', vars: { x: 1 } });
-    expect((await call('POST', `/v1/workflows/${w.id}/runs/${run.id}/retry`, {})).status).toBe(409);
+    expect((await call('POST', `/v1/workflows/${w.id}/runs/${run.id}/retry`, { from_step: 'a' })).status).toBe(409);
     const cancelled = (await call('POST', `/v1/workflows/${w.id}/runs/${run.id}/cancel`)).json;
     expect(cancelled.status).toBe('cancelled');
     expect((await call('POST', `/v1/workflows/${w.id}/runs/${run.id}/cancel`)).status).toBe(409);

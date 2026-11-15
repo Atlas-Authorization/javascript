@@ -75,9 +75,9 @@ export {
 export type { BackchannelLogoutOptions } from './backchannel-handlers';
 // Webhooks, verified with Web Crypto.
 export { ATLAS_WEBHOOK_HEADERS } from './webhook-common';
-export { verifyAtlasWebhook, verifyAtlasWebhookRequest } from './webhooks-web';
+export { verifyAtlasWebhook, verifyAtlasWebhookRequest, verifyStandardWebhookWeb, verifyStandardWebhookRequest } from './webhooks-web';
 export type { WebhookVerifyFailure, WebhookVerifyResult } from './webhook-common';
-export type { VerifyAtlasWebhookInput } from './webhooks-web';
+export type { VerifyAtlasWebhookInput, VerifyStandardWebhookWebInput } from './webhooks-web';
 export { authenticatedWithin, usedMultiFactor } from './recent-auth';
 
 export interface RelyingPartyConfig {

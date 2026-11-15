@@ -195,14 +195,14 @@ describe('journey experiments', () => {
     expect((await call('POST', `/v1/flows/${id}/experiments/${b}/start`)).status).toBe(409);
     expect((await call('PATCH', `/v1/flows/${id}/experiments/${a}`, { name: 'renamed' })).status).toBe(409);
     expect((await call('DELETE', `/v1/flows/${id}/experiments/${a}`)).status).toBe(409);
-    expect((await call('POST', `/v1/flows/${id}/experiments/${b}/stop`)).status).toBe(409);
+    expect((await call('POST', `/v1/flows/${id}/experiments/${b}/stop`, {})).status).toBe(409);
     expect((await call('POST', `/v1/flows/${id}/experiments/${a}/stop`, { promote_variant: 'nope' })).json.errors[0].param).toBe('promote_variant');
     const stopped = (await call('POST', `/v1/flows/${id}/experiments/${a}/stop`, { promote_variant: 'short' })).json;
     expect(stopped).toMatchObject({ status: 'stopped', promoted_variant: 'short' });
     expect(events(e, 'journey.experiment_stopped')[0]!.payload.data).toMatchObject({ experiment_id: a, promoted_variant: 'short' });
     // promotion made version 2 the active one
     expect((await call('GET', `/v1/flows/${id}`)).json).toMatchObject({ active_version: 2 });
-    expect((await call('POST', `/v1/flows/${id}/experiments/${a}/stop`)).status).toBe(409);
+    expect((await call('POST', `/v1/flows/${id}/experiments/${a}/stop`, {})).status).toBe(409);
     expect((await call('POST', `/v1/flows/${id}/experiments/${b}/start`)).status).toBe(200);
     expect((await call('DELETE', `/v1/flows/${id}/experiments/${a}`)).json).toMatchObject({ deleted: true });
     const trail = (await anon(e)('GET', '/__emulator/messaging/audit')).json.data.map((x: any) => x.action);

@@ -491,7 +491,7 @@ describe('Stripe Connect', () => {
     expect((await link({ return_url: 'https://user:pw@app.example.com/', refresh_url: 'https://app.example.com/retry' })).status).toBe(400);
     expect((await link({ return_url: 'https://app.example.com/done' })).status).toBe(400);
     expect((await link({ return_url: 'https://a.example.com', refresh_url: 'https://a.example.com', type: 'other' })).status).toBe(400);
-    expect((await call('POST', '/v1/billing/connect/accounts/bca_nope/onboarding_link', {})).status).toBe(404);
+    expect((await call('POST', '/v1/billing/connect/accounts/bca_nope/onboarding_link', { return_url: 'https://a.example.com', refresh_url: 'https://a.example.com' })).status).toBe(404);
     const page = (await call('GET', '/v1/billing/connect/accounts?limit=1')).json;
     expect(page.data).toHaveLength(1);
     expect(page.has_more).toBe(true);

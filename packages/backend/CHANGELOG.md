@@ -1,5 +1,14 @@
 # @atlasauth/backend changelog
 
+## 0.54.0
+
+- Resilience: requests that get a 429 (any method) or 503 (GET, PUT, DELETE, or a write with an idempotency key) are retried up to twice, waiting for `Retry-After` or an exponential backoff with jitter. Configure with `retry: { maxRetries, baseDelayMs, maxDelayMs }` or turn off with `retry: false`. `AtlasApiError.retryAfterMs` carries the server's `Retry-After`.
+- OpenTelemetry: `otel: true` (or `{ tracer, meter }`) records a client span per request and the `atlas.client.requests`, `atlas.client.retries` and `atlas.client.request.duration` metrics. `@opentelemetry/api` is an optional peer dependency; with `otel` unset nothing is loaded.
+- `doctor()` / `client.doctor()` and the `atlas-doctor` command check the secret key, clock skew, the Backend API, the JWKS, service status and instance configuration.
+- `verifyStandardWebhookWeb` and `verifyStandardWebhookRequest`: Standard Webhooks verification on Web Crypto only, for Workers, Deno, Bun and browsers. `signAtlasWebhook` and `signStandardWebhook` in `@atlasauth/rp/testing` sign deliveries for tests.
+- New typed methods: `migrations.verifyDualRun` and `status`; `instance.listScopes`, `putScopes`, `getImpersonationPolicy`, `putImpersonationPolicy`, `getOrgRoleEntitlements`, `putOrgRoleEntitlements`, `getOrgDeparturePolicy`, `putOrgDeparturePolicy`, `listAppEventTypes`, `putAppEventTypes`, `dismissPrivacyOrchestratorCases`; `users.addExternalAccount` and `removeExternalAccount`; `users.delete` takes `audit_actor_ids` and `audit_actor_emails`; `organizations.listAuditLogs`; `sessions.getRisk`; `oauthClients.getUsage` and the client webhook (`getWebhook`, `putWebhook`, `deleteWebhook`); `oauthGrants.import`; `passkeyCampaigns`; `diagnostics.getTrace` and `listTraces`; `securityAdvisories.get`; `connections.sign`; `dev.listEmails` and `clearEmails`; `integrations.test`.
+- Typed settings shapes for the instance's resolved auth configuration (`InstanceAuthConfigResolved` and its parts).
+
 ## 0.53.0
 
 - New clients and helpers: `signingKeySchedule` (ES384, PS256 and EdDSA keys with automatic rotation), `auditChain` with offline `verifyAuditChain`, `sessionBindings` with `verifyBoundSession`, `agentDelegations`, `oauthPublishers`, `billing.createStoreLink`, `billingConnect`, `referralRewards`, `connectionActions.types`, `connectionProviderChanges`, `connectionAccessRules` and `registerOAuthClient`, config snapshots and environment clones.

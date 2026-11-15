@@ -115,6 +115,10 @@ create table atlas_rp_sessions (
 
 Or implement `SidStore` yourself: `bind(sid, appSessionId, expiresAt)` and `take(sid)` (return and remove every unexpired binding).
 
+## Webhooks on any runtime
+
+`verifyAtlasWebhook` (Atlas events) and `verifyStandardWebhookWeb` (events your app publishes, Standard Webhooks) use Web Crypto only: no `node:crypto`, no `Buffer`. They run on Workers, Deno, Bun, Node 18+ and in browsers. `verifyAtlasWebhookRequest(request, { secret })` and `verifyStandardWebhookRequest(request, { secret })` read a Fetch `Request` for you.
+
 ## Testing
 
 `@atlasauth/rp/testing` is an offline issuer: no network, no Atlas account.
@@ -137,6 +141,15 @@ await rp.backchannelLogout(new Request('https://app.test/auth/backchannel-logout
   method: 'POST',
   body: new URLSearchParams({ logout_token: logout }),
 }));
+```
+
+`signAtlasWebhook({ secret, payload })` and `signStandardWebhook({ secret, payload })` return `{ body, headers }` for a correctly signed delivery, so you can test your webhook receiver the same way:
+
+```ts
+import { signStandardWebhook } from '@atlasauth/rp/testing';
+
+const { body, headers } = await signStandardWebhook({ secret: 'whsec_...', payload: { type: 'invoice.paid' } });
+const response = await receiver(new Request('https://app.test/hooks', { method: 'POST', body, headers }));
 ```
 
 `issuer.fetch` answers discovery, the JWKS, the token endpoint (PKCE checked, codes single use) and `/oauth2/session/touch` and `/end` (for sids it has issued); anything else is `404`. `issuer.idToken(claims)` signs an ID token on its own; `issuer.jwks` and `issuer.discovery` are there for other verifiers.

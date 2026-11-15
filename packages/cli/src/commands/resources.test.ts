@@ -129,3 +129,79 @@ describe('resource commands', () => {
     expect(calls.at(-1)).toEqual({ method: 'DELETE', path: '/v1/instance/data_key_provider', body: { confirm: 'shred' } });
   });
 });
+
+describe('surface resource commands', () => {
+  // [argv, method, path, body]
+  const cases: Array<[string[], string, string, unknown?]> = [
+    [['compliance', 'downstream-run', 'dsr_1', 'con_1', '--yes'], 'POST', '/v1/data_subject_requests/dsr_1/downstream/con_1/run', {}],
+    [['compliance', 'erasure-probe', 'con_1'], 'POST', '/v1/erasure_connectors/con_1/probe'],
+    [['compliance', 'cookie-consents'], 'GET', '/v1/cookie_consents'],
+    [['compliance', 'cookie-subject', 'sub 1'], 'GET', '/v1/cookie_consents/subjects/sub%201'],
+    [['compliance', 'cookie-subject-erase', 'sub_1', '--yes'], 'DELETE', '/v1/cookie_consents/subjects/sub_1'],
+    [['compliance', 'cookie-user-erase', 'user_1', '--yes'], 'DELETE', '/v1/users/user_1/cookie_consents'],
+    [['compliance', 'i18n-reviews', 'loc_1'], 'GET', '/v1/localizations/loc_1/reviews'],
+    [['connection-actions', 'types'], 'GET', '/v1/connection_actions/types'],
+    [['connection-actions', 'rules', 'con_1'], 'GET', '/v1/connections/con_1/access_rules'],
+    [['connection-actions', 'rules-set', 'con_1', '--yes', '--data', '{"rules":[]}'], 'PUT', '/v1/connections/con_1/access_rules', { rules: [] }],
+    [['connection-actions', 'rules-clear', 'con_1', '--yes'], 'DELETE', '/v1/connections/con_1/access_rules'],
+    [['connection-actions', 'register-client', '--data', '{"provider":"x"}'], 'POST', '/v1/connections/oauth_clients/register', { provider: 'x' }],
+    [['billing', 'connect-accounts'], 'GET', '/v1/billing/connect/accounts'],
+    [['billing', 'connect-account', 'acct_1'], 'GET', '/v1/billing/connect/accounts/acct_1'],
+    [['billing', 'connect-account-create', '--yes', '--data', '{"country":"US"}'], 'POST', '/v1/billing/connect/accounts', { country: 'US' }],
+    [['billing', 'connect-onboarding-link', 'acct_1'], 'POST', '/v1/billing/connect/accounts/acct_1/onboarding_link', {}],
+    [['billing', 'connect-refresh', 'acct_1'], 'POST', '/v1/billing/connect/accounts/acct_1/refresh', {}],
+    [['billing', 'connect-transfers'], 'GET', '/v1/billing/connect/transfers'],
+    [['billing', 'connect-transfer', 'tr_1'], 'GET', '/v1/billing/connect/transfers/tr_1'],
+    [['billing', 'connect-transfer-create', '--yes', '--data', '{"amount":5}'], 'POST', '/v1/billing/connect/transfers', { amount: 5 }],
+    [['billing', 'store-link', '--yes', '--data', '{"store":"app_store"}'], 'POST', '/v1/billing/store_links', { store: 'app_store' }],
+    [['audit', 'chain-verify'], 'POST', '/v1/audit/chain/verify', {}],
+    [['provider-changes', 'list'], 'GET', '/v1/connection_provider_changes'],
+    [['provider-changes', 'get', 'pc_1'], 'GET', '/v1/connection_provider_changes/pc_1'],
+    [['provider-changes', 'acknowledge', 'pc_1', '--yes'], 'POST', '/v1/connection_provider_changes/pc_1/acknowledge', {}],
+    [['provider-changes', 'resolve', 'pc_1', '--yes'], 'POST', '/v1/connection_provider_changes/pc_1/resolve', {}],
+    [['flows', 'messages', 'flow_1'], 'GET', '/v1/flows/flow_1/messages'],
+    [['flows', 'message-cancel', 'flow_1', 'msg_1', '--yes'], 'POST', '/v1/flows/flow_1/messages/msg_1/cancel', {}],
+    [['flows', 'readout', 'flow_1', 'exp_1'], 'GET', '/v1/flows/flow_1/experiments/exp_1/readout'],
+    [['referral-rewards', 'list'], 'GET', '/v1/referral_rewards'],
+    [['referral-rewards', 'get', 'rw_1'], 'GET', '/v1/referral_rewards/rw_1'],
+    [['referral-rewards', 'void', 'rw_1', '--yes'], 'POST', '/v1/referral_rewards/rw_1/void', {}],
+    [['referral-rewards', 'run', '--yes', '--data', '{"dry_run":true}'], 'POST', '/v1/referral_rewards/run', { dry_run: true }],
+    [['policies', 'audience', 'pol_1'], 'GET', '/v1/policies/pol_1/audience'],
+    [['policies', 'set-audience', 'pol_1', '--yes', '--data', '{"audience":"everyone"}'], 'PUT', '/v1/policies/pol_1/audience', { audience: 'everyone' }],
+    [['policies', 'translations', 'pol_1', 'v_1'], 'GET', '/v1/policies/pol_1/versions/v_1/translations'],
+    [['policies', 'translation-set', 'pol_1', 'v_1', 'fr', '--yes', '--data', '{"title":"Conditions"}'], 'PUT', '/v1/policies/pol_1/versions/v_1/translations/fr', { title: 'Conditions' }],
+    [['policies', 'translation-delete', 'pol_1', 'v_1', 'fr', '--yes'], 'DELETE', '/v1/policies/pol_1/versions/v_1/translations/fr'],
+    [['region', 'show'], 'GET', '/v1/region'],
+    [['region', 'set', '--yes', '--failover-region', 'eu', '--fapi-isolation', 'enforce'], 'PUT', '/v1/region', { failover_region: 'eu', fapi_isolation: 'enforce' }],
+    [['region', 'pin', '--yes'], 'PUT', '/v1/region', { pin: true }],
+    [['region', 'failover'], 'GET', '/v1/region/failover'],
+    [['oauth-publishers', 'verify', 'opub_1'], 'POST', '/v1/oauth_publishers/opub_1/verify', {}],
+    [['oauth-publishers', 'attach', 'opub_1', 'app_1', '--data', '{"allow_subject_change":true}'], 'PUT', '/v1/oauth_publishers/opub_1/clients/app_1', { allow_subject_change: true }],
+    [['oauth-publishers', 'detach', 'opub_1', 'app_1', '--yes'], 'DELETE', '/v1/oauth_publishers/opub_1/clients/app_1'],
+    [['age-assurance', 'list', 'user_1'], 'GET', '/v1/users/user_1/age_assurance'],
+    [['age-assurance', 'record', 'user_1', '--yes', '--data', '{"method":"document"}'], 'POST', '/v1/users/user_1/age_assurance', { method: 'document' }],
+    [['age-assurance', 'revoke', 'user_1', 'aa_1', '--yes'], 'POST', '/v1/users/user_1/age_assurance/aa_1/revoke', {}],
+    [['approval-devices', 'list', 'user_1'], 'GET', '/v1/users/user_1/approval_devices'],
+    [['approval-devices', 'trust', 'user_1', '--yes', '--data', '{"device_id":"d"}'], 'POST', '/v1/users/user_1/approval_devices/trust', { device_id: 'd' }],
+    [['approval-devices', 'remove', 'user_1', 'dev_1', '--yes'], 'DELETE', '/v1/users/user_1/approval_devices/dev_1'],
+  ];
+  it.each(cases)('%j', async (argv, method, path, body) => {
+    const calls: Call[] = [];
+    const { c } = ctx(calls);
+    expect(await run(argv, c)).toBe(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.method).toBe(method);
+    expect(calls[0]!.path).toBe(path);
+    if (body !== undefined) expect(calls[0]!.body).toEqual(body);
+  });
+
+  it('refuses a destructive subcommand without --yes and sends nothing', async () => {
+    for (const argv of [['region', 'pin'], ['approval-devices', 'remove', 'u', 'd'], ['policies', 'translation-delete', 'p', 'v', 'fr'], ['connection-actions', 'rules-clear', 'c']]) {
+      const calls: Call[] = [];
+      const { c, io } = ctx(calls);
+      expect(await run(argv, c)).toBe(1);
+      expect(io.stderr()).toContain('--yes');
+      expect(calls).toHaveLength(0);
+    }
+  });
+});

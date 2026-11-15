@@ -68,3 +68,14 @@ describe('atlas mirror init', () => {
     expect(p.stdout()).toContain("@atlasauth/backend/mirror/prisma");
   });
 });
+
+describe('atlas changes consumers', () => {
+  it('reads the consumers route and prints one line each', async () => {
+    const io = captureIO();
+    const paths: string[] = [];
+    const code = await run(['changes', 'consumers'], ctx(io, (p) => (paths.push(p), { data: [{ object: 'change_consumer', name: 'mirror', lag: 3 }] })));
+    expect(code).toBe(0);
+    expect(paths).toEqual(['/v1/changes/consumers']);
+    expect(io.stdout()).toContain('name=mirror\tlag=3');
+  });
+});

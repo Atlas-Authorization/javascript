@@ -19,6 +19,7 @@
   } from '@atlasauth/js';
   import { codeWaitText, createCodeWaits } from '@atlasauth/js';
   import { onDestroy } from 'svelte';
+  import type { FullAutoFill } from 'svelte/elements';
   import { useAtlas } from '../context';
   import { classFor, type ElementKey } from '../appearance';
   import { translate } from '../i18n';
@@ -107,7 +108,7 @@
     name: string;
     labelKey: string;
     type: string;
-    autocomplete?: string;
+    autocomplete?: FullAutoFill;
   }
 
   let values: Record<string, string> = {};
