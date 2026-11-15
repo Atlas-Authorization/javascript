@@ -44,17 +44,17 @@
   "devDependencies": {
     "@atlasauth/backend": "workspace:*",
     "@atlasauth/js": "workspace:*",
-    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/kit": "3.2.0",
     "@sveltejs/package": "^2.3.7",
-    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/svelte": "^5.2.4",
     "@types/node": "^22.9.0",
     "jsdom": "^25.0.1",
-    "svelte": "^5.55.7",
+    "svelte": "^5.57.1",
     "svelte-check": "^4.0.5",
     "typescript": "^5.6.3",
-    "vite": "^6.4.4",
+    "vite": "^8.0.12",
     "vitest": "^4.1.12"
   },
   "publishConfig": {
