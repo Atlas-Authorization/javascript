@@ -96,6 +96,8 @@ const OPTIONS = {
   'no-probe': { type: 'boolean' },
   shape: { type: 'string' },
   origin: { type: 'string' },
+  // whoami: ask the server (GET /v1/whoami).
+  remote: { type: 'boolean' },
   now: { type: 'boolean' },
   overlap: { type: 'string' },
   // Any command that receives a secret: print it instead of writing a 0600 file.

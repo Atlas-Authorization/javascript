@@ -316,6 +316,11 @@ export interface AtlasBackendOptions {
   legacyIssuers?: readonly LegacyIssuer[];
 }
 
+/** Split a comma/space separated issuer list (an env var value): trimmed, empties dropped. */
+export function parseIssuerList(raw: string | undefined | null): string[] {
+  return (raw ?? '').split(/[\s,]+/).filter(Boolean);
+}
+
 export class AtlasBackend {
   private readonly jwks: JwksCache;
   private readonly legacy?: LegacyIssuerVerifier;
@@ -329,6 +334,13 @@ export class AtlasBackend {
   readonly oidc: AtlasBackendOidc;
 
   constructor(private readonly options: AtlasBackendOptions) {
+    // Option not passed: fall back to ATLAS_PREVIOUS_ISSUERS so every adapter gets it for free.
+    if (options.previousIssuers === undefined) {
+      const fromEnv = parseIssuerList(
+        (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.ATLAS_PREVIOUS_ISSUERS,
+      );
+      if (fromEnv.length) this.options = { ...options, previousIssuers: fromEnv };
+    }
     // Exactly one key source. Two would be ambiguous (which wins?), and zero
     // leaves nothing to verify against — either is a configuration error worth
     // failing loudly on rather than silently accepting or rejecting every token.

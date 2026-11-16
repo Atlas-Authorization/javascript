@@ -39,7 +39,7 @@ import { idAccounts } from './commands/id-accounts';
 import { admin } from './commands/admin';
 import { partnerPlatforms } from './commands/partner-platforms';
 import {
-  AGENTS, AUDIT, BILLING, COMPLIANCE, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, PROVIDER_CHANGES, FLOWS, REFERRAL_REWARDS, POLICIES, REGION, OAUTH_PUBLISHERS, AGE_ASSURANCE, APPROVAL_DEVICES,
+  AGENTS, AUDIT, BILLING, COMPLIANCE, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, PROVIDER_CHANGES, FLOWS, REFERRAL_REWARDS, POLICIES, REGION, OAUTH_PUBLISHERS, DOMAINS, AGE_ASSURANCE, APPROVAL_DEVICES,
   resourceCommand,
 } from './commands/resources';
 import { ttyOf, type RunContext } from './context';
@@ -81,6 +81,7 @@ const COMMANDS: Record<string, Handler> = {
   init,
   'setup-guide': setupGuide,
   preflight,
+  health: (ctx: RunContext, args: ParsedArgs) => preflight(ctx, args, 'health'),
   doctor,
   golive,
   env: envCommand,
@@ -126,6 +127,7 @@ const COMMANDS: Record<string, Handler> = {
   policies: resourceCommand('policies', POLICIES),
   region: resourceCommand('region', REGION),
   'oauth-publishers': resourceCommand('oauth-publishers', OAUTH_PUBLISHERS),
+  domains: resourceCommand('domains', DOMAINS),
   'age-assurance': resourceCommand('age-assurance', AGE_ASSURANCE),
   'approval-devices': resourceCommand('approval-devices', APPROVAL_DEVICES),
 };

@@ -678,6 +678,7 @@ describe('atlas preflight', () => {
     const json = captureIO();
     expect(await run(['preflight', '--product', 'acme', '--json'], ctxWith(json))).toBe(1);
     expect(JSON.parse(json.stdout()).findings).toHaveLength(3);
+    expect(JSON.parse(json.stdout()).checks).toHaveLength(3);
   });
 
   it('an acknowledged warning is shown but does not fail --fail-on warning', async () => {

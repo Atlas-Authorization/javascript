@@ -234,12 +234,26 @@ describe('atlas plan drift (apply then plan --check)', () => {
     api.authConfig = { session: { idle_ms: 1000, extra: true }, password: { min_length: 8 } };
     const path = file({ instance: { auth_config: { session: { idle_ms: 1000 } } } }, 'partial.json');
     expect(await run(['plan', path, '--check'], ctx(captureIO(), api))).toBe(0);
+    // The instance PATCH is partial: a key the file omits (a server default included) is never a removal, even under --prune.
     const io = captureIO();
-    expect(await run(['plan', path, '--check', '--prune'], ctx(io, api))).toBe(2);
-    expect(io.stdout()).toContain('auth_config.password');
-    expect(io.stdout()).toContain('(unset)');
+    expect(await run(['plan', path, '--check', '--prune'], ctx(io, api))).toBe(0);
+    expect(io.stdout()).not.toContain('(unset)');
     const changed = file({ instance: { auth_config: { session: { idle_ms: 5 } } } }, 'changed.json');
     expect(await run(['plan', changed, '--check'], ctx(captureIO(), api))).toBe(2);
+  });
+
+  it('a top-level auth_config is named as a field of instance', async () => {
+    const io = captureIO();
+    const code = await run(['plan', file({ auth_config: { session: { idle_ms: 1 } } }, 'misplaced.json'), '--check'], ctx(io, new FakeApi()));
+    expect(code).not.toBe(0);
+    expect(io.stderr()).toContain('`auth_config` is a field of `instance`, not a resource: indent it under `instance:`');
+  });
+
+  it('--prune with server defaults the file never set plans as No changes', async () => {
+    const api = new FakeApi();
+    api.authConfig = { session: { idle_ms: 1000 }, strictRequestBodies: true, oauthProvider: { requirePkce: true } };
+    const io = captureIO();
+    expect(await run(['plan', file({ instance: { auth_config: { session: { idle_ms: 1000 } } } }, 'd.json'), '--check', '--prune'], ctx(io, api))).toBe(0);
   });
 
   it('export -> apply -> plan --check exits 0 (new instance), with hints, clients, hook, email and branding', async () => {

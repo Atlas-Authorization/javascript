@@ -58,7 +58,7 @@ function setup(answers: Record<string, unknown>, discoveryIssuer = ISSUER) {
     readFile: () => '',
     fetch: (async (url: string | URL) => {
       fetched.push(String(url));
-      return new Response(JSON.stringify({ issuer: discoveryIssuer }), { status: 200 });
+      return new Response(JSON.stringify({ issuer: discoveryIssuer }), { status: 200, headers: { 'content-type': 'application/json' } });
     }) as unknown as typeof fetch,
   });
   return { calls, fetched, make };
@@ -189,7 +189,21 @@ describe('atlas doctor --origin', () => {
     expect(out).toContain('login_readiness');
     expect(out).toContain('path_mount');
     expect(out).toContain('declared_cookies: Re-import the storage declaration');
-    expect(out).toContain('1 failing, 3 passing');
+    expect(out).toContain('mount_jwks');
+    expect(out).toContain('1 failing, 5 passing');
+  });
+
+  it('flags an HTML answer and a cached answer on the mount', async () => {
+    const { mountAliveCheck } = await import('./golive');
+    const html = (async () => new Response('<!doctype html><html></html>', { status: 200, headers: { 'content-type': 'text/html' } })) as unknown as typeof fetch;
+    const [a] = await mountAliveCheck(new URL('https://app.example.com'), '/auth', html);
+    expect(a!.ok).toBe(false);
+    expect(a!.detail).toContain('HTML');
+    expect(a!.detail).toContain('https://app.example.com/auth/.well-known/jwks.json?_atlas_probe=');
+    const cached = (async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json', age: '120' } })) as unknown as typeof fetch;
+    const [b] = await mountAliveCheck(new URL('https://app.example.com'), null, cached);
+    expect(b!.ok).toBe(false);
+    expect(b!.detail).toContain('cache');
   });
 });
 

@@ -1,5 +1,9 @@
 # @atlasauth/nextjs changelog
 
+## 0.18.0
+
+- `getAtlasPublicConfig()` passes a runtime-only `ATLAS_PUBLISHABLE_KEY` to the client provider. `ATLAS_PREVIOUS_ISSUERS` accepts spaces as well as commas.
+
 ## 0.17.0
 
 - `withStepUp` and `atlasStepUpMiddleware`; session revocation and back-channel logout helper; plan feature gate wrapper.

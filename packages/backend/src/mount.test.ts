@@ -267,6 +267,14 @@ describe('createVerifyHandler', () => {
     expect(res.headers.get('content-type')).toMatch(/^text\/plain/);
     expect(await res.text()).toBe('tok123');
   });
+  it('ignores query parameters and is never cached', async () => {
+    const hit = await GET(new Request('https://app.example.com/.well-known/atlas-verify/tok123?atlas_nonce=abc'));
+    expect(hit.status).toBe(200);
+    expect(hit.headers.get('cache-control')).toBe('no-store');
+    const miss = await GET(new Request('https://app.example.com/.well-known/atlas-verify/nope?atlas_nonce=abc'));
+    expect(miss.status).toBe(404);
+    expect(miss.headers.get('cache-control')).toBe('no-store');
+  });
   it('404s otherwise', async () => {
     expect((await GET(new Request('https://app.example.com/.well-known/atlas-verify/nope'), { params: { token: 'nope' } })).status).toBe(404);
     expect((await GET(new Request('https://app.example.com/.well-known/atlas-verify/nope'))).status).toBe(404);

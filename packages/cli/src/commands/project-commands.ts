@@ -18,7 +18,7 @@ import {
 } from '../project';
 import { deliverSecret, productDir, writeSecretFile } from '../secrets';
 import { envApiUrl, requireArg, resolveAuth, wantsJson } from './shared';
-import { declaredCookiesCheck, loginReadinessCheck, parseOrigin, pathMountCheck, preflightCheck } from './golive';
+import { declaredCookiesCheck, loginReadinessCheck, mountAliveCheck, parseOrigin, pathMountCheck, preflightCheck } from './golive';
 import { scanForSecrets } from './doctor-scan';
 import { doctorResourceServer } from './doctor-rs';
 
@@ -157,11 +157,22 @@ const FINDING_COLUMNS: Column<PreflightFinding>[] = [
   { header: 'MESSAGE', get: (f) => f.message },
 ];
 
-/** `atlas preflight` — run the instance's setup checks; exit 1 on errors (or warnings with --fail-on warning). */
-export async function preflight(ctx: RunContext, args: ParsedArgs): Promise<number> {
+/** One check in `--json`: a stable shape whatever the server adds to a finding. An acknowledged finding is `info`. */
+export function checkRow(f: PreflightFinding): { id: string; status: 'error' | 'warning' | 'info' | 'ok'; detail: string; remedy: string | null } {
+  const call = f.fix_call;
+  return {
+    id: f.code,
+    status: f.acknowledged ? 'info' : f.severity,
+    detail: f.message,
+    remedy: call ? `${call.method} ${call.path}${call.body === undefined ? '' : ` ${JSON.stringify(call.body)}`}` : f.fix || null,
+  };
+}
+
+/** `atlas preflight` (alias `health`) — run the instance's setup checks; exit 1 on errors (or warnings with --fail-on warning). */
+export async function preflight(ctx: RunContext, args: ParsedArgs, verb: 'preflight' | 'health' = 'preflight'): Promise<number> {
   const failOn = str(args.values, 'fail-on') ?? 'error';
-  if (failOn !== 'error' && failOn !== 'warning') {
-    throw new CliError(`--fail-on must be error or warning, got '${failOn}'.`);
+  if (failOn !== 'error' && failOn !== 'warning' && failOn !== 'never') {
+    throw new CliError(`--fail-on must be error, warning or never, got '${failOn}'.`);
   }
   const fix = args.values.fix === true;
   const tty = ttyOf(ctx);
@@ -182,10 +193,10 @@ export async function preflight(ctx: RunContext, args: ParsedArgs): Promise<numb
   const errors = counted.filter((f) => f.severity === 'error').length;
   const warnings = counted.filter((f) => f.severity === 'warning').length;
   const acknowledged = findings.length - counted.length;
-  const failed = errors > 0 || (failOn === 'warning' && warnings > 0);
+  const failed = failOn !== 'never' && (errors > 0 || (failOn === 'warning' && warnings > 0));
 
   if (wantsJson(args.values)) {
-    printJson(ctx.io, report);
+    printJson(ctx.io, verb === 'health' ? findings.map(checkRow) : { ...report, checks: findings.map(checkRow) });
   } else if (findings.length === 0) {
     ctx.io.out('Preflight passed: no findings.');
   } else {
@@ -251,12 +262,17 @@ export async function doctor(ctx: RunContext, args: ParsedArgs): Promise<number>
   const originRaw = str(args.values, 'origin');
   if (originRaw) {
     const origin = parseOrigin(originRaw, 'doctor');
-    const extra = await Promise.all([
-      preflightCheck(api),
-      loginReadinessCheck(api, origin.origin),
-      pathMountCheck(api, origin.host),
-      declaredCookiesCheck(api),
-    ]);
+    const domains = await api.get<{ data: Array<{ method?: string; host: string; base_path?: string | null }> }>('/v1/domains').catch(() => ({ data: [] }));
+    const mount = domains.data.find((d) => d.method === 'path' && d.host === origin.host);
+    const extra = (
+      await Promise.all([
+        preflightCheck(api),
+        loginReadinessCheck(api, origin.origin),
+        pathMountCheck(api, origin.host),
+        declaredCookiesCheck(api),
+        mountAliveCheck(origin, mount?.base_path, ctx.fetch),
+      ])
+    ).flat();
     for (const c of extra) {
       report.checks.push({ id: c.id, ok: c.ok, detail: c.detail, fix: c.fix ?? null, source: 'origin' });
       report.summary[c.ok ? 'passing' : 'failing'] += 1;

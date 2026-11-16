@@ -397,3 +397,36 @@ export async function staleSecretKeys(api: ConfigHttp, now = Date.now()): Promis
       (typeof k.last_used_at === 'number' ? k.last_used_at < cutoff : (k.last_used_at === null || k.last_used_at === undefined) && typeof k.created_at === 'number' && k.created_at < cutoff),
   );
 }
+
+/**
+ * The mount seen from outside: the JWKS and the client environment answered through the
+ * public origin (with a cache-busting query), as JSON, and not from a cache or an HTML page.
+ */
+export async function mountAliveCheck(origin: URL, basePath: string | null | undefined, f: typeof fetch = fetch): Promise<CheckResult[]> {
+  const base = `${origin.origin}${(basePath ?? '').replace(/\/+$/, '')}`;
+  const targets = [
+    { id: 'mount_jwks', path: '/.well-known/jwks.json' },
+    { id: 'mount_client_environment', path: '/v1/client/environment' },
+  ];
+  return Promise.all(
+    targets.map(async ({ id, path }): Promise<CheckResult> => {
+      const url = `${base}${path}?_atlas_probe=${Date.now()}`;
+      try {
+        const res = await f(url, { redirect: 'manual', signal: AbortSignal.timeout(8000), headers: { 'cache-control': 'no-cache' } });
+        const type = res.headers.get('content-type') ?? '';
+        const age = res.headers.get('age');
+        const cache = res.headers.get('x-cache') ?? res.headers.get('cf-cache-status');
+        const text = await res.text().catch(() => '');
+        const seen = `${res.status} ${type || 'no content-type'}${age ? `, age ${age}s` : ''}${cache ? `, cache ${cache}` : ''}`;
+        const html = /html/i.test(type) || /^\s*<(!doctype|html)/i.test(text);
+        const cached = (age !== null && Number(age) > 0) || /\bhit\b/i.test(cache ?? '');
+        const problem = res.status !== 200 ? `answered ${res.status}` : html ? 'answered HTML, not JSON: the request is not reaching Atlas (the host serves its own page)' : !/json/i.test(type) ? 'answered a non-JSON content type' : cached ? 'answered from a cache even with a cache-busting query: a cache or CDN sits in front of the mount' : '';
+        return problem
+          ? { id, ok: false, detail: `${url} ${problem} (${seen})`, fix: 'Route the mount path to Atlas and bypass caching for it (no-store); see the path-mount guide.' }
+          : { id, ok: true, detail: `${path} ${seen}` };
+      } catch (err) {
+        return { id, ok: false, detail: `${url} did not answer (${(err as Error).message})`, fix: 'Check the origin is up and the mount path is routed to Atlas.' };
+      }
+    }),
+  );
+}

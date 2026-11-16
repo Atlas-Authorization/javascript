@@ -60,6 +60,7 @@ import { ATLAS_REACT_SDK } from './version';
  */
 export function SignUp(props: FlowProps = {}) {
   const link = useEmailLink('sign_up');
+  if (useAtlas().inert) return null;
   return link ? <EmailLinkPage link={link} hideTitle={props.hideTitle} /> : <SignUpFlow {...props} />;
 }
 

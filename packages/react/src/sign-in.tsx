@@ -37,6 +37,7 @@ import type { CaptchaController } from './captcha';
 
 export function SignIn(props: FlowProps = {}) {
   const link = useEmailLink('sign_in');
+  if (useAtlas().inert) return null;
   return link ? <EmailLinkPage link={link} hideTitle={props.hideTitle} /> : <SignInFlow {...props} />;
 }
 

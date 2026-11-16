@@ -54,6 +54,24 @@ describe('atlas preflight', () => {
   });
 });
 
+describe('atlas health / --json shape', () => {
+  it('health is preflight; --json is an array of {id,status,detail,remedy}; --fail-on never exits 0', async () => {
+    const err = { ...SAFE, severity: 'error' as const, code: 'E1', message: 'bad', fix: 'do it', fix_call: undefined };
+    const { ctx } = setup([err]);
+    const io = captureIO();
+    expect(await run(['health', '--json', '--fail-on', 'never'], ctx(io))).toBe(0);
+    expect(JSON.parse(io.stdout())).toEqual([{ id: 'E1', status: 'error', detail: 'bad', remedy: 'do it' }]);
+    expect(await run(['health'], ctx(captureIO()))).toBe(1);
+  });
+
+  it('whoami --remote calls GET /v1/whoami', async () => {
+    const { ctx } = setup([]);
+    const io = captureIO();
+    expect(await run(['whoami', '--remote', '--json'], ctx(io))).toBe(0);
+    expect(JSON.parse(io.stdout())).toHaveProperty('ok');
+  });
+});
+
 describe('atlas preflight --fix', () => {
   it('refuses without a terminal unless --yes', async () => {
     const { state, ctx } = setup([SAFE]);

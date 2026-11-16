@@ -2,6 +2,7 @@ import {
   AtlasBackend,
   ForbiddenError,
   evaluate,
+  parseIssuerList,
   hasFromClaims,
   type ProtectCondition,
   type SessionClaims,
@@ -268,10 +269,7 @@ export function configFromEnv(env: Env = readEnv()): GetAuthOptions {
         .filter(Boolean)
     : undefined;
 
-  const previousIssuers = pick(env, 'ATLAS_PREVIOUS_ISSUERS')
-    ?.split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
+  const previousIssuers = parseIssuerList(pick(env, 'ATLAS_PREVIOUS_ISSUERS'));
 
   const publishableKey = pick(env, 'ATLAS_PUBLISHABLE_KEY');
 

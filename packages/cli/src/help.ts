@@ -1,4 +1,4 @@
-import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, PROVIDER_CHANGES, FLOWS, REFERRAL_REWARDS, POLICIES, REGION, OAUTH_PUBLISHERS, AGE_ASSURANCE, APPROVAL_DEVICES, type Ops } from './commands/resources';
+import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, PROVIDER_CHANGES, FLOWS, REFERRAL_REWARDS, POLICIES, REGION, OAUTH_PUBLISHERS, DOMAINS, AGE_ASSURANCE, APPROVAL_DEVICES, type Ops } from './commands/resources';
 /**
  * All help text lives here as plain strings — the CLI's "docs" surface. Kept
  * out of the handlers so the dispatch code stays about control flow and the
@@ -58,6 +58,7 @@ Commands:
                                       Who a policy is asked of, and its per-language text
   region show|set|pin|failover        Region pin, failover region, Frontend API isolation
   oauth-publishers list|verify|attach|detach   Verified publishers of your OAuth apps
+  domains list|get|verify|rotate-verification  Custom domains; rotate-verification issues a new path-mount verify URL
   age-assurance list|record|revoke <user-id>   A user's age checks
   approval-devices list|trust|remove <user-id>  A user's trusted approval devices
   csp --framework next|express|nginx
@@ -93,7 +94,7 @@ Commands:
                              Code-defined hosted-page templates: draft, signed preview link, promote
   init                       Create or complete an app's setup (idempotent); secrets to 0600 files
   setup-guide                The setup calls in order, with the read-back for each (--json for agents)
-  preflight                  Check an instance's setup; non-zero exit on errors (for CI)
+  preflight | health         Check an instance's setup; non-zero exit on errors (for CI)
   doctor                     Integration health: webhooks, logout, referrals, email, consent; 'doctor rs <url>' probes your API (exit 1 on a failure)
   golive --origin <url>      Take an instance live for an app origin, step by step; stops at the first failure
   env                        Print deploy variables: public values + secret file paths
@@ -487,7 +488,9 @@ Usage: atlas logout [--profile <name>]`,
 
   whoami: `atlas whoami — show the active profile and instance
 
-Usage: atlas whoami [--profile <name>] [--json]`,
+Usage: atlas whoami [--profile <name>] [--remote] [--json]
+
+--remote asks the server what this key is and can do (GET /v1/whoami).`,
 
   users: `atlas users — manage users
 
@@ -848,11 +851,16 @@ and which are runtime. With --product it sets up the instance as well.`,
   preflight: `atlas preflight — check an instance's setup (a CI / deploy gate)
 
 Usage: atlas preflight [--instance <id> | --product <name> [--instance-env <env>]]
-                       [--fail-on error|warning] [--fix [--yes]] [--json]
+                       [--fail-on error|warning|never] [--fix [--yes]] [--json]
+       atlas health ...                    (same command)
 
 Prints every finding (severity, code, message, fix, and the exact call when there
 is one). Exits 1 when there is an error, or with --fail-on warning
-also on a warning.
+also on a warning; --fail-on never always exits 0.
+
+health --json prints an array with one object per check: {id, status, detail, remedy},
+status being error, warning or info and remedy the call or command that fixes it.
+preflight --json prints the full report, with the same array under checks.
 
 --fix lists the findings the server marks safe to fix, asks before each call
 (--yes skips the question; needed without a terminal), applies them, runs the
@@ -873,7 +881,10 @@ fails. --no-probe uses recorded deliveries only (no live calls).
 --origin <url> adds the go-live checks for that app origin to the same report:
 setup errors (preflight), login readiness (live), the path-mount verification
 state on that host, and whether the consent declaration lists every cookie the
-SDKs read (__session, __atlas_uat, __atlas_rt, __client).
+SDKs read (__session, __atlas_uat, __atlas_rt, __client). It also requests the
+mount's /.well-known/jwks.json and /v1/client/environment from outside with a
+cache-busting query and reports status, content type and age/cache headers; an
+HTML or cached answer is flagged.
 
 rs <url> needs no key. It probes one of your protected API routes from outside with invalid
 credentials only: an anonymous request, a forged token, a malformed header, a forged DPoP
@@ -1239,6 +1250,7 @@ atlas audit verify [--after <seq>] [--jwks-url <url>] [--json]
   'referral-rewards': resHelp('referral-rewards', 'the referral reward ledger; run applies the reward rules now (--data \'{"dry_run":true}\' to preview)', REFERRAL_REWARDS),
   policies: resHelp('policies', 'policy audience (everyone, or members of listed organizations) and per-language text of a version (set takes --data with title and content_markdown)', POLICIES),
   region: resHelp('region', 'where the instance lives; pin is one-way, set takes --failover-region and --fapi-isolation off|enforce', REGION),
+  domains: resHelp('domains', 'custom domains; rotate-verification prints a new verify URL for a path mount (the old one works for 24 hours)', DOMAINS),
   'oauth-publishers': resHelp('oauth-publishers', 'verified publishers; attach takes the app\'s public client_id (--data \'{"allow_subject_change":true}\' to confirm a subject change)', OAUTH_PUBLISHERS),
   'age-assurance': resHelp('age-assurance', 'age checks on record for a user, recording one and revoking one', AGE_ASSURANCE),
   'approval-devices': resHelp('approval-devices', 'a user\'s trusted approval devices', APPROVAL_DEVICES),

@@ -396,6 +396,20 @@ export const OAUTH_PUBLISHERS: Ops = {
   attach: { m: 'PUT', p: '/v1/oauth_publishers/{}/clients/{}', f: 'b' },
   detach: { m: 'DELETE', p: '/v1/oauth_publishers/{}/clients/{}', f: 'y' },
 };
+/** Custom domains: read one, re-check it, and get a fresh verification URL for a path mount. */
+export const DOMAINS: Ops = {
+  list: { m: 'GET', p: '/v1/domains' },
+  get: { m: 'GET', p: '/v1/domains/{}' },
+  verify: { m: 'POST', p: '/v1/domains/{}/verify' },
+  'rotate-verification': {
+    m: 'POST',
+    p: '/v1/domains/{}/verification/rotate',
+    out: (d) => {
+      const v = (d.verification ?? {}) as { url?: string; previous_url?: string; previous_valid_until?: number | null };
+      return [`Verify URL: ${v.url ?? ''}`, ...(v.previous_url ? [`Previous URL (still valid until ${v.previous_valid_until ? new Date(v.previous_valid_until).toISOString() : 'unknown'}): ${v.previous_url}`] : []), 'Publish the new file, then run: atlas domains verify <id>'].join('\n');
+    },
+  },
+};
 /** Age assurance of a user: the checks on record, recording one, and revoking one. */
 export const AGE_ASSURANCE: Ops = {
   list: { m: 'GET', p: '/v1/users/{}/age_assurance' },

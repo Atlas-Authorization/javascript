@@ -25,10 +25,42 @@ export interface CustomDomain {
   routing?: 'atlas_ingress' | 'customer_proxy' | null;
   /** Path mount: `https://<host><base_path>`, the Frontend API and (once verified) the issuer. */
   frontend_api_url?: string;
-  /** Path mount: publish `content` at `url` (status 200, no redirect), then verify. */
-  verification?: { method: 'https_file'; url: string; token: string; content: string; instructions: string };
+  /** Path mount: publish `content` at `url` (status 200, no redirect, never cached), then verify. */
+  verification?: DomainVerification;
   /** Path mount, once verified: nothing to add, or the reverse-proxy rule (headers, nginx / Caddy / Traefik snippets). */
   instructions?: Record<string, unknown>;
+}
+
+/** What the last failed verification fetch got back. Null on the domain until a check fails. */
+export interface DomainVerificationObservation {
+  status: number;
+  content_type: string | null;
+  /** Body bytes seen (headers not counted); a lower bound when `bytes_capped`. */
+  bytes: number;
+  bytes_capped: boolean;
+  /** The first 200 bytes of the body. */
+  body_prefix: string;
+  final_url: string;
+  redirect_to?: string | null;
+  age: number | null;
+  /** `cf-cache-status` or `x-cache`, when present. */
+  cache_status: string | null;
+  is_html?: boolean;
+  /** A cache answered, not your origin. */
+  served_from_cache?: boolean;
+  checked_at: number;
+}
+
+export interface DomainVerification {
+  method: 'https_file';
+  url: string;
+  token: string;
+  content: string;
+  instructions: string;
+  /** After a rotation: the replaced token's URL, valid until `previous_valid_until`. */
+  previous_url?: string;
+  previous_valid_until?: number | null;
+  last_observation?: DomainVerificationObservation | null;
 }
 
 /** POST /v1/domains with method "path": the Frontend API under a path on a host you already run. */
@@ -68,6 +100,13 @@ export function domainsResource(request: RequestFn) {
       idempotencyKey?: string,
     ): Promise<CustomDomain & { instructions?: Record<string, unknown>; note?: string }> {
       return request({ method: 'POST', path: '/v1/domains', body, idempotencyKey });
+    },
+    get(id: string): Promise<CustomDomain> {
+      return request({ method: 'GET', path: `/v1/domains/${enc(id)}` });
+    },
+    /** A path mount: issue a new random verification token (the old one works for 24 hours). Use it when a CDN cached a wrong answer for the old URL. */
+    rotateVerification(id: string, idempotencyKey?: string): Promise<CustomDomain> {
+      return request({ method: 'POST', path: `/v1/domains/${enc(id)}/verification/rotate`, idempotencyKey });
     },
     verify(id: string): Promise<CustomDomain & { verified: boolean; issuer?: string }> {
       return request({ method: 'POST', path: `/v1/domains/${enc(id)}/verify` });

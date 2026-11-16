@@ -2,6 +2,7 @@ import {
   AtlasBackend,
   ForbiddenError,
   evaluate,
+  parseIssuerList,
   hasFromClaims,
   type ProtectCondition,
   type SessionClaims,
@@ -187,9 +188,7 @@ function resolveConfig(options: AtlasMiddlewareOptions): ResolvedConfig {
 
   const previousIssuers =
     options.previousIssuers ??
-    env.ATLAS_PREVIOUS_ISSUERS?.split(',')
-      .map((part) => part.trim())
-      .filter(Boolean);
+    parseIssuerList(env.ATLAS_PREVIOUS_ISSUERS);
 
   return {
     jwksUrl,

@@ -98,6 +98,8 @@ export type AuthStatus = 'loading' | 'signed_in' | 'signed_out';
 interface AtlasContextValue {
   publishableKey: string;
   frontendApi: string;
+  /** True when the provider has no publishable key: signed out, no network, and the sign-in UI renders nothing. */
+  inert?: boolean;
   status: AuthStatus;
   /** Seeded by a server-fetched `initialState`: the server drew the forms, so the first client render must match. */
   serverRendered?: boolean;
@@ -334,7 +336,56 @@ export interface AtlasProviderProps {
   attribution?: AttributionOptions;
 }
 
+let warnedNoKey = false;
+
+const NOOP_ASYNC = async () => null;
+const INERT_VALUE: AtlasContextValue = {
+  publishableKey: '',
+  frontendApi: '',
+  inert: true,
+  status: 'signed_out',
+  user: null,
+  session: null,
+  sessions: [],
+  claims: null,
+  memberships: [],
+  instanceSettings: null,
+  environment: null,
+  appearanceData: null,
+  loadEnvironment: NOOP_ASYNC,
+  catalog: EN_US,
+  pendingAttempt: null,
+  getToken: NOOP_ASYNC,
+  addSignOutListener: () => () => {},
+  getProviderToken: NOOP_ASYNC,
+  signOut: async () => ({ revoked: true }) as SignOutResult,
+  broadcastSessionChange: () => {},
+  setActiveOrganization: async () => {},
+  setActiveSession: async () => {},
+  endImpersonation: async () => ({ ended: false, resumed: false }) as EndImpersonationResult,
+  reload: async () => false,
+};
+
+/**
+ * A missing or empty `publishableKey` (an env var that shipped empty) must not
+ * take the host page down: the provider goes inert (signed out, no requests,
+ * the sign-in UI renders nothing) and warns once.
+ */
 export function AtlasProvider(props: AtlasProviderProps) {
+  if (typeof props.publishableKey !== 'string' || props.publishableKey.trim() === '') {
+    if (!warnedNoKey && typeof console !== 'undefined') {
+      warnedNoKey = true;
+      console.warn(
+        '[Atlas] <AtlasProvider> has no publishableKey, so sign-in is disabled on this page. ' +
+          'In Next.js pass it from NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY (inlined at build) or read ATLAS_PUBLISHABLE_KEY on the server and pass it as a prop.',
+      );
+    }
+    return <AtlasContext.Provider value={INERT_VALUE}>{props.children}</AtlasContext.Provider>;
+  }
+  return <AtlasProviderLive {...props} />;
+}
+
+function AtlasProviderLive(props: AtlasProviderProps) {
   const { publishableKey, children, appearance, localization, locale } = props;
   // What the Frontend API is told the UI language is, so its error messages
   // match the components'.

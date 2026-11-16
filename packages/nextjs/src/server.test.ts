@@ -8,6 +8,7 @@ import {
   buildEdgeRequest,
   configFromEnv,
   getAtlasInitialState,
+  getAtlasPublicConfig,
 } from './server';
 
 /**
@@ -221,5 +222,33 @@ describe('getAtlasInitialState', () => {
     expect(
       await getAtlasInitialState({ fetchImpl: failing, publishableKey: 'pk', frontendApi: 'https://a.example' }, {}),
     ).toEqual({});
+  });
+});
+
+describe('getAtlasPublicConfig', () => {
+  it('reads the runtime server var, or the NEXT_PUBLIC form', () => {
+    expect(getAtlasPublicConfig({ ATLAS_PUBLISHABLE_KEY: 'pk_test_a', ATLAS_FRONTEND_API: 'https://fapi.example.com' })).toEqual({
+      publishableKey: 'pk_test_a',
+      frontendApi: 'https://fapi.example.com',
+    });
+    expect(getAtlasPublicConfig({ NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY: 'pk_test_b' }).publishableKey).toBe('pk_test_b');
+  });
+
+  it('never throws; a missing key logs an error naming the variable', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(getAtlasPublicConfig({}).publishableKey).toBe('');
+    expect(err.mock.calls[0]?.[0]).toContain('ATLAS_PUBLISHABLE_KEY');
+    err.mockRestore();
+  });
+});
+
+describe('configFromEnv previous issuers', () => {
+  it('splits ATLAS_PREVIOUS_ISSUERS on commas and spaces', () => {
+    const o = configFromEnv({
+      ATLAS_JWKS_URL: 'https://x.example.com/jwks',
+      ATLAS_ISSUER: 'https://x.example.com',
+      ATLAS_PREVIOUS_ISSUERS: 'https://a.example.com, https://b.example.com',
+    });
+    expect(o.previousIssuers).toEqual(['https://a.example.com', 'https://b.example.com']);
   });
 });

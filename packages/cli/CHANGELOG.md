@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.47.0
+
+- `atlas domains list|get|verify|rotate-verification`. `atlas health` (preflight, with a `{id,status,detail,remedy}` array for `--json`; `preflight --json` adds it as `checks`), `--fail-on never`, `atlas whoami --remote`, `atlas doctor --origin` mount probe. Plan names the parent of a misplaced key, `--prune` no longer lists instance defaults as removals, and the missing email provider names its fix call.
+
 ## 0.46.0
 
 - `atlas plan` / `atlas apply` skip OAuth clients owned by a user or created by code unless the file declares them, and report how many were skipped; `--include-owned` includes them.

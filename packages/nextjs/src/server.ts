@@ -15,6 +15,7 @@
  */
 import {
   createAtlasClient,
+  parseIssuerList,
   type AtlasClient,
   type AtlasClientConfig,
 } from '@atlasauth/backend';
@@ -75,10 +76,7 @@ export function configFromEnv(env: Env = readEnv()): AtlasMiddlewareOptions {
         .filter(Boolean)
     : undefined;
 
-  const previousIssuers = pick(env, 'ATLAS_PREVIOUS_ISSUERS', 'NEXT_PUBLIC_ATLAS_PREVIOUS_ISSUERS')
-    ?.split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
+  const previousIssuers = parseIssuerList(pick(env, 'ATLAS_PREVIOUS_ISSUERS', 'NEXT_PUBLIC_ATLAS_PREVIOUS_ISSUERS'));
 
   const publishableKey = pick(env, 'ATLAS_PUBLISHABLE_KEY', 'NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY');
 
@@ -239,6 +237,28 @@ export async function auth(): Promise<ServerAuth> {
 export async function currentUser(): Promise<CurrentUser | null> {
   const helper = getCurrentUserHelper();
   return helper(await edgeRequestFromContext());
+}
+
+/**
+ * The public values `<AtlasProvider>` needs, read from the server's environment
+ * at render time. Call it in a Server Component and spread it into the client
+ * component that renders the provider, so a key that exists only at runtime
+ * (`ATLAS_PUBLISHABLE_KEY`, not inlined at build) still reaches the browser:
+ *
+ *   <AtlasClientProvider {...getAtlasPublicConfig()}>{children}</AtlasClientProvider>
+ *
+ * The publishable key is public by design. Never throws; a missing key logs one
+ * console error naming the variables to set (and the provider then stays inert).
+ */
+export function getAtlasPublicConfig(env: Env = readEnv()): { publishableKey: string; frontendApi: string } {
+  const publishableKey = pick(env, 'ATLAS_PUBLISHABLE_KEY', 'NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY') ?? '';
+  const frontendApi = pick(env, 'ATLAS_FRONTEND_API', 'NEXT_PUBLIC_ATLAS_FRONTEND_API') ?? '';
+  if (!publishableKey && typeof console !== 'undefined') {
+    console.error(
+      '[Atlas] getAtlasPublicConfig: no publishable key. Set ATLAS_PUBLISHABLE_KEY (read at runtime on the server) or NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY (inlined at build).',
+    );
+  }
+  return { publishableKey, frontendApi };
 }
 
 /**

@@ -31,3 +31,29 @@ describe('previousIssuers', () => {
     expect((await overlap.verify(foreign)).ok).toBe(false);
   });
 });
+
+describe('ATLAS_PREVIOUS_ISSUERS', () => {
+  it('parses comma/space separated values, trimmed, empties ignored', async () => {
+    const { parseIssuerList } = await import('./verify');
+    expect(parseIssuerList(' https://a.example.com, https://b.example.com  ,, ')).toEqual(['https://a.example.com', 'https://b.example.com']);
+    expect(parseIssuerList('https://a.example.com https://b.example.com')).toHaveLength(2);
+    expect(parseIssuerList(undefined)).toEqual([]);
+  });
+
+  it('is used when the option is not passed, and an explicit option wins', async () => {
+    const fx = await createTestIssuer({ issuer: 'https://app.example.com/__atlas' });
+    const old = 'https://bright-fox-fapi.example.test';
+    const before = await fx.mintSession({ sub: 'user_1', iss: old });
+    const prev = process.env.ATLAS_PREVIOUS_ISSUERS;
+    process.env.ATLAS_PREVIOUS_ISSUERS = ` ${old} , `;
+    try {
+      const fromEnv = new AtlasBackend({ jwks: fx.jwks, issuer: fx.issuer, fetchImpl: forbiddenFetch });
+      const explicit = new AtlasBackend({ jwks: fx.jwks, issuer: fx.issuer, previousIssuers: [], fetchImpl: forbiddenFetch });
+      expect((await fromEnv.verify(before)).ok).toBe(true);
+      expect((await explicit.verify(before)).ok).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.ATLAS_PREVIOUS_ISSUERS;
+      else process.env.ATLAS_PREVIOUS_ISSUERS = prev;
+    }
+  });
+});

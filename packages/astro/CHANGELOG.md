@@ -1,5 +1,9 @@
 # @atlasauth/astro changelog
 
+## 0.3.1
+
+- `ATLAS_PREVIOUS_ISSUERS` accepts spaces as well as commas.
+
 ## 0.3.0
 
 - Plan feature gate wrapper.

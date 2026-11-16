@@ -39,7 +39,7 @@ import {
   type PreflightReport,
 } from './config-rollout';
 import { configJsonSchema } from './config-types/schema';
-import { envApiUrl, resolveAuth } from './shared';
+import { EMAIL_PROVIDER_FIX, envApiUrl, resolveAuth } from './shared';
 import { configHistory } from './config-history';
 import { parseDotenv, productDir, renderDotenv, writeSecretFile } from '../secrets';
 import { REDACTED, isPlaceholder, isSecretKey, redactDeep, rememberResolved, revealingSecrets } from '../redact';
@@ -131,6 +131,8 @@ export interface SingletonSpec {
   validate?(config: Config): string[];
   /** Every top-level key a file may set; omit for a document the server validates itself. */
   fileKeys?: readonly string[];
+  /** The write is a partial patch: a key the file omits is never removed, so --prune must not show it as a change (an explicit null still unsets). */
+  partialWrite?: boolean;
   /** Allowed keys inside a top-level object key. */
   nestedKeys?: Record<string, readonly string[]>;
   /** The live side shows a set secret as "(secret set)", so an absent one really is unset. */
@@ -255,6 +257,8 @@ function registry(): ResourceSpec[] {
       kind: 'singleton',
       type: 'instance',
       fileKeys: ['allowed_origins', 'auth_config'],
+      // PATCH /v1/instance is partial: omitted keys (including the server's own defaults) are never removed.
+      partialWrite: true,
       async fetchLive(http) {
         const inst = await http.get<{ allowed_origins?: Json; allowed_origin_integrations?: Json; auth_config?: Json }>('/v1/instance');
         const hints = obj(inst.allowed_origin_integrations ?? null);
@@ -2016,7 +2020,7 @@ export async function planConfigImport(
         changes.push({ type: spec.type, action: 'create', key: '', after: masked, raw: desiredN, apply: () => spec.apply(http, desired, applyOpts) });
         continue;
       }
-      const trimmed = withoutUnstated(comparable(norm(liveRaw), desiredN, prune), desiredN);
+      const trimmed = withoutUnstated(comparable(norm(liveRaw), desiredN, prune && spec.partialWrite !== true), desiredN);
       const seen = spec.align ? spec.align(trimmed as Config, desiredN) : trimmed;
       const r = reconcileSecrets(desiredN, seen, spec.reportsSecrets === true);
       const forced = rotate ? r.unverifiable : [];
@@ -2120,6 +2124,16 @@ export async function planConfigImport(
       } else {
         skippedDeletes.push(change);
       }
+    }
+  }
+  // Email methods in the file with no sender anywhere: they stay inactive, so say how to fix it.
+  const strategies = obj(obj(sections.find((x) => x.type === 'instance')?.doc ?? null).auth_config ?? null).strategies;
+  if (isObj(strategies) && ['password', 'emailCode', 'emailLink'].some((k) => strategies[k] === true) && !present.has(`email_provider.${ext}`)) {
+    try {
+      const p = await http.get<{ configured?: boolean }>('/v1/messaging_providers/email');
+      if (p?.configured === false) warnings.push(`strategies password / emailCode / emailLink are on but no email provider is set, so they stay inactive. ${EMAIL_PROVIDER_FIX}`);
+    } catch {
+      // Advice only: never fail a plan over it.
     }
   }
   const typeOrder = new Map(registry().map((s, i) => [s.type, i] as const));
@@ -2555,6 +2569,13 @@ export async function loadCodeConfig(path: string): Promise<unknown> {
   return typeof exported === 'function' ? await (exported as () => unknown)() : exported;
 }
 
+/** A top-level key that is really a field of a resource (schema-driven from each spec's `fileKeys`): say where it belongs. */
+export function misplacedKeyHint(key: string): string[] {
+  return registry()
+    .filter((s) => s.kind === 'singleton' && s.fileKeys?.includes(key))
+    .map((s) => `\`${key}\` is a field of \`${s.type}\`, not a resource: indent it under \`${s.type}:\`.`);
+}
+
 async function resolveSource(ctx: RunContext, args: ParsedArgs): Promise<ConfigSource & { cleanup: () => void }> {
   const path =
     args.positionals[1] ??
@@ -2578,7 +2599,8 @@ async function resolveSource(ctx: RunContext, args: ParsedArgs): Promise<ConfigS
   const known = new Set(configTypes());
   const unknown = Object.keys(doc).filter((k) => !known.has(k));
   if (unknown.length) {
-    throw new CliError(`${path}: unknown resource type(s) ${unknown.join(', ')}. Known: ${configTypes().join(', ')}.`);
+    const hints = unknown.flatMap((k) => misplacedKeyHint(k));
+    throw new CliError(`${path}: unknown resource type(s) ${unknown.join(', ')}. Known: ${configTypes().join(', ')}.${hints.length ? `\n${hints.join('\n')}` : ''}`);
   }
   const dir = mkdtempSync(join(tmpdir(), 'atlas-apply-'));
   for (const [type, value] of Object.entries(doc)) writeFileSync(join(dir, `${type}.json`), serialize(value, 'json'));

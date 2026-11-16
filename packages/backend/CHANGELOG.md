@@ -1,5 +1,10 @@
 # @atlasauth/backend changelog
 
+## 0.57.0
+
+- **type-widening:** `CreateSecretKeyBody.preset` (and the rotate preset) gains `provisioning`.
+- `AtlasBackend` reads `ATLAS_PREVIOUS_ISSUERS` (comma or space separated) when `previousIssuers` is not passed; `parseIssuerList` is exported. `domains.get` and `domains.rotateVerification`. Secret key types gain `old_key_valid_until` and the richer `Whoami`. `createVerifyHandler` sends `Cache-Control: no-store` on its 404 too.
+
 ## 0.56.0
 
 - `safeFetch(url, init, opts)` and `SafeFetchError` (code `ssrf_refused`): https only by default, refuses private, loopback, link-local, unique-local, CGNAT and unspecified destinations, re-checks every redirect hop, pins the checked address on Node. `createWebBotAuthVerifier({ fetch })` applies the same guard before your fetch.

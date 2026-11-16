@@ -62,8 +62,8 @@ export interface CreateSecretKeyBody {
   name?: string;
   /** Instance scopes, or presets `read_only`, `privacy:execute`, `privacy:grants:revoke`. Send this or `preset`. */
   scopes?: string[];
-  /** A named scope set instead of `scopes`: `app-runtime` (what an app server needs; no webhook secret reveal, instance writes or key management). */
-  preset?: 'app-runtime';
+  /** A named scope set instead of `scopes`: `app-runtime` (what an app server needs; no webhook secret reveal, instance writes or key management) or `provisioning` (what a deploy script needs to configure the instance, keys included; no user, session or member data). */
+  preset?: 'app-runtime' | 'provisioning';
   /** Unix ms or ISO 8601; at most one year away. Default: one year. Every new key expires. */
   expires_at?: number | string;
   /** CIDRs the key may be used from. */
@@ -93,6 +93,14 @@ export interface Whoami {
     environment: 'live' | 'test' | null;
     scopes: string[];
     effective_scopes: string[];
+    /** The named key preset (`app-runtime`, `provisioning`) whose scopes are exactly this key's; null otherwise. */
+    preset?: string | null;
+    /** What this key may hand out through `secretKeys.create`. */
+    can_mint?: { secret_keys: boolean; scopes: string[]; presets: string[] };
+    /** What the key is scoped to. */
+    resource?: { type: string; id: string | null };
+    /** Backend API route prefixes this key's scopes can reach (for example `/v1/domains`). */
+    route_prefixes?: string[];
     owner: string | null;
     created_at: number | null;
     expires_at: number | null;
@@ -280,7 +288,7 @@ export function secretKeysResource(request: RequestFn) {
       return request({ method: 'PATCH', path: `/v1/secret_keys/${enc(id)}`, body });
     },
     /** New key with the same scopes; the old one works for `overlap_seconds` (default 72 h, 0 = now). */
-    rotate(id: string, body: { overlap_seconds?: number; key_format?: 'atlas' | 'legacy'; /** `app-runtime`: the replacement gets the preset's scopes (only ever narrower than the old key). */ preset?: 'app-runtime' } = {}): Promise<SecretKeyWithSecret & { replaces: string; previous_key_expires_at: number | null }> {
+    rotate(id: string, body: { overlap_seconds?: number; key_format?: 'atlas' | 'legacy'; /** `app-runtime`: the replacement gets the preset's scopes (only ever narrower than the old key). */ preset?: 'app-runtime' | 'provisioning' } = {}): Promise<SecretKeyWithSecret & { replaces: string; previous_key_expires_at: number | null; /** Same as `previous_key_expires_at`. */ old_key_valid_until: number | null }> {
       return request({ method: 'POST', path: `/v1/secret_keys/${enc(id)}/rotate`, body });
     },
     revoke(id: string): Promise<SecretKey & { revoked: true }> {

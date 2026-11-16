@@ -16,7 +16,7 @@ import {
 } from '../project';
 import { assertProductName, productDir, readEnvFile, writeSecretFile } from '../secrets';
 import { folderHoldsKey } from './doctor-scan';
-import { envApiUrl, wantsJson } from './shared';
+import { EMAIL_PROVIDER_FIX, envApiUrl, wantsJson } from './shared';
 import { INIT_TEMPLATES, scaffoldNext, scaffoldTemplate } from './init-next';
 
 /**
@@ -464,7 +464,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
         log(`Turned on: ${missing.join(', ')}.`);
         const inactive = (res?.inactive_methods ?? []).map((m) => m.method);
         if (inactive.length) {
-          log(`Not offered to users yet (they need an email provider, and this instance cannot send email): ${inactive.join(', ')}. They become active once email can be sent.`);
+          log(`Not offered to users yet (they need an email provider, and this instance cannot send email): ${inactive.join(', ')}. They become active once email can be sent. ${EMAIL_PROVIDER_FIX}`);
         }
       } catch (err) {
         // An older server refuses email methods without a sender: say so, keep going.
@@ -473,7 +473,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
       }
     }
     if (!emailReady && missing.some((s) => EMAIL_STRATEGIES.has(s))) {
-      log('Email code / email link need the email sender: they start working as soon as it is ready.');
+      log('Email code / email link need the email sender: they start working as soon as it is ready. ' + EMAIL_PROVIDER_FIX);
     }
   }
 

@@ -287,7 +287,8 @@ export function createVerifyHandler(options: Pick<AtlasMountOptions, 'verifyToke
       const token =
         (Array.isArray(fromParams) ? fromParams[0] : fromParams) ??
         decodeURIComponent(new URL(request.url).pathname.split('/').filter(Boolean).pop() ?? '');
-      if (!expected || token !== expected) return new Response('Not found', { status: 404 });
+      // Query string ignored (a verifier adds a cache-busting one); never cached, a hit or a miss.
+      if (!expected || token !== expected) return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
       return new Response(token, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
     },
   };

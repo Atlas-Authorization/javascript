@@ -4,6 +4,7 @@ import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { printJson } from '../output';
 import { httpFor } from '../project';
+import { redactDeep } from '../redact';
 import { maskSecret, resolveAuth, wantsJson } from './shared';
 import { deviceLogin } from './operator';
 
@@ -89,6 +90,13 @@ export async function logout(ctx: RunContext, args: ParsedArgs): Promise<number>
  */
 export async function whoami(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const auth = resolveAuth(ctx, args.values);
+  // --remote: what the server says this key is and can do (GET /v1/whoami).
+  if (args.values.remote === true) {
+    const me = redactDeep(await httpFor(ctx, { secretKey: auth.secretKey, apiUrl: auth.apiUrl }).get<Record<string, unknown>>('/v1/whoami'));
+    if (wantsJson(args.values)) printJson(ctx.io, me);
+    else for (const [k, v] of Object.entries(me)) ctx.io.out(`${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+    return 0;
+  }
 
   if (wantsJson(args.values)) {
     printJson(ctx.io, {

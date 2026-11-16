@@ -1,5 +1,9 @@
 # @atlasauth/react changelog
 
+## 0.38.0
+
+- A missing or empty publishable key makes `AtlasProvider` inert (no requests, `SignIn`/`SignUp` render nothing, one console warning) instead of breaking the page.
+
 ## 0.37.0
 
 - `<ReferralRewards />` and `useReferralRewards`: a referrer's link, the reward terms and what they have been credited.

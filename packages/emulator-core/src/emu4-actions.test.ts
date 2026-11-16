@@ -263,7 +263,8 @@ describe('the provider change radar', () => {
     const all = (await call('GET', '/v1/connection_provider_changes?limit=1')).json;
     expect(all).toMatchObject({ has_more: true });
     expect((await call('GET', `/v1/connection_provider_changes?limit=1&starting_after=${all.next_cursor}`)).json.has_more).toBe(false);
-    const id = all.data[0].id;
+    // The change that recurs below (410 on pong), whatever order the list returns.
+    const id = (await call('GET', '/v1/connection_provider_changes')).json.data.find((c: { action: string }) => c.action === 'pong').id;
     expect((await call('POST', `/v1/connection_provider_changes/${id}/acknowledge`)).json).toMatchObject({ status: 'acknowledged', handled_by: 'emulator' });
     expect((await call('GET', '/v1/connection_provider_changes')).json.data).toHaveLength(1); // open only by default
     expect((await call('GET', '/v1/connection_provider_changes?status=acknowledged')).json.data).toHaveLength(1);
