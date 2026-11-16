@@ -11795,7 +11795,7 @@ snapshots:
       resolve-from: 5.0.0
       tinyglobby: 0.2.17
     optionalDependencies:
-      expo: 58.0.25(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
+      expo: 58.0.25(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -12195,7 +12195,7 @@ snapshots:
       '@jest/schemas': 29.6.3
       '@types/istanbul-lib-coverage': 2.0.6
       '@types/istanbul-reports': 3.0.4
-      '@types/node': 20.19.43
+      '@types/node': 22.20.5
       '@types/yargs': 17.0.35
       chalk: 4.1.2
 
@@ -14418,7 +14418,7 @@ snapshots:
       react-refresh: 0.14.2
     optionalDependencies:
       '@babel/runtime': 7.29.14
-      expo: 58.0.25(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
+      expo: 58.0.25(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
     transitivePeerDependencies:
       - '@babel/core'
       - supports-color
@@ -14672,7 +14672,7 @@ snapshots:
 
   chrome-launcher@0.15.2:
     dependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.5
       escape-string-regexp: 4.0.0
       is-wsl: 2.2.0
       lighthouse-logger: 1.4.2
@@ -14689,7 +14689,7 @@ snapshots:
 
   chromium-edge-launcher@0.3.0:
     dependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.5
       escape-string-regexp: 4.0.0
       is-wsl: 2.2.0
       lighthouse-logger: 1.4.2
@@ -15631,7 +15631,7 @@ snapshots:
 
   expo-keep-awake@58.0.4(expo@58.0.25)(react@18.3.1):
     dependencies:
-      expo: 58.0.25(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
+      expo: 58.0.25(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
       react: 18.3.1
 
   expo-linking@57.0.14(expo@58.0.25)(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1):
@@ -16564,7 +16564,7 @@ snapshots:
   jest-util@29.7.0:
     dependencies:
       '@jest/types': 29.6.3
-      '@types/node': 20.19.43
+      '@types/node': 22.20.5
       chalk: 4.1.2
       ci-info: 3.9.0
       graceful-fs: 4.2.12
@@ -16581,7 +16581,7 @@ snapshots:
 
   jest-worker@29.7.0:
     dependencies:
-      '@types/node': 20.19.43
+      '@types/node': 22.20.5
       jest-util: 29.7.0
       merge-stream: 2.0.0
       supports-color: 8.1.1
