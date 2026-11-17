@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.57.1
+
+- `privacy.lookup()` accepts `identity` as an alias of `atlas`.
+
 ## 0.57.0
 
 - **type-widening:** `CreateSecretKeyBody.preset` (and the rotate preset) gains `provisioning`.

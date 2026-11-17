@@ -180,7 +180,7 @@ export function privacyResource(request: RequestFn) {
       return request({ method: 'GET', path: `/v1/privacy/presets/${enc(id)}` });
     },
     /** Find a person: `atlas.sub` alone when present, then `atlas.ext`, then emails. */
-    lookup(body: { emails?: string[]; atlas?: PrivacySubject }): Promise<PrivacyLookupResult> {
+    lookup(body: { emails?: string[]; atlas?: PrivacySubject; /** Alias of `atlas`. */ identity?: PrivacySubject }): Promise<PrivacyLookupResult> {
       return request({ method: 'POST', path: '/v1/privacy/lookup', body });
     },
     /** Open a request (or get the existing one for the same case). */
