@@ -78,3 +78,15 @@ describe('syncLocalUser', () => {
     await expect(syncLocalUser({ sub: 'user_a' }, { ...opts, create: async () => { throw new Error('boom'); } })).rejects.toThrow('boom');
   });
 });
+
+describe('syncLocalUser request context', () => {
+  it('passes the context to create and link', async () => {
+    const ctx = { request: { headers: { 'user-agent': 'ua' }, ip: '203.0.113.9' } };
+    const seen: unknown[] = [];
+    const a = store();
+    await syncLocalUser({ sub: 'user_a' }, { ...a.opts, create: (u: NewLocalUser, c) => { seen.push(c); return a.opts.create(u); } }, ctx);
+    const b = store([{ id: 1, sub: null, email: 'b@x.test', emailVerified: true }]);
+    await syncLocalUser({ sub: 'user_b', email: 'b@x.test', email_verified: true }, { ...b.opts, link: (r: Row, s: string, c) => { seen.push(c); return b.opts.link(r, s); } }, ctx);
+    expect(seen).toEqual([ctx, ctx]);
+  });
+});

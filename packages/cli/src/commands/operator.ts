@@ -134,6 +134,9 @@ export async function token(ctx: RunContext, args: ParsedArgs): Promise<number> 
   return 0;
 }
 
+/** Named scope sets a secret key can be minted or rotated to. */
+const KEY_PRESETS = ['app-runtime', 'provisioning', 'integrations'];
+
 /** Write a secret to a 0600 file (directories 0700). */
 function writeSecret(path: string, name: string, secret: string): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -190,7 +193,9 @@ export async function keys(ctx: RunContext, args: ParsedArgs): Promise<number> {
     if (!secret) throw new CliError('The response carried no secret.');
     if (values['print-secret'] === true) return ctx.io.out(secret);
     const path = str(values, 'out') || `.atlas/secret-key-${id}.env`;
-    writeSecret(path, 'ATLAS_SECRET_KEY', secret);
+    const envVar = str(values, 'env-var') ?? 'ATLAS_SECRET_KEY';
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(envVar)) throw new CliError(`--env-var must be an environment variable name such as ATLAS_PROVISIONING_KEY, got '${envVar}'.`);
+    writeSecret(path, envVar, secret);
     ctx.io.out(`Secret written to ${path} (mode 0600).`);
   };
   switch (sub) {
@@ -234,11 +239,11 @@ export async function keys(ctx: RunContext, args: ParsedArgs): Promise<number> {
       const id = requireArg(positionals, 2, 'key id');
       const overlap = str(values, 'overlap');
       const preset = str(values, 'preset');
-      if (preset && preset !== 'app-runtime') throw new CliError("--preset must be 'app-runtime'.");
+      if (preset && !KEY_PRESETS.includes(preset)) throw new CliError(`--preset must be one of: ${KEY_PRESETS.join(', ')}.`);
       const rotated = await atlas.secretKeys.rotate(id, {
         ...(overlap ? { overlap_seconds: Math.round(parseDuration(overlap, '--overlap') / 1000) } : {}),
-        ...(preset ? { preset: 'app-runtime' as const } : {}),
-      });
+        ...(preset ? { preset } : {}),
+      } as Parameters<typeof atlas.secretKeys.rotate>[1]);
       ctx.io.out(
         `Rotated ${id} → ${rotated.id}.` +
           (rotated.previous_key_expires_at ? ` The old key works until ${new Date(rotated.previous_key_expires_at).toISOString()}.` : ' The old key was revoked.'),

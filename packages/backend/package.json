@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/backend",
-  "version": "0.57.1",
+  "version": "0.58.0",
   "main": "./dist/index.js",
   "bin": {
     "atlas-doctor": "./dist/doctor-cli.js"
@@ -106,7 +106,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/mark-optional-requires.mjs",
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run --no-isolate"
   },

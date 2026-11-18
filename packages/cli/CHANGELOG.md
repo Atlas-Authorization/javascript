@@ -1,5 +1,12 @@
 # @atlasauth/cli changelog
 
+## 0.48.0
+
+- `init` mints an `app-runtime` key and a `provisioning` key for a new app instead of an all-scope key (`--key-preset all` to opt back in); asks for `--email` in a terminal, prints a notice otherwise, and refuses a production init with no email transport unless `--allow-no-email`.
+- Webhook endpoints accept `active: golive`; `plan`/`apply` take `--file` and compare provider secrets by fingerprint.
+- `golive`: warning marks for advisories, one rotate command per key preset with env var and `--out`, consent-platform step.
+- `keys create|rotate --preset provisioning|integrations`, `--env-var`; `preflight|doctor --ack <code>`; `atlas env` writes the mount's discovery and JWKS URLs.
+
 ## 0.47.0
 
 - `atlas domains list|get|verify|rotate-verification`. `atlas health` (preflight, with a `{id,status,detail,remedy}` array for `--json`; `preflight --json` adds it as `checks`), `--fail-on never`, `atlas whoami --remote`, `atlas doctor --origin` mount probe. Plan names the parent of a misplaced key, `--prune` no longer lists instance defaults as removals, and the missing email provider names its fix call.

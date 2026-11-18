@@ -82,6 +82,7 @@ import type {
   AtlasUser,
   SessionClaims,
 } from './types';
+import { withClaimEmail } from './user-email-fallback';
 
 /**
  * §10.1 `<AtlasProvider publishableKey>`.
@@ -1054,6 +1055,8 @@ function AtlasProviderLive(props: AtlasProviderProps) {
     return environmentRequest.current;
   }, [call, referralKey]);
 
+  const userWithEmail = useMemo(() => withClaimEmail(user, claims), [user, claims]);
+
   const value = useMemo<AtlasContextValue>(
     () => ({
       publishableKey,
@@ -1061,7 +1064,7 @@ function AtlasProviderLive(props: AtlasProviderProps) {
       oauthMode: props.oauthMode,
       status,
       serverRendered: props.initialState !== undefined,
-      user,
+      user: userWithEmail,
       session,
       sessions,
       claims,
@@ -1112,7 +1115,7 @@ function AtlasProviderLive(props: AtlasProviderProps) {
       endImpersonation,
       signOut,
       status,
-      user,
+      userWithEmail,
       props.initialState,
     ],
   );

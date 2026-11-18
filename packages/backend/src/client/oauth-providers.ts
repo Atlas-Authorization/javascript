@@ -36,6 +36,8 @@ export interface OAuthProvider {
   setup_docs_url: string | null;
   default_scopes: string[];
   credential_fields: OAuthProviderCredentialField[];
+  /** For a provider with a native mode: the credential fields each mode needs (native needs no client secret). Null otherwise. */
+  modes?: { native: { credential_fields: OAuthProviderCredentialField[]; hint: string }; redirect: { credential_fields: OAuthProviderCredentialField[]; hint: string } } | null;
   settings: OAuthProviderSetting[];
   native: boolean;
   redirect_uri: string;

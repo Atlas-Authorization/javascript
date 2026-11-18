@@ -894,6 +894,21 @@ export function afterUrlTarget(afterUrl?: string): string | null {
 }
 
 /**
+ * The sign-in finished but the session did not stick, so no redirect happens. Say why in the console:
+ * the usual cause on a dev instance whose Frontend API host differs from the app is a browser that
+ * drops its cross-site cookies (use a same-origin path mount, or a Frontend API on a sibling subdomain).
+ */
+function warnSessionNotKept(exchanged: boolean, afterUrl?: string): void {
+  if (typeof console === 'undefined') return;
+  console.warn(
+    `[atlas] Sign-in completed but no session is active, so${afterUrl ? ` the redirect to ${afterUrl} was skipped` : ' nothing navigated'}. ` +
+      (exchanged
+        ? 'The follow-up GET /v1/client returned no session: the browser probably did not keep the session cookie, which happens when the Frontend API is on another site than this page (blocked third-party cookies). Serve the Frontend API under this origin or a sibling subdomain.'
+        : 'The sign-in ticket could not be exchanged for a session.'),
+  );
+}
+
+/**
  * Side-effecting companion to {@link afterUrlTarget}: navigate to `afterUrl` once
  * a flow has completed (and the provider has re-booted signed-in). No-op when
  * unset/blank or under SSR, so an unset `afterUrl` leaves the page exactly where
@@ -1033,7 +1048,10 @@ export function useFlow({
       }
       const kept = exchanged && (await reload());
       setState({ ...next, busy: false, sessionKept: kept });
-      if (!kept) return;
+      if (!kept) {
+        warnSessionNotKept(exchanged, afterUrl);
+        return;
+      }
       // §R3.2 wake sibling tabs now, rather than when they next gain focus.
       broadcastSessionChange();
       if (afterSignIn && (await afterSignIn(client))) return;
@@ -1182,7 +1200,10 @@ export function useFlow({
         });
         const kept = res.ok && (await reload());
         setState((current) => ({ ...current, busy: false, sessionKept: kept }));
-        if (!kept) return;
+        if (!kept) {
+          warnSessionNotKept(res.ok, afterUrl);
+          return;
+        }
         const journeyUrl = journeyRedirectUrl(res.data);
         if (journeyUrl && typeof window !== 'undefined') {
           window.location.assign(journeyUrl);

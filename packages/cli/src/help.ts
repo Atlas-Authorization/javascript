@@ -471,8 +471,8 @@ owner turned on cli_handoff (you must have signed in to that app once). The toke
 Usage:
   atlas keys whoami                         What the current key is and can do
   atlas keys list                           Every credential on the instance
-  atlas keys create (--scopes "<scopes>" | --preset app-runtime) [--name n] [--owner o] [--expires-at <ISO>] [--allowed-ips <cidr,…>] [--out <file>]
-  atlas keys rotate <id> [--preset app-runtime] [--overlap <dur, e.g. 72h or seconds>] [--out <file>]   --preset narrows an all-scope key; the old key keeps working for the overlap
+  atlas keys create (--scopes "<scopes>" | --preset app-runtime|provisioning|integrations) [--name n] [--env-var <NAME>] [--owner o] [--expires-at <ISO>] [--allowed-ips <cidr,…>] [--out <file>]
+  atlas keys rotate <id> [--preset app-runtime|provisioning|integrations] [--overlap <dur, e.g. 72h or seconds>] [--out <file>] [--env-var <NAME>]   --preset narrows an all-scope key; the old key keeps working for the overlap
   atlas keys data status|enable|rotate|rewrap|check|shred   Customer-managed data key (shred needs the instance id typed or --confirm)
   atlas keys op list|rotate                           OpenID provider signing keys
   atlas keys revoke <id>
@@ -807,6 +807,7 @@ Usage:
              [--client-redirect <url>]... [--webhook-url <url>]
              [--backchannel <url>]
              [--with-dev] [--no-env-files --json]
+             [--key-preset app-runtime|all] [--allow-no-email]
              [--yes] [--force] [--rotate-secret] [--json]
   atlas init --next [--mount /atlas] [--dir <app-root>] [--force]
   atlas init nextjs-local-users [--dir <app>]    (a starter that keeps your own user table in step; runs create-atlas-app)
@@ -830,6 +831,10 @@ reads stdin). It is never taken from argv and never printed.
 Every secret goes to ~/.config/<product>/<env>/ (dir 0700, files 0600) and
 is never printed. An existing file is never overwritten without --force.
 --rotate-secret mints a new secret key when the app exists but its file is gone.
+The app key is the app-runtime preset (ATLAS_SECRET_KEY); a separate provisioning key (ATLAS_PROVISIONING_KEY,
+for atlas plan/apply and the CLI) goes in its own file, and the all-scope key that came with the app is revoked.
+--key-preset all keeps the all-scope key. A production app with no email transport is refused unless
+--allow-no-email.
 Public values and file paths are kept in ~/.config/<product>/atlas.json.
 Turns on strict request bodies unless the instance has them or opted out.
 
@@ -851,7 +856,7 @@ and which are runtime. With --product it sets up the instance as well.`,
   preflight: `atlas preflight — check an instance's setup (a CI / deploy gate)
 
 Usage: atlas preflight [--instance <id> | --product <name> [--instance-env <env>]]
-                       [--fail-on error|warning|never] [--fix [--yes]] [--json]
+                       [--fail-on error|warning|never] [--fix [--yes]] [--ack <code> [--ack-reason <text>]] [--json]
        atlas health ...                    (same command)
 
 Prints every finding (severity, code, message, fix, and the exact call when there
@@ -864,12 +869,16 @@ preflight --json prints the full report, with the same array under checks.
 
 --fix lists the findings the server marks safe to fix, asks before each call
 (--yes skips the question; needed without a terminal), applies them, runs the
-checks again and prints the result.`,
+checks again and prints the result.
+
+--ack <code> accepts a known warning or info finding (for example issuer_changed_recently
+once every verifier is updated): it stays listed, marked acknowledged, and stops counting.
+An error is never acknowledgeable. Remove it with DELETE /v1/instance/preflight/acks/<code>.`,
 
   doctor: `atlas doctor — integration health (a CI / deploy gate)
 
 Usage: atlas doctor [--instance <id> | --product <name> [--instance-env <env>]]
-                    [--only <source,...>] [--no-probe] [--origin <url>] [--json]
+                    [--only <source,...>] [--no-probe] [--origin <url>] [--ack <code>] [--json]
        atlas doctor --scan-dir <path> [--scan-image <ref>] [--json]
        atlas doctor rs <url> [--json]
 
@@ -1141,7 +1150,7 @@ an unknown depends_on or a cycle is an error before anything runs.`,
   apply: `atlas apply — make the instance match a config file (plan, confirm, apply)
 
 Usage:
-  atlas apply [<file|dir>] [--yes] [--prune] [--force-hook] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--out <dir>] [--secrets-out <dotenv>] [--format json|yaml] [--skip-validate] [--json]
+  atlas apply [<file|dir> | --file <path>] [--yes] [--prune] [--force-hook] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--out <dir>] [--secrets-out <dotenv>] [--format json|yaml] [--skip-validate] [--json]
   atlas apply [<file|dir>] --check
 
 <file>  One JSON or YAML document keyed by resource type, for example:
@@ -1201,7 +1210,7 @@ overlap: the old one stops signing at once.`,
   plan: `atlas plan — read-only drift diff of a config file or directory
 
 Usage:
-  atlas plan [<file|dir>] [--check|--exit-code] [--json] [--prune] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--skip-validate]
+  atlas plan [<file|dir> | --file <path>] [--check|--exit-code] [--json] [--prune] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--skip-validate]
 
 The same diff as 'atlas config plan', also for a single config file (see 'atlas
 apply --help'). --check exits 2 when there is drift; nothing is ever written.

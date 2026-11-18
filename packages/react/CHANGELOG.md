@@ -1,5 +1,11 @@
 # @atlasauth/react changelog
 
+## 0.39.0
+
+- `SignIn` no longer causes a hydration mismatch (React #418) when the page loads from an OAuth return.
+- `user.email_addresses` falls back to the session token's email when the server sends no list.
+- When a sign-in finishes but no session sticks (for example a development Frontend API on another site), the flow logs a console warning naming the cookie cause.
+
 ## 0.38.0
 
 - A missing or empty publishable key makes `AtlasProvider` inert (no requests, `SignIn`/`SignUp` render nothing, one console warning) instead of breaking the page.

@@ -1093,6 +1093,10 @@ export function instanceResource(request: RequestFn) {
       set(body: SetCookieConsentBody): Promise<CookieConsent> {
         return request({ method: 'PUT', path: '/v1/instance/cookie_consent', body });
       },
+      /** Merge the given fields over the stored setting (the rest is kept). */
+      patch(body: Partial<SetCookieConsentBody>): Promise<CookieConsent> {
+        return request({ method: 'PATCH', path: '/v1/instance/cookie_consent', body });
+      },
       /** Turn it off: no script is injected and the CSP goes back to the default. */
       delete(): Promise<CookieConsent> {
         return request({ method: 'DELETE', path: '/v1/instance/cookie_consent' });

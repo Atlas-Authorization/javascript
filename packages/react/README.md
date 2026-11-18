@@ -28,6 +28,10 @@ button hand off to your backend login route instead of running PKCE in the brows
 
 `loginUri` must be a same-origin path or an `https://` URL.
 
+## The signed-in user's email
+
+`useUser().user.email_addresses` (and `useAtlas().user`) lists the user's addresses with `primary` and `verified` flags. When the Frontend API's user payload has no list, the SDK fills a one-entry list from the session token's `email` and `email_verified` claims, so the sign-in address is always there. A list the server did send is never replaced. The source of truth is the user record; the claims are only the fallback (an id of `''` marks it). For every address, including secondary ones, use the user record through your backend.
+
 ## `<SignIn>` / `<SignUp>` options
 
 ```tsx

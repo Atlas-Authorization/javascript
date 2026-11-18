@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { sameEvents } from '../webhook-presets';
 import { tmpdir } from 'node:os';
@@ -216,7 +217,9 @@ function messagingProviderSpec(channel: 'email' | 'sms' | 'push'): SingletonSpec
       const config: Record<string, Json> = { ...obj((p.config ?? null) as Json) };
       const set = obj((p.secrets_set ?? null) as Json);
       const names = Array.isArray(p.secrets_set) ? (p.secrets_set as string[]) : Object.keys(set).filter((k) => set[k] === true);
-      for (const k of names) config[k] = SECRET_SET;
+      // The server sends the first 8 hex of sha256(value) per set secret: compare, instead of a blind "cannot be detected".
+      const fps = obj((p.secret_fingerprints ?? null) as Json);
+      for (const k of names) config[k] = typeof fps[k] === 'string' && /^[0-9a-f]{8}$/.test(fps[k] as string) ? fpMark(fps[k] as string) : SECRET_SET;
       return pick({ ...p, config }, channel === 'push' ? ['transport', 'config'] : ['transport', 'from_address', 'config']);
     },
     async apply(http, config) {
@@ -674,10 +677,21 @@ function registry(): ResourceSpec[] {
         const l = obj(live).enabled_events;
         const d = obj(desired).enabled_events;
         const strs = (x: Json | undefined): x is string[] => Array.isArray(x) && x.every((e) => typeof e === 'string');
-        return strs(l) && strs(d) && sameEvents(l, d) ? { ...obj(live), enabled_events: d } : live;
+        const base = strs(l) && strs(d) && sameEvents(l, d) ? { ...obj(live), enabled_events: d } : obj(live);
+        // `active: golive` is never a difference: golive owns the switch.
+        return obj(desired).active === 'golive' ? { ...base, active: 'golive' } : base;
+      },
+      // `active: golive`: off until `atlas golive` passes a test delivery, then never diffed or reverted.
+      warnings(config, live) {
+        const c = obj(config);
+        if (c.active !== false || obj(live ?? {}).active !== true) return [];
+        return [`webhook_endpoints ${String(c.url)}: the file says active: false but the endpoint is active (atlas golive activates endpoints after a test delivery), so apply would switch it off. Write active: golive to leave it to golive.`];
       },
       validate(config) {
-        const { url, secret } = obj(config);
+        const { url, secret, active } = obj(config);
+        if (active !== undefined && typeof active !== 'boolean' && active !== 'golive') {
+          return [`webhook_endpoints ${String(url)}: active must be true, false or golive (off until atlas golive passes a test delivery).`];
+        }
         if (secret === undefined || secret === null || hasPlaceholder(secret)) return [];
         if (typeof secret === 'string' && WEBHOOK_SECRET.test(secret)) return [];
         return [`webhook_endpoints ${String(url)}: secret must start with "whsec_" followed by 32 to 256 characters (letters, digits, + / = _ -). Omit it and Atlas generates one.`];
@@ -707,7 +721,7 @@ function registry(): ResourceSpec[] {
           url: c.url,
           enabled_events: c.enabled_events ?? [],
           // Sent on create so a paused endpoint is never live, even briefly.
-          ...(typeof c.active === 'boolean' ? { active: c.active } : {}),
+          ...(typeof c.active === 'boolean' ? { active: c.active } : c.active === 'golive' ? { active: false } : {}),
           ...(typeof c.secret === 'string' ? { secret: c.secret } : {}),
           ...(Array.isArray(c.signature_versions) ? { signature_versions: c.signature_versions } : {}),
           ...(c.filters !== undefined ? { filters: c.filters } : {}),
@@ -718,7 +732,9 @@ function registry(): ResourceSpec[] {
       async update(http, live, config) {
         // PATCH leaves the signing secret alone; only rotate_secret changes it.
         // external_ref is the idempotency key of the create: it is never re-sent.
-        const { secret, external_ref: _ref, ...rest } = obj(config);
+        const { secret, external_ref: _ref, ...withActive } = obj(config);
+        const { active, ...noActive } = withActive;
+        const rest = active === 'golive' ? noActive : withActive;
         await http.patch(`/v1/webhook_endpoints/${enc(live.id)}`, compact(rest, true));
         if (typeof secret !== 'string' || !secret) return;
         try {
@@ -1596,6 +1612,10 @@ function obj(config: Config): Record<string, Json> {
 
 /** What a write-only secret looks like on the live side, and in a plan. */
 const SECRET_SET = '(secret set)';
+/** A set secret the server fingerprinted: `(secret …<first 8 hex of sha256(value)>)`. */
+const fpMark = (fp: string) => `(secret …${fp})`;
+const fpOf = (v: unknown): string | undefined => (typeof v === 'string' ? /^\(secret …([0-9a-f]{8})\)$/.exec(v)?.[1] : undefined);
+const fingerprint = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 8);
 
 const isObj = (x: Json | undefined): x is { [k: string]: Json } => x !== null && typeof x === 'object' && !Array.isArray(x);
 
@@ -1621,7 +1641,10 @@ function reconcileSecrets(desired: Json, live: Json | undefined, reported: boole
       if (isObj(l[k])) l[k] = inner.live as Json;
       unverifiable.push(...inner.unverifiable);
     } else if (isSecretKey(k) && typeof v === 'string' && v !== '' && v !== SECRET_SET && !isPlaceholder(v)) {
-      if (l[k] === SECRET_SET) {
+      if (fpOf(l[k]) !== undefined) {
+        // Same fingerprint: equal, silent. Different: a real change that apply sends (no --rotate-secret needed).
+        d[k] = fpMark(fingerprint(v));
+      } else if (l[k] === SECRET_SET) {
         d[k] = SECRET_SET;
         unverifiable.push(path);
       } else if (l[k] === undefined || l[k] === null) {
@@ -1642,7 +1665,7 @@ function withoutUnstated(live: Json, desired: Json, defaulted: readonly string[]
   const want = isObj(desired) ? desired : {};
   const out: { [k: string]: Json } = {};
   for (const [k, v] of Object.entries(live)) {
-    if (!(k in want) && (v === SECRET_SET || defaulted.includes(k))) continue;
+    if (!(k in want) && (v === SECRET_SET || fpOf(v) !== undefined || defaulted.includes(k))) continue;
     out[k] = isObj(v) && isObj(want[k]) ? withoutUnstated(v, want[k]!) : v;
   }
   return out;
@@ -1704,7 +1727,7 @@ function invalidFileValues(spec: ResourceSpec, doc: Json): string[] {
 function withoutMarkers(value: Json): Json {
   if (Array.isArray(value)) return value.map(withoutMarkers);
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== SECRET_SET).map(([k, v]) => [k, withoutMarkers(v)]));
+    return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== SECRET_SET && fpOf(v) === undefined).map(([k, v]) => [k, withoutMarkers(v)]));
   }
   return value;
 }
@@ -2286,6 +2309,8 @@ const show = (v: Json | undefined) => (v === undefined ? '(unset)' : typeof v ==
 
 /** One printable difference: a secret carries only that it changed. */
 export interface PrintedField extends FieldDiff {
+  /** A fingerprinted secret that changed: `before`/`after` are the short fingerprints, never a value. */
+  fingerprint?: true;
   redacted?: true;
   changed?: true;
 }
@@ -2300,6 +2325,9 @@ export function printedFields(c: Change): PrintedField[] {
   const diffs = diffFields(c.before, reveal ? (c.raw ?? c.after) : c.after);
   const rows: PrintedField[] = diffs.map((f) => {
     const leaf = f.path.split('.').pop()!;
+    const was = fpOf(f.before);
+    const now = fpOf(f.after);
+    if (was !== undefined && now !== undefined) return { path: f.path, fingerprint: true, before: was, after: now };
     const textual = [f.before, f.after].every((v) => v === undefined || v === null || typeof v === 'string');
     if (!reveal && isSecretKey(leaf) && textual && !isPlaceholder(f.after)) return { path: f.path, redacted: true, changed: true };
     return { path: f.path, ...(f.before === undefined ? {} : { before: redactDeep(f.before, leaf) }), ...(f.after === undefined ? {} : { after: redactDeep(f.after, leaf) }) };
@@ -2308,7 +2336,7 @@ export function printedFields(c: Change): PrintedField[] {
   return rows;
 }
 
-const printedLine = (f: PrintedField) => (f.redacted ? `${f.path}: ${REDACTED} (changed)` : `${f.path}: ${show(f.before)} -> ${show(f.after)}`);
+const printedLine = (f: PrintedField) => (f.fingerprint ? `${f.path}: …${f.before as string} -> …${f.after as string}` : f.redacted ? `${f.path}: ${REDACTED} (changed)` : `${f.path}: ${show(f.before)} -> ${show(f.after)}`);
 
 /** The plan's advice: warnings, and the secrets Atlas cannot compare. */
 function printPlanNotes(ctx: RunContext, plan: Pick<ConfigPlan, 'warnings' | 'unverifiableSecrets'>): void {
@@ -2577,8 +2605,13 @@ export function misplacedKeyHint(key: string): string[] {
 }
 
 async function resolveSource(ctx: RunContext, args: ParsedArgs): Promise<ConfigSource & { cleanup: () => void }> {
+  const flagFile = str(args.values, 'file');
+  if (flagFile !== undefined && args.positionals[1] !== undefined && flagFile !== args.positionals[1]) {
+    throw new CliError(`Pass the config once: either '${args.positionals[1]}' or --file ${flagFile}, not both.`);
+  }
   const path =
     args.positionals[1] ??
+    flagFile ??
     (str(args.values, 'dir') ? resolveDir(args.values) : (DEFAULT_CONFIG_FILES.find((f) => existsSync(f)) ?? resolveDir(args.values)));
   const env = readSecretsEnv(ctx, args.values);
   let isFile = false;
@@ -2690,6 +2723,10 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
       try {
         await change.apply();
         applied.push(change);
+        const wantsOff = obj(change.raw ?? {}).active;
+        if (change.type === 'webhook_endpoints' && change.action === 'create' && (wantsOff === false || wantsOff === 'golive')) {
+          out(`  webhook_endpoints ${change.key}: created inactive; atlas golive activates it after a test delivery (or PATCH /v1/webhook_endpoints/{id} {"active": true}).`);
+        }
       } catch (err) {
         failed = { change, error: err instanceof Error ? err.message : String(err) };
         break;

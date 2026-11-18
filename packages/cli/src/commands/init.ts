@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { AtlasApiError, DEFAULT_API_URL } from '@atlasauth/backend';
 import { list, str, type ParsedArgs } from '../args';
 import type { RunContext } from '../context';
+import { ttyOf } from '../context';
 import { CliError } from '../errors';
 import { printJson } from '../output';
 import {
@@ -47,6 +48,18 @@ const STRATEGY_ALIASES: Record<string, string> = {
 /** Strategies that need email delivery: turned on only once the instance can send. */
 const EMAIL_STRATEGIES = new Set(['emailCode', 'emailLink']);
 
+/** The flags that give `atlas init` an email transport (the yaml equivalent is in {@link EMAIL_YAML_HINT}). */
+const EMAIL_FLAGS_HINT =
+  'Add an email transport: --email managed --domain <your-domain> --email-provider resend|brevo --email-key-file <path|-> (development instances: --email development).';
+const EMAIL_YAML_HINT = [
+  '  email_provider:',
+  '    transport: resend            # or brevo',
+  '    from_address: noreply@example.com',
+  '    config:',
+  '      api_key: ${EMAIL_API_KEY}',
+];
+const snake = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
 type EmailMode = 'managed' | 'development' | 'none';
 const EMAIL_PROVIDERS = ['resend', 'brevo'] as const;
 type EmailProvider = (typeof EMAIL_PROVIDERS)[number];
@@ -72,6 +85,12 @@ interface InitOptions {
   noEnvFiles: boolean;
   /** Create the development sibling too; each environment's keys in its own folder. */
   withDev: boolean;
+  /** `app-runtime` (default): the app key and a separate provisioning key are scoped presets; `all` keeps the all-scope key. */
+  keyPreset: 'app-runtime' | 'all';
+  /** Production without an email transport is refused unless this is passed. */
+  allowNoEmail: boolean;
+  /** `--email` (or a `--domain`, which implies managed) was given: nothing to ask or announce. */
+  emailGiven: boolean;
 }
 
 /**
@@ -79,10 +98,10 @@ interface InitOptions {
  * a folder's `*.env` never mixes a development and a production key. An existing flat
  * `<env>.env` keeps its layout: init never moves a file it didn't just write.
  */
-function secretLayout(dir: string, env: InstanceEnv): { dir: string; key: string; client: string; webhook: string } {
+function secretLayout(dir: string, env: InstanceEnv): { dir: string; key: string; client: string; webhook: string; provisioning: string } {
   return existsSync(join(dir, `${env}.env`))
-    ? { dir, key: `${env}.env`, client: `${env}-oauth-client.env`, webhook: `${env}-webhook.env` }
-    : { dir: join(dir, env), key: 'atlas.env', client: 'oauth-client.env', webhook: 'webhook.env' };
+    ? { dir, key: `${env}.env`, client: `${env}-oauth-client.env`, webhook: `${env}-webhook.env`, provisioning: `${env}-provisioning.env` }
+    : { dir: join(dir, env), key: 'atlas.env', client: 'oauth-client.env', webhook: 'webhook.env', provisioning: 'provisioning.env' };
 }
 
 /** Whether this folder already holds the other environment's key directly, as an older init left it. */
@@ -125,6 +144,9 @@ function parseOptions(args: ParsedArgs): InitOptions {
   }
   const emailKeyFile = str(v, 'email-key-file');
   if (emailKeyFile !== undefined && !providerRaw) throw new CliError('--email-key-file needs --email-provider resend|brevo.');
+  const keyPreset = str(v, 'key-preset') ?? 'app-runtime';
+  if (keyPreset !== 'app-runtime' && keyPreset !== 'all') throw new CliError(`--key-preset must be app-runtime or all, got '${keyPreset}'.`);
+  const allowNoEmail = v['allow-no-email'] === true;
   const strategies = list(v, 'strategies').map((s) => STRATEGY_ALIASES[s] ?? camel(s));
   const redirects = list(v, 'client-redirect');
   for (const r of redirects) {
@@ -155,6 +177,7 @@ function parseOptions(args: ParsedArgs): InitOptions {
     authHost: str(v, 'auth-host') || (domain ? `auth.${domain}` : undefined),
     strategies,
     email: emailRaw,
+    emailGiven: str(v, 'email') !== undefined || Boolean(domain),
     emailFrom: str(v, 'email-from') || (emailRaw === 'managed' && domain ? `noreply@mail.${domain}` : undefined),
     emailProvider: providerRaw as EmailProvider | undefined,
     emailKeyFile,
@@ -165,6 +188,8 @@ function parseOptions(args: ParsedArgs): InitOptions {
     rotateSecret: v['rotate-secret'] === true,
     noEnvFiles: v['no-env-files'] === true,
     withDev: v['with-dev'] === true,
+    keyPreset,
+    allowNoEmail,
   };
 }
 
@@ -264,6 +289,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const secretFile = join(layout.dir, layout.key);
   const clientFile = join(layout.dir, layout.client);
   const webhookFile = join(layout.dir, layout.webhook);
+  const provisioningFile = join(layout.dir, layout.provisioning);
 
   // A secret has to reach the caller once. With no file the one safe channel is stdout, when asked for by name.
   if (opts.noEnvFiles && !json) {
@@ -281,6 +307,31 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   };
   const savedAt = (path: string) => (opts.noEnvFiles ? 'the JSON output' : path);
   const hasFile = (file: string, name: string) => !opts.noEnvFiles && Boolean(readEnvFile(file)?.[name]);
+
+  // --email omitted: ask on a terminal, otherwise carry on with none (announced below) or refuse in production.
+  const tty = ttyOf(ctx);
+  if (!opts.emailGiven && tty.stdin && tty.stdout && !json && args.values.yes !== true) {
+    const needing = opts.strategies.filter((x) => EMAIL_STRATEGIES.has(x)).map(snake);
+    const answer = (
+      await ctx.prompt.text(
+        `Email transport: managed / development / none${needing.length ? ` (${needing.join(', ')} need one and stay off with none)` : ''}`,
+        { default: 'none' },
+      )
+    )
+      .trim()
+      .toLowerCase();
+    if (answer !== 'managed' && answer !== 'development' && answer !== 'none') throw new CliError(`Email transport must be managed, development or none, got '${answer}'. Nothing was changed.`);
+    if (answer === 'managed' && !opts.domain && !opts.emailFrom) throw new CliError('managed email needs --domain (or --email-from <address on your domain>). Nothing was changed.');
+    if (answer === 'development' && env !== 'development') throw new CliError('development email is only for --instance-env development. Nothing was changed.');
+    opts.email = answer;
+    opts.emailFrom ??= answer === 'managed' && opts.domain ? `noreply@mail.${opts.domain}` : undefined;
+    opts.emailGiven = true;
+  }
+  if (env === 'production' && opts.email === 'none' && !opts.allowNoEmail) {
+    throw new CliError(
+      `A production instance with no email transport cannot send sign-in codes, links or password resets. Nothing was changed.\n${EMAIL_FLAGS_HINT}\nOr pass --allow-no-email if this instance will not use email sign-in methods.`,
+    );
+  }
 
   // The plan, then a confirmation unless --yes.
   log(`atlas init: ${opts.appName} (${env})`);
@@ -312,8 +363,11 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const apps = (await plat.get<ListBody<AppRow>>('/v1/platform/apps')).data ?? [];
   let app = apps.find((a) => a.name === opts.appName && a.environment === env);
   let created = false;
+  // True only for the all-scope key that came with an app created in THIS run: that is the only key init ever revokes.
+  let bootstrap = false;
   if (!app) {
     checkFree(secretFile, opts.force);
+    if (opts.keyPreset !== 'all') checkFree(provisioningFile, opts.force);
     const origins = [...new Set(opts.redirects.map((r) => new URL(r).origin).filter((o) => o.startsWith('http')))];
     app = await plat.post<AppRow>('/v1/platform/apps', {
       name: opts.appName,
@@ -322,6 +376,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
       ...(origins.length ? { allowed_origins: origins } : {}),
     });
     created = true;
+    bootstrap = true;
     saveSecret(layout, env, layout.key, { ATLAS_SECRET_KEY: app.secret ?? '' }, {
       force: opts.force,
       comment: `Atlas secret key for ${opts.appName} (${env}, ${app.id}). Server-side only. Use it in ${env} only.`,
@@ -331,7 +386,9 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
     log(`Found app ${app.id}.`);
   }
 
-  let secretKey = handed[env]?.ATLAS_SECRET_KEY ?? readEnvFile(secretFile)?.ATLAS_SECRET_KEY ?? (opts.noEnvFiles ? ctx.env.ATLAS_SECRET_KEY?.trim() : undefined);
+  // A re-run configures with the provisioning key when init minted one; the app key is then a narrow runtime key.
+  // The key that came with the app this run wins over any file (a --force'd old provisioning file must not be used).
+  let secretKey = (created ? app.secret : undefined) ?? handed[env]?.ATLAS_PROVISIONING_KEY ?? handed[env]?.ATLAS_SECRET_KEY ?? (opts.noEnvFiles ? undefined : readEnvFile(provisioningFile)?.ATLAS_PROVISIONING_KEY) ?? readEnvFile(secretFile)?.ATLAS_SECRET_KEY ?? (opts.noEnvFiles ? ctx.env.ATLAS_SECRET_KEY?.trim() : undefined);
   if (!secretKey) {
     if (!opts.rotateSecret) {
       throw new CliError(
@@ -477,6 +534,24 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
     }
   }
 
+  // No email transport: the methods that need one are not offered. Say so loudly, with both fixes.
+  if (opts.email === 'none') {
+    const live0 = await api.get<InstanceRow>('/v1/instance');
+    const methods = [
+      ...new Set([...(live0.inactive_methods ?? []).map((m) => m.method), ...opts.strategies.filter((s) => EMAIL_STRATEGIES.has(s)).map(snake)]),
+    ];
+    if (methods.length) {
+      log('');
+      log('!! WARNING: this instance has no email transport.');
+      if (!opts.emailGiven) log(`!! --email not given, so email is none and ${methods.join(', ')} ${methods.length === 1 ? 'is' : 'are'} turned off.`);
+      log(`!! These sign-in methods will NOT be offered to users until it has one: ${methods.join(', ')}.`);
+      log(`!! ${EMAIL_FLAGS_HINT}`);
+      log('!! Or add this to atlas.yaml and run atlas apply:');
+      for (const l of EMAIL_YAML_HINT) log(`!! ${l}`);
+      log('');
+    }
+  }
+
   // Strict writes: a mistyped field is refused, not ignored. An explicit false is an opt-out and stays.
   const live = await api.get<InstanceRow>('/v1/instance');
   // The stored value, not the resolved one: resolving turns "never set" into false.
@@ -589,6 +664,42 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   record.discovery_url = inst?.discovery_url ?? app.discovery_url ?? (record.issuer ? `${record.issuer}/.well-known/openid-configuration` : null);
   record.jwks_uri = inst?.jwks_uri ?? app.jwks_uri ?? (base ? `${base}/.well-known/jwks.json` : null);
 
+  // The app was created (or its key re-minted) with an all-scope key. Hand the app a runtime-only key and keep
+  // a separate provisioning key for config-as-code, then retire the all-scope one.
+  if (bootstrap && opts.keyPreset !== 'all') {
+    const bootstrapId = (await api.get<{ key?: { id?: string } }>('/v1/whoami').catch(() => undefined))?.key?.id;
+    try {
+      const mint = (preset: string, name: string) => api.post<{ id: string; secret?: string }>('/v1/secret_keys', { preset, scopes: [], name });
+      const runtime = await mint('app-runtime', `${opts.appName} app runtime`);
+      const prov = await mint('provisioning', `${opts.appName} provisioning`);
+      if (runtime.secret && prov.secret) {
+        saveSecret(layout, env, layout.key, { ATLAS_SECRET_KEY: runtime.secret }, {
+          force: true,
+          comment: `Atlas app-runtime secret key for ${opts.appName} (${env}, ${app.id}). Server-side only. Use it in ${env} only.`,
+        });
+        saveSecret(layout, env, layout.provisioning, { ATLAS_PROVISIONING_KEY: prov.secret }, {
+          force: true,
+          comment: `Atlas provisioning key for ${opts.appName} (${env}, ${app.id}): atlas CLI and config-as-code only, never the deployed app.`,
+        });
+        record.provisioning_file = provisioningFile;
+        log(`Minted an app-runtime key (${savedAt(secretFile)}, ATLAS_SECRET_KEY) and a provisioning key (${savedAt(provisioningFile)}, ATLAS_PROVISIONING_KEY).`);
+        if (bootstrapId) {
+          try {
+            await httpFor(ctx, { secretKey: prov.secret, apiUrl: platform.apiUrl }).post(`/v1/secret_keys/${encodeURIComponent(bootstrapId)}/revoke`, {});
+            log(`Revoked the all-scope key ${bootstrapId} that came with the app.`);
+          } catch {
+            log(`Could not revoke the all-scope key ${bootstrapId}: run atlas keys revoke ${bootstrapId} once nothing uses it.`);
+          }
+        }
+      } else {
+        log('The server did not return the scoped keys, so the all-scope key stays. Re-run with a newer Atlas, or use atlas keys create --preset app-runtime.');
+      }
+    } catch (err) {
+      if (!(err instanceof AtlasApiError)) throw err;
+      log(`Could not mint the scoped keys (${err.message}); the all-scope key stays. Move it later: atlas keys rotate <id> --preset app-runtime --out <file>.`);
+    }
+  }
+
   const manifest: ProjectManifest = {
     product: opts.product,
     api_url: platform.apiUrl,
@@ -608,11 +719,13 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   ctx.io.out(`  Issuer:            ${record.issuer ?? '(unknown)'}`);
   ctx.io.out(`  Discovery:         ${record.discovery_url ?? '(unknown)'}`);
   if (record.oauth_client) ctx.io.out(`  OAuth client id:   ${record.oauth_client.client_id}`);
-  ctx.io.out(`  Secret key file:   ${secretFile}`);
+  ctx.io.out(`  Secret key file:   ${secretFile}${bootstrap && opts.keyPreset !== 'all' && existsSync(provisioningFile) ? ' (app-runtime key)' : ''}`);
+  if (!opts.noEnvFiles && existsSync(provisioningFile)) ctx.io.out(`  Provisioning key:  ${provisioningFile} (ATLAS_PROVISIONING_KEY: atlas CLI and config-as-code, not the deployed app)`);
   if (record.oauth_client?.secret_file) ctx.io.out(`  Client secret file: ${record.oauth_client.secret_file}`);
   if (record.webhook?.secret_file) ctx.io.out(`  Webhook secret file: ${record.webhook.secret_file}`);
   if (devRecord) ctx.io.out(`  Development key file: ${devRecord.secret_file}`);
   ctx.io.out(`  Project manifest:  ${manifestFile}`);
+  ctx.io.out(`  For a platform connect flow, mint its own key: atlas keys create --preset integrations --out <file> --env-var <NAME>`);
   ctx.io.out(`Next: atlas preflight --product ${opts.product} --instance-env ${env}, and atlas env --product ${opts.product} --format dotenv`);
   return 0;
 }

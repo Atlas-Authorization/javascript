@@ -26,6 +26,8 @@ export interface ProjectInstance {
   jwks_uri: string | null;
   /** The file holding ATLAS_SECRET_KEY. */
   secret_file: string;
+  /** The file holding ATLAS_PROVISIONING_KEY, when init minted one: the CLI's own key (the secret file then holds the narrow app-runtime key). */
+  provisioning_file?: string;
   oauth_client?: { id: string; client_id: string; redirect_uris: string[]; secret_file: string | null };
   webhook?: { id: string; url: string; secret_file: string | null };
   custom_domain?: { host: string; cname_target: string | null; status: string };
@@ -108,7 +110,8 @@ export function httpFor(ctx: RunContext, opts: { secretKey: string; apiUrl: stri
 
 /** Read the instance secret key from the project's secret file. */
 export function instanceSecretFromFile(instance: ProjectInstance): string {
-  const key = readEnvFile(instance.secret_file)?.ATLAS_SECRET_KEY;
+  // The CLI configures with the provisioning key when there is one; the app-runtime key can't read or write settings.
+  const key = (instance.provisioning_file ? readEnvFile(instance.provisioning_file)?.ATLAS_PROVISIONING_KEY : undefined) ?? readEnvFile(instance.secret_file)?.ATLAS_SECRET_KEY;
   if (!key) {
     throw new CliError(
       `No ATLAS_SECRET_KEY in ${instance.secret_file}. Re-run 'atlas init' with --rotate-secret to mint a new one.`,

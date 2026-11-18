@@ -362,6 +362,8 @@ export interface MessagingProviderOf<C extends 'email' | 'sms', T extends Messag
   config: { [K in PublicConfigKey<T>]?: string };
   /** For each secret key of this transport: whether a value is stored. Never the value. */
   secrets_set: { [K in MessagingSecretKeys[T]]: boolean };
+  /** For each stored secret: the first 8 hex characters of its SHA-256, so config-as-code can tell a changed value without reading it. */
+  secret_fingerprints?: { [K in MessagingSecretKeys[T]]?: string };
   updated_at: number;
 }
 

@@ -26,6 +26,11 @@ export interface NewLocalUser {
   external_id: string | undefined;
 }
 
+/** The request that triggered the sync, passed through to `create` and `link` (for example to report a server-side sign-up). */
+export interface SyncLocalUserContext {
+  request?: { headers?: Headers | Record<string, string | string[] | undefined>; ip?: string };
+}
+
 export interface SyncLocalUserOptions<Row> {
   /** Your row bound to this Atlas user, or null. */
   findBySub(sub: string): Promise<Row | null | undefined>;
@@ -39,9 +44,9 @@ export interface SyncLocalUserOptions<Row> {
    */
   isLocalEmailVerified(row: Row): boolean | Promise<boolean>;
   /** Bind the row to the Atlas sub; returns the updated row. */
-  link(row: Row, sub: string): Promise<Row>;
+  link(row: Row, sub: string, context: SyncLocalUserContext): Promise<Row>;
   /** Insert a new row. Must reject a second row for the same sub (a unique index). */
-  create(user: NewLocalUser): Promise<Row>;
+  create(user: NewLocalUser, context: SyncLocalUserContext): Promise<Row>;
   /** Whether `create` failed on a unique constraint. Default: Postgres 23505 or /duplicate|unique/i. */
   isDuplicateError?(error: unknown): boolean;
 }
@@ -75,6 +80,7 @@ export function defaultIsDuplicateError(error: unknown): boolean {
 export async function syncLocalUser<Row>(
   claims: SyncLocalUserClaims,
   options: SyncLocalUserOptions<Row>,
+  context: SyncLocalUserContext = {},
 ): Promise<SyncLocalUserResult<Row>> {
   const { sub } = claims;
   if (typeof sub !== 'string' || sub === '') throw new TypeError('syncLocalUser: claims.sub is required');
@@ -90,7 +96,7 @@ export async function syncLocalUser<Row>(
       if (existingSub && existingSub !== sub) throw new AtlasLinkConflictError(email, existingSub, sub);
       if (existingSub === sub) return { user: row, created: false, linked: false };
       if (await options.isLocalEmailVerified(row)) {
-        return { user: await options.link(row, sub), created: false, linked: true };
+        return { user: await options.link(row, sub, context), created: false, linked: true };
       }
       // An unproven local address: never link. Creating may then hit your email
       // unique index; that surfaces as the create error, not as a takeover.
@@ -103,7 +109,7 @@ export async function syncLocalUser<Row>(
       email,
       email_verified: claims.email_verified === true,
       external_id: claims.external_id,
-    });
+    }, context);
     return { user, created: true, linked: false };
   } catch (error) {
     if (!(options.isDuplicateError ?? defaultIsDuplicateError)(error)) throw error;

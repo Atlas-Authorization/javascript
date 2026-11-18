@@ -87,6 +87,45 @@ describe('atlas golive', () => {
     expect(out).not.toContain('forumulate');
   });
 
+  it('prints a warning mark, never a tick, for what doctor counts as a warning', async () => {
+    const { make } = setup(
+      mockApi({
+        'GET /v1/secret_keys': { data: [{ id: 'key_1', scopes: ['*'], last_used_at: 5 }] },
+      }),
+    );
+    const io = captureIO();
+    expect(await run(['golive', '--origin', 'https://app.example.com'], make(io))).toBe(0);
+    const out = io.stdout();
+    expect(out).toContain('⚠ preflight/W1');
+    expect(out).toContain('⚠ unscoped_keys — 1 in-use key(s) hold every scope (*): key_1.');
+    expect(out).not.toContain('✓ unscoped_keys');
+    expect(out).toContain('Rotating ends anything derived from the old secret');
+    expect(out).toContain('ATLAS_SECRET_KEY: atlas keys rotate key_1 --preset app-runtime --overlap 72h --out ./atlas-app-runtime.env');
+    expect(out).toContain('--preset provisioning');
+    expect(out).toContain('--preset integrations');
+  });
+
+  it('--json marks a warning step with severity', async () => {
+    const { make } = setup(mockApi({ 'GET /v1/secret_keys': { data: [{ id: 'key_1', scopes: ['*'], last_used_at: 5 }] } }));
+    const io = captureIO();
+    expect(await run(['golive', '--origin', 'https://app.example.com', '--json'], make(io))).toBe(0);
+    const body = JSON.parse(io.stdout()) as { steps: Array<{ id: string; ok: boolean; severity?: string }> };
+    expect(body.steps.find((x) => x.id === 'unscoped_keys')).toMatchObject({ ok: true, severity: 'warning' });
+  });
+
+  it('warns when a consent platform is connected but the hosted pages load no consent manager', async () => {
+    const { make } = setup(
+      mockApi({
+        'GET /v1/instance/integrations': { data: [{ id: 'cookiemunch', connected: true, enabled: true }] },
+        'GET /v1/instance/cookie_consent': { enabled: false, declared_cookies: [{ name: '__session' }, { name: '__client' }] },
+      }),
+    );
+    const io = captureIO();
+    expect(await run(['golive', '--origin', 'https://app.example.com'], make(io))).toBe(0);
+    expect(io.stdout()).toContain('⚠ cookie_consent — a consent platform is connected');
+    expect(io.stdout()).toContain('PUT /v1/instance/cookie_consent {"enabled": true');
+  });
+
   it('wrong issuer: stops at the issuer step with a fix and exits 1', async () => {
     const { calls, make } = setup(mockApi(), 'https://someone-else.example.net');
     const io = captureIO();

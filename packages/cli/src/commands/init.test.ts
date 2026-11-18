@@ -21,7 +21,9 @@ const CLIENT_SECRET = 'oacs_client_secret_value_0001';
 const WEBHOOK_SECRET = 'whsec_webhook_secret_value_0001';
 const PROVIDER_KEY = 're_customer_own_provider_key_01';
 const DEV_SK = 'sk_test_development_secret_value_0002';
-const SECRETS = [SK, DEV_SK, CLIENT_SECRET, WEBHOOK_SECRET, PROVIDER_KEY];
+const RUNTIME_SK = 'sk_test_runtime_secret_value_0003';
+const PROV_SK = 'sk_test_provisioning_secret_value_0004';
+const SECRETS = [RUNTIME_SK, PROV_SK, SK, DEV_SK, CLIENT_SECRET, WEBHOOK_SECRET, PROVIDER_KEY];
 
 interface State {
   apps: Array<Record<string, unknown>>;
@@ -35,6 +37,8 @@ interface State {
   findings: Array<{ severity: string; code: string; message: string; fix: string; acknowledged?: { reason: string } }>;
   writes: Array<{ method: string; path: string; body: unknown; key: string }>;
   rotations: number;
+  /** The server hands out scoped preset keys (a newer Atlas). */
+  mint: boolean;
 }
 
 function fresh(): State {
@@ -50,6 +54,7 @@ function fresh(): State {
     findings: [],
     writes: [],
     rotations: 0,
+    mint: false,
   };
 }
 
@@ -64,7 +69,9 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
         if (path === '/v1/platform/apps') return { data: state.apps.map(({ secret: _s, ...a }) => a) } as T;
         throw notFound();
       }
-      if (key !== SK) throw new AtlasApiError(401, [{ code: 'INVALID_KEY', message: 'bad key' }]);
+      if (state.mint && key === PROV_SK && path === '/v1/instance') return { id: 'ins_1', publishable_key: 'pk_test_1', frontend_api_host: 'acme-fapi.atlas.test', auth_config: { strictRequestBodies: true }, auth_config_resolved: { strategies: state.instance.strategies } } as T;
+      if (state.mint && key === SK && path === '/v1/whoami') return { key: { id: 'key_boot' } } as T;
+      if (key !== SK && !(state.mint && key === PROV_SK)) throw new AtlasApiError(401, [{ code: 'INVALID_KEY', message: 'bad key' }]);
       switch (path) {
         case '/v1/instance':
           return {
@@ -122,6 +129,7 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
         state.rotations++;
         return { secret: SK, previous_keys_expire_at: 1_900_000_000_000 } as T;
       }
+      if (state.mint && path === '/v1/secret_keys') return { id: `key_${String(b.preset)}`, secret: b.preset === 'provisioning' ? PROV_SK : RUNTIME_SK } as T;
       if (path === '/v1/messaging_providers/email/managed') {
         if ((b.config as { api_key?: string } | undefined)?.api_key !== PROVIDER_KEY) {
           throw new AtlasApiError(422, [{ code: 'VALIDATION_FAILED', message: 'key', param: 'config.api_key' }]);
@@ -253,7 +261,7 @@ const INIT_BASE = [
 const INIT = () => [...INIT_BASE, '--email-provider', 'resend', '--email-key-file', keyFile];
 
 describe('atlas init: secret layouts and strict bodies', () => {
-  const BASE = ['init', '--product', 'acme', '--yes'];
+  const BASE = ['init', '--product', 'acme', '--allow-no-email', '--yes'];
 
   it('--with-dev creates the sibling and keeps each key in its own folder', async () => {
     const io = captureIO();
@@ -472,6 +480,86 @@ describe('atlas init --next', () => {
   });
 });
 
+describe('atlas init: scoped keys and email', () => {
+  const ARGS = ['init', '--product', 'acme', '--allow-no-email', '--yes'];
+
+  it('mints an app-runtime key and a separate provisioning key, then revokes the all-scope one', async () => {
+    state.mint = true;
+    const io = captureIO();
+    expect(await run(ARGS, ctxWith(io))).toBe(0);
+    noSecrets(io);
+    const dir = join(home, 'acme', 'production');
+    expect(readFileSync(join(dir, 'atlas.env'), 'utf8')).toContain(`ATLAS_SECRET_KEY=${RUNTIME_SK}`);
+    expect(readFileSync(join(dir, 'provisioning.env'), 'utf8')).toContain(`ATLAS_PROVISIONING_KEY=${PROV_SK}`);
+    expect(mode(join(dir, 'provisioning.env'))).toBe(0o600);
+    const minted = state.writes.filter((w) => w.path === '/v1/secret_keys').map((w) => (w.body as { preset: string }).preset);
+    expect(minted).toEqual(['app-runtime', 'provisioning']);
+    expect(state.writes).toContainEqual({ method: 'POST', path: '/v1/secret_keys/key_boot/revoke', body: {}, key: PROV_SK });
+    // A re-run configures with the provisioning key and mints nothing.
+    state.writes.length = 0;
+    expect(await run(ARGS, ctxWith(captureIO()))).toBe(0);
+    expect(state.writes.filter((w) => w.path === '/v1/secret_keys')).toEqual([]);
+  });
+
+  it('--key-preset all keeps the all-scope key and mints nothing', async () => {
+    state.mint = true;
+    expect(await run([...ARGS, '--key-preset', 'all'], ctxWith(captureIO()))).toBe(0);
+    expect(readFileSync(join(home, 'acme', 'production', 'atlas.env'), 'utf8')).toContain(`ATLAS_SECRET_KEY=${SK}`);
+    expect(state.writes.filter((w) => w.path === '/v1/secret_keys')).toEqual([]);
+  });
+
+  it('production with no email transport is refused, naming the flags and the yaml; --allow-no-email proceeds', async () => {
+    const io = captureIO();
+    expect(await run(['init', '--product', 'acme', '--yes'], ctxWith(io))).toBe(1);
+    expect(io.stderr()).toContain('--email managed --domain');
+    expect(io.stderr()).toContain('--allow-no-email');
+    expect(state.writes).toEqual([]);
+  });
+
+  it('--email omitted on a terminal asks for the email mode, naming the methods that need it', async () => {
+    const asked: string[] = [];
+    const io = captureIO();
+    const c = ctxWith(io, {
+      tty: { stdin: true, stdout: true },
+      prompt: { text: async (q: string) => (asked.push(q), 'development'), secret: async () => '' },
+    });
+    // The summary's own confirmation also goes through prompt.text, so it answers 'development' there too: only the first question matters.
+    await run(['init', '--product', 'acme', '--instance-env', 'development', '--strategies', 'email_code'], c);
+    expect(asked[0]).toContain('Email transport: managed / development / none');
+    expect(asked[0]).toContain('email_code');
+    expect(io.stdout()).toContain('email:      development');
+  });
+
+  it('--email omitted without a terminal announces that email is none and what is turned off', async () => {
+    const io = captureIO();
+    expect(await run(['init', '--product', 'acme', '--instance-env', 'development', '--strategies', 'email_code,password', '--yes'], ctxWith(io, { tty: { stdin: false, stdout: false } }))).toBe(0);
+    expect(io.stdout()).toContain('!! --email not given, so email is none and email_code is turned off.');
+    expect(io.stdout()).toContain('--email managed --domain');
+  });
+
+  it('never revokes a key on a re-run or for an existing app', async () => {
+    state.mint = true;
+    expect(await run(ARGS, ctxWith(captureIO()))).toBe(0);
+    state.writes.length = 0;
+    expect(await run(ARGS, ctxWith(captureIO()))).toBe(0);
+    expect(state.writes.filter((w) => w.path.endsWith('/revoke'))).toEqual([]);
+    // An existing app with its key file gone and --rotate-secret: the rotated key stays all-scope, nothing is minted or revoked.
+    rmSync(join(home, 'acme'), { recursive: true, force: true });
+    expect(await run([...ARGS, '--rotate-secret'], ctxWith(captureIO()))).toBe(0);
+    expect(state.writes.filter((w) => w.path === '/v1/secret_keys' || w.path.endsWith('/revoke'))).toEqual([]);
+  });
+
+  it('development with no email transport warns which methods will not be offered', async () => {
+    const io = captureIO();
+    expect(await run(['init', '--product', 'acme', '--instance-env', 'development', '--strategies', 'email_code', '--yes'], ctxWith(io))).toBe(0);
+    const out = io.stdout();
+    expect(out).toContain('!! WARNING: this instance has no email transport.');
+    expect(out).toContain('email_code');
+    expect(out).toContain('development instances: --email development');
+    expect(out).toContain('email_provider:');
+  });
+});
+
 describe('atlas init', () => {
   it('creates app, email, domain, client and webhook; writes every secret to a 0600 file and prints none', async () => {
     const io = captureIO();
@@ -578,11 +666,11 @@ describe('atlas init', () => {
   it('an existing app whose secret file is gone needs --rotate-secret', async () => {
     state.apps.push({ id: 'ins_1', name: 'acme', environment: 'production', publishable_key: 'pk_test_1', frontend_api_host: null });
     const io = captureIO();
-    expect(await run(['init', '--product', 'acme', '--yes'], ctxWith(io))).toBe(1);
+    expect(await run(['init', '--product', 'acme', '--allow-no-email', '--yes'], ctxWith(io))).toBe(1);
     expect(io.stderr()).toContain('--rotate-secret');
 
     const io2 = captureIO();
-    expect(await run(['init', '--product', 'acme', '--yes', '--rotate-secret'], ctxWith(io2))).toBe(0);
+    expect(await run(['init', '--product', 'acme', '--allow-no-email', '--yes', '--rotate-secret'], ctxWith(io2))).toBe(0);
     expect(state.rotations).toBe(1);
     noSecrets(io2);
     expect(readFileSync(join(home, 'acme', 'production', 'atlas.env'), 'utf8')).toContain(SK);
@@ -639,14 +727,14 @@ describe('atlas init', () => {
     const nokey = captureIO();
     const ctx = ctxWith(nokey);
     ctx.env = { XDG_CONFIG_HOME: home };
-    expect(await run(['init', '--product', 'acme', '--yes'], ctx)).toBe(1);
+    expect(await run(['init', '--product', 'acme', '--allow-no-email', '--yes'], ctx)).toBe(1);
     expect(nokey.stderr()).toContain('ATLAS_PLATFORM_KEY');
   });
 
   it('asks before changing anything without --yes', async () => {
     const io = captureIO();
     const ctx = ctxWith(io, { prompt: { text: async () => 'n', secret: async () => '' } });
-    expect(await run(['init', '--product', 'acme'], ctx)).toBe(1);
+    expect(await run(['init', '--product', 'acme', '--allow-no-email'], ctx)).toBe(1);
     expect(io.stderr()).toContain('Aborted');
     expect(state.writes).toEqual([]);
   });
@@ -659,7 +747,7 @@ describe('atlas preflight', () => {
   ];
 
   it('exits 0 with only warnings, 1 with --fail-on warning, 1 on an error', async () => {
-    await run(['init', '--product', 'acme', '--yes'], ctxWith(captureIO()));
+    await run(['init', '--product', 'acme', '--allow-no-email', '--yes'], ctxWith(captureIO()));
     state.findings = findings;
 
     const ok = captureIO();
@@ -682,7 +770,7 @@ describe('atlas preflight', () => {
   });
 
   it('an acknowledged warning is shown but does not fail --fail-on warning', async () => {
-    await run(['init', '--product', 'acme', '--yes'], ctxWith(captureIO()));
+    await run(['init', '--product', 'acme', '--allow-no-email', '--yes'], ctxWith(captureIO()));
     state.findings = [{ ...findings[0]!, acknowledged: { reason: 'expected until we add a domain' } }, findings[1]!];
     const io = captureIO();
     expect(await run(['preflight', '--product', 'acme', '--fail-on', 'warning'], ctxWith(io))).toBe(0);

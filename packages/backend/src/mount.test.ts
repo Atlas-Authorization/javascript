@@ -327,3 +327,32 @@ describe('createMountHandler failover', () => {
     expect(GET).toBeTypeOf('function');
   });
 });
+
+describe('createMountHandler production boot check', () => {
+  const restore = () => vi.unstubAllEnvs();
+  it('throws mount_env_missing at creation in production without the env vars', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('ATLAS_UPSTREAM', '');
+    vi.stubEnv('ATLAS_PROXY_SECRET', '');
+    try {
+      createMountHandler();
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toMatchObject({ name: 'AtlasConfigError', code: 'mount_env_missing', missing: ['ATLAS_UPSTREAM', 'ATLAS_PROXY_SECRET'] });
+    } finally {
+      restore();
+    }
+  });
+  it('does not throw in production when options are passed, in dev, or during next build', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('ATLAS_UPSTREAM', '');
+    vi.stubEnv('ATLAS_PROXY_SECRET', '');
+    expect(() => createMountHandler(opts)).not.toThrow();
+    vi.stubEnv('NEXT_PHASE', 'phase-production-build');
+    expect(() => createMountHandler()).not.toThrow();
+    vi.stubEnv('NEXT_PHASE', '');
+    vi.stubEnv('NODE_ENV', 'development');
+    expect(() => createMountHandler()).not.toThrow();
+    restore();
+  });
+});

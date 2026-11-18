@@ -1,5 +1,13 @@
 # @atlasauth/backend changelog
 
+## 0.58.0
+
+- `createMountHandler` throws `AtlasConfigError` (`mount_env_missing`, with `missing`) at creation in production when `ATLAS_UPSTREAM` or `ATLAS_PROXY_SECRET` is unset and no option is passed (skipped during `next build`).
+- `syncLocalUser` passes `{ request: { headers, ip } }` as a new last argument to `create` and `link`.
+- The optional web-bot-auth dependency load no longer makes bundlers warn "the request of a dependency is an expression".
+- **type-widening:** secret key `preset` gains `integrations`.
+- `instance.cookieConsent.patch()`; `OAuthProvider.modes`; messaging providers carry `secret_fingerprints`.
+
 ## 0.57.1
 
 - `privacy.lookup()` accepts `identity` as an alias of `atlas`.

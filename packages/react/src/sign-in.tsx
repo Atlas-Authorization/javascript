@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type ButtonHTMLAttributes } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type ButtonHTMLAttributes } from 'react';
 import {
   mintNativeNonce,
   nativeSignIn,
@@ -35,6 +35,8 @@ import { useClass, useText } from './components-shared';
 import { EmailLinkPage, useEmailLink } from './email-link';
 import type { CaptchaController } from './captcha';
 
+const noopSubscribe = () => () => {};
+
 export function SignIn(props: FlowProps = {}) {
   const link = useEmailLink('sign_in');
   if (useAtlas().inert) return null;
@@ -52,7 +54,9 @@ function SignInFlow(props: FlowProps) {
   // Already signed in and no flow of ours in progress (a held attempt covers the
   // recovery-codes and finish steps): draw nothing. Also nothing until the session check answers.
   // Nothing until the session check answers, except where the server drew the form (hydration must match).
-  const hidden = (status === 'signed_in' || (status === 'loading' && !serverRendered)) && !state.attempt && !state.busy;
+  // False while hydrating, true on every later render: a held attempt read from the URL by the first client render must not draw a form the server never did.
+  const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
+  const hidden = (status === 'signed_in' || (status === 'loading' && !serverRendered)) && (!state.attempt || !mounted) && !state.busy;
   const passkey = usePasskeySignIn({
     client,
     finish,

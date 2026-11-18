@@ -87,6 +87,14 @@ const OPTIONS = {
   yes: { type: 'boolean', short: 'y' },
   force: { type: 'boolean' },
   'rotate-secret': { type: 'boolean' },
+  // init: scoped key presets (default) or the all-scope key; production without email.
+  'key-preset': { type: 'string' },
+  'allow-no-email': { type: 'boolean' },
+  // preflight / doctor: accept a known warning or info finding by code.
+  ack: { type: 'string' },
+  'ack-reason': { type: 'string' },
+  // keys create / rotate: the variable name the secret is written under.
+  'env-var': { type: 'string' },
   // plan / apply: skip the server dry-run pass (the published-limit checks still run).
   'skip-validate': { type: 'boolean' },
   instance: { type: 'string' },

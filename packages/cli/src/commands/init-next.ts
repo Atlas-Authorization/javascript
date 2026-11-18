@@ -49,7 +49,7 @@ instance:
 #   - url: \${APP_ORIGIN}/api/webhooks/atlas
 #     enabled_events: ['user.created']
 #     secret: \${ATLAS_WEBHOOK_SECRET}
-#     active: false
+#     active: golive          # off until \`atlas golive\` passes a test delivery; plan and apply never revert it
 `;
 
 const ENV_EXAMPLE = `# Build args: safe to bake into an image. The publishable key is the only one.

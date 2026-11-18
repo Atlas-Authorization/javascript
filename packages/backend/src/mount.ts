@@ -66,6 +66,31 @@ export interface AtlasMountOptions {
 
 type Handler = (request: Request) => Promise<Response>;
 
+/** Thrown at boot when the path mount is misconfigured in production. Check `code` (`mount_env_missing`). */
+export class AtlasConfigError extends Error {
+  readonly code: 'mount_env_missing';
+  readonly missing: string[];
+  constructor(code: 'mount_env_missing', message: string, missing: string[]) {
+    super(message);
+    this.name = 'AtlasConfigError';
+    this.code = code;
+    this.missing = missing;
+  }
+}
+
+/** In production, fail at creation (not on the first request) when the upstream or proxy secret is missing. */
+function assertMountEnv(options: AtlasMountOptions, sdkName: string): void {
+  const env = readEnv();
+  // `next build` evaluates route modules with NODE_ENV=production but without runtime secrets.
+  if (env.NODE_ENV !== 'production' || env.NEXT_PHASE === 'phase-production-build') return;
+  const missing: string[] = [];
+  if (!(options.upstream ?? env.ATLAS_UPSTREAM)) missing.push('ATLAS_UPSTREAM');
+  if (!(options.proxySecret ?? env.ATLAS_PROXY_SECRET)) missing.push('ATLAS_PROXY_SECRET');
+  if (missing.length) {
+    throw new AtlasConfigError('mount_env_missing', `${sdkName} createMountHandler: set ${missing.join(' and ')} (or pass the option) before starting in production.`, missing);
+  }
+}
+
 export interface AtlasMountHandlers {
   GET: Handler;
   POST: Handler;
@@ -171,6 +196,7 @@ function filterCookies(header: string, allow: (name: string) => boolean): string
  */
 export function createMountHandler(options: AtlasMountOptions = {}): AtlasMountHandlers {
   const sdk = options.sdk ?? { name: '@atlasauth/backend', version: ATLAS_BACKEND_VERSION };
+  assertMountEnv(options, sdk.name);
   const handle: Handler = async (request) => {
     const env = readEnv();
     const upstream = options.upstream ?? env.ATLAS_UPSTREAM;

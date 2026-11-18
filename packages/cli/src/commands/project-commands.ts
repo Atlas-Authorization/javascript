@@ -168,6 +168,19 @@ export function checkRow(f: PreflightFinding): { id: string; status: 'error' | '
   };
 }
 
+/**
+ * `--ack <code>`: accept a known warning or info finding (PUT /v1/instance/preflight/acks/{code}). It stays listed, marked
+ * acknowledged, and stops counting. Errors are never acknowledgeable: the server refuses them.
+ */
+export async function ackFinding(ctx: RunContext, api: ConfigHttp, args: ParsedArgs, log: (l: string) => void): Promise<void> {
+  const code = str(args.values, 'ack');
+  if (code === undefined) return;
+  if (!/^[a-z0-9_]+$/.test(code)) throw new CliError(`--ack must be a finding code such as issuer_changed_recently, got '${code}'.`);
+  const reason = str(args.values, 'ack-reason') ?? `acknowledged from the CLI (atlas ${args.positionals[0] ?? 'preflight'} --ack)`;
+  await api.put(`/v1/instance/preflight/acks/${encodeURIComponent(code)}`, { reason });
+  log(`Acknowledged ${code}. It stays listed but no longer counts. Undo: DELETE /v1/instance/preflight/acks/${code}.`);
+}
+
 /** `atlas preflight` (alias `health`) — run the instance's setup checks; exit 1 on errors (or warnings with --fail-on warning). */
 export async function preflight(ctx: RunContext, args: ParsedArgs, verb: 'preflight' | 'health' = 'preflight'): Promise<number> {
   const failOn = str(args.values, 'fail-on') ?? 'error';
@@ -181,6 +194,7 @@ export async function preflight(ctx: RunContext, args: ParsedArgs, verb: 'prefli
   }
   const cred = instanceCredential(ctx, args);
   const api = httpFor(ctx, cred);
+  await ackFinding(ctx, api, args, (l) => (wantsJson(args.values) ? ctx.io.err(l) : ctx.io.out(l)));
   let raw = await api.get<{ ok: boolean; findings: PreflightFinding[] }>('/v1/instance/preflight');
   if (fix) {
     await applyFixes(ctx, api, raw.findings ?? [], args.values.yes === true, (l) => (wantsJson(args.values) ? ctx.io.err(l) : ctx.io.out(l)));
@@ -255,6 +269,7 @@ export async function doctor(ctx: RunContext, args: ParsedArgs): Promise<number>
   if (args.values['no-probe'] === true) q.set('probe', 'false');
   const qs = q.toString();
   const api = httpFor(ctx, cred);
+  await ackFinding(ctx, api, args, (l) => (wantsJson(args.values) ? ctx.io.err(l) : ctx.io.out(l)));
   const report = redactDeep(
     await api.get<{ ok: boolean; checks: HealthCheckRow[]; summary: { failing: number; passing: number; unknown: number } }>(`/v1/integration-health${qs ? `?${qs}` : ''}`),
   );
@@ -304,6 +319,19 @@ export async function doctor(ctx: RunContext, args: ParsedArgs): Promise<number>
 const FORMATS = ['dotenv', 'coolify', 'vercel', 'k8s'] as const;
 type EnvFormat = (typeof FORMATS)[number];
 
+/**
+ * When the issuer is a custom domain or path mount (not the Frontend API host), verifiers must fetch the keys from
+ * that same issuer, and the Frontend API host is only the previous issuer they still accept.
+ */
+export function mountEndpoints(pub: Record<string, string>): void {
+  const issuer = pub.ATLAS_ISSUER?.replace(/\/+$/, '');
+  const fapi = pub.ATLAS_FRONTEND_API?.replace(/\/+$/, '');
+  if (!issuer || !fapi || issuer === fapi) return;
+  pub.ATLAS_DISCOVERY_URL = `${issuer}/.well-known/openid-configuration`;
+  pub.ATLAS_JWKS_URI = `${issuer}/.well-known/jwks.json`;
+  pub.ATLAS_PREVIOUS_ISSUERS = fapi;
+}
+
 /** Public values, then each secret as a reference to its file — never the value. */
 export async function envCommand(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const format = (str(args.values, 'format') ?? 'dotenv') as EnvFormat;
@@ -351,6 +379,8 @@ export async function envCommand(ctx: RunContext, args: ParsedArgs): Promise<num
     if (live.discovery_url) pub.ATLAS_DISCOVERY_URL = live.discovery_url;
     if (live.jwks_uri) pub.ATLAS_JWKS_URI = live.jwks_uri;
   }
+
+  mountEndpoints(pub);
 
   if (wantsJson(args.values)) {
     printJson(ctx.io, { product: product ?? null, environment, public: pub, secret_files: Object.fromEntries(secrets.map((s) => [s.key, s.file])) });

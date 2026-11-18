@@ -257,7 +257,7 @@ export class Engine {
       key = this.authenticateKey(request);
       const scope = op?.scope ?? route?.scope;
       if (scope && key.scopes && !key.scopes.includes(scope) && !key.scopes.includes('*')) {
-        throw new EmulatorError('SCOPE_MISSING', `This key lacks the \`${scope}\` scope.`, undefined, { meta: { required_scope: scope } });
+        throw new EmulatorError('SCOPE_MISSING', `This key lacks the \`${scope}\` scope.`, undefined, { meta: { required_scope: scope, missing_scopes: [scope] } });
       }
     }
 

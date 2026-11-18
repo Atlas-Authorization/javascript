@@ -23,6 +23,10 @@ export interface CheckResult {
   ok: boolean;
   detail: string;
   fix?: string;
+  /** A finding that does not stop go-live but that `atlas doctor` counts: shown with a warning mark, never a tick. */
+  severity?: 'warning';
+  /** The warnings behind a passing check (preflight), for a caller that prints them. */
+  warnings?: CheckResult[];
 }
 
 interface Domain {
@@ -66,10 +70,23 @@ export function domainFor(domains: Domain[], host: string): Domain | undefined {
   return domains.find((d) => d.host === host) ?? domains.find((d) => d.role === 'fapi');
 }
 
+/** Warnings that have their own golive step (so the preflight step does not repeat them). */
+const OWN_STEP_WARNINGS = new Set(['secret_key_unscoped_in_use']);
+
+/** Unacknowledged preflight warnings, one per finding: the same ones `atlas doctor` counts. */
+export function preflightWarnings(findings: PreflightFinding[]): CheckResult[] {
+  return findings
+    .filter((f) => f.severity === 'warning' && !f.acknowledged && !OWN_STEP_WARNINGS.has(f.code))
+    .map((f) => ({ id: `preflight/${f.code}`, ok: true, severity: 'warning' as const, detail: f.message, fix: f.fix }));
+}
+
 export async function preflightCheck(api: ConfigHttp): Promise<CheckResult> {
   const report = await api.get<{ findings?: PreflightFinding[] }>('/v1/instance/preflight');
   const errors = (report.findings ?? []).filter((f) => f.severity === 'error' && !f.acknowledged);
-  if (!errors.length) return { id: 'preflight', ok: true, detail: 'no error findings' };
+  if (!errors.length) {
+    const warnings = preflightWarnings(report.findings ?? []);
+    return { id: 'preflight', ok: true, detail: warnings.length ? `no error findings, ${warnings.length} warning(s)` : 'no error findings', warnings };
+  }
   return {
     id: 'preflight',
     ok: false,
@@ -155,6 +172,11 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
   const pass = (id: string, detail: string) => {
     results.push({ id, ok: true, detail });
     if (!json) ctx.io.out(`✓ ${id} — ${scrubText(detail)}`);
+  };
+  // One severity model with doctor: a finding doctor counts as a warning is never printed with a tick.
+  const warn = (id: string, detail: string) => {
+    results.push({ id, ok: true, severity: 'warning', detail });
+    if (!json) ctx.io.out(`⚠ ${id} — ${scrubText(detail)}`);
   };
   const fail = (problem: string, fix: string): never => {
     throw new StepFailed(current, problem, fix);
@@ -261,12 +283,16 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
 
     // (6) preflight + login readiness
     current = 'preflight';
-    check(await preflightCheck(api));
+    const pre = await preflightCheck(api);
+    check(pre);
+    for (const w of pre.warnings ?? []) warn(w.id, `${w.detail}${w.fix ? ` Fix: ${w.fix}` : ''}`);
     current = 'login_readiness';
     check(await loginReadinessCheck(api, origin.origin));
 
     // (7a) --connect: connect partners from the keys file, then read each one back.
     const wanted = str(v, 'connect');
+    let cmpConnected = false;
+    let cmpSiteId: string | undefined;
     if (wanted !== undefined) {
       current = 'connect';
       const partners = parsePartners(wanted);
@@ -284,6 +310,8 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
         const audience = (await api.get<{ audience?: string }>('/v1/instance/integrations/cookiemunch')).audience;
         const cbid = keys.COOKIEMUNCH_SITE_ID ?? (fields.privacy?.site_id as string | undefined) ?? audience?.replace(/^cookiemunch:/, '');
         if (!cbid) fail('no Cookie Munch site id for the data-rights handshake', 'Add COOKIEMUNCH_SITE_ID to the keys file, or privacy_orchestrator.site_id to --config.');
+        cmpConnected = true;
+        cmpSiteId = cbid;
         const issuer = instance.issuer ? trimSlash(instance.issuer) : expected!;
         const steps = await connectCookieMunchSide({ fetch: fetchImpl, apiBase: ctx.env.COOKIEMUNCH_API_URL, key: cmKey, cbid: cbid!, issuer, origin: origin.origin, dry });
         pass('connect/cookiemunch', steps.join('; '));
@@ -318,6 +346,14 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
     const identity = (await optional(() => api.get<{ data: Array<{ id: string; connected: boolean; enabled: boolean }> }>('/v1/instance/integrations')))?.data ?? [];
     for (const i of identity.filter((x) => x.connected)) pass(`integrations/${i.id}`, i.enabled ? 'on' : 'off');
 
+    // (7b) a consent platform is connected but the hosted pages load no consent manager.
+    current = 'cookie_consent';
+    const consent = await optional(() => api.get<{ enabled?: boolean }>('/v1/instance/cookie_consent'));
+    if (consent && consent.enabled === false && (cmpConnected || identity.some((i) => i.id === 'cookiemunch' && i.connected))) {
+      const body = `{"enabled": true, "script_url": "<your consent manager script URL>"${cmpSiteId ? `, "site_id": "${cmpSiteId}"` : ''}}`;
+      warn('cookie_consent', `a consent platform is connected, but the hosted sign-in pages load no consent manager (consent.cmp is empty). Set it: PUT /v1/instance/cookie_consent ${body}`);
+    }
+
     // (8) platform-owned secret keys nobody uses: offer to revoke them.
     current = 'platform_keys';
     const stale = await staleSecretKeys(api);
@@ -334,14 +370,11 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
         pass('platform_keys', would(`revoked ${stale.length}: ${names}`, `revoke ${stale.length}: ${names}`));
       } else pass('platform_keys', `${stale.length} unused platform-owned key(s) left: ${names} (revoke with --revoke-unused-platform-keys)`);
     }
-    // (9) an all-scope key still in use: say how to move it to the app-runtime preset without downtime.
+    // (9) an all-scope key still in use: doctor counts it as a warning, so golive shows it as one.
     current = 'unscoped_keys';
     const wide = await unscopedKeysInUse(api);
     if (!wide.length) pass('unscoped_keys', 'no all-scope keys in use');
-    else {
-      const cmds = wide.map((k) => `atlas keys rotate ${k.id} --preset app-runtime --overlap 72h --out <the file your app reads>`).join('; ');
-      pass('unscoped_keys', `${wide.length} in-use key(s) hold every scope (*). Move each to the app-runtime preset, then redeploy within the overlap: ${cmds}`);
-    }
+    else warn('unscoped_keys', unscopedAdvice(wide));
   } catch (err) {
     const failed =
       err instanceof StepFailed
@@ -358,6 +391,22 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
   if (json) printJson(ctx.io, redactDeep({ ok: true, dry_run: dry, origin: origin.origin, steps: results }));
   else if (dry) ctx.io.out('Dry run: nothing was written.');
   return 0;
+}
+
+/** The rotation advice for in-use all-scope keys: what rotating ends, where the new secret goes, which keys to hold. */
+export function unscopedAdvice(wide: Array<{ id: string }>): string {
+  const ids = wide.map((k) => k.id).join(', ');
+  return [
+    `${wide.length} in-use key(s) hold every scope (*): ${ids}.`,
+    'Rotating ends anything derived from the old secret (sessions or CSRF secrets your app derives from it), and every service holding the key must redeploy with the new one within the overlap.',
+    'Use separate keys:',
+    `(1) app-runtime for the deployed app, set as ATLAS_SECRET_KEY: atlas keys rotate ${wide[0]!.id} --preset app-runtime --overlap 72h --out ./atlas-app-runtime.env;`,
+    '(2) provisioning for config-as-code and the CLI, set as ATLAS_PROVISIONING_KEY: atlas keys create --preset provisioning --name provisioning --out ./atlas-provisioning.env --env-var ATLAS_PROVISIONING_KEY;',
+    '(3) integrations for platform connect flows, set as ATLAS_INTEGRATIONS_KEY: atlas keys create --preset integrations --name integrations --out ./atlas-integrations.env --env-var ATLAS_INTEGRATIONS_KEY.',
+    wide.length > 1 ? 'Rotate each remaining key the same way.' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 /** A read that is absent on this instance (404) is "not declared". */
