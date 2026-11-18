@@ -5,10 +5,10 @@ import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { printJson } from '../output';
 import { redactDeep, scrubText } from '../redact';
-import { httpFor } from '../project';
+import { httpFor, writeManifest } from '../project';
 import { instanceCredential } from './project-commands';
 import { wantsJson } from './shared';
-import { connectCookieMunchSide, connectPartners, parsePartners, readConnectFields, readKeysFile } from './golive-connect';
+import { connectCookieMunchSide, connectPartners, integrationsKeyHint, parsePartners, readConnectFields, readKeysFile } from './golive-connect';
 
 /**
  * `atlas golive --origin <url>`: take an instance from "configured" to "live"
@@ -104,7 +104,8 @@ export async function loginReadinessCheck(api: ConfigHttp, origin: string): Prom
   return {
     id: 'login_readiness',
     ok: false,
-    detail: `not ready for ${origin} (${failing.map((c) => c.name).join(', ') || 'unknown hop'})`,
+    // Name each failing hop with what the API says is wrong with it (which key, which fetch), not just the hop id.
+    detail: `not ready for ${origin} (${failing.map((c) => (c.detail ? `${c.name}: ${c.detail}` : c.name)).join('; ') || 'unknown hop'})`,
     fix: failing.map((c) => c.detail).join(' ') || 'See GET /v1/diagnostics/login_readiness for the failing hop.',
   };
 }
@@ -163,11 +164,13 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
   const origin = parseOrigin(str(v, 'origin'), 'golive');
   const dry = v['dry-run'] === true;
   const json = wantsJson(v);
-  const api = httpFor(ctx, instanceCredential(ctx, args));
+  const cred = instanceCredential(ctx, args);
+  const api = httpFor(ctx, cred);
   const fetchImpl = ctx.fetch ?? globalThis.fetch;
   const q = (path: string) => (dry ? `${path}${path.includes('?') ? '&' : '?'}dry_run=true` : path);
   const results: CheckResult[] = [];
   let current = 'domains';
+  let issuerMoved = false;
 
   const pass = (id: string, detail: string) => {
     results.push({ id, ok: true, detail });
@@ -201,6 +204,7 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
         const pair = `issuer moves from ${preview.issuer_before} to ${preview.issuer_after}`;
         const copy = `Add this to your token verifiers first: previousIssuers: ["${preview.issuer_before}"]${until ? ` (the old issuer is kept until ${until})` : ''}.`;
         if (!dry && v.yes !== true) fail(`verifying ${domain.host}: ${pair}`, `${copy} Then run golive again with --yes.`);
+        issuerMoved = true;
         pass('issuer_move', `${pair}. ${copy}`);
       }
       const res = await api.post<Domain & { object?: string }>(q(`/v1/domains/${domain.id}/verify`), {});
@@ -214,7 +218,7 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
 
     // (2) issuer
     current = 'issuer';
-    const instance = await api.get<{ issuer?: string | null }>('/v1/instance');
+    const instance = await api.get<{ issuer?: string | null; discovery_url?: string | null; jwks_uri?: string | null }>('/v1/instance');
     const expected = instance.issuer ? trimSlash(instance.issuer) : null;
     if (!expected) fail('the instance reports no issuer', 'Check GET /v1/instance; a verified Frontend API domain sets it.');
     const base =
@@ -237,6 +241,19 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
       fail(`${discoveryUrl} serves issuer ${served ?? '(none)'}, expected ${expected}`, 'Point that host/path at this instance\'s Frontend API, or verify the domain so the instance issues tokens for it.');
     }
     pass('issuer', `${expected}`);
+    // Values `atlas env` copied into other systems carry the old issuer once it moved: say so, and keep the manifest current.
+    const recorded = cred.instance?.issuer ? trimSlash(cred.instance.issuer) : null;
+    if (issuerMoved || (recorded && recorded !== expected)) {
+      const product = cred.manifest?.product ?? '<product>';
+      const envFlag = cred.instance && cred.instance.environment !== 'production' ? ` --instance-env ${cred.instance.environment}` : '';
+      warn('env_values_stale', `the issuer is now ${expected}${recorded && recorded !== expected ? ` (your last 'atlas env' wrote ${recorded})` : ''}, so ATLAS_ISSUER, ATLAS_DISCOVERY_URL and ATLAS_JWKS_URI you copied into your hosting are stale. Re-run: atlas env --product ${product}${envFlag} --format dotenv, and redeploy.`);
+      if (!dry && cred.manifest && cred.instance) {
+        cred.instance.issuer = expected;
+        cred.instance.discovery_url = instance.discovery_url ?? `${expected}/.well-known/openid-configuration`;
+        cred.instance.jwks_uri = instance.jwks_uri ?? `${expected}/.well-known/jwks.json`;
+        writeManifest(ctx.env, cred.manifest);
+      }
+    }
 
     // (3) Sign in with Atlas
     current = 'sign_in_with_atlas';
@@ -291,15 +308,17 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
 
     // (7a) --connect: connect partners from the keys file, then read each one back.
     const wanted = str(v, 'connect');
+    // The connect and integration calls use ATLAS_INTEGRATIONS_KEY from the keys file when it holds one; every other step keeps the main key.
+    const keys = wanted !== undefined ? readKeysFile(ctx, str(v, 'keys-file')) : {};
+    const iapi = keys.ATLAS_INTEGRATIONS_KEY ? httpFor(ctx, { secretKey: keys.ATLAS_INTEGRATIONS_KEY, apiUrl: cred.apiUrl }) : api;
     let cmpConnected = false;
     let cmpSiteId: string | undefined;
     if (wanted !== undefined) {
       current = 'connect';
       const partners = parsePartners(wanted);
-      const keys = readKeysFile(ctx, str(v, 'keys-file'));
       const configFile = str(v, 'config');
       const fields = configFile ? readConnectFields(ctx, configFile) : {};
-      const { table, failures } = await connectPartners(api, partners, keys, q, () => undefined, fields);
+      const { table, failures } = await connectPartners(iapi, partners, keys, q, () => undefined, fields);
       if (!json) ctx.io.out(table);
       if (failures.length) fail(failures.join('; '), 'Fix the key or audience named above, then run golive again.');
       pass('connect', would(partners.join(', '), `connect ${partners.join(', ')}`));
@@ -307,7 +326,7 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
       const cmKey = keys.COOKIEMUNCH_API_KEY;
       if (partners.includes('cookiemunch') && cmKey) {
         current = 'connect/cookiemunch';
-        const audience = (await api.get<{ audience?: string }>('/v1/instance/integrations/cookiemunch')).audience;
+        const audience = (await iapi.get<{ audience?: string }>('/v1/instance/integrations/cookiemunch')).audience;
         const cbid = keys.COOKIEMUNCH_SITE_ID ?? (fields.privacy?.site_id as string | undefined) ?? audience?.replace(/^cookiemunch:/, '');
         if (!cbid) fail('no Cookie Munch site id for the data-rights handshake', 'Add COOKIEMUNCH_SITE_ID to the keys file, or privacy_orchestrator.site_id to --config.');
         cmpConnected = true;
@@ -335,7 +354,7 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
         pass(current, would('connection tested', 'test the connection'));
       }
     }
-    const privacy = await optional(() => api.get<{ preset: string | null; connected: boolean }>('/v1/instance/privacy_integrations'));
+    const privacy = await optional(() => iapi.get<{ preset: string | null; connected: boolean }>('/v1/instance/privacy_integrations'));
     if (privacy?.preset) {
       current = 'integrations/privacy';
       if (!privacy.connected) {
@@ -343,7 +362,7 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
       }
       pass(current, `${privacy.preset} connected`);
     }
-    const identity = (await optional(() => api.get<{ data: Array<{ id: string; connected: boolean; enabled: boolean }> }>('/v1/instance/integrations')))?.data ?? [];
+    const identity = (await optional(() => iapi.get<{ data: Array<{ id: string; connected: boolean; enabled: boolean }> }>('/v1/instance/integrations')))?.data ?? [];
     for (const i of identity.filter((x) => x.connected)) pass(`integrations/${i.id}`, i.enabled ? 'on' : 'off');
 
     // (7b) a consent platform is connected but the hosted pages load no consent manager.
@@ -380,7 +399,7 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
       err instanceof StepFailed
         ? err
         : err instanceof AtlasApiError
-          ? new StepFailed(current, `API error (HTTP ${err.status})${err.code ? ` [${err.code}]` : ''}: ${err.message}`, 'Check the key has the scopes this step needs, then run golive again.')
+          ? new StepFailed(current, `API error (HTTP ${err.status})${err.code ? ` [${err.code}]` : ''}: ${err.message}`, (/^(connect|integrations)/.test(current) ? integrationsKeyHint(err) : undefined) ?? 'Check the key has the scopes this step needs, then run golive again.')
           : null;
     if (!failed) throw err;
     results.push({ id: failed.step, ok: false, detail: failed.problem, fix: failed.fix });

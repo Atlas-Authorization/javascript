@@ -1,5 +1,12 @@
 # @atlasauth/cli changelog
 
+## 0.49.0
+
+- `keys create --preset` and `init`'s scoped keys no longer send `scopes: []` (the API refused it with a preset); `--preset` with `--scopes` is a CLI error.
+- `doctor`: warnings print WARN and are counted apart; only errors fail the exit code (`--fail-on warning|error|never`).
+- `init --email-provider hermetica --email-from <address> --email-key-file <path>`; the email fix text lists every transport.
+- `golive`: prints the login-readiness failure detail, warns about stale env values after the issuer moves and updates the manifest, and uses `ATLAS_INTEGRATIONS_KEY` from the keys file for `--connect` calls.
+
 ## 0.48.0
 
 - `init` mints an `app-runtime` key and a `provisioning` key for a new app instead of an all-scope key (`--key-preset all` to opt back in); asks for `--email` in a terminal, prints a notice otherwise, and refuses a production init with no email transport unless `--allow-no-email`.

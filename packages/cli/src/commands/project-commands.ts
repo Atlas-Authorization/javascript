@@ -246,10 +246,19 @@ interface HealthCheckRow {
   fix: string | null;
   hop?: string;
   source: string;
+  severity?: 'error' | 'warning' | 'info';
+}
+
+/** One state per row, same as `atlas health` and golive: errors FAIL, warnings WARN, info and unknown are notes. */
+type RowState = 'ok' | 'FAIL' | 'WARN' | 'note';
+export function rowState(c: Pick<HealthCheckRow, 'ok' | 'severity'>): RowState {
+  if (c.ok === true) return 'ok';
+  if (c.ok === null || c.severity === 'info') return 'note';
+  return c.severity === 'warning' ? 'WARN' : 'FAIL';
 }
 
 const HEALTH_COLUMNS: Column<HealthCheckRow>[] = [
-  { header: 'STATE', get: (c) => (c.ok === true ? 'ok' : c.ok === false ? 'FAIL' : '-') },
+  { header: 'STATE', get: (c) => { const st = rowState(c); return st === 'note' ? '-' : st; } },
   { header: 'CHECK', get: (c) => c.id },
   { header: 'HOP', get: (c) => c.hop ?? '' },
   { header: 'DETAIL', get: (c) => c.detail },
@@ -271,7 +280,7 @@ export async function doctor(ctx: RunContext, args: ParsedArgs): Promise<number>
   const api = httpFor(ctx, cred);
   await ackFinding(ctx, api, args, (l) => (wantsJson(args.values) ? ctx.io.err(l) : ctx.io.out(l)));
   const report = redactDeep(
-    await api.get<{ ok: boolean; checks: HealthCheckRow[]; summary: { failing: number; passing: number; unknown: number } }>(`/v1/integration-health${qs ? `?${qs}` : ''}`),
+    await api.get<{ ok: boolean; checks: HealthCheckRow[]; summary: { failing: number; passing: number; unknown: number; warning?: number } }>(`/v1/integration-health${qs ? `?${qs}` : ''}`),
   );
   // --origin: the go-live checks for that origin join the same report.
   const originRaw = str(args.values, 'origin');
@@ -289,26 +298,32 @@ export async function doctor(ctx: RunContext, args: ParsedArgs): Promise<number>
       ])
     ).flat();
     for (const c of extra) {
-      report.checks.push({ id: c.id, ok: c.ok, detail: c.detail, fix: c.fix ?? null, source: 'origin' });
-      report.summary[c.ok ? 'passing' : 'failing'] += 1;
+      report.checks.push({ id: c.id, ok: c.ok, detail: c.detail, fix: c.fix ?? null, source: 'origin', ...(c.severity ? { severity: c.severity } : {}) });
     }
-    if (extra.some((c) => !c.ok)) report.ok = false;
   }
+  // One severity per row (the server's own counts treat every non-ok row as failing): recount from the rows so the summary matches what is printed.
+  const states = report.checks.map(rowState);
+  const count = (st: RowState) => states.filter((x) => x === st).length;
+  report.summary = { failing: count('FAIL'), warning: count('WARN'), passing: count('ok'), unknown: count('note') };
+  const failOn = str(args.values, 'fail-on') ?? 'error';
+  if (!['error', 'warning', 'never'].includes(failOn)) throw new CliError(`--fail-on must be error, warning or never, got '${failOn}'.`);
+  report.ok = failOn === 'never' || (report.summary.failing === 0 && !(failOn === 'warning' && (report.summary.warning ?? 0) > 0));
   if (wantsJson(args.values)) {
     printJson(ctx.io, report);
   } else {
-    const rows = [...report.checks].sort((a, b) => (a.ok === false ? 0 : a.ok === null ? 2 : 1) - (b.ok === false ? 0 : b.ok === null ? 2 : 1));
+    const rank = { FAIL: 0, WARN: 1, ok: 2, note: 3 } as const;
+    const rows = [...report.checks].sort((a, b) => rank[rowState(a)] - rank[rowState(b)]);
     ctx.io.out(renderTable(HEALTH_COLUMNS, rows));
-    const failing = rows.filter((c) => c.ok === false && c.fix);
+    const failing = rows.filter((c) => (rowState(c) === 'FAIL' || rowState(c) === 'WARN') && c.fix);
     if (failing.length) {
       ctx.io.out('');
       for (const c of failing) ctx.io.out(`${c.id}: ${c.fix}`);
     }
     ctx.io.out('');
-    ctx.io.out(`${report.summary.failing} failing, ${report.summary.passing} passing, ${report.summary.unknown} not known or not configured.`);
+    ctx.io.out(`${report.summary.failing} failing, ${report.summary.warning} warning, ${report.summary.passing} passing, ${report.summary.unknown} not known or not configured.`);
   }
   if (!report.ok) {
-    ctx.io.err(`atlas: ${report.summary.failing} integration check(s) failing.`);
+    ctx.io.err(`atlas: ${report.summary.failing} integration check(s) failing${report.summary.warning ? `, ${report.summary.warning} warning(s)` : ''}.`);
     return 1;
   }
   return 0;

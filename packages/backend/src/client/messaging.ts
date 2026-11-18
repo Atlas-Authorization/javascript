@@ -21,8 +21,10 @@ import { enc, type RequestFn } from './request';
 
 // ── Transports ──────────────────────────────────────────────────────────────
 
-/** Email transports accepted by `PUT /v1/messaging_providers/email`. */
-export type EmailTransport = 'resend' | 'ses' | 'smtp' | 'brevo' | 'mailgun' | 'smtp2go' | 'webhook';
+/**
+ * Email transports accepted by `PUT /v1/messaging_providers/email`.
+ */
+export type EmailTransport = 'resend' | 'ses' | 'smtp' | 'brevo' | 'mailgun' | 'smtp2go' | 'hermetica' | 'webhook';
 
 /** SMS transports accepted by `PUT /v1/messaging_providers/sms`. */
 export type SmsTransport =
@@ -76,6 +78,14 @@ export interface Smtp2goConfig {
   api_key: string;
   /** The data region your account uses. Omit for the regionless host. */
   region?: 'us' | 'eu' | 'au';
+}
+
+/** Hermetica. */
+export interface HermeticaConfig {
+  /** Hermetica secret API key (`hm_sk_…`) allowed to send messages. Required on first setup. Write-only: never returned. */
+  api_key: string;
+  /** Your app slug: tagged on every message and set as `metadata.app`, so `GET /v1/messages?app=` finds it. */
+  app?: string;
 }
 
 /** Amazon SES. */
@@ -238,6 +248,7 @@ export interface MessagingTransportConfigs {
   brevo: BrevoConfig;
   mailgun: MailgunConfig;
   smtp2go: Smtp2goConfig;
+  hermetica: HermeticaConfig;
   twilio: TwilioConfig;
   vonage: VonageConfig;
   messagebird: MessagebirdConfig;
@@ -259,6 +270,7 @@ export interface MessagingSecretKeys {
   brevo: 'api_key';
   mailgun: 'api_key';
   smtp2go: 'api_key';
+  hermetica: 'api_key';
   twilio: 'auth_token';
   vonage: 'api_secret';
   messagebird: 'access_key';
@@ -531,7 +543,7 @@ export interface DevelopmentEmail {
 /** `{ provider_id }`, or your provider exactly as `messaging.setEmail` takes it. */
 export type EnableDevelopmentEmailBody =
   | { provider_id: string; from_address?: string }
-  | { transport: 'resend' | 'ses' | 'smtp' | 'brevo' | 'mailgun' | 'smtp2go' | 'webhook'; config?: Record<string, string>; from_address?: string };
+  | { transport: EmailTransport; config?: Record<string, string>; from_address?: string };
 
 export interface MessagingTestResult {
   object: 'messaging_test';

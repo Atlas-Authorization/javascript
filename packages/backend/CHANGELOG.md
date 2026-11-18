@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.59.0
+
+- **type-widening:** `EmailTransport` gains `hermetica` (`HermeticaConfig`: `api_key`, optional `app`).
+
 ## 0.58.0
 
 - `createMountHandler` throws `AtlasConfigError` (`mount_env_missing`, with `missing`) at creation in production when `ATLAS_UPSTREAM` or `ATLAS_PROXY_SECRET` is unset and no option is passed (skipped during `next build`).

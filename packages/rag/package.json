@@ -9,7 +9,15 @@
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
-  "keywords": ["atlas", "atlasauth", "rag", "authorization", "fga", "retrieval", "llm"],
+  "keywords": [
+    "atlas",
+    "atlasauth",
+    "rag",
+    "authorization",
+    "fga",
+    "retrieval",
+    "llm"
+  ],
   "devDependencies": {
     "typescript": "^5.6.3",
     "vitest": "^4.1.12"
@@ -17,5 +25,15 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "CHANGELOG.md"]
+  "files": [
+    "dist",
+    "!dist/*.tsbuildinfo",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "directory": "packages/rag"
+  }
 }

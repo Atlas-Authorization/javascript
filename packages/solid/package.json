@@ -39,7 +39,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alphajew420/ssoly.git",
+    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
     "directory": "packages/solid"
   },
   "homepage": "https://github.com/alphajew420/ssoly/tree/main/packages/solid#readme",

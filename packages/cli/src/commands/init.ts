@@ -17,7 +17,7 @@ import {
 } from '../project';
 import { assertProductName, productDir, readEnvFile, writeSecretFile } from '../secrets';
 import { folderHoldsKey } from './doctor-scan';
-import { EMAIL_PROVIDER_FIX, envApiUrl, wantsJson } from './shared';
+import { EMAIL_PROVIDERS, EMAIL_PROVIDER_FIX, EMAIL_PROVIDER_LIST, envApiUrl, wantsJson } from './shared';
 import { INIT_TEMPLATES, scaffoldNext, scaffoldTemplate } from './init-next';
 
 /**
@@ -48,20 +48,21 @@ const STRATEGY_ALIASES: Record<string, string> = {
 /** Strategies that need email delivery: turned on only once the instance can send. */
 const EMAIL_STRATEGIES = new Set(['emailCode', 'emailLink']);
 
+const MANAGED_EMAIL_PROVIDERS: readonly string[] = ['resend', 'brevo'];
+
 /** The flags that give `atlas init` an email transport (the yaml equivalent is in {@link EMAIL_YAML_HINT}). */
 const EMAIL_FLAGS_HINT =
-  'Add an email transport: --email managed --domain <your-domain> --email-provider resend|brevo --email-key-file <path|-> (development instances: --email development).';
+  `Add an email transport: --email managed --domain <your-domain> --email-provider ${EMAIL_PROVIDER_LIST} --email-key-file <path|-> (development instances: --email development).`;
 const EMAIL_YAML_HINT = [
   '  email_provider:',
-  '    transport: resend            # or brevo',
+  '    transport: resend            # or brevo, hermetica',
   '    from_address: noreply@example.com',
   '    config:',
   '      api_key: ${EMAIL_API_KEY}',
 ];
 const snake = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
-type EmailMode = 'managed' | 'development' | 'none';
-const EMAIL_PROVIDERS = ['resend', 'brevo'] as const;
+type EmailMode = 'managed' | 'provider' | 'development' | 'none';
 type EmailProvider = (typeof EMAIL_PROVIDERS)[number];
 
 interface InitOptions {
@@ -123,10 +124,16 @@ function parseOptions(args: ParsedArgs): InitOptions {
   if (domain && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
     throw new CliError(`--domain must be a domain name like example.com, got '${domain}'.`);
   }
-  const emailRaw = str(v, 'email') ?? (domain ? 'managed' : 'none');
-  if (emailRaw !== 'managed' && emailRaw !== 'development' && emailRaw !== 'none') {
+  const providerRaw = str(v, 'email-provider');
+  // hermetica has no managed-domain registration: it is set directly (PUT) with --email-from.
+  const emailRaw = str(v, 'email') ?? (providerRaw === 'hermetica' ? 'provider' : domain ? 'managed' : 'none');
+  if (emailRaw === 'managed' && providerRaw && !MANAGED_EMAIL_PROVIDERS.includes(providerRaw)) {
+    throw new CliError(`--email managed registers your domain with ${MANAGED_EMAIL_PROVIDERS.join(' or ')}; ${providerRaw} is set directly: drop --email managed and pass --email-from <address> with --email-provider ${providerRaw}.`);
+  }
+  if (emailRaw !== 'managed' && emailRaw !== 'provider' && emailRaw !== 'development' && emailRaw !== 'none') {
     throw new CliError(`--email must be managed, development or none, got '${emailRaw}'.`);
   }
+  if (emailRaw === 'provider' && !str(v, 'email-from')) throw new CliError(`--email-provider ${providerRaw} needs --email-from <sender address> and --email-key-file <path|->.`);
   if (emailRaw === 'managed' && !domain && !str(v, 'email-from')) {
     throw new CliError('--email managed needs --domain (or --email-from <address on your domain>).');
   }
@@ -136,14 +143,13 @@ function parseOptions(args: ParsedArgs): InitOptions {
   if (v['with-dev'] === true && environment !== 'production') {
     throw new CliError('--with-dev creates a development sibling for a production app; drop --instance-env development.');
   }
-  const providerRaw = str(v, 'email-provider');
   if (providerRaw !== undefined && !EMAIL_PROVIDERS.includes(providerRaw as EmailProvider)) {
     throw new CliError(
       `--email-provider must be ${EMAIL_PROVIDERS.join(' or ')}, got '${providerRaw}'. Configure other providers with PUT /v1/messaging_providers/email.`,
     );
   }
   const emailKeyFile = str(v, 'email-key-file');
-  if (emailKeyFile !== undefined && !providerRaw) throw new CliError('--email-key-file needs --email-provider resend|brevo.');
+  if (emailKeyFile !== undefined && !providerRaw) throw new CliError(`--email-key-file needs --email-provider ${EMAIL_PROVIDER_LIST}.`);
   const keyPreset = str(v, 'key-preset') ?? 'app-runtime';
   if (keyPreset !== 'app-runtime' && keyPreset !== 'all') throw new CliError(`--key-preset must be app-runtime or all, got '${keyPreset}'.`);
   const allowNoEmail = v['allow-no-email'] === true;
@@ -459,13 +465,18 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const providerKey = () => {
     if (!opts.emailProvider || !opts.emailKeyFile) {
       throw new CliError(
-        `--email ${opts.email} sends through your own email provider. Pass --email-provider resend|brevo and --email-key-file <path> (or - to read it from stdin).`,
+        `--email ${opts.email} sends through your own email provider. Pass --email-provider ${EMAIL_PROVIDER_LIST} and --email-key-file <path> (or - to read it from stdin).`,
       );
     }
     return { transport: opts.emailProvider, config: { api_key: readProviderKey(ctx, opts.emailKeyFile) } };
   };
   let emailReady = opts.email === 'none';
-  if (opts.email === 'managed') {
+  if (opts.email === 'provider') {
+    await api.put('/v1/messaging_providers/email', { ...providerKey(), from_address: opts.emailFrom });
+    emailReady = true;
+    record.email = { mode: 'provider', from_address: opts.emailFrom };
+    log(`Email sender set: your ${opts.emailProvider} account, from ${opts.emailFrom}.`);
+  } else if (opts.email === 'managed') {
     let managed: { from_address: string; verified: boolean; records?: Array<{ type: string; name: string; value: string; priority?: number }> };
     try {
       managed = await api.get('/v1/messaging_providers/email/managed');
@@ -669,7 +680,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   if (bootstrap && opts.keyPreset !== 'all') {
     const bootstrapId = (await api.get<{ key?: { id?: string } }>('/v1/whoami').catch(() => undefined))?.key?.id;
     try {
-      const mint = (preset: string, name: string) => api.post<{ id: string; secret?: string }>('/v1/secret_keys', { preset, scopes: [], name });
+      const mint = (preset: string, name: string) => api.post<{ id: string; secret?: string }>('/v1/secret_keys', { preset, name });
       const runtime = await mint('app-runtime', `${opts.appName} app runtime`);
       const prov = await mint('provisioning', `${opts.appName} provisioning`);
       if (runtime.secret && prov.secret) {

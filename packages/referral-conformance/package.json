@@ -46,5 +46,10 @@
   "license": "MIT",
   "engines": {
     "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "directory": "packages/referral-conformance"
   }
 }

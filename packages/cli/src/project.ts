@@ -31,7 +31,7 @@ export interface ProjectInstance {
   oauth_client?: { id: string; client_id: string; redirect_uris: string[]; secret_file: string | null };
   webhook?: { id: string; url: string; secret_file: string | null };
   custom_domain?: { host: string; cname_target: string | null; status: string };
-  email?: { mode: 'managed' | 'development' | 'none'; from_address?: string | null };
+  email?: { mode: 'managed' | 'development' | 'provider' | 'none'; from_address?: string | null };
 }
 
 export interface ProjectManifest {

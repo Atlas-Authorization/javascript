@@ -1,7 +1,7 @@
 {
   "name": "@atlasauth/passport",
   "version": "0.3.1",
-  "description": "Passport.js strategies for Atlas \u2014 an OIDC authorization-code strategy for interactive login and a bearer/JWT strategy for API routes, both wrapping @atlasauth/backend.",
+  "description": "Passport.js strategies for Atlas — an OIDC authorization-code strategy for interactive login and a bearer/JWT strategy for API routes, both wrapping @atlasauth/backend.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -51,7 +51,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alphajew420/ssoly.git",
+    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
     "directory": "packages/passport-atlas"
   },
   "homepage": "https://github.com/alphajew420/ssoly/tree/main/packages/passport-atlas#readme",

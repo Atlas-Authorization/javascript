@@ -16,7 +16,13 @@
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
-  "keywords": ["atlas", "atlasauth", "migration", "export", "auth"],
+  "keywords": [
+    "atlas",
+    "atlasauth",
+    "migration",
+    "export",
+    "auth"
+  ],
   "engines": {
     "node": ">=18"
   },
@@ -33,5 +39,10 @@
     "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "directory": "packages/migrate"
+  }
 }

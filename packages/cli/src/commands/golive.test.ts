@@ -1,4 +1,8 @@
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { AtlasApiError } from '@atlasauth/backend';
 import { MemoryConfigStore } from '../config';
 import type { ConfigHttp } from '../config-http';
 import type { ManagementClient, RunContext } from '../context';
@@ -175,6 +179,14 @@ describe('atlas golive', () => {
       expect(io.stdout()).toContain(`✓ issuer_move — issuer moves from ${OLD}`);
     });
 
+    it('warns that copied env values are stale and names the command to re-run', async () => {
+      const { make } = setup(moved());
+      const io = captureIO();
+      expect(await run(['golive', '--origin', 'https://app.example.com', '--yes'], make(io))).toBe(0);
+      expect(io.stdout()).toContain('⚠ env_values_stale');
+      expect(io.stdout()).toContain('atlas env --product <product> --format dotenv');
+    });
+
     it('--dry-run prints the pair and writes nothing, without --yes', async () => {
       const { calls, make } = setup(moved());
       const io = captureIO();
@@ -218,6 +230,71 @@ describe('atlas golive', () => {
   });
 });
 
+describe('golive --connect with an integrations key', () => {
+  const keysFile = (body: string) => {
+    const f = join(mkdtempSync(join(tmpdir(), 'atlas-keys-')), 'partner-keys.env');
+    writeFileSync(f, body, { mode: 0o600 });
+    return f;
+  };
+  const withKeys = (answers: Record<string, unknown>) => {
+    const { make } = setup(answers);
+    const used: Array<{ key: string; path: string }> = [];
+    return {
+      used,
+      ctx: (io: CaptureIO): RunContext => {
+        const base = make(io);
+        const mk = base.makeHttp!;
+        return {
+          ...base,
+          readFile: (path: string) => readFileSync(path, 'utf8'),
+          makeHttp: (o) => {
+            const h = mk(o);
+            return { ...h, get: (p) => (used.push({ key: o.secretKey, path: p }), h.get(p)) } as ConfigHttp;
+          },
+        };
+      },
+    };
+  };
+  const ANSWERS = () => mockApi({ 'GET /v1/instance/integrations/chatly': { id: 'chatly', audience: 'chatly:x' }, 'GET /v1/instance/integrations': { data: [] } });
+
+  it('uses ATLAS_INTEGRATIONS_KEY for integration calls only; other steps keep the main key', async () => {
+    const { ctx, used } = withKeys(ANSWERS());
+    const f = keysFile('ATLAS_INTEGRATIONS_KEY=sk_test_integrations_key\nCHATLY_API_KEY=chk\n');
+    const io = captureIO();
+    expect(await run(['golive', '--origin', 'https://app.example.com', '--connect', 'chatly', '--keys-file', f], ctx(io))).toBe(0);
+    const integ = used.filter((u) => u.path.startsWith('/v1/instance/integrations'));
+    expect(integ.length).toBeGreaterThan(0);
+    expect(integ.every((u) => u.key === 'sk_test_integrations_key')).toBe(true);
+    expect(used.filter((u) => u.path === '/v1/domains').every((u) => u.key === 'sk_test_123456')).toBe(true);
+    expect(io.stdout()).not.toContain('sk_test_integrations_key');
+  });
+
+  it('a 403 with missing scopes and no integrations key prints the integrations-key hint', async () => {
+    const answers = ANSWERS();
+    const { make } = setup(answers);
+    const io = captureIO();
+    const base = make(io);
+    const denied = () => {
+      throw new AtlasApiError(403, [{ code: 'SCOPE_MISSING', message: 'missing', meta: { missing_scopes: ['privacy:execute'] } }]);
+    };
+    const ctx: RunContext = { ...base, makeHttp: (o) => ({ ...base.makeHttp!(o), put: async () => denied() }) as ConfigHttp };
+    const f = keysFile('CHATLY_API_KEY=chk\n');
+    expect(await run(['golive', '--origin', 'https://app.example.com', '--connect', 'chatly', '--keys-file', f], ctx)).toBe(1);
+    expect(io.stdout()).toContain('this step needs an integrations key: atlas keys create --preset integrations');
+    expect(io.stdout()).toContain('privacy:execute');
+  });
+});
+
+describe('login readiness detail', () => {
+  it('names the failing hop with the API detail', async () => {
+    const { loginReadinessCheck } = await import('./golive');
+    const api = { get: async () => ({ ready: false, checks: [{ name: 'token_signing', pass: false, detail: 'signing key sk_1 has no public half in the JWKS' }] }) } as unknown as ConfigHttp;
+    const r = await loginReadinessCheck(api, 'https://app.example.com');
+    expect(r.ok).toBe(false);
+    expect(r.detail).toContain('token_signing: signing key sk_1 has no public half in the JWKS');
+  });
+});
+
 describe('atlas doctor --origin', () => {
   it('adds preflight, login readiness, path mount and declared cookies to one report', async () => {
     const { make } = setup(mockApi());
@@ -229,7 +306,7 @@ describe('atlas doctor --origin', () => {
     expect(out).toContain('path_mount');
     expect(out).toContain('declared_cookies: Re-import the storage declaration');
     expect(out).toContain('mount_jwks');
-    expect(out).toContain('1 failing, 5 passing');
+    expect(out).toContain('1 failing, 0 warning, 5 passing');
   });
 
   it('flags an HTML answer and a cached answer on the mount', async () => {

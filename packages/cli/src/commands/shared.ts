@@ -85,6 +85,10 @@ export function maskSecret(key: string): string {
   return `${key.slice(0, 8)}…${key.slice(-4)}`;
 }
 
+/** Every email transport the CLI can configure (init flag, hints); the server's full list is wider. */
+export const EMAIL_PROVIDERS = ['resend', 'brevo', 'hermetica'] as const;
+export const EMAIL_PROVIDER_LIST = EMAIL_PROVIDERS.join('|');
+
 /** What switches on password / email code / email link: the call and the fields it needs (the key is a placeholder, never a value). */
 export const EMAIL_PROVIDER_FIX =
-  'Set the email provider: PUT /v1/messaging_providers/email {"transport":"resend"|"brevo","from_address":"<sender>","config":{"api_key":"<key>"}} (or in atlas.yaml: email_provider: { transport, from_address, config: { api_key: ${EMAIL_API_KEY} } }).';
+  `Set the email provider: PUT /v1/messaging_providers/email {"transport":"${EMAIL_PROVIDERS.join('"|"')}","from_address":"<sender>","config":{"api_key":"<key>"}} (or in atlas.yaml: email_provider: { transport, from_address, config: { api_key: \${EMAIL_API_KEY} } }).`;

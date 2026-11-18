@@ -222,9 +222,11 @@ export async function keys(ctx: RunContext, args: ParsedArgs): Promise<number> {
       const scopes = (str(values, 'scopes') || '').split(/[ ,]+/).filter(Boolean);
       const preset = str(values, 'preset') || undefined;
       if (scopes.length === 0 && !preset) throw new CliError('--scopes or --preset is required, e.g. --scopes "instance:read webhooks:read", --scopes read_only or --preset app-runtime.');
+      if (preset && scopes.length) throw new CliError('Pass --scopes or --preset, not both: a preset already names its scopes.');
       const created = await atlas.secretKeys.create({
         ...(preset ? { preset } : {}),
-        scopes,
+        // The API refuses scopes alongside a preset, so send scopes only when given.
+        ...(scopes.length ? { scopes } : {}),
         name: str(values, 'name') || undefined,
         owner: str(values, 'owner') || undefined,
         expires_at: str(values, 'expires-at') || undefined,

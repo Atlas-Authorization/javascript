@@ -13,6 +13,14 @@ import { interpolate } from './config';
 export const PARTNERS = ['cookiemunch', 'forumulate', 'chatly', 'referalli'] as const;
 export type Partner = (typeof PARTNERS)[number];
 
+/** For a 403 naming missing scopes on a connect call: say a separate integrations key is needed (never a key value). */
+export function integrationsKeyHint(err: unknown): string | undefined {
+  if (!(err instanceof AtlasApiError) || err.status !== 403) return undefined;
+  const missing = err.errors.flatMap((e) => (Array.isArray(e.meta?.missing_scopes) ? (e.meta!.missing_scopes as unknown[]).map(String) : []));
+  if (!missing.length) return undefined;
+  return `this step needs an integrations key: atlas keys create --preset integrations --out <file> --env-var ATLAS_INTEGRATIONS_KEY, then add ATLAS_INTEGRATIONS_KEY to the keys file (missing scopes: ${missing.join(', ')})`;
+}
+
 /** `--connect a,b`: a subset of the partners, in the order given. */
 export function parsePartners(raw: string): Partner[] {
   const ids = raw.split(',').map((s) => s.trim()).filter(Boolean);
@@ -129,7 +137,7 @@ export async function connectPartners(
       if (id === 'referalli' && (key || fields.referrals)) await api.patch(q('/v1/instance/referrals'), { provider: 'referalli', enabled: true, ...fields.referrals, ...(key ? { api_key: key } : {}) });
       say(`connected ${id}`);
     } catch (err) {
-      failures.push(`${id}: ${err instanceof AtlasApiError ? `HTTP ${err.status} ${err.message}` : (err as Error).message}`);
+      failures.push(`${id}: ${integrationsKeyHint(err) ?? (err instanceof AtlasApiError ? `HTTP ${err.status} ${err.message}` : (err as Error).message)}`);
     }
   }
   const list = await api.get<{ data: Row[] }>('/v1/instance/integrations');

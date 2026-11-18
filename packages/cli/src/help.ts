@@ -1,3 +1,4 @@
+import { EMAIL_PROVIDER_LIST } from './commands/shared';
 import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, PROVIDER_CHANGES, FLOWS, REFERRAL_REWARDS, POLICIES, REGION, OAUTH_PUBLISHERS, DOMAINS, AGE_ASSURANCE, APPROVAL_DEVICES, type Ops } from './commands/resources';
 /**
  * All help text lives here as plain strings — the CLI's "docs" surface. Kept
@@ -803,7 +804,8 @@ Usage:
              [--instance-env development|production] [--name <app-name>]
              [--strategies password,email_code,...]
              [--email managed|development|none] [--email-from <address>]
-             [--email-provider resend|brevo --email-key-file <path|->]
+             [--email-provider ${EMAIL_PROVIDER_LIST} --email-key-file <path|->]
+             (hermetica is set directly: --email-provider hermetica --email-from <address> --email-key-file <path|->)
              [--client-redirect <url>]... [--webhook-url <url>]
              [--backchannel <url>]
              [--with-dev] [--no-env-files --json]
@@ -878,14 +880,16 @@ An error is never acknowledgeable. Remove it with DELETE /v1/instance/preflight/
   doctor: `atlas doctor — integration health (a CI / deploy gate)
 
 Usage: atlas doctor [--instance <id> | --product <name> [--instance-env <env>]]
-                    [--only <source,...>] [--no-probe] [--origin <url>] [--ack <code>] [--json]
+                    [--only <source,...>] [--no-probe] [--origin <url>] [--ack <code>]
+                    [--fail-on error|warning|never] [--json]
        atlas doctor --scan-dir <path> [--scan-image <ref>] [--json]
        atlas doctor rs <url> [--json]
 
 Prints every check: setup findings, webhook receivers (with the failing hop:
 dns, tls, http, challenge or auth), back-channel logout, the referral
-platform, email, the consent manager and SDK versions. Exits 1 when a check
-fails. --no-probe uses recorded deliveries only (no live calls).
+platform, email, the consent manager and SDK versions. Errors print FAIL and exit 1;
+warnings print WARN, are counted separately and exit 0 unless --fail-on warning;
+info is a note. Same severities as atlas health. --no-probe uses recorded deliveries only (no live calls).
 
 --origin <url> adds the go-live checks for that app origin to the same report:
 setup errors (preflight), login readiness (live), the path-mount verification
@@ -928,7 +932,8 @@ Runs, in order, and stops at the first failure with its fix:
 --connect (any subset) connects those partners before the integrations step, with the keys
 from --keys-file (default ~/.config/atlas/partner-keys.env; refused unless only you can read
 it): FORUMULATE_API_KEY, COOKIEMUNCH_API_KEY, REFERALLI_API_KEY, and <PARTNER>_AUDIENCE for a
-first connect. With --config <file> it also sends that file's integrations (org_id, spaces,
+first connect. ATLAS_INTEGRATIONS_KEY (a key created with --preset integrations) in the same file is
+used for the connect and integration calls only; every other step uses your main key. With --config <file> it also sends that file's integrations (org_id, spaces,
 channel, claims, urls, ...), referrals and privacy_orchestrator settings, so no curl is
 needed; <PARTNER>_ORG_ID, <PARTNER>_SPACES (comma list) and <PARTNER>_CHANNEL in the keys
 file work too. For cookiemunch with its key, golive also connects Atlas as the identity executor
@@ -1158,7 +1163,7 @@ Usage:
           redirect_urls:       [ { url: ... } ]
           oauth_clients:       [ { name: ..., redirect_uris: [...] } ]
           webhook_endpoints:   [ { url: ..., enabled_events: [...], secret: "\${WEBHOOK_SECRET}", active: false } ]
-          email_provider:      { transport: brevo, from_address: ..., config: { api_key: "\${BREVO_KEY}" } }
+          email_provider:      { transport: brevo, from_address: ..., config: { api_key: "\${BREVO_KEY}" } }   # or resend, hermetica (api_key hm_sk_…)
           sms_provider:        { transport: twilio, from_address: "+15551234567", config: { account_sid: ..., auth_token: "\${TWILIO_TOKEN}" } }
           push_provider:       { transport: expo, config: { access_token: "\${EXPO_TOKEN}" } }   # or apns_fcm
           hooks:               { before_user_create: { url: ..., timeout_ms, fail_closed, enabled } }

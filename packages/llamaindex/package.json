@@ -13,7 +13,14 @@
     "@atlasauth/backend": "workspace:^",
     "@atlasauth/rag": "workspace:^"
   },
-  "keywords": ["atlas", "atlasauth", "llamaindex", "rag", "authorization", "fga"],
+  "keywords": [
+    "atlas",
+    "atlasauth",
+    "llamaindex",
+    "rag",
+    "authorization",
+    "fga"
+  ],
   "devDependencies": {
     "typescript": "^5.6.3",
     "vitest": "^4.1.12"
@@ -21,5 +28,15 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": ["dist", "!dist/*.tsbuildinfo", "README.md", "CHANGELOG.md"]
+  "files": [
+    "dist",
+    "!dist/*.tsbuildinfo",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "directory": "packages/llamaindex"
+  }
 }

@@ -27,5 +27,10 @@
     "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "directory": "packages/fastify"
+  }
 }

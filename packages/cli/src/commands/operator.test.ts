@@ -173,6 +173,23 @@ describe('atlas keys create', () => {
     if (process.platform !== 'win32') expect(statSync(out).mode & 0o777).toBe(0o600);
     expect(m.out.join('\n')).not.toContain('secretvalue');
   });
+
+  it('--preset without --scopes sends no scopes key; both together is a CLI error', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'atlas-cli-'));
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return json({ object: 'secret_key', id: 'key_1', prefix: 'atlas_live_sk_abcd', scopes: ['users:read'], secret: 'atlas_live_sk_v' }, 201);
+    }) as unknown as typeof fetch;
+    const m = memIO();
+    const ctx = defaultContext({ io: m.io, config: new FileConfigStore(join(dir, 'c.json')), fetch: fetchImpl, env: { ATLAS_SECRET_KEY: 'sk_live_x', ATLAS_API_URL: 'https://api.test' } });
+    expect(await run(['keys', 'create', '--preset', 'integrations', '--out', join(dir, 'k.env')], ctx)).toBe(0);
+    expect(bodies[0]).toMatchObject({ preset: 'integrations' });
+    expect(bodies[0]).not.toHaveProperty('scopes');
+    expect(await run(['keys', 'create', '--preset', 'integrations', '--scopes', 'read_only'], ctx)).toBe(1);
+    expect(m.err.join('\n')).toMatch(/not both/);
+    expect(bodies).toHaveLength(1);
+  });
 });
 
 describe('atlas keys rotate', () => {

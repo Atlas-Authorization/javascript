@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/backend",
-  "version": "0.58.0",
+  "version": "0.59.0",
   "main": "./dist/index.js",
   "bin": {
     "atlas-doctor": "./dist/doctor-cli.js"
@@ -135,7 +135,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alphajew420/ssoly.git",
+    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
     "directory": "packages/backend"
   },
   "homepage": "https://github.com/alphajew420/ssoly/tree/main/packages/backend#readme",

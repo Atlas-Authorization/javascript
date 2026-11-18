@@ -27,7 +27,17 @@
     "typescript": "^5.6.3",
     "vitest": "^4.1.12"
   },
-  "keywords": ["atlas", "atlasauth", "authorization", "pdp", "cedar", "fga", "openfga", "authzen", "policy"],
+  "keywords": [
+    "atlas",
+    "atlasauth",
+    "authorization",
+    "pdp",
+    "cedar",
+    "fga",
+    "openfga",
+    "authzen",
+    "policy"
+  ],
   "publishConfig": {
     "access": "public"
   },
@@ -36,5 +46,10 @@
     "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "directory": "packages/pdp"
+  }
 }

@@ -101,7 +101,7 @@ function fakeAtlas(state: State, key: string): ConfigHttp {
           return { ok: !state.findings.some((f) => f.severity === 'error'), findings: state.findings } as T;
         case '/v1/integration-health':
         case '/v1/integration-health?only=webhooks&probe=false': {
-          const checks = state.findings.map((f) => ({ id: f.code, ok: f.severity === 'info' ? null : false, detail: f.message, fix: f.fix, source: 'preflight' }));
+          const checks = state.findings.map((f) => ({ id: f.code, ok: f.severity === 'info' ? null : false, severity: f.severity, detail: f.message, fix: f.fix, source: 'preflight' }));
           const failing = checks.filter((c) => c.ok === false).length;
           return { ok: failing === 0, checks, summary: { failing, passing: 0, unknown: checks.length - failing }, lastPath: path } as T;
         }
@@ -494,11 +494,23 @@ describe('atlas init: scoped keys and email', () => {
     expect(mode(join(dir, 'provisioning.env'))).toBe(0o600);
     const minted = state.writes.filter((w) => w.path === '/v1/secret_keys').map((w) => (w.body as { preset: string }).preset);
     expect(minted).toEqual(['app-runtime', 'provisioning']);
+    // The API refuses scopes alongside a preset.
+    for (const w of state.writes.filter((x) => x.path === '/v1/secret_keys')) expect(w.body).not.toHaveProperty('scopes');
     expect(state.writes).toContainEqual({ method: 'POST', path: '/v1/secret_keys/key_boot/revoke', body: {}, key: PROV_SK });
     // A re-run configures with the provisioning key and mints nothing.
     state.writes.length = 0;
     expect(await run(ARGS, ctxWith(captureIO()))).toBe(0);
     expect(state.writes.filter((w) => w.path === '/v1/secret_keys')).toEqual([]);
+  });
+
+  it('--email-provider hermetica sets the provider directly with --email-from; managed is refused for it', async () => {
+    const io = captureIO();
+    expect(await run([...ARGS, '--email-provider', 'hermetica', '--email-from', 'login@acme.example', '--email-key-file', keyFile], ctxWith(io))).toBe(0);
+    expect(state.writes).toContainEqual(expect.objectContaining({ method: 'PUT', path: '/v1/messaging_providers/email', body: { transport: 'hermetica', config: { api_key: PROVIDER_KEY }, from_address: 'login@acme.example' } }));
+    noSecrets(io);
+    const bad = captureIO();
+    expect(await run([...ARGS, '--email', 'managed', '--domain', 'acme.example', '--email-provider', 'hermetica', '--email-key-file', keyFile], ctxWith(bad))).toBe(1);
+    expect(bad.stderr()).toContain('set directly');
   });
 
   it('--key-preset all keeps the all-scope key and mints nothing', async () => {
@@ -958,6 +970,20 @@ describe('atlas doctor', () => {
     expect(io.stderr()).toContain('integration check(s) failing');
     state.findings = [];
     expect(await run(['doctor', '--product', 'acme', '--only', 'webhooks', '--no-probe'], ctxWith(captureIO()))).toBe(0);
+  });
+
+  it('doctor shows warnings as WARN, counts them apart and exits 0 unless --fail-on warning', async () => {
+    state.findings = [
+      { severity: 'warning', code: 'issuer_changed_recently', message: 'Issuer changed.', fix: 'Re-run atlas env.' },
+      { severity: 'info', code: 'note_only', message: 'Fyi.', fix: 'None.' },
+    ];
+    const io = captureIO();
+    expect(await run(['doctor', '--product', 'acme'], ctxWith(io))).toBe(0);
+    expect(io.stdout()).toMatch(/WARN\s+issuer_changed_recently/);
+    expect(io.stdout()).not.toContain('FAIL');
+    expect(io.stdout()).toContain('0 failing, 1 warning, 0 passing, 1 not known');
+    expect(await run(['doctor', '--product', 'acme', '--fail-on', 'warning'], ctxWith(captureIO()))).toBe(1);
+    state.findings = [];
   });
 
 });
