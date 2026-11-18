@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: read
+  # npm provenance: the publish signs a statement that this workflow, at this commit, built the package.
+  id-token: write
 
 concurrency:
   group: npm-release
@@ -49,6 +51,7 @@ jobs:
         if: steps.plan.outputs.names != ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
         run: |
           # Straight to latest, in dependency order (pnpm -r publishes dependencies first). npm serves a new version
           # once it has processed it; parking it under next first only delayed latest by that same processing time.
