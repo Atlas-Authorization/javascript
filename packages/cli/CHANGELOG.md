@@ -1,5 +1,12 @@
 # @atlasauth/cli changelog
 
+## 0.50.0
+
+- `atlas plan` / `atlas apply` print an error line (and `errors` in `--json`) when nobody could sign up, naming `PATCH /v1/instance/sign_in_with_atlas {"enabled":true}`.
+- Unknown config fields and values: `UNKNOWN_FIELD_VALUE <path>=<value>` with an upgrade hint.
+- `atlas migrate plan --from authjs` (`--set dump=<dir>` or `--file`) recommends a migration route with exact commands.
+- Commands for the `before_first_session` hook, `GET /v1/instance/issuers`, integrations health and sign-up forwarding.
+
 ## 0.49.0
 
 - `keys create --preset` and `init`'s scoped keys no longer send `scopes: []` (the API refused it with a preset); `--preset` with `--scopes` is a CLI error.

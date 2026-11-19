@@ -121,7 +121,7 @@ export const extraParityRequests: ParityRequest[] = [
   q('revoke job', 'GET', '/v1/sessions/revoke_jobs/{{xj}}', { group: 'round2', tolerate: ['status', 'matched', 'revoked', 'completed_at'] }),
   q('signing keys', 'GET', '/v1/instance/signing_keys'),
   q('jwks', 'GET', '/.well-known/jwks.json', { anonymous: true, tolerate: ['keys'] }),
-  q('discovery', 'GET', '/.well-known/openid-configuration', { anonymous: true, tolerate: ['atlas_emulator', 'atlas_previous_issuers'] }),
+  q('discovery', 'GET', '/.well-known/openid-configuration', { anonymous: true, tolerate: ['atlas_emulator', 'atlas_previous_issuers', 'atlas_planned_issuer'] }),
   // ── users bulk and deleted addresses ──
   q('bulk dry run', 'POST', '/v1/users/bulk_actions', { body: { action: 'ban', user_ids: ['{{xu2}}'], dry_run: true }, group: 'round2' }),
   q('bulk ban', 'POST', '/v1/users/bulk_actions', { body: { action: 'unban', user_ids: ['{{xu2}}'] }, capture: { xb: 'id' }, group: 'round2', tolerate: ['status', 'processed', 'succeeded', 'completed_at', 'progress', 'created_by'] }),
@@ -164,7 +164,7 @@ export const extraParityRequests: ParityRequest[] = [
   q('oauth clients', 'GET', '/v1/oauth_clients', { group: 'oauth' }),
   q('oauth client get', 'GET', '/v1/oauth_clients/{{xc}}', { group: 'oauth' }),
   q('oauth client update', 'PATCH', '/v1/oauth_clients/{{xc}}', { body: { name: 'Parity app renamed {{rand}}' }, group: 'oauth' }),
-  q('oauth metadata', 'GET', '/.well-known/oauth-authorization-server', { anonymous: true, group: 'oauth', tolerate: ['atlas_emulator', 'atlas_previous_issuers'] }),
+  q('oauth metadata', 'GET', '/.well-known/oauth-authorization-server', { anonymous: true, group: 'oauth', tolerate: ['atlas_emulator', 'atlas_previous_issuers', 'atlas_planned_issuer'] }),
   q('oauth authorize', 'GET', `/oauth2/authorize?client_id={{xc}}&redirect_uri=${encodeURIComponent(CB)}&response_type=code&scope=openid%20email%20offline_access&state=st1&nonce=n1&code_challenge=${PKCE_CHALLENGE}&code_challenge_method=S256&login_hint={{xu}}`, { anonymous: true, capture: { xcode: 'location#code' }, group: 'oauth' }),
   q('oauth authorize bad client', 'GET', `/oauth2/authorize?client_id=oac_unknown&redirect_uri=${encodeURIComponent(CB)}&response_type=code`, { anonymous: true, group: 'oauth' }),
   q('oauth token', 'POST', '/oauth2/token', { anonymous: true, form: { grant_type: 'authorization_code', code: '{{xcode}}', redirect_uri: CB, client_id: '{{xc}}', client_secret: '{{xcs}}', code_verifier: PKCE_VERIFIER }, capture: { xat: 'access_token', xort: 'refresh_token' }, tolerate: ['access_token', 'refresh_token', 'id_token'], group: 'oauth' }),

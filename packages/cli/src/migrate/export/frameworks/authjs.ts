@@ -53,7 +53,7 @@ export const AUTHJS_TABLES = {
   authenticator: ['Authenticator', 'authenticators', 'authenticator'],
 } as const;
 
-const PASSWORD_COLUMNS = ['password', 'passwordHash', 'password_hash', 'hashedPassword', 'hashed_password', 'encryptedPassword'];
+export const PASSWORD_COLUMNS = ['password', 'passwordHash', 'password_hash', 'hashedPassword', 'hashed_password', 'encryptedPassword'];
 
 export function exportAuthJs(tables: Tables, options: AuthJsExportOptions = {}): FrameworkExport {
   const out = new FrameworkExport();

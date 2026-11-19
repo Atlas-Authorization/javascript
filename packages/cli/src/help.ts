@@ -69,7 +69,9 @@ Commands:
   fga test|validate|transform <file>
   fga export|import|watch|materialize <store>
                              Run .fga.yaml test suites, validate and convert authorization models
-  integrations list|get|set|remove|deliveries   Identity integrations (chat, docs, consent, referrals, custom)
+  integrations list|health|forwarding|get|set|remove|deliveries   Identity integrations (chat, docs, consent, referrals, custom)
+  hooks before-first-session show|set|remove|test   The hook that links accounts before a first session
+  issuers                    The token issuers a verifier accepts (active, planned, previous)
   partner-platforms list|get|set|registration|token|deliveries|remove
                              This instance as a partner platform (signed consent deliveries in)
   id-accounts provision|list|rotate|remove
@@ -107,6 +109,8 @@ Commands:
   import --from <vendor> <file>
                              Move users from Auth0, Clerk, Supabase, Firebase, Cognito,
                              Auth.js, WorkOS or Better Auth (resumable; --dry-run first)
+  migrate plan --from authjs (--set dump=<dir> | --file <f>)
+                             Count an Auth.js database and recommend the route
   migrate code --from <vendor> [path]
                              Rewrite an app's auth code onto Atlas (Clerk, Auth.js,
                              Supabase, Auth0, Better Auth); a dry run with a diff unless --yes
@@ -150,6 +154,7 @@ export const COMMAND_HELP: Record<string, string> = {
   migrate: `atlas migrate — move an app's auth onto Atlas
 
 Usage:
+  atlas migrate plan --from authjs (--set dump=<dir> | --file <export.json> | --db <url>) [--json]
   atlas migrate code --from <vendor> [path] [--yes] [--json]
   atlas migrate better-auth config [path] [--dir <dir>] [--format json|yaml] [--entry <file>] [--json]
   atlas migrate better-auth [path] [--dry-run] [--yes] [--resume] [--force] [--json]
@@ -160,6 +165,12 @@ Usage:
   atlas migrate <vendor> config|export|import|bridge|lazy [path] [--set name=value ...]
   atlas migrate export <vendor> [path]      (same as: atlas migrate <vendor> export)
   atlas migrate custom export --file <records.ndjson|.json> [path]
+
+migrate plan reads your Auth.js tables (a dump folder, or one JSON file with
+users / accounts / sessions / authenticators arrays), prints what is in them and
+recommends a route: import with identities, lazy link, or session bridge, each
+with its exact commands. It never connects to a database: --db only prints the
+psql commands that make the dump (this CLI has no database driver).
 
 migrate <vendor> is the program for every other vendor, one plugin each
 (atlas migrate --help lists them). Steps, checkpointed in
@@ -790,12 +801,45 @@ Usage:
                          [--backchannel-logout-url <url|none>] [--oauth-client-id <client_id|none>]
                          [--disable] [--dry-run] [--json]
   atlas integrations remove <id> [--json]
+  atlas integrations health [--json]
+  atlas integrations forwarding set <lucida|hermetica|seolyticize|webhook> [--secret-file <path|->] [--host <h>]
+                         [--site-key <k>] [--conversion-event <e>] [--include-pii] [--url <https url>] [--active|--inactive]
+  atlas integrations forwarding show <destination> [--json]
+  atlas integrations forwarding remove <destination>
   atlas integrations deliveries <id> [--trace <id>] [--json]
+
+health lists every connected receiver (webhook endpoints, integrations, the privacy
+orchestrator) with its last delivery. forwarding set sends user.created sign-ups to
+a platform with YOUR key (read from --secret-file, or - for stdin; never printed) or
+to any https receiver (webhook, with --url); show reads it back (never the key); remove stops it.
 
 <id> is a preset (chatly, forumulate, cookiemunch, referalli) or your own id.
 --oauth-client-id names the first-party OAuth client the service signs users in
 with: while no --backchannel-logout-url is set, its backchannel_logout_uri is the
 integration's back-channel receiver.`,
+
+  hooks: `atlas hooks — server hooks
+
+Usage:
+  atlas hooks before-first-session show [--json]
+  atlas hooks before-first-session set [--url <https url>] [--secret-file <path|->] [--timeout-ms <ms>] [--enable|--disable] [--json]
+  atlas hooks before-first-session remove [--json]
+  atlas hooks before-first-session test [--json]
+
+before-first-session is called once per user, after their email is verified and
+before their first session token, so your answer ({ "external_id": "..." }) is
+already in that token. The signing secret is write-only: pass it with --secret-file
+(or - for stdin). remove clears the url and secret and turns the hook off; test
+sends a signed sample call with a made-up user and stores nothing.`,
+
+  issuers: `atlas issuers — the token issuers a verifier accepts
+
+Usage:
+  atlas issuers [--json]
+
+Prints the active issuer, the planned one (a path mount or custom domain whose
+claim is not verified yet; register it up front), the previous issuers still
+accepted, and the JWKS URL.`,
 
   init: `atlas init — create or complete an app's setup, idempotently
 

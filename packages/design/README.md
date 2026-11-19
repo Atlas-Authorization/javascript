@@ -33,13 +33,13 @@ const attrs = designDataAttributes(design); // { 'data-atlas-card': 'solid', ...
 - **Contrast:** `contrastRatio`, `readableOn`, `readableInk` and
   `designWarnings` (WCAG AA checks for a resolved design).
 
-**Two entries.** `@atlasauth/design` is everything, including the zod schemas
+**Two entries.** `@atlasauth/design` is everything, including the schema objects
 and the dashboard validators (`validateDesign`, `applyDesignPatch`).
-`@atlasauth/design/runtime` is the zod-free subset a renderer needs — presets,
+`@atlasauth/design/runtime` is the lean subset a renderer needs — presets,
 `resolveDesign`/`layerDesign`, the compiler, data attributes, fonts, contrast
 and the SDK composition helpers — with hand-written input guards that accept
 exactly what the schema accepts. Use it where bundle size matters.
 
-Runtime dependency: `zod` (full entry only). Works in browsers, Node, Deno, Bun and edge runtimes.
+No runtime dependencies. Works in browsers, Node, Deno, Bun and edge runtimes.
 
 MIT licensed.

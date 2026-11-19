@@ -1,5 +1,9 @@
 # @atlasauth/chrome-extension changelog
 
+## 0.6.2
+
+- Built against `@atlasauth/react` 0.40, whose `@atlasauth/design` 0.5 has no zod dependency.
+
 ## 0.6.1
 
 - Re-exports `exchangeGoogleTokenForSession` from `@atlasauth/js`. Needs `@atlasauth/js` 0.46.0 or later (peer range raised).

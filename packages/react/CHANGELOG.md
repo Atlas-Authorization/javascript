@@ -1,5 +1,13 @@
 # @atlasauth/react changelog
 
+## 0.40.0
+
+- `<AtlasProvider>` works without `publishableKey` on a path mount (reads it from `<mount>/v1/environment`).
+- New `integrations` prop: `window.Atlas.session.getToken` mints only for the listed partner integrations.
+- The Sign up link resolves a relative `frontendApi` against the page origin, keeping the referral.
+- `<SignIn>` hides the identifier step when no identifier-first method is enabled.
+- Uses `@atlasauth/design` 0.5, which has no zod dependency.
+
 ## 0.39.0
 
 - `SignIn` no longer causes a hydration mismatch (React #418) when the page loads from an OAuth return.

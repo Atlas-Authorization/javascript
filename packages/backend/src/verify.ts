@@ -157,6 +157,10 @@ export interface SessionClaimsBase {
    * integrator provision a first-login user from the token alone, with no
    * `GET /v1/users/:sub` round-trip. It is a snapshot at mint time, not a live
    * lookup — treat it as identity, not as an always-current address.
+   *
+   * OMITTED, never a placeholder, when the user has no real address (an internal
+   * `@no-email.invalid` stand-in is never put in a token). Test for `email`
+   * before you use it.
    */
   email?: string;
   /**
@@ -171,6 +175,14 @@ export interface SessionClaimsBase {
    * `email` under the same opt-in, and only when the user carries one.
    */
   external_id?: string;
+  /** Display name, with `session.includeEmailClaim`, when the user has one. */
+  name?: string;
+  /** Given name, with `session.includeEmailClaim`, when known. */
+  given_name?: string;
+  /** Family name, with `session.includeEmailClaim`, when known. */
+  family_name?: string;
+  /** Profile picture URL, with `session.includeEmailClaim`, when the user has one. */
+  picture?: string;
   /**
    * Present ONLY on a token accepted through `legacyIssuers` (a cutover from
    * another provider): which issuer minted it and the subject it carried there.
@@ -300,6 +312,15 @@ export interface AtlasBackendOptions {
    * backwards compatible.
    */
   audience?: string | readonly string[];
+  /**
+   * Which kind of Atlas token this verifier accepts. `'session'` (default): a session
+   * token. `'template'`: a token minted from a JWT template
+   * (`POST /v1/sessions/{id}/tokens/{template}`), which carries `token_use: "template"`
+   * and the template's own `aud`. Set `audience` too, so a template token minted for
+   * another service is refused. A verifier accepts one kind: a session token is
+   * refused by a `'template'` verifier, and the reverse.
+   */
+  tokenUse?: 'session' | 'template';
   secretKey?: string;
   bapiBaseUrl?: string;
   fetchImpl?: typeof fetch;
@@ -492,6 +513,13 @@ export class AtlasBackend {
      * so this never mass-invalidates a live fleet.
      */
     const tokenUse = (claims as { token_use?: unknown }).token_use;
+    if (this.options.tokenUse === 'template') {
+      if (tokenUse !== 'template') return { ok: false, reason: 'invalid' };
+      if (this.options.authorizedParties?.length && (!claims.azp || !this.options.authorizedParties.includes(claims.azp))) {
+        return { ok: false, reason: 'unauthorized_party' };
+      }
+      return authorized(claims);
+    }
     const isSessionMarked = tokenUse === 'session';
     // §S4: a first-party session token now carries `aud` (its instance id), so
     // `aud`-present no longer distinguishes an id_token. The positive

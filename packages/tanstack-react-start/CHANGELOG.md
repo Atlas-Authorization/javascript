@@ -1,5 +1,9 @@
 # @atlasauth/tanstack-react-start changelog
 
+## 0.3.1
+
+- Built against `@atlasauth/react` 0.40, whose `@atlasauth/design` 0.5 has no zod dependency.
+
 ## 0.3.0
 
 - `atlasRequireFeature` plan feature gate.

@@ -57,3 +57,21 @@ describe('ATLAS_PREVIOUS_ISSUERS', () => {
     }
   });
 });
+
+describe('tokenUse: template', () => {
+  it('accepts a template token for the right audience and refuses a session token, a wrong audience and the reverse', async () => {
+    const fx = await createTestIssuer();
+    const tpl = new AtlasBackend({ jwks: fx.jwks, issuer: fx.issuer, tokenUse: 'template', audience: 'billing-api', fetchImpl: forbiddenFetch });
+    const session = new AtlasBackend({ jwks: fx.jwks, issuer: fx.issuer, fetchImpl: forbiddenFetch });
+
+    const ok = await fx.mintSession({ token_use: 'template', aud: 'billing-api' });
+    const wrongAud = await fx.mintSession({ token_use: 'template', aud: 'other-api' });
+    const sess = await fx.mintSession({ aud: 'billing-api' });
+
+    const r = await tpl.verify(ok);
+    expect(r.ok).toBe(true);
+    expect((await tpl.verify(wrongAud)).ok).toBe(false);
+    expect((await tpl.verify(sess)).ok).toBe(false);
+    expect((await session.verify(ok)).ok).toBe(false);
+  });
+});

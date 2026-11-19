@@ -3,7 +3,7 @@ import type { DesignBackground } from './schema';
 /**
  * The design system's closed vocabularies and the resolved-design shape —
  * plain constants and types with NO runtime dependency, shared by the
- * zod schema (`./schema`) and the zod-free runtime entry (`./runtime`).
+ * zod schema (`./schema`) and the dependency-free runtime entry (`./runtime`).
  */
 
 // ---- closed vocabularies ---------------------------------------------------

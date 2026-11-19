@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { memoryWebhookStore, sqlWebhookDedupeStore, verifyAndDedupe, verifyWebhookAndDedupe, WebhookVerificationError } from './webhook-dedupe';
+import { memoryWebhookStore, sqlWebhookDedupeStore, memoryDedupeStore, sqlDedupeStore, redisDedupeStore, verifyAndDedupe, verifyWebhookAndDedupe, WebhookVerificationError } from './webhook-dedupe';
 
 const SECRET = 'whsec_test_secret';
 const now = new Date('2026-11-01T12:00:00Z');
@@ -108,5 +108,48 @@ describe('sqlWebhookDedupeStore dialects', () => {
     expect(seen[0]!.sql).toMatch(/^delete .*`key` = \?/);
     expect(seen[1]!.sql).toMatch(/^insert ignore/);
     expect(await sqlWebhookDedupeStore({ query: q([], 0), dialect: 'mysql' }).setIfAbsent('k', 60)).toBe(false);
+  });
+});
+
+describe('naming and options', () => {
+  it('keeps the old names as aliases', () => {
+    expect(memoryWebhookStore).toBe(memoryDedupeStore);
+    expect(sqlWebhookDedupeStore).toBe(sqlDedupeStore);
+  });
+
+  it('dedupe: false verifies without a store and never reports a duplicate', async () => {
+    const o = { secret: SECRET, dedupe: false as const, now };
+    expect((await verifyAndDedupe(req(), o)).duplicate).toBe(false);
+    expect((await verifyAndDedupe(req(), o)).duplicate).toBe(false);
+  });
+
+  it('redisDedupeStore speaks node-redis v4 (options object)', async () => {
+    const seen = new Map<string, number>();
+    const client = {
+      async set(k: string, _v: string, opts: { EX: number; NX: boolean }) {
+        if (opts.NX && seen.has(k)) return null;
+        seen.set(k, opts.EX);
+        return 'OK';
+      },
+      async del(k: string) { seen.delete(k); },
+    };
+    const store = redisDedupeStore(client);
+    expect(await store.setIfAbsent('k', 60)).toBe(true);
+    expect(await store.setIfAbsent('k', 60)).toBe(false);
+    await store.delete!('k');
+    expect(await store.setIfAbsent('k', 60)).toBe(true);
+  });
+
+  it('redisDedupeStore speaks ioredis (positional args)', async () => {
+    const calls: unknown[][] = [];
+    const client = {
+      defineCommand() {},
+      async set(...a: unknown[]) { calls.push(a); return calls.length === 1 ? 'OK' : null; },
+      async del() {},
+    };
+    const store = redisDedupeStore(client);
+    expect(await store.setIfAbsent('k', 60)).toBe(true);
+    expect(calls[0]).toEqual(['k', '1', 'EX', 60, 'NX']);
+    expect(await store.setIfAbsent('k', 60)).toBe(false);
   });
 });

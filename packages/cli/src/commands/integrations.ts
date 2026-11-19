@@ -5,6 +5,7 @@ import { CliError } from '../errors';
 import { fmtTime, printJson, renderTable, type Column } from '../output';
 import { httpFor } from '../project';
 import { resolveAuth, wantsJson } from './shared';
+import { readKeyFile } from './referrals';
 
 const COLUMNS: Column<Integration>[] = [
   { header: 'ID', get: (i) => i.id },
@@ -26,6 +27,28 @@ const DELIVERY_COLUMNS: Column<IntegrationDelivery>[] = [
 
 /** A URL flag: absent = unchanged (preset default), "none" = null (no receiver). */
 const urlFlag = (v: string | undefined): string | null | undefined => (v === undefined ? undefined : v === 'none' ? null : v);
+
+interface HealthRow {
+  kind: string;
+  id: string;
+  name: string | null;
+  managed_by: string | null;
+  destination: string | null;
+  state: string;
+  last_success_at: number | null;
+  consecutive_failures: number;
+}
+const HEALTH_COLUMNS: Column<HealthRow>[] = [
+  { header: 'KIND', get: (r) => r.kind },
+  { header: 'NAME', get: (r) => r.name ?? r.id },
+  { header: 'MANAGED BY', get: (r) => r.managed_by ?? '' },
+  { header: 'DESTINATION', get: (r) => r.destination ?? '' },
+  { header: 'STATE', get: (r) => r.state },
+  { header: 'LAST OK', get: (r) => (r.last_success_at ? fmtTime(r.last_success_at) : '') },
+  { header: 'FAILS', get: (r) => r.consecutive_failures },
+];
+
+const FORWARDING_DESTINATIONS = ['lucida', 'hermetica', 'seolyticize', 'webhook'];
 
 /**
  * `atlas integrations list | get <id> | set <id> | remove <id> | deliveries <id>`:
@@ -51,6 +74,59 @@ export async function integrations(ctx: RunContext, args: ParsedArgs): Promise<n
       const page = await http().get<{ data: Integration[] }>('/v1/instance/integrations');
       if (json) printJson(ctx.io, page);
       else ctx.io.out(renderTable(COLUMNS, page.data));
+      return 0;
+    }
+    case 'health': {
+      const page = await http().get<{ data: HealthRow[]; unhealthy_count: number }>('/v1/instance/integrations/health');
+      if (json) printJson(ctx.io, page);
+      else {
+        ctx.io.out(renderTable(HEALTH_COLUMNS, page.data));
+        ctx.io.out(page.unhealthy_count ? `${page.unhealthy_count} failing or disabled.` : 'Nothing failing.');
+      }
+      return 0;
+    }
+    case 'forwarding': {
+      // atlas integrations forwarding show|set|remove <lucida|hermetica|seolyticize|webhook>
+      const action = id;
+      const dest = args.positionals[3];
+      if ((action !== 'set' && action !== 'remove' && action !== 'show') || !dest || !FORWARDING_DESTINATIONS.includes(dest)) {
+        throw new CliError(`integrations forwarding needs: show|set|remove <${FORWARDING_DESTINATIONS.join('|')}>.`);
+      }
+      const url = `/v1/instance/integrations/forwarding/${dest}`;
+      if (action === 'show') {
+        const found = await http().get<{ id?: string; active?: boolean }>(url);
+        if (json) printJson(ctx.io, found);
+        else ctx.io.out(`Forwarding user.created to ${dest} (endpoint ${found.id ?? 'unknown'}, ${found.active === false ? 'inactive' : 'active'}).`);
+        return 0;
+      }
+      if (action === 'remove') {
+        await http().delete(url);
+        if (json) printJson(ctx.io, { forwarding: dest, removed: true });
+        else ctx.io.out(`Stopped forwarding sign-ups to ${dest}.`);
+        return 0;
+      }
+      const body: Record<string, unknown> = {};
+      if (dest === 'webhook') {
+        const target = str(args.values, 'url');
+        if (target) body.url = target;
+      } else {
+        const keyFile = str(args.values, 'secret-file');
+        if (keyFile) body.server_key = readKeyFile(ctx, keyFile, `the ${dest} server key`);
+        const host = str(args.values, 'host');
+        if (host) body.host = host;
+        if (args.values['include-pii'] === true && dest !== 'hermetica') body.include_pii = true;
+        if (dest === 'seolyticize') {
+          const site = str(args.values, 'site-key');
+          if (site) body.site_key = site;
+          const conv = str(args.values, 'conversion-event');
+          if (conv) body.conversion_event = conv;
+        }
+      }
+      if (args.values.active === true) body.active = true;
+      if (args.values.inactive === true) body.active = false;
+      const saved = await http().put<{ id?: string; created?: boolean }>(url, body);
+      if (json) printJson(ctx.io, saved);
+      else ctx.io.out(`${saved.created ? 'Now forwarding' : 'Updated forwarding of'} user.created to ${dest}${saved.id ? ` (endpoint ${saved.id})` : ''}.`);
       return 0;
     }
     case 'get': {
@@ -99,8 +175,8 @@ export async function integrations(ctx: RunContext, args: ParsedArgs): Promise<n
     default:
       throw new CliError(
         sub
-          ? `Unknown subcommand 'integrations ${sub}'. Try: list, get, set, remove, deliveries.`
-          : 'integrations needs a subcommand: list, get, set, remove, deliveries.',
+          ? `Unknown subcommand 'integrations ${sub}'. Try: list, health, forwarding, get, set, remove, deliveries.`
+          : 'integrations needs a subcommand: list, health, forwarding, get, set, remove, deliveries.',
       );
   }
 }

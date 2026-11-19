@@ -1,5 +1,5 @@
 /**
- * @atlasauth/design/runtime — the zod-free subset of the design system for
+ * @atlasauth/design/runtime — the dependency-free subset of the design system for
  * renderers that must stay small: everything needed to resolve, layer, compile
  * and apply a design (presets, resolver, CSS compiler, data attributes, fonts,
  * contrast, warnings, the SDK composition helpers), with hand-written input

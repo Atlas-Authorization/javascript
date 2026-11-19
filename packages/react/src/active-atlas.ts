@@ -39,6 +39,12 @@ export interface GetTokenOptions {
   dpop?: (input: { htm: 'POST'; htu: string; accessToken: string }) => Promise<string> | string;
 }
 
+/**
+ * An identity integration the page opts in to (`<AtlasProvider integrations>`): its id, or its id with the
+ * defaults a third-party script should not have to know (`{ for: 'forumulate', spaceId: 'sp_1' }`).
+ */
+export type AtlasIntegrationSpec = string | ({ for: string } & Omit<GetTokenOptions, 'for' | 'template'>);
+
 /** The slice of the provider the compat helpers read. */
 export interface ActiveAtlas {
   status: AuthStatus;
@@ -50,13 +56,35 @@ export interface ActiveAtlas {
 }
 
 let active: ActiveAtlas | null = null;
+let integrations: AtlasIntegrationSpec[] | null = null;
+
+/**
+ * Called by `<AtlasProvider integrations>`. With a list, `window.Atlas.session.getToken({ for })` mints only the
+ * listed integrations (with their defaults); any other `for` answers null. Without one, every integration the
+ * instance defines is reachable, as before.
+ * @internal
+ */
+export function setIntegrations(next: AtlasIntegrationSpec[] | null): void {
+  integrations = next;
+}
+
+/** The options a page script's `getToken(options)` really runs with, or null when it may not mint that integration. */
+export function resolveGlobalTokenOptions<T extends { for?: string }>(options: T | undefined): T | undefined | null {
+  if (!integrations || !options?.for) return options;
+  const entry = integrations.find((i) => (typeof i === 'string' ? i : i.for) === options.for);
+  if (!entry) return null;
+  return typeof entry === 'string' ? options : { ...entry, ...options };
+}
 let unregisterGlobal: (() => void) | null = null;
 
 /** `window.Atlas.session` reads whichever provider is mounted right now. */
 function exposeGlobal(): void {
   if (unregisterGlobal || typeof window === 'undefined') return;
   unregisterGlobal = installSessionGlobal({
-    getToken: async (o: SessionGlobalTokenOptions) => (active ? active.getToken(o) : null),
+    getToken: async (o: SessionGlobalTokenOptions) => {
+      const resolved = resolveGlobalTokenOptions(o);
+      return active && resolved !== null ? active.getToken(resolved) : null;
+    },
     user: () => (active?.status === 'signed_in' && active.user ? { ...active.user, external_id: (active.claims as { external_id?: string } | null)?.external_id ?? null } : null),
   });
 }

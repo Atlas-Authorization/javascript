@@ -2,6 +2,10 @@
 
 
 
+## 0.20.2
+
+- Uses `@atlasauth/design` 0.5, which has no zod dependency: installing this package no longer changes your app's zod version.
+
 ## 0.20.1
 
 - Uses @atlasauth/js 0.47.0.

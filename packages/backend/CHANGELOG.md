@@ -1,5 +1,15 @@
 # @atlasauth/backend changelog
 
+## 0.60.0
+
+- `@atlasauth/backend/link`: `sqlUserLink` (postgres, mysql, sqlite; `verified_email_oldest` or `strict`) and `describeUserLinkContract` from `@atlasauth/backend/link/testing`.
+- `createLinkHook({ secret, resolve })` answers the `before_first_session` hook.
+- `redisDedupeStore` (node-redis v4 or ioredis) and `dedupe: false`. Store names are now `memoryDedupeStore`, `sqlDedupeStore`, `redisDedupeStore`; `memoryWebhookStore` and `sqlWebhookDedupeStore` stay as deprecated aliases. `fetch-handlers` no longer re-exports the store names (import them from the package root).
+- `AtlasBackend` `tokenUse: 'template'` (with `audience`) verifies template tokens.
+- `SessionClaims`: `name`, `given_name`, `family_name`, `picture`; `email` is omitted rather than a placeholder.
+- Client: `userHooks` `before_first_session` methods; `instance.getIssuers()`, `getIntegrationsHealth()`, `putSignupForwarding()`, `deleteSignupForwarding()`; platform `apps.renewProvisioningKey()`, `secret_key_profile: 'web_app'` and `runtime_secret`.
+- **type-widening:** `user.deactivated` / `user.reactivated` webhook data gain `id`; `user.banned` / `user.deleted` gain `revoke_hint`.
+
 ## 0.59.0
 
 - **type-widening:** `EmailTransport` gains `hermetica` (`HermeticaConfig`: `api_key`, optional `app`).

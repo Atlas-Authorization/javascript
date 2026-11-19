@@ -1,6 +1,6 @@
 {
   "name": "gatsby-plugin-atlasauth",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Gatsby plugin that wraps your site in Atlas's React provider so @atlasauth/react hooks and components work on every page, server-rendered and hydrated alike.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

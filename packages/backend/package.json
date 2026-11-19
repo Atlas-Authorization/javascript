@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/backend",
-  "version": "0.59.0",
+  "version": "0.60.0",
   "main": "./dist/index.js",
   "bin": {
     "atlas-doctor": "./dist/doctor-cli.js"
@@ -63,6 +63,14 @@
       "types": "./dist/mirror/prisma.d.ts",
       "default": "./dist/mirror/prisma.js"
     },
+    "./link": {
+      "types": "./dist/link/index.d.ts",
+      "default": "./dist/link/index.js"
+    },
+    "./link/testing": {
+      "types": "./dist/link/testing.d.ts",
+      "default": "./dist/link/testing.js"
+    },
     "./package.json": "./package.json"
   },
   "typesVersions": {
@@ -102,6 +110,12 @@
       ],
       "mirror/prisma": [
         "./dist/mirror/prisma.d.ts"
+      ],
+      "link": [
+        "./dist/link/index.d.ts"
+      ],
+      "link/testing": [
+        "./dist/link/testing.d.ts"
       ]
     }
   },

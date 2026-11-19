@@ -7,6 +7,7 @@ import {
   backendConfigFromEnv,
   buildEdgeRequest,
   configFromEnv,
+  createAtlasAuth,
   getAtlasInitialState,
   getAtlasPublicConfig,
 } from './server';
@@ -250,5 +251,67 @@ describe('configFromEnv previous issuers', () => {
       ATLAS_PREVIOUS_ISSUERS: 'https://a.example.com, https://b.example.com',
     });
     expect(o.previousIssuers).toEqual(['https://a.example.com', 'https://b.example.com']);
+  });
+});
+
+describe('createAtlasAuth', () => {
+  const keep = { ...process.env };
+  const restore = () => {
+    for (const k of Object.keys(process.env)) if (!(k in keep)) delete process.env[k];
+    Object.assign(process.env, keep);
+  };
+
+  it('is not configured without the env, and answers null without throwing', async () => {
+    delete process.env.ATLAS_ISSUER;
+    delete process.env.ATLAS_JWKS_URL;
+    delete process.env.NEXT_PUBLIC_ATLAS_ISSUER;
+    delete process.env.NEXT_PUBLIC_ATLAS_JWKS_URL;
+    const a = createAtlasAuth();
+    expect(a.configured()).toBe(false);
+    expect(await a.auth()).toBeNull();
+    expect(await a.verifyRequest({ headers: new Headers({ authorization: 'Bearer x' }) })).toBeNull();
+    restore();
+  });
+
+  it('verifies a bearer token, refuses guests by default, and runs resolve', async () => {
+    const { privateKey, publicKey } = await generateKeyPair('RS256');
+    const jwk = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
+    const jwksFetch = (async () => new Response(JSON.stringify({ keys: [jwk] }))) as unknown as typeof fetch;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = jwksFetch;
+    process.env.ATLAS_ISSUER = 'https://auth.example.test';
+    process.env.ATLAS_JWKS_URL = 'https://auth.example.test/jwks.json';
+    const mint = (extra: Record<string, unknown> = {}) =>
+      new SignJWT({ sid: 's1', token_use: 'session', ...extra })
+        .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+        .setIssuer('https://auth.example.test')
+        .setSubject('user_1')
+        .setIssuedAt()
+        .setExpirationTime('5m')
+        .sign(privateKey);
+    try {
+      const resolve = vi.fn(async (c: { sub: string }) => ({ localId: `local_${c.sub}` }));
+      const a = createAtlasAuth({ resolve });
+      expect(a.configured()).toBe(true);
+      const ok = await a.verifyRequest({ headers: new Headers({ authorization: `Bearer ${await mint()}` }) });
+      expect(ok).toMatchObject({ userId: 'user_1', guest: false, local: { localId: 'local_user_1' } });
+      const guestReq = { headers: new Headers({ authorization: `Bearer ${await mint({ anon: true })}` }) };
+      expect(await a.verifyRequest(guestReq)).toBeNull();
+      expect(await createAtlasAuth({ guests: 'allow' }).verifyRequest(guestReq)).toMatchObject({ guest: true });
+      expect(await a.verifyRequest({ headers: new Headers({ authorization: 'Bearer garbage' }) })).toBeNull();
+    } finally {
+      globalThis.fetch = realFetch;
+      restore();
+    }
+  });
+
+  it('revocation needs ATLAS_SECRET_KEY to count as configured', () => {
+    process.env.ATLAS_ISSUER = 'https://x';
+    process.env.ATLAS_JWKS_URL = 'https://x/jwks';
+    delete process.env.ATLAS_SECRET_KEY;
+    expect(createAtlasAuth({ revocation: 'sid_list' }).configured()).toBe(false);
+    process.env.ATLAS_SECRET_KEY = 'sk_test_x';
+    expect(createAtlasAuth({ revocation: 'sid_list' }).configured()).toBe(true);
+    restore();
   });
 });

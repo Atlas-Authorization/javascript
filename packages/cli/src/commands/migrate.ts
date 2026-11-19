@@ -10,6 +10,7 @@ import { resolveFormat } from './config';
 import { migrateBetterAuth } from '../migrate/better-auth/orchestrator';
 import { reportJson, summaryLines, writeTranslation } from '../migrate/better-auth/output';
 import { translateBetterAuth } from '../migrate/better-auth/translate';
+import { migratePlan } from '../migrate/authjs-plan';
 import { hasPlugin, knownVendors, migrateExportAlias, migrateWithPlugin } from '../migrate/framework/commands';
 
 /**
@@ -31,6 +32,7 @@ export async function migrate(ctx: RunContext, args: ParsedArgs): Promise<number
     if (args.positionals[2] === 'config') return betterAuthConfig(ctx, args, args.positionals[3]);
     return migrateBetterAuth(ctx, args, args.positionals[2]);
   }
+  if (sub === 'plan') return migratePlan(ctx, args);
   if (sub === 'export') return migrateExportAlias(ctx, args, args.positionals.slice(2));
   if (sub !== 'code' && sub && hasPlugin(sub)) return migrateWithPlugin(ctx, args, sub, args.positionals.slice(2));
   if (sub !== 'code') {

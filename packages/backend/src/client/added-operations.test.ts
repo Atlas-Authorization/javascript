@@ -22,6 +22,12 @@ const MOVE = { from: 'https://old.example.com', to: 'https://new.example.com', d
 
 // [method, path+query, expected JSON body (undefined = none), call]
 const BAPI: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
+  ['GET', '/v1/instance/issuers', undefined, (c) => c.instance.getIssuers()],
+  ['GET', '/v1/instance/integrations/health', undefined, (c) => c.instance.getIntegrationsHealth()],
+  ['GET', '/v1/instance/integrations/forwarding/hermetica', undefined, (c) => c.instance.getSignupForwarding('hermetica')],
+  ['PUT', '/v1/instance/integrations/forwarding/lucida', { server_key: 'lk_1', include_pii: false }, (c) => c.instance.putSignupForwarding('lucida', { server_key: 'lk_1', include_pii: false })],
+  ['PUT', '/v1/instance/integrations/forwarding/webhook', { url: 'https://app.example.com/signups' }, (c) => c.instance.putSignupForwarding('webhook', { url: 'https://app.example.com/signups' })],
+  ['DELETE', '/v1/instance/integrations/forwarding/seolyticize', undefined, (c) => c.instance.deleteSignupForwarding('seolyticize')],
   ['DELETE', '/v1/instance/hooks/before_user_create', undefined, (c) => c.userHooks.deleteBeforeUserCreate()],
   ['DELETE', '/v1/users/user_1/password', { sign_out_of_other_sessions: false }, (c) => c.users.removePassword('user_1', { sign_out_of_other_sessions: false })],
   ['GET', '/v1/instance/integrations/chatly/mints?limit=5', undefined, (c) => c.instance.integrations.mints('chatly', { limit: 5 })],
@@ -282,6 +288,8 @@ const BAPI: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
 ];
 
 const PLATFORM: Array<[string, string, unknown, (c: Plat) => Promise<unknown>]> = [
+  ['POST', '/v1/platform/apps/app_1/provisioning_key/renew', { instance_id: 'ins_2' }, (c) => c.apps.renewProvisioningKey('app_1', { instance_id: 'ins_2' })],
+  ['POST', '/v1/platform/apps', { name: 'Shop', secret_key_profile: 'web_app' }, (c) => c.apps.create({ name: 'Shop', secret_key_profile: 'web_app' })],
   ['POST', '/v1/platform/apps/app_1/narrow_secret_keys', { preset: 'app-runtime' }, (c) => c.apps.narrowSecretKeys('app_1', { preset: 'app-runtime' })],
   ['POST', '/v1/platform/atlas_id_apps/app_1/adoption_codes', { instance_id: 'ins_1' }, (c) => c.atlasIdApps.issueAdoptionCode('app_1', { instance_id: 'ins_1' })],
   ['GET', '/v1/platform/atlas_id_apps/app_1/adoption_codes', undefined, (c) => c.atlasIdApps.listAdoptionCodes('app_1')],

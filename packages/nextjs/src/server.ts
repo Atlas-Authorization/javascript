@@ -14,14 +14,17 @@
  * builds and runs with no `next` installed. `next` is only an OPTIONAL peer.
  */
 import {
+  AtlasBackend,
   createAtlasClient,
   parseIssuerList,
   type AtlasClient,
   type AtlasClientConfig,
+  type SessionClaims,
 } from '@atlasauth/backend';
 import {
   createAuthHelper,
   createCurrentUserHelper,
+  resolveAuth,
   type AtlasMiddlewareOptions,
   type CurrentUser,
   type EdgeRequest,
@@ -239,6 +242,119 @@ export async function currentUser(): Promise<CurrentUser | null> {
   return helper(await edgeRequestFromContext());
 }
 
+export interface CreateAtlasAuthOptions<L = undefined> {
+  /** `'sid_list'` also refuses a session Atlas has revoked (sign-out elsewhere, a ban). Needs `ATLAS_SECRET_KEY` with `sessions:read`. Default: off. */
+  revocation?: 'sid_list';
+  /** A guest (anonymous) session: `'reject'` (default) answers null, `'allow'` passes it with `guest: true`. */
+  guests?: 'reject' | 'allow';
+  /**
+   * Bind the verified claims to your own user row, e.g. `(claims) => link.resolve(claims)` with
+   * `sqlUserLink` from `@atlasauth/backend/link`. The result is returned as `local`. An error it throws propagates:
+   * a failed database call is not "signed out".
+   */
+  resolve?: (claims: SessionClaims) => L | Promise<L>;
+}
+
+/** A verified, signed-in request. */
+export interface AtlasAuthResult<L = undefined> {
+  userId: string;
+  sessionId: string;
+  orgId: string | null;
+  orgRole: string | null;
+  claims: SessionClaims;
+  /** True for a guest session (only with `guests: 'allow'`). */
+  guest: boolean;
+  /** What `resolve` returned. */
+  local: L;
+}
+
+export interface AtlasAuth<L = undefined> {
+  /** The signed-in user of the ambient `next/headers` request, or null. Never throws for missing configuration. */
+  auth(): Promise<AtlasAuthResult<L> | null>;
+  /** The same for an explicit request (a route handler, a Request with a Bearer token or `__session` cookie). */
+  verifyRequest(request: { headers: { get(name: string): string | null } }): Promise<AtlasAuthResult<L> | null>;
+  /** The Backend API client from `ATLAS_SECRET_KEY`. Throws when that variable is missing. */
+  readonly atlasApi: AtlasClient;
+  /** True when `ATLAS_ISSUER` and `ATLAS_JWKS_URL` (and `ATLAS_SECRET_KEY` for `revocation`) are set. */
+  configured(): boolean;
+}
+
+const backendCache = new Map<string, AtlasBackend>();
+
+/**
+ * One place that reads `ATLAS_ISSUER`, `ATLAS_JWKS_URL`, `ATLAS_PREVIOUS_ISSUERS` and `ATLAS_SECRET_KEY`
+ * and gives a route or server component the signed-in user. With the variables missing (a preview build,
+ * a fresh checkout) `auth()` answers null instead of throwing, so the page renders signed out.
+ *
+ * ```ts
+ * export const { auth, verifyRequest, atlasApi } = createAtlasAuth({
+ *   guests: 'reject',
+ *   resolve: (claims) => link.resolve(claims),
+ * });
+ * ```
+ */
+export function createAtlasAuth<L = undefined>(options: CreateAtlasAuthOptions<L> = {}): AtlasAuth<L> {
+  const settings = () => {
+    const env = readEnv();
+    const jwksUrl = pick(env, 'ATLAS_JWKS_URL', 'NEXT_PUBLIC_ATLAS_JWKS_URL');
+    const issuer = pick(env, 'ATLAS_ISSUER', 'NEXT_PUBLIC_ATLAS_ISSUER');
+    const secretKey = pick(env, 'ATLAS_SECRET_KEY');
+    const previous = parseIssuerList(pick(env, 'ATLAS_PREVIOUS_ISSUERS', 'NEXT_PUBLIC_ATLAS_PREVIOUS_ISSUERS')) ?? [];
+    const bapiBaseUrl = pick(env, 'ATLAS_API_BASE', 'ATLAS_API_URL', 'NEXT_PUBLIC_ATLAS_API_URL');
+    return { jwksUrl, issuer, secretKey, previous, bapiBaseUrl };
+  };
+  const configured = () => {
+    const c = settings();
+    return Boolean(c.jwksUrl && c.issuer && (!options.revocation || c.secretKey));
+  };
+
+  async function verifyRequest(request: { headers: { get(name: string): string | null } }): Promise<AtlasAuthResult<L> | null> {
+    if (!configured()) return null;
+    const c = settings();
+    const key = [c.jwksUrl, c.issuer, c.previous.join(','), options.revocation ? c.secretKey : ''].join('\n');
+    let backend = backendCache.get(key);
+    if (!backend) {
+      backend = new AtlasBackend({
+        jwksUrl: c.jwksUrl!,
+        issuer: c.issuer!,
+        previousIssuers: c.previous.length ? c.previous : undefined,
+        ...(options.revocation ? { secretKey: c.secretKey, bapiBaseUrl: c.bapiBaseUrl } : {}),
+      });
+      backendCache.set(key, backend);
+    }
+    let state;
+    try {
+      state = await resolveAuth(backend, request as EdgeRequest, options.revocation ? {} : undefined);
+    } catch {
+      return null;
+    }
+    const claims = state.claims;
+    if (!claims || !state.userId || !state.sessionId) return null;
+    const guest = (claims as { anon?: unknown }).anon === true;
+    if (guest && (options.guests ?? 'reject') === 'reject') return null;
+    const local = (options.resolve ? await options.resolve(claims) : undefined) as L;
+    return { userId: state.userId, sessionId: state.sessionId, orgId: state.orgId, orgRole: state.orgRole, claims, guest, local };
+  }
+
+  return {
+    configured,
+    verifyRequest,
+    async auth() {
+      if (!configured()) return null;
+      let req: EdgeRequest;
+      try {
+        req = await edgeRequestFromContext();
+      } catch {
+        return null; // outside a request scope
+      }
+      return verifyRequest(req);
+    },
+    get atlasApi() {
+      return atlasClient();
+    },
+  };
+}
+
 /**
  * The public values `<AtlasProvider>` needs, read from the server's environment
  * at render time. Call it in a Server Component and spread it into the client
@@ -327,6 +443,11 @@ export async function getAtlasInitialState(
 
 export type { AtlasClient, AtlasClientConfig } from '@atlasauth/backend';
 export type { AuthState, CurrentUser, EdgeRequest } from './middleware';
+export type { SessionClaims } from '@atlasauth/backend';
+
+// The `beforeFirstSession` hook handler, so a route needs one import path.
+export { createLinkHook } from '@atlasauth/backend';
+export type { LinkHookOptions, LinkCandidate } from '@atlasauth/backend';
 
 // The Frontend API path mount and its domain-verification file, for route handlers.
 export { createMountHandler, createVerifyHandler } from './mount';

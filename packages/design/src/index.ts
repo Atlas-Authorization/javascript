@@ -15,7 +15,7 @@
  *  - contrast helpers and design warnings;
  *  - `composeDesign`: what an SDK component renders (instance design + code).
  *
- * Browser-safe, framework-free, one runtime dependency (zod).
+ * Browser-safe, framework-free, no runtime dependencies.
  */
 export * from './runtime';
 export * from './schema';

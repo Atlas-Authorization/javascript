@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/convex",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Use Atlas sign-in with Convex: the Convex auth config for Atlas tokens and <ConvexProviderWithAtlas>.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

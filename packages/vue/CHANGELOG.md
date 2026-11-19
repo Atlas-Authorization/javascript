@@ -2,6 +2,10 @@
 
 
 
+## 0.24.1
+
+- Uses `@atlasauth/design` 0.5, which has no zod dependency: installing this package no longer changes your app's zod version.
+
 ## 0.24.0
 
 - API keys, billing (pricing table, invoices, embedded checkout with discount codes, usage reader) and device authorization components, matching React.

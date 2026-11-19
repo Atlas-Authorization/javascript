@@ -14,7 +14,7 @@
   "dependencies": {
     "@atlasauth/expo": "^0.12.0",
     "@atlasauth/js": "^0.48.0",
-    "@atlasauth/react": "^0.39.0",
+    "@atlasauth/react": "^0.40.0",
     "expo": "~52.0.0",
     "expo-constants": "~17.0.0",
     "expo-router": "~4.0.0",

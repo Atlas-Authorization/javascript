@@ -1,5 +1,10 @@
 # @atlasauth/nextjs changelog
 
+## 0.19.0
+
+- `@atlasauth/nextjs/server` `createAtlasAuth({ revocation, guests, resolve })` returns `auth()`, `verifyRequest()`, `atlasApi` and `configured()`.
+- Re-exports `createLinkHook` and `redisDedupeStore`; the webhook handler accepts `dedupe: false`.
+
 ## 0.18.0
 
 - `getAtlasPublicConfig()` passes a runtime-only `ATLAS_PUBLISHABLE_KEY` to the client provider. `ATLAS_PREVIOUS_ISSUERS` accepts spaces as well as commas.

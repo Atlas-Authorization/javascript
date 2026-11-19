@@ -28,7 +28,7 @@ import {
 
 /**
  * Hand-written design validation with NO dependency — the runtime twin of the
- * zod `designSchema` (./schema.ts), for bundles that must stay small (the embed
+ * `designSchema` (./schema.ts), for bundles that must stay small (the embed
  * widget). It accepts exactly what the schema accepts: every object is strict
  * (unknown keys refused), every leaf a closed enum, a bounded integer, a strict
  * `#RRGGBB` hex or a catalog id. `guards.test.ts` fuzzes both against each

@@ -37,6 +37,14 @@ import type { CaptchaController } from './captcha';
 
 const noopSubscribe = () => () => {};
 
+const IDENTIFIER_FIRST_FACTORS = ['password', 'email_code', 'email_link', 'phone_code', 'username'];
+
+/** True when the environment lists the enabled first factors and none of them starts with an identifier. */
+function hasNoIdentifierStep(environment: unknown): boolean {
+  const factors = (environment as { first_factors?: unknown } | null)?.first_factors;
+  return Array.isArray(factors) && !factors.some((f) => IDENTIFIER_FIRST_FACTORS.includes(f as string));
+}
+
 export function SignIn(props: FlowProps = {}) {
   const link = useEmailLink('sign_in');
   if (useAtlas().inert) return null;
@@ -50,7 +58,13 @@ function SignInFlow(props: FlowProps) {
     referral: props.referral,
     referralConsent: props.referralConsent,
   });
-  const { status, serverRendered } = useAtlas();
+  const { status, serverRendered, environment, loadEnvironment } = useAtlas();
+  // No identifier-first method (email code / link, password, phone, username) is on: the identifier box would
+  // lead nowhere. Only decided once the environment has answered and says which first factors are on.
+  const noIdentifierStep = hasNoIdentifierStep(environment);
+  useEffect(() => {
+    if (environment == null) void loadEnvironment();
+  }, [environment, loadEnvironment]);
   // Already signed in and no flow of ours in progress (a held attempt covers the
   // recovery-codes and finish steps): draw nothing. Also nothing until the session check answers.
   // Nothing until the session check answers, except where the server drew the form (hydration must match).
@@ -92,6 +106,9 @@ function SignInFlow(props: FlowProps) {
     <>
       {!state.attempt ? <LastUsedHint client={client} /> : null}
       {placement === 'above' ? alternatives : null}
+      {noIdentifierStep && !state.attempt ? (
+        placement === 'inside' ? alternatives : null
+      ) : (
       <AttemptFlow
         prefill={props.initialValues ?? {}}
         alternatives={placement === 'inside' ? alternatives : null}
@@ -128,6 +145,7 @@ function SignInFlow(props: FlowProps) {
           })
         }
       />
+      )}
       {state.attempt?.status !== 'complete' ? <SignUpPrompt signUpUrl={props.signUpUrl} afterUrl={props.afterUrl} /> : null}
       {placement === 'below' ? alternatives : null}
     </>

@@ -2091,11 +2091,17 @@ export function SignUpPrompt({ signUpUrl, afterUrl }: { signUpUrl?: string | nul
     if (signUpUrl === null) return null;
     if (signUpUrl) return signUpUrl;
     try {
-      return hostedSignUp({
-        frontendApi,
-        redirectUrl: afterUrl ?? (typeof window !== 'undefined' ? window.location.href : undefined),
-        navigate: false,
-      });
+      const redirectUrl = afterUrl ?? (typeof window !== 'undefined' ? window.location.href : undefined);
+      // A same-origin or path-mounted Frontend API ('', '/atlas', 'https://app.example.com/__atlas'): the hosted page
+      // lives under that path, and a bare path has no host, so resolve it against the page's origin (with no window,
+      // SSR, a path stays relative, which a browser resolves).
+      const mounted = frontendApi === '' || frontendApi.startsWith('/') || /^https?:\/\/[^/]+\/./i.test(frontendApi);
+      if (mounted) {
+        const origin = !frontendApi.startsWith('http') && typeof window !== 'undefined' ? window.location.origin : '';
+        const page = `${origin}${frontendApi}/hosted/sign-up`;
+        return hostedSignUp({ url: redirectUrl ? `${page}?redirect_url=${encodeURIComponent(redirectUrl)}` : page, navigate: false });
+      }
+      return hostedSignUp({ frontendApi, redirectUrl, navigate: false });
     } catch {
       return null;
     }

@@ -41,7 +41,9 @@ import {
  * tombstones elsewhere.
  * `fetchImpl` is replaced by the cache-backed fetch, so it is not forwardable.
  */
-export interface AtlasProviderProps extends Omit<ReactAtlasProviderProps, 'fetchImpl'> {
+export interface AtlasProviderProps extends Omit<ReactAtlasProviderProps, 'fetchImpl' | 'publishableKey'> {
+  /** Required here: a native app has no path mount to read the key from. */
+  publishableKey: string;
   /**
    * Where the session token is kept. Defaults to a NON-persistent in-memory
    * cache — pass `createSecureStoreTokenCache(SecureStore)` in production so the

@@ -63,7 +63,7 @@ import {
 } from '@atlasauth/js';
 import { useStableReferralConsent } from './referral';
 import { ATLAS_REACT_SDK } from './version';
-import { publishActiveAtlas, type GetTokenOptions } from './active-atlas';
+import { publishActiveAtlas, setIntegrations, type AtlasIntegrationSpec, type GetTokenOptions } from './active-atlas';
 import { localeDirection, resolveLocale, type SupportedLocale } from '@atlasauth/localizations';
 import {
   classFor,
@@ -227,7 +227,19 @@ interface SessionSignal {
 }
 
 export interface AtlasProviderProps {
-  publishableKey: string;
+  /**
+   * The instance's publishable key. Optional when `frontendApi` is a path mount (`"/atlas"`, or
+   * `"https://app.example.com/__atlas"`): the provider then asks that Frontend API which instance it serves (`GET /v1/environment`, no key
+   * needed). Anywhere else, a missing key leaves the provider inert, as before.
+   */
+  publishableKey?: string;
+  /**
+   * Identity integrations a third-party script on this page may mint tokens for through
+   * `window.Atlas.session.getToken({ for: 'partner' })`: `['chatly']`, or an entry with defaults,
+   * `{ for: 'forumulate', spaceId: 'sp_1' }`. Registered while this provider is mounted. Unset: every
+   * integration the instance defines is reachable. Set: only the listed ones (others answer null).
+   */
+  integrations?: AtlasIntegrationSpec[];
   /**
    * Keep the session fresh across background throttling and sleep: when the tab becomes visible again or the
    * network returns, refresh the token at once if it is expired or within 30 seconds of expiring, instead of
@@ -374,19 +386,58 @@ const INERT_VALUE: AtlasContextValue = {
  */
 export function AtlasProvider(props: AtlasProviderProps) {
   if (typeof props.publishableKey !== 'string' || props.publishableKey.trim() === '') {
-    if (!warnedNoKey && typeof console !== 'undefined') {
-      warnedNoKey = true;
-      console.warn(
-        '[Atlas] <AtlasProvider> has no publishableKey, so sign-in is disabled on this page. ' +
-          'In Next.js pass it from NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY (inlined at build) or read ATLAS_PUBLISHABLE_KEY on the server and pass it as a prop.',
-      );
-    }
-    return <AtlasContext.Provider value={INERT_VALUE}>{props.children}</AtlasContext.Provider>;
+    return <AtlasProviderKeyless {...props} />;
   }
-  return <AtlasProviderLive {...props} />;
+  return <AtlasProviderLive {...props} publishableKey={props.publishableKey} />;
 }
 
-function AtlasProviderLive(props: AtlasProviderProps) {
+function warnNoKey(): void {
+  if (!warnedNoKey && typeof console !== 'undefined') {
+    warnedNoKey = true;
+    console.warn(
+      '[Atlas] <AtlasProvider> has no publishableKey, so sign-in is disabled on this page. ' +
+        'In Next.js pass it from NEXT_PUBLIC_ATLAS_PUBLISHABLE_KEY (inlined at build) or read ATLAS_PUBLISHABLE_KEY on the server and pass it as a prop.',
+    );
+  }
+}
+
+/**
+ * No publishable key. On a path mount (`frontendApi` a path on this origin, or an absolute URL with a path) the Frontend API itself says which
+ * instance it serves, so ask it; anywhere else (or if it will not say) go inert and warn once.
+ */
+function AtlasProviderKeyless(props: AtlasProviderProps) {
+  const mount = useMemo(() => {
+    try {
+      const base = resolveFrontendApi(props.frontendApi, { component: '<AtlasProvider>' });
+      // Same-origin, a path on this origin, or an absolute URL that carries a path (https://app.example.com/__atlas).
+      return base === '' || base.startsWith('/') || /^https?:\/\/[^/]+\/./.test(base) ? base : null;
+    } catch {
+      return null;
+    }
+  }, [props.frontendApi]);
+  const [discovered, setDiscovered] = useState<string | null>(null);
+  const fetchImpl = props.fetchImpl;
+  useEffect(() => {
+    if (mount === null) return warnNoKey();
+    let live = true;
+    (fetchImpl ?? fetch)(`${mount}/v1/environment`, { headers: { accept: 'application/json' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { publishable_key?: unknown } | null) => {
+        const key = typeof body?.publishable_key === 'string' ? body.publishable_key.trim() : '';
+        if (!live) return;
+        if (key) setDiscovered(key);
+        else warnNoKey();
+      })
+      .catch(() => live && warnNoKey());
+    return () => {
+      live = false;
+    };
+  }, [mount, fetchImpl]);
+  if (discovered) return <AtlasProviderLive {...props} publishableKey={discovered} />;
+  return <AtlasContext.Provider value={INERT_VALUE}>{props.children}</AtlasContext.Provider>;
+}
+
+function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string }) {
   const { publishableKey, children, appearance, localization, locale } = props;
   // What the Frontend API is told the UI language is, so its error messages
   // match the components'.
@@ -1126,6 +1177,12 @@ function AtlasProviderLive(props: AtlasProviderProps) {
     publishActiveAtlas(value);
   }, [value]);
   useEffect(() => () => publishActiveAtlas(null), []);
+  const integrationsKey = JSON.stringify(props.integrations ?? null);
+  useEffect(() => {
+    setIntegrations(props.integrations ?? null);
+    return () => setIntegrations(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content: an inline array literal must not re-register every render
+  }, [integrationsKey]);
 
   /**
    * The design configured in the Atlas dashboard, from `GET /v1/appearance`.

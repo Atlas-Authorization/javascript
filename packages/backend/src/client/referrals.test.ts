@@ -96,6 +96,15 @@ const OPS: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
     (c) => c.userHooks.updateBeforeUserCreate({ enabled: true, url: 'https://app.example.com/hook', timeout_ms: 2000 }),
   ],
   ['POST', '/v1/instance/hooks/before_user_create/test', undefined, (c) => c.userHooks.testBeforeUserCreate()],
+  ['GET', '/v1/instance/hooks/before_first_session', undefined, (c) => c.userHooks.getBeforeFirstSession()],
+  [
+    'PATCH',
+    '/v1/instance/hooks/before_first_session',
+    { enabled: true, url: 'https://app.example.com/link', timeout_ms: 2000 },
+    (c) => c.userHooks.updateBeforeFirstSession({ enabled: true, url: 'https://app.example.com/link', timeout_ms: 2000 }),
+  ],
+  ['DELETE', '/v1/instance/hooks/before_first_session', undefined, (c) => c.userHooks.deleteBeforeFirstSession()],
+  ['POST', '/v1/instance/hooks/before_first_session/test', undefined, (c) => c.userHooks.testBeforeFirstSession()],
   [
     'GET',
     '/v1/instance/referrals/calls?limit=1000&kind=alias&starting_after=rfc_9',

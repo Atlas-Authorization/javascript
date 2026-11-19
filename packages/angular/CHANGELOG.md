@@ -1,5 +1,9 @@
 # @atlasauth/angular changelog
 
+## 0.23.1
+
+- Uses `@atlasauth/design` 0.5, which has no zod dependency: installing this package no longer changes your app's zod version.
+
 ## 0.23.0
 
 - Built with Angular 20.3 (patched against the current Angular sanitization and i18n advisories; Angular 17 to 19 have no fixes). The peer ranges for `@angular/core`, `@angular/common` and `@angular/router` are now `>=20` (was `>=17`): partial-compilation output is only guaranteed for the Angular version it was built with and later. Apps on Angular 17 to 19 stay on `@atlasauth/angular` 0.22.x.

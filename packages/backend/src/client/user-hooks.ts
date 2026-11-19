@@ -124,7 +124,47 @@ export interface BeforeUserCreateHookTest {
   error?: { code: string; message: string };
 }
 
+/**
+ * The `before_first_session` hook: called once per user, after their email is
+ * verified and before their first session token, so the token already carries
+ * the `external_id` you answer (`createLinkHook` handles the call). Same url,
+ * write-only signing secret and timeout as `before_user_create`; a hook that
+ * fails never blocks sign-in.
+ */
+export interface BeforeFirstSessionHook {
+  object: 'before_first_session_hook';
+  enabled: boolean;
+  url: string | null;
+  /** The secret is write-only. */
+  signing_secret_set: boolean;
+  timeout_ms: number;
+  last_call: { at: number; status: string | null; error: string | null } | null;
+  /** Calls that failed since the last good one. */
+  failed_calls: number;
+  updated_at: number | null;
+}
+
+export interface UpdateBeforeFirstSessionHookBody {
+  enabled?: boolean;
+  /** https (http only for localhost on a development instance); `null` clears. */
+  url?: string | null;
+  /** Write-only; `null` clears. */
+  signing_secret?: string | null;
+  timeout_ms?: number;
+}
+
+/** `POST …/test`: a signed sample call with a made-up user; nothing is stored. */
+export interface BeforeFirstSessionHookTest {
+  ok: boolean;
+  status: 'success' | 'failed';
+  http_status: number | null;
+  latency_ms: number;
+  answer?: { external_id?: string | null };
+  error?: { code: string; message: string };
+}
+
 const PATH = '/v1/instance/hooks/before_user_create';
+const FIRST_SESSION_PATH = '/v1/instance/hooks/before_first_session';
 
 export function userHooksResource(request: RequestFn) {
   return {
@@ -143,6 +183,22 @@ export function userHooksResource(request: RequestFn) {
     /** `POST /v1/instance/hooks/before_user_create/test`. */
     testBeforeUserCreate(): Promise<BeforeUserCreateHookTest> {
       return request({ method: 'POST', path: `${PATH}/test` });
+    },
+    /** `GET /v1/instance/hooks/before_first_session`. */
+    getBeforeFirstSession(): Promise<BeforeFirstSessionHook> {
+      return request({ method: 'GET', path: FIRST_SESSION_PATH });
+    },
+    /** `PATCH /v1/instance/hooks/before_first_session` — partial; the secret is write-only. */
+    updateBeforeFirstSession(body: UpdateBeforeFirstSessionHookBody): Promise<BeforeFirstSessionHook> {
+      return request({ method: 'PATCH', path: FIRST_SESSION_PATH, body });
+    },
+    /** `DELETE /v1/instance/hooks/before_first_session` — turn it off and clear `url` and the secret. Repeating it changes nothing. */
+    deleteBeforeFirstSession(): Promise<BeforeFirstSessionHook> {
+      return request({ method: 'DELETE', path: FIRST_SESSION_PATH });
+    },
+    /** `POST /v1/instance/hooks/before_first_session/test`. */
+    testBeforeFirstSession(): Promise<BeforeFirstSessionHookTest> {
+      return request({ method: 'POST', path: `${FIRST_SESSION_PATH}/test` });
     },
   };
 }

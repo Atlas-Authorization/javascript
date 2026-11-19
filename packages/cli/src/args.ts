@@ -252,6 +252,8 @@ const OPTIONS = {
   wait: { type: 'boolean' },
   // import --from <vendor>.
   from: { type: 'string' },
+  // migrate plan --from authjs: the app's database URL (only used to print the dump commands).
+  db: { type: 'string' },
   'batch-size': { type: 'string' },
   'state-file': { type: 'string' },
   'hash-config': { type: 'string' },
@@ -280,6 +282,12 @@ const OPTIONS = {
   'oauth-client-id': { type: 'string' },
   trace: { type: 'string' },
   disable: { type: 'boolean' },
+  // hooks before-first-session set; integrations forwarding set.
+  'timeout-ms': { type: 'string' },
+  host: { type: 'string' },
+  'site-key': { type: 'string' },
+  'conversion-event': { type: 'string' },
+  'include-pii': { type: 'boolean' },
   // partner-platforms.
   'platform-id': { type: 'string' },
   'jwks-url': { type: 'string' },

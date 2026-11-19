@@ -1,5 +1,9 @@
 # @atlasauth/react-router changelog
 
+## 0.3.2
+
+- Built against `@atlasauth/react` 0.40, whose `@atlasauth/design` 0.5 has no zod dependency.
+
 ## 0.3.1
 
 - `ATLAS_PREVIOUS_ISSUERS` accepts spaces as well as commas.

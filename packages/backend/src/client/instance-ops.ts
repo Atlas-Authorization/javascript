@@ -288,8 +288,100 @@ export type InstanceGetStorageDeclarationResult = {
 };
 
 /** Operations on `/v1/instance` (9). */
+/** `GET /v1/instance/issuers`: the issuers a verifier accepts. */
+export type InstanceIssuers = {
+  /** The issuer new tokens carry now. */
+  active: string;
+  /** The issuer once a pending custom-domain or path-mount claim is verified (accepted early, so you can register it up front); null when none. */
+  planned: string | null;
+  /** Earlier issuers still accepted during their overlap window. */
+  previous: string[];
+  jwks_uri: string;
+};
+
+/** One receiver in `GET /v1/instance/integrations/health`. */
+export type IntegrationsHealthEntry = {
+  kind: 'webhook_endpoint' | 'integration' | 'privacy_orchestrator';
+  id: string | null;
+  name?: string | null;
+  url?: string | null;
+  /** The connected platform that owns it, if any. */
+  managed_by?: string | null;
+  /** `https`, a destination such as `lucida`, `events_receiver`, `tokens_only` or `case_api`. */
+  destination?: string;
+  state: 'healthy' | 'failing' | 'disabled' | 'inactive' | 'no_deliveries' | 'unknown';
+  last_success_at?: number | null;
+  last_failure?: { at?: number | null; status?: number | null; error?: string | null } | null;
+  consecutive_failures?: number;
+  /** `integration` only: the last token minted for it. */
+  last_minted_at?: number | null;
+};
+
+export type InstanceIntegrationsHealth = {
+  object: 'list';
+  data: IntegrationsHealthEntry[];
+  has_more: boolean;
+  /** Rows that are `failing` or `disabled`. */
+  unhealthy_count: number;
+  generated_at?: number;
+};
+
+/** Where sign-ups (`user.created`) can be forwarded. */
+export type SignupForwardingDestination = 'lucida' | 'hermetica' | 'seolyticize' | 'webhook';
+
+/** `PUT /v1/instance/integrations/forwarding/{destination}`: send only the fields that destination takes. */
+export type SignupForwardingBody = {
+  /** lucida, hermetica, seolyticize: the destination's server-side key (write-only; an omitted key keeps the stored one on an update). */
+  server_key?: string;
+  /** seolyticize: the site key. */
+  site_key?: string;
+  /** lucida, hermetica: an https host other than the default. */
+  host?: string;
+  /** seolyticize: which event records the conversion. */
+  conversion_event?: 'user.created' | 'user.attributed';
+  /** lucida, seolyticize: send email, name, ip and user agent. Default false. */
+  include_pii?: boolean;
+  /** webhook: the https receiver. */
+  url?: string;
+  active?: boolean;
+};
+
+/** The managed webhook endpoint behind forwarding (see the webhook endpoint fields), plus: */
+export type SignupForwarding = {
+  object: 'integration_forwarding';
+  forwarding: SignupForwardingDestination;
+  event: 'user.created';
+  /** True when this call created the endpoint (201), false on an update. */
+  created: boolean;
+  /** The managed webhook endpoint. */
+  id: string;
+  /** `webhook` only, on create: the signing secret, shown once. */
+  secret?: string;
+  [field: string]: unknown;
+};
+
 export function instanceOpsResource(request: RequestFn) {
   return {
+    /** `GET /v1/instance/issuers`: active, planned and previous issuers and the JWKS URI. */
+    getIssuers(): Promise<InstanceIssuers> {
+      return request({ method: 'GET', path: '/v1/instance/issuers' });
+    },
+    /** `GET /v1/instance/integrations/health`: every connected receiver (webhook endpoints, integrations, privacy orchestrator) with its last delivery. */
+    getIntegrationsHealth(): Promise<InstanceIntegrationsHealth> {
+      return request({ method: 'GET', path: '/v1/instance/integrations/health' });
+    },
+    /** `GET /v1/instance/integrations/forwarding/{destination}`: the stored forwarding (never the key); 404 when it was not set. */
+    getSignupForwarding(destination: SignupForwardingDestination): Promise<SignupForwarding> {
+      return request({ method: 'GET', path: `/v1/instance/integrations/forwarding/${enc(destination)}` });
+    },
+    /** `PUT /v1/instance/integrations/forwarding/{destination}`: forward every sign-up to a platform (with your own key) or an https webhook. A repeat call updates the same endpoint. */
+    putSignupForwarding(destination: SignupForwardingDestination, body: SignupForwardingBody, idempotencyKey?: string): Promise<SignupForwarding> {
+      return request({ method: 'PUT', path: `/v1/instance/integrations/forwarding/${enc(destination)}`, body, idempotencyKey });
+    },
+    /** `DELETE /v1/instance/integrations/forwarding/{destination}`: stop forwarding (404 when it was not set). */
+    deleteSignupForwarding(destination: SignupForwardingDestination): Promise<void> {
+      return request({ method: 'DELETE', path: `/v1/instance/integrations/forwarding/${enc(destination)}` });
+    },
     /** Cancel a staged rotation: the staged key leaves the JWKS and never signs. 404 when none is staged. Audited as signing_key.staged_canceled. */
     deleteNextSigningKey(): Promise<InstanceDeleteNextSigningKeyResult> {
       return request({ method: 'DELETE', path: '/v1/instance/signing_keys/next' });

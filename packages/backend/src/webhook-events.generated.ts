@@ -2176,7 +2176,7 @@ export type WebhookDataUmaRequest = {
   [key: string]: unknown;
 };
 
-/** The user as it now stands (user.created, user.updated, user.banned, …), with their addresses. */
+/** The user as it now stands (user.created, user.updated, user.banned, …), with their addresses. user.banned also carries `revoke_hint`. */
 export type WebhookDataUser = {
   object: "user";
   id: string;
@@ -2220,6 +2220,14 @@ export type WebhookDataUser = {
   external_accounts?: Array<Record<string, unknown>>;
   referral_code?: string | null;
   referral_link?: string | null;
+  /** What to end for this person on your side: product-issued API keys and sessions. */
+  revoke_hint?: Array<"api_keys" | "sessions">;
+  /** user.created only, for a sign-up made in a browser: where it came from. Webhook deliveries only; never stored on the user. */
+  signup_context?: {
+    ip?: string | null;
+    user_agent?: string | null;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 };
 
@@ -2246,6 +2254,8 @@ export type WebhookDataUserAttributed = {
 /** A deprovisioning signal: revoke sessions and access now. */
 export type WebhookDataUserDeactivated = {
   object: "user";
+  id: string;
+  /** Deprecated alias of `id`. */
   user_id: string;
   organization_id: string | null;
   source: "admin" | "scim" | "self";
@@ -2300,6 +2310,8 @@ export type WebhookDataUserDeleted = {
   referral_code?: string | null;
   referral_link?: string | null;
   deleted: true;
+  /** What to end for this person on your side: product-issued API keys and sessions. */
+  revoke_hint?: Array<"api_keys" | "sessions">;
   /** Why the user was deleted. */
   reason: "erasure" | "admin" | "self_service" | "anonymous_expired";
   /** The data subject request, for an erasure. */
@@ -2352,6 +2364,8 @@ export type WebhookDataUserMerged = {
 /** A dormant account was reactivated by signing in. */
 export type WebhookDataUserReactivation = {
   object: "user_reactivation";
+  id: string;
+  /** Deprecated alias of `id`. */
   user_id: string;
   session_id?: string | null;
   sign_in_method?: string | null;

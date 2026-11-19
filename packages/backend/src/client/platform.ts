@@ -116,9 +116,34 @@ export interface PlatformAppWithSecret extends PlatformApp {
   onboarding_key_id?: string;
   /** Epoch ms the setup key stops working (24 hours after the create). */
   onboarding_secret_expires_at?: number;
+  /** With `secret_key_profile: 'web_app'`: the narrow runtime key (verify, users read/delete, sessions revoke, privacy), shown once. `secret` is then the full-scope key labelled `provisioning`. */
+  runtime_secret?: string;
+  runtime_key_id?: string;
+  runtime_secret_scopes?: string[];
+  /** `provisioning` for the full-scope `secret` of a `web_app` app. */
+  secret_key_label?: string;
+  /** Epoch ms the full-scope `secret` stops working unless renewed (`apps.renewProvisioningKey`); null when it does not expire. */
+  secret_expires_at?: number | null;
+  /** The call that renews it: `POST /v1/platform/apps/{id}/provisioning_key/renew`. */
+  secret_renew?: string;
   /** `full_scope_secret_key` when `secret` holds every scope: narrow it before it reaches a running server. */
   warnings?: Array<{ code: string; message: string }>;
   note?: string;
+}
+
+/** `POST /v1/platform/apps/{id}/provisioning_key/renew`: body. */
+export interface RenewProvisioningKeyBody {
+  /** An instance of the app (default: the app itself). */
+  instance_id?: string;
+}
+
+export interface RenewedProvisioningKey {
+  object: 'app_provisioning_key_renewed';
+  app_id: string;
+  instance_id: string;
+  renewed: Array<{ key_id: string; prefix: string }>;
+  /** Epoch ms: 24 hours from the renewal. */
+  expires_at: number;
 }
 
 /** `POST /v1/platform/apps/{id}/narrow_secret_keys`: body. */
@@ -194,6 +219,11 @@ export interface CreatePlatformAppBody {
   secret_key_preset?: 'full' | 'app-runtime';
   /** Two-key provisioning: `secret` is the app-runtime key and `onboarding_secret` a full-scope setup key that expires in 24 hours. */
   provisioning_key?: boolean;
+  /**
+   * `web_app`: `runtime_secret` is a narrow key for the app's server and `secret` the full-scope key labelled
+   * `provisioning`, which expires in 24 hours unless renewed. Do not combine with `provisioning_key` or `secret_key_preset`.
+   */
+  secret_key_profile?: 'web_app';
   tags?: string[];
   metadata?: ProvisioningMetadata;
   /** A stable key of your own: a repeat create with it returns the existing app (200, no secret). */
@@ -825,6 +855,10 @@ function platformNamespaces(request: RequestFn) {
        */
       narrowSecretKeys(id: string, body: NarrowSecretKeysBody = {}): Promise<NarrowedSecretKeys> {
         return request({ method: 'POST', path: `/v1/platform/apps/${enc(id)}/narrow_secret_keys`, body });
+      },
+      /** Another 24 hours for the app's `provisioning` key (`secret_key_profile: 'web_app'`). 404 when it has no live one. */
+      renewProvisioningKey(id: string, body: RenewProvisioningKeyBody = {}): Promise<RenewedProvisioningKey> {
+        return request({ method: 'POST', path: `/v1/platform/apps/${enc(id)}/provisioning_key/renew`, body });
       },
       /** Currently-valid secret keys (metadata only). */
       secretKeys(id: string, params: { metadata?: ProvisioningMetadata } = {}): Promise<ListPage<PlatformSecretKey>> {

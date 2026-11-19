@@ -17,6 +17,14 @@ describe('SessionClaims step-up / MFA claims', () => {
     void bad;
   });
 
+  it('types the profile claims as optional strings', () => {
+    expectTypeOf<SessionClaims['name']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<SessionClaims['given_name']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<SessionClaims['family_name']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<SessionClaims['picture']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<SessionClaims['external_id']>().toEqualTypeOf<string | undefined>();
+  });
+
   it('recent-auth helpers accept SessionClaims', () => {
     const c: SessionClaims = { ...base, acr: 'urn:atlas:acr:mfa', amr: ['pwd', 'mfa'], auth_time: 1_000 };
     expect(usedMultiFactor(c)).toBe(true);

@@ -76,7 +76,7 @@ function randomDesign(r: () => number): Record<string, unknown> {
   return out;
 }
 
-describe('runtime guards agree with the zod schema', () => {
+describe('runtime guards agree with the hand-written schema (mini.ts)', () => {
   it('on every preset and on resolved designs', () => {
     for (const p of DESIGN_PRESET_LIST) {
       expect(isValidDesign({ preset: p.id, ...p.design })).toBe(true);

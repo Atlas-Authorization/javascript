@@ -1,5 +1,9 @@
 # @atlasauth/expo changelog
 
+## 0.12.1
+
+- Built against `@atlasauth/react` 0.40, whose `@atlasauth/design` 0.5 has no zod dependency.
+
 ## 0.12.0
 
 - Re-exports `stepUpFactorInfo`, `STEP_UP_FACTORS` and their types from `@atlasauth/js`.

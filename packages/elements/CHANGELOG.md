@@ -1,5 +1,9 @@
 # @atlasauth/elements changelog
 
+## 0.13.1
+
+- Built against `@atlasauth/react` 0.40, whose `@atlasauth/design` 0.5 has no zod dependency.
+
 ## 0.13.0 — 2026-11-13
 
 - `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.

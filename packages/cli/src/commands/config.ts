@@ -42,6 +42,8 @@ import {
 import { configJsonSchema } from './config-types/schema';
 import { EMAIL_PROVIDER_FIX, envApiUrl, resolveAuth } from './shared';
 import { configHistory } from './config-history';
+import { getVersion } from '../version';
+import { signupUsabilityError } from './signup-usable';
 import { parseDotenv, productDir, renderDotenv, writeSecretFile } from '../secrets';
 import { REDACTED, isPlaceholder, isSecretKey, redactDeep, rememberResolved, revealingSecrets } from '../redact';
 
@@ -1688,18 +1690,42 @@ export function didYouMean(key: string, known: readonly string[]): string {
   return best && distance(norm(key), best) <= Math.max(2, Math.floor(key.length / 3)) ? ` (did you mean ${best}?)` : '';
 }
 
-/** The keys in one parsed resource file that no spec knows, each named with its nearest real key. */
+/** The value of an unknown key as an error shows it: scalars only, a secret-named key never. */
+function shownValue(key: string, value: Json | undefined): string {
+  if (isSecretKey(key)) return REDACTED;
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return String(value);
+  if (typeof value === 'string') return hasPlaceholder(value) ? value : JSON.stringify(value.length > 40 ? `${value.slice(0, 40)}…` : value);
+  return Array.isArray(value) ? '[…]' : '{…}';
+}
+
+/**
+ * Said under every refused field or value: a file written for a newer release names settings this CLI does not
+ * know, and the CLI is the part to update.
+ */
+export function upgradeHint(): string {
+  return `If the file was written for a newer release, upgrade the CLI (this is @atlasauth/cli ${getVersion()}): npm install -g @atlasauth/cli@latest, or pin the current version in your CI.`;
+}
+
+/**
+ * The keys in one parsed resource file that no spec knows, each as `UNKNOWN_FIELD_VALUE <path>=<value>` and then
+ * the section, the key and its nearest real key.
+ */
 function unknownFileKeys(spec: ResourceSpec, doc: Json): string[] {
   const out: string[] = [];
-  const check = (value: Json, known: readonly string[], label: string) => {
+  const check = (value: Json, known: readonly string[], label: string, path: string) => {
     if (!isObj(value)) return;
-    for (const k of Object.keys(value)) if (!known.includes(k)) out.push(`${label}: ${k}${didYouMean(k, known)}`);
+    for (const k of Object.keys(value)) {
+      if (!known.includes(k)) out.push(`UNKNOWN_FIELD_VALUE ${path}.${k}=${shownValue(k, value[k])}  (${label}: ${k}${didYouMean(k, known)})`);
+    }
   };
   if (spec.kind === 'collection') {
-    for (const entry of asArray(doc)) check(entry, spec.fileKeys, `${spec.type} ${spec.keyOf(entry) || '(no key)'}`);
+    for (const entry of asArray(doc)) {
+      const key = spec.keyOf(entry);
+      check(entry, spec.fileKeys, `${spec.type} ${key || '(no key)'}`, `${spec.type}[${key || '?'}]`);
+    }
   } else if (spec.fileKeys) {
-    check(doc, spec.fileKeys, spec.type);
-    for (const [k, known] of Object.entries(spec.nestedKeys ?? {})) if (isObj(doc)) check(doc[k]!, known, `${spec.type}.${k}`);
+    check(doc, spec.fileKeys, spec.type, spec.type);
+    for (const [k, known] of Object.entries(spec.nestedKeys ?? {})) if (isObj(doc)) check(doc[k]!, known, `${spec.type}.${k}`, `${spec.type}.${k}`);
   }
   return out;
 }
@@ -1939,6 +1965,8 @@ export interface ConfigPlan {
   managed: Array<{ type: string; key: string; managedBy: string }>;
   /** Advice about the file (a secret unused in native mode, …). */
   warnings: string[];
+  /** Error-level findings printed with the plan (they do not change the exit code): e.g. no usable sign-up method. */
+  errors?: string[];
   /** Secrets in the file that Atlas cannot compare with what it stores. */
   unverifiableSecrets: Array<{ type: string; key: string; path: string }>;
   /** Each section of the file after `requires:` and `code_file` were resolved (a skipped section is absent): what the limit checks read. */
@@ -2002,7 +2030,7 @@ export async function planConfigImport(
   });
   env = { ...env, ...(await instancePlaceholderValues(http, JSON.stringify(files.map((f) => f.doc)))) };
   const unknown = files.flatMap(({ spec, doc }) => unknownFileKeys(spec, doc));
-  if (unknown.length) throw new CliError(`Unknown key(s) in the config:\n  ${unknown.join('\n  ')}`);
+  if (unknown.length) throw new CliError(`Unknown key(s) in the config:\n  ${unknown.join('\n  ')}\n${upgradeHint()}`);
   const invalid = files.flatMap(({ spec, doc }) => invalidFileValues(spec, interpolate(doc, env)));
   if (invalid.length) throw new CliError(`Invalid value(s) in the config:\n  ${invalid.join('\n  ')}`);
 
@@ -2159,9 +2187,19 @@ export async function planConfigImport(
       // Advice only: never fail a plan over it.
     }
   }
+  // The instance, once this file is applied, must still let someone sign up.
+  const section = (type: string) => sections.find((x) => x.type === type)?.doc;
+  const errors: string[] = [];
+  const noSignup = await signupUsabilityError(http, {
+    instance: section('instance'),
+    signInWithAtlas: section('sign_in_with_atlas'),
+    oauthProviders: section('oauth_providers'),
+    emailProviderInFile: present.has(`email_provider.${ext}`),
+  });
+  if (noSignup) errors.push(noSignup);
   const typeOrder = new Map(registry().map((s, i) => [s.type, i] as const));
   const preflight = () => runPreflight(changes, gate, typeOrder, (c) => unresolvedPlaceholders([c]).length > 0);
-  return { changes, unchanged, skippedDeletes, skippedOwned, managed, warnings, unverifiableSecrets, sections, preflight };
+  return { changes, unchanged, skippedDeletes, skippedOwned, managed, warnings, errors, unverifiableSecrets, sections, preflight };
 }
 
 /** True for a non-empty object whose every leaf is `null` (a file that only clears fields). */
@@ -2339,7 +2377,8 @@ export function printedFields(c: Change): PrintedField[] {
 const printedLine = (f: PrintedField) => (f.fingerprint ? `${f.path}: …${f.before as string} -> …${f.after as string}` : f.redacted ? `${f.path}: ${REDACTED} (changed)` : `${f.path}: ${show(f.before)} -> ${show(f.after)}`);
 
 /** The plan's advice: warnings, and the secrets Atlas cannot compare. */
-function printPlanNotes(ctx: RunContext, plan: Pick<ConfigPlan, 'warnings' | 'unverifiableSecrets'>): void {
+function printPlanNotes(ctx: RunContext, plan: Pick<ConfigPlan, 'warnings' | 'unverifiableSecrets' | 'errors'>): void {
+  for (const e of plan.errors ?? []) ctx.io.out(`error: ${e}`);
   for (const w of plan.warnings) ctx.io.out(`warning: ${w}`);
   for (const u of plan.unverifiableSecrets) {
     ctx.io.out(`note: ${u.type}${u.key ? ` ${u.key}` : ''} ${u.path}: Atlas does not return this value, so a change to it cannot be detected. Send it again with --rotate-secret.`);
@@ -2382,6 +2421,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
           unmanaged_live: deletes.map((d) => ({ type: d.type, key: d.key || null })),
           managed_by_platform: plan.managed.map((m) => ({ type: m.type, key: m.key, managed_by: m.managedBy })),
           warnings: plan.warnings,
+          errors: plan.errors ?? [],
           unverifiable_secrets: plan.unverifiableSecrets.map((u) => ({ type: u.type, key: u.key || null, path: u.path })),
           validation: validationJson(validation),
           has_errors: invalid.length > 0,
@@ -2416,7 +2456,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
       ctx.io.out('Managed by a connected platform (not part of this file; never pruned):');
       for (const m of plan.managed) ctx.io.out(`    ${m.type} ${m.key} (${m.managedBy})`);
     }
-    if (plan.warnings.length || plan.unverifiableSecrets.length) ctx.io.out('');
+    if (plan.warnings.length || plan.unverifiableSecrets.length || plan.errors?.length) ctx.io.out('');
     printPlanNotes(ctx, plan);
     printValidation(ctx, validation);
     if (pending === 0) ctx.io.out(`No drift: the instance matches ${where}.`);
@@ -2492,6 +2532,8 @@ function printValidation(ctx: RunContext, v: PlanValidation): void {
     ctx.io.out('');
     ctx.io.out(`Validation: ${errors.length} error(s) apply would hit:`);
     for (const e of errors) ctx.io.out(`    ${e}`);
+    // The server refused a field or value it does not know: usually a file written for a newer release than this CLI.
+    if (errors.some((e) => /UNKNOWN_FIELD|unknown (?:field|key|setting)|not a valid (?:value|option)/i.test(e))) ctx.io.out(`    ${upgradeHint()}`);
   }
   for (const i of v.report?.deferred ?? []) ctx.io.out(`note: ${issueLine(i)} (not validated before apply: it could not be checked against the other changes of this plan)`);
   for (const s of v.report?.skipped ?? []) ctx.io.out(`note: ${s.type}${s.key ? ` ${s.key}` : ''} was not validated: ${s.reason}.`);
@@ -2689,7 +2731,7 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
     }
     const refOf = (c: Change) => ({ type: c.type, key: c.key || null, action: c.action });
     if (plan.changes.length === 0) {
-      if (json) ctx.io.out(JSON.stringify({ object: 'config_apply', applied: [], failed: null, not_applied: [], warnings: plan.warnings }, null, 2));
+      if (json) ctx.io.out(JSON.stringify({ object: 'config_apply', applied: [], failed: null, not_applied: [], warnings: plan.warnings, errors: plan.errors ?? [] }, null, 2));
       else ctx.io.out('No changes to apply.');
       if (secretsOut) await writeSecretsOut(ctx, kept.http, source, plan, collected, secretsOut);
       return 0;
@@ -2704,7 +2746,7 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
     if (!json) printValidation(ctx, validation);
     if (invalid.length) {
       if (json) {
-        ctx.io.out(JSON.stringify({ object: 'config_apply', applied: [], failed: null, not_applied: plan.changes.map(refOf), validation: validationJson(validation), warnings: plan.warnings }, null, 2));
+        ctx.io.out(JSON.stringify({ object: 'config_apply', applied: [], failed: null, not_applied: plan.changes.map(refOf), validation: validationJson(validation), warnings: plan.warnings, errors: plan.errors ?? [] }, null, 2));
       } else {
         ctx.io.out(`Nothing applied: ${invalid.length} change(s) would be refused. Fix them and run again.`);
       }
@@ -2742,7 +2784,7 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
             failed: failed ? { ...refOf(failed.change), error: failed.error } : null,
             not_applied: notApplied.map(refOf),
             validation: validationJson(validation),
-            warnings: plan.warnings,
+            warnings: plan.warnings, errors: plan.errors ?? [],
           },
           null,
           2,

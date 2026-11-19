@@ -1,5 +1,9 @@
 # @atlasauth/design
 
+## 0.5.0
+
+- No runtime dependency on zod: the schemas are built with a small built-in builder, with the same exports (`designSchema`, `designPatchSchema`, `zodProblems`, ...). Installing it no longer changes the host app's zod version.
+
 ## 0.4.0 — 2026-11-12
 
 - Uses zod 4 (4.6.6 or later), which fixes a memory-exhaustion advisory in zod 3. Schemas are zod 4 objects; code that inspects them should use zod 4.

@@ -126,7 +126,7 @@ interface PreflightFinding {
 }
 
 /** Read a key from a file, or stdin with '-'. A bare key or a dotenv line. Never printed. */
-function readKeyFile(ctx: RunContext, file: string, what: string): string {
+export function readKeyFile(ctx: RunContext, file: string, what: string): string {
   let text: string;
   try {
     text = ctx.readFile(file === '-' ? '/dev/stdin' : file);

@@ -14,7 +14,7 @@ export interface WebhookDedupeStore {
 }
 
 /** A single-process store. Use a shared one (Redis, a database) when you run more than one instance. */
-export function memoryWebhookStore(now: () => number = Date.now): WebhookDedupeStore {
+export function memoryDedupeStore(now: () => number = Date.now): WebhookDedupeStore {
   const seen = new Map<string, number>();
   return {
     async setIfAbsent(key, ttlSeconds) {
@@ -30,8 +30,19 @@ export function memoryWebhookStore(now: () => number = Date.now): WebhookDedupeS
   };
 }
 
-export interface VerifyAndDedupeOptions extends Omit<WebhookVerifyOptions, 'headers'> {
-  store: WebhookDedupeStore;
+type DedupeChoice =
+  | {
+      /** Remembers seen delivery ids. */
+      store: WebhookDedupeStore;
+      dedupe?: true;
+    }
+  | {
+      /** `false`: verify only. Use it when your handler is already idempotent (an upsert keyed on the event id). */
+      dedupe: false;
+      store?: undefined;
+    };
+
+export type VerifyAndDedupeOptions = Omit<WebhookVerifyOptions, 'headers'> & DedupeChoice & {
   /** How long a delivery id is remembered. Default 24 hours; keep it longer than your endpoint's retry window. */
   ttlSeconds?: number;
   /** Key prefix in the store. Default `atlas-webhook:`. */
@@ -39,7 +50,7 @@ export interface VerifyAndDedupeOptions extends Omit<WebhookVerifyOptions, 'head
   /** The exact URL Atlas POSTed to; checks `v2` signatures too. */
   url?: string;
   requireV2?: boolean;
-}
+};
 
 export interface VerifyAndDedupeResult<T = unknown> {
   /** The parsed event envelope `{ id, type, timestamp, instance_id, data }`. */
@@ -69,15 +80,15 @@ export async function verifyAndDedupe<T = unknown>(
   request: Request,
   options: VerifyAndDedupeOptions,
 ): Promise<VerifyAndDedupeResult<T>> {
-  const { store, ttlSeconds, keyPrefix, ...verify } = options;
-  return dedupeVerified(await verifyAtlasWebhookRequest<T>(request, verify), { store, ttlSeconds, keyPrefix });
+  const { store, dedupe, ttlSeconds, keyPrefix, ...verify } = options;
+  return dedupeVerified(await verifyAtlasWebhookRequest<T>(request, verify), { store, dedupe, ttlSeconds, keyPrefix });
 }
 
-export interface VerifyWebhookAndDedupeInput extends VerifyWebhookInput {
-  store: WebhookDedupeStore;
-  ttlSeconds?: number;
-  keyPrefix?: string;
-}
+export type VerifyWebhookAndDedupeInput = VerifyWebhookInput &
+  DedupeChoice & {
+    ttlSeconds?: number;
+    keyPrefix?: string;
+  };
 
 /**
  * {@link verifyAndDedupe} for Node/Express: the RAW body and the request
@@ -94,17 +105,19 @@ export interface VerifyWebhookAndDedupeInput extends VerifyWebhookInput {
 export async function verifyWebhookAndDedupe<T = unknown>(
   input: VerifyWebhookAndDedupeInput,
 ): Promise<VerifyAndDedupeResult<T>> {
-  const { store, ttlSeconds, keyPrefix, ...verify } = input;
-  return dedupeVerified(verifyWebhook<T>(verify), { store, ttlSeconds, keyPrefix });
+  const { store, dedupe, ttlSeconds, keyPrefix, ...verify } = input;
+  return dedupeVerified(verifyWebhook<T>(verify), { store, dedupe, ttlSeconds, keyPrefix });
 }
 
 async function dedupeVerified<T>(
   res: WebhookVerifyResult<T>,
-  o: { store: WebhookDedupeStore; ttlSeconds?: number; keyPrefix?: string },
+  o: { store?: WebhookDedupeStore; dedupe?: boolean; ttlSeconds?: number; keyPrefix?: string },
 ): Promise<VerifyAndDedupeResult<T>> {
   const { store, ttlSeconds = 86_400, keyPrefix = 'atlas-webhook:' } = o;
   if (!res.verified || !res.deliveryId) throw new WebhookVerificationError(res.reason ?? 'signature_mismatch');
   if (res.event === undefined) throw new WebhookVerificationError('invalid_body');
+  if (o.dedupe === false) return { event: res.event, duplicate: false, deliveryId: res.deliveryId, release: async () => {} };
+  if (!store) throw new Error('verifyAndDedupe needs a `store` (or `dedupe: false` to verify without remembering delivery ids).');
   const key = `${keyPrefix}${res.deliveryId}`;
   const fresh = await store.setIfAbsent(key, ttlSeconds);
   return {
@@ -130,7 +143,7 @@ export type WebhookDedupeDialect = 'postgres' | 'sqlite' | 'mysql';
  *
  * A key whose row has expired counts as unseen and is claimed again.
  */
-export function sqlWebhookDedupeStore({
+export function sqlDedupeStore({
   query,
   dialect = 'postgres',
 }: {
@@ -166,6 +179,36 @@ export function sqlWebhookDedupeStore({
     },
     async delete(key) {
       await query(dialect === 'postgres' ? 'delete from atlas_webhook_seen where key = $1' : dialect === 'mysql' ? 'delete from atlas_webhook_seen where `key` = ?' : 'delete from atlas_webhook_seen where key = ?', [key]);
+    },
+  };
+}
+
+/** @deprecated Renamed `memoryDedupeStore`. */
+export const memoryWebhookStore = memoryDedupeStore;
+/** @deprecated Renamed `sqlDedupeStore`. */
+export const sqlWebhookDedupeStore = sqlDedupeStore;
+
+/** The part of a Redis client {@link redisDedupeStore} calls. node-redis v4 and ioredis both fit. */
+export interface RedisLikeClient {
+  set(...args: any[]): Promise<unknown>;
+  del(key: string): Promise<unknown>;
+}
+
+/**
+ * A {@link WebhookDedupeStore} on Redis (`SET key 1 EX ttl NX`), for several server instances.
+ * Takes a node-redis v4 client (`createClient()`, connected) or an ioredis client.
+ */
+export function redisDedupeStore(client: RedisLikeClient): WebhookDedupeStore {
+  // ioredis exposes `defineCommand` and takes positional args; node-redis v4 takes an options object.
+  const positional = typeof (client as { defineCommand?: unknown }).defineCommand === 'function';
+  return {
+    async setIfAbsent(key, ttlSeconds) {
+      const ttl = Math.max(1, Math.ceil(ttlSeconds));
+      const res = positional ? await client.set(key, '1', 'EX', ttl, 'NX') : await client.set(key, '1', { EX: ttl, NX: true });
+      return res === 'OK';
+    },
+    async delete(key) {
+      await client.del(key);
     },
   };
 }

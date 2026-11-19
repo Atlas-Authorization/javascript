@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { createBeforeUserCreateHandler, createWebhookHandler, memoryDedupeStore } from './fetch-handlers';
+import { createBeforeUserCreateHandler, createLinkHook, createWebhookHandler } from './fetch-handlers';
+import { memoryDedupeStore } from './webhook-dedupe';
 
 const SECRET = 'whsec_test';
 function signed(payload: object, id = 'msg_1', secret = SECRET, extra: Record<string, string> = {}) {
@@ -90,5 +91,45 @@ describe('typed onEvent', () => {
     });
     await h(signed({ id: 'e1', type: 'user.created', timestamp: 1, instance_id: 'ins_1', data: { id: 'user_1' } }));
     expect(id).toBe('user_1');
+  });
+});
+
+describe('createWebhookHandler dedupe: false', () => {
+  it('runs onEvent for every delivery of the same id', async () => {
+    const onEvent = vi.fn();
+    const h = createWebhookHandler({ secret: SECRET, onEvent, dedupe: false });
+    await h(signed({ type: 'user.created' }));
+    await h(signed({ type: 'user.created' }));
+    expect(onEvent).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('createLinkHook', () => {
+  const data = { user_id: 'user_1', email: 'a@example.com', email_verified: true, provider: null, provider_user_id: null, name: null, external_id: null };
+  const body = { type: 'before_first_session', data };
+
+  it('answers 503 without a secret and 401 on a bad signature', async () => {
+    expect((await createLinkHook({ secret: undefined, resolve: () => ({}) })(signed(body))).status).toBe(503);
+    expect((await createLinkHook({ secret: SECRET, resolve: () => ({}) })(signed(body, 'm', 'other'))).status).toBe(401);
+  });
+
+  it('passes the candidate to resolve and answers its external_id', async () => {
+    const resolve = vi.fn(async () => ({ external_id: 'local_9' }));
+    const res = await createLinkHook({ secret: SECRET, resolve })(signed(body));
+    expect(await res.json()).toEqual({ external_id: 'local_9' });
+    expect(resolve).toHaveBeenCalledWith(data);
+  });
+
+  it('answers {} when resolve leaves it unset, 500 when it throws, 400 for another body type', async () => {
+    expect(await (await createLinkHook({ secret: SECRET, resolve: () => ({}) })(signed(body))).json()).toEqual({});
+    expect((await createLinkHook({ secret: SECRET, resolve: () => { throw new Error('x'); } })(signed(body))).status).toBe(500);
+    expect((await createLinkHook({ secret: SECRET, resolve: () => ({}) })(signed({ type: 'other', data }))).status).toBe(400);
+  });
+
+  it('answers {} to a test call without calling resolve', async () => {
+    const resolve = vi.fn();
+    const res = await createLinkHook({ secret: SECRET, resolve })(signed({ test: true }, 'm', SECRET));
+    expect(await res.json()).toEqual({});
+    expect(resolve).not.toHaveBeenCalled();
   });
 });

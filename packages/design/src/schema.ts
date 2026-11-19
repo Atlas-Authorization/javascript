@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { array, enumOf as enumSchema, literal, number, object, string, type Schema, type SchemaError } from './mini';
 import { CUSTOM_FONT_ID, FONT_IDS } from './fonts';
 import {
   COLOR_SCHEMES,
@@ -24,6 +24,8 @@ import {
   PRESET_IDS,
   HEX_COLOR,
   ASSET_ID,
+  type PaletteSlot,
+  type PresetId,
   type DesignProblem,
   type DesignValidation,
 } from './vocab';
@@ -51,107 +53,142 @@ export * from './vocab';
  * and resolves over the chosen preset, then the defaults (see `./resolve.ts`).
  */
 
-export const hexColor = z.string().regex(HEX_COLOR, 'Use a 6-digit hex colour like #4F46E5.');
-export const assetId = z
-  .string()
-  .regex(ASSET_ID, 'Use the asset_id returned by the design image upload (dasset_…).');
+export const hexColor = string(HEX_COLOR, 'Use a 6-digit hex colour like #4F46E5.');
+export const assetId = string(ASSET_ID, 'Use the asset_id returned by the design image upload (dasset_…).');
 /** A catalog font id, or a self-hosted brand font id (`custom-<hash>`). One typed string, so the OpenAPI schema stays typed. */
 const FONT_ID_PATTERN = new RegExp(
   `^(?:${FONT_IDS.map((id) => id.replace(/[^a-z0-9-]/g, '')).join('|')}|${CUSTOM_FONT_ID.source.replace(/^\^|\$$/g, '')})$`,
 );
-const fontId = z
-  .string()
-  .regex(FONT_ID_PATTERN, `Use a catalog font id (${FONT_IDS.join(', ')}), or a self-hosted font id (custom-…) from a brand import.`);
-const int = (min: number, max: number) => z.number().int().min(min).max(max);
-const enumOf = <T extends readonly [string, ...string[]]>(values: T) => z.enum(values);
+const fontId = string(
+  FONT_ID_PATTERN,
+  `Use a catalog font id (${FONT_IDS.join(', ')}), or a self-hosted font id (custom-…) from a brand import.`,
+);
+const int = (min: number, max: number, multipleOf?: number) => number({ int: true, min, max, multipleOf });
+const enumOf = <const T extends readonly string[]>(values: T) => enumSchema(values);
+
+// ---- types -------------------------------------------------------------------
+
+export type DesignPalette = { [K in PaletteSlot]?: string };
+export type DesignGradient = {
+  type: (typeof GRADIENT_TYPES)[number];
+  /** Degrees; linear only. */
+  angle?: number;
+  stops: { color: string; at: number }[];
+};
+export type DesignBackgroundImage = {
+  assetId: string;
+  fit?: (typeof IMAGE_FITS)[number];
+  position?: (typeof IMAGE_POSITIONS)[number];
+  overlay?: { color: string; opacity: number };
+  blur?: number;
+};
+export type DesignBackground = {
+  color?: string;
+  gradient?: DesignGradient;
+  image?: DesignBackgroundImage;
+  pattern?: (typeof BACKGROUND_PATTERNS)[number];
+};
+
+/** A stored design: overrides on top of a preset. */
+export type AtlasDesign = {
+  /** Schema version, for forward migrations. */
+  version?: 1;
+  preset?: PresetId;
+  colorScheme?: (typeof COLOR_SCHEMES)[number];
+  palette?: DesignPalette;
+  paletteDark?: DesignPalette;
+  typography?: {
+    font?: string;
+    headingFont?: string;
+    baseSize?: number;
+    headingWeight?: number;
+    bodyWeight?: number;
+    letterCase?: (typeof LETTER_CASES)[number];
+    scale?: keyof typeof TYPE_SCALES;
+  };
+  shape?: { radius?: number; controlRadius?: number; borderWidth?: number };
+  elevation?: { cardShadow?: (typeof CARD_SHADOWS)[number] };
+  spacing?: { density?: (typeof DENSITIES)[number] };
+  card?: { style?: (typeof CARD_STYLES)[number]; blur?: number; width?: (typeof CARD_WIDTHS)[number] };
+  layout?: {
+    position?: (typeof LAYOUT_POSITIONS)[number];
+    splitImageSide?: (typeof SPLIT_SIDES)[number];
+    logoPlacement?: (typeof LOGO_PLACEMENTS)[number];
+    logoSize?: (typeof LOGO_SIZES)[number];
+  };
+  buttons?: { style?: (typeof BUTTON_STYLES)[number]; socialLayout?: (typeof SOCIAL_LAYOUTS)[number] };
+  inputs?: { style?: (typeof INPUT_STYLES)[number] };
+  background?: DesignBackground;
+  backgroundDark?: DesignBackground;
+  logo?: { assetId?: string; darkAssetId?: string };
+};
 
 // ---- sections ----------------------------------------------------------------
 
-const paletteShape = Object.fromEntries(PALETTE_SLOTS.map((k) => [k, hexColor.optional()])) as {
-  [K in (typeof PALETTE_SLOTS)[number]]: z.ZodOptional<typeof hexColor>;
-};
-export const paletteSchema = z.object(paletteShape).strict();
+export const paletteSchema = object<DesignPalette>(
+  Object.fromEntries(PALETTE_SLOTS.map((k) => [k, hexColor.optional()])),
+);
 
-export const typographySchema = z
-  .object({
-    /** A catalog font id, or a self-hosted brand font (`custom-<hash>`, imported from a brand document). */
-    font: fontId.optional(),
-    headingFont: fontId.optional(),
-    /** Body text size in px. */
-    baseSize: int(12, 20).optional(),
-    headingWeight: int(400, 800).multipleOf(100).optional(),
-    bodyWeight: int(300, 600).multipleOf(100).optional(),
-    /** Letter case of BUTTON labels. */
-    letterCase: enumOf(LETTER_CASES).optional(),
-    scale: z.enum(TYPE_SCALE_NAMES as [string, ...string[]]).optional(),
-  })
-  .strict();
+export const typographySchema = object<NonNullable<AtlasDesign['typography']>>({
+  /** A catalog font id, or a self-hosted brand font (`custom-<hash>`, imported from a brand document). */
+  font: fontId.optional(),
+  headingFont: fontId.optional(),
+  /** Body text size in px. */
+  baseSize: int(12, 20).optional(),
+  headingWeight: int(400, 800, 100).optional(),
+  bodyWeight: int(300, 600, 100).optional(),
+  /** Letter case of BUTTON labels. */
+  letterCase: enumOf(LETTER_CASES).optional(),
+  scale: enumOf(TYPE_SCALE_NAMES).optional(),
+});
 
-export const shapeSchema = z
-  .object({
-    /** Card corner radius, px. */
-    radius: int(0, 32).optional(),
-    /** Button + input corner radius, px; 999 = pill. */
-    controlRadius: int(0, 999).optional(),
-    borderWidth: int(0, 3).optional(),
-  })
-  .strict();
+export const shapeSchema = object<NonNullable<AtlasDesign['shape']>>({
+  /** Card corner radius, px. */
+  radius: int(0, 32).optional(),
+  /** Button + input corner radius, px; 999 = pill. */
+  controlRadius: int(0, 999).optional(),
+  borderWidth: int(0, 3).optional(),
+});
 
-export const elevationSchema = z.object({ cardShadow: enumOf(CARD_SHADOWS).optional() }).strict();
-export const spacingSchema = z.object({ density: enumOf(DENSITIES).optional() }).strict();
+export const elevationSchema = object<NonNullable<AtlasDesign['elevation']>>({ cardShadow: enumOf(CARD_SHADOWS).optional() });
+export const spacingSchema = object<NonNullable<AtlasDesign['spacing']>>({ density: enumOf(DENSITIES).optional() });
 
-export const cardSchema = z
-  .object({
-    style: enumOf(CARD_STYLES).optional(),
-    /** Backdrop blur, px. Only applied when `style` is `glass`. */
-    blur: int(0, 40).optional(),
-    width: enumOf(CARD_WIDTHS).optional(),
-  })
-  .strict();
+export const cardSchema = object<NonNullable<AtlasDesign['card']>>({
+  style: enumOf(CARD_STYLES).optional(),
+  /** Backdrop blur, px. Only applied when `style` is `glass`. */
+  blur: int(0, 40).optional(),
+  width: enumOf(CARD_WIDTHS).optional(),
+});
 
-export const layoutSchema = z
-  .object({
-    position: enumOf(LAYOUT_POSITIONS).optional(),
-    /** Which side the image panel sits on. Only applied when `position` is `split`. */
-    splitImageSide: enumOf(SPLIT_SIDES).optional(),
-    logoPlacement: enumOf(LOGO_PLACEMENTS).optional(),
-    logoSize: enumOf(LOGO_SIZES).optional(),
-  })
-  .strict();
+export const layoutSchema = object<NonNullable<AtlasDesign['layout']>>({
+  position: enumOf(LAYOUT_POSITIONS).optional(),
+  /** Which side the image panel sits on. Only applied when `position` is `split`. */
+  splitImageSide: enumOf(SPLIT_SIDES).optional(),
+  logoPlacement: enumOf(LOGO_PLACEMENTS).optional(),
+  logoSize: enumOf(LOGO_SIZES).optional(),
+});
 
-export const buttonsSchema = z
-  .object({
-    style: enumOf(BUTTON_STYLES).optional(),
-    socialLayout: enumOf(SOCIAL_LAYOUTS).optional(),
-  })
-  .strict();
+export const buttonsSchema = object<NonNullable<AtlasDesign['buttons']>>({
+  style: enumOf(BUTTON_STYLES).optional(),
+  socialLayout: enumOf(SOCIAL_LAYOUTS).optional(),
+});
 
-export const inputsSchema = z.object({ style: enumOf(INPUT_STYLES).optional() }).strict();
+export const inputsSchema = object<NonNullable<AtlasDesign['inputs']>>({ style: enumOf(INPUT_STYLES).optional() });
 
-export const gradientSchema = z
-  .object({
-    type: enumOf(GRADIENT_TYPES),
-    /** Degrees; linear only. */
-    angle: int(0, 360).optional(),
-    stops: z
-      .array(z.object({ color: hexColor, at: z.number().min(0).max(100) }).strict())
-      .min(2)
-      .max(4),
-  })
-  .strict();
+export const gradientSchema = object<DesignGradient>({
+  type: enumOf(GRADIENT_TYPES),
+  /** Degrees; linear only. */
+  angle: int(0, 360).optional(),
+  stops: array(object<{ color: string; at: number }>({ color: hexColor, at: number({ min: 0, max: 100 }) }), 2, 4),
+});
 
-export const backgroundImageSchema = z
-  .object({
-    assetId,
-    fit: enumOf(IMAGE_FITS).optional(),
-    position: enumOf(IMAGE_POSITIONS).optional(),
-    overlay: z
-      .object({ color: hexColor, opacity: z.number().min(0).max(1) })
-      .strict()
-      .optional(),
-    blur: int(0, 20).optional(),
-  })
-  .strict();
+export const backgroundImageSchema = object<DesignBackgroundImage>({
+  assetId,
+  fit: enumOf(IMAGE_FITS).optional(),
+  position: enumOf(IMAGE_POSITIONS).optional(),
+  overlay: object<{ color: string; opacity: number }>({ color: hexColor, opacity: number({ min: 0, max: 1 }) }).optional(),
+  blur: int(0, 20).optional(),
+});
 
 /**
  * A page background: a colour, a gradient, an uploaded image and a pattern,
@@ -159,52 +196,38 @@ export const backgroundImageSchema = z
  * `background` REPLACES the preset's background wholesale (so a preset's photo
  * cannot leak under a customer's plain colour).
  */
-export const backgroundSchema = z
-  .object({
-    color: hexColor.optional(),
-    gradient: gradientSchema.optional(),
-    image: backgroundImageSchema.optional(),
-    pattern: enumOf(BACKGROUND_PATTERNS).optional(),
-  })
-  .strict();
+export const backgroundSchema = object<DesignBackground>({
+  color: hexColor.optional(),
+  gradient: gradientSchema.optional(),
+  image: backgroundImageSchema.optional(),
+  pattern: enumOf(BACKGROUND_PATTERNS).optional(),
+});
 
-export const logoSchema = z
-  .object({
-    /** Uploaded logo for light mode. */
-    assetId: assetId.optional(),
-    /** Uploaded logo for dark mode; falls back to `assetId`. */
-    darkAssetId: assetId.optional(),
-  })
-  .strict();
+export const logoSchema = object<NonNullable<AtlasDesign['logo']>>({
+  /** Uploaded logo for light mode. */
+  assetId: assetId.optional(),
+  /** Uploaded logo for dark mode; falls back to `assetId`. */
+  darkAssetId: assetId.optional(),
+});
 
-export const designSchema = z
-  .object({
-    /** Schema version, for forward migrations. */
-    version: z.literal(1).optional(),
-    preset: z.enum(PRESET_IDS).optional(),
-    colorScheme: enumOf(COLOR_SCHEMES).optional(),
-    palette: paletteSchema.optional(),
-    paletteDark: paletteSchema.optional(),
-    typography: typographySchema.optional(),
-    shape: shapeSchema.optional(),
-    elevation: elevationSchema.optional(),
-    spacing: spacingSchema.optional(),
-    card: cardSchema.optional(),
-    layout: layoutSchema.optional(),
-    buttons: buttonsSchema.optional(),
-    inputs: inputsSchema.optional(),
-    background: backgroundSchema.optional(),
-    backgroundDark: backgroundSchema.optional(),
-    logo: logoSchema.optional(),
-  })
-  .strict();
-
-/** A stored design: overrides on top of a preset. */
-export type AtlasDesign = z.infer<typeof designSchema>;
-export type DesignPalette = z.infer<typeof paletteSchema>;
-export type DesignBackground = z.infer<typeof backgroundSchema>;
-export type DesignGradient = z.infer<typeof gradientSchema>;
-export type DesignBackgroundImage = z.infer<typeof backgroundImageSchema>;
+export const designSchema = object<AtlasDesign>({
+  version: literal(1).optional(),
+  preset: enumOf(PRESET_IDS).optional(),
+  colorScheme: enumOf(COLOR_SCHEMES).optional(),
+  palette: paletteSchema.optional(),
+  paletteDark: paletteSchema.optional(),
+  typography: typographySchema.optional(),
+  shape: shapeSchema.optional(),
+  elevation: elevationSchema.optional(),
+  spacing: spacingSchema.optional(),
+  card: cardSchema.optional(),
+  layout: layoutSchema.optional(),
+  buttons: buttonsSchema.optional(),
+  inputs: inputsSchema.optional(),
+  background: backgroundSchema.optional(),
+  backgroundDark: backgroundSchema.optional(),
+  logo: logoSchema.optional(),
+});
 
 // ---- partial updates -------------------------------------------------------------
 
@@ -213,14 +236,14 @@ export type DesignBackgroundImage = z.infer<typeof backgroundImageSchema>;
  * patch's "delete this key"; arrays (gradient stops) are left as-is because
  * they replace wholesale. Strictness is preserved at every level.
  */
-function toPatch(schema: z.ZodType): z.ZodType {
+function toPatch(schema: Schema<unknown>): Schema<unknown> {
   let inner = schema;
-  while (inner instanceof z.ZodOptional || inner instanceof z.ZodNullable) inner = inner.unwrap() as z.ZodType;
-  if (inner instanceof z.ZodObject) {
-    const shape = inner.shape as Record<string, z.ZodType>;
-    const next: Record<string, z.ZodType> = {};
-    for (const [k, v] of Object.entries(shape)) next[k] = toPatch(v).nullable().optional();
-    return z.object(next).strict();
+  while (inner._zod.def.type === 'optional' || inner._zod.def.type === 'nullable') inner = inner._zod.def.innerType!;
+  const def = inner._zod.def;
+  if (def.type === 'object') {
+    const next: Record<string, Schema<unknown>> = {};
+    for (const [k, v] of Object.entries(def.shape!)) next[k] = toPatch(v).nullable().optional();
+    return object(next);
   }
   return inner;
 }
@@ -230,7 +253,7 @@ function toPatch(schema: z.ZodType): z.ZodType {
  * replace, an explicit `null` removes the key (falling back to the preset).
  * Apply with `applyDesignPatch`, which re-validates the merged result.
  */
-export const designPatchSchema = toPatch(designSchema) as z.ZodType<DesignPatch>;
+export const designPatchSchema = toPatch(designSchema as Schema<unknown>) as Schema<DesignPatch>;
 export type DesignPatch = DeepPatch<AtlasDesign>;
 type DeepPatch<T> = {
   [K in keyof T]?: NonNullable<T[K]> extends readonly unknown[]
@@ -242,14 +265,14 @@ type DeepPatch<T> = {
 
 // ---- validation with full paths ------------------------------------------------
 
-/** Zod issues → one problem per offending key, unknown keys named with their full path. */
-export function zodProblems(error: z.ZodError, prefix = ''): DesignProblem[] {
+/** Schema issues → one problem per offending key, unknown keys named with their full path. */
+export function zodProblems(error: SchemaError, prefix = ''): DesignProblem[] {
   const out: DesignProblem[] = [];
   const join = (parts: PropertyKey[]) =>
     [prefix, ...parts.map(String)].filter((p) => p !== '').join('.');
   for (const issue of error.issues) {
     if (issue.code === 'unrecognized_keys') {
-      for (const key of issue.keys) {
+      for (const key of issue.keys ?? []) {
         out.push({ path: join([...issue.path, key]), message: `Unknown setting "${key}".` });
       }
     } else {

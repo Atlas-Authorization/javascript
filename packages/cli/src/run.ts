@@ -35,6 +35,7 @@ import { changes, mirrorCommand } from './commands/changes';
 import { auditCommand } from './commands/audit-chain';
 import { preview } from './commands/preview';
 import { integrations } from './commands/integrations';
+import { hooks, issuers } from './commands/hooks';
 import { idAccounts } from './commands/id-accounts';
 import { admin } from './commands/admin';
 import { partnerPlatforms } from './commands/partner-platforms';
@@ -66,6 +67,8 @@ const COMMANDS: Record<string, Handler> = {
   changes,
   mirror: mirrorCommand,
   integrations,
+  hooks,
+  issuers,
   'partner-platforms': partnerPlatforms,
   'id-accounts': idAccounts,
   admin,

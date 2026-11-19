@@ -35,7 +35,9 @@ import { StorageCache, createChromeTombstoneStore, type TokenStore } from './sto
  * after a hosted sign-in, or let a prior session persist it). This provider does
  * not itself drive the sign-in UI flow.
  */
-export interface ChromeAtlasProviderProps extends Omit<AtlasProviderProps, 'fetchImpl'> {
+export interface ChromeAtlasProviderProps extends Omit<AtlasProviderProps, 'fetchImpl' | 'publishableKey'> {
+  /** Required here: an extension has no path mount to read the key from. */
+  publishableKey: string;
   /** Where the token lives. Defaults to `chrome.storage.local` via {@link StorageCache}. */
   store?: TokenStore;
   /** Base `fetch` to wrap (before bearer/persist). Defaults to the platform `fetch`. */
