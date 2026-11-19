@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.60.1
+
+- `user.created` webhook types: `signup_context.visit`.
+
 ## 0.60.0
 
 - `@atlasauth/backend/link`: `sqlUserLink` (postgres, mysql, sqlite; `verified_email_oldest` or `strict`) and `describeUserLinkContract` from `@atlasauth/backend/link/testing`.

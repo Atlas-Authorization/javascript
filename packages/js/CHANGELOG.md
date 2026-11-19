@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.49.0
+
+- Sign-in and sign-up starts send the visitor's `atlas_visit` token (read from the page URL or its `redirect_url`) so a connected analytics platform can credit the sign-up to the visit. Invalid tokens are dropped silently.
+
 ## 0.48.0
 
 - Approvals: decide with a `note`, `approveWithStepUp()` for requests that name a step-up policy, and `excludeRequester` / `stepUpPolicy` on the approval type.

@@ -2226,6 +2226,8 @@ export type WebhookDataUser = {
   signup_context?: {
     ip?: string | null;
     user_agent?: string | null;
+    /** The relying party's `atlas_visit` token (opaque, starts with `v1.`), present only when the sign-up carried a valid one. */
+    visit?: string;
     [key: string]: unknown;
   };
   [key: string]: unknown;

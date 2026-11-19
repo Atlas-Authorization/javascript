@@ -17,6 +17,7 @@ import {
 } from './referral';
 import { captureAttributionFields, pageAttribution, type AttributionOptions } from './attribution-fields';
 import { deviceId } from './telemetry';
+import { pageVisitToken } from './visit';
 import { attestationHeaderFor, isAttestationGuarded, type AttestationProvider } from './attestation';
 import type { DpopClient } from './dpop';
 import { parsePolicyAcceptances } from './policy-acceptance';
@@ -303,6 +304,11 @@ export class FapiClient {
     ) {
       const referral = await currentReferral(this);
       if (referral) payload = { ...(payload as Record<string, unknown>), referral };
+    }
+    // The relying party's visit token (`atlas_visit` on the page URL) rides the same starts, for sign-up forwarding.
+    if (payload !== null && typeof payload === 'object' && !Array.isArray(payload) && !('atlas_visit' in (payload as Record<string, unknown>)) && acceptsReferral(path)) {
+      const atlas_visit = pageVisitToken();
+      if (atlas_visit) payload = { ...(payload as Record<string, unknown>), atlas_visit };
     }
     // The stable device id rides on every start that can create an account
     // (email sign-up, social and enterprise SSO sign-ins) so the instance's
