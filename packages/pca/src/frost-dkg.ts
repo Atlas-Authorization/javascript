@@ -1,14 +1,27 @@
 import { ed25519 } from '@noble/curves/ed25519';
+import { ctAdd, ctMul, ctReduce, ctToBigint } from './ct-scalar';
 import { sha512 } from '@noble/hashes/sha512';
-import { b64u, unb64u, utf8 } from './hash';
+import { b64u, hashCanonical, unb64u, utf8 } from './hash';
 import {
   CONTEXT_STRING,
   L,
   bytesToScalar,
+  isCanonicalScalar,
+  decodeSafePoint,
   scalarToBytes,
   type FrostParticipantShare,
   type ParticipantId,
 } from './frost';
+
+/**
+ * Strict scalar decode for every scalar a DKG peer can influence (PoP `mu`, share-signature `s`, revealed
+ * shares): exactly 32 bytes AND < L. `bytesToScalar` reduces mod L silently, so without this `s` and `s + L`
+ * both verified and hashed (into the echo transcript) to different digests: a malleable encoding.
+ */
+function canonicalScalar(b: Uint8Array): bigint {
+  if (!isCanonicalScalar(b)) throw new Error('dkg: scalar must be 32 bytes and < the group order');
+  return bytesToScalar(b);
+}
 
 /**
  * TRUSTLESS FROST DISTRIBUTED KEY GENERATION (DKG) — PedPoP / FROST paper two-round DKG, now with a
@@ -149,8 +162,24 @@ function mulPoint(pt: InstanceType<typeof P>, s: bigint): InstanceType<typeof P>
   return v === 0n ? P.ZERO : pt.multiply(v);
 }
 
-function decodePoint(b: Uint8Array): InstanceType<typeof P> {
-  return P.fromHex(b);
+/** Strict decode (canonical, on-curve, not small-order, torsion-free) — see frost.ts decodeSafePoint. */
+const decodePoint = decodeSafePoint;
+
+/**
+ * The FULL VSS commitment vector (C_0..C_{t-1}) as bound into every challenge: u32be(count) ‖ each
+ * 32-byte point. Binding the whole vector (not just C_0) stops a dealer from showing different
+ * higher-degree commitments to different parties under one PoP / share signature.
+ */
+interface CommitVec {
+  c0: InstanceType<typeof P>;
+  bytes: Uint8Array;
+}
+function commitVecOf(commitments: string[]): CommitVec {
+  if (!Array.isArray(commitments) || commitments.length === 0) throw new Error('dkg: empty commitment vector');
+  const pts = commitments.map((c) => decodePoint(unb64u(c)));
+  const hdr = new Uint8Array(4);
+  new DataView(hdr.buffer).setUint32(0, pts.length, false);
+  return { c0: pts[0]!, bytes: concat(hdr, ...pts.map((p) => p.toRawBytes())) };
 }
 
 function randomScalar(): bigint {
@@ -159,9 +188,11 @@ function randomScalar(): bigint {
 
 /** Evaluate f(x) = Σ_j coeffs[j]·x^j via Horner (scalars). */
 function evalPoly(coeffs: bigint[], x: bigint): bigint {
-  let acc = 0n;
-  for (let j = coeffs.length - 1; j >= 0; j--) acc = mod(acc * x + coeffs[j]!);
-  return acc;
+  // The coefficients are secret: fixed-width scalar path (ct-scalar.ts), not BigInt `*` and `%`.
+  const xb = scalarToBytes(x);
+  let acc: Uint8Array = new Uint8Array(32);
+  for (let j = coeffs.length - 1; j >= 0; j--) acc = ctAdd(ctMul(acc, xb), scalarToBytes(coeffs[j]!));
+  return ctToBigint(acc);
 }
 
 /**
@@ -202,7 +233,7 @@ const CTX = utf8(CONTEXT_STRING);
 function dkgPopChallenge(
   sessionId: Uint8Array,
   identifier: ParticipantId,
-  commitment0: InstanceType<typeof P>,
+  cv: CommitVec,
   R: InstanceType<typeof P>,
 ): bigint {
   return hashToScalar(
@@ -211,7 +242,7 @@ function dkgPopChallenge(
       DKG_POP_DST,
       sessionId,
       scalarToBytes(BigInt(identifier)),
-      commitment0.toRawBytes(),
+      cv.bytes,
       R.toRawBytes(),
     ),
   );
@@ -240,7 +271,7 @@ function dkgShareChallenge(
   from: ParticipantId,
   to: ParticipantId,
   shareBytes: Uint8Array,
-  commitment0: InstanceType<typeof P>,
+  cv: CommitVec,
   Rs: InstanceType<typeof P>,
 ): bigint {
   return hashToScalar(
@@ -251,7 +282,7 @@ function dkgShareChallenge(
       scalarToBytes(BigInt(from)),
       scalarToBytes(BigInt(to)),
       shareBytes,
-      commitment0.toRawBytes(),
+      cv.bytes,
       Rs.toRawBytes(),
     ),
   );
@@ -268,7 +299,7 @@ function dkgShareNonce(
   from: ParticipantId,
   to: ParticipantId,
   shareBytes: Uint8Array,
-  commitment0: InstanceType<typeof P>,
+  cv: CommitVec,
 ): bigint {
   return hashToScalar(
     concat(
@@ -279,7 +310,7 @@ function dkgShareNonce(
       scalarToBytes(BigInt(from)),
       scalarToBytes(BigInt(to)),
       shareBytes,
-      commitment0.toRawBytes(),
+      cv.bytes,
     ),
   );
 }
@@ -287,16 +318,16 @@ function dkgShareNonce(
 /** Produce the sender's Schnorr signature over a share. Returns b64u(R_s ‖ s). */
 function signShareScalar(
   a0: bigint,
-  commitment0: InstanceType<typeof P>,
+  cv: CommitVec,
   sessionId: Uint8Array,
   from: ParticipantId,
   to: ParticipantId,
   shareBytes: Uint8Array,
 ): string {
-  const k = dkgShareNonce(a0, sessionId, from, to, shareBytes, commitment0);
+  const k = dkgShareNonce(a0, sessionId, from, to, shareBytes, cv);
   const Rs = mulBase(k);
-  const e = dkgShareChallenge(sessionId, from, to, shareBytes, commitment0, Rs);
-  const s = mod(k + mod(a0 * e));
+  const e = dkgShareChallenge(sessionId, from, to, shareBytes, cv, Rs);
+  const s = ctToBigint(ctAdd(scalarToBytes(k), ctMul(scalarToBytes(a0), scalarToBytes(e))));
   return b64u(concat(Rs.toRawBytes(), scalarToBytes(s)));
 }
 
@@ -307,16 +338,16 @@ function verifyShareSig(
   from: ParticipantId,
   to: ParticipantId,
   shareBytes: Uint8Array,
-  commitment0: InstanceType<typeof P>,
+  cv: CommitVec,
 ): boolean {
   try {
     const raw = unb64u(sig);
     if (raw.length !== 64) return false;
     const Rs = decodePoint(raw.subarray(0, 32));
-    const s = bytesToScalar(raw.subarray(32, 64));
-    const e = dkgShareChallenge(sessionId, from, to, shareBytes, commitment0, Rs);
+    const s = canonicalScalar(raw.subarray(32, 64));
+    const e = dkgShareChallenge(sessionId, from, to, shareBytes, cv, Rs);
     // s·B == R_s + e·C_0
-    return mulBase(s).equals(Rs.add(mulPoint(commitment0, e)));
+    return mulBase(s).equals(Rs.add(mulPoint(cv.c0, e)));
   } catch {
     return false;
   }
@@ -333,8 +364,8 @@ function verifyShareSigAgainstPackage(
 ): boolean {
   try {
     if (typeof sig !== 'string' || senderPackage.coefficientCommitments.length === 0) return false;
-    const c0 = decodePoint(unb64u(senderPackage.coefficientCommitments[0]!));
-    return verifyShareSig(sig, sessionId, from, to, shareBytes, c0);
+    const cv = commitVecOf(senderPackage.coefficientCommitments);
+    return verifyShareSig(sig, sessionId, from, to, shareBytes, cv);
   } catch {
     return false;
   }
@@ -348,8 +379,8 @@ function verifyShareSigAgainstPackage(
  */
 export function dkgSignShare(state: DkgParticipantState, to: ParticipantId, shareBytes: Uint8Array): string {
   const a0 = bytesToScalar(state.coefficients[0]!);
-  const c0 = decodePoint(unb64u(state.package.coefficientCommitments[0]!));
-  return signShareScalar(a0, c0, state.sessionId, state.identifier, to, shareBytes);
+  const cv = commitVecOf(state.package.coefficientCommitments);
+  return signShareScalar(a0, cv, state.sessionId, state.identifier, to, shareBytes);
 }
 
 // ---- public types -------------------------------------------------------------------------------
@@ -582,11 +613,11 @@ export function dkgRound1(
 
   // Schnorr proof of possession of a_0: R = k·B, c = H(sessionId, id, C_0, R), mu = k + a_0·c.
   const a0 = coeffs[0]!;
-  const commit0 = commitmentPoints[0]!;
+  const cv = commitVecOf(coefficientCommitments);
   const k = opts.popNonce ? bytesToScalar(opts.popNonce) : randomScalar();
   const R = mulBase(k);
-  const c = dkgPopChallenge(sessionId, identifier, commit0, R);
-  const mu = mod(k + mod(a0 * c));
+  const c = dkgPopChallenge(sessionId, identifier, cv, R);
+  const mu = ctToBigint(ctAdd(scalarToBytes(k), ctMul(scalarToBytes(a0), scalarToBytes(c))));
 
   const pkg: DkgRound1Package = {
     identifier,
@@ -616,10 +647,11 @@ export function dkgVerifyRound1(
   try {
     if (pkg.sessionId !== b64u(sessionId)) return false;
     if (pkg.coefficientCommitments.length === 0) return false;
-    const commit0 = decodePoint(unb64u(pkg.coefficientCommitments[0]!));
+    const cv = commitVecOf(pkg.coefficientCommitments);
+    const commit0 = cv.c0;
     const R = decodePoint(unb64u(pkg.proofOfKnowledge.R));
-    const mu = bytesToScalar(unb64u(pkg.proofOfKnowledge.mu));
-    const c = dkgPopChallenge(sessionId, fromIdentifier, commit0, R);
+    const mu = canonicalScalar(unb64u(pkg.proofOfKnowledge.mu));
+    const c = dkgPopChallenge(sessionId, fromIdentifier, cv, R);
     const lhs = mulBase(mu);
     const rhs = R.add(mulPoint(commit0, c));
     return lhs.equals(rhs);
@@ -651,12 +683,12 @@ export function dkgRound2(state: DkgParticipantState, allRound1Packages: DkgRoun
 
   const coeffs = state.coefficients.map((c) => bytesToScalar(c));
   const a0 = coeffs[0]!;
-  const c0 = decodePoint(unb64u(state.package.coefficientCommitments[0]!));
+  const cv = commitVecOf(state.package.coefficientCommitments);
   const out: DkgShareToSend[] = [];
   for (const j of ids) {
     if (j === state.identifier) continue;
     const share = scalarToBytes(evalPoly(coeffs, BigInt(j)));
-    const sig = signShareScalar(a0, c0, state.sessionId, state.identifier, j, share);
+    const sig = signShareScalar(a0, cv, state.sessionId, state.identifier, j, share);
     out.push({ from: state.identifier, to: j, sessionId: sidB64, share, sig });
   }
   return out;
@@ -689,7 +721,7 @@ export function dkgVerifyShare(
     if (!verifyShareSigAgainstPackage(received.sig, sessionId, received.from, myIdentifier, received.share, senderPackage)) {
       return false;
     }
-    return vssCheck(bytesToScalar(received.share), senderPackage.coefficientCommitments, myIdentifier);
+    return vssCheck(canonicalScalar(received.share), senderPackage.coefficientCommitments, myIdentifier);
   } catch {
     return false;
   }
@@ -769,7 +801,7 @@ export function dkgVerifyComplaint(complaint: DkgComplaint, round1Packages: DkgR
         reason: 'revealed share is not validly signed by the accused — inadmissible (cannot frame an honest party)',
       };
     }
-    const valid = vssCheck(bytesToScalar(shareBytes), accusedPkg.coefficientCommitments, complaint.accuser);
+    const valid = vssCheck(canonicalScalar(shareBytes), accusedPkg.coefficientCommitments, complaint.accuser);
     if (valid) {
       return {
         justified: false,
@@ -850,7 +882,7 @@ export function dkgResolveBlame(
       accusedPkg,
     );
     if (admissible) {
-      const valid = vssCheck(bytesToScalar(shareBytes), accusedPkg.coefficientCommitments, complaint.accuser);
+      const valid = vssCheck(canonicalScalar(shareBytes), accusedPkg.coefficientCommitments, complaint.accuser);
       if (!valid) {
         return { guilty: complaint.accused, reason: 'accused non-repudiably signed a share that fails VSS' };
       }
@@ -861,7 +893,7 @@ export function dkgResolveBlame(
       const rShare = unb64u(rebuttal.presentedShare);
       const rebuttalValid =
         verifyShareSigAgainstPackage(rebuttal.shareSig, sidBytes, complaint.accused, complaint.accuser, rShare, accusedPkg) &&
-        vssCheck(bytesToScalar(rShare), accusedPkg.coefficientCommitments, complaint.accuser);
+        vssCheck(canonicalScalar(rShare), accusedPkg.coefficientCommitments, complaint.accuser);
       if (rebuttalValid) {
         return {
           guilty: complaint.accuser,
@@ -937,6 +969,146 @@ export function dkgQualifiedSet(
   return [...qualified].sort((a, b) => a - b);
 }
 
+// ---- echo-broadcast / agreement round -----------------------------------------------------------
+
+/**
+ * A party's ECHO: a commitment (hash) over its OWN view of the DKG transcript — the round-1 packages
+ * it received, the complaints it saw, and the qualified set it derived. Broadcast over the authenticated
+ * channel AFTER the blame round and BEFORE finalize.
+ *
+ * WHY (Gennaro-style agreement). Without an agreement round, an equivocating dealer or a network
+ * adversary can show different honest parties different round-1 packages / complaints, so they derive
+ * DIFFERENT qualified sets and finalize to DIFFERENT (inconsistent) group keys without anyone noticing.
+ * Requiring every qualified party to echo an IDENTICAL transcript digest before finalizing closes that
+ * split: a divergent view produces a divergent digest, `dkgCheckEchoes` sees the disagreement, and
+ * `dkgFinalize` ABORTS rather than committing to a key over a transcript the parties did not all agree on.
+ */
+export interface DkgEcho {
+  identifier: ParticipantId;
+  /** b64u of the DKG session id this echo is bound to (anti-replay / cross-run). */
+  sessionId: string;
+  /** b64u sha256 over the canonical, order-independent transcript (see `dkgTranscriptDigest`). */
+  transcriptDigest: string;
+}
+
+/** Deterministic, order-independent per-package digest (binds every field of a round-1 package). */
+function round1PackageDigest(p: DkgRound1Package): string {
+  return hashCanonical({
+    identifier: p.identifier,
+    sessionId: p.sessionId,
+    coefficientCommitments: p.coefficientCommitments,
+    proofOfKnowledge: { R: p.proofOfKnowledge.R, mu: p.proofOfKnowledge.mu },
+  });
+}
+
+/** Deterministic, order-independent per-complaint digest (binds every field of a complaint). */
+function complaintDigest(c: DkgComplaint): string {
+  return hashCanonical({
+    accused: c.accused,
+    accuser: c.accuser,
+    sessionId: c.sessionId,
+    revealedShare: c.revealedShare,
+    shareSig: c.shareSig,
+  });
+}
+
+/**
+ * The CANONICAL, order-independent transcript digest a party commits to in its echo: a hash over the
+ * SORTED set of round-1 package digests, the SORTED set of complaint digests, the SORTED qualified set,
+ * and the session id. Sorting makes it independent of message-arrival order, so two honest parties that
+ * saw the SAME transcript (in any order) produce the SAME digest, while any divergence — a different
+ * package, a dropped/extra complaint, or a different qualified set — produces a different digest.
+ */
+export function dkgTranscriptDigest(args: {
+  round1Packages: DkgRound1Package[];
+  complaints: DkgComplaint[];
+  qualified: ParticipantId[];
+  sessionId: Uint8Array;
+}): string {
+  const round1 = args.round1Packages.map(round1PackageDigest).sort();
+  const complaints = args.complaints.map(complaintDigest).sort();
+  const qualified = [...args.qualified].sort((a, b) => a - b);
+  return hashCanonical({ sessionId: b64u(args.sessionId), round1, complaints, qualified });
+}
+
+/**
+ * Build this party's echo over its transcript view. A party broadcasts this after the blame round; the
+ * finalizer requires every qualified party's echo to carry an identical `transcriptDigest`.
+ */
+export function dkgEcho(args: {
+  identifier: ParticipantId;
+  round1Packages: DkgRound1Package[];
+  complaints: DkgComplaint[];
+  qualified: ParticipantId[];
+  sessionId: Uint8Array;
+}): DkgEcho {
+  return {
+    identifier: args.identifier,
+    sessionId: b64u(args.sessionId),
+    transcriptDigest: dkgTranscriptDigest({
+      round1Packages: args.round1Packages,
+      complaints: args.complaints,
+      qualified: args.qualified,
+      sessionId: args.sessionId,
+    }),
+  };
+}
+
+/** The outcome of the echo-agreement check. */
+export interface DkgEchoAgreement {
+  /** True iff every qualified party echoed exactly one same-session echo and ALL digests are identical. */
+  agreed: boolean;
+  /** The agreed transcript digest (present only when `agreed`). */
+  digest?: string;
+  /** Why agreement failed (a missing echo, a cross-session echo, a duplicate, or a divergent digest). */
+  reason?: string;
+}
+
+/**
+ * Check the echo-broadcast round: EVERY qualified party must have contributed exactly one echo, all bound
+ * to `sessionId`, all carrying the SAME `transcriptDigest`. Echoes from non-qualified parties are ignored.
+ * Returns the agreed digest, or the reason agreement failed (a divergent digest signals equivocation — an
+ * adversary split the honest parties onto different views). Never throws.
+ */
+export function dkgCheckEchoes(
+  qualified: ParticipantId[],
+  echoes: DkgEcho[],
+  sessionId: Uint8Array,
+): DkgEchoAgreement {
+  try {
+    const sidB64 = b64u(sessionId);
+    const qSet = new Set(qualified);
+    const byId = new Map<ParticipantId, DkgEcho>();
+    for (const e of echoes) {
+      if (!qSet.has(e.identifier)) continue; // a non-qualified party's echo does not count
+      if (e.sessionId !== sidB64) {
+        return { agreed: false, reason: `echo from ${e.identifier} is bound to a different session` };
+      }
+      if (byId.has(e.identifier)) {
+        return { agreed: false, reason: `duplicate echo from qualified participant ${e.identifier}` };
+      }
+      byId.set(e.identifier, e);
+    }
+    let agreedDigest: string | undefined;
+    for (const j of qSet) {
+      const e = byId.get(j);
+      if (!e) return { agreed: false, reason: `missing echo from qualified participant ${j}` };
+      if (agreedDigest === undefined) {
+        agreedDigest = e.transcriptDigest;
+      } else if (e.transcriptDigest !== agreedDigest) {
+        return {
+          agreed: false,
+          reason: `qualified participant ${j} echoed a DIFFERENT transcript (equivocation detected)`,
+        };
+      }
+    }
+    if (agreedDigest === undefined) return { agreed: false, reason: 'no qualified echoes to agree on' };
+    return { agreed: true, digest: agreedDigest };
+  } catch {
+    return { agreed: false, reason: 'malformed echoes' };
+  }
+}
+
 // ---- finalize -----------------------------------------------------------------------------------
 
 /**
@@ -952,6 +1124,13 @@ export function dkgQualifiedSet(
  * path, byte-identical to the pre-blame behavior). The finalizer must itself be qualified, and
  * |qualified| ≥ t. All packages/shares must name the SAME session as `myState` (anti-replay). The
  * output's `signingShare`/`groupPublicKey` are drop-in for `frostSign`.
+ *
+ * ECHO-BROADCAST AGREEMENT (opt-in via `agreement`). When `agreement.echoes` is supplied, finalize runs
+ * the Gennaro-style agreement round BEFORE deriving any key: it recomputes its OWN transcript digest over
+ * (`allCommitments`, `agreement.complaints`, the qualified set) and requires EVERY qualified party's echo
+ * to carry that identical digest (`dkgCheckEchoes`). If any qualified party echoed a different transcript
+ * — the signature of an equivocating dealer / network split — finalize ABORTS. Omitting `agreement`
+ * preserves the exact pre-agreement behavior (byte-identical output), so existing callers are unaffected.
  */
 export function dkgFinalize(
   myIdentifier: ParticipantId,
@@ -959,6 +1138,7 @@ export function dkgFinalize(
   receivedShares: DkgReceivedShare[],
   allCommitments: DkgRound1Package[],
   qualified?: ParticipantId[],
+  agreement?: { echoes: DkgEcho[]; complaints?: DkgComplaint[] },
 ): DkgKeyPackage {
   if (myState.identifier !== myIdentifier) throw new Error('dkgFinalize: myState.identifier != myIdentifier');
   const ids = allCommitments.map((p) => p.identifier);
@@ -991,6 +1171,30 @@ export function dkgFinalize(
     }
   }
 
+  // ECHO-BROADCAST AGREEMENT ROUND (opt-in). Before deriving any key material, require every qualified
+  // party to have echoed an IDENTICAL transcript (round-1 packages / complaints / qualified set). An
+  // equivocating dealer or a network adversary that split honest parties onto different views yields a
+  // divergent digest, which `dkgCheckEchoes` detects → we ABORT rather than finalize against a transcript
+  // the parties did not all agree on (a Gennaro-style agreement break → inconsistent group keys).
+  if (agreement?.echoes !== undefined) {
+    const qsorted = [...qSet].sort((a, b) => a - b);
+    const check = dkgCheckEchoes(qsorted, agreement.echoes, myState.sessionId);
+    if (!check.agreed) {
+      throw new Error(`dkgFinalize: echo-broadcast agreement failed — ${check.reason}`);
+    }
+    const myDigest = dkgTranscriptDigest({
+      round1Packages: allCommitments,
+      complaints: agreement.complaints ?? [],
+      qualified: qsorted,
+      sessionId: myState.sessionId,
+    });
+    if (check.digest !== myDigest) {
+      throw new Error(
+        'dkgFinalize: echo-broadcast agreement failed — my transcript view diverges from the agreed echo digest (equivocation)',
+      );
+    }
+  }
+
   // Expect exactly one received share from every OTHER QUALIFIED participant; ignore the rest.
   const recvBy = new Map<ParticipantId, Uint8Array>();
   for (const r of receivedShares) {
@@ -1009,9 +1213,9 @@ export function dkgFinalize(
 
   // signingShare s_i = f_i(i) + Σ_{j∈qualified, j≠i} f_j(i).
   const myCoeffs = myState.coefficients.map((c) => bytesToScalar(c));
-  let s = evalPoly(myCoeffs, BigInt(myIdentifier));
-  for (const [, share] of recvBy) s = mod(s + bytesToScalar(share));
-  const signingShare = scalarToBytes(s);
+  let sBytes = scalarToBytes(evalPoly(myCoeffs, BigInt(myIdentifier)));
+  for (const [, share] of recvBy) sBytes = ctAdd(sBytes, ctReduce(share));
+  const signingShare = sBytes;
 
   // Group VSS coefficients Φ_k = Σ_{ℓ∈qualified} C_ℓk (points), index 0 is the group public key.
   const groupCoeffPoints: InstanceType<typeof P>[] = [];
@@ -1038,7 +1242,13 @@ export function dkgFinalize(
     return { identifier: j, publicKey: acc.toRawBytes() };
   });
 
+  const s = ctToBigint(signingShare);
   const verifyingShare = mulBase(s).toRawBytes();
+  // Consistency: my signing share must be exactly the share the group polynomial (Φ) predicts for me.
+  const mine = verifyingShares.find((v) => v.identifier === myIdentifier);
+  if (!mine || !mulBase(s).equals(decodePoint(mine.publicKey))) {
+    throw new Error('dkgFinalize: signing share is inconsistent with the group verifying share (bad dealer share)');
+  }
 
   return {
     identifier: myIdentifier,
@@ -1065,6 +1275,13 @@ export interface DkgSimulateOpts {
    * finalizes over the honest qualified set (requires |n − cheaters| ≥ t).
    */
   cheaters?: ParticipantId[];
+  /**
+   * Participant id whose ECHO is computed over a TAMPERED transcript view (a different qualified set),
+   * modelling an equivocating dealer / network split that shows one honest party a divergent view. Its
+   * echo digest then disagrees with the rest and `dkgFinalize` ABORTS the run. For exercising the
+   * agreement round only.
+   */
+  equivocateEchoFor?: ParticipantId;
 }
 
 /**
@@ -1095,6 +1312,7 @@ export function frostDkgSimulate(
   qualified: ParticipantId[];
   complaints: DkgComplaint[];
   rebuttals: DkgRebuttal[];
+  echoes: DkgEcho[];
   sessionId: Uint8Array;
 } {
   if (!Number.isInteger(t) || !Number.isInteger(n) || t < 1 || n < t) {
@@ -1165,10 +1383,21 @@ export function frostDkgSimulate(
     throw new Error(`frostDkgSimulate: only ${qualified.length} qualified participants (< t=${t}) after the blame round`);
   }
 
+  // Echo-broadcast / agreement round: every qualified party commits to its transcript view, and the
+  // finalizer requires them all to agree before deriving a key. An honest run agrees; a tampered view
+  // (opts.equivocateEchoFor) echoes a divergent qualified set, so the agreement check fails at finalize.
+  const echoes: DkgEcho[] = qualified.map((id) => {
+    const view =
+      id === opts.equivocateEchoFor
+        ? qualified.filter((q) => q !== qualified[qualified.length - 1]) // a DIFFERENT qualified set
+        : qualified;
+    return dkgEcho({ identifier: id, round1Packages, complaints, qualified: view, sessionId });
+  });
+
   // Finalize over the qualified set (only qualified participants hold a usable key).
   const qualifiedStates = states.filter((st) => qualified.includes(st.identifier));
   const keyPackages = qualifiedStates.map((st) =>
-    dkgFinalize(st.identifier, st, inbox.get(st.identifier)!, round1Packages, qualified),
+    dkgFinalize(st.identifier, st, inbox.get(st.identifier)!, round1Packages, qualified, { echoes, complaints }),
   );
 
   // Every qualified participant must derive the same group key.
@@ -1195,6 +1424,7 @@ export function frostDkgSimulate(
     qualified,
     complaints,
     rebuttals,
+    echoes,
     sessionId,
   };
 }

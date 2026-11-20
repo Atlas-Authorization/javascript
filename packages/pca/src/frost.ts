@@ -1,3 +1,4 @@
+import { ctAdd, ctFromBigint, ctMul, ctReduce, ctToBigint } from './ct-scalar';
 import { ed25519 } from '@noble/curves/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
 import { utf8 } from './hash';
@@ -42,16 +43,14 @@ import { utf8 } from './hash';
  *
  * SCOPE / SECURITY NOTE
  * ---------------------
- * This is a correct, vector-validated REFERENCE implementation of the protocol math. It is NOT
- * hardened against side channels (noble's constant-time scalar mult is used for secret base-point
- * multiplications, but the surrounding BigInt scalar arithmetic is not constant-time), and it
- * implements the trusted-dealer key split here, but a NO-DEALER interactive DKG is now available in
- * `frost-dkg.ts` (`frostDkgSimulate` / `dkgRound1`…`dkgFinalize`): its `signingShare`/`groupPublicKey`
- * output has the SAME shapes as the trusted-dealer keygen, so it is a drop-in for the group key whose
- * shares are held by the PCA agent / guardian / principal — the plug-in can split the group key by DKG
- * instead of trusting a dealer. That DKG is likewise a reference implementation needing an audit. For
- * production threshold custody, use an audited FROST library and a real DKG. PCA's DEFAULT remains the
- * multi-signature.
+ * Tier: "hardened, awaiting independent audit". This is a vector-validated implementation of the protocol math (RFC 9591
+ * vectors byte-exact; signing and DKG output also reproduced by frost-ed25519 and curve25519-dalek, see
+ * tools/pca-frost-xcheck). Secret scalar arithmetic (nonce derivation, signature shares, polynomial evaluation, DKG sums)
+ * runs on the fixed-width branch-free path in ct-scalar.ts, with a timing test; point multiplication is noble's. What this
+ * does NOT give: a constant-time proof (the runtime is a JIT), a hardware-isolated share (use an HSM or enclave), an
+ * authenticated network (the DKG assumes an authenticated broadcast channel and private point-to-point channels that the
+ * caller provides), or an independent review. No-dealer DKG is in `frost-dkg.ts`; it is a custom PedPoP variant, not a
+ * standard. PCA's DEFAULT remains the multi-signature.
  */
 
 const P = ed25519.ExtendedPoint;
@@ -65,26 +64,29 @@ const CTX = utf8(CONTEXT_STRING);
 // ---- low-level scalar / point helpers (all math delegated to noble) -----------------------------
 
 function mod(a: bigint): bigint {
+  if (a >= 0n && a < L) return a;
   const r = a % L;
   return r >= 0n ? r : r + L;
 }
 
 /** Serialize a scalar as 32 bytes little-endian (RFC 8032 / RFC 9591 SerializeScalar for Ed25519). */
 export function scalarToBytes(s: bigint): Uint8Array {
-  let v = mod(s);
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    out[i] = Number(v & 0xffn);
-    v >>= 8n;
-  }
-  return out;
+  return ctFromBigint(mod(s));
 }
 
 /** Parse 32-byte little-endian bytes as a scalar (reduced mod L). */
 export function bytesToScalar(b: Uint8Array): bigint {
+  if (b.length === 0) return 0n;
+  // Secret-bearing input (shares, nonces, hash output): reduced with the fixed-width path, never BigInt `%`.
+  return ctToBigint(ctReduce(b));
+}
+
+/** True iff `b` is exactly 32 bytes encoding a scalar < L (one encoding per scalar; `bytesToScalar` reduces mod L). */
+export function isCanonicalScalar(b: unknown): boolean {
+  if (!(b instanceof Uint8Array) || b.length !== 32) return false;
   let x = 0n;
-  for (let i = b.length - 1; i >= 0; i--) x = (x << 8n) | BigInt(b[i]!);
-  return mod(x);
+  for (let i = 31; i >= 0; i--) x = (x << 8n) | BigInt(b[i]!);
+  return x < L;
 }
 
 function concat(...parts: Uint8Array[]): Uint8Array {
@@ -101,7 +103,7 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 
 /** HashToScalar for Ed25519: OS2IP_LE(SHA-512(msg)) mod L (RFC 9591 §6.1). */
 function hashToScalar(msg: Uint8Array): bigint {
-  return mod(bytesToScalar(sha512(msg)));
+  return bytesToScalar(sha512(msg));
 }
 
 /** s·B (base-point mult). 0 maps to the identity (noble's multiply rejects 0). */
@@ -116,8 +118,49 @@ function mulPoint(pt: InstanceType<typeof P>, s: bigint): InstanceType<typeof P>
   return v === 0n ? P.ZERO : pt.multiply(v);
 }
 
-function decodePoint(b: Uint8Array): InstanceType<typeof P> {
-  return P.fromHex(b);
+/**
+ * Strict point decode used for EVERY point a FROST/DKG caller can influence. Rejects: wrong length,
+ * non-canonical y (>= p), points not on the curve, SMALL-ORDER points (incl. the identity), and points
+ * with a torsion component (not in the prime-order subgroup). A small-order / mixed-order commitment
+ * would let an attacker bias R or forge a share against a cofactor-clearing verifier.
+ */
+export function decodeSafePoint(b: Uint8Array): InstanceType<typeof P> {
+  if (!(b instanceof Uint8Array) || b.length !== 32) throw new Error('frost: point must be 32 bytes');
+  const pt = P.fromHex(b); // noble's fromHex default is strict (canonical y only)
+  pt.assertValidity();
+  if (pt.isSmallOrder()) throw new Error('frost: small-order point rejected');
+  if (!pt.isTorsionFree()) throw new Error('frost: point is not in the prime-order subgroup');
+  // Canonical re-encoding must round-trip exactly.
+  const re = pt.toRawBytes();
+  for (let i = 0; i < 32; i++) if (re[i] !== b[i]) throw new Error('frost: non-canonical point encoding');
+  return pt;
+}
+
+const decodePoint = decodeSafePoint;
+
+/** Participant identifiers: positive safe integers (a zero id would zero every other Lagrange coefficient). */
+function assertValidId(id: unknown): asserts id is number {
+  if (!Number.isSafeInteger(id) || (id as number) <= 0) {
+    throw new Error('frost: participant identifier must be a positive safe integer');
+  }
+}
+
+/** Validate a signing-commitment list: shape, distinct ids, safe points, and (optionally) |list| >= t. */
+function validateCommitments(list: FrostCommitment[], threshold?: number): void {
+  if (!Array.isArray(list) || list.length === 0) throw new Error('frost: empty commitment list');
+  if (threshold !== undefined) {
+    if (!Number.isSafeInteger(threshold) || threshold < 1) throw new Error('frost: invalid threshold');
+    if (list.length < threshold) throw new Error(`frost: need at least t=${threshold} commitments (got ${list.length})`);
+  }
+  const seen = new Set<number>();
+  for (const c of list) {
+    if (!c || typeof c !== 'object') throw new Error('frost: malformed commitment');
+    assertValidId(c.identifier);
+    if (seen.has(c.identifier)) throw new Error(`frost: duplicate commitment identifier ${c.identifier}`);
+    seen.add(c.identifier);
+    decodeSafePoint(c.hiding);
+    decodeSafePoint(c.binding);
+  }
 }
 
 // ---- ciphersuite hashes H1..H5 (RFC 9591 §6.1) --------------------------------------------------
@@ -247,11 +290,13 @@ export function frostTrustedDealerKeygen(t: number, n: number, opts: FrostKeygen
     coeffs.push(c ? bytesToScalar(c) : bytesToScalar(ed25519.utils.randomPrivateKey()));
   }
 
-  // f(x) = sum_j a_j x^j  (Horner).
+  // f(x) = sum_j a_j x^j  (Horner), on the fixed-width scalar path (the coefficients are secret).
+  const coeffBytes = coeffs.map((a) => scalarToBytes(a));
   const evalPoly = (x: bigint): bigint => {
-    let acc = 0n;
-    for (let j = coeffs.length - 1; j >= 0; j--) acc = mod(acc * x + coeffs[j]!);
-    return acc;
+    const xb = scalarToBytes(x);
+    let acc: Uint8Array = new Uint8Array(32);
+    for (let j = coeffBytes.length - 1; j >= 0; j--) acc = ctAdd(ctMul(acc, xb), coeffBytes[j]!);
+    return ctToBigint(acc);
   };
 
   const participantShares: FrostParticipantShare[] = ids.map((id) => {
@@ -261,6 +306,16 @@ export function frostTrustedDealerKeygen(t: number, n: number, opts: FrostKeygen
 
   const groupCommitment = coeffs.map((a) => mulBase(a).toRawBytes());
   return { groupPublicKey: groupCommitment[0]!, participantShares, groupCommitment };
+}
+
+/**
+ * The verification share for a secret signing share: PK_i = share·B (32-byte point). A FROST signing
+ * share is a raw scalar (NOT an RFC-8032 clamped Ed25519 secret), so this is `mulBase` of the scalar,
+ * not `publicKeyOf`. Used by custody to re-derive and check a stored verification share against its
+ * (decrypted) secret share — the same derive-and-compare integrity check the single-key path does.
+ */
+export function frostVerifyingShare(share: Uint8Array): Uint8Array {
+  return mulBase(bytesToScalar(share)).toRawBytes();
 }
 
 // ---- round 1: commit (RFC 9591 §5.1) ------------------------------------------------------------
@@ -348,12 +403,16 @@ function deriveInterpolatingValue(participants: ParticipantId[], i: ParticipantI
     num = mod(num * xj);
     den = mod(den * (xj - xi));
   }
-  return mod(num * modInverse(den));
+  const lam = mod(num * modInverse(den));
+  if (lam === 0n) throw new Error('frost: zero Lagrange coefficient');
+  return lam;
 }
 
 function modInverse(a: bigint): bigint {
+  const v = mod(a);
+  if (v === 0n) throw new Error('frost: modular inverse of zero');
   // Fermat: a^(L-2) mod L (L is prime).
-  return modPow(mod(a), L - 2n);
+  return modPow(v, L - 2n);
 }
 
 function modPow(base: bigint, exp: bigint): bigint {
@@ -381,6 +440,53 @@ function modPow(base: bigint, exp: bigint): bigint {
  * (The RFC's `sign` takes the nonce as an explicit argument; it is required here too and placed after
  * `groupPublicKey`, matching the RFC parameter order sign(id, share, group_pk, nonce, msg, commits).)
  */
+export interface FrostSignOpts {
+  /** Reject a commitment set smaller than t. Strongly recommended. */
+  threshold?: number;
+  /** This signer's verification share (share·B). If given, it must equal share·B. */
+  verificationShare?: Uint8Array;
+  /**
+   * Every signer's verification share. If given (and covering all signers), Σ λ_i·PK_i must equal
+   * `groupPublicKey`, i.e. the group key really is the one these shares interpolate to.
+   */
+  verificationShares?: { identifier: ParticipantId; publicKey: Uint8Array }[];
+}
+
+/** Nonce arrays already consumed by frostSign (one-shot: reuse across two messages leaks the key share). */
+const SPENT_NONCES = new WeakSet<Uint8Array>();
+
+/**
+ * Content-based one-shot guard (RT-14). The WeakSet above only catches the very same array; a clone
+ * of the nonce bytes (crash recovery, a serialised session, structuredClone) would sign a second
+ * message. This set is keyed by the nonce's PUBLIC commitment (the point `nonce·B` that the signer
+ * already published), so any byte-identical copy of a spent nonce is refused whatever object holds it,
+ * without keeping secret material. Per process: it cannot see a nonce spent in another process or
+ * before a restart (callers must not persist nonces). Bounded FIFO; the oldest entry is evicted only
+ * after {@link SPENT_COMMITMENT_CAP} later signings.
+ */
+const SPENT_COMMITMENTS = new Set<string>();
+export const SPENT_COMMITMENT_CAP = 262_144;
+
+function commitmentKey(kind: 'h' | 'b', point: Uint8Array): string {
+  let hex: string = kind;
+  for (const x of point) hex += x.toString(16).padStart(2, '0');
+  return hex;
+}
+
+function claimCommitment(key: string): void {
+  SPENT_COMMITMENTS.add(key);
+  if (SPENT_COMMITMENTS.size > SPENT_COMMITMENT_CAP) {
+    const oldest = SPENT_COMMITMENTS.values().next().value as string;
+    SPENT_COMMITMENTS.delete(oldest);
+  }
+}
+
+function isZero(b: Uint8Array): boolean {
+  let acc = 0;
+  for (const x of b) acc |= x;
+  return acc === 0;
+}
+
 export function frostSign(
   identifier: ParticipantId,
   share: Uint8Array,
@@ -388,20 +494,75 @@ export function frostSign(
   nonces: FrostNonces,
   message: Uint8Array,
   signingCommitments: FrostCommitment[],
+  opts: FrostSignOpts = {},
 ): FrostSignatureShare {
+  assertValidId(identifier);
+  validateCommitments(signingCommitments, opts.threshold);
+  decodeSafePoint(groupPublicKey);
+  if (!nonces || !(nonces.hiding instanceof Uint8Array) || !(nonces.binding instanceof Uint8Array)) {
+    throw new Error('frostSign: malformed nonces');
+  }
+  if (SPENT_NONCES.has(nonces.hiding) || SPENT_NONCES.has(nonces.binding)) {
+    throw new Error('frostSign: nonces already used (one-shot; reuse would leak the signing share)');
+  }
+  if (isZero(nonces.hiding) || isZero(nonces.binding)) throw new Error('frostSign: zero/zeroized nonce');
+  if (nonces.hiding === nonces.binding) throw new Error('frostSign: hiding and binding nonce must differ');
+
   const list = sortCommitments(signingCommitments);
-  const bindingFactors = computeBindingFactors(groupPublicKey, list, message);
-  const bf = bindingFactors.get(identifier);
-  if (bf === undefined) throw new Error('frostSign: this identifier has no commitment in the set');
-  const R = computeGroupCommitment(list, bindingFactors);
-  const participants = list.map((c) => c.identifier);
-  const lambda = deriveInterpolatingValue(participants, identifier);
-  const c = computeChallenge(R.toRawBytes(), groupPublicKey, message);
+  const mine = list.find((c) => c.identifier === identifier);
+  if (!mine) throw new Error('frostSign: this identifier has no commitment in the set');
 
   const hiding = bytesToScalar(nonces.hiding);
   const binding = bytesToScalar(nonces.binding);
   const sk = bytesToScalar(share);
-  const z = mod(hiding + mod(binding * bf) + mod(mod(lambda * sk) * c));
+  // The signer's own published commitment must be exactly the commitment to its nonces.
+  if (!mulBase(hiding).equals(decodePoint(mine.hiding)) || !mulBase(binding).equals(decodePoint(mine.binding))) {
+    throw new Error('frostSign: own commitment does not match nonces');
+  }
+  // Content-based single use: a byte-clone of a spent nonce has the same commitment (RT-14).
+  const hKey = commitmentKey('h', mine.hiding);
+  const bKey = commitmentKey('b', mine.binding);
+  if (SPENT_COMMITMENTS.has(hKey) || SPENT_COMMITMENTS.has(bKey)) {
+    throw new Error('frostSign: nonces already used (one-shot; reuse would leak the signing share)');
+  }
+  // The share must match its verification share, and (if supplied) the group key.
+  if (opts.verificationShare !== undefined) {
+    if (!mulBase(sk).equals(decodePoint(opts.verificationShare))) {
+      throw new Error('frostSign: share does not match verification share');
+    }
+  }
+  const participants = list.map((c) => c.identifier);
+  if (opts.verificationShares !== undefined) {
+    let acc = P.ZERO;
+    for (const id of participants) {
+      const vs = opts.verificationShares.find((v) => v.identifier === id);
+      if (!vs) throw new Error(`frostSign: missing verification share for ${id}`);
+      acc = acc.add(mulPoint(decodePoint(vs.publicKey), deriveInterpolatingValue(participants, id)));
+    }
+    if (!acc.equals(decodePoint(groupPublicKey))) {
+      throw new Error('frostSign: group public key does not match the verification shares');
+    }
+  }
+
+  const bindingFactors = computeBindingFactors(groupPublicKey, list, message);
+  const bf = bindingFactors.get(identifier)!;
+  const R = computeGroupCommitment(list, bindingFactors);
+  const lambda = deriveInterpolatingValue(participants, identifier);
+  const c = computeChallenge(R.toRawBytes(), groupPublicKey, message);
+  // z = hiding + binding*bf + (lambda*share)*c on the fixed-width path: nonces and share are secret.
+  const zBytes = ctAdd(
+    ctAdd(scalarToBytes(hiding), ctMul(scalarToBytes(binding), scalarToBytes(bf))),
+    ctMul(ctMul(scalarToBytes(lambda), scalarToBytes(sk)), scalarToBytes(c)),
+  );
+  const z = ctToBigint(zBytes);
+
+  // One-shot: mark spent and zeroize in place so the secret nonces cannot be reused.
+  SPENT_NONCES.add(nonces.hiding);
+  SPENT_NONCES.add(nonces.binding);
+  claimCommitment(hKey);
+  claimCommitment(bKey);
+  nonces.hiding.fill(0);
+  nonces.binding.fill(0);
   return { identifier, sigShare: scalarToBytes(z) };
 }
 
@@ -411,20 +572,126 @@ export function frostSign(
  * Aggregate the per-participant signature shares into a STANDARD Ed25519 signature R ‖ z. The result
  * verifies under `verify(groupPublicKey, message, sig)` (RFC 9591 guarantees the aggregate is a valid
  * plain Ed25519 signature under the group key) — which is exactly PCA's existing leaf-sig check.
- * Does not itself validate the individual shares; use `frostVerifySigShare` for that (RFC §5.3).
+ * R6-ALIAS-07: every share is verified with `frostVerifySigShare` against its participant's verification share BEFORE
+ * aggregation (RFC 9591 §5.3), so a bad share is refused and named, and a non-canonical share (z + L) never aggregates.
+ * `verificationShares` is therefore REQUIRED (it throws without it).
  */
 export function frostAggregate(
   message: Uint8Array,
   signingCommitments: FrostCommitment[],
   sigShares: FrostSignatureShare[],
   groupPublicKey: Uint8Array,
+  opts: {
+    threshold?: number;
+    /** Every signer's verification share (share·B); each signature share is checked against it and a bad one is named. */
+    verificationShares: { identifier: ParticipantId; publicKey: Uint8Array }[];
+  },
 ): Uint8Array {
+  validateCommitments(signingCommitments, opts?.threshold);
+  decodeSafePoint(groupPublicKey);
   const list = sortCommitments(signingCommitments);
+  if (!Array.isArray(sigShares) || sigShares.length !== list.length) {
+    throw new Error('frostAggregate: need exactly one signature share per commitment');
+  }
+  const shareIds = new Set<number>();
+  for (const s of sigShares) {
+    if (!list.some((c) => c.identifier === s.identifier)) throw new Error('frostAggregate: share from non-signer');
+    if (shareIds.has(s.identifier)) throw new Error('frostAggregate: duplicate signature share');
+    shareIds.add(s.identifier);
+  }
+  if (!Array.isArray(opts?.verificationShares)) {
+    throw new Error('frostAggregate: verificationShares are required (every signature share is verified before aggregation)');
+  }
+  {
+    for (const s of sigShares) {
+      const vs = opts.verificationShares.find((v) => v.identifier === s.identifier);
+      const commitment = list.find((c) => c.identifier === s.identifier)!;
+      if (
+        !vs ||
+        !frostVerifySigShare({
+          identifier: s.identifier,
+          publicKey: vs.publicKey,
+          commitment,
+          sigShare: s,
+          signingCommitments: list,
+          groupPublicKey,
+          message,
+        })
+      ) {
+        throw new Error(`frostAggregate: invalid signature share from participant ${s.identifier}`);
+      }
+    }
+  }
   const bindingFactors = computeBindingFactors(groupPublicKey, list, message);
   const R = computeGroupCommitment(list, bindingFactors);
   let z = 0n;
   for (const s of sigShares) z = mod(z + bytesToScalar(s.sigShare));
-  return concat(R.toRawBytes(), scalarToBytes(z));
+  const sig = concat(R.toRawBytes(), scalarToBytes(z));
+  // Never return an aggregate that is not a valid signature under the group key.
+  if (!ed25519.verify(sig, message, groupPublicKey, { zip215: false })) {
+    throw new Error('frostAggregate: aggregate signature does not verify (a share is invalid)');
+  }
+  return sig;
+}
+
+/**
+ * ONE-SHOT in-process signing-round coordinator (round 1 → round 2 → aggregate) over a quorum of
+ * participant shares, returning the aggregate as a STANDARD Ed25519 signature under `groupPublicKey`.
+ *
+ * This is the "coordinator" a threshold-custody holder runs once a quorum has agreed to sign: each
+ * quorum member produces its own fresh (hiding, binding) nonce pair via `frostCommit`, then its
+ * signature share via `frostSign`, and the shares aggregate into a single 64-byte signature. ALL the
+ * recommended safety checks are wired on by default: every share is `frostSign`-bound to its own
+ * commitment and verification share, the signing set's verification shares must interpolate (Σ λ_i·PK_i)
+ * to `groupPublicKey`, and `frostAggregate` re-verifies the final signature and REFUSES to return an
+ * invalid aggregate — so an insufficient (< t), mismatched, or forged quorum cannot yield a valid
+ * cosignature. `opts.threshold` additionally rejects a quorum smaller than `t` up front.
+ *
+ * SECURITY MODEL (read): this runs every participant's `frostCommit`/`frostSign` in ONE process, so it
+ * is only as strong as that process is: a caller holding ALL the quorum's `share` bytes can of course
+ * produce the aggregate. The threshold property "no valid signature without ≥ t independently-held
+ * shares" becomes literally true ONLY when the `share` bytes live in separate trust domains (distinct
+ * nodes / HSMs) and this coordinator is replaced by network round-trips that collect each remote
+ * participant's commitment and signature share. See `frost-dkg.ts` for establishing the group key with
+ * no trusted dealer; the per-participant `share`s it outputs are exactly the quorum members here.
+ */
+export function frostCosign(
+  groupPublicKey: Uint8Array,
+  quorum: FrostParticipantShare[],
+  message: Uint8Array,
+  opts: { threshold?: number } = {},
+): Uint8Array {
+  if (!Array.isArray(quorum) || quorum.length === 0) throw new Error('frostCosign: empty signing quorum');
+  if (opts.threshold !== undefined && quorum.length < opts.threshold) {
+    throw new Error(`frostCosign: quorum of ${quorum.length} is below the threshold t=${opts.threshold}`);
+  }
+  const ids = new Set<number>();
+  for (const p of quorum) {
+    assertValidId(p.identifier);
+    if (ids.has(p.identifier)) throw new Error(`frostCosign: duplicate participant ${p.identifier} in quorum`);
+    ids.add(p.identifier);
+  }
+  const vss = quorum.map((p) => ({ identifier: p.identifier, publicKey: p.publicKey }));
+  // Round 1: each quorum member commits to a fresh nonce pair.
+  const commits = quorum.map((p) => frostCommit(p));
+  const commitments = commits.map((c) => c.commitment);
+  // Round 2: each quorum member produces its signature share, with every safety check on.
+  const sigShares = quorum.map((p, i) =>
+    frostSign(
+      p.identifier,
+      p.share,
+      groupPublicKey,
+      { hiding: commits[i]!.hidingNonce, binding: commits[i]!.bindingNonce },
+      message,
+      commitments,
+      { ...(opts.threshold !== undefined ? { threshold: opts.threshold } : {}), verificationShare: p.publicKey, verificationShares: vss },
+    ),
+  );
+  // Aggregate (re-verifies under the group key; throws on any invalid / insufficient share set).
+  return frostAggregate(message, commitments, sigShares, groupPublicKey, {
+    ...(opts.threshold !== undefined ? { threshold: opts.threshold } : {}),
+    verificationShares: vss,
+  });
 }
 
 /**
@@ -443,6 +710,7 @@ export function frostVerifySigShare(params: {
   message: Uint8Array;
 }): boolean {
   try {
+    validateCommitments(params.signingCommitments);
     const list = sortCommitments(params.signingCommitments);
     const bindingFactors = computeBindingFactors(params.groupPublicKey, list, params.message);
     const bf = bindingFactors.get(params.identifier);
@@ -453,6 +721,7 @@ export function frostVerifySigShare(params: {
     const participants = list.map((x) => x.identifier);
     const lambda = deriveInterpolatingValue(participants, params.identifier);
 
+    if (!isCanonicalScalar(params.sigShare.sigShare)) return false; // z and z + L must not both verify
     const lhs = mulBase(bytesToScalar(params.sigShare.sigShare));
     const rhs = commShare.add(mulPoint(decodePoint(params.publicKey), mod(c * lambda)));
     return lhs.equals(rhs);

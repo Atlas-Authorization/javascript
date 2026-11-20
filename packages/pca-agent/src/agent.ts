@@ -5,14 +5,12 @@ import {
   type InclusionProof,
   type PCActn,
   type PlanNode,
-  assembleThreshold,
+  type ProvenanceRecorder,
   buildPCActn,
   commitPlan as commitPlanLocal,
   delegate as delegateCap,
-  signShare,
-  thresholdMessage,
-  verifyLedgerInclusion,
 } from '@atlasauth/pca';
+import { entryCommit, verifyLedgerInclusion } from '@atlasauth/pca/ext/ledger';
 
 export type FetchLike = (
   url: string,
@@ -39,6 +37,8 @@ export interface Receipt {
   commit: string;
   root: string;
   size?: number;
+  /** Entry salt, when the server discloses it: lets the client check the entry commits to THIS action. */
+  salt?: string;
   inclusion_proof: InclusionProof;
 }
 
@@ -74,10 +74,47 @@ export interface CreateAgentOptions {
   /** b64u public key of the agent (informational). */
   agentPublic?: string;
   rsBaseUrl: string;
+  /**
+   * REQUIRED. The audience the PCActns are FOR (wire v2 `aud`): for the hosted Atlas API this is the Atlas
+   * INSTANCE id (`ins_...`); for your own resource server, the id it passes to `requirePCA({ audience })`.
+   * A PCActn only verifies at the audience it names, so it cannot be replayed at another server / instance.
+   */
+  audience: string;
+  /** Lifetime stamped into each PCActn (`exp = iat + ttlMs`), default 20 min (covers the 15-min step-up window). */
+  ttlMs?: number;
+  /** Clock (epoch ms) for `iat`; default `Date.now`. */
+  now?: () => number;
+  /** Stamp a fresh random per-action `nonce` (default true). */
+  nonce?: boolean;
   fetch?: FetchLike;
+  /**
+   * Verify the ledger inclusion proof of every receipt before reporting `allowed` (default true; an allow whose
+   * receipt does not verify is an error, never an allow). Set false only for a test double that has no real ledger.
+   */
+  verifyReceipts?: boolean;
   /** Initial counter (last used); the first act() uses counter+1. Default 0. */
   counter?: number;
   budget?: TrustBudget;
+  /**
+   * The session's provenance recorder (provenance by default). When set, every `act` appends the action receipt and sends the
+   * bundle as `pca_provenance`, so the server can tell the principal's choices from content a tool, page or document injected.
+   * Record the principal's message (`recorder.principal(text)`) and every tool result entering the model's context.
+   */
+  provenance?: ProvenanceRecorder;
+}
+
+/** Optional signed slots of wire v2 (all signed into the PCActn when present; absent = current behaviour). */
+export interface ActSlots {
+  /** Uncertainty attestation in [0,1]; MONOTONE (the verifier takes max with its own risk). */
+  caution?: number;
+  /** b64u(32) commitment to your rationale. */
+  rationaleCommitment?: string;
+  progressStep?: Record<string, unknown>;
+  prohibitionEvidence?: Record<string, unknown> | unknown[];
+  /** The tool signature you will dispatch to (hashed with `hashCanonical`) or its b64u(32) digest. */
+  toolBinding?: string;
+  /** Override the generated nonce. */
+  nonce?: string;
 }
 
 export interface AgentClient {
@@ -88,15 +125,41 @@ export interface AgentClient {
   readonly budget: TrustBudget | undefined;
   readonly planRoot: string | undefined;
   commitPlan(nodes: PlanNode[]): Promise<{ planRoot: string }>;
-  act(nodeId: string, params?: Record<string, unknown>): Promise<ActResult>;
+  act(nodeId: string, params?: Record<string, unknown>, slots?: ActSlots): Promise<ActResult>;
   awaitStepUp(stepupId: string, opts?: { pollMs?: number; timeoutMs?: number }): Promise<StepUpOutcome>;
   delegate(opts: { toPublic: string; addedCaveats?: Caveat[]; agentSecret?: Uint8Array }): AgentClient;
   verifyReceipt(receipt: Receipt): boolean;
 }
 
+const newNonce = (): string => {
+  const b = new Uint8Array(16);
+  (globalThis as unknown as { crypto: { getRandomValues(a: Uint8Array): Uint8Array } }).crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+};
+
+const isBudget = (b: unknown): b is TrustBudget =>
+  b !== null && typeof b === 'object' && [(b as TrustBudget).B, (b as TrustBudget).tau, (b as TrustBudget).asOf].every((x) => typeof x === 'number' && Number.isFinite(x));
+
+const receiptBinds = (r: Receipt, pcactn: PCActn): boolean => {
+  try {
+    return typeof r.salt === 'string' && entryCommit(r.salt, pcactn) === r.commit;
+  } catch {
+    return false;
+  }
+};
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function createAgent(opts: CreateAgentOptions): AgentClient {
+  if (typeof opts.audience !== 'string' || opts.audience.length === 0) {
+    throw new PcaAgentError('build_failed', 'createAgent: `audience` is required (the resource-server / Atlas instance id PCActns are for)');
+  }
+  try {
+    const u = new URL(opts.rsBaseUrl);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('scheme');
+  } catch {
+    throw new PcaAgentError('build_failed', 'createAgent: `rsBaseUrl` must be an absolute http(s) URL');
+  }
   const base = opts.rsBaseUrl.replace(/\/+$/, '');
   const doFetch: FetchLike = opts.fetch ?? ((u, i) => (globalThis as unknown as { fetch: FetchLike }).fetch(u, i));
   const chain = opts.chain ?? [opts.grant];
@@ -141,15 +204,16 @@ export function createAgent(opts: CreateAgentOptions): AgentClient {
         throw new PcaAgentError('bad_response', `plan commit failed (${res.status})`, res.status);
       }
       const remote = res.json.plan_root;
-      if (typeof remote === 'string' && remote !== local) {
-        throw new PcaAgentError('bad_response', 'server plan_root differs from the locally computed root', res.status);
+      // The server must echo the root it committed: a missing root cannot be told apart from a server that stored another plan.
+      if (typeof remote !== 'string' || remote !== local) {
+        throw new PcaAgentError('bad_response', 'server plan_root is missing or differs from the locally computed root', res.status);
       }
-      plan = nodes;
+      plan = nodes.map((n) => ({ ...n }));
       planRoot = local;
       return { planRoot: local };
     },
 
-    async act(nodeId, params) {
+    async act(nodeId, params, slots) {
       if (!plan) return { status: 'error', error: new PcaAgentError('no_plan', 'commitPlan() first') };
       if (!opts.agentSecret) return { status: 'error', error: new PcaAgentError('no_secret', 'no agentSecret for this client') };
       if (!plan.some((n) => n.id === nodeId)) {
@@ -158,18 +222,39 @@ export function createAgent(opts: CreateAgentOptions): AgentClient {
       const next = counter + 1;
       let pcactn: PCActn;
       try {
-        pcactn = buildPCActn({ grant: opts.grant, chain, plan, nodeId, params, counter: next, signerSecret: opts.agentSecret });
-        pcactn = {
-          ...pcactn,
-          threshold: assembleThreshold([signShare('agent', opts.agentSecret, thresholdMessage(pcactn))]),
-        };
+        // The leaf `sig` IS the agent's threshold share: no separate agent share is carried.
+        pcactn = buildPCActn({
+          grant: opts.grant,
+          chain,
+          plan,
+          nodeId,
+          params,
+          counter: next,
+          signerSecret: opts.agentSecret,
+          aud: opts.audience,
+          now: (opts.now ?? Date.now)(),
+          ...(opts.ttlMs !== undefined ? { ttlMs: opts.ttlMs } : {}),
+          ...(slots?.nonce !== undefined ? { nonce: slots.nonce } : opts.nonce !== false ? { nonce: newNonce() } : {}),
+          ...(slots?.caution !== undefined ? { caution: slots.caution } : {}),
+          ...(slots?.rationaleCommitment !== undefined ? { rationaleCommitment: slots.rationaleCommitment } : {}),
+          ...(slots?.progressStep !== undefined ? { progressStep: slots.progressStep } : {}),
+          ...(slots?.prohibitionEvidence !== undefined ? { prohibitionEvidence: slots.prohibitionEvidence } : {}),
+          ...(slots?.toolBinding !== undefined ? { toolBinding: slots.toolBinding } : {}),
+        });
       } catch (e) {
         return { status: 'error', error: new PcaAgentError('build_failed', (e as Error).message) };
       }
       counter = next; // monotonic: never reuse a counter, even if the call fails
+      const node = plan.find((n) => n.id === nodeId)!;
+      let pcaProvenance: unknown;
+      try {
+        pcaProvenance = opts.provenance?.forAction({ verb: node.verb, resource: node.resource, params: params ?? {} });
+      } catch (e) {
+        return { status: 'error', error: new PcaAgentError('build_failed', (e as Error).message) };
+      }
       let res;
       try {
-        res = await call('POST', '/v1/pca/actions', { pcactn });
+        res = await call('POST', '/v1/pca/actions', { pcactn, ...(pcaProvenance !== undefined ? { pca_provenance: pcaProvenance } : {}) });
       } catch (e) {
         return { status: 'error', error: new PcaAgentError('network', (e as Error).message) };
       }
@@ -182,11 +267,21 @@ export function createAgent(opts: CreateAgentOptions): AgentClient {
         }
         return { status: 'step_up', stepupId: id, requiredT: typeof t === 'number' ? t : 2, pcactn };
       }
-      const verdict = (j.verdict ?? { allow: j.allow === true }) as Verdict;
-      if (verdict.budget) budget = verdict.budget;
-      if (res.status >= 200 && res.status < 300 && (j.allow === true || verdict.allow)) {
+      const rawVerdict = j.verdict;
+      const verdict = (rawVerdict !== null && typeof rawVerdict === 'object' && !Array.isArray(rawVerdict) ? rawVerdict : { allow: j.allow === true }) as Verdict;
+      // Allow only on an explicit boolean `true` from every place the server states it (a truthy string or a
+      // contradiction between `allow` and `verdict.allow` is a deny).
+      const allowed = res.status >= 200 && res.status < 300 && verdict.allow === true && (j.allow === undefined || j.allow === true);
+      if (isBudget(verdict.budget)) budget = verdict.budget;
+      if (allowed) {
         const receipt = j.receipt as Receipt | undefined;
-        if (!receipt) return { status: 'error', error: new PcaAgentError('bad_response', 'allow without receipt', res.status) };
+        if (!receipt || typeof receipt !== 'object') return { status: 'error', error: new PcaAgentError('bad_response', 'allow without receipt', res.status) };
+        if (opts.verifyReceipts !== false) {
+          if (!client.verifyReceipt(receipt)) return { status: 'error', error: new PcaAgentError('bad_response', 'allow receipt inclusion proof does not verify', res.status) };
+          if (receipt.salt !== undefined && !receiptBinds(receipt, pcactn)) {
+            return { status: 'error', error: new PcaAgentError('bad_response', 'allow receipt does not commit to this action', res.status) };
+          }
+        }
         return { status: 'allowed', verdict, receipt, pcactn };
       }
       return { status: 'denied', verdict, httpStatus: res.status, pcactn };
@@ -196,11 +291,22 @@ export function createAgent(opts: CreateAgentOptions): AgentClient {
       const pollMs = o.pollMs ?? 1000;
       const deadline = Date.now() + (o.timeoutMs ?? 5 * 60_000);
       for (;;) {
-        const res = await call('GET', `/v1/pca/stepups/${encodeURIComponent(stepupId)}`);
+        let res;
+        try {
+          // Long poll (the server answers as soon as the step-up is decided, at most 25 s); servers without it ignore `wait`.
+          const wait = Math.min(25, Math.floor((deadline - Date.now()) / 1000));
+          res = await call('GET', `/v1/pca/stepups/${encodeURIComponent(stepupId)}${wait > 0 ? `?wait=${wait}` : ''}`);
+        } catch (e) {
+          throw new PcaAgentError('network', (e as Error).message);
+        }
         const s = res.json.status;
-        if (s === 'approved' || s === 'denied' || s === 'expired') {
+        // Only a 2xx answer can approve; a non-2xx answer that says "approved" is not an approval.
+        const ok = res.status >= 200 && res.status < 300;
+        if (ok && (s === 'approved' || s === 'denied' || s === 'expired')) {
           return { ...res.json, status: s } as StepUpOutcome;
         }
+        // 4xx other than 429 is final (unknown or foreign step-up): stop polling, never approve.
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) return { status: 'denied', httpStatus: res.status };
         if (Date.now() + pollMs > deadline) return { status: 'timeout' };
         await sleep(pollMs);
       }
@@ -216,7 +322,14 @@ export function createAgent(opts: CreateAgentOptions): AgentClient {
         agentSecret,
         agentPublic: toPublic,
         rsBaseUrl: base,
+        audience: opts.audience,
+        ...(opts.ttlMs !== undefined ? { ttlMs: opts.ttlMs } : {}),
+        ...(opts.now ? { now: opts.now } : {}),
+        ...(opts.nonce !== undefined ? { nonce: opts.nonce } : {}),
         fetch: doFetch,
+        ...(opts.verifyReceipts !== undefined ? { verifyReceipts: opts.verifyReceipts } : {}),
+        // a sub-agent works in the same context session: its actions extend the same chain
+        ...(opts.provenance !== undefined ? { provenance: opts.provenance } : {}),
         counter: 0,
       });
       return sub;

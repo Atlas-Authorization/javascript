@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { attenuate } from './capability';
 import { mintGrant } from './envelope';
 import { b64u, utf8 } from './hash';
 import { encodeKey, generateKeyPair, verify } from './keys';
@@ -11,11 +10,15 @@ import {
   type FrostSignatureShare,
   frostAggregate,
   frostCommit,
+  frostCosign,
   frostSign,
   frostTrustedDealerKeygen,
   frostVerifySigShare,
+  frostVerifyingShare,
   scalarToBytes,
 } from './frost';
+import { frostDkgSimulate } from './frost-dkg';
+import { shareMessage, signShare, verifyThreshold, type Signer, type ThresholdShare } from './threshold';
 
 const fromHex = (h: string): Uint8Array => {
   const out = new Uint8Array(h.length / 2);
@@ -124,7 +127,11 @@ describe('FROST(Ed25519, SHA-512) — RFC 9591 official test vectors', () => {
     expect(toHex(share3.sigShare)).toBe(V.p3.sigShare);
 
     // Byte-exact aggregate signature.
-    const sig = frostAggregate(message, commitments, [share1, share3], groupPublicKey);
+    const vss = [
+      { identifier: V.p1.id, publicKey: frostVerifyingShare(fromHex(V.p1.share)) },
+      { identifier: V.p3.id, publicKey: frostVerifyingShare(fromHex(V.p3.share)) },
+    ];
+    const sig = frostAggregate(message, commitments, [share1, share3], groupPublicKey, { verificationShares: vss });
     expect(toHex(sig)).toBe(V.aggregateSignature);
 
     // And it is a valid PLAIN Ed25519 signature under the group key.
@@ -179,7 +186,8 @@ function session(kg: ReturnType<typeof frostTrustedDealerKeygen>, signerIds: num
       commitments,
     ),
   );
-  return frostAggregate(message, commitments, sigShares, kg.groupPublicKey);
+  const vss = kg.participantShares.map((p) => ({ identifier: p.identifier, publicKey: p.publicKey }));
+  return frostAggregate(message, commitments, sigShares, kg.groupPublicKey, { verificationShares: vss });
 }
 
 describe('FROST round-trip', () => {
@@ -200,8 +208,8 @@ describe('FROST round-trip', () => {
     const kg = frostTrustedDealerKeygen(2, 3);
     const msg = utf8('insufficient quorum');
     // Only one signer participates → Lagrange over {1} reconstructs the wrong secret → invalid sig.
-    const sig = session(kg, [1], msg);
-    expect(verify(kg.groupPublicKey, msg, sig)).toBe(false);
+    // frostAggregate now refuses to return an invalid aggregate.
+    expect(() => session(kg, [1], msg)).toThrow(/does not verify/);
   });
 
   it('a signature over message A does not verify against message B', () => {
@@ -246,7 +254,7 @@ describe('FROST ⨯ PCActn', () => {
 
     // 3) Build the PCActn body (sign with a throwaway key; we overwrite `sig` with the FROST aggregate).
     const throwaway = generateKeyPair();
-    const draft = buildPCActn({
+    const draft = buildPCActn({ aud: 'test-aud',
       grant,
       chain: [grant], // single hop: leaf == grant, holder == group key
       plan: nodes,
@@ -271,12 +279,13 @@ describe('FROST ⨯ PCActn', () => {
         commitments,
       ),
     );
-    const aggregate = frostAggregate(msg, commitments, sigShares, kg.groupPublicKey);
+    const vss = kg.participantShares.map((p) => ({ identifier: p.identifier, publicKey: p.publicKey }));
+    const aggregate = frostAggregate(msg, commitments, sigShares, kg.groupPublicKey, { verificationShares: vss });
 
     // The FROST aggregate IS the ordinary Ed25519 leaf signature — no new verifier path.
     const pcactn = { ...draft, sig: b64u(aggregate) };
 
-    const res = await verifyPCActnCore(pcactn, { grant });
+    const res = await verifyPCActnCore(pcactn, { insecureSkipPlanRootCheck: true, grant, audience: 'test-aud' });
     expect(res.allow).toBe(true);
     expect(res.checks.leaf_signature).toBe('pass');
     expect(res.checks.cap_chain).toBe('pass');
@@ -284,9 +293,76 @@ describe('FROST ⨯ PCActn', () => {
 
     // Tampering with the action (new counter) breaks the aggregate leaf signature.
     const tampered = { ...pcactn, counter: 8 };
-    const bad = await verifyPCActnCore(tampered, { grant });
+    const bad = await verifyPCActnCore(tampered, { insecureSkipPlanRootCheck: true, grant });
     expect(bad.allow).toBe(false);
     expect(bad.checks.leaf_signature).toBe('fail');
+  });
+});
+
+// =================================================================================================
+// Guardian threshold custody — the FROST cosign coordinator over a DKG-established group key.
+// This is the property the PCA admission path relies on: a guardian cosignature is a FROST aggregate
+// that (a) verifies under the group key end-to-end, and (b) CANNOT be formed from fewer than t shares.
+// =================================================================================================
+describe('FROST guardian cosign (threshold custody)', () => {
+  // Establish the guardian group with the NO-DEALER DKG (the echo-broadcast agreement round runs inside).
+  const group = () => {
+    const dkg = frostDkgSimulate(2, 3);
+    return { groupKey: dkg.groupPublicKey, participants: dkg.participantShares, t: 2 };
+  };
+
+  it('a t-of-n quorum cosign verifies under the group key end-to-end (DKG-established, no trusted dealer)', () => {
+    const { groupKey, participants, t } = group();
+    const msg = utf8('guardian cosign — compliant action');
+    const sig = frostCosign(groupKey, participants.slice(0, t), msg, { threshold: t });
+    expect(verify(groupKey, msg, sig)).toBe(true);
+  });
+
+  it('an INSUFFICIENT quorum (< t) cannot produce a valid cosign', () => {
+    const { groupKey, participants, t } = group();
+    const msg = utf8('one share is not enough');
+    // The up-front threshold guard rejects a sub-threshold quorum…
+    expect(() => frostCosign(groupKey, participants.slice(0, 1), msg, { threshold: t })).toThrow(/below the threshold/);
+    // …and even without it, one share Lagrange-interpolates to the wrong secret → aggregate is invalid.
+    expect(() => frostCosign(groupKey, participants.slice(0, 1), msg)).toThrow();
+  });
+
+  it('a FORGED signing share cannot produce a valid cosign', () => {
+    const { groupKey, participants, t } = group();
+    const msg = utf8('forged share');
+    const tampered = Uint8Array.from(participants[0]!.share);
+    tampered[0] = tampered[0]! ^ 0x01;
+    const forged = [{ ...participants[0]!, share: tampered }, participants[1]!];
+    // The tampered secret no longer matches its verifying share → frostSign rejects it (fail closed).
+    expect(() => frostCosign(groupKey, forged, msg, { threshold: t })).toThrow();
+  });
+
+  it('the aggregate IS the guardian share the EXISTING threshold verifier accepts (signer set guardian == group key)', () => {
+    const { groupKey, participants, t: tg } = group();
+    const agent = generateKeyPair();
+    const principal = generateKeyPair();
+    const groupKeyB64u = b64u(groupKey);
+    const signerSet: Signer[] = [
+      { role: 'agent', publicKey: encodeKey(agent.publicKey) },
+      { role: 'guardian', publicKey: groupKeyB64u }, // <-- the FROST GROUP key, not a single guardian key
+      { role: 'principal', publicKey: encodeKey(principal.publicKey) },
+    ];
+    const message = utf8('the canonical threshold message');
+    const t = 2; // PCA action threshold: agent + guardian must both sign.
+
+    // The guardian cosign is a FROST aggregate over the role-bound guardian message.
+    const guardianMsg = shareMessage('guardian', message, signerSet, t);
+    const aggregate = frostCosign(groupKey, participants.slice(0, tg), guardianMsg, { threshold: tg });
+    const guardianShare: ThresholdShare = { role: 'guardian', publicKey: groupKeyB64u, sig: b64u(aggregate) };
+    const agentShare = signShare('agent', agent.secretKey, message, { signerSet, t }); // v2.1: agent share is signerSetHash‖t-bound too
+
+    const verdict = verifyThreshold({ shares: [agentShare, guardianShare] }, message, signerSet, t);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.roles).toContain('guardian');
+
+    // A guardian share aggregated from ONE FROST share (insufficient) cannot be formed at all — there is no
+    // valid Ed25519 signature under the group key, so the guardian role can never be satisfied.
+    expect(() => frostCosign(groupKey, participants.slice(0, 1), guardianMsg, { threshold: tg })).toThrow();
   });
 });
 
@@ -307,5 +383,128 @@ describe('frost helpers', () => {
 
   it('frostTrustedDealerKeygen rejects t>n', () => {
     expect(() => frostTrustedDealerKeygen(3, 2)).toThrow();
+  });
+});
+
+// =================================================================================================
+// Hardening (P5-3): nonce one-shot, duplicate ids, subgroup checks, aggregate verification
+// =================================================================================================
+import { ed25519 } from '@noble/curves/ed25519';
+import { decodeSafePoint } from './frost';
+
+describe('FROST hardening', () => {
+  const setup = (ids = [1, 2]) => {
+    const kg = frostTrustedDealerKeygen(2, 3);
+    const msg = utf8('hardening');
+    const shares = new Map(kg.participantShares.map((s) => [s.identifier, s]));
+    const commits = ids.map((id) => frostCommit(shares.get(id)!));
+    const commitments = commits.map((c) => c.commitment);
+    return { kg, msg, shares, commits, commitments };
+  };
+
+  it('valid session with all optional checks (threshold, verification shares) still signs + verifies', () => {
+    const { kg, msg, shares, commits, commitments } = setup();
+    const vss = kg.participantShares.map((s) => ({ identifier: s.identifier, publicKey: s.publicKey }));
+    const sigShares = [1, 2].map((id, i) =>
+      frostSign(id, shares.get(id)!.share, kg.groupPublicKey, { hiding: commits[i]!.hidingNonce, binding: commits[i]!.bindingNonce }, msg, commitments, {
+        threshold: 2,
+        verificationShare: shares.get(id)!.publicKey,
+        verificationShares: vss,
+      }),
+    );
+    const sig = frostAggregate(msg, commitments, sigShares, kg.groupPublicKey, { threshold: 2, verificationShares: vss });
+    expect(verify(kg.groupPublicKey, msg, sig)).toBe(true);
+  });
+
+  it('nonces are one-shot: a second frostSign with the same nonces throws, and they are zeroized', () => {
+    const { kg, msg, shares, commits, commitments } = setup();
+    const nonces = { hiding: commits[0]!.hidingNonce, binding: commits[0]!.bindingNonce };
+    frostSign(1, shares.get(1)!.share, kg.groupPublicKey, nonces, msg, commitments);
+    expect(nonces.hiding.every((b) => b === 0)).toBe(true);
+    expect(nonces.binding.every((b) => b === 0)).toBe(true);
+    expect(() => frostSign(1, shares.get(1)!.share, kg.groupPublicKey, nonces, utf8('other'), commitments)).toThrow(/already used|zeroized/);
+    // A fresh array copy of the (zero) bytes is also rejected.
+    expect(() => frostSign(1, shares.get(1)!.share, kg.groupPublicKey, { hiding: new Uint8Array(32), binding: new Uint8Array(32) }, msg, commitments)).toThrow();
+  });
+
+  it('rejects duplicate participant identifiers in the commitment set', () => {
+    const { kg, msg, shares, commits, commitments } = setup();
+    const dup = [commitments[0]!, { ...commitments[0]! }];
+    expect(() =>
+      frostSign(1, shares.get(1)!.share, kg.groupPublicKey, { hiding: commits[0]!.hidingNonce, binding: commits[0]!.bindingNonce }, msg, dup),
+    ).toThrow(/duplicate/);
+  });
+
+  it('rejects identifier 0 / non-integer ids (zero Lagrange coefficient)', () => {
+    const { kg, msg, shares, commits, commitments } = setup();
+    const bad = [{ ...commitments[0]!, identifier: 0 }, commitments[1]!];
+    expect(() =>
+      frostSign(1, shares.get(1)!.share, kg.groupPublicKey, { hiding: commits[0]!.hidingNonce, binding: commits[0]!.bindingNonce }, msg, bad),
+    ).toThrow(/identifier/);
+  });
+
+  it('requires |commitments| >= t when a threshold is given', () => {
+    const { kg, msg, shares, commits } = setup([1]);
+    expect(() =>
+      frostSign(1, shares.get(1)!.share, kg.groupPublicKey, { hiding: commits[0]!.hidingNonce, binding: commits[0]!.bindingNonce }, msg, [commits[0]!.commitment], { threshold: 2 }),
+    ).toThrow(/at least t=2/);
+  });
+
+  it("rejects a signer whose own commitment does not match its nonces", () => {
+    const { kg, msg, shares, commits, commitments } = setup();
+    const other = frostCommit(shares.get(1)!);
+    expect(() =>
+      frostSign(1, shares.get(1)!.share, kg.groupPublicKey, { hiding: other.hidingNonce, binding: other.bindingNonce }, msg, commitments),
+    ).toThrow(/own commitment/);
+    void commits;
+  });
+
+  it('rejects a share that does not match its verification share, or a group key that does not match the shares', () => {
+    const { kg, msg, shares, commits, commitments } = setup();
+    expect(() =>
+      frostSign(1, shares.get(1)!.share, kg.groupPublicKey, { hiding: commits[0]!.hidingNonce, binding: commits[0]!.bindingNonce }, msg, commitments, {
+        verificationShare: shares.get(2)!.publicKey,
+      }),
+    ).toThrow(/verification share/);
+    const wrongGroup = frostTrustedDealerKeygen(2, 3).groupPublicKey;
+    const vss = kg.participantShares.map((s) => ({ identifier: s.identifier, publicKey: s.publicKey }));
+    expect(() =>
+      frostSign(2, shares.get(2)!.share, wrongGroup, { hiding: commits[1]!.hidingNonce, binding: commits[1]!.bindingNonce }, msg, commitments, {
+        verificationShares: vss,
+      }),
+    ).toThrow(/group public key/);
+  });
+
+  it('rejects small-order and non-torsion-free commitment points', () => {
+    const { kg, msg, shares, commits, commitments } = setup();
+    const identity = new Uint8Array(32);
+    identity[0] = 1;
+    const order2 = Uint8Array.from(Buffer.from('ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f', 'hex'));
+    const order8 = Uint8Array.from(Buffer.from('c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a', 'hex'));
+    const mixed = ed25519.ExtendedPoint.BASE.add(ed25519.ExtendedPoint.fromHex(order8)).toRawBytes();
+    for (const badPt of [identity, order2, order8, mixed]) {
+      expect(() => decodeSafePoint(badPt)).toThrow();
+      const bad = [{ ...commitments[0]!, hiding: badPt }, commitments[1]!];
+      expect(() =>
+        frostSign(1, shares.get(1)!.share, kg.groupPublicKey, { hiding: commits[0]!.hidingNonce, binding: commits[0]!.bindingNonce }, msg, bad),
+      ).toThrow();
+    }
+    expect(() => decodeSafePoint(kg.groupPublicKey)).not.toThrow();
+    // Non-canonical y (y = p) is rejected.
+    const nonCanon = Uint8Array.from(Buffer.from('edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f', 'hex'));
+    expect(() => decodeSafePoint(nonCanon)).toThrow();
+    expect(() => decodeSafePoint(new Uint8Array(31))).toThrow();
+  });
+
+  it('frostAggregate names a cheating share when verification shares are supplied, and never returns an invalid signature', () => {
+    const { kg, msg, shares, commits, commitments } = setup();
+    const vss = kg.participantShares.map((s) => ({ identifier: s.identifier, publicKey: s.publicKey }));
+    const sigShares = [1, 2].map((id, i) =>
+      frostSign(id, shares.get(id)!.share, kg.groupPublicKey, { hiding: commits[i]!.hidingNonce, binding: commits[i]!.bindingNonce }, msg, commitments),
+    );
+    const bad = [sigShares[0]!, { identifier: 2, sigShare: scalarToBytes(12345n) }];
+    expect(() => frostAggregate(msg, commitments, bad, kg.groupPublicKey, { verificationShares: vss })).toThrow(/participant 2/);
+    expect(() => frostAggregate(msg, commitments, bad, kg.groupPublicKey, {} as never)).toThrow(/verificationShares are required/); // R6-ALIAS-07
+    expect(() => frostAggregate(msg, commitments, [sigShares[0]!], kg.groupPublicKey, { verificationShares: vss })).toThrow();
   });
 });

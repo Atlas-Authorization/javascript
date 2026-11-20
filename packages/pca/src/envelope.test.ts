@@ -34,6 +34,63 @@ describe('envelope / grant', () => {
     expect(e.agent_binding).toEqual({ model_allowlist: ['m1'] }); // undefined stripped
     expect(e.risk_policy).toEqual(DEFAULT_RISK_POLICY);
   });
+  it('new agent_binding fields (require_hardware, { svn } min_measurement) survive mint -> read', () => {
+    const P = generateKeyPair();
+    const A = generateKeyPair();
+    const out = mintGrant({
+      principalSecret: P.secretKey,
+      principalPublic: encodeKey(P.publicKey),
+      holder: encodeKey(A.publicKey),
+      envelope: {
+        predicates: [],
+        caveats: [],
+        agent_binding: { require_hardware: true, min_measurement: { svn: 7 } },
+        risk_policy: DEFAULT_RISK_POLICY,
+      },
+      goal: 'g',
+    });
+    const e = readEnvelope(out.grant)!;
+    expect(e.agent_binding).toEqual({ require_hardware: true, min_measurement: { svn: 7 } });
+    expect(verifyChain([out.grant], encodeKey(P.publicKey))).toEqual({ ok: true });
+  });
+  it('require_measured_weights (hardware-rooted weights pin) survives mint -> read', () => {
+    const P = generateKeyPair();
+    const A = generateKeyPair();
+    const out = mintGrant({
+      principalSecret: P.secretKey,
+      principalPublic: encodeKey(P.publicKey),
+      holder: encodeKey(A.publicKey),
+      envelope: {
+        predicates: [],
+        caveats: [],
+        agent_binding: { weights_allowlist: ['w-sha-1'], require_measured_weights: true },
+        risk_policy: DEFAULT_RISK_POLICY,
+      },
+      goal: 'g',
+    });
+    const e = readEnvelope(out.grant)!;
+    expect(e.agent_binding).toEqual({ weights_allowlist: ['w-sha-1'], require_measured_weights: true });
+    expect(verifyChain([out.grant], encodeKey(P.publicKey))).toEqual({ ok: true });
+  });
+  it('provenance-beyond-weights agent_binding fields (system_prompt_allowlist, tool_manifest_allowlist) survive mint -> read', () => {
+    const P = generateKeyPair();
+    const A = generateKeyPair();
+    const out = mintGrant({
+      principalSecret: P.secretKey,
+      principalPublic: encodeKey(P.publicKey),
+      holder: encodeKey(A.publicKey),
+      envelope: {
+        predicates: [],
+        caveats: [],
+        agent_binding: { system_prompt_allowlist: ['sp-1', 'sp-2'], tool_manifest_allowlist: ['tm-1'] },
+        risk_policy: DEFAULT_RISK_POLICY,
+      },
+      goal: 'g',
+    });
+    const e = readEnvelope(out.grant)!;
+    expect(e.agent_binding).toEqual({ system_prompt_allowlist: ['sp-1', 'sp-2'], tool_manifest_allowlist: ['tm-1'] });
+    expect(verifyChain([out.grant], encodeKey(P.publicKey))).toEqual({ ok: true });
+  });
   it('goal commit is salted, openable, and deterministic for a given salt', () => {
     const { goalCommit, goalSalt } = setup();
     expect(goalSalt).toBe('fixed-salt');

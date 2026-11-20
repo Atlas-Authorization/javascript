@@ -47,7 +47,9 @@ describe('policy VM decide', () => {
   it('compliant low-risk action: release, t=1, auto-admit, budget unchanged at r=0', () => {
     const d = decide(input());
     expect(d).toMatchObject({ releaseGuardianShare: true, admit: true, needStepUp: false, r: 0 });
-    expect(d.requiredThreshold).toEqual({ t: 1, proof: 'claim', optimisticAllowed: true });
+    // act() declares no reversibility_class (undefined) => the optimistic fast-path fails CLOSED
+    // (optimisticAllowed: false). The auto-admit (t=1) path is unaffected.
+    expect(d.requiredThreshold).toEqual({ t: 1, proof: 'claim', optimisticAllowed: false });
     expect(d.reasons).toEqual([]);
   });
   it('is deterministic', () => {
@@ -78,12 +80,14 @@ describe('policy VM decide', () => {
   it('caveats use derived blast radius, plan reversibility class and supplied context', () => {
     const g = grant([{ type: 'max_blast_radius', max: 0.5 }, { type: 'reversibility_max', class: 'rate_limited' }, { type: 'delegation_depth', max: 1 }]);
     const plan: PlanNode[] = [{ id: 'n1', verb: 'revoke_session', resource: '/acct/1/s', reversibility_class: 'reversible' }];
-    const ok = decide(input({ grant: g, plan, risk: { ...lowRisk, blastRadius: 0.4 }, caveatContext: { delegationDepth: 1 } }));
+    const ok = decide(input({ grant: g, plan, nodeId: 'n1', risk: { ...lowRisk, blastRadius: 0.4 }, caveatContext: { delegationDepth: 1 } }));
     expect(ok.releaseGuardianShare).toBe(true);
-    expect(decide(input({ grant: g, plan, risk: { ...lowRisk, blastRadius: 0.6 }, caveatContext: { delegationDepth: 1 } })).releaseGuardianShare).toBe(false);
-    expect(decide(input({ grant: g, plan, risk: { ...lowRisk, blastRadius: 0.4 } })).releaseGuardianShare).toBe(false); // depth unknown
+    expect(decide(input({ grant: g, plan, nodeId: 'n1', risk: { ...lowRisk, blastRadius: 0.6 }, caveatContext: { delegationDepth: 1 } })).releaseGuardianShare).toBe(false);
+    expect(decide(input({ grant: g, plan, nodeId: 'n1', risk: { ...lowRisk, blastRadius: 0.4 } })).releaseGuardianShare).toBe(false); // depth unknown
     const irr: PlanNode[] = [{ ...plan[0]!, reversibility_class: 'irreversible' }];
-    expect(decide(input({ grant: g, plan: irr, caveatContext: { delegationDepth: 0 } })).releaseGuardianShare).toBe(false);
+    expect(decide(input({ grant: g, plan: irr, nodeId: 'n1', caveatContext: { delegationDepth: 0 } })).releaseGuardianShare).toBe(false);
+    // the class comes only from the action or the NAMED node: without nodeId it is unknown and reversibility_max denies
+    expect(decide(input({ grant: g, plan, risk: { ...lowRisk, blastRadius: 0.4 }, caveatContext: { delegationDepth: 1 } })).releaseGuardianShare).toBe(false);
   });
   it('high blast radius -> t=3 needs human; guardian may still release', () => {
     const d = decide(input({ risk: { ...lowRisk, blastRadius: 1, semanticDistance: 1, reversibility: 0 } }));
@@ -139,6 +143,40 @@ describe('policy VM decide', () => {
     const plan: PlanNode[] = [{ id: 'n', verb: 'revoke_session', resource: '/acct/1/s', reversibility_class: 'irreversible' }];
     const d = decide(input({ plan, risk: { ...lowRisk, semanticDistance: 0 } }));
     expect(d.requiredThreshold.optimisticAllowed).toBe(false);
+  });
+
+  describe('optimistic fast-path reversibility fails CLOSED (undefined/unknown => irreversible)', () => {
+    // r = 0 (lowRisk) => t=1, so optimisticAllowed is decided purely by the reversibility class.
+    const optAllowed = (reversibility_class?: string) =>
+      decide(
+        input({
+          action: act({
+            action: {
+              verb: 'revoke_session',
+              resource: '/acct/1/s',
+              params: { device: 'laptop' },
+              ...(reversibility_class !== undefined ? { reversibility_class } : {}),
+            },
+          }),
+        }),
+      ).requiredThreshold.optimisticAllowed;
+
+    it("explicit 'reversible' => optimistic allowed (unchanged)", () => {
+      expect(optAllowed('reversible')).toBe(true);
+    });
+    it('undefined class => optimistic NOT allowed (fail closed)', () => {
+      expect(optAllowed(undefined)).toBe(false);
+    });
+    it('unrecognized string => optimistic NOT allowed (fail closed)', () => {
+      expect(optAllowed('totally-made-up')).toBe(false);
+    });
+    it("'irreversible' => optimistic NOT allowed (unchanged)", () => {
+      expect(optAllowed('irreversible')).toBe(false);
+    });
+    it("recognized 'rate_limited' / 'costly' stay eligible", () => {
+      expect(optAllowed('rate_limited')).toBe(true);
+      expect(optAllowed('costly')).toBe(true);
+    });
   });
   it('total: junk input never throws and denies with a reason', () => {
     for (const bad of [{}, { grant: null }, { ...input(), grant: { ...grant(), caveats: [] } }, { ...input(), now: NaN }, { ...input(), action: null }]) {

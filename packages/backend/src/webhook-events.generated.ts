@@ -1558,6 +1558,34 @@ export type WebhookDataPasskey = {
   [key: string]: unknown;
 };
 
+/** A held agent step-up that needs a human: the step-up, a one-line summary of the action, its goal lineage and the approval link. Following the link never approves by itself. */
+export type WebhookDataPcaApprovalRequested = {
+  type: "pca.step_up.created";
+  stepup: Record<string, unknown>;
+  summary: string;
+  lineage?: string[];
+  inbox_url?: string;
+  [key: string]: unknown;
+};
+
+/** The outcome of a held agent step-up. An approved one carries the signed receipt when there is one; expired means deny. */
+export type WebhookDataPcaStepup = {
+  object: "pca_stepup";
+  stepup_id: string;
+  grant_ref: string;
+  action_digest: string;
+  status: "approved" | "denied" | "expired";
+  receipt?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+/** An undo-window notice for a reversible agent action (never carries the undo token). pca_undo_window.opened also carries the undo link. */
+export type WebhookDataPcaUndoWindow = {
+  notice: Record<string, unknown>;
+  undo_url?: string;
+  [key: string]: unknown;
+};
+
 /** A permission. */
 export type WebhookDataPermission = {
   object: "permission";
@@ -2672,6 +2700,16 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"organization_settings.updated", WebhookDataOrganizationSettings>
   | AtlasWebhookEnvelope<"passkey.registered", WebhookDataPasskey>
   | AtlasWebhookEnvelope<"passkey.removed", WebhookDataPasskey>
+  | AtlasWebhookEnvelope<"pca_approval.requested", WebhookDataPcaApprovalRequested>
+  | AtlasWebhookEnvelope<"pca_stepup.approved", WebhookDataPcaStepup>
+  | AtlasWebhookEnvelope<"pca_stepup.denied", WebhookDataPcaStepup>
+  | AtlasWebhookEnvelope<"pca_stepup.expired", WebhookDataPcaStepup>
+  | AtlasWebhookEnvelope<"pca_undo_window.compensated", WebhookDataPcaUndoWindow>
+  | AtlasWebhookEnvelope<"pca_undo_window.compensation_failed", WebhookDataPcaUndoWindow>
+  | AtlasWebhookEnvelope<"pca_undo_window.finalized", WebhookDataPcaUndoWindow>
+  | AtlasWebhookEnvelope<"pca_undo_window.opened", WebhookDataPcaUndoWindow>
+  | AtlasWebhookEnvelope<"pca_undo_window.revoked", WebhookDataPcaUndoWindow>
+  | AtlasWebhookEnvelope<"pca_undo_window.vetoed", WebhookDataPcaUndoWindow>
   | AtlasWebhookEnvelope<"permission.created", WebhookDataPermission>
   | AtlasWebhookEnvelope<"permission.deleted", WebhookDataPermission>
   | AtlasWebhookEnvelope<"permission.updated", WebhookDataPermission>
@@ -2988,6 +3026,16 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "organization_settings.updated",
   "passkey.registered",
   "passkey.removed",
+  "pca_approval.requested",
+  "pca_stepup.approved",
+  "pca_stepup.denied",
+  "pca_stepup.expired",
+  "pca_undo_window.compensated",
+  "pca_undo_window.compensation_failed",
+  "pca_undo_window.finalized",
+  "pca_undo_window.opened",
+  "pca_undo_window.revoked",
+  "pca_undo_window.vetoed",
   "permission.created",
   "permission.deleted",
   "permission.updated",

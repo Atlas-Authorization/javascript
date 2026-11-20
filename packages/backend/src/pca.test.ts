@@ -20,7 +20,7 @@ describe('Proof-Carrying Authority exports', () => {
   it('fails closed on garbage and on a request without a PCActn', async () => {
     const v = await verifyPCActn('not a pcactn', { grant: {} as never });
     expect(v.allow).toBe(false);
-    const guard = requirePCA({ audience: 'ins_1', resolveGrant: async () => null });
+    const guard = requirePCA({ audience: 'ins_1', operation: () => ({ verb: 'test.op', resource: 'test:1' }), resolveGrant: async () => null });
     const res = await guard({ headers: {} });
     expect(res.ok).toBe(false);
   });

@@ -172,28 +172,38 @@ export function ageSinceTouch(b: TrustBudget, now: number, horizonMs = 3_600_000
 }
 
 export interface Admission {
+  /** t=1 auto path: no human, no co-signer needed. */
   admit: boolean;
   needStepUp: boolean;
   t: 1 | 2 | 3;
+  /**
+   * The action proceeds WITHOUT a human co-signature (t=1 auto-admit, or t=2 where the guardian
+   * auto-cosigns) and so MUST be debited κ·r. Only t=3 (a human step-up) is unmetered.
+   */
+  metered: boolean;
 }
 
 /**
- * Auto-admit iff r <= θ1 AND B >= c(A). Otherwise step-up: t from the risk map, except a
- * depleted budget on a low-risk action forces t=3 (the recharge is human-sourced). The budget
- * passed in must already be leaked up to the decision time.
+ * The machine-only band is t=1 AND t=2 (at t=2 the guardian auto-cosigns; no human is involved), so
+ * BOTH are metered: an action at t<3 proceeds only if B >= c(A), and is then debited κ·r. When the
+ * budget cannot cover it the action escalates to t=3 (human step-up; the recharge is human-sourced).
+ * t=3 is never debited. The budget passed in must already be leaked up to the decision time (and,
+ * on the hosted path, read under a row lock so the check-and-debit is atomic).
  */
 export function admit(r: number, b: TrustBudget, p: RiskPolicy): Admission {
   const { t } = requiredThreshold(r, p);
   const c = cost(r, p.kappa);
-  if (t === 1 && b.B >= c) return { admit: true, needStepUp: false, t: 1 };
-  return { admit: false, needStepUp: true, t: t === 1 ? 3 : t };
+  if (t < 3 && !(b.B >= c)) return { admit: false, needStepUp: true, t: 3, metered: false };
+  if (t === 1) return { admit: true, needStepUp: false, t: 1, metered: true };
+  if (t === 2) return { admit: false, needStepUp: true, t: 2, metered: true };
+  return { admit: false, needStepUp: true, t: 3, metered: false };
 }
 
 /**
- * Safety bound: between two consecutive human recharges, the total risk of auto-admitted actions
- * is at most bMax/κ.
+ * Safety bound: between two consecutive human recharges, the total risk of machine-only actions
+ * (auto-admitted t=1 AND guardian-auto-cosigned t=2) is at most bMax/κ.
  *
- * Proof. Let B₀ ≤ bMax be the budget right after a recharge. Auto-admission of action i requires
+ * Proof. Let B₀ ≤ bMax be the budget right after a recharge. Machine-only admission of action i requires
  * Bᵢ ≥ cᵢ = κ·rᵢ and sets Bᵢ₊₁ = Bᵢ − cᵢ ≥ 0; leak only lowers B further and nothing but a human
  * recharge raises it. Telescoping: Σcᵢ ≤ B₀ − B_last ≤ B₀ ≤ bMax, so κ·Σrᵢ ≤ bMax, i.e.
  * Σrᵢ ≤ bMax/κ — whatever the agent does, even if fully compromised.
@@ -227,6 +237,24 @@ export function debitConsolidated(parent: TrustBudget, sub: TrustBudget, c: numb
   if (sub.B < x) return { ok: false, reason: 'sub-agent budget insufficient' };
   if (parent.B < x) return { ok: false, reason: 'parent budget insufficient' };
   return { ok: true, parent: debit(parent, x), sub: debit(sub, x) };
+}
+
+export type ConsolidatedPathResult = { ok: true; nodes: TrustBudget[] } | { ok: false; reason: string };
+
+/**
+ * Consolidated debit along a root->leaf budget-subtree PATH, generalizing {@link debitConsolidated} to
+ * N levels. Every node on the path — the acting leaf AND each of its ancestors — must be able to cover
+ * `c`; if ANY cannot, nothing is debited (fail-closed) and the first offender is named. Only when all
+ * cover is each node debited by `c`. This is what makes a sub-agent's spend consume its own carried
+ * allocation and every ancestor allocation at once, so a swarm under any node can never collectively
+ * exceed that node's allocation (the per-child containment property). `path` ordered root..leaf.
+ */
+export function debitConsolidatedPath(path: TrustBudget[], c: number): ConsolidatedPathResult {
+  const x = nz(c);
+  for (let i = 0; i < path.length; i++) {
+    if (!(path[i]!.B >= x)) return { ok: false, reason: `budget node at depth ${i} insufficient (need ${x}, have ${path[i]!.B})` };
+  }
+  return { ok: true, nodes: path.map((b) => debit(b, x)) };
 }
 
 // ---- plan geodesic ---------------------------------------------------------------------

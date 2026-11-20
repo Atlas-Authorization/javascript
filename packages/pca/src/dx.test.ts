@@ -37,8 +37,8 @@ const plan: PlanNode[] = [
 describe('buildPCActn', () => {
   it('output verifies; inclusion links to the node', async () => {
     const G = mk();
-    const p = buildPCActn({ grant: G, chain: [G], plan, nodeId: 'n1', params: { d: 'a' }, counter: 1, signerSecret: A.secretKey });
-    const v = await verifyPCActnCore(p, { grant: G });
+    const p = buildPCActn({ aud: 'test-aud', grant: G, chain: [G], plan, nodeId: 'n1', params: { d: 'a' }, counter: 1, signerSecret: A.secretKey });
+    const v = await verifyPCActnCore(p, { insecureSkipPlanRootCheck: true, grant: G, audience: 'test-aud' });
     expect(v.allow).toBe(true);
     expect(v.checks.plan_inclusion).toBe('pass');
     expect(v.checks.leaf_signature).toBe('pass');
@@ -47,21 +47,21 @@ describe('buildPCActn', () => {
   });
   it('node without params_digest round-trips (params omitted)', async () => {
     const G = mk();
-    const p = buildPCActn({ grant: G, chain: [G], plan, nodeId: 'n2', counter: 1, signerSecret: A.secretKey });
+    const p = buildPCActn({ aud: 'test-aud', grant: G, chain: [G], plan, nodeId: 'n2', counter: 1, signerSecret: A.secretKey });
     expect(p.action.params_digest).toBe(EMPTY_PARAMS_DIGEST);
     expect(planNodeLeaf(plan[1]!).params_digest).toBe(paramsDigest());
-    expect((await verifyPCActnCore(p, { grant: G })).checks.plan_inclusion).toBe('pass');
+    expect((await verifyPCActnCore(p, { insecureSkipPlanRootCheck: true, grant: G })).checks.plan_inclusion).toBe('pass');
   });
   it('param mismatch throws; unknown node throws; swapped nodeId breaks inclusion', async () => {
     const G = mk();
     const base = { grant: G, chain: [G], plan, counter: 1, signerSecret: A.secretKey };
-    expect(() => buildPCActn({ ...base, nodeId: 'n1', params: { d: 'b' } })).toThrow(/params/);
-    expect(() => buildPCActn({ ...base, nodeId: 'zz' })).toThrow(/unknown plan node/);
-    const p = buildPCActn({ ...base, nodeId: 'n1', params: { d: 'a' } });
+    expect(() => buildPCActn({ aud: 'test-aud', ...base, nodeId: 'n1', params: { d: 'b' } })).toThrow(/params/);
+    expect(() => buildPCActn({ aud: 'test-aud', ...base, nodeId: 'zz' })).toThrow(/unknown plan node/);
+    const p = buildPCActn({ aud: 'test-aud', ...base, nodeId: 'n1', params: { d: 'a' } });
     const q = { ...p, plan: { ...p.plan, node_id: 'n2' } };
-    expect((await verifyPCActnCore(q, { grant: G })).checks.plan_inclusion).toBe('fail');
+    expect((await verifyPCActnCore(q, { insecureSkipPlanRootCheck: true, grant: G })).checks.plan_inclusion).toBe('fail');
     const r = { ...p, action: { ...p.action, params_digest: paramsDigest({ d: 'x' }) } };
-    expect((await verifyPCActnCore(r, { grant: G })).checks.plan_inclusion).toBe('fail');
+    expect((await verifyPCActnCore(r, { insecureSkipPlanRootCheck: true, grant: G })).checks.plan_inclusion).toBe('fail');
   });
 });
 
@@ -117,8 +117,8 @@ describe('deriveDecideInput', () => {
   it('matches a hand-built input and decide accepts it', () => {
     const G = mk([{ type: 'expires', at: 9e12 }, { type: 'delegation_depth', max: 1 }]);
     const c1 = delegate(G, encodeKey(S.publicKey), [], A.secretKey);
-    const p = buildPCActn({ grant: G, chain: [G, c1], plan, nodeId: 'n1', params: { d: 'a' }, counter: 1, signerSecret: S.secretKey });
-    const ctx = { plan, params: { d: 'a' }, risk: lowRisk, budget: fresh, now: NOW };
+    const p = buildPCActn({ aud: 'test-aud', grant: G, chain: [G, c1], plan, nodeId: 'n1', params: { d: 'a' }, counter: 1, signerSecret: S.secretKey });
+    const ctx = { plan, params: { d: 'a' }, risk: lowRisk, budget: fresh, now: NOW, grant: G };
     const derived = deriveDecideInput(p, ctx);
     const hand = {
       grant: G,

@@ -9,10 +9,14 @@ import {
   frostCommit,
   frostSign,
   frostVerifySigShare,
+  scalarToBytes,
 } from './frost';
 import {
+  type DkgEcho,
   type DkgReceivedShare,
   type DkgRound1Package,
+  dkgCheckEchoes,
+  dkgEcho,
   dkgFileComplaint,
   dkgFinalize,
   dkgQualifiedSet,
@@ -21,6 +25,7 @@ import {
   dkgRound1,
   dkgRound2,
   dkgSignShare,
+  dkgTranscriptDigest,
   dkgVerifyComplaint,
   dkgVerifyRound1,
   dkgVerifyShare,
@@ -79,7 +84,8 @@ function signWithQuorum(
       }),
     ).toBe(true);
   });
-  return frostAggregate(message, commitments, sigShares, groupPublicKey);
+  const verificationShares = signerIds.map((id) => ({ identifier: id, publicKey: shares.get(id)!.publicKey }));
+  return frostAggregate(message, commitments, sigShares, groupPublicKey, { verificationShares });
 }
 
 describe('FROST DKG — round-trip into the vector-exact signer', () => {
@@ -120,8 +126,8 @@ describe('FROST DKG — round-trip into the vector-exact signer', () => {
     const dkg = frostDkgSimulate(2, 3);
     const shares = new Map(dkg.participantShares.map((s) => [s.identifier, s]));
     const msg = utf8('insufficient');
-    const sig = signWithQuorum(shares, dkg.groupPublicKey, [1], msg);
-    expect(verify(dkg.groupPublicKey, msg, sig)).toBe(false);
+    // frostAggregate now refuses to return an invalid aggregate.
+    expect(() => signWithQuorum(shares, dkg.groupPublicKey, [1], msg)).toThrow(/does not verify/);
   });
 });
 
@@ -577,5 +583,176 @@ describe('FROST DKG — input validation', () => {
     const round1 = results.map((r) => r.package);
     // Participant 1 finalizes with an EMPTY inbox (missing shares from 2 and 3).
     expect(() => dkgFinalize(1, results[0]!.state, [], round1)).toThrow();
+  });
+});
+
+// =================================================================================================
+// Hardening (P5-3): full commitment-vector binding, subgroup checks, final consistency
+// =================================================================================================
+describe('FROST DKG hardening', () => {
+  it('the PoP binds the FULL commitment vector: swapping a higher-degree commitment invalidates it', () => {
+    const session = sid();
+    const a = dkgRound1(1, 3, 3, session).package;
+    const other = dkgRound1(2, 3, 3, session).package;
+    expect(dkgVerifyRound1(1, a, session)).toBe(true);
+    const tampered = { ...a, coefficientCommitments: [a.coefficientCommitments[0]!, other.coefficientCommitments[1]!, a.coefficientCommitments[2]!] };
+    expect(dkgVerifyRound1(1, tampered, session)).toBe(false);
+    const truncated = { ...a, coefficientCommitments: a.coefficientCommitments.slice(0, 2) };
+    expect(dkgVerifyRound1(1, truncated, session)).toBe(false);
+  });
+
+  it('a share signature made against one commitment vector fails against a different vector', () => {
+    const session = sid();
+    const ids = [1, 2, 3];
+    const results = ids.map((id) => dkgRound1(id, 2, 3, session));
+    const round1 = results.map((r) => r.package);
+    const out = dkgRound2(results[0]!.state, round1)[0]!;
+    expect(dkgVerifyShare(out, round1[0]!, out.to, session)).toBe(true);
+    const forged = { ...round1[0]!, coefficientCommitments: [round1[0]!.coefficientCommitments[0]!, round1[1]!.coefficientCommitments[1]!] };
+    expect(dkgVerifyShare(out, forged, out.to, session)).toBe(false);
+  });
+
+  it('rejects a round-1 package with a small-order commitment or PoP nonce', () => {
+    const session = sid();
+    const pkg = dkgRound1(1, 2, 2, session).package;
+    const identity = new Uint8Array(32);
+    identity[0] = 1;
+    expect(dkgVerifyRound1(1, { ...pkg, coefficientCommitments: [b64u(identity), pkg.coefficientCommitments[1]!] }, session)).toBe(false);
+    expect(dkgVerifyRound1(1, { ...pkg, coefficientCommitments: [pkg.coefficientCommitments[0]!, b64u(identity)] }, session)).toBe(false);
+    expect(dkgVerifyRound1(1, { ...pkg, proofOfKnowledge: { ...pkg.proofOfKnowledge, R: b64u(identity) } }, session)).toBe(false);
+  });
+
+  it('dkgFinalize fails the final consistency check when a received share is wrong', () => {
+    const session = sid();
+    const ids = [1, 2, 3];
+    const results = ids.map((id) => dkgRound1(id, 2, 3, session));
+    const round1 = results.map((r) => r.package);
+    const inbox = new Map<number, DkgReceivedShare[]>(ids.map((id) => [id, []]));
+    for (const r of results) {
+      for (const out of dkgRound2(r.state, round1)) {
+        inbox.get(out.to)!.push({ from: out.from, sessionId: out.sessionId, share: out.share, sig: out.sig });
+      }
+    }
+    // Corrupt one share received by participant 1.
+    const bad = inbox.get(1)!.map((s, i) => (i === 0 ? { ...s, share: scalarToBytes(7n) } : s));
+    expect(() => dkgFinalize(1, results[0]!.state, bad, round1)).toThrow(/inconsistent/);
+    // The honest path still finalizes.
+    expect(() => dkgFinalize(1, results[0]!.state, inbox.get(1)!, round1)).not.toThrow();
+  });
+});
+
+// =================================================================================================
+// Echo-broadcast / agreement round (Gennaro-style): every qualified party must confirm it saw the
+// IDENTICAL transcript (round-1 packages / complaints / qualified set) before finalizing, so an
+// equivocating dealer / network split cannot drive honest parties onto different group keys.
+// =================================================================================================
+describe('FROST DKG — echo-broadcast agreement round', () => {
+  /** Run an honest (t,n) ceremony by hand and return everything finalize needs, including echoes. */
+  function honestCeremony(t: number, n: number, session: Uint8Array) {
+    const ids = Array.from({ length: n }, (_, i) => i + 1);
+    const results = ids.map((id) => dkgRound1(id, t, n, session));
+    const round1 = results.map((r) => r.package);
+    const inbox = new Map<number, DkgReceivedShare[]>(ids.map((id) => [id, []]));
+    for (const r of results) {
+      for (const out of dkgRound2(r.state, round1)) {
+        inbox.get(out.to)!.push({ from: out.from, sessionId: out.sessionId, share: out.share, sig: out.sig });
+      }
+    }
+    const complaints: never[] = [];
+    const qualified = dkgQualifiedSet(ids, complaints, round1);
+    const echoes = qualified.map((id) => dkgEcho({ identifier: id, round1Packages: round1, complaints, qualified, sessionId: session }));
+    return { ids, results, round1, inbox, complaints, qualified, echoes };
+  }
+
+  it('the transcript digest is canonical / order-independent (same view in any order → same digest)', () => {
+    const session = sid(0xc1);
+    const { round1, qualified } = honestCeremony(2, 3, session);
+    const d1 = dkgTranscriptDigest({ round1Packages: round1, complaints: [], qualified, sessionId: session });
+    // Reversed package order and reversed qualified order yield the SAME digest.
+    const d2 = dkgTranscriptDigest({ round1Packages: [...round1].reverse(), complaints: [], qualified: [...qualified].reverse(), sessionId: session });
+    expect(d2).toBe(d1);
+    // A DIFFERENT qualified set yields a DIFFERENT digest.
+    const d3 = dkgTranscriptDigest({ round1Packages: round1, complaints: [], qualified: qualified.slice(0, 2), sessionId: session });
+    expect(d3).not.toBe(d1);
+    // A different session yields a different digest.
+    const d4 = dkgTranscriptDigest({ round1Packages: round1, complaints: [], qualified, sessionId: sid(0xc2) });
+    expect(d4).not.toBe(d1);
+  });
+
+  it('honest run: all echoes agree and dkgFinalize derives ONE consistent group key', () => {
+    const session = sid(0xc3);
+    const { results, round1, inbox, complaints, qualified, echoes } = honestCeremony(2, 3, session);
+
+    // dkgCheckEchoes agrees and reports the common digest.
+    const agreement = dkgCheckEchoes(qualified, echoes, session);
+    expect(agreement.agreed).toBe(true);
+    expect(agreement.digest).toBe(dkgTranscriptDigest({ round1Packages: round1, complaints, qualified, sessionId: session }));
+
+    // Every qualified party finalizes under the agreement and derives the SAME group key.
+    const finals = qualified.map((id) => {
+      const r = results.find((x) => x.state.identifier === id)!;
+      return dkgFinalize(id, r.state, inbox.get(id)!, round1, qualified, { echoes, complaints });
+    });
+    const gpk = b64u(finals[0]!.groupPublicKey);
+    for (const f of finals) expect(b64u(f.groupPublicKey)).toBe(gpk);
+
+    // …and a quorum still signs a valid group-key signature (frost signing path unchanged).
+    const shares = new Map<number, FrostParticipantShare>(
+      finals.map((f) => [f.identifier, { identifier: f.identifier, share: f.signingShare, publicKey: f.verifyingShare }]),
+    );
+    const msg = utf8('agreement round — honest');
+    const sig = signWithQuorum(shares, finals[0]!.groupPublicKey, [1, 2], msg);
+    expect(verify(finals[0]!.groupPublicKey, msg, sig)).toBe(true);
+  });
+
+  it('equivocation (by hand): one party echoes a DIFFERENT qualified set → echoes disagree → finalize ABORTS', () => {
+    const session = sid(0xc4);
+    const { results, round1, inbox, complaints, qualified, echoes } = honestCeremony(2, 3, session);
+
+    // Participant 3 was shown a divergent view: it echoes a qualified set {1,2} instead of {1,2,3}.
+    const tamperedEchoes: DkgEcho[] = echoes.map((e) =>
+      e.identifier === 3
+        ? dkgEcho({ identifier: 3, round1Packages: round1, complaints, qualified: [1, 2], sessionId: session })
+        : e,
+    );
+
+    // The disagreement is detected: not all qualified parties echoed the same transcript.
+    const agreement = dkgCheckEchoes(qualified, tamperedEchoes, session);
+    expect(agreement.agreed).toBe(false);
+    expect(agreement.reason).toMatch(/different transcript|equivocation/i);
+
+    // Finalize ABORTS rather than committing to an un-agreed transcript.
+    const r1 = results.find((x) => x.state.identifier === 1)!;
+    expect(() => dkgFinalize(1, r1.state, inbox.get(1)!, round1, qualified, { echoes: tamperedEchoes, complaints })).toThrow(
+      /echo-broadcast agreement failed/,
+    );
+  });
+
+  it('dkgCheckEchoes rejects a missing echo and a cross-session echo', () => {
+    const session = sid(0xc5);
+    const { qualified, echoes } = honestCeremony(2, 3, session);
+
+    // Drop participant 2's echo → a qualified party has not confirmed the transcript.
+    const missing = echoes.filter((e) => e.identifier !== 2);
+    expect(dkgCheckEchoes(qualified, missing, session)).toMatchObject({ agreed: false });
+    expect(dkgCheckEchoes(qualified, missing, session).reason).toMatch(/missing echo/i);
+
+    // An echo bound to a different session does not count as this run's confirmation.
+    const crossSession = echoes.map((e) => (e.identifier === 2 ? { ...e, sessionId: b64u(sid(0xc6)) } : e));
+    expect(dkgCheckEchoes(qualified, crossSession, session)).toMatchObject({ agreed: false });
+  });
+
+  it('frostDkgSimulate wires the agreement round: honest run agrees, equivocation aborts', () => {
+    // Honest: echoes are returned and all agree on the transcript.
+    const dkg = frostDkgSimulate(2, 3);
+    expect(dkg.echoes.length).toBe(dkg.qualified.length);
+    const agree = dkgCheckEchoes(dkg.qualified, dkg.echoes, dkg.sessionId);
+    expect(agree.agreed).toBe(true);
+    // Exactly one group key was derived (finalize ran under agreement).
+    const gpk = b64u(dkg.keyPackages[0]!.groupPublicKey);
+    for (const kp of dkg.keyPackages) expect(b64u(kp.groupPublicKey)).toBe(gpk);
+
+    // Equivocation: one party is shown a divergent qualified set → the whole run aborts at finalize.
+    expect(() => frostDkgSimulate(2, 3, { equivocateEchoFor: 1 })).toThrow(/echo-broadcast agreement failed/);
   });
 });

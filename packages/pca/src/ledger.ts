@@ -10,8 +10,21 @@
  * Pure and deterministic given explicit salts; the default salt is 16 random bytes.
  */
 import { randomBytes } from '@noble/hashes/utils';
+import { verifyConsistencyVerified } from '@atlasauth/pca-verified-core';
+import { verifiedCoreOptIn } from './verified-core-mode';
 import { b64u, canonicalBytes, hashCanonical, sha256, unb64u, utf8 } from './hash';
-import { publicKeyOf, sign, verifyB64u } from './keys';
+import { publicKeyOf } from './keys';
+import {
+  type SignerSuiteOpts,
+  type SigAlg,
+  bindSuiteFields,
+  suitePqPublicKey,
+  suiteKeysOf,
+  type PqPinPolicy,
+  resolveSigAlg,
+  signSuiteArtifact,
+  verifyPinnedSuite,
+} from './pq';
 import { type InclusionProof, leafHash, merkleProof, verifyInclusion as verifyMerkleInclusion } from './merkle';
 import { type PCActn, pcactnDigest } from './pcactn';
 
@@ -60,10 +73,19 @@ export interface WitnessedHead {
   principal: string;
   size: number;
   root: string;
-  /** Witness / guardian public key (b64u). */
+  /** Witness / guardian public key (b64u Ed25519 identity). */
   witness: string;
   sig: string;
+  /** Signature suite (crypto-agility). Absent == ed25519 (byte-identical). */
+  alg?: SigAlg;
+  /** b64u ML-DSA-65 public key of the witness — ml-dsa-65 / hybrid (body-bound). */
+  pq_pk?: string;
+  /** b64u ML-DSA-65 signature — hybrid only. */
+  pq_sig?: string;
 }
+
+/** Optional signature-suite material for a guardian/witness signature (default ed25519). */
+export type LedgerSuiteOpts = SignerSuiteOpts;
 
 /** The salted commitment of a PCActn. */
 export function entryCommit(salt: string, pcactn: PCActn): string {
@@ -88,42 +110,70 @@ export function verifyLedgerInclusion(root: string, proof: InclusionProof, commi
   return verifyMerkleInclusion(root, proof, commit);
 }
 
-/** RFC 9162 §2.1.4.2 consistency verification. Never throws. */
+/** Root of the empty tree (RFC 9162 §2.1.1: MTH({}) = SHA-256 of the empty string), b64u. */
+export const EMPTY_TREE_ROOT: string = b64u(sha256(new Uint8Array(0)));
+
+/** Longest consistency path any tree of fewer than 2^53 leaves can need (2 * 53 + 1); anything longer is junk. */
+const MAX_CONSISTENCY_PATH = 2 * 53 + 2;
+
+/**
+ * RFC 9162 §2.1.4.2 consistency verification. Never throws.
+ *
+ * Sizes are integers in [0, 2^53). All index arithmetic is done in BigInt: the RFC algorithm is defined over
+ * arbitrary-precision integers and JavaScript's `>>`, `&` and `^` truncate to 32 bits, which made
+ * (3, 7) and (3 + 2^32, 7 + 2^32) verify the same path.
+ *
+ * Size 0 (RFC 9162 §2.1.4.1: "consistency of an empty tree with any tree is trivial"): the OLD tree is the empty
+ * tree, so `oldRoot` MUST be the empty-tree root and the path MUST be empty; `newRoot` is then unconstrained
+ * (there is nothing for it to be consistent with) except that a NEW size of 0 is the empty tree again.
+ * Without the `oldRoot` pin an attacker-chosen "previous head" would make any rewrite look consistent.
+ */
 export function verifyLedgerConsistency(oldRoot: string, newRoot: string, proof: ConsistencyProof): boolean {
+  // OPT-IN (`PCA_VERIFIED_CORE=merkle-strict`): the Dafny-proved RFC 9162 consistency verifier (formal/dafny/Merkle.dfy,
+  // verified-core `verifyConsistencyVerified`). Not the default because it is STRICTER than this function (roots and path
+  // elements must be canonical base64url of exactly 32 bytes), not because of cost; see docs/pca/security/verified-core.md.
+  if (verifiedCoreOptIn('merkle-strict')) return verifyConsistencyVerified(oldRoot, newRoot, proof);
   try {
+    if (typeof oldRoot !== 'string' || typeof newRoot !== 'string') return false;
     const first = proof.oldSize;
     const second = proof.newSize;
-    if (!Number.isInteger(first) || !Number.isInteger(second) || first < 0 || first > second) return false;
-    if (!Array.isArray(proof.path)) return false;
-    if (first === 0) return proof.path.length === 0; // the empty log is a prefix of everything
+    if (!Number.isSafeInteger(first) || !Number.isSafeInteger(second) || first < 0 || first > second || Object.is(first, -0) || Object.is(second, -0)) return false;
+    if (!Array.isArray(proof.path) || proof.path.length > MAX_CONSISTENCY_PATH) return false;
+    if (first === 0) {
+      if (proof.path.length !== 0 || oldRoot !== EMPTY_TREE_ROOT) return false;
+      return second === 0 ? newRoot === EMPTY_TREE_ROOT : true; // vacuous for a non-empty new tree
+    }
     if (first === second) return proof.path.length === 0 && oldRoot === newRoot;
     const path = proof.path.map(unb64u);
-    if ((first & (first - 1)) === 0) path.unshift(unb64u(oldRoot));
+    const f = BigInt(first);
+    if ((f & (f - 1n)) === 0n) path.unshift(unb64u(oldRoot));
     if (path.length === 0) return false;
-    let fn = first - 1;
-    let sn = second - 1;
-    while (fn & 1) {
-      fn >>= 1;
-      sn >>= 1;
+    // Every node is a SHA-256 output: a wrong-length element is malformed, refuse it in every mode (not only merkle-strict).
+    if (path.some((n) => n.length !== 32)) return false;
+    let fn = f - 1n;
+    let sn = BigInt(second) - 1n;
+    while (fn & 1n) {
+      fn >>= 1n;
+      sn >>= 1n;
     }
     let fr = path[0]!;
     let sr = path[0]!;
     for (const c of path.slice(1)) {
-      if (sn === 0) return false;
-      if (fn & 1 || fn === sn) {
+      if (sn === 0n) return false;
+      if (fn & 1n || fn === sn) {
         fr = nodeHash(c, fr);
         sr = nodeHash(c, sr);
-        while (!(fn & 1) && fn !== 0) {
-          fn >>= 1;
-          sn >>= 1;
+        while (!(fn & 1n) && fn !== 0n) {
+          fn >>= 1n;
+          sn >>= 1n;
         }
       } else {
         sr = nodeHash(sr, c);
       }
-      fn >>= 1;
-      sn >>= 1;
+      fn >>= 1n;
+      sn >>= 1n;
     }
-    return sn === 0 && b64u(fr) === oldRoot && b64u(sr) === newRoot;
+    return sn === 0n && b64u(fr) === oldRoot && b64u(sr) === newRoot;
   } catch {
     return false;
   }
@@ -131,8 +181,8 @@ export function verifyLedgerConsistency(oldRoot: string, newRoot: string, proof:
 
 const WITNESS_DOMAIN = 'atlas-pca/ledger-head/v1\0';
 
-function headMessage(principal: string, size: number, root: string): Uint8Array {
-  const body = canonicalBytes({ principal, size, root });
+function headMessage(principal: string, size: number, root: string, alg?: SigAlg, pqPk?: string): Uint8Array {
+  const body = canonicalBytes(bindSuiteFields({ principal, size, root }, alg, pqPk));
   const p = utf8(WITNESS_DOMAIN);
   const m = new Uint8Array(p.length + body.length);
   m.set(p);
@@ -140,9 +190,22 @@ function headMessage(principal: string, size: number, root: string): Uint8Array 
   return m;
 }
 
-/** Verify a (co-)signed head against the witness' public key (b64u). */
-export function verifyWitnessedHead(wh: WitnessedHead, witnessPublic: string): boolean {
-  return wh.witness === witnessPublic && verifyB64u(witnessPublic, headMessage(wh.principal, wh.size, wh.root), wh.sig);
+/** Verify a (co-)signed head against the witness' public key (b64u). Suite-agile; ed25519 == pre-agility. */
+export function verifyWitnessedHead(wh: WitnessedHead, witnessPublic: string, pin?: PqPinPolicy): boolean {
+  try {
+    if (!wh || wh.witness !== witnessPublic || resolveSigAlg(wh.alg) === null) return false;
+    return verifyPinnedSuite(
+      wh.alg,
+      witnessPublic,
+      wh.pq_pk,
+      headMessage(wh.principal, wh.size, wh.root, wh.alg, wh.pq_pk),
+      { sig: wh.sig, pq_sig: wh.pq_sig },
+      pin,
+    );
+  } catch {
+    // Never throws: a hostile head whose fields cannot be canonicalised (over-nested / non-JSON) is simply invalid.
+    return false;
+  }
 }
 
 /**
@@ -150,10 +213,10 @@ export function verifyWitnessedHead(wh: WitnessedHead, witnessPublic: string): b
  * and size but different roots prove equivocation. (Cross-size inconsistency is detected with
  * verifyLedgerConsistency.)
  */
-export function detectEquivocation(a: WitnessedHead, b: WitnessedHead, witnessPublic: string): boolean {
+export function detectEquivocation(a: WitnessedHead, b: WitnessedHead, witnessPublic: string, pin?: PqPinPolicy): boolean {
   return (
-    verifyWitnessedHead(a, witnessPublic) &&
-    verifyWitnessedHead(b, witnessPublic) &&
+    verifyWitnessedHead(a, witnessPublic, pin) &&
+    verifyWitnessedHead(b, witnessPublic, pin) &&
     a.principal === b.principal &&
     a.size === b.size &&
     a.root !== b.root
@@ -186,6 +249,23 @@ export class TransparencyLedger {
     const commit = entryCommit(salt, pcactn);
     const index = this._entries.length;
     this._entries.push({ commit, opening: { salt, pcactn } });
+    this._hashes.push(leafHash(commit));
+    return { index, commit };
+  }
+
+  /**
+   * Append a PRECOMPUTED opaque commitment leaf (CT-style): the caller holds the opening off-log (e.g. a
+   * guardian-signed settlement record + its salt, or a trajectory-head commitment). The leaf, root and every
+   * inclusion / consistency proof behave exactly as for {@link append}; no opening is stored here, so the
+   * entry is already shredded and {@link auditOpenings} ignores it. The log stays append-only and witnessable,
+   * so anything anchored this way is externally auditable (inclusion proof + a signed/witnessed STH) and a
+   * rollback that drops the leaf fails the consistency proof against a pinned head. Refuses a non-string /
+   * empty commit (fail closed).
+   */
+  appendCommitment(commit: string): { index: number; commit: string } {
+    if (typeof commit !== 'string' || commit.length === 0) throw new Error('appendCommitment: commit must be a non-empty string');
+    const index = this._entries.length;
+    this._entries.push({ commit });
     this._hashes.push(leafHash(commit));
     return { index, commit };
   }
@@ -268,10 +348,349 @@ export class TransparencyLedger {
     return had;
   }
 
-  /** Sign the current head for third-party witnessing / anti-equivocation (co-sign hook). */
-  witnessHead(guardianSecret: Uint8Array): WitnessedHead {
+  /** Sign the current head for third-party witnessing / anti-equivocation (co-sign hook). Suite-agile. */
+  witnessHead(guardianSecret: Uint8Array, suite?: LedgerSuiteOpts): WitnessedHead {
     const { size, root } = this.head();
-    const sig = sign(guardianSecret, headMessage(this.principal, size, root));
-    return { principal: this.principal, size, root, witness: b64u(publicKeyOf(guardianSecret)), sig: b64u(sig) };
+    const pqPk = suitePqPublicKey(suite?.alg, suite);
+    const fields = signSuiteArtifact(suite?.alg, suiteKeysOf(guardianSecret, suite), headMessage(this.principal, size, root, suite?.alg, pqPk));
+    return { principal: this.principal, size, root, witness: b64u(publicKeyOf(guardianSecret)), ...fields };
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Signed Tree Heads (STH): the guardian signs `{instance_id, principal, size, root, prev_root,
+// timestamp}` on EVERY append, under a domain separator distinct from the witness head and from
+// every other guardian signature. A client pins the latest STH and demands a consistency proof from
+// the pinned size to the new one on every poll; the operator can no longer rewrite history or show
+// two clients different logs without a signed, attributable contradiction.
+// ---------------------------------------------------------------------------------------------
+
+export const STH_DOMAIN = 'atlas-pca/sth/v1\0';
+
+export interface SignedTreeHead {
+  /** UNSIGNED annotation: which guardian key epoch signed this (the signature is checked against `guardian`). */
+  guardian_epoch?: number;
+  instance_id: string;
+  /** The log key (grant_ref). */
+  principal: string;
+  size: number;
+  root: string;
+  /** Root of the previous STH of this log ('' for the first). */
+  prev_root: string;
+  /** epoch ms the head was signed. */
+  timestamp: number;
+  /** Signing guardian public key (b64u Ed25519 identity). */
+  guardian: string;
+  sig: string;
+  /**
+   * Signature suite (crypto-agility). Absent == `ed25519` (byte-identical to pre-agility: no suite
+   * fields and the signed tree-head bytes are unchanged). For `ml-dsa-65`/`hybrid` the suite + the
+   * guardian's ML-DSA key `pq_pk` are SIGNED INTO the STH body, and `sig`/`pq_sig` carry the components.
+   */
+  alg?: SigAlg;
+  /** b64u ML-DSA-65 public key of the guardian — ml-dsa-65 / hybrid (body-bound). */
+  pq_pk?: string;
+  /** b64u ML-DSA-65 STH signature — hybrid only. */
+  pq_sig?: string;
+  /**
+   * OPTIONAL external witness cosignatures (C2SP tlog-witness / Sigsum model). A trusted witness other
+   * than the operator cosigns the SAME tree-head statement under its own key (see {@link cosignTreeHead}),
+   * turning a self-attested STH into an anti-equivocation artefact: a split view can no longer gather a
+   * threshold of honest-witness cosignatures on two conflicting roots at the same size.
+   *
+   * ADDITIVE: this field is NOT part of the guardian-signed bytes ({@link sthMessage}). An STH with no
+   * witnesses is byte-identical to before and verifies exactly as today; the field is absent, never `[]`,
+   * when there are none.
+   */
+  witnesses?: WitnessCosignature[];
+}
+
+/** A C2SP tlog-witness cosignature: a trusted witness's signature over the STH statement. Suite-agile. */
+export interface WitnessCosignature {
+  /** Witness public key (b64u Ed25519 identity). */
+  key: string;
+  /** Signature over the domain-separated witness message (b64u). Ed25519 for ed25519/hybrid, ML-DSA-65 for pure. */
+  sig: string;
+  /** Signature suite (crypto-agility). Absent == ed25519 (byte-identical). */
+  alg?: SigAlg;
+  /** b64u ML-DSA-65 public key of the witness — ml-dsa-65 / hybrid (bound into the cosigned bytes). */
+  pq_pk?: string;
+  /** b64u ML-DSA-65 cosignature — hybrid only. */
+  pq_sig?: string;
+}
+
+/** The k-of-n trust policy a monitor / verifier applies to an STH's witness cosignatures. */
+export interface WitnessPolicy extends PqPinPolicy {
+  /** The set of TRUSTED witness public keys (b64u). */
+  witnessKeys: string[];
+  /** Minimum number of DISTINCT trusted witnesses that must have a valid cosignature. */
+  threshold: number;
+}
+
+function sthMessage(h: Omit<SignedTreeHead, 'guardian' | 'sig'>): Uint8Array {
+  const body = canonicalBytes(
+    bindSuiteFields(
+      {
+        instance_id: h.instance_id,
+        principal: h.principal,
+        size: h.size,
+        root: h.root,
+        prev_root: h.prev_root,
+        timestamp: h.timestamp,
+      },
+      h.alg,
+      h.pq_pk,
+    ),
+  );
+  const p = utf8(STH_DOMAIN);
+  const m = new Uint8Array(p.length + body.length);
+  m.set(p);
+  m.set(body, p.length);
+  return m;
+}
+
+// ---------------------------------------------------------------------------------------------
+// C2SP external witness cosignatures (anti-equivocation). A witness cosigns the tree-head STATEMENT
+// — {size, root, prev_root, guardian_epoch} — under a domain separator DISTINCT from the guardian STH
+// domain and from the legacy ledger-head witness domain, so a cosignature can never be mistaken for (or
+// replayed as) a guardian signature. The witness binds to WHAT the log is at this size; it does not
+// re-sign the guardian's bytes. Honest witnesses cosign at most one root per size, so two conflicting
+// roots at the same size cannot both reach a threshold of honest cosignatures.
+// ---------------------------------------------------------------------------------------------
+
+export const STH_WITNESS_DOMAIN = 'atlas-pca/sth-witness/v2\0';
+
+function sthWitnessMessage(
+  h: Pick<SignedTreeHead, 'instance_id' | 'principal' | 'size' | 'root' | 'prev_root' | 'guardian_epoch'>,
+  alg?: SigAlg,
+  pqPk?: string,
+): Uint8Array {
+  const body = canonicalBytes(
+    bindSuiteFields(
+      {
+        // RT-15: scoped to ONE log. Without instance_id + principal a cosignature for one log verified on any
+        // other log whose (size, root, prev_root) coincide (e.g. two empty logs).
+        instance_id: h.instance_id,
+        principal: h.principal,
+        size: h.size,
+        root: h.root,
+        prev_root: h.prev_root,
+        guardian_epoch: h.guardian_epoch ?? 0,
+      },
+      alg,
+      pqPk,
+    ),
+  );
+  const p = utf8(STH_WITNESS_DOMAIN);
+  const m = new Uint8Array(p.length + body.length);
+  m.set(p);
+  m.set(body, p.length);
+  return m;
+}
+
+/**
+ * A trusted witness cosigns the tree-head statement of `sth` with its own secret key. The cosignature is
+ * bound to the exact {instance_id, principal, size, root, prev_root, guardian_epoch} (plus the suite for a non-default `suite`); a
+ * cosignature minted for one head does not verify against a head with a different size or root. Suite-agile:
+ * ed25519 (default) is byte-identical; ml-dsa-65/hybrid bind the witness ML-DSA key into the cosigned bytes.
+ */
+export function cosignTreeHead(
+  sth: Pick<SignedTreeHead, 'instance_id' | 'principal' | 'size' | 'root' | 'prev_root' | 'guardian_epoch'>,
+  witnessSecret: Uint8Array,
+  suite?: LedgerSuiteOpts,
+): WitnessCosignature {
+  const pqPk = suitePqPublicKey(suite?.alg, suite);
+  const fields = signSuiteArtifact(suite?.alg, suiteKeysOf(witnessSecret, suite), sthWitnessMessage(sth, suite?.alg, pqPk));
+  return { key: b64u(publicKeyOf(witnessSecret)), ...fields };
+}
+
+/**
+ * Verify a single cosignature against a trusted witness key, bound to this exact head. Never throws.
+ */
+export function verifyWitnessCosignature(sth: SignedTreeHead, cosig: WitnessCosignature, witnessPublic: string, pin?: PqPinPolicy): boolean {
+  try {
+    if (!cosig || cosig.key !== witnessPublic || typeof cosig.sig !== 'string' || resolveSigAlg(cosig.alg) === null) return false;
+    return verifyPinnedSuite(
+      cosig.alg,
+      witnessPublic,
+      cosig.pq_pk,
+      sthWitnessMessage(sth, cosig.alg, cosig.pq_pk),
+      { sig: cosig.sig, pq_sig: cosig.pq_sig },
+      pin,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * k-of-n verification of an STH's witness cosignatures. FAIL-CLOSED: an UNKNOWN witness (key not in the
+ * trusted set), a DUPLICATE trusted key (counted at most once), and a MIS-BOUND / tampered signature (one
+ * that does not verify over this exact {instance_id, principal, size, root, prev_root, guardian_epoch}) none of them count toward
+ * the threshold. Returns true iff at least `threshold` DISTINCT trusted witnesses carry a valid cosignature.
+ * `threshold === 0` is vacuously satisfied (no witnesses demanded). Never throws.
+ */
+export function verifyWitnessCosignatures(sth: SignedTreeHead, policy: WitnessPolicy, pin: PqPinPolicy | undefined = policy): boolean {
+  try {
+    const threshold = policy?.threshold;
+    if (!Number.isInteger(threshold) || threshold! < 0) return false;
+    if (threshold === 0) return true;
+    const trusted = new Set(policy.witnessKeys ?? []);
+    if (trusted.size === 0) return false;
+    const witnesses = sth?.witnesses;
+    if (!Array.isArray(witnesses)) return false;
+    const counted = new Set<string>();
+    for (const w of witnesses) {
+      if (!w || typeof w.key !== 'string' || typeof w.sig !== 'string') continue;
+      if (!trusted.has(w.key) || counted.has(w.key)) continue; // unknown or duplicate
+      // Suite-agile per cosignature (each binds its own alg + the witness ML-DSA key); ed25519 == before.
+      if (!verifyWitnessCosignature(sth, w, w.key, pin)) continue; // mis-bound / tampered / unknown suite
+      counted.add(w.key);
+      if (counted.size >= threshold!) return true;
+    }
+    return counted.size >= threshold!;
+  } catch {
+    return false;
+  }
+}
+
+export function signTreeHead(
+  guardianSecret: Uint8Array,
+  head: Omit<SignedTreeHead, 'guardian' | 'sig' | 'alg' | 'pq_pk' | 'pq_sig'>,
+  suite?: LedgerSuiteOpts,
+): SignedTreeHead {
+  const pqPk = suitePqPublicKey(suite?.alg, suite);
+  // The suite fields are bound into the signed body (sthMessage reads alg/pq_pk off the head).
+  const annotated = { ...head, ...bindSuiteFields({}, suite?.alg, pqPk) } as Omit<SignedTreeHead, 'guardian' | 'sig'>;
+  const fields = signSuiteArtifact(suite?.alg, suiteKeysOf(guardianSecret, suite), sthMessage(annotated));
+  return {
+    instance_id: head.instance_id,
+    principal: head.principal,
+    size: head.size,
+    root: head.root,
+    prev_root: head.prev_root,
+    timestamp: head.timestamp,
+    guardian: b64u(publicKeyOf(guardianSecret)),
+    ...fields,
+  };
+}
+
+/**
+ * Verify an STH against the (pinned) guardian public key. Never throws.
+ *
+ * When `requireWitnessThreshold` is supplied (opt-in), the head ALSO has to carry at least `threshold`
+ * distinct valid cosignatures from the trusted witness set — a monitor can thus refuse a head the operator
+ * signed alone. Omitting it leaves the check exactly as before (a witness-less head still verifies).
+ */
+export function verifyTreeHead(
+  sth: SignedTreeHead,
+  guardianPublic: string,
+  requireWitnessThreshold?: WitnessPolicy,
+  pin?: PqPinPolicy,
+): boolean {
+  try {
+    if (!sth || sth.guardian !== guardianPublic || resolveSigAlg(sth.alg) === null) return false;
+    if (!Number.isSafeInteger(sth.size) || sth.size < 0) return false;
+    if (!verifyPinnedSuite(sth.alg, guardianPublic, sth.pq_pk, sthMessage(sth), { sig: sth.sig, pq_sig: sth.pq_sig }, pin)) return false;
+    if (requireWitnessThreshold && !verifyWitnessCosignatures(sth, requireWitnessThreshold, pin ?? requireWitnessThreshold)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Pin-and-check: both heads must be genuine, for the same instance + log, and the consistency proof
+ * must connect `older` to `newer` (an append-only extension). A forged, truncated or rewritten head
+ * fails. Never throws.
+ *
+ * HASH-CHAIN ENFORCEMENT (hardening). The STH carries a SIGNED `prev_root` — the root of the log's
+ * immediately-preceding STH — which used to be decorative (never verified; only the RFC 9162 consistency
+ * proof linked the two roots). It is now REAL: when `older` is the immediate predecessor of `newer`
+ * (consecutive heads under the per-append STH model, `older.size + 1 === newer.size`), the signed
+ * `newer.prev_root` MUST equal `older.root`, IN ADDITION to the consistency-proof check. This catches a
+ * guardian-signed head that carries a forged/inconsistent `prev_root` even when a valid (or forged)
+ * Merkle consistency proof would otherwise accept it — the hash chain and the Merkle proof must agree.
+ * For a NON-adjacent pin (skip-ahead), `prev_root` links to an intermediate STH not supplied here, so the
+ * consistency proof remains the sole cross-size check (unchanged). No signed byte of the STH changes.
+ */
+export function verifyHeadConsistency(
+  older: SignedTreeHead,
+  newer: SignedTreeHead,
+  proof: ConsistencyProof,
+  guardianPublic: string,
+  requireWitnessThreshold?: WitnessPolicy,
+  pin?: PqPinPolicy,
+): boolean {
+  try {
+    if (
+      !verifyTreeHead(older, guardianPublic, requireWitnessThreshold, pin) ||
+      !verifyTreeHead(newer, guardianPublic, requireWitnessThreshold, pin)
+    )
+      return false;
+    if (older.instance_id !== newer.instance_id || older.principal !== newer.principal) return false;
+    if (proof.oldSize !== older.size || proof.newSize !== newer.size) return false;
+    // Enforce the signed prev_root hash-chain link when `older` is `newer`'s immediate predecessor.
+    if (newer.size === older.size + 1 && newer.prev_root !== older.root) return false;
+    return verifyLedgerConsistency(older.root, newer.root, proof);
+  } catch {
+    return false;
+  }
+}
+
+/** One link of a checkpoint chain: a signed head and the consistency proof from the PREVIOUS checkpoint to it (absent on the first). */
+export interface Checkpoint {
+  sth: SignedTreeHead;
+  proof?: ConsistencyProof;
+}
+
+export type CheckpointChainVerdict = { ok: true; head: SignedTreeHead } | { ok: false; at: number; reason: 'empty' | 'head' | 'proof_missing' | 'inconsistent' };
+
+/**
+ * Verify a sequence of pinned checkpoints end to end: every head is genuine (guardian signature, and the witness
+ * cosignature threshold when `requireWitnessThreshold` is given), the first needs no proof, and every later checkpoint
+ * carries a consistency proof that connects it to the checkpoint before (same log, signed `prev_root` link when adjacent,
+ * RFC 9162 path). A log that rewrote or dropped history between ANY two checkpoints fails at that boundary; `at` is the
+ * index of the first checkpoint that does not verify. An empty chain fails closed. Never throws.
+ */
+export function verifyCheckpointChain(
+  chain: readonly Checkpoint[],
+  guardianPublic: string,
+  requireWitnessThreshold?: WitnessPolicy,
+  pin?: PqPinPolicy,
+): CheckpointChainVerdict {
+  try {
+    if (!Array.isArray(chain) || chain.length === 0) return { ok: false, at: 0, reason: 'empty' };
+    for (let i = 0; i < chain.length; i++) {
+      const cp = chain[i];
+      if (!cp || !verifyTreeHead(cp.sth, guardianPublic, requireWitnessThreshold, pin)) return { ok: false, at: i, reason: 'head' };
+      if (i === 0) continue;
+      if (!cp.proof) return { ok: false, at: i, reason: 'proof_missing' };
+      if (!verifyHeadConsistency(chain[i - 1]!.sth, cp.sth, cp.proof, guardianPublic, requireWitnessThreshold, pin)) return { ok: false, at: i, reason: 'inconsistent' };
+    }
+    return { ok: true, head: chain[chain.length - 1]!.sth };
+  } catch {
+    return { ok: false, at: 0, reason: 'head' };
+  }
+}
+
+/**
+ * Split-view proof for signed tree heads: two heads, both genuinely signed by `guardianPublic`, for the same log and the same
+ * size but with different roots. The guardian signed two histories of one length, which is the one thing an honest log never
+ * does; the pair is self-contained evidence anyone can check (unlike a failed consistency proof, which proves nothing about who
+ * is at fault). Never throws.
+ */
+export function detectTreeHeadEquivocation(a: SignedTreeHead, b: SignedTreeHead, guardianPublic: string, pin?: PqPinPolicy): boolean {
+  try {
+    return (
+      verifyTreeHead(a, guardianPublic, undefined, pin) &&
+      verifyTreeHead(b, guardianPublic, undefined, pin) &&
+      a.instance_id === b.instance_id &&
+      a.principal === b.principal &&
+      a.size === b.size &&
+      a.root !== b.root
+    );
+  } catch {
+    return false;
   }
 }

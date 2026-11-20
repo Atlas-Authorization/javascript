@@ -1,0 +1,163 @@
+# @atlasauth/pca-vdf
+
+> Maturity: **hardened** (hardened, formally verified (model), awaiting independent audit). The engineering is done and evidenced by tests, differential checks and a mutation gate; it awaits an independent review of the Wesolowski proof handling and the timelock binding (the modulus is the public RSA-2048 challenge number, whose factors nobody is known to hold). It is never production until that review is done, and its API may still change. See [maturity tiers](https://github.com/Atlas-Authorization/pca/blob/main/docs/maturity.md).
+
+A Verifiable Delay Function (VDF) timelock for Proof-Carrying Authority. It gives irreversible actions a
+mandatory cooling-off period that is verifiable offline with no trusted clock: an action is released only
+when a Wesolowski VDF proof shows that `steps` sequential modular squarings were performed on an input
+derived from that exact action. Proving is slow by design (the work is the wait); verifying is cheap.
+
+## Install
+
+```sh
+npm i @atlasauth/pca-vdf @atlasauth/pca
+```
+
+## Usage
+
+```ts
+import {
+  RSA_2048_CHALLENGE_MODULUS as N, // a modulus of unknown factorisation: the production default
+  requireTimelock, proveTimelockElapsed, verifyTimelock,
+} from '@atlasauth/pca-vdf';
+
+const steps = 2000;
+
+// `action` is a PCActn from @atlasauth/pca, or any precomputed action digest string.
+const action = 'digest-of-the-irreversible-action';
+
+// An unpredictable value published AFTER the action exists and was approved (a drand round, or the
+// ledger head that contains the action). The delay starts when it is published. You must validate it
+// (signature, and that it post-dates the action) before passing it in: this package cannot.
+const beacon = 'drand-quicknet-round-1234567';
+
+// Policy side: the requirement (derives the VDF input x from the action AND the beacon).
+const requirement = requireTimelock(action, { steps, N, beacon });
+
+// Prover side: runs `steps` sequential squarings, so this call is the cooling-off.
+const proof = proveTimelockElapsed(action, steps, N, { beacon });
+
+// Verifier side: cheap, offline, fail-closed (returns false, never throws).
+verifyTimelock(action, proof, { steps, N, beacon });          // true
+verifyTimelock('another-action', proof, { steps, N, beacon }); // false: proof is bound to the action
+verifyTimelock(action, proof, { steps, N, beacon: 'other' });  // false: and to the beacon
+```
+
+### Development and tests
+
+`insecureDevSetup({ bits })` generates a modulus whose factors the calling process knows. Whoever knows the
+factors skips the delay with a single modular exponentiation, so it is for development and tests only. Its
+result is branded `insecureDevOnly: true`, and the timelock functions refuse such a modulus (and any modulus
+under 2048 bits, an even or prime modulus, a perfect square, or one with a small factor) unless you pass the
+deliberately loud `allowInsecureDevModulus: true`:
+
+```ts
+import { insecureDevSetup, proveTimelockElapsed, verifyTimelock } from '@atlasauth/pca-vdf';
+
+const dev = insecureDevSetup({ bits: 256 });
+const proof = proveTimelockElapsed('a', 200, dev.N, { allowInsecureDevModulus: true });
+verifyTimelock('a', proof, { steps: 200, N: dev.N, allowInsecureDevModulus: true }); // true, but delays nobody who holds dev.p and dev.q
+```
+
+## API
+
+- `requireTimelock(action, { steps, N, beacon })`, `proveTimelockElapsed(action, steps, N, { beacon })`,
+  `verifyTimelock(action, proof, { steps, N, beacon })` - the PCA timelock layer (breaking: `beacon` is
+  required, input domain is `v2`, proofs are canonical `y <= N/2`; old proofs do not verify). All three refuse a modulus that
+  fails `checkProductionModulus` (`verifyTimelock` returns `false`).
+- `deriveTimelockInput(action, N, beacon)`, `actionDigest(action)` - the action-to-VDF-input binding.
+- `calibrateSteps({ N, desiredSeconds, adversaryAdvantage? })` - helper that converts a target duration
+  into a step count by timing squarings on this machine.
+- `vdfEvalCanonical`, `vdfVerifyCanonical(Detailed)`, `canonicalVdfOutput` - the unique-output form used by
+  the timelock layer: `y` is the canonical representative of `{y, N-y}` and `y > N/2` is rejected, so
+  `(N-y, N-pi'')` (which the plain verifier accepts) is no longer a second valid proof. The proof element is
+  canonical too (`pi <= N/2`, else `non-canonical-pi`), so `(y, N-pi)` is not a second encoding either.
+- `vdfEval(x, T, N)`, `vdfVerify(x, y, pi, T, N)`, `vdfVerifyDetailed(...)` (returns the refusal reason),
+  `hashToPrime`, `modpow`, `isProbablePrime` (also grouped as the `vdf` object) - the underlying Wesolowski
+  VDF over an RSA group.
+- `insecureDevSetup(opts?)` - DEV/TEST ONLY modulus generator (formerly `setup`; the old name is removed so
+  it cannot be mistaken for a production setup). `checkProductionModulus(N)` - the screen the timelock layer
+  applies.
+- `RSA_2048_CHALLENGE_MODULUS` / `DEFAULT_MODULUS` - the RSA-2048 challenge number, as a modulus of
+  unknown factorisation.
+
+## Where it fits, and what happens when something is missing
+
+Use it as a release gate for an irreversible action that must wait a minimum time even if every signature is valid, without trusting a clock: the approval workflow stores `requireTimelock(...)` with the action; once the beacon is published a prover runs `proveTimelockElapsed`; the executor calls `verifyTimelock` before it acts, next to the usual PCA verification. If a trusted server clock and an approval step are enough for your case, use those; this adds a proof of elapsed sequential work, not a time stamp.
+
+| Missing or wrong | Result |
+|---|---|
+| No beacon | the requirement cannot be built; `requireTimelock` throws |
+| Modulus from `insecureDevSetup`, under 2048 bits, even, prime, a square or with a small factor | refused; `verifyTimelock` returns `false` |
+| Proof for another action, beacon, step count or modulus | `false` |
+| `y` or `pi` zero, a multiple of the modulus, or non-canonical (`> N/2`) | `false` (the detailed verifier names the reason) |
+| Fewer steps than required | `false` |
+| Malformed proof object | `false`, never a throw |
+| Challenge prime | derived by trial division, Miller-Rabin over 25 prime bases and a strong Lucas test (Baillie-PSW structure), identically by prover and verifier |
+
+## Status
+
+Hardened, awaiting independent audit. What the test suite now establishes, and what it does not:
+
+**Validated**
+
+- The bundled `RSA_2048_CHALLENGE_MODULUS` is compared digit for digit with the decimal published by RSA
+  Laboratories for the RSA-2048 challenge (Internet Archive capture) and with the Wikipedia "RSA numbers"
+  listing; both captures are recorded with URL, date and sha256.
+- The Wesolowski prover and verifier are checked against an independent implementation written separately
+  (Python 3.12 with gmpy2 2.3.2 / GMP 6.3.0 for modular exponentiation and primality, `hashlib` for SHA-256;
+  `y` by one big-exponent modpow and `pi` by direct floor division, not the running long-division the
+  TypeScript uses). On 40+ committed vectors over RSA-2048 and a 512-bit test modulus the outputs `y`, `pi`
+  and the challenge prime are identical, and 20+ tampered or malformed proofs are refused with the same
+  reason code. With a Python environment available, a live run also cross-verifies fresh random proofs in both
+  directions and checks the Miller-Rabin routine against GMP on random numbers, Carmichael numbers and strong
+  pseudoprimes. These vectors are self-written; no official vectors exist for this construction (the
+  challenge-prime derivation is specific to this package, and chiavdf is a class-group VDF).
+- Timelock input derivation is re-computed independently with Node's crypto and matches.
+- The production path refuses a modulus produced by `insecureDevSetup`, anything under 2048 bits, and
+  structurally weak moduli, each with a specific reason.
+
+**Precomputation and beacon limits (red-team RT-10)**
+
+- The beacon is what makes the delay start late: without it `x` depends only on the action digest and an
+  agent can grind the squarings for a predicted digest long before approval. With it, nobody can start
+  before the beacon exists. This package does NOT verify the beacon; if an adversary can predict or choose
+  it (a counter, a value the agent controls, a small candidate set) it can precompute for every candidate.
+  Use a public randomness beacon or a ledger head that includes the action, and check it post-dates the action.
+- The proof is a work proof, not a clock: the delay is a floor under an assumption about the fastest squarer.
+- The plain `vdfVerify`/`vdfEval` primitive keeps its sign ambiguity (`y` and `N-y`); use the canonical
+  functions wherever `y` is hashed or compared. Uniqueness is of the canonical representative, in the
+  quotient by `+-1`; it is not a proof that `x` is a square.
+
+**Defect found by these tests and fixed**
+
+- `vdfVerify` used to accept `y = 0, pi = 0` (and any multiple of the modulus) for every input and step
+  count, so a timelock could be released with no work at all. Verification now requires `y`, `pi` and `x` to
+  be canonical units of the group.
+
+**Not validated**
+
+- An RSA-group VDF is only a delay if nobody knows the factors of `N`. The RSA-2048 challenge number is
+  unfactored as far as is publicly known; that is a statement about public knowledge, not a guarantee.
+  `checkProductionModulus` is a screen for obviously unsuitable moduli, not proof that a well-formed
+  semiprime has unknown factors, and it cannot recognise a dev modulus generated in another process. For real
+  use supply a modulus from an unknown-order ceremony or the challenge number. A class-group VDF, which needs
+  no trusted setup, is not implemented.
+- The challenge prime is derived with a fixed set of Miller-Rabin bases plus a strong Lucas test rather than a certified-prime proof (no known counterexample to that combination).
+- A VDF measures sequential work, not seconds. Use `calibrateSteps` with a conservative adversary speedup
+  and treat the resulting wall-clock time as a floor, not an exact timer.
+- No side-channel review (BigInt arithmetic is not constant time) and no independent audit.
+
+## Formal evidence
+
+Wesolowski timelock, `PcaComp/Vdf.lean`. What a machine checked, and what it did not.
+
+- Proved: the honest proof always verifies, whatever challenge prime the hash yields (`wesolowski_complete`); the VDF input commits to the action, the beacon and the modulus up to a hash collision (`x_binding`).
+- Assumed (named, NOT mechanised): NA-AROOT (adaptive root assumption in the RSA-2048 challenge group, which is what makes an accepting proof mean `y = x^(2^T)`), NA-RSA (nobody holds the factorisation), NA-SEQ (no shortcut to `T` sequential squarings), NA-ROM for hashToPrime. The delay is a hardware statement, not a theorem about the code.
+- Not modelled: soundness of the proof.
+
+Reproduce: `formal/computational/check.sh lean` (core Lean 4, no Mathlib; it also prints the axioms each theorem uses, only `propext`, `Classical.choice` and `Quot.sound`). The models are hand-written from the code and are NOT statements about the shipped implementation: the independent audit of the implementation is still required, and this package stays hardened until then.
+
+## License
+
+MIT - see LICENSE

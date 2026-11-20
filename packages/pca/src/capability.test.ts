@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { attenuate, capHash, delegate, mintRoot, verifyChain, type Capability } from './capability';
+import {
+  allocationsMonotone,
+  attenuate,
+  budgetAllocCaveat,
+  budgetAllocNodes,
+  capHash,
+  delegate,
+  MAX_CHAIN_DEPTH,
+  mintRoot,
+  verifyChain,
+  type Capability,
+} from './capability';
 import { encodeKey, generateKeyPair } from './keys';
 import { b64u, hashCanonical, sha256, utf8 } from './hash';
 
@@ -102,3 +113,71 @@ function forge(body: { issuer: string; holder: string; caveats: unknown[]; paren
   m.set(raw, p.length);
   return { id: digest, issuer: body.issuer, holder: body.holder, caveats: body.caveats as Capability['caveats'], parent: body.parent, body_digest: digest, sig: b64u(sign(secret, m)) };
 }
+
+describe('capability chain hardening (P5-3)', () => {
+  it('rejects chains deeper than MAX_CHAIN_DEPTH before any signature work, accepts exactly the max', () => {
+    const { A, root } = setup();
+    const chain: Capability[] = [root];
+    for (let i = 1; i < MAX_CHAIN_DEPTH; i++) chain.push(attenuate(chain[i - 1]!, [], A.secretKey));
+    expect(verifyChain(chain).ok).toBe(true);
+    chain.push(attenuate(chain[chain.length - 1]!, [], A.secretKey));
+    const r = verifyChain(chain);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/too long/);
+  });
+
+  it('rejects wrongly-typed hops instead of throwing', () => {
+    const { A, root } = setup();
+    const child = attenuate(root, [{ type: 'x' }], A.secretKey);
+    const mut = (patch: Record<string, unknown>) => verifyChain([root, { ...child, ...patch } as unknown as Capability]);
+    expect(mut({ caveats: 'nope' }).ok).toBe(false);
+    expect(mut({ caveats: [null] }).ok).toBe(false);
+    expect(mut({ caveats: [{ nottype: 1 }] }).ok).toBe(false);
+    expect(mut({ sig: 5 }).ok).toBe(false);
+    expect(mut({ parent: 7 }).ok).toBe(false);
+    expect(verifyChain([null as unknown as Capability]).ok).toBe(false);
+    expect(verifyChain([root, child]).ok).toBe(true);
+  });
+});
+
+describe('per-child budget subtree: carried allocation caveat (monotone / lineage)', () => {
+  it('allocationsMonotone: non-increasing passes, a widening and a malformed limit are rejected', () => {
+    expect(allocationsMonotone([]).ok).toBe(true); // no allocations => single-pool path
+    expect(allocationsMonotone([{ type: 'expires', at: 1 }]).ok).toBe(true); // unrelated caveats ignored
+    expect(allocationsMonotone([budgetAllocCaveat(10), budgetAllocCaveat(10), budgetAllocCaveat(4)]).ok).toBe(true);
+    const widen = allocationsMonotone([budgetAllocCaveat(5), budgetAllocCaveat(7)]);
+    expect(widen.ok).toBe(false);
+    expect(widen.reason).toMatch(/widens/);
+    expect(allocationsMonotone([budgetAllocCaveat(Number.NaN)]).ok).toBe(false);
+    expect(allocationsMonotone([budgetAllocCaveat(-1)]).ok).toBe(false);
+  });
+
+  it('verifyChain accepts a child allocating <= its parent and REJECTS a child that widens', () => {
+    const { P, A, S, root } = setup();
+    const pPub = encodeKey(P.publicKey);
+    // root -> task (alloc 10) -> sub (alloc 4): monotone, verifies.
+    const task = delegate(root, encodeKey(A.publicKey), [budgetAllocCaveat(10)], A.secretKey);
+    const sub = delegate(task, encodeKey(S.publicKey), [budgetAllocCaveat(4)], A.secretKey);
+    expect(verifyChain([root, task, sub], pPub)).toEqual({ ok: true });
+    // a sibling sub that tries to allocate MORE than the parent carried (10) is rejected by chain verify.
+    const widen = delegate(task, encodeKey(S.publicKey), [budgetAllocCaveat(11)], A.secretKey);
+    const r = verifyChain([root, task, widen], pPub);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/widens/);
+  });
+
+  it('budgetAllocNodes: extracts one node per allocation, in root->leaf order, with monotone limits + stable keys', () => {
+    const { A, S, root } = setup();
+    const task = delegate(root, encodeKey(A.publicKey), [budgetAllocCaveat(10)], A.secretKey);
+    const sub = delegate(task, encodeKey(S.publicKey), [budgetAllocCaveat(4)], A.secretKey);
+    const nodes = budgetAllocNodes([root, task, sub]);
+    expect(nodes.map((n) => n.limit)).toEqual([10, 4]);
+    expect(nodes.map((n) => n.depth)).toEqual([1, 2]); // introduced at hops 1 and 2
+    expect(nodes[0]!.holder).toBe(encodeKey(A.publicKey));
+    expect(nodes[1]!.holder).toBe(encodeKey(S.publicKey));
+    expect(new Set(nodes.map((n) => n.nodePath)).size).toBe(2); // distinct, content-addressed keys
+    // a chain with no allocation caveat yields no nodes (the backward-compatible single-pool path).
+    const plain = delegate(root, encodeKey(S.publicKey), [{ type: 'expires', at: Date.now() + 1000 }], A.secretKey);
+    expect(budgetAllocNodes([root, plain])).toEqual([]);
+  });
+});

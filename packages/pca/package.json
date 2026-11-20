@@ -1,7 +1,34 @@
 {
   "name": "@atlasauth/pca",
-  "version": "0.1.0",
-  "description": "Proof-Carrying Authority core: canonical hashing, Ed25519, Merkle plan commitments, attenuable capability chains, PCActn verifier (M0).",
+  "version": "0.5.0",
+  "description": "Proof-Carrying Authority core: canonical hashing, Ed25519 and post-quantum signatures, Merkle plan commitments, attenuable capability chains, hardware attestation verification, and the PCActn verifier.",
+  "keywords": [
+    "capability",
+    "delegation",
+    "attestation",
+    "post-quantum",
+    "ed25519",
+    "ml-dsa",
+    "fn-dsa",
+    "verifier",
+    "tee",
+    "merkle",
+    "agent authorization",
+    "proof-carrying authority",
+    "pca",
+    "ai agents"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/Atlas-Authorization/pca#readme",
+  "bugs": {
+    "url": "https://github.com/Atlas-Authorization/pca/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
+    "directory": "packages/pca"
+  },
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -9,7 +36,43 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "default": "./dist/core.js"
+    },
+    "./dataflow": {
+      "types": "./dist/dataflow.d.ts",
+      "default": "./dist/dataflow.js"
+    },
+    "./durable-state": {
+      "types": "./dist/durable-state.d.ts",
+      "default": "./dist/durable-state.js"
+    },
+    "./ext/*": {
+      "types": "./dist/ext/*.d.ts",
+      "default": "./dist/ext/*.js"
+    },
+    "./durable-mesh-witness": {
+      "types": "./dist/durable-mesh-witness.d.ts",
+      "default": "./dist/durable-mesh-witness.js"
+    },
     "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "core": [
+        "dist/core.d.ts"
+      ],
+      "dataflow": [
+        "dist/dataflow.d.ts"
+      ],
+      "durable-state": [
+        "dist/durable-state.d.ts"
+      ],
+      "ext/*": [
+        "dist/ext/*.d.ts"
+      ]
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -18,19 +81,71 @@
     "example": "tsx examples/pca-loop.ts"
   },
   "dependencies": {
+    "@atlasauth/pca-fndsa-wasm": "workspace:*",
+    "@atlasauth/pca-verified-core": "workspace:*",
     "@noble/curves": "^1.9.1",
     "@noble/hashes": "^1.8.0",
+    "@noble/post-quantum": "^0.4.1",
     "@scure/base": "^1.2.6"
+  },
+  "optionalDependencies": {
+    "@atlasauth/pca-less-wasm": "workspace:*",
+    "@xmldom/xmldom": "0.8.15",
+    "asn1js": "3.0.10",
+    "pkijs": "3.4.1",
+    "xml-crypto": "6.1.2"
+  },
+  "peerDependencies": {
+    "snarkjs": "^0.7.5"
+  },
+  "peerDependenciesMeta": {
+    "snarkjs": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
+    "circomlib": "^2.0.5",
+    "fast-check": "^3.23.1",
+    "snarkjs": "^0.7.5",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vitest": "^4.1.12"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Atlas-Authorization/javascript.git",
-    "directory": "packages/pca"
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "circuits/*.circom",
+    "circuits/*.sh",
+    "circuits/*vkey.json",
+    "circuits/circuit-versions.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pca": {
+    "maturity": "stable",
+    "features": {
+      "core": "stable",
+      "pq-signatures": "stable",
+      "server": "production",
+      "durable-state": "production",
+      "threshold-multisig": "production",
+      "frost": "hardened",
+      "attestation-software": "production",
+      "attestation": "hardened",
+      "zk-compliance": "hardened",
+      "optimistic": "production",
+      "intent": "production",
+      "intent-frontier": "production",
+      "ledger": "hardened",
+      "kem": "hardened",
+      "product-layer": "production",
+      "entropy": "hardened"
+    }
   }
 }

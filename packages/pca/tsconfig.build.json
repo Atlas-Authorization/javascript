@@ -7,5 +7,5 @@
     "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
   },
   // Typecheck covers the tests; the BUILD must not emit them into dist.
-  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
+  "exclude": ["**/*.test.ts", "**/*.test.tsx", "**/*.test-util.ts", "src/test-support/**"]
 }

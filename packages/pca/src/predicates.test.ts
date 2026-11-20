@@ -3,9 +3,16 @@ import {
   envelopeCaveatEvaluator,
   evaluateCaveats,
   evaluateCondition,
+  evaluateConditionTri,
   evaluatePredicates,
+  isGroupCondition,
+  isLeafCondition,
+  isSafeRegexSource,
+  MAX_PATTERN_SUBJECT_LEN,
+  MAX_RE_RESOURCE_LEN,
   resolvePath,
   type ActionContext,
+  type Condition,
   type Predicate,
 } from './predicates';
 
@@ -73,7 +80,7 @@ describe('predicates', () => {
   });
   it('unknown op, missing field, type mismatch, bad shapes are safe (false, no throw)', () => {
     const t = (c: unknown) => evaluateCondition(c as never, ctx());
-    expect(t({ field: 'env.region', op: 'matches', value: 'e.' })).toBe(false);
+    expect(t({ field: 'env.region', op: 'nonsense_op', value: 'e.' })).toBe(false);
     expect(t({ field: 'env.zzz', op: 'eq', value: 1 })).toBe(false);
     expect(t({ field: 'env.zzz', op: 'ne', value: 1 })).toBe(false);
     expect(t({ field: 'env.region', op: 'lt', value: 5 })).toBe(false);
@@ -127,5 +134,293 @@ describe('envelope caveat evaluator', () => {
     const r = evaluateCaveats([{ type: 'expires', at: 2_000_000 }, { type: 'delegation_depth', max: 0 }], { ...base, delegationDepth: 3 });
     expect(r).toEqual({ ok: false, failed: ['delegation_depth'] });
     expect(evaluateCaveats([], base).ok).toBe(true);
+  });
+});
+
+describe('predicates hardening (P5-3)', () => {
+  const rx = (re: string, resource: string) => evaluatePredicates([{ verb: '*', resource: `re:${re}` }], ctx({ action: { verb: 'x', resource } })).allowed;
+
+  it('well-formed re: patterns keep their semantics', () => {
+    expect(rx('/acct/[^/]+/sessions/\\d+', '/acct/42/sessions/7')).toBe(true);
+    expect(rx('/acct/[^/]+/sessions/\\d+', '/acct/42/sessions/x')).toBe(false);
+    expect(rx('(?:GET|POST) /x', 'POST /x')).toBe(true);
+    expect(rx('/a/(?:b|c)/.*', '/a/c/zzz')).toBe(true);
+    expect(rx('(ab)+c', 'ababc')).toBe(true);
+    expect(rx('a{1,5}b', 'aaab')).toBe(true);
+  });
+
+  it('rejects nested-quantifier / ambiguous-alternation patterns (ReDoS) without evaluating them', () => {
+    const evil = 'a'.repeat(40) + '!';
+    const t0 = Date.now();
+    for (const p of ['(a+)+$', '(a*)*b', '(a|aa)+$', '(.*a){10}', '(a+)*', '(?:a+)+']) {
+      expect(rx(p, evil)).toBe(false);
+      expect(isSafeRegexSource(p)).toBe(false);
+    }
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+
+  it('rejects backreferences, lookaround, too many unbounded quantifiers, huge repeats, and overlong resources', () => {
+    for (const p of ['(a)\\1', '(?=a)a', '(?<=a)a', '(?<n>a)\\k<n>', '.*.*.*.*', 'a{1,1000}', '*a', '(a']) {
+      expect(isSafeRegexSource(p)).toBe(false);
+    }
+    expect(rx('.*', 'a'.repeat(MAX_RE_RESOURCE_LEN + 1))).toBe(false);
+    expect(rx('.*', 'a'.repeat(MAX_RE_RESOURCE_LEN))).toBe(true);
+  });
+
+  it('params-rooted conditions fail closed when params were not supplied (exists:false is not vacuous)', () => {
+    const noParams = { action: { verb: 'v', resource: '/r' } } as ActionContext;
+    expect(evaluateCondition({ field: 'action.params.secret', op: 'exists', value: false }, noParams)).toBe(false);
+    expect(evaluateCondition({ field: 'action.params.x', op: 'nin', value: [1] }, noParams)).toBe(false);
+    expect(evaluateCondition({ field: 'env.region', op: 'eq', value: 'x', ref: 'action.params.y' }, noParams)).toBe(false);
+    // With params supplied, "absent" still works as before.
+    const withParams = { action: { verb: 'v', resource: '/r', params: {} } } as ActionContext;
+    expect(evaluateCondition({ field: 'action.params.secret', op: 'exists', value: false }, withParams)).toBe(true);
+    // Non-params roots are unaffected.
+    expect(evaluateCondition({ field: 'env.nothing', op: 'exists', value: false }, noParams)).toBe(true);
+  });
+});
+
+describe('DSL extensions — new leaf ops', () => {
+  const t = (c: Condition, over: Partial<ActionContext> = {}) =>
+    evaluateCondition(c, {
+      action: { verb: 'v', resource: '/acct/42/items/7', params: { name: 'report-final.pdf', path: '/a/b/c', code: 'AB-12' } },
+      subject: { id: 'User::alice', principal: { type: 'User', tags: ['admin', 'eu'] }, groups: ['team:core'] },
+      env: {
+        region: 'eu',
+        wildcard: 'eu-*',
+        parents: { 'team:core': ['team:eng'], 'team:eng': ['org:acme'], 'org:acme': [] },
+        cyclic: { a: ['b'], b: ['c'], c: ['a'] },
+      },
+      ...over,
+    });
+
+  it('like: anchored glob with * and ? and escaping', () => {
+    expect(t({ field: 'action.params.name', op: 'like', value: '*.pdf' })).toBe(true);
+    expect(t({ field: 'action.params.name', op: 'like', value: 'report-*' })).toBe(true);
+    expect(t({ field: 'action.params.name', op: 'like', value: '*.txt' })).toBe(false);
+    expect(t({ field: 'action.params.code', op: 'like', value: 'AB-??' })).toBe(true);
+    expect(t({ field: 'action.params.code', op: 'like', value: 'AB-?' })).toBe(false); // anchored: needs exactly one more
+    // escaping: a literal star / question mark
+    expect(t({ field: 'action.params.name', op: 'like', value: 'report-final.pd?' })).toBe(true);
+    expect(t({ field: 'action.params.code', op: 'like', value: 'AB\\-12' })).toBe(true);
+    expect(evaluateConditionTri({ field: 'action.params.code', op: 'like', value: 'A*' }, {
+      action: { verb: 'v', resource: '/r', params: { code: 'A*literal' } },
+    } as ActionContext)).toBe('true');
+    // escaped literal star must NOT act as a wildcard
+    expect(t({ field: 'action.params.code', op: 'like', value: 'A\\*' })).toBe(false);
+    // non-string value / operand => unknown => false (fails closed)
+    expect(t({ field: 'action.params.name', op: 'like', value: 5 })).toBe(false);
+    expect(t({ field: 'env.region', op: 'like', ref: 'subject.groups' })).toBe(false);
+  });
+
+  it('like: oversized subject fails closed', () => {
+    const big = 'a'.repeat(MAX_PATTERN_SUBJECT_LEN + 1);
+    expect(
+      evaluateCondition({ field: 'action.params.x', op: 'like', value: '*' }, {
+        action: { verb: 'v', resource: '/r', params: { x: big } },
+      } as ActionContext),
+    ).toBe(false);
+  });
+
+  it('matches: anchored safe regex, fail-closed on regex-bomb / invalid / non-string', () => {
+    expect(t({ field: 'action.params.code', op: 'matches', value: '[A-Z]{2}-\\d{2}' })).toBe(true);
+    expect(t({ field: 'action.params.code', op: 'matches', value: '\\d+' })).toBe(false); // anchored full-match
+    expect(t({ field: 'env.region', op: 'matches', value: 'e.' })).toBe(true);
+    // ReDoS construct rejected (unsafe source) => unknown => false, and does NOT hang
+    const t0 = Date.now();
+    expect(
+      evaluateCondition({ field: 'action.params.x', op: 'matches', value: '(a+)+$' }, {
+        action: { verb: 'v', resource: '/r', params: { x: 'a'.repeat(40) + '!' } },
+      } as ActionContext),
+    ).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(500);
+    // invalid regex / non-string
+    expect(t({ field: 'env.region', op: 'matches', value: '(' })).toBe(false);
+    expect(t({ field: 'subject.groups', op: 'matches', value: '.*' })).toBe(false);
+  });
+
+  it('is_a: Type::id string prefix, object type, tags, ref operand', () => {
+    expect(t({ field: 'subject.id', op: 'is_a', value: 'User' })).toBe(true);
+    expect(t({ field: 'subject.id', op: 'is_a', value: 'Group' })).toBe(false);
+    expect(t({ field: 'action.resource', op: 'is_a', value: 'User' })).toBe(false);
+    expect(t({ field: 'subject.principal', op: 'is_a', value: 'User' })).toBe(true); // object.type
+    expect(t({ field: 'subject.principal', op: 'is_a', value: 'admin' })).toBe(true); // object.tags
+    expect(t({ field: 'subject.principal', op: 'is_a', value: 'nope' })).toBe(false);
+    // provided value via ref
+    expect(
+      t({ field: 'subject.id', op: 'is_a', ref: 'env.expected_type' }, { env: { expected_type: 'User' } }),
+    ).toBe(true);
+    // a value with no decidable type/tag => unknown => false
+    expect(t({ field: 'action.params.code', op: 'is_a', value: 'AB-12::x' })).toBe(false);
+    expect(t({ field: 'action.params', op: 'is_a', value: 'Anything' })).toBe(false);
+  });
+
+  it('member_of: reflexive bounded transitive closure, cycle-guarded, array targets', () => {
+    const mo = (value: unknown, collection = 'env.parents') =>
+      t({ field: 'subject.groups.0', op: 'member_of', value, collection });
+    expect(mo('team:core')).toBe(true); // reflexive
+    expect(mo('team:eng')).toBe(true); // one hop
+    expect(mo('org:acme')).toBe(true); // transitive
+    expect(mo('org:other')).toBe(false); // not reachable (cleanly false)
+    expect(mo(['org:other', 'org:acme'])).toBe(true); // any-of targets
+    // cycle guard: resolve against a cyclic adjacency without hanging
+    expect(
+      t({ field: 'env.start', op: 'member_of', value: 'c', collection: 'env.cyclic' }, { env: { start: 'a', cyclic: { a: ['b'], b: ['c'], c: ['a'] } } }),
+    ).toBe(true);
+    expect(
+      t({ field: 'env.start', op: 'member_of', value: 'z', collection: 'env.cyclic' }, { env: { start: 'a', cyclic: { a: ['b'], b: ['c'], c: ['a'] } } }),
+    ).toBe(false);
+    // missing / non-object collection, non-string field => fail closed
+    expect(t({ field: 'subject.groups.0', op: 'member_of', value: 'x', collection: 'env.nope' })).toBe(false);
+    expect(t({ field: 'subject.groups', op: 'member_of', value: 'x', collection: 'env.parents' })).toBe(false);
+    expect(t({ field: 'subject.groups.0', op: 'member_of', value: 'x' })).toBe(false); // no collection
+    // prototype-pollution key is never traversed
+    expect(
+      t({ field: 'env.start', op: 'member_of', value: 'polluted', collection: 'env.adj' }, { env: { start: '__proto__', adj: { x: ['y'] } } }),
+    ).toBe(false);
+  });
+});
+
+describe('DSL extensions — boolean groupings (all_of / any_of / not)', () => {
+  const ctx = (over: Partial<ActionContext> = {}): ActionContext => ({
+    action: { verb: 'pay', resource: '/acct/42', params: { amount: 500, currency: 'usd' } },
+    subject: { id: 'u1' },
+    env: { region: 'eu' },
+    ...over,
+  });
+  const t = (c: Condition, over: Partial<ActionContext> = {}) => evaluateCondition(c, ctx(over));
+
+  it('all_of is conjunction; any_of is disjunction', () => {
+    const amtOk: Condition = { field: 'action.params.amount', op: 'lte', value: 1000 };
+    const eu: Condition = { field: 'env.region', op: 'eq', value: 'eu' };
+    const us: Condition = { field: 'env.region', op: 'eq', value: 'us' };
+    expect(t({ all_of: [amtOk, eu] })).toBe(true);
+    expect(t({ all_of: [amtOk, us] })).toBe(false);
+    expect(t({ any_of: [us, eu] })).toBe(true);
+    expect(t({ any_of: [us, { field: 'env.region', op: 'eq', value: 'ap' }] })).toBe(false);
+  });
+
+  it('not negates a cleanly-decided condition and FAILS CLOSED on an undecidable child', () => {
+    expect(t({ not: { field: 'env.region', op: 'eq', value: 'us' } })).toBe(true); // region != us
+    expect(t({ not: { field: 'env.region', op: 'eq', value: 'eu' } })).toBe(false);
+    // inner is UNKNOWN (missing field) => not must NOT grant
+    expect(t({ not: { field: 'env.missing', op: 'eq', value: 'x' } })).toBe(false);
+    // inner is UNKNOWN (unknown op) => not must NOT grant
+    expect(t({ not: { field: 'env.region', op: 'bogus' as never, value: 'x' } })).toBe(false);
+    // inner is UNKNOWN (regex bomb) => not must NOT grant
+    expect(t({ not: { field: 'env.region', op: 'matches', value: '(a+)+$' } })).toBe(false);
+  });
+
+  it('nesting: arbitrary boolean logic', () => {
+    const c: Condition = {
+      all_of: [
+        { field: 'action.params.amount', op: 'gt', value: 0 },
+        { any_of: [{ field: 'env.region', op: 'eq', value: 'eu' }, { field: 'env.region', op: 'eq', value: 'us' }] },
+        { not: { field: 'action.params.currency', op: 'eq', value: 'xxx' } },
+      ],
+    };
+    expect(t(c)).toBe(true);
+    expect(t(c, { action: { verb: 'pay', resource: '/acct/42', params: { amount: 500, currency: 'xxx' } } })).toBe(false);
+  });
+
+  it('empty / malformed groupings fail closed', () => {
+    expect(evaluateConditionTri({ all_of: [] }, ctx())).toBe('unknown');
+    expect(evaluateConditionTri({ any_of: [] }, ctx())).toBe('unknown');
+    expect(t({ all_of: 'x' as never })).toBe(false);
+    expect(t({ any_of: 5 as never })).toBe(false);
+    // an all_of whose child is unknown is unknown (not granted)
+    expect(evaluateConditionTri({ all_of: [{ field: 'env.region', op: 'eq', value: 'eu' }, { field: 'env.x', op: 'eq', value: 1 }] }, ctx())).toBe('unknown');
+    // an any_of with one true short-circuits past an unknown
+    expect(evaluateConditionTri({ any_of: [{ field: 'env.region', op: 'eq', value: 'eu' }, { field: 'env.x', op: 'eq', value: 1 }] }, ctx())).toBe('true');
+  });
+
+  it('groupings compose with predicates (where is an implicit AND over groupings)', () => {
+    const p: Predicate = {
+      verb: 'pay',
+      where: [{ any_of: [{ field: 'env.region', op: 'eq', value: 'eu' }, { field: 'env.region', op: 'eq', value: 'us' }] }],
+    };
+    expect(evaluatePredicates([p], ctx()).allowed).toBe(true);
+    expect(evaluatePredicates([p], ctx({ env: { region: 'ap' } })).allowed).toBe(false);
+  });
+
+  it('type guards distinguish leaves from groupings', () => {
+    expect(isLeafCondition({ field: 'env.region', op: 'eq', value: 'eu' })).toBe(true);
+    expect(isGroupCondition({ field: 'env.region', op: 'eq', value: 'eu' })).toBe(false);
+    expect(isGroupCondition({ all_of: [] })).toBe(true);
+    expect(isGroupCondition({ not: { field: 'x', op: 'exists' } })).toBe(true);
+    expect(isLeafCondition({ any_of: [] })).toBe(false);
+  });
+});
+
+describe('limit-naming denial reasons (0.5, B6)', () => {
+  const pay = (params: Record<string, unknown>): ActionContext => ({ action: { verb: 'pay', resource: 'acct/1', params } });
+  const why = (preds: Predicate[], c: ActionContext) => evaluatePredicates(preds, c).reason;
+  const P = (where: Condition[], extra: Partial<Predicate> = {}): Predicate => ({ verb: 'pay', resource: 'acct/*', where, ...extra });
+  const F = (field: string, op: string, value?: unknown): Condition => ({ field: `action.params.${field}`, op, value }) as Condition;
+
+  it('names the first unmet limit in scope, with the executed verb and resource', () => {
+    expect(why([P([F('amount', 'lte', 500)])], pay({ amount: 5000 }))).toBe('amount <= 500 not satisfied for pay on acct/1');
+    expect(why([P([F('amount', 'lte', 500), F('currency', 'eq', 'usd')])], pay({ amount: 5, currency: 'eur' }))).toBe('currency == "usd" not satisfied for pay on acct/1');
+    expect(why([P([F('amount', 'lte', 500), F('currency', 'eq', 'usd')])], pay({ amount: 5000, currency: 'eur' }))).toBe('amount <= 500 not satisfied for pay on acct/1');
+  });
+
+  it('spells operators and operands deterministically', () => {
+    const t = (c: Condition, params: Record<string, unknown> = {}) => why([P([c])], pay(params));
+    const s = ' not satisfied for pay on acct/1';
+    expect(t(F('a', 'gt', 1))).toBe(`a > 1${s}`);
+    expect(t(F('a', 'gte', 1))).toBe(`a >= 1${s}`);
+    expect(t(F('a', 'lt', -2))).toBe(`a < -2${s}`);
+    expect(t(F('a', 'ne', true))).toBe(`a != true${s}`);
+    expect(t(F('a', 'eq', null))).toBe(`a == null${s}`);
+    expect(t(F('a', 'in', ['usd', 'eur', 3]))).toBe(`a in ["usd", "eur", 3]${s}`);
+    expect(t(F('a', 'nin', ['x']))).toBe(`a not in ["x"]${s}`);
+    expect(t(F('a', 'prefix', 'p/'))).toBe(`a starts with "p/"${s}`);
+    expect(t(F('a', 'like', 'x*'))).toBe(`a like "x*"${s}`);
+    expect(t(F('a', 'matches', '^x'))).toBe(`a matches "^x"${s}`);
+    expect(t(F('a', 'is_a', 'T'))).toBe(`a is a "T"${s}`);
+    expect(t(F('a', 'member_of', 'g'))).toBe(`a member of "g"${s}`);
+    expect(t({ field: 'action.params.a', op: 'constructor' } as unknown as Condition)).toBe(`a <condition>${s}`);
+    expect(t({ field: 'action.params.a', op: 'frobnicate', value: 1 } as unknown as Condition)).toBe(`a <condition>${s}`);
+    expect(t(F('a', 'exists'))).toBe(`a present${s}`);
+    expect(t(F('a', 'exists', false), { a: 1 })).toBe(`a absent${s}`);
+    expect(t({ field: 'action.params.a', op: 'eq', ref: 'env.cap' } as Condition)).toBe(`a == env.cap${s}`);
+    expect(t({ field: 'env.region', op: 'eq', value: 'eu' } as Condition)).toBe(`env.region == "eu"${s}`);
+  });
+
+  it('keeps values bounded: long or odd strings, floats, objects and big arrays are not spelled out', () => {
+    const s = ' not satisfied for pay on acct/1';
+    const t = (v: unknown) => why([P([F('a', 'eq', v)])], pay({}));
+    expect(t('x'.repeat(64))).toBe(`a == "${'x'.repeat(64)}"${s}`);
+    expect(t('x'.repeat(65))).toBe(`a == "..."${s}`);
+    expect(t('say "hi"')).toBe(`a == "..."${s}`);
+    expect(t('back\\slash')).toBe(`a == "..."${s}`);
+    expect(t('line\nbreak')).toBe(`a == "..."${s}`);
+    expect(t('emoji \u{1F600}')).toBe(`a == "..."${s}`);
+    expect(t(0.5)).toBe(`a == <number>${s}`);
+    expect(t(2 ** 53)).toBe(`a == <number>${s}`);
+    expect(t(Number.MAX_SAFE_INTEGER)).toBe(`a == 9007199254740991${s}`);
+    expect(t({ k: 1 })).toBe(`a == <value>${s}`);
+    expect(t([[1]])).toBe(`a == [<value>]${s}`);
+    expect(why([P([F('a', 'in', [1, 2, 3, 4, 5, 6, 7, 8])])], pay({}))).toBe(`a in [1, 2, 3, 4, 5, 6, 7, 8]${s}`);
+    expect(why([P([F('a', 'in', [1, 2, 3, 4, 5, 6, 7, 8, 9])])], pay({}))).toBe(`a in [...]${s}`);
+  });
+
+  it('descends into all_of and describes any_of / not groups', () => {
+    const s = ' not satisfied for pay on acct/1';
+    expect(why([P([{ all_of: [F('a', 'eq', 1), F('b', 'lte', 2)] }])], pay({ a: 1, b: 3 }))).toBe(`b <= 2${s}`);
+    expect(why([P([{ any_of: [F('a', 'eq', 1), F('b', 'lte', 2)] }])], pay({ a: 0, b: 3 }))).toBe(`any of (a == 1; b <= 2)${s}`);
+    expect(why([P([{ not: F('a', 'eq', 1) }])], pay({ a: 1 }))).toBe(`not (a == 1)${s}`);
+    expect(why([P([{ any_of: [{ all_of: [F('a', 'eq', 1)] }, F('b', 'eq', 2)] }])], pay({}))).toBe(`any of (all of (a == 1); b == 2)${s}`);
+    expect(why([P([{ any_of: [{ any_of: [{ not: F('a', 'eq', 1) }] }] }])], pay({ a: 1 }))).toBe(`any of (any of ((...)))${s}`);
+  });
+
+  it('keeps the plain wording when nothing is in scope, and uses the first predicate in scope', () => {
+    expect(why([P([F('amount', 'lte', 500)])], { action: { verb: 'refund', resource: 'acct/1', params: { amount: 9 } } })).toBe('no predicate permits refund on acct/1');
+    expect(why([P([F('amount', 'lte', 500)])], { action: { verb: 'pay', resource: 'other/1', params: { amount: 9999 } } })).toBe('no predicate permits pay on other/1');
+    expect(why([], pay({}))).toBe('envelope grants no predicates');
+    expect(why([{ verb: 'pay' }], { action: { verb: 'x', resource: 'y' } })).toBe('no predicate permits x on y');
+    expect(why([P([F('amount', 'lte', 1)]), P([F('amount', 'lte', 2)])], pay({ amount: 9 }))).toBe('amount <= 1 not satisfied for pay on acct/1');
+    // a predicate in scope whose where is not an array is skipped (fail closed, plain wording)
+    expect(why([{ verb: 'pay', where: 'x' as never }], pay({}))).toBe('no predicate permits pay on acct/1');
   });
 });

@@ -6,6 +6,7 @@ import {
   cost,
   debit,
   debitConsolidated,
+  debitConsolidatedPath,
   leak,
   planGeodesic,
   recharge,
@@ -104,13 +105,14 @@ describe('trust budget', () => {
     expect(ageSinceTouch({ B: 1, tau: 0 }, 9e9)).toBe(1);
   });
   it('admit: low r + budget -> auto; mid/high r -> step-up; depleted low r -> step-up t=3', () => {
-    expect(admit(0.1, { B: 1, tau: 0 }, P)).toEqual({ admit: true, needStepUp: false, t: 1 });
+    expect(admit(0.1, { B: 1, tau: 0 }, P)).toEqual({ admit: true, needStepUp: false, t: 1, metered: true });
     expect(admit(0.25, { B: 0.25, tau: 0 }, P).admit).toBe(true); // B >= cost edge
-    expect(admit(0.4, { B: 1, tau: 0 }, P)).toEqual({ admit: false, needStepUp: true, t: 2 });
-    expect(admit(0.9, { B: 1, tau: 0 }, P)).toEqual({ admit: false, needStepUp: true, t: 3 });
-    expect(admit(0.1, { B: 0.05, tau: 0 }, P)).toEqual({ admit: false, needStepUp: true, t: 3 });
+    expect(admit(0.4, { B: 1, tau: 0 }, P)).toEqual({ admit: false, needStepUp: true, t: 2, metered: true }); // t=2 is metered
+    expect(admit(0.4, { B: 0.3, tau: 0 }, P)).toEqual({ admit: false, needStepUp: true, t: 3, metered: false }); // t=2 unaffordable -> t=3
+    expect(admit(0.9, { B: 1, tau: 0 }, P)).toEqual({ admit: false, needStepUp: true, t: 3, metered: false });
+    expect(admit(0.1, { B: 0.05, tau: 0 }, P)).toEqual({ admit: false, needStepUp: true, t: 3, metered: false });
   });
-  it('SAFETY INVARIANT: sum r of auto-admitted actions between human recharges <= bMax/kappa', () => {
+  it('SAFETY INVARIANT: sum r of machine-only (t=1 AND t=2) actions between human recharges <= bMax/kappa', () => {
     for (const pol of [P, { ...P, kappa: 2, bMax: 1.5 }, { ...P, kappa: 0.5, bMax: 0.7, lambda: 0 }]) {
       // deterministic LCG so the "adversarial" sequence is reproducible
       let seed = 12345;
@@ -122,9 +124,9 @@ describe('trust budget', () => {
       for (let i = 0; i < 5000; i++) {
         now += Math.floor(rnd() * 5000);
         b = leak(b, now, pol.lambda);
-        const r = rnd() * 0.3; // mostly auto-eligible
+        const r = rnd() * 0.7; // spans t=1 and t=2 (machine-only band), some t=3
         const a = admit(r, b, pol);
-        if (a.admit) {
+        if (a.metered) {
           sum += r;
           b = debit(b, cost(r, pol.kappa));
           expect(sum).toBeLessThanOrEqual(safetyBound(pol) + 1e-9);
@@ -175,6 +177,23 @@ describe('trust budget', () => {
     const b = debitConsolidated(a.parent, s2.sub, 0.4);
     expect(b).toMatchObject({ ok: false, reason: expect.stringMatching(/parent/) });
     expect(debitConsolidated(parent, { B: 0.1, tau: 0 }, 0.2)).toMatchObject({ ok: false });
+  });
+  it('debitConsolidatedPath: debits node + every ancestor across a 2-3 level tree; refuses if ANY cannot cover', () => {
+    // A root->leaf path of carried-allocation remainings (ancestor budgets): grant-subtree 5, mid 3, leaf 2.
+    const path: TrustBudget[] = [{ B: 5, tau: 0 }, { B: 3, tau: 0 }, { B: 2, tau: 0 }];
+    const a = debitConsolidatedPath(path, 1.5);
+    expect(a.ok).toBe(true);
+    if (!a.ok) throw new Error();
+    expect(a.nodes.map((n) => n.B)).toEqual([3.5, 1.5, 0.5]); // every level debited by the SAME cost
+    // the tightest (leaf) node is now the binding one: a second 1.5 cannot be covered by it (0.5 < 1.5).
+    const b = debitConsolidatedPath(a.nodes, 1.5);
+    expect(b).toMatchObject({ ok: false, reason: expect.stringMatching(/depth 2/) });
+    // an EXHAUSTED ancestor refuses the whole debit even when the leaf could cover it (containment).
+    const ancestorDry: TrustBudget[] = [{ B: 0.2, tau: 0 }, { B: 9, tau: 0 }];
+    expect(debitConsolidatedPath(ancestorDry, 1)).toMatchObject({ ok: false, reason: expect.stringMatching(/depth 0/) });
+    // a zero-cost debit (e.g. an unmetered human-cosigned t=3) always succeeds and changes nothing.
+    const z = debitConsolidatedPath(path, 0);
+    expect(z.ok && z.nodes.map((n) => n.B)).toEqual([5, 3, 2]);
   });
   it('validateRiskPolicy', () => {
     expect(validateRiskPolicy(P)).toBeNull();

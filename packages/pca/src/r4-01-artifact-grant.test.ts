@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest';
+import { b64u } from './hash';
+import { generateKeyPair } from './keys';
+import { mintRoot } from './capability';
+import { buildPCActn, verifyPCActnCore } from './pcactn';
+import { encodeMlDsaPublicKey, mlDsa65Keygen } from './pq';
+
+/** R4-01 follow-up: a grant lifted from the artifact (grantFromArtifact) is never a `trustedRoot` for a PQ root. */
+const NOW = 1_800_000_000_000;
+const victim = generateKeyPair();
+const vPub = b64u(victim.publicKey);
+const atk = generateKeyPair();
+const aPub = b64u(atk.publicKey);
+const vMl = mlDsa65Keygen(new Uint8Array(32).fill(7));
+const aMl = mlDsa65Keygen(new Uint8Array(32).fill(9));
+const caveats = [{ type: 'ttl', secs: 3600 }] as never;
+const node = { id: 'n', verb: 'x', resource: 'r', reversibility_class: 'reversible' } as never;
+const mk = (root: ReturnType<typeof mintRoot>) =>
+  buildPCActn({ grant: root, chain: [root], plan: [node], nodeId: 'n', counter: 1, signerSecret: atk.secretKey, aud: 'a', now: NOW });
+
+describe('R4-01: verifyPCActnCore grantFromArtifact', () => {
+  const forged = mintRoot({ principalSecret: atk.secretKey, principalPublic: vPub, holder: aPub, caveats, suite: { alg: 'ml-dsa-65', mlDsa: aMl } });
+  const genuine = mintRoot({ principalSecret: victim.secretKey, principalPublic: vPub, holder: aPub, caveats, suite: { alg: 'ml-dsa-65', mlDsa: vMl } });
+  const pins = { [vPub]: encodeMlDsaPublicKey(vMl.publicKey) };
+
+  it('a stored (verifier-held) grant still authorises its own PQ root (unchanged)', async () => {
+    expect((await verifyPCActnCore(mk(genuine), { insecureSkipPlanRootCheck: true, grant: genuine, audience: 'a', nowEpoch: NOW })).checks.cap_chain).toBe('pass');
+  });
+  it('an artifact-lifted PQ root is refused without a pin, and a forged one even with the victim\'s pin', async () => {
+    const o = { audience: 'a', nowEpoch: NOW, grantFromArtifact: true } as const;
+    expect((await verifyPCActnCore(mk(forged), { insecureSkipPlanRootCheck: true, ...o, grant: forged })).checks.cap_chain).toBe('fail');
+    expect((await verifyPCActnCore(mk(forged), { insecureSkipPlanRootCheck: true, ...o, grant: forged, pqPins: pins })).checks.cap_chain).toBe('fail');
+    expect((await verifyPCActnCore(mk(genuine), { insecureSkipPlanRootCheck: true, ...o, grant: genuine })).checks.cap_chain).toBe('fail');
+    expect((await verifyPCActnCore(mk(genuine), { insecureSkipPlanRootCheck: true, ...o, grant: genuine, pqPins: pins })).checks.cap_chain).toBe('pass');
+  });
+  it('an ed25519 root is unaffected', async () => {
+    const ed = mintRoot({ principalSecret: victim.secretKey, principalPublic: vPub, holder: aPub, caveats });
+    expect((await verifyPCActnCore(mk(ed), { insecureSkipPlanRootCheck: true, grant: ed, audience: 'a', nowEpoch: NOW, grantFromArtifact: true })).checks.cap_chain).toBe('pass');
+  });
+  it('a classical root from an issuer that has a pin is refused (pq_pin), with or without grantFromArtifact; unpinned issuers are unchanged', async () => {
+    const ed = mintRoot({ principalSecret: victim.secretKey, principalPublic: vPub, holder: aPub, caveats });
+    const REASON = 'pq_pin: the grant issuer is pinned to a post-quantum key; a classical grant is refused';
+    for (const fromArtifact of [true, false]) {
+      const o = { insecureSkipPlanRootCheck: true, grant: ed, audience: 'a', nowEpoch: NOW, ...(fromArtifact ? { grantFromArtifact: true } : {}) } as const;
+      const pinned = await verifyPCActnCore(mk(ed), { ...o, pqPins: pins });
+      expect(pinned.allow, String(fromArtifact)).toBe(false);
+      expect(pinned.checks['pq_pin']).toBe('fail');
+      expect(pinned.reason ?? '').toContain(REASON);
+      expect((await verifyPCActnCore(mk(ed), { ...o, pqPins: { [vPub]: 7 as never } })).checks['pq_pin']).toBe('fail');
+      const other = await verifyPCActnCore(mk(ed), { ...o, pqPins: { somebody: 'k' } });
+      expect('pq_pin' in other.checks).toBe(false);
+      expect((await verifyPCActnCore(mk(ed), { ...o, pqPins: {} })).checks.cap_chain).toBe('pass');
+      expect('pq_pin' in (await verifyPCActnCore(mk(ed), o)).checks).toBe(false);
+    }
+    expect((await verifyPCActnCore(mk(ed), { insecureSkipPlanRootCheck: true, grant: ed, audience: 'a', nowEpoch: NOW, pqPins: Object.create({ [vPub]: 'k' }) })).checks['pq_pin']).toBeUndefined();
+  });
+});
