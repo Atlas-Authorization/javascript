@@ -1,4 +1,5 @@
 import { ed25519 } from '@noble/curves/ed25519';
+import type { ExtPointConstructor } from '@noble/curves/abstract/edwards';
 import { ctAdd, ctMul, ctReduce, ctToBigint } from './ct-scalar';
 import { sha512 } from '@noble/hashes/sha512';
 import { b64u, hashCanonical, unb64u, utf8 } from './hash';
@@ -124,7 +125,8 @@ function canonicalScalar(b: Uint8Array): bigint {
  * so it is a literal drop-in for that in-process path.
  */
 
-const P = ed25519.ExtendedPoint;
+// Annotated so emitted declarations name the type portably.
+const P: ExtPointConstructor = ed25519.ExtendedPoint;
 
 // ---- local scalar / point helpers (frost.ts keeps its own private; mirror them here) -------------
 

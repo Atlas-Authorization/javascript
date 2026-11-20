@@ -2,6 +2,7 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 // `node:http` is imported LAZILY (inside startSignerHttpServer) so this module — re-exported from the
 // package barrel — carries no static Node-builtin import and stays safe to bundle for the browser.
 import { ed25519 } from '@noble/curves/ed25519';
+import type { ExtPointConstructor } from '@noble/curves/abstract/edwards';
 import { ctAdd, ctMul } from './ct-scalar';
 import { sha512 } from '@noble/hashes/sha512';
 import type { NonceStore } from './frost-nonce-store';
@@ -234,7 +235,8 @@ export interface SignerPoP {
   s: string;
 }
 
-const EdPt = ed25519.ExtendedPoint;
+// Annotated so emitted declarations name the type portably.
+const EdPt: ExtPointConstructor = ed25519.ExtendedPoint;
 
 function modL(a: bigint): bigint {
   const r = a % L;

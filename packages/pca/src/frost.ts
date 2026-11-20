@@ -1,5 +1,6 @@
 import { ctAdd, ctFromBigint, ctMul, ctReduce, ctToBigint } from './ct-scalar';
 import { ed25519 } from '@noble/curves/ed25519';
+import type { ExtPointConstructor } from '@noble/curves/abstract/edwards';
 import { sha512 } from '@noble/hashes/sha512';
 import { utf8 } from './hash';
 
@@ -53,7 +54,8 @@ import { utf8 } from './hash';
  * standard. PCA's DEFAULT remains the multi-signature.
  */
 
-const P = ed25519.ExtendedPoint;
+// Annotated so emitted declarations name the type portably.
+const P: ExtPointConstructor = ed25519.ExtendedPoint;
 /** Order of the prime-order edwards25519 scalar field. */
 export const L: bigint = ed25519.CURVE.n;
 
