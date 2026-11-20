@@ -42,7 +42,10 @@ const setRel = (oldS: readonly string[], newS: readonly string[]): Rel => {
 };
 /** More restrictive = larger. */
 const rankRel = (o: number, n: number): Rel => (n === o ? 'eq' : n > o ? 'narrow' : 'widen');
-const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+// Key order is not meaning: a stored (jsonb) def comes back with its keys sorted, a fresh one in author order.
+const sortKeys = (v: unknown): unknown =>
+  Array.isArray(v) ? v.map(sortKeys) : v !== null && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys((v as Record<string, unknown>)[k])])) : v;
+const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
 
 // ---- parameter domains ---------------------------------------------------------------------------------------------------------------
 
