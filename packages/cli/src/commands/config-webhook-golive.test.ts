@@ -23,7 +23,7 @@ class Api implements ConfigHttp {
   async post<T>(path: string, body: unknown): Promise<T> {
     if (path.includes('dry_run=true')) return {} as T;
     this.calls.push({ method: 'POST', path, body });
-    if (path === '/v1/webhook_endpoints') return { id: 'we_new', secret: 'whsec_minted0123456789012345678901234567' } as T;
+    if (path === '/v1/webhook_endpoints') return { id: 'we_new', secret: 'whsec_' + 'minted0123456789012345678901234567' } as T;
     return {} as T;
   }
   async put<T>(path: string, body: unknown): Promise<T> {

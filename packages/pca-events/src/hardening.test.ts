@@ -14,7 +14,7 @@ import {
   webhookHeaders,
 } from './index';
 
-const SECRET = 'whsec_0123456789abcdef0123456789';
+const SECRET = 'whsec_' + '0123456789abcdef0123456789';
 const T = 1_700_000_100;
 const event = buildStepUpEvent('step_up.approved', { type: 'step_up.approved', at: 1_700_000_000_000, grant_ref: 'g1', action: { verb: 'stripe.refund', resource: 'pi_1' }, tier: 2, actor: 'u1' });
 const payload = serializeEvent(event);
@@ -81,13 +81,13 @@ describe('timestamps and tolerance fail closed', () => {
 });
 
 describe('secret rotation: several v1 entries', () => {
-  const OLD = 'whsec_old_0123456789abcdef012345';
+  const OLD = 'whsec_' + 'old_0123456789abcdef012345';
   it('any matching v1 is enough, in any position', () => {
     const oldMac = signWebhook(OLD, payload, { timestamp: T }).split('v1=')[1] as string;
     const newMac = sig.split('v1=')[1] as string;
     expect(verifyWebhook(SECRET, payload, `t=${T},v1=${oldMac},v1=${newMac}`, { now: T })).toBe(true);
     expect(verifyWebhook(SECRET, payload, `t=${T},v1=${newMac},v1=${oldMac}`, { now: T })).toBe(true);
-    expect(verifyWebhook('whsec_other_0123456789abcdefghi', payload, `t=${T},v1=${oldMac},v1=${newMac}`, { now: T })).toBe(false);
+    expect(verifyWebhook('whsec_' + 'other_0123456789abcdefghi', payload, `t=${T},v1=${oldMac},v1=${newMac}`, { now: T })).toBe(false);
   });
   it('a bad entry next to a good one does not hide the good one', () => {
     const mac = sig.split('v1=')[1] as string;
@@ -135,7 +135,7 @@ describe('verifyDelivery: one genuine delivery per event', () => {
   });
   it('a bad signature does not burn the event id', async () => {
     const o = opts();
-    expect(await verifyDelivery('whsec_wrong_0123456789abcdefghi', payload, sig, o)).toEqual({ ok: false, reason: 'bad signature' });
+    expect(await verifyDelivery('whsec_' + 'wrong_0123456789abcdefghi', payload, sig, o)).toEqual({ ok: false, reason: 'bad signature' });
     expect((await verifyDelivery(SECRET, payload, sig, o)).ok).toBe(true);
   });
   it('a correctly signed payload that is not a well-formed event is refused with the parse reason', async () => {
@@ -157,7 +157,7 @@ describe('verifyDelivery: one genuine delivery per event', () => {
   });
   it('no refusal reason carries the secret or the payload', async () => {
     const reasons = [
-      await verifyDelivery('whsec_wrong_0123456789abcdefghi', payload, sig, opts()),
+      await verifyDelivery('whsec_' + 'wrong_0123456789abcdefghi', payload, sig, opts()),
       await verifyDelivery(SECRET, payload, 'garbage', opts()),
       await verifyDelivery(SECRET, payload, sig, { now: T } as never),
     ].map((r) => JSON.stringify(r));

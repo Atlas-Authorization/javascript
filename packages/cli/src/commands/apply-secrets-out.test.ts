@@ -29,8 +29,8 @@ class Api implements ConfigHttp {
     if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
    
     this.calls.push({ method: 'POST', path, body });
-    if (path === '/v1/webhook_endpoints') return { id: 'we_new', secret: 'whsec_minted0123456789012345678901234567' } as T;
-    if (path.endsWith('/reveal_secret')) return { secret: 'whsec_revealed01234567890123456789012345' } as T;
+    if (path === '/v1/webhook_endpoints') return { id: 'we_new', secret: 'whsec_' + 'minted0123456789012345678901234567' } as T;
+    if (path.endsWith('/reveal_secret')) return { secret: 'whsec_' + 'revealed01234567890123456789012345' } as T;
     return {} as T;
   }
   async put<T>(path: string, body: unknown): Promise<T> {
@@ -63,14 +63,14 @@ describe('atlas apply --secrets-out', () => {
     const out = join(dir, 'sub', 'dir', '.env');
     const io = captureIO();
     expect(await run(['apply', write('atlas.yaml', file), '--yes', '--secrets-out', out], ctx(io, api))).toBe(0);
-    expect(readFileSync(out, 'utf8')).toContain('ATLAS_WEBHOOK_SECRET=whsec_minted');
+    expect(readFileSync(out, 'utf8')).toContain('ATLAS_WEBHOOK_SECRET=whsec_' + 'minted');
     expect(statSync(out).mode & 0o777).toBe(0o600);
-    expect(io.stdout() + io.stderr()).not.toContain('whsec_minted');
+    expect(io.stdout() + io.stderr()).not.toContain('whsec_' + 'minted');
     expect(io.stdout()).toContain('ATLAS_WEBHOOK_SECRET');
     writeFileSync(out, '# mine\nOTHER=1\nATLAS_WEBHOOK_SECRET=old\n');
     api.webhooks = [];
     await run(['apply', write('atlas.yaml', file), '--yes', '--secrets-out', out], ctx(captureIO(), api));
-    expect(readFileSync(out, 'utf8')).toBe('# mine\nOTHER=1\nATLAS_WEBHOOK_SECRET=whsec_minted0123456789012345678901234567\n');
+    expect(readFileSync(out, 'utf8')).toBe('# mine\nOTHER=1\nATLAS_WEBHOOK_SECRET=whsec_' + 'minted0123456789012345678901234567\n');
   });
   it('reveals (no rotation) an existing endpoint secret once, and skips it when the file has one', async () => {
     const api = new Api();

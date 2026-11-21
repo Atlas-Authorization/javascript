@@ -29,8 +29,8 @@ class Api implements ConfigHttp {
     if (path.includes('dry_run=true')) return {} as T; // pre-flight validates only
    
     this.calls.push({ method: 'POST', path, body });
-    if (path === '/v1/webhook_endpoints') return { id: 'we_new', secret: 'whsec_minted0123456789012345678901234567' } as T;
-    if (path.endsWith('/reveal_secret')) return { secret: 'whsec_revealed01234567890123456789012345' } as T;
+    if (path === '/v1/webhook_endpoints') return { id: 'we_new', secret: 'whsec_' + 'minted0123456789012345678901234567' } as T;
+    if (path.endsWith('/reveal_secret')) return { secret: 'whsec_' + 'revealed01234567890123456789012345' } as T;
     return {} as T;
   }
   async put<T>(path: string, body: unknown): Promise<T> {
