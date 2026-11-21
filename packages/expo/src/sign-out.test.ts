@@ -236,6 +236,7 @@ describe('<AtlasProvider> (expo) wiring', () => {
       children: null,
     });
     expect(element.type).toBe(ReactAtlasProvider);
+    expect((element.props as { host?: string }).host).toBe('native');
     const props = element.props as {
       tombstoneStore: { getItem(k: string): unknown; setItem(k: string, v: string): unknown };
       fetchImpl: typeof fetch;

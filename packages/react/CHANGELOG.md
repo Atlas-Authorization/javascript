@@ -1,5 +1,9 @@
 # @atlasauth/react changelog
 
+## 0.40.2
+
+- New `host` prop (`'dom'` | `'native'`) says explicitly what `<AtlasProvider>` renders around its children; React Native detection is now only the fallback when it is not set.
+
 ## 0.40.1
 
 - Under React Native, `<AtlasProvider>` renders only its context: no `<style>`, `<link>` or root `<div>`, and no `window.location` reads. This fixes `@atlasauth/expo` crashing at launch. New export `isReactNative()`.

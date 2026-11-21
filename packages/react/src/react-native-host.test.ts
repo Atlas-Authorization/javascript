@@ -33,4 +33,10 @@ describe('<AtlasProvider> host elements', () => {
     const html = renderToStaticMarkup(createElement(AtlasProvider, { ...props, children: 'child' }));
     expect(html).toBe('child');
   });
+
+  it('follows an explicit host over detection', () => {
+    expect(renderToStaticMarkup(createElement(AtlasProvider, { ...props, host: 'native', children: 'child' }))).toBe('child');
+    vi.stubGlobal('navigator', { product: 'ReactNative' });
+    expect(renderToStaticMarkup(createElement(AtlasProvider, { ...props, host: 'dom', children: 'child' }))).toContain('<div');
+  });
 });

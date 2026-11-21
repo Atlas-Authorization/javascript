@@ -247,6 +247,13 @@ export interface AtlasProviderProps {
    */
   keepSessionAlive?: boolean;
   /**
+   * What the provider renders around its children. `'dom'` (browsers, server rendering): the base and design
+   * `<style>`, font `<link>`s and the `.atlas-root` `<div>`. `'native'` (React Native): the context only, since
+   * those host elements do not exist there. `@atlasauth/expo` passes `'native'`. Default: `'native'` when
+   * running under React Native, else `'dom'`.
+   */
+  host?: 'dom' | 'native';
+  /**
    * The instance's Frontend API origin — REQUIRED.
    *
    * The publishable key is `pk_(live|test)_<instanceId>`: it encodes the
@@ -1226,7 +1233,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
   const style = rendered.style as React.CSSProperties;
 
   // React Native has no <style>/<link>/<div> host elements: rendering one crashes the app.
-  if (isReactNative()) return <AtlasContext.Provider value={value}>{children}</AtlasContext.Provider>;
+  if ((props.host ?? (isReactNative() ? 'native' : 'dom')) === 'native') return <AtlasContext.Provider value={value}>{children}</AtlasContext.Provider>;
 
   return (
     <AtlasContext.Provider value={value}>
@@ -1273,7 +1280,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
   );
 }
 
-/** True in React Native (Expo, bare RN), where `window` exists but has no DOM. Expo web reports a browser. */
+/** True in React Native (Expo, bare RN), where `window` exists but has no DOM. The fallback when `host` is not set. */
 export function isReactNative(): boolean {
   return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
 }

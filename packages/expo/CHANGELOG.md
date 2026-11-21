@@ -1,5 +1,9 @@
 # @atlasauth/expo changelog
 
+## 0.12.3
+
+- `<AtlasProvider>` tells the web provider explicitly that it runs natively (`host: 'native'`) instead of relying on React Native detection (needs `@atlasauth/react` 0.40.2).
+
 ## 0.12.2
 
 - Fixes the crash at launch: `<AtlasProvider>` no longer renders browser elements under React Native (needs `@atlasauth/react` 0.40.1).

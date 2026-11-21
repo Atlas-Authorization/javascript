@@ -41,7 +41,7 @@ import {
  * tombstones elsewhere.
  * `fetchImpl` is replaced by the cache-backed fetch, so it is not forwardable.
  */
-export interface AtlasProviderProps extends Omit<ReactAtlasProviderProps, 'fetchImpl' | 'publishableKey'> {
+export interface AtlasProviderProps extends Omit<ReactAtlasProviderProps, 'fetchImpl' | 'publishableKey' | 'host'> {
   /** Required here: a native app has no path mount to read the key from. */
   publishableKey: string;
   /**
@@ -85,6 +85,8 @@ export function AtlasProvider(props: AtlasProviderProps): ReactElement {
 
   return createElement(ReactAtlasProvider, {
     ...rest,
+    // Never render the web provider's <style>/<link>/<div>: React Native has no such host elements.
+    host: 'native',
     tombstoneStore: rest.tombstoneStore ?? wiring.tombstoneStore,
     fetchImpl: wiring.cacheFetch,
     children: createElement(ExpoFapiContext.Provider, { value: wiring.fapi }, rest.children),
