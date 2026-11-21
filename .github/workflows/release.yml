@@ -71,3 +71,9 @@ jobs:
           }
           for n in ${{ steps.plan.outputs.names }}; do check "$n" & done
           wait
+
+      - name: Fail if a version was held back
+        if: always()
+        run: |
+          # Set by the plan: a version its CHANGELOG.md does not describe was not published.
+          if [ -f .release-held ]; then cat .release-held; exit 1; fi
