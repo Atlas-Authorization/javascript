@@ -13,9 +13,11 @@ import {
   isCaptchaError,
   nextStep,
   readRedirectResult,
+  signInWithNativeBrowser,
   resolveFrontendApi,
   startSignUp,
   type AttestationProvider,
+  type NativeAuthBrowser,
   type CaptchaFlowKey,
   type EmailDelivery,
   type FapiClient,
@@ -97,6 +99,11 @@ export interface AtlasStoreConfig {
    */
   attestation?: AttestationProvider;
   /**
+   * This app's registered id (`napp_…`, from `POST /v1/native_apps`). Sent as `X-Atlas-App-Id` on every
+   * request and as the app of every `signInWithOAuth`. Required when the publishable key is restricted to apps.
+   */
+  appId?: string;
+  /**
    * Delays (ms) between background re-tries of a revoke `signOut()` could not
    * complete. Default `[15_000, 60_000, 300_000]`; `[]` re-tries only on a
    * later `bootstrap()`.
@@ -133,6 +140,14 @@ const CAPTCHA_REQUIRED_MESSAGE = 'Please complete the security check, then try a
 const attemptId = (flow: FlowState): string =>
   (flow.attempt as { id?: string } | null)?.id ?? '';
 
+declare const __DEV__: boolean | undefined;
+
+/** What `signInWithOAuth` resolves with. Cancelling is a status, not an error. */
+export type OAuthSignInResult =
+  | { status: 'complete' | 'cancelled'; errors: [] }
+  | { status: 'needs_second_factor' | 'needs_required_action'; attemptId: string; attemptStatus: string; policyToken?: string; codeVerifier?: string; errors: [] }
+  | { status: 'error'; errors: Array<{ code: string; message: string; param?: string; reason?: string }> };
+
 export class AtlasStore {
   private state: AtlasStoreState = {
     status: 'loading',
@@ -146,6 +161,7 @@ export class AtlasStore {
   private readonly client: FapiClient;
   private readonly getCaptchaToken?: AtlasStoreConfig['getCaptchaToken'];
   private readonly locale?: string;
+  private readonly appId?: string;
   /** Tombstones + revoke (with background re-try) for `signOut()` and `bootstrap()`. */
   private readonly guard: SignOutGuard;
   /** A raw FAPI request authenticated with `token` (not the stored one). */
@@ -155,6 +171,7 @@ export class AtlasStore {
     this.storage = config.storage ?? createInMemoryStorage();
     this.getCaptchaToken = config.getCaptchaToken;
     this.locale = config.locale;
+    this.appId = config.appId;
     const fetchImpl = config.fetchImpl ?? fetch;
     const frontendApi = resolveFrontendApi(config.frontendApi, {
       component: '<AtlasProvider> / createAtlasStore()',
@@ -167,6 +184,7 @@ export class AtlasStore {
       getToken: () => this.storage.getToken(),
       locale: config.locale,
       attestation: config.attestation,
+      appId: config.appId,
     });
     // The revoke is bound to the token being dropped, not read from storage at
     // call time: sign-out clears storage, and the background re-try of a failed
@@ -174,6 +192,7 @@ export class AtlasStore {
     this.requestWith = (token) => (path, init = {}) => {
       const headers = new Headers(init.headers);
       headers.set('x-publishable-key', config.publishableKey);
+      if (config.appId) headers.set('x-atlas-app-id', config.appId);
       return bearerFetch(fetchImpl, () => token)(`${frontendApi}${path}`, { ...init, headers });
     };
     this.guard = new SignOutGuard({
@@ -390,9 +409,47 @@ export class AtlasStore {
   // ── OAuth ──────────────────────────────────────────────────────────────────
 
   /**
-   * Begin OAuth. Returns the authorization URL for the app to open with
-   * `expo-auth-session` / `Linking`. When the provider redirects back to the
-   * app's deep link, hand the callback URL to `completeOAuthRedirect`.
+   * Sign in with a provider (Discord, GitHub, …) in the system browser, in one call:
+   * PKCE, start, browser, redeem, store the session.
+   *
+   * `browser` opens the auth session (`expo-web-browser`'s `openAuthSessionAsync`
+   * fits; `@atlasauth/expo` wires it for you). A cancelled browser is
+   * `status: 'cancelled'`, never an error. `needs_second_factor` /
+   * `needs_required_action` carry the `attemptId` to continue with
+   * `attemptSecondFactor` / the sign-in screens. Refused inside a WebView.
+   */
+  signInWithOAuth = async (
+    provider: string,
+    opts: { browser: NativeAuthBrowser; appId?: string; redirectUrl?: string; callback?: string; preferEphemeralSession?: boolean; inWebView?: boolean },
+  ): Promise<OAuthSignInResult> => {
+    const nativeAppId = opts.appId ?? this.appId;
+    const out = await signInWithNativeBrowser(this.client, {
+      provider,
+      browser: opts.browser,
+      ...(nativeAppId ? { nativeAppId } : {}),
+      ...(opts.redirectUrl ? { redirectUrl: opts.redirectUrl } : {}),
+      ...(opts.callback ? { callback: opts.callback } : {}),
+      ...(opts.preferEphemeralSession !== undefined ? { preferEphemeralSession: opts.preferEphemeralSession } : {}),
+      ...(opts.inWebView !== undefined ? { inWebView: opts.inWebView } : {}),
+      onStarted: ({ redirectUrl }) => {
+        if (typeof __DEV__ !== 'undefined' && __DEV__) console.log(`[atlas] OAuth redirect_url sent: ${redirectUrl}`);
+      },
+    });
+    if (out.status === 'complete') {
+      await this.setSessionToken(out.session.jwt);
+      return { status: 'complete', errors: [] };
+    }
+    if (out.status === 'error') return out;
+    if (out.status === 'cancelled') return { status: 'cancelled', errors: [] };
+    return { ...out, errors: [] };
+  };
+
+  /**
+   * Begin OAuth by hand.
+   *
+   * @deprecated Use `signInWithOAuth`, which adds PKCE and does the whole flow.
+   * Returns the authorization URL for the app to open; hand the callback URL to
+   * `completeOAuthRedirect`. An app-scheme redirect needs a registered native app.
    */
   startOAuth = (input: {
     provider: string;
@@ -403,7 +460,8 @@ export class AtlasStore {
   }> => startOAuthSignIn(this.client, input);
 
   /**
-   * Finish an OAuth sign-in from the deep-link callback URL. Parses Atlas's
+   * Finish a by-hand OAuth sign-in (`startOAuth`) from the deep-link callback URL.
+   * Prefer `signInWithOAuth`, which does this for you with PKCE. Parses Atlas's
    * redirect params (shared `@atlasauth/js` contract), and — if the sign-in
    * completed — exchanges the ticket for a token and persists it. A callback
    * carrying only a status (a second factor is still owed) returns `needs_more`.

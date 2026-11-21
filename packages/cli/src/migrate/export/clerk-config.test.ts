@@ -280,7 +280,8 @@ describe('translateClerkConfig', () => {
       { name: 'supabase', claims: JWT_TEMPLATES[0]!.claims, lifetime: 3600, allowed_clock_skew: 5 },
       { name: 'hasura', claims: JWT_TEMPLATES[1]!.claims, lifetime: 60, allowed_clock_skew: 5 },
     ]);
-    expect(r.documents.redirect_urls).toEqual([{ url: 'myapp://oauth-callback' }]);
+    expect(r.documents.redirect_urls).toBeUndefined();
+    expect(r.report).toContainEqual(expect.objectContaining({ status: 'differs', setting: 'myapp://oauth-callback', atlas: 'native_apps' }));
     const report = r.report;
     expect(report).toContainEqual(expect.objectContaining({ status: 'mapped', setting: 'organization_permissions', note: "1 custom permission(s); Clerk's system permissions are built into Atlas." }));
     expect(report).toContainEqual(expect.objectContaining({ status: 'mapped', setting: 'organization_roles', note: '2 role(s), same keys.' }));

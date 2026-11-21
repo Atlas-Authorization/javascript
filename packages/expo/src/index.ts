@@ -59,6 +59,10 @@ export * from './step-up';
 export * from './screens';
 export * from './screens-hook';
 
+// Browser sign-in with a provider (PKCE, Expo Go aware): `useSignIn().signInWithOAuth('discord')`.
+export * from './sign-in-hook';
+export { createExpoOAuth, isExpoGo, type ExpoOAuthModules, type ExpoSignInOptions } from './expo-oauth';
+
 // Default React Native screens (sign-in, sign-up, second factor, account security) built on those view-models,
 // and the element builders behind them (themeable, testable without a renderer).
 export * from './native-screens';

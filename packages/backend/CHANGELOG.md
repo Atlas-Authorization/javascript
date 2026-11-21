@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.61.0
+
+- `atlas.nativeApps`: list, create, get, update and delete native apps (`/v1/native_apps`), and get or set which apps the publishable key may sign in (`/v1/native_apps/publishable_key`).
+
 ## 0.60.1
 
 - `user.created` webhook types: `signup_context.visit`.

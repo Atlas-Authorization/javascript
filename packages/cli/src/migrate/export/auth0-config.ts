@@ -206,8 +206,7 @@ export function translateAuth0Config(snap: Auth0ConfigSnapshot): TranslationResu
       b.add('differs', 'applications', `callbacks ${url}`, 'Atlas redirect URLs are exact (no wildcards); list each URL.', 'redirect_urls');
       continue;
     }
-    b.push('redirect_urls', { url });
-    exact++;
+    if (b.push('redirect_urls', { url })) exact++;
   }
   if (exact) b.add('mapped', 'applications', 'callbacks', `${exact} callback URL(s) become redirect URLs.`, 'redirect_urls');
   if (origins.size) {

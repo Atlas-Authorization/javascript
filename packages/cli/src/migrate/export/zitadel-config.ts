@@ -227,8 +227,7 @@ export function translateZitadelConfig(snap: ZitadelConfigSnapshot): Translation
       add('differs', 'applications', `redirectUris ${url}`, 'Atlas redirect URLs are exact (no wildcards); list each URL.', 'redirect_urls');
       continue;
     }
-    b.push('redirect_urls', { url });
-    exact++;
+    if (b.push('redirect_urls', { url })) exact++;
   }
   if (exact) add('mapped', 'applications', 'oidcApps redirectUris', `${exact} redirect / post-logout URL(s) become redirect URLs.`, 'redirect_urls');
   if (origins.size) {

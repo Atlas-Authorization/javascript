@@ -1,5 +1,10 @@
 # @atlasauth/react-native changelog
 
+## 0.9.0
+
+- `signInWithOAuth(provider)`: one call does PKCE, opens the system browser, and returns the session (or the attempt and `codeVerifier` when a second factor is needed).
+- Needs `@atlasauth/js` 0.50.0.
+
 ## 0.8.0 — 2026-11-13
 
 - Sign-in, sign-up and password reset solve Atlas captcha on Hermes/JSC with no app code.

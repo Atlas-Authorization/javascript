@@ -309,11 +309,12 @@ export function translateAzureConfig(snap: AzureConfigSnapshot): TranslationResu
     for (const u of uris) redirects.add(u);
     if (app.isFallbackPublicClient === true) publicClient ??= str(app.appId);
   }
+  let mappedRedirects = 0;
   for (const url of redirects) {
     if (url.includes('*')) b.add('differs', 'app registrations', `redirectUris ${url}`, 'Atlas redirect URLs are exact (no wildcards).', 'redirect_urls');
-    else b.push('redirect_urls', { url });
+    else if (b.push('redirect_urls', { url })) mappedRedirects++;
   }
-  if (redirects.size) b.add('mapped', 'app registrations', 'web / spa / publicClient redirectUris', `${redirects.size} redirect URI(s).`, 'redirect_urls');
+  if (mappedRedirects) b.add('mapped', 'app registrations', 'web / spa / publicClient redirectUris', `${mappedRedirects} redirect URI(s).`, 'redirect_urls');
 
   // ── groups → roles ──
   for (const g of snap.groups) {

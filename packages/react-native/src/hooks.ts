@@ -16,6 +16,7 @@ import {
   type SignOutResult,
 } from '@atlasauth/js';
 import { useAtlasState, useAtlasStore } from './AtlasProvider';
+import type { AtlasStore } from './store';
 import type { AtlasSession, AtlasUser, AuthStatus, FlowResult } from './types';
 
 /**
@@ -112,6 +113,8 @@ export function useSignIn(): {
     errors: Array<{ code: string; message: string; param?: string }>;
   }>;
   completeOAuthRedirect(callbackUrl: string): Promise<FlowResult>;
+  /** Sign in with a provider in the system browser, with PKCE, in one call (see `AtlasStore.signInWithOAuth`). */
+  signInWithOAuth: AtlasStore['signInWithOAuth'];
   /**
    * Continue an attempt the server holds at `needs_policy_acceptance` (a
    * `FlowResult` with that `attemptStatus`): send `controller.build()` with the
@@ -130,6 +133,7 @@ export function useSignIn(): {
     attemptSecondFactor: store.attemptSecondFactor,
     startOAuth: store.startOAuth,
     completeOAuthRedirect: store.completeOAuthRedirect,
+    signInWithOAuth: store.signInWithOAuth,
     acceptPolicies: store.acceptPolicies,
   };
 }

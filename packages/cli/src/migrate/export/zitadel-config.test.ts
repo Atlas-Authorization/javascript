@@ -84,7 +84,6 @@ describe('translateZitadelConfig', () => {
       { url: 'https://app.acme.com/welcome' },
       { url: 'https://app.acme.com/callback' },
       { url: 'https://app.acme.com/' },
-      { url: 'com.acme.app://callback' },
     ]);
     expect(entry('redirectUris https://*.acme.com/cb').status).toBe('differs');
     expect((t.documents.instance as { allowed_origins: string[] }).allowed_origins).toEqual(['https://app.acme.com']);

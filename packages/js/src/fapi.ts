@@ -105,6 +105,11 @@ export interface FapiClientOptions {
    * Your own `unsafe_metadata` on the call wins. See `./attribution-fields`.
    */
   attribution?: AttributionOptions;
+  /**
+   * A native app's registered id (`napp_…`), sent as `X-Atlas-App-Id` on every request. A publishable key
+   * restricted to specific apps refuses a native request without it (`APP_NOT_ALLOWED`).
+   */
+  appId?: string;
 }
 
 /**
@@ -246,6 +251,7 @@ export class FapiClient {
           'x-publishable-key': this.options.publishableKey,
           [SDK_HEADER]: sdkHeaderValue(sdk),
           ...(language ? { 'accept-language': language } : {}),
+          ...(this.options.appId ? { 'x-atlas-app-id': this.options.appId } : {}),
           ...(attestation ? { 'atlas-attestation': attestation } : {}),
           ...(dpopProof ? { dpop: dpopProof } : {}),
           ...(init.body ? { 'content-type': 'application/json' } : {}),

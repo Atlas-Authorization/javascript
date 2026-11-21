@@ -161,8 +161,7 @@ export function translateKeycloakConfig(realm: Obj, opts: { groupsAs?: 'roles' |
       b.add('differs', 'clients', `redirectUris ${url}`, 'Atlas redirect URLs are exact absolute URLs (no wildcards or relative paths).', 'redirect_urls');
       continue;
     }
-    b.push('redirect_urls', { url });
-    exact++;
+    if (b.push('redirect_urls', { url })) exact++;
   }
   if (exact) b.add('mapped', 'clients', 'redirectUris', `${exact} redirect URI(s).`, 'redirect_urls');
 

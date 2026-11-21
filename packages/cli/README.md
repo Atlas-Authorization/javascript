@@ -57,6 +57,7 @@ atlas golive   --origin <url> [--dry-run] [--yes] [--connect cookiemunch,forumul
 atlas keys     rotate <id> [--preset app-runtime] [--overlap 72h] [--out <file>]   # new secret goes to a 0600 file, the old key works for the overlap
 atlas keys     create (--scopes "<scopes>" | --preset app-runtime) [--name n]
 atlas dev      proxy --app <url> --api <fapi url> [--base-path /atlas]
+atlas dev      native [--provider discord]   # native apps, callbacks, what is missing, the sign-in snippet
 atlas referrals connect ... [--dry-run]
 atlas env      --product <name> --format dotenv|coolify|vercel
 atlas client   rotate <client-id> [--now | --overlap <seconds>]

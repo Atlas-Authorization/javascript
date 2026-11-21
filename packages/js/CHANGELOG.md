@@ -1,5 +1,12 @@
 # @atlasauth/js changelog
 
+## 0.50.0
+
+- Native OAuth with PKCE: `signInWithNativeBrowser`, `startOAuthSignIn` (sends `code_challenge`, `native_app_id`, `callback`) and `redeemOAuthCode` (`POST /v1/client/sign_ins/oauth/token`). `createPkcePair` works without WebCrypto (Hermes).
+- `readRedirectResult` returns the `code` of a native return URL. `FapiClient` takes `appId` (sent as `X-Atlas-App-Id`).
+- The sign-in flow resumes a native attempt that needs a second factor (`resumeAttempt` with its `codeVerifier`) and redeems the code with the verifier at the end.
+- `NATIVE_OAUTH_ERRORS`: each native sign-in error code with its fix.
+
 ## 0.49.0
 
 - Sign-in and sign-up starts send the visitor's `atlas_visit` token (read from the page URL or its `redirect_url`) so a connected analytics platform can credit the sign-up to the visit. Invalid tokens are dropped silently.

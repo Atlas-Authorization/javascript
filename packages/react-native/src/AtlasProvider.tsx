@@ -60,6 +60,8 @@ export interface AtlasProviderProps {
   getCaptchaToken?: AtlasStoreConfig['getCaptchaToken'];
   /** App Attest / Play Integrity provider, once the instance requires app attestation. Read once. */
   attestation?: AtlasStoreConfig['attestation'];
+  /** This app's registered id (`napp_…`); sent as `X-Atlas-App-Id` and used by `signInWithOAuth`. */
+  appId?: AtlasStoreConfig['appId'];
   children: ReactNode;
 }
 
@@ -76,6 +78,7 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
       locale: props.locale,
       getCaptchaToken: props.getCaptchaToken,
       attestation: props.attestation,
+      appId: props.appId,
     }),
   );
 

@@ -535,5 +535,33 @@ export const ERROR_CATALOG: Record<string, { status: number; title: string }> = 
   "OWNERSHIP_TRANSFER_REQUIRED": {
     "status": 409,
     "title": "Ownership transfer required"
-  }
+  },
+  "PKCE_REQUIRED": {
+    "status": 400,
+    "title": "PKCE required"
+  },
+  "PKCE_MISMATCH": {
+    "status": 400,
+    "title": "PKCE verifier mismatch"
+  },
+  "NATIVE_APP_NOT_REGISTERED": {
+    "status": 400,
+    "title": "Native app not registered"
+  },
+  "CALLBACK_NOT_REGISTERED": {
+    "status": 400,
+    "title": "Callback not registered"
+  },
+  "PROVIDER_NOT_ENABLED": {
+    "status": 400,
+    "title": "Provider not enabled"
+  },
+  "APP_NOT_ALLOWED": {
+    "status": 403,
+    "title": "App not allowed"
+  },
+  "DEV_SCHEME_ON_PRODUCTION": {
+    "status": 400,
+    "title": "Development scheme on production"
+  },
 };

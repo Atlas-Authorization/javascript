@@ -392,11 +392,11 @@ describe('translateAuth0Config', () => {
     const r = translateAuth0Config(FULL);
     expect(r.documents.redirect_urls).toEqual([
       { url: 'https://app.acme.example/callback' },
-      { url: 'com.acme.app://acme.us.auth0.com/ios/com.acme.app/callback' },
       { url: 'https://partner.example/cb' },
     ]);
+    expect(r.report).toContainEqual(expect.objectContaining({ status: 'differs', area: 'native apps', setting: 'com.acme.app://acme.us.auth0.com/ios/com.acme.app/callback', atlas: 'native_apps' }));
     expect(r.report).toContainEqual(expect.objectContaining({ status: 'differs', area: 'applications', setting: 'callbacks https://*.preview.acme.example/callback', atlas: 'redirect_urls' }));
-    expect(r.report).toContainEqual({ status: 'mapped', area: 'applications', setting: 'callbacks', note: '3 callback URL(s) become redirect URLs.', atlas: 'redirect_urls' });
+    expect(r.report).toContainEqual({ status: 'mapped', area: 'applications', setting: 'callbacks', note: '2 callback URL(s) become redirect URLs.', atlas: 'redirect_urls' });
     expect(r.report).toContainEqual(expect.objectContaining({ status: 'mapped', area: 'applications', setting: 'web_origins / allowed_origins', atlas: 'instance.allowed_origins' }));
     expect(r.report).toContainEqual(expect.objectContaining({ status: 'manual', area: 'applications Billing worker', setting: 'app_type non_interactive', atlas: 'oauth_clients' }));
     expect(r.report).toContainEqual(expect.objectContaining({ status: 'manual', area: 'applications Partner Portal', setting: 'is_first_party false', atlas: 'oauth_clients' }));

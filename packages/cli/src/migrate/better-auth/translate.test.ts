@@ -208,7 +208,8 @@ describe('kitchen-sink: many plugins, a function-scoped instance, payments', () 
     expect(find(t, 'databaseHooks.user.create.before')?.note).toContain('pre-user-registration Action');
     expect(find(t, 'hooks.before')?.status).toBe('manual');
     expect(t.document.instance.allowed_origins).toEqual(['https://kitchen.example', 'https://admin.kitchen.example']);
-    expect(t.document.redirect_urls).toEqual([{ url: 'myapp://' }]);
+    expect(t.document.redirect_urls).toEqual([]);
+    expect(find(t, 'trustedOrigins "myapp://"')?.atlas).toBe('native_apps');
   });
 
   it('maps the remaining plugins', () => {

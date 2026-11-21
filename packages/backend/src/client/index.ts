@@ -137,6 +137,7 @@ import { pcaResource } from './pca';
 import { mcpConnectorResource, mcpResource } from './mcp';
 import { legacyAuthConnectionResource } from './legacy-auth';
 import { redirectUrlsResource } from './redirect-urls';
+import { nativeAppsResource } from './native-apps';
 import { sessionExchangeAppsResource } from './session-exchange-apps';
 import { ticketsResource } from './tickets';
 import { testModeResource } from './test-mode';
@@ -442,6 +443,7 @@ function buildNamespaces(request: RequestFn) {
     mcpConnector: mcpConnectorResource(request),
     legacyAuthConnection: legacyAuthConnectionResource(request),
     redirectUrls: redirectUrlsResource(request),
+    nativeApps: nativeAppsResource(request),
     sessionExchangeApps: sessionExchangeAppsResource(request),
     tickets: ticketsResource(request),
     // Development-instance helpers: the paired test instance, test users, testing tokens.

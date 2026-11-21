@@ -43,6 +43,8 @@ export function createNativeClient(opts: {
   locale?: string;
   /** App Attest / Play Integrity provider; sign-up, sign-in and SMS-send calls then carry the `Atlas-Attestation` proof. */
   attestation?: AttestationProvider;
+  /** The registered native app id (`napp_…`), sent as `X-Atlas-App-Id`. */
+  appId?: string;
 }): FapiClient {
   return new FapiClient({
     publishableKey: opts.publishableKey,
@@ -55,17 +57,23 @@ export function createNativeClient(opts: {
     fetchImpl: bearerFetch(opts.fetchImpl, opts.getToken),
     locale: opts.locale,
     attestation: opts.attestation,
+    appId: opts.appId,
   });
 }
 
 /**
- * Start an OAuth sign-in. Returns the provider's authorization URL for the app
- * to open — with `expo-auth-session`, `expo-web-browser`, or `Linking`. This SDK
- * does NOT hard-depend on any browser library: opening the URL and catching the
- * deep-link callback is the app's job, and `completeOAuthRedirect` finishes it.
+ * Start an OAuth sign-in by hand. Returns the provider's authorization URL for
+ * the app to open; opening it and catching the deep-link callback is the app's
+ * job, and `completeOAuthRedirect` finishes it.
  *
- * `redirectUrl` is the app's deep link (e.g. `myapp://oauth-callback`); it must
- * be registered as one of the instance's allowed redirect URLs.
+ * @deprecated Prefer `signInWithOAuth`: it adds PKCE (the callback carries a code
+ * only this device can redeem, not a ticket), opens the system browser and stores
+ * the session. This path sends no code challenge, which a native redirect refuses
+ * (`PKCE_REQUIRED`); it still serves web-style https redirects.
+ *
+ * `redirectUrl` must be an https URL on the instance's allowed origins. An app
+ * scheme like `exampleapp://` is not an allowed origin: register the app
+ * (`POST /v1/native_apps`) and add the scheme to its `callback_urls` instead.
  */
 export async function startOAuthSignIn(
   client: FapiClient,

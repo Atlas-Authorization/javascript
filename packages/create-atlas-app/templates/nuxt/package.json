@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@atlasauth/nuxt": "^0.4.0",
-    "@atlasauth/js": "^0.49.0",
+    "@atlasauth/js": "^0.50.0",
     "nuxt": "^4.6.4",
     "vue": "^3.5.0"
   },

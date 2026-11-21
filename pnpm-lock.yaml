@@ -506,6 +506,12 @@ importers:
       '@atlasauth/react-native':
         specifier: workspace:^
         version: link:../react-native
+      expo-constants:
+        specifier: '>=15'
+        version: 58.0.16(expo@58.0.26)(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(typescript@5.8.3)
+      expo-linking:
+        specifier: '>=6'
+        version: 58.0.17(expo@58.0.26)(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
     devDependencies:
       '@atlasauth/js':
         specifier: workspace:*
@@ -8139,6 +8145,13 @@ packages:
       react: '*'
       react-native: '*'
 
+  expo-linking@58.0.17:
+    resolution: {integrity: sha512-NFOt1L+FdW1uwjnwvvW+1oZ8j0W1IpYydKKuqny7tCiDVmHLxDYiYgXbyuHNAMLdQYjCBknq4910DmTM1x/XGw==}
+    peerDependencies:
+      expo: '*'
+      react: '*'
+      react-native: '*'
+
   expo-local-authentication@57.0.3:
     resolution: {integrity: sha512-1oQCBKz8JOpai+Zp+Z2RkBFIi2CHHWLSJk/pjvT9VEyf8nPFslo4kt1ZlQvtJ4rupbKNCmxqKfYr8Mlo8nJEug==}
     peerDependencies:
@@ -10253,8 +10266,8 @@ packages:
     resolution: {integrity: sha512-vv7l/mM7B9WgrhDaudIqv1x6v4LOBRYYmpWGdWushhpbCmVHp11sUB2v4hj1CAeTGXVxuZFz6xOU1RalAiPKfQ==}
     engines: {node: '>=20.x'}
 
-  pkce-challenge@5.0.1:
-    resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
+  pkce-challenge@5.0.2:
+    resolution: {integrity: sha512-vCc54+qyIfKC5e2UN28AZKElwqjLINgiIV3RKI8pDu93TjaAJoB3QrgMzEBouy8yOKsXVXdAinO1QArJf9x5WA==}
     engines: {node: '>=16.20.0'}
 
   pkg-dir@3.0.0:
@@ -14767,7 +14780,7 @@ snapshots:
       hono: 4.13.19
       jose: 6.2.3
       json-schema-typed: 8.0.2
-      pkce-challenge: 5.0.1
+      pkce-challenge: 5.0.2
       raw-body: 3.0.2
       zod: 4.6.7
       zod-to-json-schema: 3.25.2(zod@4.6.7)
@@ -18339,6 +18352,17 @@ snapshots:
       - expo
       - supports-color
 
+  expo-linking@58.0.17(expo@58.0.26)(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3):
+    dependencies:
+      expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
+      expo-constants: 58.0.16(expo@58.0.26)(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(typescript@5.8.3)
+      invariant: 2.2.4
+      react: 18.3.1
+      react-native: 0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1)
+    transitivePeerDependencies:
+      - supports-color
+      - typescript
+
   expo-local-authentication@57.0.3(expo@58.0.26):
     dependencies:
       expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
@@ -21123,7 +21147,7 @@ snapshots:
     optionalDependencies:
       '@napi-rs/nice': 1.1.1
 
-  pkce-challenge@5.0.1: {}
+  pkce-challenge@5.0.2: {}
 
   pkg-dir@3.0.0:
     dependencies:

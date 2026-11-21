@@ -327,8 +327,7 @@ export function translateOryConfig(snap: OryConfigSnapshot): TranslationResult {
         add('differs', 'URLs', 'selfservice.allowed_return_urls', `${url}: Atlas redirect URLs are exact (no wildcards); list each URL.`, 'redirect_urls');
         continue;
       }
-      b.push('redirect_urls', { url });
-      exact++;
+      if (b.push('redirect_urls', { url })) exact++;
     }
     if (exact) add('mapped', 'URLs', has('selfservice.allowed_return_urls') ? 'selfservice.allowed_return_urls' : 'selfservice.default_browser_return_url', `${exact} return URL(s) become redirect URLs.`, 'redirect_urls');
     const origins = strs(kv('serve.public.cors.allowed_origins')).filter((o) => !o.includes('*'));

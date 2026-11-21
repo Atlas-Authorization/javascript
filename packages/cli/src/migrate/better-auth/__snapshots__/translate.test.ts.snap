@@ -568,11 +568,7 @@ exports[`kitchen-sink: many plugins, a function-scoped instance, payments > matc
       },
     ],
     "permissions": [],
-    "redirect_urls": [
-      {
-        "url": "myapp://",
-      },
-    ],
+    "redirect_urls": [],
     "resource_servers": [
       {
         "identifier": "https://mcp.kitchen.example",
@@ -959,10 +955,10 @@ exports[`kitchen-sink: many plugins, a function-scoped instance, payments > matc
     },
     {
       "area": "trustedOrigins",
-      "atlas": "redirect_urls",
+      "atlas": "native_apps",
       "file": "src/auth.ts",
       "line": 79,
-      "note": "An app scheme (native/Expo deep link) becomes a redirect URL. Add native apps under auth_config.nativeApps for passkeys and Sign in with Apple.",
+      "note": "An app scheme (native/Expo deep link) is not a redirect URL. Register the app under native_apps (platform, bundle id or package name, and this scheme in callback_urls); that also serves passkeys and Sign in with Apple.",
       "option": "trustedOrigins "myapp://"",
       "status": "differs",
     },

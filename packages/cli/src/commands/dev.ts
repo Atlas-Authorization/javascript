@@ -3,16 +3,19 @@ import type { ParsedArgs } from '../args';
 import { str } from '../args';
 import type { RunContext } from '../context';
 import { CliError } from '../errors';
+import { devNative } from './dev-native';
 
 /**
  * `atlas dev [--port 4400] [--seed file.json] [--app <url>] [--openapi <path or URL>]`: a local in-memory
  * Atlas (FAPI, minimal BAPI, OIDC discovery, mail catcher).
+ * `atlas dev native [--provider discord]`: the instance's native apps and callbacks, what is missing, and the sign-in snippet.
  * `atlas dev proxy --app <url> --api <fapi url> [--base-path /atlas]`: one origin for app + API.
  */
 export async function dev(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const v = args.values;
   const sub = args.positionals[1];
-  if (sub !== undefined && sub !== 'proxy') throw new CliError(`Unknown dev subcommand '${sub}'. Use 'atlas dev' or 'atlas dev proxy'.`);
+  if (sub === 'native') return devNative(ctx, args);
+  if (sub !== undefined && sub !== 'proxy') throw new CliError(`Unknown dev subcommand '${sub}'. Use 'atlas dev', 'atlas dev proxy' or 'atlas dev native'.`);
   const port = str(v, 'port') ? Number(str(v, 'port')) : sub ? 4401 : 4400;
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new CliError('--port must be 0-65535.');
   const app = str(v, 'app');

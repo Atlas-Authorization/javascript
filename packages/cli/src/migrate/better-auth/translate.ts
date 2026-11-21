@@ -935,8 +935,7 @@ function translateTrustedOrigins(b: Builder, opts: StaticValue): void {
         const wildcard = origin.includes('*');
         b.add(wildcard ? 'differs' : 'mapped', area, `trustedOrigins "${v}"`, wildcard ? 'Wildcard kept. Atlas accepts one wildcard label under a domain you own (https://*.your-domain.com); open or shared-host wildcards are refused.' : 'Allowed origin.', item, 'instance allowed_origins');
       } else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) {
-        b.doc.redirect_urls.push({ url: v.includes('*') ? v.replace(/\*+$/, '') : v });
-        b.add('differs', area, `trustedOrigins "${v}"`, 'An app scheme (native/Expo deep link) becomes a redirect URL. Add native apps under auth_config.nativeApps for passkeys and Sign in with Apple.', item, 'redirect_urls');
+        b.add('differs', area, `trustedOrigins "${v}"`, 'An app scheme (native/Expo deep link) is not a redirect URL. Register the app under native_apps (platform, bundle id or package name, and this scheme in callback_urls); that also serves passkeys and Sign in with Apple.', item, 'native_apps');
       } else {
         b.add('manual', area, `trustedOrigins "${v}"`, 'Not an origin Atlas can use; review it.', item);
       }
@@ -1485,7 +1484,7 @@ const PLUGIN_HANDLERS: Record<string, PluginHandler> = {
     b.add('mapped', 'plugin:oAuthProxy', 'oAuthProxy()', 'Not needed: provider callbacks land on Atlas, so preview deployments work once their origins are allowed (a wildcard under your domain).', call);
   },
   expo(b, { call }) {
-    b.add('manual', 'plugin:expo', 'expo()', 'Use @atlasauth/expo; add the app scheme as a redirect URL and the app under auth_config.nativeApps.', call, 'redirect_urls / auth_config.nativeApps');
+    b.add('manual', 'plugin:expo', 'expo()', 'Use @atlasauth/expo; register the app under native_apps with its scheme in callback_urls, then call useSignIn().signInWithOAuth(provider).', call, 'native_apps');
   },
   scim(b, { call }) {
     b.add('mapped', 'plugin:scim', 'scim()', 'SCIM 2.0 provisioning is built in per organization connection; issue a SCIM token for each directory.', call);

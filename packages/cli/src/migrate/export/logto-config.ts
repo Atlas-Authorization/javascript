@@ -228,8 +228,7 @@ export function translateLogtoConfig(snap: LogtoConfigSnapshot): TranslationResu
       b.add('differs', 'applications', `redirectUris ${url}`, 'A native-app scheme: register it with the Atlas native app, not as a web redirect URL.', 'native_apps');
       continue;
     }
-    b.push('redirect_urls', { url });
-    exact++;
+    if (b.push('redirect_urls', { url })) exact++;
   }
   if (exact) b.add('mapped', 'applications', 'oidcClientMetadata.redirectUris / postLogoutRedirectUris', `${exact} redirect URL(s).`, 'redirect_urls');
   if (origins.size) {

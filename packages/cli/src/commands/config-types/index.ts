@@ -12,6 +12,7 @@ import { OAUTH_PUBLISHER_CONFIG_TYPES } from './oauth-publishers';
 import { COMPLIANCE_OPS_CONFIG_TYPES } from './compliance-ops';
 import { TRUST_CONFIG_TYPES } from './trust';
 import { SURFACE_CONFIG_TYPES } from './surface-config';
+import { NATIVE_APP_CONFIG_TYPES } from './native-apps';
 
 /**
  * Resource types registered outside config.ts. Each group file exports a list of
@@ -32,6 +33,7 @@ const GROUPS: ResourceSpec[][] = [
   COMPLIANCE_OPS_CONFIG_TYPES,
   TRUST_CONFIG_TYPES,
   SURFACE_CONFIG_TYPES,
+  NATIVE_APP_CONFIG_TYPES,
 ];
 
 export function registeredConfigTypes(): ResourceSpec[] {

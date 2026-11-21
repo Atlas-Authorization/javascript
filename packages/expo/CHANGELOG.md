@@ -1,5 +1,12 @@
 # @atlasauth/expo changelog
 
+## 0.13.0
+
+- `useSignIn().signInWithOAuth(provider)` and `createExpoOAuth`: PKCE sign-in through `expo-web-browser`, with the callback built by `expo-linking`. In Expo Go it uses the hosted native callback, so nothing needs registering for development.
+- `signInWithGoogle` / `signInWithApple` use the native modules when present and fall back to the browser flow.
+- `<AtlasProvider appId>` sends `X-Atlas-App-Id`. `isExpoGo()`.
+- Optional peers `expo-constants` and `expo-linking`. Needs `@atlasauth/js` 0.50.0.
+
 ## 0.12.3
 
 - `<AtlasProvider>` tells the web provider explicitly that it runs natively (`host: 'native'`) instead of relying on React Native detection (needs `@atlasauth/react` 0.40.2).

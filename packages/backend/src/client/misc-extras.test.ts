@@ -126,6 +126,30 @@ describe('redirectUrls', () => {
   });
 });
 
+describe('nativeApps', () => {
+  it('covers the registry and the publishable key restriction', async () => {
+    const { atlas, last } = setup({ object: 'native_app', id: 'napp_1' });
+    await atlas.nativeApps.list();
+    expect(last().url).toBe(`${API_URL}/v1/native_apps`);
+
+    await atlas.nativeApps.create({ platform: 'ios', bundle_id: 'com.example.app', team_id: 'TEAM', callback_urls: ['exampleapp://oauth-callback'] });
+    expect(last().method).toBe('POST');
+    expect(last().json).toEqual({ platform: 'ios', bundle_id: 'com.example.app', team_id: 'TEAM', callback_urls: ['exampleapp://oauth-callback'] });
+
+    await atlas.nativeApps.update('napp/1', { callback_urls: ['https://a.test/cb'] });
+    expect(last().method).toBe('PATCH');
+    expect(last().url).toBe(`${API_URL}/v1/native_apps/napp%2F1`);
+
+    await atlas.nativeApps.delete('napp_1');
+    expect(last().method).toBe('DELETE');
+
+    await atlas.nativeApps.setPublishableKeyRestriction(['napp_1']);
+    expect(last().method).toBe('PUT');
+    expect(last().url).toBe(`${API_URL}/v1/native_apps/publishable_key`);
+    expect(last().json).toEqual({ app_ids: ['napp_1'] });
+  });
+});
+
 describe('sessionExchangeApps', () => {
   it('covers CRUD', async () => {
     const { atlas, last } = setup({ object: 'session_exchange_app', id: 'sxa_1' });

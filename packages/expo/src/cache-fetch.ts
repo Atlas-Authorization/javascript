@@ -33,13 +33,16 @@ export function createCacheFetch(opts: {
   cache: TokenCache;
   key: string;
   fetchImpl: typeof fetch;
+  /** The registered native app id, sent as `X-Atlas-App-Id` on every request. */
+  appId?: string;
 }): typeof fetch {
-  const { cache, key, fetchImpl } = opts;
+  const { cache, key, fetchImpl, appId } = opts;
 
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const token = (await cache.getToken(key)) ?? null;
     const headers = new Headers(init?.headers);
     if (token) headers.set('authorization', `Bearer ${token}`);
+    if (appId) headers.set('x-atlas-app-id', appId);
 
     const response = await fetchImpl(input, { ...init, headers });
 

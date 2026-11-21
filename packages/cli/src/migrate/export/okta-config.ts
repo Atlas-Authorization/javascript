@@ -177,8 +177,7 @@ export function translateOktaConfig(snap: OktaConfigSnapshot, opts: { groupsAs?:
       b.add('differs', 'apps', `redirect_uris ${url}`, 'Atlas redirect URLs are exact (no wildcards).', 'redirect_urls');
       continue;
     }
-    b.push('redirect_urls', { url });
-    exact++;
+    if (b.push('redirect_urls', { url })) exact++;
   }
   if (exact) b.add('mapped', 'apps', 'redirect_uris', `${exact} redirect URI(s).`, 'redirect_urls');
 

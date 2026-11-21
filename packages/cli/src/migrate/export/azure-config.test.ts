@@ -165,7 +165,8 @@ describe('translateAzureConfig', () => {
     expect(entry(r, 'apiConnectorConfiguration')?.status).toBe('manual');
     expect(entry(r, 'userFlowAttributes (custom)')?.note).toContain('loyaltyTier');
 
-    expect(r.documents.redirect_urls).toEqual([{ url: 'https://app.contoso.com/auth/callback' }, { url: 'https://app.contoso.com/' }, { url: 'msalmobile://auth' }]);
+    expect(r.documents.redirect_urls).toEqual([{ url: 'https://app.contoso.com/auth/callback' }, { url: 'https://app.contoso.com/' }]);
+    expect(entry(r, 'msalmobile://auth')).toEqual(expect.objectContaining({ status: 'differs', area: 'native apps', atlas: 'native_apps' }));
     expect(entry(r, 'redirectUris https://*.contoso.dev/')?.status).toBe('differs');
     expect(r.documents.roles).toEqual([{ key: 'vip_customers', name: 'VIP Customers', description: '', permissions: [] }]);
 

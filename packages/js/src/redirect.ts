@@ -21,7 +21,7 @@ import {
   listenForPopupResult,
 } from './popup-channel';
 
-export const REDIRECT_PARAMS = ['__atlas_attempt', '__atlas_ticket', '__atlas_status', '__atlas_policy_token'] as const;
+export const REDIRECT_PARAMS = ['__atlas_attempt', '__atlas_ticket', '__atlas_code', '__atlas_status', '__atlas_policy_token'] as const;
 
 /**
  * Start a redirect-based OAuth sign-in for a provider that has no in-page native
@@ -47,6 +47,8 @@ export interface RedirectResult {
   attemptId: string;
   /** Present only when the sign-in completed — exchange it for cookies. */
   ticket?: string;
+  /** Present on a PKCE (native app) sign-in that completed — redeem it with `redeemOAuthCode` and the code verifier. */
+  code?: string;
   /** Present when a step remains (e.g. `needs_second_factor`); no session yet. */
   status?: string;
   /** With `needs_policy_acceptance`: the one-time token for `acceptAttemptPolicies`. */
@@ -333,13 +335,15 @@ export function readRedirectResult(search: string): RedirectResult | null {
   if (!attemptId) return null;
 
   const ticket = params.get('__atlas_ticket');
+  const code = params.get('__atlas_code');
   const status = params.get('__atlas_status');
-  if (!ticket && !status) return null;
+  if (!ticket && !code && !status) return null;
 
   const policyToken = params.get('__atlas_policy_token');
   return {
     attemptId,
     ...(ticket ? { ticket } : {}),
+    ...(code ? { code } : {}),
     ...(status ? { status } : {}),
     ...((status === 'needs_policy_acceptance' || status === 'needs_required_action') && policyToken ? { policyToken } : {}),
   };

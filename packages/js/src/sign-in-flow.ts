@@ -29,6 +29,7 @@ import {
   startSignUp,
   resendSignUpVerification,
   initialFlow,
+  flowFromPending,
   type FapiClient,
   type FlowState,
 } from './fapi';
@@ -140,6 +141,8 @@ interface Core {
   acceptPolicies(acceptances: PolicyAcceptance[]): Promise<FlowSnapshot>;
   /** Forget everything and go back to the first step. */
   reset(): FlowSnapshot;
+  /** Continue an attempt that was started elsewhere (a native OAuth that came back owing a second factor or a required action). */
+  resumeAttempt(pending: { id: string; status: string; policyToken?: string; codeVerifier?: string }): Promise<FlowSnapshot>;
 }
 
 /** The typed step for the first owed action, or null for a kind this SDK does not know. */
@@ -265,13 +268,19 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
     }
   };
 
+  /** The PKCE verifier of a resumed native OAuth attempt, if any. */
+  let pkceVerifier: string | null = null;
+
   /** Run one call, fold its resulting FlowState in, exchange a completion ticket, and publish. */
   const run = async (call: () => Promise<FlowState>): Promise<FlowSnapshot> => {
     busy = true;
     emit();
     let next = await call();
     if (next.ticket && next.attempt?.id) {
-      const exchanged = await client.post('/v1/client/tickets/exchange', { attempt_id: next.attempt.id, ticket: next.ticket });
+      // A PKCE-bound attempt (native OAuth resumed here) is redeemed with its verifier; tickets/exchange refuses it.
+      const exchanged = pkceVerifier
+        ? await client.post('/v1/client/sign_ins/oauth/token', { attempt_id: next.attempt.id, code: next.ticket, code_verifier: pkceVerifier })
+        : await client.post('/v1/client/tickets/exchange', { attempt_id: next.attempt.id, ticket: next.ticket });
       next = exchanged.ok ? { ...next, ticket: null } : { ...next, errors: exchanged.errors };
     }
     flow = next;
@@ -356,8 +365,12 @@ function makeCore(opts: FlowOptions, captchaFlow: CaptchaFlowKey) {
           return emit();
         },
         acceptPolicies: (acceptances) => run(() => acceptAttemptPolicies(client, flow, acceptances)),
+        resumeAttempt: (pending) => {
+          pkceVerifier = pending.codeVerifier ?? null;
+          return run(async () => flowFromPending(pending));
+        },
         reset() {
-          flow = initialFlow; step = { type: 'needs_identifier' }; errors = []; reason = null; captchaToken = null; redirect = null; sentTo = null; enrollment = null; recovery = null;
+          flow = initialFlow; pkceVerifier = null; step = { type: 'needs_identifier' }; errors = []; reason = null; captchaToken = null; redirect = null; sentTo = null; enrollment = null; recovery = null;
           return emit();
         },
       };

@@ -1,5 +1,9 @@
 # @atlasauth/create-atlas-app changelog
 
+## 0.5.2
+
+- Templates pin the native sign-in releases: `@atlasauth/expo` `^0.13.0`, `@atlasauth/js` `^0.50.0`, `@atlasauth/backend` `^0.61.0`.
+
 ## 0.5.1
 
 - The templates that use `@atlasauth/backend` pin `^0.54.0`.

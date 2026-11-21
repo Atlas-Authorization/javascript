@@ -109,9 +109,37 @@ function SignInScreen() {
 }
 ```
 
-## OAuth with expo-auth-session
+## Sign in with a provider (one call)
 
-`startOAuth` returns the provider's authorization URL — this SDK never opens a
+`signInWithOAuth(provider, { browser, appId?, redirectUrl?, preferEphemeralSession? })` runs the whole
+browser flow with PKCE: it starts the sign-in, opens `browser.openAuthSession(url, redirectUrl, options)`,
+redeems the one-time code and stores the session. It resolves to `{ status }` with `complete`, `cancelled`
+(the person closed the browser, never an error), `needs_second_factor`, `needs_required_action` or `error`.
+It refuses to run inside a WebView.
+
+```tsx
+import * as WebBrowser from 'expo-web-browser';
+import { useSignIn } from '@atlasauth/react-native';
+
+const browser = {
+  async openAuthSession(url: string, redirectUrl: string, o: { preferEphemeralSession?: boolean }) {
+    return WebBrowser.openAuthSessionAsync(url, redirectUrl, { preferEphemeralSession: o.preferEphemeralSession });
+  },
+};
+
+function DiscordButton() {
+  const { signInWithOAuth } = useSignIn();
+  return <Button title="Discord" onPress={() => signInWithOAuth('discord', { browser })} />;
+}
+```
+
+Register the app first (`POST /v1/native_apps`, or `native_apps:` in `atlas.yaml`) and set `appId` on the
+provider to its `napp_` id: see
+[Sign-in in a React Native or Expo app](https://atlasauth.net/docs/react-native-sign-in).
+
+## OAuth, by hand
+
+`startOAuth` and `completeOAuthRedirect` still work, but `signInWithOAuth` replaces them. `startOAuth` returns the provider's authorization URL — this SDK never opens a
 browser itself, so you stay in control of the flow. Open the URL, then hand the
 deep-link callback back to `completeOAuthRedirect`.
 
@@ -122,7 +150,7 @@ import { useSignIn } from '@atlasauth/react-native';
 
 function useGoogleSignIn() {
   const { startOAuth, completeOAuthRedirect } = useSignIn();
-  const redirectUrl = Linking.createURL('oauth-callback'); // myapp://oauth-callback
+  const redirectUrl = Linking.createURL('oauth-callback'); // exampleapp://oauth-callback
 
   return async function signInWithGoogle() {
     const { authorizationUrl, errors } = await startOAuth({ provider: 'google', redirectUrl });
@@ -140,7 +168,9 @@ function useGoogleSignIn() {
 }
 ```
 
-`redirectUrl` must be registered as an allowed redirect URL on the instance.
+`redirectUrl` must be one of the `callback_urls` of a native app registered on the instance. An app
+scheme is not a web redirect URL, and `POST /v1/redirect_urls` refuses it. This flow also needs a PKCE
+challenge, so prefer `signInWithOAuth`.
 `expo-auth-session`, `expo-web-browser`, and `Linking` are all optional — any
 mechanism that opens a URL and gives you back the callback works.
 

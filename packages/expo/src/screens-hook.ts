@@ -1,5 +1,6 @@
-import { useMemo, useRef, useSyncExternalStore } from 'react';
+import { useContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { SecuritySectionKind, SecuritySectionView, SignInScreenView } from '@atlasauth/js';
+import { ExpoNativeContext } from './fapi-context';
 import { useExpoFapiClient } from './policies';
 import { createExpoSecuritySection, createExpoSignInScreen, createExpoSignUpScreen, type SecuritySectionSetup, type SignInScreenSetup } from './screens';
 
@@ -15,6 +16,9 @@ export function useSignInScreen(setup: SignInScreenSetup = {}) {
   // Created once per client; the setup (providers, localization) is read when the client changes.
   const screen = useMemo(() => createExpoSignInScreen(client, setup), [client]); // eslint-disable-line react-hooks/exhaustive-deps
   const view: SignInScreenView = useSyncExternalStore(screen.subscribe, screen.getView, screen.getView);
+  // A browser sign-in (`useSignIn().signInWithOAuth`) that came back owing a second factor or a required action continues here.
+  const native = useContext(ExpoNativeContext);
+  useEffect(() => native?.onPending((a) => void screen.flow.resumeAttempt(a)), [native, screen]);
   return { view, ...screen };
 }
 

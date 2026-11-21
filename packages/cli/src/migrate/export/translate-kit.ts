@@ -50,8 +50,16 @@ export class ConfigBuilder {
     return `\${${name}}`;
   }
 
-  push(collection: keyof ConfigBuilder['collections'] | string, value: Json): void {
+  /** False when the entry was not added (an app scheme sent to the redirect URLs). */
+  push(collection: keyof ConfigBuilder['collections'] | string, value: Json): boolean {
+    // An app scheme (myapp://) is not a web redirect URL: Atlas refuses it there, so it moves to a native app's callback_urls.
+    const url = collection === 'redirect_urls' && value && typeof value === 'object' ? (value as { url?: unknown }).url : undefined;
+    if (typeof url === 'string' && !/^https?:\/\//i.test(url)) {
+      this.add('differs', 'native apps', url, 'An app scheme is not a redirect URL. Register the app under native_apps (its callback_urls) in atlas.yaml, or POST /v1/native_apps. https://atlasauth.net/docs/react-native-sign-in', 'native_apps');
+      return false;
+    }
     (this.collections[collection] ??= []).push(value);
+    return true;
   }
 
   /** An `oauth_providers` entry for a built-in Atlas provider, credentials as placeholders. */

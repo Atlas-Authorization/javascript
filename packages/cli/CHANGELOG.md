@@ -1,5 +1,12 @@
 # @atlasauth/cli changelog
 
+## 0.51.0
+
+- `atlas dev native [--provider]` prints the publishable key, Frontend API URL, registered native apps and their callbacks, what is missing, and the sign-in call.
+- `native_apps` in `atlas.yaml` (plan, apply, pull).
+- `native_apps_publishable_key` in `atlas.yaml`: which native apps the publishable key may sign in, by `ios:<bundle_id>` / `android:<package_name>`.
+- `atlas migrate` moves app-scheme redirect URLs (`myapp://`) to native apps instead of web redirect URLs.
+
 ## 0.50.0
 
 - `atlas plan` / `atlas apply` print an error line (and `errors` in `--json`) when nobody could sign up, naming `PATCH /v1/instance/sign_in_with_atlas {"enabled":true}`.

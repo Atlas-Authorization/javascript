@@ -641,6 +641,7 @@ sessions:read (and api_keys:read with --allow-api-keys). WebSocket upgrades are 
 Usage:
   atlas dev [--port 4400] [--seed seed.json] [--app http://localhost:3000] [--openapi <path or URL>]
   atlas dev proxy --app <url> --api <fapi url> [--port 4401] [--base-path /atlas]
+  atlas dev native [--provider discord] [--json]
 
 The emulator serves the Frontend API, a minimal Backend API, OIDC discovery and
 a mail/SMS catcher at /__emulator/mail. Every code is 424242. With --openapi (the
@@ -648,7 +649,10 @@ API document: a file or https://atlasauth.net/v1/openapi.json?surface=BAPI) it a
 Backend API from memory: roles, API keys, machines and grants, signed webhooks, the change feed.
 With --app it also
 forwards everything it does not own to your app, so both share one origin.
-'dev proxy' does the same against a real instance. No account, no network.`,
+'dev proxy' does the same against a real instance. No account, no network.
+'dev native' reads your real instance: its publishable key and Frontend API URL, the
+registered native apps with their callback URLs, what is still missing (preflight
+findings for native apps), and the exact useSignIn().signInWithOAuth call to paste.`,
   'move-origin': `atlas move-origin — move an app to a new domain
 
 Usage: atlas move-origin --from <origin> --to <origin> [--dry-run] [--yes] [--json]
@@ -1216,7 +1220,7 @@ Usage:
         or a directory from 'atlas config export' (default ./atlas-config).
 
 Shows the plan, asks before applying (--yes skips the question; needed without a
-terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, referral_reward_rules, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, journey_experiments, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, write_budget, oauth_publishers, erasure_connectors, signing_key_schedule, audit_chain, policy_audiences, oauth_publisher_clients, region. Re-running is a no-op.
+terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, referral_reward_rules, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, journey_experiments, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, write_budget, oauth_publishers, erasure_connectors, signing_key_schedule, audit_chain, policy_audiences, oauth_publisher_clients, region, native_apps, native_apps_publishable_key. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --skip-validate leave out the server dry-run pass (the published-limit checks still run)

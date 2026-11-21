@@ -110,12 +110,29 @@ connected social provider.
 > components (`<SignIn>`, `<UserButton>`, …) render DOM and are **web-only** —
 > build those screens with React Native primitives and these hooks.
 
-## OAuth with expo-web-browser
+## Sign in with a provider
 
-The provider exposes the same flow helpers as the web SDK; open the authorization
-URL with `expo-web-browser` and let the provider complete the redirect. See
-[`@atlasauth/react-native`](../react-native#oauth-with-expo-auth-session) for the
-full pattern — it is identical here.
+`useSignIn()` returns `signInWithOAuth(provider)`, already bound to `expo-web-browser`
+(`ASWebAuthenticationSession` on iOS, Custom Tabs on Android). One call runs the whole browser flow
+with PKCE and stores the session; the result's `status` is `complete`, `cancelled` (never an error),
+`needs_second_factor`, `needs_required_action` or `error`.
+
+```tsx
+import { AtlasProvider, useSignIn } from '@atlasauth/expo';
+
+// <AtlasProvider publishableKey="pk_live_..." appId="napp_..." tokenCache={tokenCache}>
+function DiscordButton() {
+  const { signInWithOAuth } = useSignIn();
+  return <Button title="Discord" onPress={() => signInWithOAuth('discord')} />;
+}
+```
+
+Register the app first: `POST /v1/native_apps`, or `native_apps:` in `atlas.yaml`, with its callback
+URLs (an `https` Universal/App Link or a private-use scheme such as `exampleapp://oauth-callback`);
+`appId` is that app's `napp_` id. In Expo Go on a development instance the SDK uses the `exp://` URL
+Expo gives it, so there is nothing to register. `preferEphemeralSession` defaults to `false`.
+`atlas dev native` prints what your instance has and what is missing. Full guide:
+[Sign-in in a React Native or Expo app](https://atlasauth.net/docs/react-native-sign-in).
 
 ## Native session (first-party OAuth → session)
 

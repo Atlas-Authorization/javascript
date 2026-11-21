@@ -173,11 +173,11 @@ export function translateFusionAuthConfig(snap: FusionAuthConfigSnapshot, opts: 
   let exact = 0;
   for (const url of redirects) {
     if (url.includes('*') || !/^https?:\/\//.test(url)) {
-      b.add('differs', 'applications', `authorizedRedirectURLs ${url}`, 'Atlas redirect URLs are exact absolute URLs (no wildcards or custom schemes).', 'redirect_urls');
+      const scheme = !/^https?:\/\//.test(url) && /^[a-z][a-z0-9+.-]*:\/\//i.test(url);
+      b.add('differs', 'applications', `authorizedRedirectURLs ${url}`, scheme ? 'An app scheme is not a redirect URL: register the app under native_apps (callback_urls).' : 'Atlas redirect URLs are exact absolute URLs (no wildcards).', scheme ? 'native_apps' : 'redirect_urls');
       continue;
     }
-    b.push('redirect_urls', { url });
-    exact++;
+    if (b.push('redirect_urls', { url })) exact++;
   }
   if (exact) b.add('mapped', 'applications', 'authorizedRedirectURLs', `${exact} redirect URL(s).`, 'redirect_urls');
 
