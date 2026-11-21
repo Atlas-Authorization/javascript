@@ -1,5 +1,9 @@
 # @atlasauth/expo changelog
 
+## 0.12.2
+
+- Fixes the crash at launch: `<AtlasProvider>` no longer renders browser elements under React Native (needs `@atlasauth/react` 0.40.1).
+
 ## 0.12.1
 
 - Built against `@atlasauth/react` 0.40, whose `@atlasauth/design` 0.5 has no zod dependency.

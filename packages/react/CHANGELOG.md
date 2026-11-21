@@ -1,5 +1,9 @@
 # @atlasauth/react changelog
 
+## 0.40.1
+
+- Under React Native, `<AtlasProvider>` renders only its context: no `<style>`, `<link>` or root `<div>`, and no `window.location` reads. This fixes `@atlasauth/expo` crashing at launch. New export `isReactNative()`.
+
 ## 0.40.0
 
 - `<AtlasProvider>` works without `publishableKey` on a path mount (reads it from `<mount>/v1/environment`).

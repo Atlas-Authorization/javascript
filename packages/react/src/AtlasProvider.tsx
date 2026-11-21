@@ -513,7 +513,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
    * carries a status but no ticket, and that is what the 2FA resume seeds from.
    */
   const [pendingAttempt] = useState<{ id: string; status: string; policyToken?: string } | null>(() => {
-    if (typeof window === 'undefined') return null;
+    if (!hasBrowserUrl()) return null;
     const result = readRedirectResult(window.location.search);
     return result?.status && !result.ticket
       ? { id: result.attemptId, status: result.status, ...(result.policyToken ? { policyToken: result.policyToken } : {}) }
@@ -666,7 +666,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
 
   const keepAlive = props.keepSessionAlive !== false;
   useEffect(() => {
-    if (!keepAlive || status !== 'signed_in' || typeof document === 'undefined') return;
+    if (!keepAlive || status !== 'signed_in' || !hasBrowserUrl()) return;
     const wake = () => {
       if (document.visibilityState === 'hidden') return;
       const token = cache.current.peek();
@@ -716,7 +716,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
    * `reload()` never broadcasts, so a received signal cannot loop.
    */
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!hasBrowserUrl()) return;
     const ch = bestChannel('atlas-session');
     channel.current = ch;
     const unsub = ch?.subscribe((msg) => {
@@ -776,12 +776,11 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
    *     the waiting opener and close the popup.
    */
   useEffect(() => {
-    const fromUrl =
-      typeof window !== 'undefined' ? readRedirectResult(window.location.search) : null;
+    const fromUrl = hasBrowserUrl() ? readRedirectResult(window.location.search) : null;
 
     void (async () => {
       let result: RedirectResult | null = fromUrl;
-      const landing = typeof window !== 'undefined' ? await completeOAuthPopupLanding().catch(() => null) : null;
+      const landing = hasBrowserUrl() ? await completeOAuthPopupLanding().catch(() => null) : null;
       if (landing && !landing.delivered) {
         const outcome = mapOAuthPopupPayload(landing.payload);
         if (outcome?.ticket && outcome.attemptId) {
@@ -802,7 +801,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
         exchanged = !!response?.ok;
         journeyUrl = await journeyRedirectFrom(response);
       }
-      if (fromUrl && typeof window !== 'undefined') {
+      if (fromUrl && hasBrowserUrl()) {
         window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
       }
       await reload();
@@ -812,7 +811,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
       // Signed in inside the Atlas popup: hand back to the opener and close.
       if (exchanged) void closeOAuthPopupAfterSignIn();
       // The sign-in journey names where to go next (not inside a popup, which closes itself).
-      if (journeyUrl && typeof window !== 'undefined' && !window.opener) window.location.assign(journeyUrl);
+      if (journeyUrl && hasBrowserUrl() && !window.opener) window.location.assign(journeyUrl);
     })();
     // Runs once on mount (empty deps): the redirect is handled exactly once, and
     // re-running would only re-read an already-scrubbed URL. `reload`/`call` are
@@ -1226,6 +1225,9 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
   );
   const style = rendered.style as React.CSSProperties;
 
+  // React Native has no <style>/<link>/<div> host elements: rendering one crashes the app.
+  if (isReactNative()) return <AtlasContext.Provider value={value}>{children}</AtlasContext.Provider>;
+
   return (
     <AtlasContext.Provider value={value}>
       {/*
@@ -1269,6 +1271,16 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
       </div>
     </AtlasContext.Provider>
   );
+}
+
+/** True in React Native (Expo, bare RN), where `window` exists but has no DOM. Expo web reports a browser. */
+export function isReactNative(): boolean {
+  return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
+}
+
+/** A real browser page: `window.location` and `document` exist (not SSR, not React Native). */
+function hasBrowserUrl(): boolean {
+  return typeof document !== 'undefined' && typeof window !== 'undefined' && !!window.location;
 }
 
 export function useAtlas(): AtlasContextValue {
