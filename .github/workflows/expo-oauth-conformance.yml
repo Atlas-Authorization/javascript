@@ -62,6 +62,9 @@ jobs:
         run: |
           UDID=$(xcrun simctl list devices available | grep -m1 'iPhone' | grep -oE '[0-9A-F-]{36}')
           xcrun simctl boot "$UDID"
+          # Wait until the simulator has finished booting: launching earlier leaves its trust daemon starting, and
+          # the app's first HTTPS requests fail certificate evaluation ("A TLS error caused the secure connection to fail").
+          xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" "$RUNNER_TEMP"/app/build/Build/Products/Release-iphonesimulator/Conformance.app
       - name: Run the flow
         run: |
