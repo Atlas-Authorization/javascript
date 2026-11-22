@@ -128,7 +128,8 @@ function DiscordButton() {
 ```
 
 Register the app first: `POST /v1/native_apps`, or `native_apps:` in `atlas.yaml`, with its callback
-URLs (an `https` Universal/App Link or a private-use scheme such as `exampleapp://oauth-callback`);
+URLs (an `https` Universal/App Link or a private-use scheme; in a build the SDK returns to
+`<your scheme>://atlas-oauth` unless you pass `{ callback }`, so register `exampleapp://atlas-oauth`);
 `appId` is that app's `napp_` id. In Expo Go on a development instance the SDK uses the `exp://` URL
 Expo gives it, so there is nothing to register. `preferEphemeralSession` defaults to `false`.
 `atlas dev native` prints what your instance has and what is missing. Full guide:

@@ -7,7 +7,7 @@ The instance needs: to be a DEVELOPMENT instance, with the built-in `atlas_test`
 (`PUT /v1/oauth_providers/atlas_test` with `{ "enabled": true }`; no client id or secret). Its page has a single
 "Sign in as test user" button, which the Maestro flows tap. To use another provider set
 `EXPO_PUBLIC_ATLAS_TEST_PROVIDER`. A native app must be registered with `bundle_id`/`package_name`
-`com.example.app` and the callback `exampleapp://oauth-callback`; in Expo Go nothing needs registering.
+`com.example.app` and the callback `exampleapp://atlas-oauth`; in Expo Go nothing needs registering.
 `atlas dev native` prints the publishable key, Frontend API URL and the registered apps.
 
 ```bash

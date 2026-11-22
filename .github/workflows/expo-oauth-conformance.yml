@@ -2,7 +2,7 @@
 # (Atlas-Authorization/javascript) and copy this folder (without this file) to .github/conformance/expo-oauth-conformance/
 # there: the mirror sync keeps its own .github and replaces everything else with packages/, so neither is carried.
 # Secrets: ATLAS_DEV_PK (publishable key of a DEVELOPMENT instance that has the built-in atlas_test provider
-# enabled (PUT /v1/oauth_providers/atlas_test {enabled:true}) and the native app com.example.app registered with callback exampleapp://oauth-callback), ATLAS_DEV_FAPI (its
+# enabled (PUT /v1/oauth_providers/atlas_test {enabled:true}) and the native app com.example.app registered with callback exampleapp://atlas-oauth), ATLAS_DEV_FAPI (its
 # Frontend API URL). Optional: ATLAS_DEV_NATIVE_APP_ID, ATLAS_DEV_TEST_PROVIDER.
 name: expo-oauth-conformance
 
@@ -44,6 +44,8 @@ jobs:
           # use the packages built above instead of the published ones (pack rewrites workspace:* to versions)
           (cd "$GITHUB_WORKSPACE" && pnpm --filter "@atlasauth/expo..." -r exec pnpm pack --pack-destination "$RUNNER_TEMP/tgz")
           npm install --no-audit --no-fund "$RUNNER_TEMP"/tgz/*.tgz
+          # the React Native and Expo module versions that match this Expo SDK
+          npx expo install react react-native expo-constants expo-linking expo-secure-store expo-web-browser
           npx expo prebuild --platform ios
           xcodebuild -workspace ios/Conformance.xcworkspace -scheme Conformance -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO
@@ -57,10 +59,12 @@ jobs:
           xcrun simctl boot "$UDID"
           xcrun simctl install "$UDID" "$RUNNER_TEMP"/app/build/Build/Products/Release-iphonesimulator/Conformance.app
       - name: Run the flow
-        run: maestro test .github/conformance/expo-oauth-conformance/maestro/ios.yaml --format junit --output ios-report.xml
+        run: |
+          maestro test .github/conformance/expo-oauth-conformance/maestro/ios.yaml --format junit --output ios-report.xml || {
+            xcrun simctl spawn booted log show --last 5m --predicate 'process == "Conformance"' > ios-device.log; exit 1; }
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: ios-report, path: ios-report.xml }
+        with: { name: ios-report, path: "ios-report.xml\nios-device.log\n~/.maestro/tests" }
 
   android:
     runs-on: ubuntu-latest
@@ -81,6 +85,8 @@ jobs:
           cd "$RUNNER_TEMP/app"
           (cd "$GITHUB_WORKSPACE" && pnpm --filter "@atlasauth/expo..." -r exec pnpm pack --pack-destination "$RUNNER_TEMP/tgz")
           npm install --no-audit --no-fund "$RUNNER_TEMP"/tgz/*.tgz
+          # the React Native and Expo module versions that match this Expo SDK
+          npx expo install react react-native expo-constants expo-linking expo-secure-store expo-web-browser
           npx expo prebuild --platform android --no-install
           (cd android && ./gradlew assembleRelease -x lint)
       - name: Install Maestro
@@ -97,7 +103,7 @@ jobs:
           arch: x86_64
           script: |
             adb install "$RUNNER_TEMP"/app/android/app/build/outputs/apk/release/app-release.apk
-            maestro test .github/conformance/expo-oauth-conformance/maestro/android.yaml --format junit --output android-report.xml
+            maestro test .github/conformance/expo-oauth-conformance/maestro/android.yaml --format junit --output android-report.xml || (adb logcat -d > android-logcat.txt; exit 1)
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: android-report, path: android-report.xml }
+        with: { name: android-report, path: "android-report.xml\nandroid-logcat.txt\n~/.maestro/tests" }
