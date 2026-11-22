@@ -70,7 +70,7 @@ export interface MfaChoices {
   passkeyCeremony?: { rpId: string; origins: string[]; hostedSignInUrl: string | null };
 }
 
-const pageOrigin = () => (typeof window !== 'undefined' ? window.location.origin : '');
+const pageOrigin = () => (typeof window !== 'undefined' && window.location ? window.location.origin : '');
 
 /** A browser refuses a ceremony unless the page is on the RP ID or under it, or is an origin it accepts as related. */
 export function passkeyRunsHere(ceremony: MfaChoices['passkeyCeremony'], origin = pageOrigin()): boolean {

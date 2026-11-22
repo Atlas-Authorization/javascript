@@ -83,6 +83,18 @@ describe('signInWithNativeBrowser', () => {
     expect(redeem).toMatchObject({ attempt_id: 'att_1', code: 'code1' });
   });
 
+  it('completes under React Native, where window exists but window.location does not', async () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('navigator', { product: 'ReactNative' });
+    try {
+      const { client } = fakeFapi((path) => (path.endsWith('/token') ? json(200, { object: 'session', jwt: 'a.b.c', session_id: 's1' }) : start.clone()));
+      const out = await signInWithNativeBrowser(client, { provider: 'discord', browser: browserReturning('exampleapp://cb?__atlas_attempt=att_1&__atlas_code=code1'), nativeAppId: 'napp_1' });
+      expect(out).toMatchObject({ status: 'complete' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('cancel and dismiss are cancelled, not errors', async () => {
     for (const type of ['cancel', 'dismiss'] as const) {
       const { client } = fakeFapi(() => start.clone());

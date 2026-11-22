@@ -6,7 +6,7 @@ export function parseVisitToken(value: unknown): string | null {
 /** The `atlas_visit` on this page's URL (kept in memory for the page's life, so client-side navigation that drops it still sends it), or null. */
 let remembered: string | null = null;
 export function pageVisitToken(search?: string): string | null {
-  const q = search ?? (typeof window !== 'undefined' ? window.location.search : '');
+  const q = search ?? (typeof window !== 'undefined' && window.location ? window.location.search : '');
   try {
     const found = parseVisitToken(new URLSearchParams(q).get('atlas_visit'));
     if (found) remembered = found;

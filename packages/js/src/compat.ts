@@ -441,7 +441,7 @@ export class Auth0CompatClient {
     if (body?.session) await revokeSession(this.raw, body.session.id);
     this.state = null;
     this.token = null;
-    const url = options.logoutParams?.returnTo ?? (typeof window !== 'undefined' ? window.location.origin : '/');
+    const url = options.logoutParams?.returnTo ?? (typeof window !== 'undefined' && window.location ? window.location.origin : '/');
     if (options.openUrl === false) return;
     if (typeof options.openUrl === 'function') await options.openUrl(url);
     else if (typeof window !== 'undefined') window.location.assign(url);

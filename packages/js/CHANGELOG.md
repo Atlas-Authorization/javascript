@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.52.1
+
+- React Native: `signInWithNativeBrowser` (and so `signInWithOAuth` / `signInWithSSO` in `@atlasauth/expo` and `@atlasauth/react-native`) threw `TypeError: Cannot read property 'search' of undefined` before opening the browser. React Native has a `window` with no `location`; the SDK now checks for `window.location` wherever it reads the page URL.
+
 ## 0.52.0
 
 - Native sign-in through enterprise connections: `signInWithNativeBrowser` and `startOAuthSignIn` take `strategy: 'oauth' | 'sso' | 'saml' | 'wsfed'` (default `'oauth'`) with `identifier` (the work email) and `connectionId`. The provider is only needed for `'oauth'`. The same PKCE code is redeemed at `POST /v1/client/sign_ins/oauth/token`. Needs a server with native enterprise start routes.

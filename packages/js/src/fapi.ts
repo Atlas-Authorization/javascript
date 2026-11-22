@@ -201,7 +201,7 @@ export class FapiClient {
 
   /** The absolute URL of a Frontend API path (for a DPoP proof's `htu`). */
   urlFor(path: string): string {
-    const base = this.options.baseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+    const base = this.options.baseUrl || (typeof window !== 'undefined' && window.location ? window.location.origin : '');
     return `${base}${path}`;
   }
 
@@ -1216,7 +1216,7 @@ export function signUpProvedByLink(attempt: AttemptView | null | undefined): boo
 export function signInAfterProofUrl(options: { url?: string | null | undefined; frontendApi?: string | undefined; redirectUrl?: string | undefined }): string | null {
   if (options.url !== undefined) return options.url;
   try {
-    const redirectUrl = options.redirectUrl ?? (typeof window !== 'undefined' ? window.location.href : undefined);
+    const redirectUrl = options.redirectUrl ?? (typeof window !== 'undefined' && window.location ? window.location.href : undefined);
     return hostedSignIn({
       ...(options.frontendApi ? { frontendApi: options.frontendApi } : {}),
       ...(redirectUrl ? { redirectUrl } : {}),

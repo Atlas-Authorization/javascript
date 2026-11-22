@@ -652,7 +652,7 @@ export interface BillingState {
   error: string | null;
 }
 
-const hereUrl = (): string => (typeof window === 'undefined' ? '/' : window.location.href);
+const hereUrl = (): string => (typeof window === 'undefined' || !window.location ? '/' : window.location.href);
 const goto = (url: string): void => {
   if (typeof window !== 'undefined') window.location.assign(url);
 };
