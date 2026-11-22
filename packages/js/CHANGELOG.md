@@ -1,5 +1,11 @@
 # @atlasauth/js changelog
 
+## 0.52.0
+
+- Native sign-in through enterprise connections: `signInWithNativeBrowser` and `startOAuthSignIn` take `strategy: 'oauth' | 'sso' | 'saml' | 'wsfed'` (default `'oauth'`) with `identifier` (the work email) and `connectionId`. The provider is only needed for `'oauth'`. The same PKCE code is redeemed at `POST /v1/client/sign_ins/oauth/token`. Needs a server with native enterprise start routes.
+- New exports: `NativeSignInStrategy`. `StartOAuthSignInInput.provider` and `NativeOAuthOptions.provider` are now optional (type-widening).
+
+
 ## 0.51.0
 
 - Session continuity for background tabs: `mayHaveSession()` and `SIGNED_IN_HINT_COOKIE` read the signed-in hint cookie; `onWake(cb)` fires when the page becomes visible, gains focus, comes back online or is restored from the back/forward cache (coalesced to once a second); `coordinatedRefresh(key, fn)` makes tabs that wake together share one token refresh.

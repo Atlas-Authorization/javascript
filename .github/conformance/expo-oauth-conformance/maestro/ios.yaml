@@ -1,0 +1,21 @@
+# iOS simulator. The system browser is ASWebAuthenticationSession; the test provider signs in without a password.
+appId: com.example.app
+---
+- launchApp:
+    clearState: true
+- assertVisible: "signed-out"
+- tapOn:
+    id: "sign-in"
+# The system asks once to allow the app to use the provider's site to sign in.
+- tapOn:
+    text: "Continue"
+    optional: true
+# The test OIDC provider shows one button and signs the fixed test user in.
+- extendedWaitUntil:
+    visible: "Sign in as test user"
+    timeout: 30000
+- tapOn: "Sign in as test user"
+- extendedWaitUntil:
+    visible: "signed-in"
+    timeout: 30000
+- assertVisible: "complete"

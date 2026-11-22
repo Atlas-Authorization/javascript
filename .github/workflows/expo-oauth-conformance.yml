@@ -1,0 +1,103 @@
+# Copy to .github/workflows/expo-oauth-conformance.yml in the public javascript repository
+# (Atlas-Authorization/javascript) and copy this folder (without this file) to .github/conformance/expo-oauth-conformance/
+# there: the mirror sync keeps its own .github and replaces everything else with packages/, so neither is carried.
+# Secrets: ATLAS_DEV_PK (publishable key of a DEVELOPMENT instance that has the built-in atlas_test provider
+# enabled (PUT /v1/oauth_providers/atlas_test {enabled:true}) and the native app com.example.app registered with callback exampleapp://oauth-callback), ATLAS_DEV_FAPI (its
+# Frontend API URL). Optional: ATLAS_DEV_NATIVE_APP_ID, ATLAS_DEV_TEST_PROVIDER.
+name: expo-oauth-conformance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['packages/expo/**', 'packages/react-native/**', 'packages/js/**']
+  schedule:
+    - cron: '0 5 * * *'
+
+concurrency:
+  group: expo-oauth-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPO_PUBLIC_ATLAS_DEV_PK: ${{ secrets.ATLAS_DEV_PK }}
+  EXPO_PUBLIC_ATLAS_DEV_FAPI: ${{ secrets.ATLAS_DEV_FAPI }}
+  EXPO_PUBLIC_ATLAS_NATIVE_APP_ID: ${{ secrets.ATLAS_DEV_NATIVE_APP_ID }}
+  EXPO_PUBLIC_ATLAS_TEST_PROVIDER: ${{ secrets.ATLAS_DEV_TEST_PROVIDER }}
+
+jobs:
+  # The app is built from the packages in this repository, so the run tests the code about to be released.
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @atlasauth/js --filter @atlasauth/expo build
+      - name: Prepare the example app
+        run: |
+          mkdir -p "$RUNNER_TEMP/app" && cp -R .github/conformance/expo-oauth-conformance/. "$RUNNER_TEMP/app/"
+          cd "$RUNNER_TEMP/app"
+          # use the packages built above instead of the published ones
+          npm pkg set dependencies.@atlasauth/expo="file:$GITHUB_WORKSPACE/packages/expo" dependencies.@atlasauth/js="file:$GITHUB_WORKSPACE/packages/js"
+          npm install --no-audit --no-fund
+          npx expo prebuild --platform ios --no-install
+          xcodebuild -workspace ios/Conformance.xcworkspace -scheme Conformance -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Boot a simulator and install the app
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone' | grep -oE '[0-9A-F-]{36}')
+          xcrun simctl boot "$UDID"
+          xcrun simctl install "$UDID" "$RUNNER_TEMP"/app/build/Build/Products/Release-iphonesimulator/Conformance.app
+      - name: Run the flow
+        run: maestro test .github/conformance/expo-oauth-conformance/maestro/ios.yaml --format junit --output ios-report.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: ios-report, path: ios-report.xml }
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @atlasauth/js --filter @atlasauth/expo build
+      - name: Prepare the example app
+        run: |
+          mkdir -p "$RUNNER_TEMP/app" && cp -R .github/conformance/expo-oauth-conformance/. "$RUNNER_TEMP/app/"
+          cd "$RUNNER_TEMP/app"
+          npm pkg set dependencies.@atlasauth/expo="file:$GITHUB_WORKSPACE/packages/expo" dependencies.@atlasauth/js="file:$GITHUB_WORKSPACE/packages/js"
+          npm install --no-audit --no-fund
+          npx expo prebuild --platform android --no-install
+          (cd android && ./gradlew assembleRelease -x lint)
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          script: |
+            adb install "$RUNNER_TEMP"/app/android/app/build/outputs/apk/release/app-release.apk
+            maestro test .github/conformance/expo-oauth-conformance/maestro/android.yaml --format junit --output android-report.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: android-report, path: android-report.xml }

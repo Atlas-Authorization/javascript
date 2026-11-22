@@ -57,6 +57,8 @@ export interface ExpoSignInOptions {
   preferEphemeralSession?: boolean;
 }
 
+type BrowserWho = { provider?: string; strategy?: 'sso' | 'saml' | 'wsfed'; identifier?: string; connectionId?: string };
+
 const failure = (code: string, message: string): OAuthSignInResult => ({ status: 'error', errors: [{ code, message }] });
 
 export function createExpoOAuth(deps: {
@@ -71,7 +73,7 @@ export function createExpoOAuth(deps: {
   const mod = <K extends keyof ExpoOAuthModules>(key: K, load: () => ExpoOAuthModules[K]): ExpoOAuthModules[K] =>
     deps.modules && key in deps.modules ? deps.modules[key] : load();
 
-  async function signInWithOAuth(provider: string, opts: ExpoSignInOptions = {}): Promise<OAuthSignInResult> {
+  async function browserSignIn(who: BrowserWho, opts: ExpoSignInOptions): Promise<OAuthSignInResult> {
     const webBrowser = mod('webBrowser', loadWebBrowser);
     if (!webBrowser) return failure('EXPO_WEB_BROWSER_MISSING', 'Install expo-web-browser (npx expo install expo-web-browser) to sign in with a provider.');
     let callback = opts.callback;
@@ -89,7 +91,7 @@ export function createExpoOAuth(deps: {
       },
     };
     const out = await signInWithNativeBrowser(deps.client, {
-      provider,
+      ...who,
       browser,
       ...(appId ? { nativeAppId: appId } : {}),
       ...(opts.redirectUrl ? { redirectUrl: opts.redirectUrl } : {}),
@@ -108,6 +110,25 @@ export function createExpoOAuth(deps: {
     deps.setPending({ id: out.attemptId, status: out.attemptStatus, codeVerifier: out.codeVerifier, ...(out.policyToken ? { policyToken: out.policyToken } : {}) });
     return { ...out, errors: [] };
   }
+
+  const signInWithOAuth = (provider: string, opts: ExpoSignInOptions = {}): Promise<OAuthSignInResult> => browserSignIn({ provider }, opts);
+
+  /**
+   * Enterprise sign-in (OIDC SSO by default, or SAML / WS-Federation) in the system browser, with the same PKCE flow
+   * and result as `signInWithOAuth`. Name the connection with `connectionId`, or give the work email as `identifier`.
+   */
+  const signInWithSSO = (
+    input: { identifier?: string; connectionId?: string; strategy?: 'sso' | 'saml' | 'wsfed' },
+    opts: ExpoSignInOptions = {},
+  ): Promise<OAuthSignInResult> =>
+    browserSignIn(
+      {
+        strategy: input.strategy ?? 'sso',
+        ...(input.identifier ? { identifier: input.identifier } : {}),
+        ...(input.connectionId ? { connectionId: input.connectionId } : {}),
+      },
+      opts,
+    );
 
   /**
    * Google: the native sheet when a Google sign-in module is given and the app is not in Expo Go; otherwise the browser
@@ -128,5 +149,5 @@ export function createExpoOAuth(deps: {
     return { status: 'error', errors: (r.errors.length ? r.errors : [{ code: 'GOOGLE_FAILED', message: 'Could not sign in with Google.' }]) as FieldError[] };
   }
 
-  return { signInWithOAuth, signInWithGoogle };
+  return { signInWithOAuth, signInWithSSO, signInWithGoogle };
 }

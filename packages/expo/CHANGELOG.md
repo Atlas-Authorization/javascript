@@ -1,5 +1,10 @@
 # @atlasauth/expo changelog
 
+## 0.14.0
+
+- `useSignIn().signInWithSSO({ identifier?, connectionId?, strategy? })` and `createExpoOAuth().signInWithSSO`: enterprise sign-in (OIDC SSO, SAML or WS-Federation) through `expo-web-browser` with PKCE, with the same Expo callback handling as `signInWithOAuth`.
+
+
 ## 0.13.0
 
 - `useSignIn().signInWithOAuth(provider)` and `createExpoOAuth`: PKCE sign-in through `expo-web-browser`, with the callback built by `expo-linking`. In Expo Go it uses the hosted native callback, so nothing needs registering for development.

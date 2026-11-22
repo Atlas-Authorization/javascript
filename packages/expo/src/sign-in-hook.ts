@@ -7,6 +7,7 @@ import { useExpoFapiClient } from './policies';
 /**
  * Sign in with a provider (Discord, GitHub, Google in Expo Go, …) in the system browser, in one call:
  * `const { signInWithOAuth } = useSignIn(); const r = await signInWithOAuth('discord');`
+ * Enterprise SSO (OIDC, SAML, WS-Federation) the same way: `await signInWithSSO({ identifier: 'ada@example.com' })`, or `{ connectionId, strategy: 'saml' }`.
  *
  * `r.status` is `complete` (the session is stored and `useAuth()` updates), `cancelled` (the person closed the
  * browser; not an error), `needs_second_factor` / `needs_required_action` (the pending attempt is handed to

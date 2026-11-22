@@ -556,6 +556,10 @@ export const ERROR_CATALOG: Record<string, { status: number; title: string }> = 
     "status": 400,
     "title": "Provider not enabled"
   },
+  "ATLAS_TEST_PROVIDER_DEVELOPMENT_ONLY": {
+    "status": 400,
+    "title": "Test provider is development only"
+  },
   "APP_NOT_ALLOWED": {
     "status": 403,
     "title": "App not allowed"

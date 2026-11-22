@@ -116,3 +116,43 @@ describe('browser watch URL', () => {
     expect(openAuthSession).toHaveBeenCalledWith('https://p/auth', 'exampleapp://cb', { preferEphemeralSession: false });
   });
 });
+
+describe('enterprise strategies', () => {
+  const start = () => json(200, { authorization_url: 'https://idp.example.com/auth', attempt_id: 'att_1', redirect_url: 'https://fapi.test/v1/oauth/native-callback/napp_1', callback_url: 'exampleapp://cb' });
+
+  it('starts each enterprise route with its own body fields (identifier is the route email)', async () => {
+    for (const strategy of ['sso', 'saml', 'wsfed'] as const) {
+      const { client, calls } = fakeFapi(() => start(), 'napp_1');
+      await startOAuthSignIn(client, { strategy, identifier: 'ada@example.com', connectionId: 'ssoc_1', nativeAppId: 'napp_1', codeChallenge: 'x'.repeat(43) });
+      expect(calls[0]!.path).toBe(`/v1/client/sign_ins/${strategy}`);
+      expect(calls[0]!.body).toMatchObject({ email: 'ada@example.com', connection_id: 'ssoc_1', native_app_id: 'napp_1', code_challenge_method: 'S256' });
+      expect(calls[0]!.body.provider).toBeUndefined();
+      expect(calls[0]!.body.identifier).toBeUndefined();
+    }
+  });
+
+  it('keeps the oauth default: the oauth route with provider', async () => {
+    const { client, calls } = fakeFapi(() => start());
+    await startOAuthSignIn(client, { provider: 'discord', codeChallenge: 'x'.repeat(43) });
+    expect(calls[0]!.path).toBe('/v1/client/sign_ins/oauth');
+    expect(calls[0]!.body.provider).toBe('discord');
+  });
+
+  it('signs in through an enterprise connection and redeems at the one token route', async () => {
+    const { client, calls } = fakeFapi((path) => (path.endsWith('/token') ? json(200, { object: 'session', jwt: 'a.b.c', session_id: 's1' }) : start()));
+    const browser = { openAuthSession: vi.fn(async () => ({ type: 'success' as const, url: 'exampleapp://cb?__atlas_attempt=att_1&__atlas_code=c1' })) };
+    const out = await signInWithNativeBrowser(client, { strategy: 'saml', connectionId: 'ssoc_1', browser, nativeAppId: 'napp_1' });
+    expect(out).toMatchObject({ status: 'complete', session: { jwt: 'a.b.c' } });
+    expect(calls[0]!.path).toBe('/v1/client/sign_ins/saml');
+    expect(calls[1]!.path).toBe('/v1/client/sign_ins/oauth/token');
+    expect(browser.openAuthSession).toHaveBeenCalledWith('https://idp.example.com/auth', 'exampleapp://cb', { preferEphemeralSession: false });
+  });
+
+  it('needs a connection or identifier for an enterprise sign-in, and a provider for oauth, before any request', async () => {
+    const { client, calls } = fakeFapi(() => start());
+    const browser = { openAuthSession: vi.fn() };
+    expect(await signInWithNativeBrowser(client, { strategy: 'sso', browser })).toMatchObject({ status: 'error', errors: [{ code: 'IDENTIFIER_REQUIRED' }] });
+    expect(await signInWithNativeBrowser(client, { browser })).toMatchObject({ status: 'error', errors: [{ code: 'PROVIDER_REQUIRED' }] });
+    expect(calls).toHaveLength(0);
+  });
+});

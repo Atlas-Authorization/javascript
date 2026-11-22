@@ -148,6 +148,16 @@ export type OAuthSignInResult =
   | { status: 'needs_second_factor' | 'needs_required_action'; attemptId: string; attemptStatus: string; policyToken?: string; codeVerifier?: string; errors: [] }
   | { status: 'error'; errors: Array<{ code: string; message: string; param?: string; reason?: string }> };
 
+/** The browser step and per-call overrides of `signInWithOAuth` / `signInWithSSO`. */
+export interface NativeBrowserOptions {
+  browser: NativeAuthBrowser;
+  appId?: string;
+  redirectUrl?: string;
+  callback?: string;
+  preferEphemeralSession?: boolean;
+  inWebView?: boolean;
+}
+
 export class AtlasStore {
   private state: AtlasStoreState = {
     status: 'loading',
@@ -418,13 +428,34 @@ export class AtlasStore {
    * `needs_required_action` carry the `attemptId` to continue with
    * `attemptSecondFactor` / the sign-in screens. Refused inside a WebView.
    */
-  signInWithOAuth = async (
-    provider: string,
-    opts: { browser: NativeAuthBrowser; appId?: string; redirectUrl?: string; callback?: string; preferEphemeralSession?: boolean; inWebView?: boolean },
-  ): Promise<OAuthSignInResult> => {
+  signInWithOAuth = async (provider: string, opts: NativeBrowserOptions): Promise<OAuthSignInResult> => this.browserSignIn({ provider }, opts);
+
+  /**
+   * Sign in through an enterprise connection (OIDC SSO by default, or SAML / WS-Federation) in the system
+   * browser, with the same PKCE flow and result as `signInWithOAuth`. Name the connection with `connectionId`, or
+   * give the person's work `identifier` (email) so its domain finds it. A connection that is not found is
+   * `status: 'error'` with the server's message.
+   */
+  signInWithSSO = async (
+    input: { identifier?: string; connectionId?: string; strategy?: 'sso' | 'saml' | 'wsfed' },
+    opts: NativeBrowserOptions,
+  ): Promise<OAuthSignInResult> =>
+    this.browserSignIn(
+      {
+        strategy: input.strategy ?? 'sso',
+        ...(input.identifier ? { identifier: input.identifier } : {}),
+        ...(input.connectionId ? { connectionId: input.connectionId } : {}),
+      },
+      opts,
+    );
+
+  private async browserSignIn(
+    who: { provider?: string; strategy?: 'sso' | 'saml' | 'wsfed'; identifier?: string; connectionId?: string },
+    opts: NativeBrowserOptions,
+  ): Promise<OAuthSignInResult> {
     const nativeAppId = opts.appId ?? this.appId;
     const out = await signInWithNativeBrowser(this.client, {
-      provider,
+      ...who,
       browser: opts.browser,
       ...(nativeAppId ? { nativeAppId } : {}),
       ...(opts.redirectUrl ? { redirectUrl: opts.redirectUrl } : {}),
@@ -442,7 +473,7 @@ export class AtlasStore {
     if (out.status === 'error') return out;
     if (out.status === 'cancelled') return { status: 'cancelled', errors: [] };
     return { ...out, errors: [] };
-  };
+  }
 
   /**
    * Begin OAuth by hand.

@@ -32,6 +32,23 @@ describe('isExpoGo', () => {
   });
 });
 
+describe('createExpoOAuth.signInWithSSO', () => {
+  it('starts the enterprise route with the Expo callback and adopts the jwt', async () => {
+    const t = setup({ type: 'success', url: 'exp://192.168.1.5:8081/--/atlas-oauth?__atlas_attempt=att_1&__atlas_code=c1' });
+    expect(await t.oauth.signInWithSSO({ identifier: 'ada@example.com', strategy: 'wsfed' })).toEqual({ status: 'complete', errors: [] });
+    expect(t.calls[0]!.path).toBe('/v1/client/sign_ins/wsfed');
+    expect(t.calls[0]!.body).toMatchObject({ email: 'ada@example.com', native_app_id: 'napp_1', callback: 'exp://192.168.1.5:8081/--/atlas-oauth' });
+    expect(t.calls[1]!.path).toBe('/v1/client/sign_ins/oauth/token');
+    expect(t.adopt).toHaveBeenCalledWith('a.b.c');
+  });
+
+  it('defaults to the OIDC SSO route', async () => {
+    const t = setup({ type: 'cancel' });
+    expect(await t.oauth.signInWithSSO({ connectionId: 'ssoc_1' })).toEqual({ status: 'cancelled', errors: [] });
+    expect(t.calls[0]!.path).toBe('/v1/client/sign_ins/sso');
+  });
+});
+
 describe('createExpoOAuth.signInWithOAuth', () => {
   it('completes: sends the Expo callback, the app id and a non-ephemeral session, then adopts the jwt', async () => {
     const t = setup({ type: 'success', url: 'exp://192.168.1.5:8081/--/atlas-oauth?__atlas_attempt=att_1&__atlas_code=c1' });

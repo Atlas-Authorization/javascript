@@ -115,6 +115,8 @@ export function useSignIn(): {
   completeOAuthRedirect(callbackUrl: string): Promise<FlowResult>;
   /** Sign in with a provider in the system browser, with PKCE, in one call (see `AtlasStore.signInWithOAuth`). */
   signInWithOAuth: AtlasStore['signInWithOAuth'];
+  /** Sign in through an enterprise connection (SSO, SAML, WS-Federation) in the system browser, with PKCE (see `AtlasStore.signInWithSSO`). */
+  signInWithSSO: AtlasStore['signInWithSSO'];
   /**
    * Continue an attempt the server holds at `needs_policy_acceptance` (a
    * `FlowResult` with that `attemptStatus`): send `controller.build()` with the
@@ -134,6 +136,7 @@ export function useSignIn(): {
     startOAuth: store.startOAuth,
     completeOAuthRedirect: store.completeOAuthRedirect,
     signInWithOAuth: store.signInWithOAuth,
+    signInWithSSO: store.signInWithSSO,
     acceptPolicies: store.acceptPolicies,
   };
 }

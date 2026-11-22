@@ -1,0 +1,16 @@
+# Android emulator. The system browser is a Custom Tab.
+appId: com.example.app
+---
+- launchApp:
+    clearState: true
+- assertVisible: "signed-out"
+- tapOn:
+    id: "sign-in"
+- extendedWaitUntil:
+    visible: "Sign in as test user"
+    timeout: 30000
+- tapOn: "Sign in as test user"
+- extendedWaitUntil:
+    visible: "signed-in"
+    timeout: 30000
+- assertVisible: "complete"

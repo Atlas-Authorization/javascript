@@ -1,5 +1,5 @@
 /**
- * Native app OAuth (RFC 8252 + RFC 7636): sign in with a provider in the system browser and redeem a
+ * Native app OAuth (RFC 8252 + RFC 7636): sign in with a provider (or an enterprise SSO connection) in the system browser and redeem a
  * one-time code with a PKCE verifier. No ticket ever appears in the callback URL, so a leaked callback
  * cannot be redeemed by anyone but the device that started the sign-in.
  *
@@ -113,8 +113,25 @@ export async function createPkcePair(): Promise<{ codeVerifier: string; codeChal
 
 // ── start / redeem ──────────────────────────────────────────────────────────
 
+/** Which start route a native sign-in uses: social OAuth (default), or an enterprise connection (OIDC SSO, SAML, WS-Federation). */
+export type NativeSignInStrategy = 'oauth' | 'sso' | 'saml' | 'wsfed';
+
+const START_PATHS: Record<NativeSignInStrategy, string> = {
+  oauth: '/v1/client/sign_ins/oauth',
+  sso: '/v1/client/sign_ins/sso',
+  saml: '/v1/client/sign_ins/saml',
+  wsfed: '/v1/client/sign_ins/wsfed',
+};
+
 export interface StartOAuthSignInInput {
-  provider: string;
+  /** The start route to use. Default `'oauth'`; `'sso'`, `'saml'` and `'wsfed'` start an enterprise connection. */
+  strategy?: NativeSignInStrategy;
+  /** Social OAuth only (strategy `'oauth'`): the provider id. */
+  provider?: string;
+  /** Enterprise: the work email the connection is found by (its domain), sent as the route's `email`. Social OAuth: the route's `identifier`. */
+  identifier?: string;
+  /** Enterprise: the connection to use, instead of finding it by the identifier's domain. */
+  connectionId?: string;
   /** The registered native app (`napp_…`). */
   nativeAppId?: string;
   /** The URL the provider flow ends at. Omit to use the hosted native callback. */
@@ -138,10 +155,15 @@ export interface StartOAuthSignInResult {
   errors: FieldError[];
 }
 
-/** `POST /v1/client/sign_ins/oauth` with a PKCE challenge. */
+/** `POST /v1/client/sign_ins/oauth` (or the enterprise start route for `strategy`) with a PKCE challenge. */
 export async function startOAuthSignIn(client: FapiClient, input: StartOAuthSignInInput): Promise<StartOAuthSignInResult> {
-  const res = await client.post<{ authorization_url?: string; attempt_id?: string; redirect_url?: string; callback_url?: string }>('/v1/client/sign_ins/oauth', {
-    provider: input.provider,
+  const strategy = input.strategy ?? 'oauth';
+  const who =
+    strategy === 'oauth'
+      ? { provider: input.provider, ...(input.identifier ? { identifier: input.identifier } : {}) }
+      : { ...(input.identifier ? { email: input.identifier } : {}), ...(input.connectionId ? { connection_id: input.connectionId } : {}) };
+  const res = await client.post<{ authorization_url?: string; attempt_id?: string; redirect_url?: string; callback_url?: string }>(START_PATHS[strategy], {
+    ...who,
     code_challenge: input.codeChallenge,
     code_challenge_method: 'S256',
     ...(input.nativeAppId ? { native_app_id: input.nativeAppId } : {}),
@@ -167,7 +189,7 @@ export interface OAuthSessionBody {
   expires_in?: number;
 }
 
-/** `POST /v1/client/sign_ins/oauth/token`: trade the callback's `__atlas_code` and your verifier for the session. */
+/** `POST /v1/client/sign_ins/oauth/token`: trade the callback's `__atlas_code` and your verifier for the session. It serves every native sign-in, social or enterprise. */
 export async function redeemOAuthCode(
   client: FapiClient,
   input: { attemptId: string; code: string; codeVerifier: string },
@@ -199,7 +221,14 @@ export type NativeOAuthResult =
   | { status: 'error'; errors: FieldError[] };
 
 export interface NativeOAuthOptions {
-  provider: string;
+  /** Social OAuth (strategy `'oauth'`, the default): the provider id. */
+  provider?: string;
+  /** `'oauth'` (default), or `'sso'` / `'saml'` / `'wsfed'` to sign in through an enterprise connection. */
+  strategy?: NativeSignInStrategy;
+  /** Enterprise: the work email whose domain finds the connection. */
+  identifier?: string;
+  /** Enterprise: the connection id (alternative to `identifier`). */
+  connectionId?: string;
   browser: NativeAuthBrowser;
   nativeAppId?: string;
   redirectUrl?: string;
@@ -229,6 +258,9 @@ export async function signInWithNativeBrowser(client: FapiClient, opts: NativeOA
   if (opts.inWebView ?? insideWebView()) {
     return fail('WEBVIEW_NOT_ALLOWED', 'OAuth sign-in cannot run inside a WebView: providers refuse it. Open the system browser instead.');
   }
+  const strategy = opts.strategy ?? 'oauth';
+  if (strategy === 'oauth' && !opts.provider) return fail('PROVIDER_REQUIRED', 'A provider is required for an OAuth sign-in.');
+  if (strategy !== 'oauth' && !opts.identifier && !opts.connectionId) return fail('IDENTIFIER_REQUIRED', 'An identifier (work email) or connectionId is required for an enterprise sign-in.');
   let pkce;
   try {
     pkce = await createPkcePair();
@@ -236,7 +268,10 @@ export async function signInWithNativeBrowser(client: FapiClient, opts: NativeOA
     return fail('NO_SECURE_RANDOM', e instanceof Error ? e.message : 'No secure random source.');
   }
   const started = await startOAuthSignIn(client, {
-    provider: opts.provider,
+    strategy,
+    ...(opts.provider ? { provider: opts.provider } : {}),
+    ...(opts.identifier ? { identifier: opts.identifier } : {}),
+    ...(opts.connectionId ? { connectionId: opts.connectionId } : {}),
     codeChallenge: pkce.codeChallenge,
     ...(opts.nativeAppId ? { nativeAppId: opts.nativeAppId } : {}),
     ...(opts.redirectUrl ? { redirectUrl: opts.redirectUrl } : {}),

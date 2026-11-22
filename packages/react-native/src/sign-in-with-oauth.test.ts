@@ -51,3 +51,27 @@ describe('AtlasStore.signInWithOAuth', () => {
     expect(t.seen).toHaveLength(0);
   });
 });
+
+describe('AtlasStore.signInWithSSO', () => {
+  it('starts the SSO route with the email, redeems at the token route and stores the session', async () => {
+    const t = setup('exampleapp://cb?__atlas_attempt=att_1&__atlas_code=c1');
+    const out = await t.store.signInWithSSO({ identifier: 'ada@example.com' }, { browser: t.browser });
+    expect(out).toEqual({ status: 'complete', errors: [] });
+    expect(t.token()).toBe(jwt);
+    expect(t.seen[0]!.path).toBe('/v1/client/sign_ins/sso');
+    expect(t.seen[0]!.body).toMatchObject({ email: 'ada@example.com', native_app_id: 'napp_1', code_challenge_method: 'S256' });
+    expect(t.seen[1]!.path).toBe('/v1/client/sign_ins/oauth/token');
+  });
+
+  it('uses the SAML route for a connection id and strategy saml', async () => {
+    const t = setup('exampleapp://cb?__atlas_attempt=att_1&__atlas_code=c1');
+    await t.store.signInWithSSO({ connectionId: 'ssoc_1', strategy: 'saml' }, { browser: t.browser });
+    expect(t.seen[0]!.path).toBe('/v1/client/sign_ins/saml');
+    expect(t.seen[0]!.body).toMatchObject({ connection_id: 'ssoc_1' });
+  });
+
+  it('a cancelled browser is cancelled', async () => {
+    const t = setup(null);
+    expect(await t.store.signInWithSSO({ identifier: 'ada@example.com' }, { browser: t.browser })).toEqual({ status: 'cancelled', errors: [] });
+  });
+});

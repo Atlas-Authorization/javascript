@@ -1,5 +1,10 @@
 # @atlasauth/react-native changelog
 
+## 0.10.0
+
+- `signInWithSSO({ identifier?, connectionId?, strategy? }, { browser })` on the store and `useSignIn()`: enterprise sign-in (OIDC SSO, SAML or WS-Federation) in the system browser with PKCE, next to `signInWithOAuth`. Exports `NativeBrowserOptions`.
+
+
 ## 0.9.0
 
 - `signInWithOAuth(provider)`: one call does PKCE, opens the system browser, and returns the session (or the attempt and `codeVerifier` when a second factor is needed).
@@ -9,8 +14,6 @@
 
 - Sign-in, sign-up and password reset solve Atlas captcha on Hermes/JSC with no app code.
 - `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.
-
-## Unreleased
 
 ## 0.7.0 — 2026-10-26
 
