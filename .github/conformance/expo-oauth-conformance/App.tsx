@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Text, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { AtlasProvider, createSecureStoreTokenCache, useAuth, useSignIn } from '@atlasauth/expo';
@@ -17,6 +17,13 @@ function Screen() {
   const { isSignedIn } = useAuth();
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
+  // A raw request to the Frontend API, outside the SDK, so a failed run shows whether the device can reach it at all.
+  const [probe, setProbe] = useState('probing');
+  useEffect(() => {
+    fetch(`${FAPI}/v1/environment`, { headers: { 'x-publishable-key': PK } })
+      .then((r) => setProbe(`probe ${r.status}`))
+      .catch((e) => setProbe(`probe failed: ${String(e)}`));
+  }, []);
 
   async function onPress() {
     try {
@@ -37,6 +44,7 @@ function Screen() {
       <Text testID="status">{status}</Text>
       <Text testID="error">{error}</Text>
       <Text testID="fapi">{FAPI || 'no Frontend API configured'}</Text>
+      <Text testID="probe">{probe}</Text>
       <Button testID="sign-in" title="Sign in" onPress={onPress} />
     </View>
   );

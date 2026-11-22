@@ -51,6 +51,8 @@ jobs:
           npx expo prebuild --platform ios
           xcodebuild -workspace ios/Conformance.xcworkspace -scheme Conformance -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO
+      - name: Reach the Frontend API from the runner
+        run: curl -sS -o /dev/null -w 'runner -> Frontend API: %{http_code} via %{remote_ip} (%{ssl_verify_result})\n' "$EXPO_PUBLIC_ATLAS_DEV_FAPI/v1/environment" -H "x-publishable-key: $EXPO_PUBLIC_ATLAS_DEV_PK" || true
       - name: Install Maestro
         run: |
           curl -Ls "https://get.maestro.mobile.dev" | bash
