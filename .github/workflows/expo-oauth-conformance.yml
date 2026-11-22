@@ -41,10 +41,10 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/app" && cp -R .github/conformance/expo-oauth-conformance/. "$RUNNER_TEMP/app/"
           cd "$RUNNER_TEMP/app"
-          # use the packages built above instead of the published ones
-          npm pkg set dependencies.@atlasauth/expo="file:$GITHUB_WORKSPACE/packages/expo" dependencies.@atlasauth/js="file:$GITHUB_WORKSPACE/packages/js"
-          npm install --no-audit --no-fund
-          npx expo prebuild --platform ios --no-install
+          # use the packages built above instead of the published ones (pack rewrites workspace:* to versions)
+          (cd "$GITHUB_WORKSPACE" && pnpm --filter "@atlasauth/expo..." -r exec pnpm pack --pack-destination "$RUNNER_TEMP/tgz")
+          npm install --no-audit --no-fund "$RUNNER_TEMP"/tgz/*.tgz
+          npx expo prebuild --platform ios
           xcodebuild -workspace ios/Conformance.xcworkspace -scheme Conformance -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO
       - name: Install Maestro
@@ -79,8 +79,8 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/app" && cp -R .github/conformance/expo-oauth-conformance/. "$RUNNER_TEMP/app/"
           cd "$RUNNER_TEMP/app"
-          npm pkg set dependencies.@atlasauth/expo="file:$GITHUB_WORKSPACE/packages/expo" dependencies.@atlasauth/js="file:$GITHUB_WORKSPACE/packages/js"
-          npm install --no-audit --no-fund
+          (cd "$GITHUB_WORKSPACE" && pnpm --filter "@atlasauth/expo..." -r exec pnpm pack --pack-destination "$RUNNER_TEMP/tgz")
+          npm install --no-audit --no-fund "$RUNNER_TEMP"/tgz/*.tgz
           npx expo prebuild --platform android --no-install
           (cd android && ./gradlew assembleRelease -x lint)
       - name: Install Maestro
