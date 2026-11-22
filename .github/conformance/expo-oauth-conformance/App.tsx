@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, SafeAreaView, Text } from 'react-native';
+import { Button, Text, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { AtlasProvider, createSecureStoreTokenCache, useAuth, useSignIn } from '@atlasauth/expo';
 
@@ -16,18 +16,28 @@ function Screen() {
   const { signInWithOAuth } = useSignIn();
   const { isSignedIn } = useAuth();
   const [status, setStatus] = useState('idle');
+  const [error, setError] = useState('');
 
   async function onPress() {
-    const result = await signInWithOAuth(PROVIDER);
-    setStatus(result.status);
+    try {
+      const result = await signInWithOAuth(PROVIDER);
+      setStatus(result.status);
+      // A failed run names the error on screen, so the Maestro report shows why.
+      setError(result.errors.map((e) => `${e.code}: ${e.message}`).join('\n'));
+    } catch (e) {
+      setStatus('threw');
+      setError(String(e));
+    }
   }
 
   return (
-    <SafeAreaView>
+    // Clear of the status bar on both platforms (Android draws edge to edge).
+    <View style={{ paddingTop: 80, paddingHorizontal: 16 }}>
       <Text testID="signed-in">{isSignedIn ? 'signed-in' : 'signed-out'}</Text>
       <Text testID="status">{status}</Text>
+      <Text testID="error">{error}</Text>
       <Button testID="sign-in" title="Sign in" onPress={onPress} />
-    </SafeAreaView>
+    </View>
   );
 }
 

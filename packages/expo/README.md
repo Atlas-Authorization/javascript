@@ -18,7 +18,7 @@ backed by [`expo-secure-store`](https://docs.expo.dev/versions/latest/sdk/secure
 ```sh
 npx expo install @atlasauth/expo @atlasauth/js expo-secure-store
 # plus, as you use them:
-#   expo-web-browser expo-auth-session   (OAuth)
+#   expo-web-browser expo-linking expo-crypto   (OAuth; expo-crypto gives PKCE its secure random source on Hermes)
 ```
 
 `@atlasauth/js` is a **peer**, so your app, `@atlasauth/expo` and the other Atlas packages share one copy. `react` and `react-native` come from your Expo app. `expo-secure-store`,

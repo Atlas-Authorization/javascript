@@ -1,5 +1,10 @@
 # @atlasauth/expo changelog
 
+## 0.14.1
+
+- `signInWithOAuth` and `signInWithSSO` work in a built app: PKCE needs `crypto.getRandomValues`, which Hermes does not have, so the call returned `NO_SECURE_RANDOM` before opening the browser. The SDK now uses `expo-crypto` (a new optional peer: `npx expo install expo-crypto`) when the global is missing, and returns `EXPO_CRYPTO_MISSING` if neither exists.
+- README: in a build the SDK returns to `<your scheme>://atlas-oauth` unless you pass `{ callback }`; register that URL.
+
 ## 0.14.0
 
 - `useSignIn().signInWithSSO({ identifier?, connectionId?, strategy? })` and `createExpoOAuth().signInWithSSO`: enterprise sign-in (OIDC SSO, SAML or WS-Federation) through `expo-web-browser` with PKCE, with the same Expo callback handling as `signInWithOAuth`.

@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/expo",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -41,7 +41,8 @@
     "expo-web-browser": ">=12",
     "expo-auth-session": ">=5",
     "expo-constants": ">=15",
-    "expo-linking": ">=6"
+    "expo-linking": ">=6",
+    "expo-crypto": ">=12"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -63,6 +64,9 @@
       "optional": true
     },
     "expo-linking": {
+      "optional": true
+    },
+    "expo-crypto": {
       "optional": true
     }
   },

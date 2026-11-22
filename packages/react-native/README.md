@@ -117,6 +117,10 @@ redeems the one-time code and stores the session. It resolves to `{ status }` wi
 (the person closed the browser, never an error), `needs_second_factor`, `needs_required_action` or `error`.
 It refuses to run inside a WebView.
 
+PKCE needs `crypto.getRandomValues`, which Hermes does not have: install `react-native-get-random-values`
+and import it once at the top of your entry file (`import 'react-native-get-random-values';`). Without it the call
+resolves to `error` with `NO_SECURE_RANDOM`. (`@atlasauth/expo` uses `expo-crypto` instead.)
+
 ```tsx
 import * as WebBrowser from 'expo-web-browser';
 import { useSignIn } from '@atlasauth/react-native';

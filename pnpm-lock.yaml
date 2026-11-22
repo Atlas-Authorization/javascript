@@ -509,6 +509,9 @@ importers:
       expo-constants:
         specifier: '>=15'
         version: 58.0.16(expo@58.0.26)(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(typescript@5.8.3)
+      expo-crypto:
+        specifier: '>=12'
+        version: 58.0.8(expo@58.0.26)
       expo-linking:
         specifier: '>=6'
         version: 58.0.17(expo@58.0.26)(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
@@ -8117,6 +8120,11 @@ packages:
 
   expo-crypto@57.0.4:
     resolution: {integrity: sha512-LqMMs/N6wvwZyw4deVmcl3AgXgqMwCVQ9WyWf2eaWyrk99TXSKk5da3QspiLOOjnn5Qv9f8C50cDNuoyLThpdw==}
+    peerDependencies:
+      expo: '*'
+
+  expo-crypto@58.0.8:
+    resolution: {integrity: sha512-yMSiMlallOweQ28oQ3BqJf6I/4ZoBggFNRg+PfjG1NbQWBWzGKmkPPUrd3yT0oPW4P+AYppg+Mw6xoAYddLUKA==}
     peerDependencies:
       expo: '*'
 
@@ -18315,6 +18323,10 @@ snapshots:
       - typescript
 
   expo-crypto@57.0.4(expo@58.0.26):
+    dependencies:
+      expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
+
+  expo-crypto@58.0.8(expo@58.0.26):
     dependencies:
       expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
 

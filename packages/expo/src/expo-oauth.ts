@@ -2,7 +2,7 @@
  * Browser sign-in for Expo: the system browser (`expo-web-browser`), PKCE, and the Expo Go dev callback.
  * No React here (testable in Node); the hook is `useSignIn()` in `./sign-in-hook`.
  *
- * `expo-web-browser`, `expo-constants` and `expo-linking` are optional peers, required lazily and guarded: an app
+ * `expo-web-browser`, `expo-constants`, `expo-linking` and `expo-crypto` are optional peers, required lazily and guarded: an app
  * that never signs in through a browser never loads them, and tests inject fakes through `modules`.
  */
 import { signInWithNativeBrowser, type FapiClient, type FieldError, type NativeAuthBrowser } from '@atlasauth/js';
@@ -20,10 +20,14 @@ export interface ConstantsLike {
 export interface LinkingLike {
   createURL(path: string): string;
 }
+export interface CryptoLike {
+  getRandomValues(array: Uint8Array): Uint8Array;
+}
 export interface ExpoOAuthModules {
   webBrowser?: WebBrowserLike | null;
   constants?: ConstantsLike | null;
   linking?: LinkingLike | null;
+  crypto?: CryptoLike | null;
 }
 
 // Metro needs each module name as a literal, so one guarded require per module.
@@ -37,6 +41,25 @@ const guarded = <T>(load: () => T): T | null => {
 const loadWebBrowser = () => guarded<WebBrowserLike>(() => require!('expo-web-browser'));
 const loadConstants = () => guarded<ConstantsLike>(() => require!('expo-constants')?.default ?? require!('expo-constants'));
 const loadLinking = () => guarded<LinkingLike>(() => require!('expo-linking'));
+const loadCrypto = () => guarded<CryptoLike>(() => require!('expo-crypto'));
+
+type CryptoGlobal = { crypto?: { getRandomValues?: unknown } };
+
+/**
+ * PKCE needs `crypto.getRandomValues`, which Hermes does not have. When it is missing, install expo-crypto's
+ * (a native secure random source) on the global, the same way react-native-get-random-values does. False when
+ * neither exists.
+ */
+export function ensureSecureRandom(load: () => CryptoLike | null | undefined): boolean {
+  const g = globalThis as CryptoGlobal;
+  if (typeof g.crypto?.getRandomValues === 'function') return true;
+  const expoCrypto = load();
+  if (typeof expoCrypto?.getRandomValues !== 'function') return false;
+  const getRandomValues = (array: Uint8Array): Uint8Array => expoCrypto.getRandomValues(array);
+  if (g.crypto) g.crypto.getRandomValues = getRandomValues;
+  else g.crypto = { getRandomValues };
+  return true;
+}
 
 /** True in Expo Go (the store client), where there is no custom scheme and the callback is an `exp://` URL. */
 export function isExpoGo(constants: ConstantsLike | null | undefined): boolean {
@@ -76,6 +99,9 @@ export function createExpoOAuth(deps: {
   async function browserSignIn(who: BrowserWho, opts: ExpoSignInOptions): Promise<OAuthSignInResult> {
     const webBrowser = mod('webBrowser', loadWebBrowser);
     if (!webBrowser) return failure('EXPO_WEB_BROWSER_MISSING', 'Install expo-web-browser (npx expo install expo-web-browser) to sign in with a provider.');
+    if (!ensureSecureRandom(() => mod('crypto', loadCrypto))) {
+      return failure('EXPO_CRYPTO_MISSING', 'Install expo-crypto (npx expo install expo-crypto) to sign in with a provider: PKCE needs a secure random source.');
+    }
     let callback = opts.callback;
     if (!callback && !opts.redirectUrl) {
       const linking = mod('linking', loadLinking);

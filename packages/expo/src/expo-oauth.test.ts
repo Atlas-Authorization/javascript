@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FapiClient } from '@atlasauth/js';
-import { createExpoOAuth, isExpoGo } from './expo-oauth';
+import { createExpoOAuth, ensureSecureRandom, isExpoGo } from './expo-oauth';
 import { createExpoNativeContext } from './fapi-context';
 import { createCacheFetch } from './cache-fetch';
 import { createInMemoryTokenCache } from './token-cache';
@@ -112,5 +112,26 @@ describe('createCacheFetch appId', () => {
     const f = createCacheFetch({ cache: createInMemoryTokenCache(), key: 'k', appId: 'napp_1', fetchImpl: (async (_i: unknown, init: RequestInit) => { seen = new Headers(init.headers); return json(200, {}); }) as unknown as typeof fetch });
     await f('https://fapi.test/v1/client');
     expect(seen!.get('x-atlas-app-id')).toBe('napp_1');
+  });
+});
+
+describe('ensureSecureRandom (Hermes has no crypto.getRandomValues)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('installs expo-crypto on the global when it is missing', () => {
+    vi.stubGlobal('crypto', undefined);
+    const fill = vi.fn((a: Uint8Array): Uint8Array => a.fill(7));
+    expect(ensureSecureRandom(() => ({ getRandomValues: fill }))).toBe(true);
+    const out = (globalThis as unknown as { crypto: { getRandomValues(a: Uint8Array): Uint8Array } }).crypto.getRandomValues(new Uint8Array(4));
+    expect([...out]).toEqual([7, 7, 7, 7]);
+    expect(fill).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an existing source and reports a missing one', () => {
+    const load = vi.fn(() => null);
+    expect(ensureSecureRandom(load)).toBe(true); // Node has one
+    expect(load).not.toHaveBeenCalled();
+    vi.stubGlobal('crypto', undefined);
+    expect(ensureSecureRandom(() => null)).toBe(false);
   });
 });
