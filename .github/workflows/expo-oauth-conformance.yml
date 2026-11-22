@@ -36,7 +36,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile=false
-      - run: pnpm --filter @atlasauth/js --filter @atlasauth/expo build
+      - run: pnpm --filter "@atlasauth/expo..." build
       - name: Prepare the example app
         run: |
           mkdir -p "$RUNNER_TEMP/app" && cp -R .github/conformance/expo-oauth-conformance/. "$RUNNER_TEMP/app/"
@@ -74,7 +74,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 17 }
       - run: pnpm install --frozen-lockfile=false
-      - run: pnpm --filter @atlasauth/js --filter @atlasauth/expo build
+      - run: pnpm --filter "@atlasauth/expo..." build
       - name: Prepare the example app
         run: |
           mkdir -p "$RUNNER_TEMP/app" && cp -R .github/conformance/expo-oauth-conformance/. "$RUNNER_TEMP/app/"
