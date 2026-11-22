@@ -72,7 +72,7 @@ export interface ExpoSignInOptions {
   /** The hosted callback is the default; pass your own https redirect only if you run one. */
   redirectUrl?: string;
   /**
-   * The URL the app is sent back to. Default: `Linking.createURL('/atlas-oauth')` (an `exp://` URL in Expo Go, your
+   * The URL the app is sent back to. Default: `Linking.createURL('atlas-oauth')` (an `exp://` URL in Expo Go, your
    * scheme in a build). It must be one of the registered app's `callback_urls`; `atlas dev native` prints it.
    */
   callback?: string;
@@ -107,7 +107,8 @@ export function createExpoOAuth(deps: {
       const linking = mod('linking', loadLinking);
       if (!linking) return failure('EXPO_LINKING_MISSING', 'Install expo-linking (npx expo install expo-linking), or pass `callback`.');
       // Expo Go has no custom scheme: this is an exp:// URL there, which a development instance accepts.
-      callback = linking.createURL('/atlas-oauth');
+      // No leading slash: createURL('/x') is scheme:///x in a build, which never matches scheme://x.
+      callback = linking.createURL('atlas-oauth');
     }
     const appId = opts.appId ?? deps.appId;
     const browser: NativeAuthBrowser = {

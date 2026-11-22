@@ -39,7 +39,14 @@ export function createCacheFetch(opts: {
   const { cache, key, fetchImpl, appId } = opts;
 
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const token = (await cache.getToken(key)) ?? null;
+    // A store that cannot be read (the iOS Keychain without its entitlement, a locked keystore) means no
+    // token, never a failed request: the call goes out unauthenticated, which is what signed out means.
+    let token: string | null = null;
+    try {
+      token = (await cache.getToken(key)) ?? null;
+    } catch {
+      token = null;
+    }
     const headers = new Headers(init?.headers);
     if (token) headers.set('authorization', `Bearer ${token}`);
     if (appId) headers.set('x-atlas-app-id', appId);

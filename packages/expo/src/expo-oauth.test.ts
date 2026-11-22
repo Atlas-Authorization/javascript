@@ -19,7 +19,7 @@ function setup(browserResult: { type: string; url?: string }, modules: Record<st
   const webBrowser = { openAuthSessionAsync: vi.fn(async () => browserResult) };
   const adopt = vi.fn(async () => {});
   const setPending = vi.fn();
-  const oauth = createExpoOAuth({ client, appId: 'napp_1', adopt, setPending, modules: { webBrowser, linking: { createURL: (p: string) => `exp://192.168.1.5:8081/--${p}` }, constants: null, ...modules } });
+  const oauth = createExpoOAuth({ client, appId: 'napp_1', adopt, setPending, modules: { webBrowser, linking: { createURL: (p: string) => `exp://192.168.1.5:8081/--/${p}` }, constants: null, ...modules } });
   return { oauth, webBrowser, adopt, setPending, calls };
 }
 
@@ -133,5 +133,19 @@ describe('ensureSecureRandom (Hermes has no crypto.getRandomValues)', () => {
     expect(load).not.toHaveBeenCalled();
     vi.stubGlobal('crypto', undefined);
     expect(ensureSecureRandom(() => null)).toBe(false);
+  });
+});
+
+describe('createCacheFetch with an unreadable token store', () => {
+  it('sends the request without a token instead of failing it', async () => {
+    const seen: Array<string | null> = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      seen.push(new Headers(init.headers).get('authorization'));
+      return json(200, { object: 'client' });
+    }) as unknown as typeof fetch;
+    const cache = { getToken: async () => { throw new Error('errSecMissingEntitlement (-34018)'); }, saveToken: async () => {}, clearToken: async () => {} };
+    const res = await createCacheFetch({ cache, key: 'k', fetchImpl })('https://fapi.test/v1/client');
+    expect(res.status).toBe(200);
+    expect(seen).toEqual([null]);
   });
 });

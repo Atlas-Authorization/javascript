@@ -1,5 +1,10 @@
 # @atlasauth/expo changelog
 
+## 0.14.2
+
+- The default callback is `Linking.createURL('atlas-oauth')`, which is `<your scheme>://atlas-oauth` in a build. It was `createURL('/atlas-oauth')`, which is `<your scheme>:///atlas-oauth` and never matched the registered URL (`CALLBACK_NOT_REGISTERED`).
+- A token store that cannot be read (for example the iOS Keychain in a build without its entitlement) no longer turns every request into `NETWORK`: the request goes out without a token.
+
 ## 0.14.1
 
 - `signInWithOAuth` and `signInWithSSO` work in a built app: PKCE needs `crypto.getRandomValues`, which Hermes does not have, so the call returned `NO_SECURE_RANDOM` before opening the browser. The SDK now uses `expo-crypto` (a new optional peer: `npx expo install expo-crypto`) when the global is missing, and returns `EXPO_CRYPTO_MISSING` if neither exists.
