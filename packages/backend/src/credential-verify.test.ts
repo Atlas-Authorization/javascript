@@ -86,4 +86,14 @@ describe('verifyMachineToken', () => {
     expect((await verifyMachineToken(bound, { issuer: ISSUER, keys, audience: 'https://svc.test' })).valid).toBe(true);
     expect((await verifyMachineToken(bound, { issuer: ISSUER, keys, anyAudience: true })).valid).toBe(true);
   });
+
+  it('refuses a machine token the deny hook names, with the token claims to decide on', async () => {
+    const { keys, sign } = await setup();
+    const token = await sign({ token_use: 'm2m', jti: 'j', sub: 'mch_1' });
+    const seen: string[] = [];
+    const denied = await verifyMachineToken(token, { issuer: ISSUER, keys, isRevoked: (c) => (seen.push(c.sub), true) });
+    expect(denied).toEqual({ valid: false, code: 'revoked' });
+    expect(seen).toEqual(['mch_1']);
+    expect((await verifyMachineToken(token, { issuer: ISSUER, keys, isRevoked: async () => false })).valid).toBe(true);
+  });
 });

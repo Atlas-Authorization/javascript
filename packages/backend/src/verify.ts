@@ -12,7 +12,10 @@ import {
   type ProtectCondition,
   type RegisteredSessionClaims,
 } from '@atlasauth/authz';
-import { JwksCache, readKid, type Jwks } from './jwks-cache';
+import { PreviousIssuersFeed } from './previous-issuers';
+import { verifyCsrfJws } from './csrf-jws';
+import type { CsrfRequest } from './csrf';
+import { JwksCache, checkJwksCacheTuning, readKid, type Jwks, type JwksCacheTuning } from './jwks-cache';
 import { JwksDiscovery, instanceIdFromPublishableKey } from './discovery';
 import {
   checkLogoutToken,
@@ -107,6 +110,12 @@ export interface SessionClaimsBase {
   org_mfa_required?: true;
   /** With `org_mfa_required`: this session currently meets the organization's MFA policy. */
   org_mfa_ok?: boolean;
+  /** An active organization is set but its claims (org_id, org_role, ...) are withheld: `mfa_required` (the organization's MFA bar is not met) or `sign_in_method` (the seat does not allow this session's sign-in method). Absent when claims are present or there is no active organization. */
+  org_claims_withheld?: 'mfa_required' | 'sign_in_method';
+  /** Opt-in (`session.includeResourceRoleClaims`): the user's direct resource role assignments, `{ type: { external_id: [role] } }`. Capped; see `resource_claims_truncated`. As stale as `org_permissions`: not for revoke-critical checks. */
+  res?: Record<string, Record<string, string[]>>;
+  /** Set instead of `res` when the user holds more assignments than the instance's cap. */
+  resource_claims_truncated?: true;
   /** The session's last activity when this token was minted, epoch seconds (for idle checks). */
   last_active_at?: number;
   /** When the user last authenticated (first factor or step-up), epoch seconds. */
@@ -294,9 +303,14 @@ export interface AtlasBackendOptions {
    * the instance moves to a new one (a custom domain or a path mount going
    * active). The keys are the instance's own, so nothing else changes. The
    * instance's discovery document lists them in `atlas_previous_issuers` with
-   * an `accepted_until`; remove them after that.
+   * an `accepted_until`; remove them after that. Pass `'discovery'` (or set
+   * `ATLAS_PREVIOUS_ISSUERS=discovery`) to read that list from the document instead:
+   * each issuer is accepted until its own end date, and issuers you declared as
+   * aliases are included.
    */
-  previousIssuers?: readonly string[];
+  previousIssuers?: readonly string[] | 'discovery';
+  /** How the JWKS cache behaves (TTL, how long stale keys are served, a stale hook). `maxStaleMs: 0` is strict. Default unchanged. */
+  jwksCache?: JwksCacheTuning;
   /**
    * §7.3 optional azp allowlist. When set, a token minted for a different
    * origin is refused, which is what stops a token issued to one of the
@@ -349,6 +363,7 @@ export class AtlasBackend {
   private readonly jwks: JwksCache;
   private readonly legacy?: LegacyIssuerVerifier;
   private sidList?: SidRevocationList;
+  private previousFeed?: PreviousIssuersFeed;
 
   /**
    * The server-side OIDC relying party (hosted-redirect sign-in) for this
@@ -365,6 +380,11 @@ export class AtlasBackend {
       );
       if (fromEnv.length) this.options = { ...options, previousIssuers: fromEnv };
     }
+    const declared = this.options.previousIssuers;
+    if (Array.isArray(declared) && declared.length === 1 && declared[0] === 'discovery') {
+      this.options = { ...this.options, previousIssuers: 'discovery' };
+    }
+    checkJwksCacheTuning(options.jwksCache);
     // Exactly one key source. Two would be ambiguous (which wins?), and zero
     // leaves nothing to verify against — either is a configuration error worth
     // failing loudly on rather than silently accepting or rejecting every token.
@@ -398,6 +418,7 @@ export class AtlasBackend {
     const bind = <T extends { issuer?: string }>(o: T) => ({
       fetchImpl: options.fetchImpl,
       now: options.now,
+      jwksCache: options.jwksCache,
       ...o,
       issuer: o.issuer ?? options.issuer,
     });
@@ -429,6 +450,37 @@ export class AtlasBackend {
       resolveUrl: discovery ? () => discovery.jwksUri() : undefined,
       fetchImpl: options.fetchImpl,
       now: options.now,
+      ...options.jwksCache,
+    });
+    if (this.options.previousIssuers === 'discovery') {
+      this.previousFeed = new PreviousIssuersFeed({
+        issuer: options.issuer,
+        instanceId:
+          options.instanceId ?? (options.publishableKey ? instanceIdFromPublishableKey(options.publishableKey) : undefined),
+        fetchImpl: options.fetchImpl,
+        now: options.now,
+      });
+    }
+  }
+
+  /** The earlier issuers accepted right now: the fixed list, or the discovery document's. */
+  private async acceptedPrevious(): Promise<readonly string[]> {
+    const p = this.options.previousIssuers;
+    if (p === 'discovery') return (await this.previousFeed?.get()) ?? [];
+    return p ?? [];
+  }
+
+  /**
+   * Verify a state-changing request against Atlas's CSRF cookie (the instance setting `session.csrfCookie`): the
+   * submitted token must equal the `__atlas_csrf` cookie and be signed by this instance for session `sid` (the `sid`
+   * of the session token you just verified). Uses this backend's issuer and key cache; no shared secret.
+   */
+  verifyCsrf(request: CsrfRequest, options: { sid: string }): Promise<boolean> {
+    return verifyCsrfJws(request, {
+      sid: options.sid,
+      issuer: this.options.issuer,
+      jwks: (kid) => this.jwks.get(kid),
+      now: this.options.now,
     });
   }
 
@@ -493,6 +545,7 @@ export class AtlasBackend {
         : { ok: false, reason: 'no_keys' };
     }
 
+    const previous = await this.acceptedPrevious();
     let claims: SessionClaims;
     let expired = false;
     try {
@@ -500,9 +553,7 @@ export class AtlasBackend {
         // Pinned. Without this, a token whose header says `alg: none` — or any
         // algorithm the key material can be coerced into — verifies.
         algorithms: ATLAS_SIGNING_ALGS,
-        issuer: this.options.previousIssuers?.length
-          ? [this.options.issuer, ...this.options.previousIssuers]
-          : this.options.issuer,
+        issuer: previous.length ? [this.options.issuer, ...previous] : this.options.issuer,
         // §S4 enforce `aud` ONLY when the caller configured an expected audience.
         // Unset leaves `aud` unchecked, so a token carrying its default
         // instance-id audience still verifies (backwards compatible).
@@ -654,7 +705,7 @@ export class AtlasBackend {
       fetchImpl: this.options.fetchImpl,
       now: this.options.now ?? Date.now,
     });
-    if (await this.sidList.isRevoked(result.claims.sid)) return { ok: false, reason: 'revoked', status: 'token_invalid' };
+    if (await this.sidList.isRevoked(result.claims.sid, { sub: result.claims.sub, iat: result.claims.iat })) return { ok: false, reason: 'revoked', status: 'token_invalid' };
     return this.sidList.unavailable()
       ? { ok: false, reason: 'revocation_unavailable', status: 'token_invalid' }
       : { ...result, status };

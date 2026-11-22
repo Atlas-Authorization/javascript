@@ -1,5 +1,9 @@
 # @atlasauth/actions changelog
 
+## 0.8.0
+
+- New `pre_user_merge` Action trigger: refuse a merge with `403 ACTION_BLOCKED`.
+
 ## 0.7.0
 
 - `pre_message_send` trigger types and test harness; `egress_allowlist` for `api.http`.

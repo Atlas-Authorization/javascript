@@ -6,9 +6,11 @@ type Bapi = ReturnType<typeof createAtlasClient>;
 // [method, path+query, expected JSON body (undefined = none), call]
 const CASES: Array<[string, string, unknown, (c: Bapi) => Promise<unknown>]> = [
   ['POST', '/v1/migrations/legacy/verify', { token: 't' }, (c) => c.migrations.verifyDualRun('legacy', { token: 't' })],
+  ['POST', '/v1/migrations/auth0/sessions', { sessions: [{ token: 't', external_id: 'e1', expires_at: '2030-01-01T00:00:00Z' }] }, (c) => c.migrations.importSessions('auth0', { sessions: [{ token: 't', external_id: 'e1', expires_at: '2030-01-01T00:00:00Z' }] })],
   ['GET', '/v1/migrations/status?quiet_days=30', undefined, (c) => c.migrations.status({ quiet_days: 30 })],
   ['GET', '/v1/instance/scopes?limit=5', undefined, (c) => c.instance.listScopes({ limit: 5 })],
   ['PUT', '/v1/instance/scopes', { scopes: [{ name: 'read', sensitive: true }] }, (c) => c.instance.putScopes({ scopes: [{ name: 'read', sensitive: true }] })],
+  ['PUT', '/v1/instance/scopes?mode=partial&too_long=truncate', { scopes: [{ name: 'listings:*', requires_client_level: 'certified', owner_exempt: true }] }, (c) => c.instance.putScopes({ scopes: [{ name: 'listings:*', requires_client_level: 'certified', owner_exempt: true }] }, { mode: 'partial', too_long: 'truncate' })],
   ['GET', '/v1/instance/impersonation_policy', undefined, (c) => c.instance.getImpersonationPolicy()],
   ['PUT', '/v1/instance/impersonation_policy', { require_reason: true }, (c) => c.instance.putImpersonationPolicy({ require_reason: true })],
   ['GET', '/v1/instance/org_role_entitlements', undefined, (c) => c.instance.getOrgRoleEntitlements()],

@@ -47,6 +47,7 @@ export const extraParityRequests: ParityRequest[] = [
   q('org member role', 'PATCH', '/v1/organizations/{{xo}}/memberships/{{xu}}', { body: { role: 'org:admin' } }),
   q('org invitation', 'POST', '/v1/organizations/{{xo}}/invitations', { body: { email: 'x-inv-{{rand}}@example.com' } }),
   q('invitations list', 'GET', '/v1/invitations'),
+  q('org invitations by email', 'GET', '/v1/organization_invitations?status=pending'),
   q('org list', 'GET', '/v1/organizations?limit=2'),
   q('org member remove', 'DELETE', '/v1/organizations/{{xo}}/memberships/{{xu}}'),
   // ── roles and permissions ──
@@ -55,6 +56,11 @@ export const extraParityRequests: ParityRequest[] = [
   q('role update', 'PATCH', '/v1/roles/{{xr}}', { body: { name: 'Extra role 2' } }),
   q('role permissions', 'PUT', '/v1/roles/{{xr}}/permissions', { body: { permissions: ['org:read'] } }),
   q('role delete', 'DELETE', '/v1/roles/{{xr}}'),
+  q('permission rename', 'POST', '/v1/permissions/{{xp}}/rename', { body: { key: 'org:x_renamed_{{rand}}:read' }, tolerate: ['key', 'previous_key', 'alias'] }),
+  q('alias create', 'POST', '/v1/permission_aliases', { body: { alias: 'org:legacy_read', permission_key: 'org:read' } }),
+  q('alias put', 'PUT', '/v1/permission_aliases/org:legacy_read', { body: { permission_key: 'org:read' } }),
+  q('alias list', 'GET', '/v1/permission_aliases', { tolerate: ['data', 'next_cursor', 'has_more', 'total_count'] }),
+  q('alias delete', 'DELETE', '/v1/permission_aliases/org:legacy_read'),
   q('permission delete', 'DELETE', '/v1/permissions/{{xp}}'),
   // ── webhooks, events and the change feed ──
   q('hook create', 'POST', '/v1/webhook_endpoints', { body: { url: 'https://example.com/hooks/x-{{rand}}', enabled_events: ['user.created'] }, capture: { xh: 'id' }, tolerate: ['secret'] }),
@@ -78,6 +84,13 @@ export const extraParityRequests: ParityRequest[] = [
   q('key update', 'PATCH', '/v1/api_keys/{{xk}}', { body: { name: 'x2' } }),
   q('key verify', 'POST', '/v1/api_keys/verify', { body: { secret: '{{xks}}' } }),
   q('key revoked list', 'GET', '/v1/api_keys/revoked'),
+  q('key dies with', 'POST', '/v1/api_keys', { body: { subject_type: 'user', subject_id: '{{xu}}', dies_with: 'sign_out_everywhere', metadata: { team: 'ops' } }, capture: { xkd: 'id' }, tolerate: ['secret', 'prefix'] }),
+  q('key dies with bad', 'POST', '/v1/api_keys', { body: { subject_type: 'user', subject_id: '{{xu}}', dies_with: 'forever' } }),
+  q('key dies with revoke', 'DELETE', '/v1/api_keys/{{xkd}}'),
+  q('revocations start', 'GET', '/v1/revocations', { tolerate: ['next_cursor'] }),
+  q('revocations bad cursor', 'GET', '/v1/revocations?after=evt_x'),
+  q('revocations bad kind', 'GET', '/v1/revocations?after=0&kinds=nope'),
+  q('machine revoked feed', 'GET', '/v1/machines/revoked', { tolerate: ['data', 'next_cursor'] }),
   q('key posture', 'GET', '/v1/api_keys/posture', { group: 'round2' }),
   q('key callers', 'GET', '/v1/api_keys/{{xk}}/callers', { group: 'round2' }),
   q('key rotate', 'POST', '/v1/api_keys/{{xk}}/rotate', { body: { overlap_seconds: 60 }, capture: { xk2: 'id' }, tolerate: ['secret'], group: 'round2' }),
@@ -106,6 +119,7 @@ export const extraParityRequests: ParityRequest[] = [
   q('session create', 'POST', '/v1/sessions', { body: { user_id: '{{xu}}' }, capture: { xs: 'id', xjwt: 'jwt', xrt: 'refresh_token' }, tolerate: ['jwt', 'refresh_token'] }),
   q('session list', 'GET', '/v1/sessions?user_id={{xu}}'),
   q('session get', 'GET', '/v1/sessions/{{xs}}'),
+  q('session active org clear', 'PUT', '/v1/sessions/{{xs}}/active_organization', { body: { organization_id: null }, tolerate: ['jwt', 'refresh_token'] }),
   q('session events', 'GET', '/v1/sessions/{{xs}}/events', { group: 'round2' }),
   q('token verify', 'POST', '/v1/tokens/verify', { body: { token: '{{xjwt}}' } }),
   q('session refresh', 'POST', '/v1/client/sessions/{{xs}}/tokens', { anonymous: true, body: { refresh_token: '{{xrt}}' }, capture: { xrt2: 'refresh_token' }, tolerate: ['jwt', 'refresh_token'] }),
@@ -431,6 +445,7 @@ export const fullParityRequests: ParityRequest[] = [...defaultParityRequests, ..
 
 /** Hand-written routes parity deliberately does not send to a real instance, each with the reason. */
 export const PARITY_EXEMPT: Record<string, string> = {
+  'GET /v1/revocations/stream': 'a real instance holds the connection open until it is closed; the long poll at GET /v1/revocations answers the same frames and is covered',
   'POST /v1/instance/signing_keys/rotate': 'rotating the signing key of the reference instance would invalidate its live tokens; the shape is covered by the key list',
 };
 

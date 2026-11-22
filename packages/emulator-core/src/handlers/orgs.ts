@@ -232,6 +232,22 @@ export function orgsHandlers(): RouteDef[] {
         return { body: presentInvitation(e, i) };
       },
     },
+    // Invitations across every organization, by invited address (secret key only on the real route).
+    {
+      method: 'GET',
+      pattern: '/v1/organization_invitations',
+      handler: (c) => {
+        const e = c.engine;
+        const email = c.query.get('email')?.toLowerCase();
+        const status = c.query.get('status');
+        const orgId = c.query.get('organization_id');
+        const rows = e.db.orgInvitations.filter((i) => (!email || String(i.email_address).toLowerCase() === email) && (!status || i.status === status) && (!orgId || i.organization_id === orgId));
+        return listReply(c, rows.reverse(), (i) => {
+          const o = e.db.organizations.get(i.organization_id);
+          return { object: 'organization_invitation', id: i.id, organization_id: i.organization_id, email: i.email_address, role: i.role, status: i.status, expires_at: i.expires_at ?? null, created_at: i.created_at, organization_name: o?.name ?? null, organization_slug: o?.slug ?? null };
+        });
+      },
+    },
     // Organization invitations send an email: it lands in the message sink with the accept link.
     {
       method: 'POST',

@@ -1,5 +1,18 @@
 # @atlasauth/backend changelog
 
+## 0.63.0
+
+- Delegation tokens: `users.createDelegationToken`, `verifyDelegationToken`; short-lived, audience- and scope-limited tokens with a mandatory `act` claim.
+- CSRF: `verifyCsrf`, `verifyCsrfJws`, `checkCsrfJws` for the signed, session-bound CSRF cookie. `ipInAllowlist` is exported.
+- `jwksCache: { maxStaleMs, ttlMs }` on the verifiers tunes how long a stale JWKS may be served (`maxStaleMs: 0` fails closed). `previousIssuers: 'discovery'` reads the issuer aliases you declared.
+- Revocations: `revocationStream`, `createRevocationMirror`, `createSessionDenyList`, `createMachineDenyList`, `machines.listRevoked`, `listGrants({ include_ended })`, and `isRevoked` on `verifyMachineToken`. API key and machine types gain `metadata`, `dies_with` and end records; `include_metadata` on the API key token call.
+- Grants: `grants` resource for the unified grant API (`list`, `get`, `update`, `revoke`) with `metadata`; OAuth clients take `subject_type: 'external_id'` and `subject_fallback`. Revoking a Grant Management grant now also ends the user's consent and refresh tokens for that app.
+- OAuth: consent request fields `request_url`, `prompt`, `max_age`; `consentRequests.switchAccount`; `deviceRequests`; client `delegate_consent`, `device_url`, `default_scopes`, `default_resource`, `require_openid`, `certified`; catalogue scopes `requires_client_level`, `owner_exempt` and wildcard names; `putScopes` takes `mode: 'partial'` and `too_long: 'truncate'`.
+- Users: `users.upsertByExternalId`, `users.securitySummary`, `users.findByProviderIdentity`, `users.listDeleted`, `webhooks.dlqAll`, `users.deletion.reschedule`, `users.riskSignals.forUser(id)`, `users.approvalRequests.list`, `migrations.importSessions`. Users gain `phone_numbers`, `primary_phone_number` and `phone_number_verified`.
+- Organizations: `sessions.setActiveOrganization`, `organizations.invitations.listByEmail`, `keep_old_link` on invitation resend, `permissions.rename` and permission aliases, `include_private_membership` on webhook endpoints; membership and invitation events carry `organization_seq`.
+- Connections and messaging: RSA-signed OAuth 1.0a, the `cookie_jar` kind, `connections.rehome`, connection templates and provider policy listing; `messages.createLink()` and new send fields (`reply_to`, `from`, `headers`, `unsubscribe`, `category`, `locale`); analytics `captcha` and `sms`; staging copies on the instance secret key.
+- **type-widening:** webhook event types gain `user.deletion_rescheduled`, `user.phone_verified`, `message.bounced`, `message.complained` and `connection.secrets_exported`; the user type gains the phone fields and `sandbox`; approver `mode` gains `group`.
+
 ## 0.62.0
 
 - `AuthStatus` (`signed_in`, `signed_out`, `session_expired`, `token_invalid`): `RequestAuth` gains `status` and `reason`, and `authenticateRequest` results gain `status`. A token that is only past its expiry (signature and claims valid) with the refresh cookie or `__atlas_uat` present is `session_expired`, meaning renew rather than sign out. `isSignedIn` and `verify` are unchanged.

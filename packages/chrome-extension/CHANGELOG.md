@@ -1,5 +1,9 @@
 # @atlasauth/chrome-extension changelog
 
+## 0.7.0
+
+- Native sessions refresh once across the popup and the service worker (Web Lock plus shared store); the Google nonce is reused across re-renders.
+
 ## 0.6.2
 
 - Built against `@atlasauth/react` 0.40, whose `@atlasauth/design` 0.5 has no zod dependency.

@@ -1,5 +1,10 @@
 # @atlasauth/react changelog
 
+## 0.42.0
+
+- Re-exports the new `@atlasauth/js` helpers (CSRF token, security summary, sign-in wait, pending approvals, browser handoff).
+- The sign-in configuration falls back to the cacheable environment response.
+
 ## 0.41.0
 
 - `getToken()` called while the provider is still loading now waits for the first boot (up to 10 s) instead of returning `null`, so an app's first request after a reload carries a token.

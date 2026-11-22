@@ -515,7 +515,7 @@ export async function issueMachineToken(
   if (audience) {
     const rs = resourceServerOf(e, audience);
     const now = e.clock.now();
-    const grant = e.db.grants.find((g) => g.machine_id === m.id && (g.resource_server_id === rs.id || g.resource_server_id === rs.identifier) && !(g.expires_at && g.expires_at <= now));
+    const grant = e.db.grants.find((g) => !g.revoked_at && g.machine_id === m.id && (g.resource_server_id === rs.id || g.resource_server_id === rs.identifier) && !(g.expires_at && g.expires_at <= now));
     if (!grant) throw new EmulatorError('FORBIDDEN', 'This machine has no grant for that resource server.');
     const asked: string[] = Array.isArray(req.scopes) ? req.scopes : [];
     const scopes = asked.length ? asked : [...grant.scopes];

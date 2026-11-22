@@ -8,6 +8,10 @@ export interface ApprovalApprovers {
   organization_id?: string;
   /** An organization role key; members holding it may decide. */
   role?: string;
+  /** Several role keys of `organization_id`: a holder of any may decide. Not together with `role`. */
+  roles?: string[];
+  /** A group: every member may decide (membership is read when they decide). Not together with `user_ids` or `organization_id`. */
+  group_id?: string;
   /** How many distinct approvers must approve. Default 1. */
   required?: number;
 }
@@ -63,7 +67,7 @@ export interface ApprovalRequest {
   require_trusted_device?: boolean;
   exclude_requester?: boolean;
   step_up_policy?: string | null;
-  approvers: { mode: 'subject' | 'users' | 'role'; user_ids: string[]; organization_id: string | null; role: string | null; required: number };
+  approvers: { mode: 'subject' | 'users' | 'role' | 'group'; user_ids: string[]; organization_id: string | null; role: string | null; roles?: string[]; group_id?: string; required: number };
   /** SHA-256 of `canonical`, base64url: what an approver signs. */
   digest: string | null;
   canonical: string | null;

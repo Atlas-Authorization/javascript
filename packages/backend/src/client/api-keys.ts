@@ -21,6 +21,16 @@ export interface ApiKey {
   /** The key type segment (`ak_<type>_<id>_<secret>`), or null for an untyped key. */
   type?: string | null;
   claims: Record<string, unknown>;
+  /** The same object as `claims`, under the name most integrators use. Settable as `metadata` on create and update. */
+  metadata?: Record<string, unknown>;
+  /** `sign_out_everywhere`: the key is revoked when its user subject signs out everywhere. Null = independent of sessions. */
+  dies_with?: 'sign_out_everywhere' | null;
+  /** Always answered once the key ended: `revoked_reason`, else `revoked_by_api` / `revoked_by_admin`. Null while live. */
+  end_reason?: string | null;
+  /** Epoch ms the key ended (the same value as `revoked_at`). */
+  ended_at?: number | null;
+  /** Who revoked the key. Null while live and for keys revoked before this was recorded. */
+  revoked_by?: { type: string; id: string | null } | null;
   /** Delegated-token / verify scopes on the key; null when none are set. */
   scopes?: string[] | null;
   /** Per-key spend caps, or `null` when the key has none. */
@@ -272,6 +282,10 @@ export interface CreateApiKeyBody extends ApiKeyControls {
   organization_id?: string;
   /** An ORGANIZATION key: the member who created it (must belong to the organization). */
   created_by_user_id?: string;
+  /** `sign_out_everywhere`: revoke the key when its user subject signs out everywhere (user keys only). */
+  dies_with?: 'sign_out_everywhere';
+  /** The same object as `claims`; send one or the other. */
+  metadata?: Record<string, unknown>;
   name?: string;
   claims?: Record<string, unknown>;
   /** Epoch ms; null never expires (omitted: the instance default lifetime, if any). */
@@ -301,6 +315,10 @@ export interface CreateApiKeyBody extends ApiKeyControls {
 export interface UpdateApiKeyBody extends ApiKeyControls {
   name?: string | null;
   claims?: Record<string, unknown>;
+  /** The same object as `claims`; send one or the other. */
+  metadata?: Record<string, unknown>;
+  /** `sign_out_everywhere`, or `null` to detach the key from sessions (user keys only). */
+  dies_with?: 'sign_out_everywhere' | null;
   expires_at?: number | null;
   /** Replace the spend caps; `null` clears them (counters are kept). */
   limits?: ApiKeyLimit[] | null;
@@ -337,6 +355,10 @@ export type ApiKeyVerification =
       subject_id: string;
       name?: string | null;
       claims: Record<string, unknown>;
+      /** The same object as `claims`. */
+      metadata?: Record<string, unknown>;
+      /** `sign_out_everywhere` when the key ends with its user's sign-out everywhere. */
+      dies_with?: 'sign_out_everywhere' | null;
       scopes?: string[] | null;
       /**
        * The held scopes expanded through the instance scope implications
@@ -392,6 +414,8 @@ export interface MintApiKeyTokenBody {
   audience?: string | string[];
   /** The end caller's address; required when minting for a key with `allowed_ips` using an `sk_` key. */
   client_ip?: string;
+  /** Sign the key's metadata into the token as the `meta` claim, so a resource reads it offline. */
+  include_metadata?: boolean;
 }
 
 /** One entry in the revocation feed: an id and when it was revoked. */
@@ -401,6 +425,9 @@ export interface RevokedApiKeyRef {
   revoked_at: number | null;
   /** Why, when a person did not revoke it: `membership_ended`, `creator_departed`, `organization_deleted`, `user_banned` or `rotated`. */
   revoked_reason?: string | null;
+  /** Always answered once the key ended (`revoked_by_api` / `revoked_by_admin` when a person revoked it). */
+  end_reason?: string | null;
+  revoked_by?: { type: string; id: string | null } | null;
   subject_type?: ApiKeySubjectType;
   subject_id?: string;
   /** The organization the key was bound to, if any. */

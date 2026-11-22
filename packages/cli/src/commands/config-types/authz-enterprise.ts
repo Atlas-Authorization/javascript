@@ -112,6 +112,8 @@ export const authzEnterpriseSpecs: ResourceSpec[] = [
   // Groups and application roles
   simpleResourceSpec({ type: 'groups', path: '/v1/groups', nameKey: 'slug', idKey: 'id', fileKeys: ['slug', 'name', 'description', 'attributes', 'app_role_keys', 'include_in_token', 'dynamic_filter', 'sso_match'] }),
   simpleResourceSpec({ type: 'group_rules', path: '/v1/group_rules', idKey: 'id', fileKeys: ['name', 'enabled', 'priority', 'condition', 'actions'] }),
+  // Legacy permission keys that stand for a canonical key (kept after a rename); writes accept them, tokens carry the canonical key.
+  simpleResourceSpec({ type: 'permission_aliases', path: '/v1/permission_aliases', nameKey: 'alias', idKey: 'alias', fileKeys: ['alias', 'permission_key'], updateKeys: ['permission_key'], updateMethod: 'put' }),
   simpleResourceSpec({ type: 'app_roles', path: '/v1/app_roles', nameKey: 'key', idKey: 'id', fileKeys: ['key', 'name', 'description', 'permissions'], updateKeys: ['name', 'description', 'permissions'] }),
   // Resource-scoped roles: the registry of resource types and their roles (a type's roles are replaced as a whole).
   simpleResourceSpec({ type: 'resource_types', path: '/v1/resource_types', nameKey: 'key', idKey: 'key', fileKeys: ['key', 'name', 'description', 'parent_type', 'inherit', 'roles'], updateKeys: ['name', 'description', 'parent_type', 'inherit', 'roles'] }),

@@ -82,6 +82,8 @@ Commands:
                              (operator sign-in with a recent second factor; passwords to 0600 files)
   sessions revoke|binding|unbind
   grants usage <machine|agent> <grant-id>
+  connections templates | rehome <from-client> <to-client> [<connection-id>...] [--dry-run|--yes]
+                             Marketplace connection templates; move connections between owner OAuth clients
   messages send --to <address[,address]> (--template <name> | --subject <text> --html-file <f> / --text-file <f>)
                              Live usage counters and open leases of a machine or agent grant
   oauth-clients consents|revoke-consents <client-id>
@@ -609,6 +611,7 @@ secret signing alongside the new one for that many seconds.`,
 Usage:
   atlas listen --forward-to <url> [--events user.*,session.created] [--count <n>] [--timeout <dur>] [--json]
   atlas listen --no-forward [--events ...]            only print events
+  atlas listen --revocations [--kinds session,api_key,machine,...] [--count <n>] [--timeout <dur>] [--json]
 
 Opens a signed event stream from your instance and POSTs each event to
 --forward-to with the same atlas-id, atlas-timestamp and atlas-signature headers a
@@ -616,7 +619,13 @@ real delivery carries, then prints the status your server returned. No tunnel
 and no second endpoint. The signing secret belongs to this session only and is
 written to a 0600 file (webhook-listen.env): point your verifier at it. --events
 takes names or patterns (user.*, *.created). The session lasts up to an hour;
-Ctrl-C stops it. --count n exits after n events (exit 1 if any forward failed).`,
+Ctrl-C stops it. --count n exits after n events (exit 1 if any forward failed).
+
+--revocations watches the revocation stream instead: everything that ends a
+session, token, API key, machine, machine grant or person's access, in commit
+order, with reason and actor (needs events:read; nothing is forwarded). --kinds
+filters (session, user_sessions, token_family, grant, api_key, machine,
+machine_grant, user). It starts from now and resumes by position on reconnect.`,
   proxy: `atlas proxy — an authenticating reverse proxy for any app
 
 Usage:
@@ -1029,10 +1038,26 @@ Usage:
   grants: `atlas grants — inspect grants
 
 Usage:
+  atlas grants list [--user-id <id>] [--type consent|managed|all] [--status active|revoked|all] [--limit <n>] [--starting-after <cursor>] [--json]
+  atlas grants get <grant-id>
   atlas grants usage <machine|agent> <grant-id> [--json]
 
-Shows each counter the grant defines (used, limit, remaining, window, when it resets)
+list and get read consent and Grant Management grants.
+
+usage shows each counter the grant defines (used, limit, remaining, window, when it resets)
 and any lease still holding an amount.`,
+
+  connections: `atlas connections — marketplace templates and OAuth client moves
+
+Usage:
+  atlas connections templates [--json]
+  atlas connections rehome <from-client> <to-client> [<connection-id>...] (--dry-run | --yes) [--json]
+
+templates lists each marketplace connection (kind, secrets, hosts, signature). rehome moves
+connections from one owner OAuth client to another: when both are the same provider app the
+tokens simply move; otherwise one real refresh per connection with the target client proves
+the move, and a connection that fails stays on the old client unchanged. Exits 1 when any
+connection did not move.`,
 
   messages: `atlas messages — send transactional email through your own provider
 
@@ -1088,6 +1113,7 @@ import  Diff the directory against live config and apply creates/updates
           --prune     also delete live resources absent from the config
           --prune-type <type>  also delete live resources of one opt-in type (repeatable); a bare --prune skips those
           --include-owned  also diff clients owned by a user or created by code (skipped by default)
+          --match-by-name  (deprecated) match OAuth clients by name when the file gives no id or external_ref
           --force-hook  enable a before_user_create hook even if its test call fails
           --dir       config directory (default: ./atlas-config)
           --format    json (default) or yaml
@@ -1095,6 +1121,8 @@ import  Diff the directory against live config and apply creates/updates
 plan    A Terraform-style, read-only diff of the directory against the live
         instance: field-by-field before -> after for updates. --check (alias
         --exit-code) exits 2 when there is drift (for CI); --json for tooling.
+        --fail-on-unmanaged also exits 2 when live has objects the file no longer
+        declares (a provider or client deleted from the file but still live).
 
 promote Copy one environment's configuration to another (development ->
         staging -> production). Each environment is a profile holding that
@@ -1220,7 +1248,7 @@ Usage:
         or a directory from 'atlas config export' (default ./atlas-config).
 
 Shows the plan, asks before applying (--yes skips the question; needed without a
-terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, referral_reward_rules, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, journey_experiments, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, write_budget, oauth_publishers, erasure_connectors, signing_key_schedule, audit_chain, policy_audiences, oauth_publisher_clients, region, native_apps, native_apps_publishable_key. Re-running is a no-op.
+terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, referral_reward_rules, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, journey_experiments, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, permission_aliases, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, message_receivers, write_budget, oauth_publishers, erasure_connectors, signing_key_schedule, audit_chain, policy_audiences, oauth_publisher_clients, region, native_apps, native_apps_publishable_key, connection_provider_policies. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --skip-validate leave out the server dry-run pass (the published-limit checks still run)
@@ -1238,6 +1266,7 @@ requires: [VAR, ...] on a section (an object section as a key; a list section as
 never pruned. An action takes code_file: <path relative to the config> in place of code.
   --prune         also delete live resources missing from the config, and compare every live key
   --include-owned also diff OAuth clients owned by an Atlas user or created by code (left out by default, with a count)
+  --match-by-name (deprecated) match OAuth clients by name when the file gives no id or external_ref
   --force-hook    enable the before_user_create hook even when its test call fails (409)
   --rotate-secret send again each secret Atlas cannot compare (it never returns them)
   --show-secrets  print secret values in the diff; refused without a terminal or when CI is set
@@ -1266,7 +1295,8 @@ Usage:
   atlas plan [<file|dir> | --file <path>] [--check|--exit-code] [--json] [--prune] [--rotate-secret] [--show-secrets] [--secrets-file <dotenv>] [--skip-validate]
 
 The same diff as 'atlas config plan', also for a single config file (see 'atlas
-apply --help'). --check exits 2 when there is drift; nothing is ever written.
+apply --help'). --check exits 2 when there is drift (with --fail-on-unmanaged, also when live has
+objects the file no longer declares); nothing is ever written.
 It also runs the checks apply would hit: the file against the server's published limits, then
 each change against the server's own dry run (validated, then rolled back: nothing is saved).
 Errors are listed (and under "validation" in --json) and the exit code is 1. A key without write

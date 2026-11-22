@@ -85,6 +85,12 @@ export interface AtlasProxyCsrfOptions {
   secret?: string;
   /** Your Frontend API path mount, which Atlas protects itself. Default `ATLAS_BASE_PATH` or `/atlas`. */
   mountBasePath?: string;
+  /**
+   * Use the CSRF token Atlas issues itself (instance setting `session.csrfCookie`): Atlas sets the `__atlas_csrf`
+   * cookie with each session token and the proxy verifies the echoed token against your instance JWKS. No secret,
+   * and the proxy sets no cookie.
+   */
+  atlasSigned?: boolean;
 }
 
 export interface AtlasProxyOptions extends AtlasMiddlewareOptions {
@@ -121,7 +127,7 @@ function underBase(pathname: string, base: string): boolean {
 }
 
 /** The CSRF gate: a 403 to return, or null after recording the request's token. */
-function createCsrfGate(option: true | AtlasProxyCsrfOptions) {
+function createCsrfGate(option: true | AtlasProxyCsrfOptions, atlas: { verifyCsrf(request: { headers: { get(name: string): string | null } }, o: { sid: string }): Promise<boolean> }) {
   const config = option === true ? {} : option;
   let secret: string | undefined;
   return async function gate(request: ProxyRequest, auth: AuthState): Promise<Response | null> {
@@ -130,6 +136,13 @@ function createCsrfGate(option: true | AtlasProxyCsrfOptions) {
     const env = readEnv();
     const base = `/${(config.mountBasePath ?? env.ATLAS_BASE_PATH ?? '/atlas').replace(/^\/+|\/+$/g, '')}`;
     if (underBase(request.nextUrl.pathname, base)) return null;
+    if (config.atlasSigned) {
+      const existing = readCookieValue(request.headers.get('cookie'), CSRF_COOKIE);
+      csrfState.set(request, { token: existing ?? '', setCookie: false, secure: true });
+      if (!UNSAFE_METHODS.has((request.method ?? 'GET').toUpperCase())) return null;
+      if (await atlas.verifyCsrf(request, { sid: auth.sessionId })) return null;
+      return new Response(JSON.stringify({ errors: [{ code: 'CSRF_TOKEN_INVALID' }] }), { status: 403, headers: { 'content-type': 'application/json' } });
+    }
     if (!secret) {
       secret = config.secret ?? env.ATLAS_CSRF_SECRET ?? (env.ATLAS_SECRET_KEY ? deriveCsrfSecret(env.ATLAS_SECRET_KEY) : undefined);
       if (!secret) throw new Error('@atlasauth/nextjs atlasProxy({ csrf }): set ATLAS_CSRF_SECRET or ATLAS_SECRET_KEY.');
@@ -172,7 +185,7 @@ function serializeCookie({ name, value, options }: AtlasCookie): string {
  */
 export function atlasProxy(options: AtlasProxyOptions): AtlasProxy {
   const decide = createAtlasDecider(options);
-  const csrfGate = options.csrf ? createCsrfGate(options.csrf) : null;
+  const csrfGate = options.csrf ? createCsrfGate(options.csrf, decide.backend) : null;
 
   return async function proxy(request) {
     const decision = await decide(request);

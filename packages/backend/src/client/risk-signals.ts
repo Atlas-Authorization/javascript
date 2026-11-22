@@ -90,6 +90,23 @@ export function riskSignalsResource(request: RequestFn) {
     revoke(id: string): Promise<RiskSignal> {
       return request({ method: 'DELETE', path: `/v1/risk_signals/${enc(id)}` });
     },
+    /** The same signals scoped to one user (`/v1/users/:id/risk_signals`). Raise sign-in risk for a window, list what is live, clear it. */
+    forUser(userId: string) {
+      const path = `/v1/users/${enc(userId)}/risk_signals`;
+      return {
+        /** Raise this user's sign-in risk. Expires on its own after `ttl_seconds` (default 3600). */
+        create(body: Omit<RiskSignalInput, 'user_id' | 'email' | 'ip'> & { signal_type: string; severity: RiskSignalSeverityName }, options: { idempotencyKey?: string } = {}): Promise<RiskSignal> {
+          return request({ method: 'POST', path, body, idempotencyKey: options.idempotencyKey });
+        },
+        list(query: { status?: 'active' | 'all'; limit?: number; before?: string } = {}): Promise<ListPage<RiskSignal>> {
+          return request({ method: 'GET', path, query });
+        },
+        /** End every live signal on this user now. */
+        clear(): Promise<{ object: 'risk_signals_cleared'; user_id: string; cleared: number }> {
+          return request({ method: 'DELETE', path });
+        },
+      };
+    },
     /** What would a different risk policy have done to recent sign-ins? Changes nothing. */
     replay(body: RiskReplayInput = {}): Promise<RiskReplay> {
       return request({ method: 'POST', path: '/v1/risk_based_mfa/replay', body });

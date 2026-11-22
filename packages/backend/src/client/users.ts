@@ -12,6 +12,8 @@ export interface User {
   last_name: string | null;
   image_url: string | null;
   public_metadata: Metadata;
+  /** A test user: set at create only. Atlas sends it no message, does not bill it, and its tokens carry `env: "sandbox"`. */
+  sandbox?: boolean;
   mfa_enabled: boolean;
   /** Factor classes this user must always use; empty = none. */
   required_factors?: string[];
@@ -65,6 +67,56 @@ export interface User {
    * older than this field.)
    */
   external_accounts?: UserExternalAccount[];
+  /** Every phone number of the user (read, list, create and update responses; user webhooks). */
+  phone_numbers?: UserPhoneNumberView[];
+  /** The primary phone number (E.164): the one the person made primary, else their oldest verified one; null when none. */
+  primary_phone_number?: string | null;
+  /** True only when the primary phone number was proven. */
+  phone_number_verified?: boolean;
+}
+
+/** A phone number as the user object carries it. */
+export interface UserPhoneNumberView {
+  object: 'phone_number';
+  id: string;
+  phone_number: string;
+  verified: boolean;
+  primary: boolean;
+}
+
+/** `GET /v1/users/{id}/security_summary`: how an account is protected, in one read. Ids and labels only, never a secret. */
+export interface UserSecuritySummary {
+  object: 'security_summary';
+  user_id: string;
+  password_enabled: boolean;
+  /** Epoch milliseconds; null when the account has no password or it was never changed. */
+  password_changed_at: number | null;
+  mfa_enabled: boolean;
+  has_passkey: boolean;
+  /** What the user can sign in with right now, e.g. `password`, `passkey`, `email_code`, `oauth_google`. */
+  sign_in_methods: string[];
+  linked_providers: Array<{
+    id: string;
+    provider: string;
+    provider_user_id: string;
+    email_address: string | null;
+    email_verified: boolean;
+  }>;
+  mfa_factors: Array<{ id: string; type: string; verified: true; created_at: number }>;
+  backup_codes_remaining: number | null;
+  passkeys: Array<{ id: string; name: string | null; created_at: number; last_used_at: number | null }>;
+  trusted_devices: Array<{
+    kind: 'remembered_browser' | 'device_key';
+    id: string;
+    label: string | null;
+    created_at: number;
+    last_used_at: number | null;
+    expires_at: number | null;
+  }>;
+  active_sessions: {
+    count: number;
+    latest: { id: string; last_active_at: number; ip_address: string | null; country: string | null } | null;
+  };
 }
 
 /** A provider identity linked to a user. Tokens are never included. */
@@ -252,6 +304,10 @@ export interface ListUsersParams extends CursorParams {
   username?: string;
   phone_number?: string;
   external_id?: string;
+  /** With `provider_user_id`: the user who holds that identity at that provider (both are required together). */
+  provider?: string;
+  /** The provider's own id for the person, e.g. a Discord user id. Needs `provider`. */
+  provider_user_id?: string;
   banned?: boolean;
   /** true = has at least one verified email; false = has none. */
   email_verified?: boolean;
@@ -281,6 +337,11 @@ export interface CreateUserBody {
   email_verified?: boolean;
   /** The user must choose a new password at their first sign-in (`update_password` required action). */
   password_change_required?: boolean;
+  /**
+   * A sandbox user for tests and developer sandboxes: nothing is ever sent to it (email, SMS, push, voice, WhatsApp),
+   * it is not billed or counted as active, and its tokens carry `env: "sandbox"`. Set at creation, never changed.
+   */
+  sandbox?: boolean;
   public_metadata?: Metadata;
   private_metadata?: Metadata;
   unsafe_metadata?: Metadata;
@@ -298,6 +359,27 @@ export interface CreateUserBody {
   referral_code?: string;
   /** An existing authenticator (TOTP or HOTP) and recovery codes to import, so the user keeps their second factor. */
   mfa?: ImportedMfa;
+}
+
+/**
+ * `PUT /v1/users/by_external_id/{id}`. On create the fields are those of {@link CreateUserBody} (`email_address` is
+ * required); on update only the profile fields apply (names, image, metadata bags, password, referral_code) and the
+ * rest is ignored.
+ */
+export interface UpsertUserByExternalIdBody extends Partial<CreateUserBody> {
+  /**
+   * Adopt an existing user that has the address but no `external_id` yet. Honoured only when that address is verified
+   * in Atlas (your own `email_verified` is not trusted for this); without it that case is a 409 naming the holder.
+   */
+  link_by_verified_email?: boolean;
+  /** Create-only (inherited from the create body): ignored when this call updates or adopts an existing user. */
+  sandbox?: boolean;
+  /**
+   * What happens to a `password` or `password_hash` you send when this call creates the user: `until_email_verified`
+   * holds it until an address on the account is proven, `active` (default) leaves it usable at once. Omitted: the
+   * instance's `accountUx.passwordImport.importedPasswordPolicy`.
+   */
+  password_policy?: 'active' | 'until_email_verified';
 }
 
 export interface UpdateUserBody {
@@ -327,14 +409,61 @@ export interface ReplaceUserMetadataBody {
   unsafe_metadata?: Metadata;
 }
 
+export interface CreateDelegationTokenBody {
+  /** The service the token is for; must be listed in the instance's `delegationTokens.audiences`. */
+  audience: string;
+  /** What the token may do; each must be listed for the audience. */
+  scopes: string[];
+  /** Who is acting: a service name or a staff user id. Lands in the `act` claim. */
+  actor: { sub: string; type?: string };
+  /** Up to 300 seconds (or the instance's lower cap); default 120. */
+  ttl_seconds?: number;
+  /** Speak for the user inside this organization; they must be a member. */
+  org_id?: string;
+  /** Why, up to 500 characters, kept in the audit row. */
+  reason?: string;
+}
+
+export interface DelegationToken {
+  object: 'delegation_token';
+  /** The signed JWT, shown once. */
+  token: string;
+  token_type: 'Bearer';
+  user_id: string;
+  audience: string;
+  scopes: string[];
+  actor: { sub: string; type?: string };
+  jti: string;
+  expires_at: string;
+  expires_in: number;
+}
+
 export function usersResource(request: RequestFn) {
   return {
     /** `GET /v1/users` — search, filter and sort; cursor- (or offset-) paginated. */
     list(params: ListUsersParams = {}): Promise<CursorPage<User> & { total_count?: number }> {
       return request({ method: 'GET', path: '/v1/users', query: { ...params } });
     },
+    /** `GET /v1/users/deleted` — users deleted at or after `since` (Unix ms or ISO 8601): id, external_id, deleted_at only. Reconcile a missed `user.deleted`; page with `starting_after`. */
+    listDeleted(params: { since: number | string; limit?: number; starting_after?: string }): Promise<{
+      object: 'list';
+      data: Array<{ object: 'deleted_user'; id: string; external_id: string | null; deleted_at: number }>;
+      has_more: boolean;
+      next_cursor: string | null;
+    }> {
+      return request({ method: 'GET', path: '/v1/users/deleted', query: { ...params } });
+    },
     get(id: string): Promise<User> {
       return request({ method: 'GET', path: `/v1/users/${enc(id)}` });
+    },
+    /**
+     * `POST /v1/users/{id}/delegation_tokens`: mint a short-lived (300 s at most), audience- and scope-limited token that
+     * lets your server act as this user. The audience and scopes must be on the instance's `delegationTokens` settings;
+     * the token carries an `act` claim naming `actor.sub`, and the mint is on the user's audit trail. Needs the
+     * `delegation_tokens:write` scope. Verify it in your service with `verifyDelegationToken`.
+     */
+    createDelegationToken(id: string, body: CreateDelegationTokenBody, idempotencyKey?: string): Promise<DelegationToken> {
+      return request({ method: 'POST', path: `/v1/users/${enc(id)}/delegation_tokens`, body, idempotencyKey });
     },
     /**
      * Issue a temporary access pass: a time-limited code the user signs in with
@@ -346,6 +475,28 @@ export function usersResource(request: RequestFn) {
     },
     create(body: CreateUserBody, idempotencyKey?: string): Promise<User> {
       return request({ method: 'POST', path: '/v1/users', body, idempotencyKey });
+    },
+    /**
+     * Create the user with this `external_id`, or update it if it exists
+     * (`PUT /v1/users/by_external_id/{external_id}`): 201 when created, 200 when updated or adopted. Race-safe:
+     * parallel calls for one id create one user. An existing user with the same address is adopted only with
+     * `link_by_verified_email: true` and an address Atlas has verified; otherwise it is a 409 `IDENTIFIER_EXISTS`
+     * naming the holder in `meta.user_id`.
+     */
+    upsertByExternalId(externalId: string, body: UpsertUserByExternalIdBody, idempotencyKey?: string): Promise<User> {
+      return request({ method: 'PUT', path: `/v1/users/by_external_id/${enc(externalId)}`, body, idempotencyKey });
+    },
+    /** `GET /v1/users/{id}/security_summary` (scope `users:read`): sign-in methods, providers, second factors, passkeys, devices and sessions in one read. */
+    securitySummary(id: string): Promise<UserSecuritySummary> {
+      return request({ method: 'GET', path: `/v1/users/${enc(id)}/security_summary` });
+    },
+    /**
+     * The user who holds an identity at a provider, or null: `GET /v1/users?provider=&provider_user_id=` (for
+     * example `findByProviderIdentity('discord', '80351110224678912')`).
+     */
+    async findByProviderIdentity(provider: string, providerUserId: string): Promise<User | null> {
+      const page = await request<CursorPage<User>>({ method: 'GET', path: '/v1/users', query: { provider, provider_user_id: providerUserId, limit: 1 } });
+      return page.data[0] ?? null;
     },
     update(id: string, body: UpdateUserBody): Promise<User> {
       return request({ method: 'PATCH', path: `/v1/users/${enc(id)}`, body });
@@ -849,6 +1000,19 @@ export function usersResource(request: RequestFn) {
           idempotencyKey,
         });
       },
+      /** `PATCH /v1/users/:id/deletion` — move a scheduled deletion: exactly one of `effective_at` (ISO 8601) or `grace_seconds` from now. 409 when nothing is scheduled, it is paused or the user is erased. */
+      reschedule(
+        id: string,
+        body: { effective_at: string; grace_seconds?: never } | { grace_seconds: number; effective_at?: never },
+        idempotencyKey?: string,
+      ): Promise<User> {
+        return request({
+          method: 'PATCH',
+          path: `/v1/users/${enc(id)}/deletion`,
+          body,
+          idempotencyKey,
+        });
+      },
       /** `POST /v1/users/:id/deletion/reconfirm` — resume a PAUSED scheduled deletion on its original schedule; sends no mail; 409 unless paused. */
       reconfirm(id: string, idempotencyKey?: string): Promise<User> {
         return request({
@@ -917,6 +1081,21 @@ export function usersResource(request: RequestFn) {
        */
       create(id: string, body: CreateUserApprovalRequestBody): Promise<UserApprovalRequestCreated> {
         return request({ method: 'POST', path: `/v1/users/${enc(id)}/approval_requests`, body });
+      },
+      /**
+       * `GET /v1/users/:id/approval_requests` — everything the user has open: approval requests about them plus (while
+       * `status` is pending or omitted) their sign-in "approve in your app" requests, `kind` telling them apart.
+       */
+      list(id: string, params: { status?: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled'; limit?: number } = {}): Promise<{
+        object: 'list';
+        data: Array<Record<string, unknown> & { kind: 'approval_request' | 'sign_in_approval'; id: string; status: string }>;
+        has_more: boolean;
+      }> {
+        const q = new URLSearchParams();
+        if (params.status) q.set('status', params.status);
+        if (params.limit !== undefined) q.set('limit', String(params.limit));
+        const qs = q.toString();
+        return request({ method: 'GET', path: `/v1/users/${enc(id)}/approval_requests${qs ? `?${qs}` : ''}` });
       },
       /** `GET /v1/users/:id/approval_requests/:approvalId` — poll its status. */
       get(id: string, approvalId: string): Promise<UserApprovalRequest> {
@@ -1274,9 +1453,12 @@ export interface Identity {
 export interface Grant {
   object: 'grant';
   id: string;
+  type: 'consent';
   client_id: string | null;
   client_name: string | null;
   scopes: string[];
+  /** The JSON you set on the grant (see `grants.update`). */
+  metadata: Record<string, unknown>;
   granted_at: number;
   updated_at: number;
 }

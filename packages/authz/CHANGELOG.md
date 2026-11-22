@@ -1,5 +1,9 @@
 # @atlasauth/authz changelog
 
+## 0.5.0
+
+- Permission keys may have up to 5 parts after `org:`, parts up to 64 characters (160 in all); role keys up to 64.
+
 ## 0.4.1
 
 - Uses @atlasauth/types 0.19.0.

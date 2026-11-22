@@ -31,6 +31,8 @@ export interface FunnelRow {
 }
 export interface JourneyFunnelRow { step: string; held: number; completed: number; applied: number; denied: number; completion_rate: number }
 export interface FailureRow { phase: string; reason: string; method: string; count: number; share: number }
+export interface CaptchaRow { provider: string; flow: string; issued: number; passed: number; failed: number; blocked: number; solve_rate: number }
+export interface SmsRow { country: string; messages: number; delivered: number; failed: number; estimated_cost?: number }
 export interface BreakdownRow { value: string; count: number; share: number }
 export interface ActiveUsersRow { bucket: string; active_users: number; new_users: number; returning_users: number; sign_ins: number }
 export interface PasskeyAdoptionRow { bucket: string; passkey_sign_ins: number; sign_ins: number; passkey_share: number }
@@ -114,9 +116,13 @@ export function analyticsResource(request: RequestFn) {
     journeyFunnel: (params: Omit<AnalyticsParams, 'organization_id'> & { journey_id: string }) => read<JourneyFunnelRow>('/v1/analytics/journey_funnel', params),
     /** Failed attempts by reason and method. */
     failures: (params: Omit<AnalyticsParams, 'organization_id'> = {}) => read<FailureRow>('/v1/analytics/failures', params),
-    /** Sign-ins by method, device, browser, os or country. */
-    breakdown: (params: AnalyticsParams & { dimension?: 'method' | 'device' | 'browser' | 'os' | 'country' } = {}) =>
+    /** Sign-ins by method, device, browser, os or country; `failure_code` counts failed attempts by the reason they were refused with. */
+    breakdown: (params: AnalyticsParams & { dimension?: 'method' | 'device' | 'browser' | 'os' | 'country' | 'failure_code' } = {}) =>
       read<BreakdownRow>('/v1/analytics/breakdown', params),
+    /** Captcha challenges issued, passed, failed and refused per provider and flow, with the solve rate. */
+    captcha: (params: Omit<AnalyticsParams, 'organization_id'> = {}) => read<CaptchaRow>('/v1/analytics/captcha', params),
+    /** SMS by destination country; pass `rate_per_message` (your provider's price) to add `estimated_cost`. */
+    sms: (params: Omit<AnalyticsParams, 'organization_id'> & { rate_per_message?: number; currency?: string } = {}) => read<SmsRow>('/v1/analytics/sms', params),
     /** DAU/WAU/MAU and a series, with new vs returning users. */
     activeUsers: (params: AnalyticsParams = {}) => read<ActiveUsersRow>('/v1/analytics/active_users', params),
     passkeyAdoption: (params: AnalyticsParams = {}) => read<PasskeyAdoptionRow>('/v1/analytics/passkey_adoption', params),
@@ -138,7 +144,7 @@ export function analyticsResource(request: RequestFn) {
      * Any analytics read as CSV text, e.g. `exportCsv('breakdown', { dimension: 'country' })`.
      * For Parquet call the same path with `format=parquet` over HTTP (a binary body).
      */
-    exportCsv: (report: 'funnel' | 'failures' | 'breakdown' | 'active_users' | 'passkey_adoption' | 'reports/inactive_users' | 'reports/mfa_coverage' | 'reports/access_by_app', params: object = {}) =>
+    exportCsv: (report: 'funnel' | 'failures' | 'breakdown' | 'captcha' | 'sms' | 'active_users' | 'passkey_adoption' | 'reports/inactive_users' | 'reports/mfa_coverage' | 'reports/access_by_app', params: object = {}) =>
       csv(`/v1/analytics/${report}`, params),
     alertRules: {
       list(): Promise<{ object: 'list'; data: AnalyticsAlertRule[]; has_more: boolean }> {

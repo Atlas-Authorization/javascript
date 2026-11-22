@@ -218,7 +218,7 @@ export function resolveCodeFiles(type: string, doc: Json, baseDir: string): Json
 export interface ConfigLimits {
   resource_types: { max_roles_per_type: number; key_pattern: string; name_max_length: number };
   app_roles: { max_permissions_per_role: number; max_roles_per_instance: number };
-  permissions: { max_implied_per_permission: number; key_max_length: number };
+  permissions: { max_implied_per_permission: number; key_max_length: number; max_parts?: number; part_max_length?: number };
   scopes: { description_max_length: number; label_max_length: number };
 }
 

@@ -88,6 +88,8 @@ export interface WebhookEndpoint extends ProvisioningFields {
   /** The OAuth settings without the client secret. */
   oauth?: (Omit<WebhookEndpointOAuth, 'client_secret'> & { client_secret_set: true }) | null;
   max_rps?: number | null;
+  /** Send the seat's `private_metadata` on `organization_membership.*` events to this endpoint (instance-owned endpoints only). */
+  include_private_membership?: boolean;
   destination?: WebhookDestination & { credentials_set?: boolean };
   health?: 'healthy' | 'failing' | 'disabled';
   /** Start of the current failure streak (epoch ms), or null when the last delivery succeeded. */
@@ -190,6 +192,8 @@ export interface WebhookEndpointSettings {
   oauth?: WebhookEndpointOAuth | null;
   /** Most deliveries per second (1 to 1000); null = unlimited. */
   max_rps?: number | null;
+  /** Send the seat's `private_metadata` on `organization_membership.*` events to this endpoint (instance-owned endpoints only). */
+  include_private_membership?: boolean;
 }
 
 export interface WebhookEndpointFilters {
@@ -218,6 +222,10 @@ export interface WebhookDeadLetterPage {
   /** Unacknowledged dead letters the endpoint holds. */
   depth: number;
   max_attempts: number;
+}
+
+export interface InstanceWebhookDeadLetterPage extends Omit<WebhookDeadLetterPage, 'depth'> {
+  data: Array<WebhookDeadLetter & { endpoint_id: string }>;
 }
 
 export interface CreateWebhookEndpointBody extends WebhookEndpointSettings, ProvisioningInput {
@@ -465,8 +473,12 @@ export function webhooksResource(request: RequestFn) {
       ): Promise<WebhookBulkResult> {
         return request({ method: 'POST', path: `/v1/webhook_endpoints/${enc(id)}/replay`, body, idempotencyKey });
       },
-      /** The dead-letter queue: deliveries that used every attempt, newest first, with payloads. Page with `starting_after`. */
-      dlq(id: string, params: { limit?: number; starting_after?: string } = {}): Promise<WebhookDeadLetterPage> {
+      /** `GET /v1/webhook_dlq` — the dead-letter queue of every endpoint at once, optionally narrowed to an `event_type` such as `user.deleted`. Each row names its `endpoint_id`. */
+      dlqAll(params: { limit?: number; starting_after?: string; event_type?: string } = {}): Promise<InstanceWebhookDeadLetterPage> {
+        return request({ method: 'GET', path: '/v1/webhook_dlq', query: params });
+      },
+      /** The dead-letter queue: deliveries that used every attempt, newest first, with payloads. Page with `starting_after`; `event_type` narrows it. */
+      dlq(id: string, params: { limit?: number; starting_after?: string; event_type?: string } = {}): Promise<WebhookDeadLetterPage> {
         return request({ method: 'GET', path: `/v1/webhook_endpoints/${enc(id)}/dlq`, query: params });
       },
       /** Acknowledge handled dead letters (up to 100): they leave the queue. */

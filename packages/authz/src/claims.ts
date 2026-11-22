@@ -6,9 +6,24 @@
  * of them. Keeping it structural is deliberate — it is the seam that lets one
  * primitive serve server, edge, and browser alike.
  */
+/** Why the active organization's claims are withheld from a token (see `org_claims_withheld`). */
+export type OrgClaimsWithheld = 'mfa_required' | 'sign_in_method';
+
+/**
+ * The reason the session's active organization has no `org_*` claims, or null when they are present, no
+ * organization is active, or the token predates the claim. Lets a UI say "verify your second factor to use this
+ * organization" instead of treating it like "no organization selected".
+ */
+export function orgClaimsWithheld(claims: { org_claims_withheld?: unknown } | null | undefined): OrgClaimsWithheld | null {
+  const v = claims?.org_claims_withheld;
+  return v === 'mfa_required' || v === 'sign_in_method' ? v : null;
+}
+
 export interface AuthzClaims {
   /** The active organization, if the session has one selected. */
   org_id?: string | null;
+  /** Set when an organization is active but its claims are left out: `mfa_required` or `sign_in_method`. */
+  org_claims_withheld?: string | null;
   /** The user's role key in the active organization (e.g. `org:admin`). */
   org_role?: string | null;
   /**

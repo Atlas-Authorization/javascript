@@ -4,7 +4,7 @@ type Atlas = Pick<AtlasClient, 'oauthClients'>;
 
 export interface ProxyRequest {
   method: string;
-  /** Path under your mount point: `login`, `login/accept`, `login/reject`, `consent`, `consent/accept`, `consent/reject`. */
+  /** Path under your mount point: `login`, `login/accept`, `login/reject`, `consent`, `consent/accept`, `consent/reject`, `consent/switch_account`, `device`, `device/accept`, `device/reject`. */
   path: string;
   query: Record<string, string | undefined>;
   body?: unknown;
@@ -24,13 +24,14 @@ export interface ProxyResponse {
 export function delegatedUiProxy(
   atlas: Atlas,
   opts: {
-    /** Called for `login/accept` and `consent/*`; return the Atlas user id the visitor is, or null to refuse. */
+    /** Called for `login/accept`, `consent/accept` and `device/accept`; return the Atlas user id the visitor is, or null to refuse. */
     authorize: (req: ProxyRequest) => Promise<string | null> | string | null;
   },
 ) {
   return async function handle(req: ProxyRequest): Promise<ProxyResponse> {
     const login = req.query.login_challenge;
     const consent = req.query.consent_challenge;
+    const device = req.query.device_challenge;
     const body = (req.body ?? {}) as Record<string, unknown>;
     try {
       const route = `${req.method.toUpperCase()} ${req.path.replace(/^\/|\/$/g, '')}`;
@@ -38,6 +39,13 @@ export function delegatedUiProxy(
       if (route === 'GET consent' && consent) return { status: 200, body: await atlas.oauthClients.consentRequests.get(consent) };
       if (route === 'POST login/reject' && login) return { status: 200, body: await atlas.oauthClients.loginRequests.reject(login, body) };
       if (route === 'POST consent/reject' && consent) return { status: 200, body: await atlas.oauthClients.consentRequests.reject(consent, body) };
+      if (route === 'GET device' && device) return { status: 200, body: await atlas.oauthClients.deviceRequests.get(device) };
+      if (route === 'POST device/reject' && device) return { status: 200, body: await atlas.oauthClients.deviceRequests.reject(device) };
+      if (route === 'POST consent/switch_account' && consent) return { status: 200, body: await atlas.oauthClients.consentRequests.switchAccount(consent) };
+      if (route === 'POST device/accept' && device) {
+        if (!(await opts.authorize(req))) return { status: 401, body: { error: { message: 'Not signed in.' } } };
+        return { status: 200, body: await atlas.oauthClients.deviceRequests.accept(device) };
+      }
       if (route === 'POST login/accept' && login) {
         const subject = await opts.authorize(req);
         if (!subject) return { status: 401, body: { error: { message: 'Not signed in.' } } };

@@ -90,6 +90,8 @@ export interface UseAuthReturn {
   sessionId: string | null;
   orgId: string | null;
   orgRole: string | null;
+  /** Why the active organization's claims are missing (`mfa_required` or `sign_in_method`), or null. */
+  orgClaimsWithheld: 'mfa_required' | 'sign_in_method' | null;
   /** Always fresh: refreshes first if the cached token is close to expiry. */
   /** The session JWT; with `{ for }` an integration token (e.g. `'chatly'`), with `{ template }` a named-template token. */
   getToken(options?: GetTokenOptions): Promise<string | null>;
@@ -122,6 +124,7 @@ export function authFromContext(
     sessionId: claims?.sid ?? null,
     orgId: claims?.org_id ?? null,
     orgRole: claims?.org_role ?? null,
+    orgClaimsWithheld: claims?.org_claims_withheld ?? null,
     getToken,
     getProviderToken,
     signOut,
@@ -137,6 +140,8 @@ export function useOrganization(): {
   isLoaded: boolean;
   organization: AtlasOrganizationMembership['organization'] | null;
   membership: AtlasOrganizationMembership | null;
+  /** The session has an active organization but its claims are withheld: why (`mfa_required` or `sign_in_method`), else null. */
+  claimsWithheld: 'mfa_required' | 'sign_in_method' | null;
   memberships: AtlasOrganizationMembership[];
   setActive(organizationId: string | null): Promise<void>;
 } {
@@ -147,6 +152,7 @@ export function useOrganization(): {
     isLoaded: status !== 'loading',
     organization: active?.organization ?? null,
     membership: active,
+    claimsWithheld: claims?.org_claims_withheld ?? null,
     memberships,
     setActive: setActiveOrganization,
   };

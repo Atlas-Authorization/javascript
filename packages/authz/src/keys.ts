@@ -17,10 +17,10 @@
  */
 
 /** `org:` then one lowercase segment. Matches a role key like `org:admin`. */
-export const ROLE_KEY_PATTERN = /^org:[a-z][a-z0-9_]{1,31}$/;
+export const ROLE_KEY_PATTERN = /^org:[a-z][a-z0-9_]{1,63}$/;
 
-/** `org:<resource>:<action>`. Matches a permission key like `org:billing:manage`. */
-export const PERMISSION_KEY_PATTERN = /^org:[a-z][a-z0-9_]{1,31}:[a-z][a-z0-9_]{1,31}$/;
+/** `org:<resource>:<action>` plus up to three more `:` parts. Matches `org:billing:manage` or `org:store:orders:refund:partial`. */
+export const PERMISSION_KEY_PATTERN = /^org:[a-z][a-z0-9_]{1,63}(?::[a-z][a-z0-9_]{1,63}){1,4}$/;
 
 /** True for a well-shaped role key (`org:admin`), false otherwise. */
 export function isRoleKey(key: string): boolean {

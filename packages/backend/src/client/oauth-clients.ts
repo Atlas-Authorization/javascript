@@ -41,7 +41,17 @@ export interface WorkloadPreset {
   notes: string;
 }
 
-export interface OAuthClient extends ProvisioningFields {
+/** Per-client request defaults and the pure-API switch. */
+export interface OAuthClientDefaultFields {
+  /** The scopes a request without `scope` gets; each must be requestable by the client. `null` clears. */
+  default_scopes?: string[] | null;
+  /** The identifier of the API a request without `resource`/`audience` is made for. `null` clears. */
+  default_resource?: string | null;
+  /** `false` = a pure-API client: no `openid` needed and no ID token issued (confidential clients, no implicit grant). Default `true`. */
+  require_openid?: boolean;
+}
+
+export interface OAuthClient extends ProvisioningFields, OAuthClientDefaultFields {
   object: 'oauth_client';
   id: string;
   client_id: string;
@@ -95,8 +105,15 @@ export interface OAuthClient extends ProvisioningFields {
   disabled?: boolean;
   /** PKCE required even though the client is confidential. */
   require_pkce?: boolean;
+  /** The instance certified this client (the level above approved). Set with `certified: true` on update. */
+  certified?: boolean;
+  /** When it was certified (epoch ms), or `null`. */
+  certified_at?: number | null;
   /** OIDC Core §8: `pairwise` clients see a per-sector `sub` instead of the user id. */
-  subject_type?: 'public' | 'pairwise';
+  /** OIDC Core §8: `pairwise` clients see a per-sector `sub` instead of the user id; `external_id` clients see the user's external_id. */
+  subject_type?: 'public' | 'pairwise' | 'external_id';
+  /** With `external_id`: what a user without one gets, `atlas_user_id` (default) or `refuse` (the authorization fails). */
+  subject_fallback?: 'atlas_user_id' | 'refuse';
   sector_identifier_uri?: string | null;
   /** When the current secret stops authenticating (epoch ms); null = never. */
   client_secret_expires_at?: number | null;
@@ -140,8 +157,10 @@ export interface OAuthClientTokenFields {
 
 /** OIDC Core §8 subject settings, accepted on create and update. */
 export interface OAuthClientSubjectFields {
-  /** `public` (default): the user id. `pairwise`: a per-sector identifier. */
-  subject_type?: 'public' | 'pairwise';
+  /** `public` (default): the user id. `pairwise`: a per-sector identifier. `external_id`: the user's external_id. */
+  subject_type?: 'public' | 'pairwise' | 'external_id';
+  /** With `external_id`: `atlas_user_id` (default) or `refuse` for a user without an external_id. */
+  subject_fallback?: 'atlas_user_id' | 'refuse';
   /** https URL serving a JSON array of every redirect URI; its host is the sector. `null` clears it. */
   sector_identifier_uri?: string | null;
 }
@@ -243,7 +262,7 @@ export interface ClientGrant {
   updated_at: number;
 }
 
-export interface CreateOAuthClientBody extends ProvisioningInput, OAuthClientLogoutFields, OAuthClientSubjectFields, OAuthClientTokenFields {
+export interface CreateOAuthClientBody extends ProvisioningInput, OAuthClientDefaultFields, OAuthClientLogoutFields, OAuthClientSubjectFields, OAuthClientTokenFields {
   name: string;
   redirect_uris: string[];
   allowed_scopes?: string[];
@@ -263,12 +282,14 @@ export interface CreateOAuthClientBody extends ProvisioningInput, OAuthClientLog
   add_redirect_origins?: boolean;
 }
 
-export interface UpdateOAuthClientBody extends OAuthClientLogoutFields, OAuthClientSubjectFields, OAuthClientTokenFields {
+export interface UpdateOAuthClientBody extends OAuthClientDefaultFields, OAuthClientLogoutFields, OAuthClientSubjectFields, OAuthClientTokenFields {
   /** Replaces the provisioning metadata. */
   metadata?: ProvisioningMetadata;
   name?: string;
   redirect_uris?: string[];
   allowed_scopes?: string[];
+  /** Certify (`true`) or withdraw certification of an approved client; gates scopes whose `requires_client_level` is `certified`. */
+  certified?: boolean;
   token_endpoint_auth_method?: 'client_secret_basic' | 'client_secret_post' | 'none' | 'workload_jwt';
   logo_url?: string | null;
   first_party?: boolean;
@@ -470,8 +491,22 @@ export function oauthClientsResource(request: RequestFn) {
     /** Set (or clear with null) the URLs of your own sign-in and consent pages for a client. */
     setDelegatedUi(
       id: string,
-      body: { login_url?: string | null; consent_url?: string | null },
-    ): Promise<{ object: 'oauth_client_delegated_ui'; client_id: string; login_url: string | null; consent_url: string | null }> {
+      body: {
+        login_url?: string | null;
+        consent_url?: string | null;
+        /** 'always' sends a first-party client's consent to consent_url too (needs the client's own consent_url). */
+        delegate_consent?: 'always' | null;
+        /** Your own device-approval page; Atlas sends the signed-in user there with a device_challenge. */
+        device_url?: string | null;
+      },
+    ): Promise<{
+      object: 'oauth_client_delegated_ui';
+      client_id: string;
+      login_url: string | null;
+      consent_url: string | null;
+      delegate_consent: 'always' | null;
+      device_url: string | null;
+    }> {
       return request({ method: 'PUT', path: `/v1/oauth_clients/${enc(id)}/delegated_ui`, body });
     },
     /** Delegated login: read, accept or reject the `login_challenge` your sign-in page received. */
@@ -499,6 +534,22 @@ export function oauthClientsResource(request: RequestFn) {
       },
       reject(consentChallenge: string, body: DelegatedReject = {}): Promise<DelegatedRedirect> {
         return request({ method: 'PUT', path: '/v1/oauth_consent_requests/reject', query: { consent_challenge: consentChallenge }, body });
+      },
+      /** The signed-in user is the wrong account: returns redirect_to restarting the application's request at login (prompt=login). */
+      switchAccount(consentChallenge: string): Promise<DelegatedRedirect> {
+        return request({ method: 'PUT', path: '/v1/oauth_consent_requests/switch_account', query: { consent_challenge: consentChallenge } });
+      },
+    },
+    /** Delegated device approval: read, accept or reject the `device_challenge` your device_url page received. */
+    deviceRequests: {
+      get(deviceChallenge: string): Promise<DelegatedDeviceRequest> {
+        return request({ method: 'GET', path: '/v1/oauth_device_requests', query: { device_challenge: deviceChallenge } });
+      },
+      accept(deviceChallenge: string): Promise<DelegatedRedirect> {
+        return request({ method: 'PUT', path: '/v1/oauth_device_requests/accept', query: { device_challenge: deviceChallenge } });
+      },
+      reject(deviceChallenge: string): Promise<DelegatedRedirect> {
+        return request({ method: 'PUT', path: '/v1/oauth_device_requests/reject', query: { device_challenge: deviceChallenge } });
       },
     },
 
@@ -623,6 +674,13 @@ export interface DelegatedLoginRequest {
   session_subject: string | null;
   ui_locales: string | null;
   login_hint: string | null;
+  /** The application's original /oauth2/authorize request on this instance; null when too large to carry. */
+  request_url: string | null;
+  /** The prompt values the application sent. */
+  prompt: string[];
+  /** true for prompt=select_account: offer an account chooser instead of reusing session_subject. */
+  select_account: boolean;
+  max_age: number | null;
   expires_at: number;
 }
 export interface DelegatedConsentRequest {
@@ -634,10 +692,23 @@ export interface DelegatedConsentRequest {
   authorization_details: unknown[];
   organization_id: string | null;
   redirect_uri: string;
+  /** The application's original /oauth2/authorize request on this instance; null when too large to carry. */
+  request_url: string | null;
+  prompt: string[];
+  max_age: number | null;
+  expires_at: number;
+}
+export interface DelegatedDeviceRequest {
+  object: 'oauth_device_request';
+  subject: string;
+  user_code: string;
+  client: DelegatedClientRef;
+  requested_scope: string[];
+  audience: string | null;
   expires_at: number;
 }
 export interface DelegatedRedirect {
-  object: 'oauth_login_redirect' | 'oauth_consent_redirect';
+  object: 'oauth_login_redirect' | 'oauth_consent_redirect' | 'oauth_device_redirect';
   /** Send the end user's browser here next. */
   redirect_to: string;
 }

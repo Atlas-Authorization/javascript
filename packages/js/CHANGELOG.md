@@ -1,5 +1,13 @@
 # @atlasauth/js changelog
 
+## 0.53.0
+
+- `waitForSignIn` waits on an email-link or approve-in-your-app sign-in; `listPendingApprovals` lists what is waiting on the signed-in user; `createBrowserHandoff` opens a signed-in browser from a signed-in app.
+- `getSecuritySummary` and the `SecuritySummary` type; `getCsrfToken()` plus an automatic CSRF header when the CSRF cookie is on; device-approval helpers.
+- `createGoogleNonceSession` reuses one nonce across button re-renders.
+- Native sessions refresh once across a popup and a service worker (Web Lock plus shared store); the session manager can reload and adopt a session.
+- The sign-in configuration falls back to the cacheable environment response.
+
 ## 0.52.1
 
 - React Native: `signInWithNativeBrowser` (and so `signInWithOAuth` / `signInWithSSO` in `@atlasauth/expo` and `@atlasauth/react-native`) threw `TypeError: Cannot read property 'search' of undefined` before opening the browser. React Native has a `window` with no `location`; the SDK now checks for `window.location` wherever it reads the page URL.

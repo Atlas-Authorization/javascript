@@ -160,6 +160,23 @@ export function sessionsHandlers(): RouteDef[] {
       },
     },
     {
+      method: 'PUT',
+      pattern: '/v1/sessions/:id/active_organization',
+      handler: (c) => {
+        const e = c.engine;
+        const s = e.db.sessions.get(c.params.id);
+        if (!s) throw notFound('Session');
+        if (s.status !== 'active') throw new EmulatorError('SESSION_REVOKED', 'That session has ended.');
+        const orgId: string | null = 'organization_id' in c.body ? c.body.organization_id : need(c.body, 'organization_id');
+        if (orgId) {
+          const org = e.db.organizations.get(orgId);
+          if (!org || org.deleted || !e.db.memberships.find((m) => m.user_id === s.user_id && m.organization_id === orgId)) throw notFound('Organization');
+        }
+        s.organization_id = orgId ?? null;
+        return { body: presentSession(s) };
+      },
+    },
+    {
       method: 'POST',
       pattern: '/v1/sessions/:id/revoke',
       handler: (c) => {

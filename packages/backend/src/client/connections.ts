@@ -1,5 +1,6 @@
 import { enc, type RequestFn } from './request';
 import type { CursorParams, ListPage } from './types';
+import type { ConnectionProviderPolicy } from './connections-extras';
 
 export type ConnectionOwnerType = 'organization' | 'user' | 'external';
 export type ConnectionEnvironment = 'production' | 'sandbox';
@@ -224,6 +225,8 @@ export interface ImportConnectionsResult {
 }
 
 export interface ExportConnectionsBody {
+  /** Export only these connections (a rollback of one). */
+  connection_ids?: string[];
   owner_type?: ConnectionOwnerType;
   owner_id?: string;
   provider?: string;
@@ -238,6 +241,10 @@ export interface ExportConnectionsBody {
 }
 
 export interface ExportedConnection {
+  /** The connection kind. A non-oauth row imports with `credentials` and `config`. */
+  kind: string;
+  /** Non-secret config of a non-oauth connection. */
+  config?: Record<string, unknown>;
   provider: string;
   owner: { type: ConnectionOwnerType; id: string };
   external_id: string | null;
@@ -251,6 +258,46 @@ export interface ExportedConnection {
   expires_at: number | null;
   refresh_token?: string;
   access_token?: string;
+  /** Sealed export: for a non-oauth connection the entered credential as credential entry takes it (api keys, OAuth 1.0a secrets and RSA private key, `cookies` of a cookie_jar). */
+  credentials?: Record<string, unknown>;
+}
+
+export interface RehomeConnectionsBody {
+  /** The id of the OAuth client the connections hold now. */
+  from_client: string;
+  /** The id of the OAuth client to move them to. */
+  to_client: string;
+  connection_ids?: string[];
+  dry_run?: boolean;
+  /** Default true. false is accepted only when both clients are the same provider app. */
+  verify?: boolean;
+}
+
+export interface ConnectionRehomeResult {
+  object: 'connection_rehome';
+  from_client: string;
+  to_client: string;
+  dry_run: boolean;
+  same_app: boolean;
+  moved: number;
+  would_move: number;
+  failed: number;
+  skipped: number;
+  data: Array<{ connection_id: string; status: 'moved' | 'would_move' | 'would_verify' | 'failed' | 'skipped'; reason?: string }>;
+}
+
+export interface ConnectionTemplate {
+  object: 'connection_template';
+  provider: string;
+  name: string;
+  kind: string;
+  flow: 'connect' | 'credentials';
+  secrets: string[];
+  config: Record<string, unknown>;
+  allowed_hosts: string[];
+  host_params: string[];
+  signature: string;
+  note: string;
 }
 
 export type ExportConnectionsResult =
@@ -283,6 +330,8 @@ export interface ConnectionOAuthClient {
   enabled: boolean;
   /** Your own https redirect URI for this client, or null when Atlas's callback is used. */
   redirect_uri?: string | null;
+  /** eBay: the RuName consent runs with. */
+  ru_name?: string | null;
   /** The redirect URI to register on this client at the provider: `redirect_uri` when set, else Atlas's callback. */
   callback_url: string;
   /** Where your `redirect_uri` page can 302 the browser (keeping code and state) to let Atlas finish the connect. */
@@ -322,6 +371,8 @@ export interface SetConnectionOAuthClientBody {
   key_alg?: 'RS256' | 'PS256' | 'ES256';
   /** tls_client_auth: the client certificate, PEM. */
   mtls_cert?: string;
+  /** eBay only: the RuName registered for your eBay app. Shorthand for `host_params.ru_name`: sent as redirect_uri on both legs so the owner consents at Atlas (register the client's callback_url as the RuName's accepted URL). `null` clears it. */
+  ru_name?: string | null;
 }
 
 /** Forward what your own redirect page received: finishes a connect started with a client that has a `redirect_uri`. */
@@ -357,7 +408,7 @@ async function sha256Hex(text: string): Promise<string> {
  * The credential fields of a connection's kind (write-only). api_key `{api_key}`, bearer `{token}`, basic
  * `{username, password}`, custom_header `{value}`, hmac_secret `{secret}`, client_credentials `{client_id,
  * client_secret, token_url...}`, jwt_bearer `{private_key | service_account_json | generate_key | assertion}`,
- * oauth1 `{consumer_key, consumer_secret, token?, token_secret?}`, github_app_installation `{private_key}`.
+ * oauth1 `{consumer_key, consumer_secret, token?, token_secret?}` (RSA-SHA1/RSA-SHA256: `{consumer_key, private_key, token?, token_secret?}`), cookie_jar `{cookies: [{name, value, domain, path?, expires?, secure?, http_only?, same_site?}]}`, github_app_installation `{private_key}`.
  * The kind's non-secret settings may ride along or go in `config`.
  */
 export interface SetConnectionCredentialsBody {
@@ -577,7 +628,7 @@ export function connectionsResource(request: RequestFn) {
       return request({ method: 'GET', path: `/v1/connections/${enc(id)}/credentials/versions` });
     },
     /**
-     * Read an api_key, bearer, basic, custom_header or hmac_secret credential. Needs the `connections:secret_read`
+     * Read an api_key, bearer, basic, custom_header, hmac_secret or cookie_jar credential. Needs the `connections:secret_read`
      * scope; every read is audited. `version` is `current` (default), `previous` (inside a rotation's overlap
      * window) or a number. With `organizationId` the connection must belong to that organization (404 otherwise).
      */
@@ -621,9 +672,22 @@ export function connectionsResource(request: RequestFn) {
       get(id: string): Promise<ConnectionOAuthClient> {
         return request({ method: 'GET', path: `/v1/connections/oauth_clients/${enc(id)}` });
       },
-      delete(id: string): Promise<void> {
-        return request({ method: 'DELETE', path: `/v1/connections/oauth_clients/${enc(id)}` });
+      /** With `rehomeTo`, every connection moves to that client first (each proven with a refresh); the client is deleted only when all moved. */
+      delete(id: string, options: { rehomeTo?: string } = {}): Promise<void> {
+        return request({ method: 'DELETE', path: `/v1/connections/oauth_clients/${enc(id)}`, query: options.rehomeTo ? { rehome_to: options.rehomeTo } : undefined });
       },
+    },
+    /** `POST /v1/connections/rehome`: move connections from one owner OAuth client to another. */
+    rehome(body: RehomeConnectionsBody): Promise<ConnectionRehomeResult> {
+      return request({ method: 'POST', path: '/v1/connections/rehome', body });
+    },
+    /** `GET /v1/connection_templates`: kind, secrets, hosts and config per marketplace connection. */
+    templates(): Promise<ListPage<ConnectionTemplate>> {
+      return request({ method: 'GET', path: '/v1/connection_templates' });
+    },
+    /** `GET /v1/connection_providers/policies`: every provider policy the instance set (never secrets). */
+    providerPolicies(): Promise<ListPage<ConnectionProviderPolicy>> {
+      return request({ method: 'GET', path: '/v1/connection_providers/policies' });
     },
   };
 }

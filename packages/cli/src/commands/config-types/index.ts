@@ -13,6 +13,7 @@ import { COMPLIANCE_OPS_CONFIG_TYPES } from './compliance-ops';
 import { TRUST_CONFIG_TYPES } from './trust';
 import { SURFACE_CONFIG_TYPES } from './surface-config';
 import { NATIVE_APP_CONFIG_TYPES } from './native-apps';
+import { CONNECTION_POLICY_CONFIG_TYPES } from './connection-policies';
 
 /**
  * Resource types registered outside config.ts. Each group file exports a list of
@@ -34,6 +35,7 @@ const GROUPS: ResourceSpec[][] = [
   TRUST_CONFIG_TYPES,
   SURFACE_CONFIG_TYPES,
   NATIVE_APP_CONFIG_TYPES,
+  CONNECTION_POLICY_CONFIG_TYPES,
 ];
 
 export function registeredConfigTypes(): ResourceSpec[] {

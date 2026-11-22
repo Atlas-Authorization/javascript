@@ -22,6 +22,7 @@ import { attestationHeaderFor, isAttestationGuarded, type AttestationProvider } 
 import type { DpopClient } from './dpop';
 import { parsePolicyAcceptances } from './policy-acceptance';
 import { registerClientSession } from './session-global';
+import { csrfHeadersFor } from './csrf';
 
 /**
  * The FAPI client and the sign-in flow driver.
@@ -254,6 +255,7 @@ export class FapiClient {
           ...(this.options.appId ? { 'x-atlas-app-id': this.options.appId } : {}),
           ...(attestation ? { 'atlas-attestation': attestation } : {}),
           ...(dpopProof ? { dpop: dpopProof } : {}),
+          ...csrfHeadersFor(init.method),
           ...(init.body ? { 'content-type': 'application/json' } : {}),
           ...init.headers,
         },

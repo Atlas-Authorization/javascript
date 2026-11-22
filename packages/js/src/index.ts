@@ -53,6 +53,7 @@ export * from './version';
 // `onSignOut({ reason })` for every sign-out path, and the `atlas:signout` window event.
 export * from './sign-out-events';
 export * from './native';
+export * from './browser-handoff';
 export * from './native-session';
 export * from './passkey';
 // Device-bound biometric sign-in for native apps (register a device key, sign in with it).
@@ -80,6 +81,7 @@ export * from './telegram';
 export * from './siwe';
 export * from './telemetry';
 export * from './reauth';
+export * from './csrf';
 // End-user API key self-service (`/v1/client/me/api_keys`).
 export * from './api-keys';
 // The apps a user authorized, with the OpenID Grant Management grants each holds.
@@ -97,6 +99,7 @@ export * from './referral-rewards';
 export * from './marketing';
 export { configureAttribution, type AttributionOptions, type AttributionSource } from './attribution-fields';
 export * from './phone-numbers';
+export * from './security-summary';
 export * from './email-addresses';
 // Username availability + the "Last used" sign-in method hint.
 export * from './account-hints';
@@ -152,6 +155,8 @@ export {
   hasFromClaims,
   protectFromClaims,
   ForbiddenError,
+  orgClaimsWithheld,
+  type OrgClaimsWithheld,
   ROLE_KEY_PATTERN,
   PERMISSION_KEY_PATTERN,
   isRoleKey,

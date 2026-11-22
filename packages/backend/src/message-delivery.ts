@@ -4,7 +4,7 @@ import type { WebhookVerifyFailure } from './webhook-common';
 /**
  * A typed receiver for the message-delivery events Atlas sends about the messages that left through YOUR
  * providers: `email.delivered`, `email.bounced`, `email.complained`, `email.failed`, `sms.delivered`,
- * `sms.failed` and `message_suppression.created`. It verifies the Atlas signature (same rules as
+ * `sms.failed`, the channel-neutral `message.bounced` and `message.complained`, and `message_suppression.created`. It verifies the Atlas signature (same rules as
  * `verifyWebhook`) and hands back the event narrowed on `type`.
  *
  * ```ts
@@ -58,7 +58,7 @@ interface Envelope {
 }
 
 export type MessageDeliveryEvent =
-  | (Envelope & { type: 'email.delivered' | 'email.bounced' | 'email.complained' | 'email.failed' | 'sms.delivered' | 'sms.failed'; data: MessageDeliveryData })
+  | (Envelope & { type: 'email.delivered' | 'email.bounced' | 'email.complained' | 'email.failed' | 'sms.delivered' | 'sms.failed' | 'message.bounced' | 'message.complained'; data: MessageDeliveryData })
   | (Envelope & { type: 'message_suppression.created'; data: MessageSuppressionData });
 
 export const MESSAGE_DELIVERY_EVENT_TYPES = [
@@ -68,6 +68,8 @@ export const MESSAGE_DELIVERY_EVENT_TYPES = [
   'email.failed',
   'sms.delivered',
   'sms.failed',
+  'message.bounced',
+  'message.complained',
   'message_suppression.created',
 ] as const;
 

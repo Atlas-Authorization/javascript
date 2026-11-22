@@ -73,6 +73,36 @@ export async function mintNativeNonce(
 }
 
 /**
+ * One nonce shared by every Google button render on a page. The server burns a nonce only on a successful sign-in, so a
+ * re-render (framework remount, resize, One Tap retry) can keep using it; this helper mints once, hands the same nonce
+ * back until 30 s before it lapses, then mints a fresh one. Call `reset()` after a successful sign-in.
+ */
+export function createGoogleNonceSession(client: FapiClient, now: () => number = Date.now) {
+  let cached: { nonce: string; renewAt: number } | null = null;
+  let pending: Promise<string | null> | null = null;
+  return {
+    async nonce(): Promise<string | null> {
+      if (cached && now() < cached.renewAt) return cached.nonce;
+      pending ??= client
+        .post<{ nonce?: string; nonce_expires_in?: number }>('/v1/client/sign_ins/id_token/nonce', { provider: 'google' })
+        .then((response) => {
+          const data = response.ok ? response.data : null;
+          if (!data?.nonce) return null;
+          cached = { nonce: data.nonce, renewAt: now() + (typeof data.nonce_expires_in === 'number' ? data.nonce_expires_in : 60) * 1000 - 30_000 };
+          return data.nonce;
+        })
+        .finally(() => {
+          pending = null;
+        });
+      return pending;
+    },
+    reset(): void {
+      cached = null;
+    },
+  };
+}
+
+/**
  * Post a provider id_token (+ the nonce from {@link mintNativeNonce}) to the
  * native sign-in endpoint and return a {@link FlowState} — the same shape the
  * password/redirect drivers return, so a caller drives completion identically:

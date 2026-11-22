@@ -16,6 +16,8 @@ import { sha256 } from '@noble/hashes/sha256';
 export const CSRF_HEADER = 'x-atlas-csrf';
 export const CSRF_FORM_FIELD = 'atlas_csrf';
 export const CSRF_COOKIE = '__atlas_csrf';
+/** `aud` of the token Atlas signs when `session.csrfCookie` is on (see `verifyCsrfJws`). */
+export const CSRF_AUDIENCE = 'atlas:csrf';
 
 export interface CsrfOptions {
   /** The session id (`sid` claim). */
@@ -108,8 +110,14 @@ export interface CsrfRequest {
  */
 export async function verifyCsrf(request: CsrfRequest, options: CsrfOptions): Promise<boolean> {
   requireOptions(options);
+  const submitted = await submittedMatchingCookie(request);
+  return submitted !== null && checkCsrfToken(submitted, options);
+}
+
+/** The token the request submitted (header, else form field) when it equals the `__atlas_csrf` cookie; else null. */
+export async function submittedMatchingCookie(request: CsrfRequest): Promise<string | null> {
   const cookie = readCookieValue(request.headers.get('cookie'), CSRF_COOKIE);
-  if (!cookie) return false;
+  if (!cookie) return null;
   let submitted: string | null = request.headers.get(CSRF_HEADER);
   if (submitted === null) {
     const type = (request.headers.get('content-type') ?? '').toLowerCase();
@@ -122,6 +130,6 @@ export async function verifyCsrf(request: CsrfRequest, options: CsrfOptions): Pr
       }
     }
   }
-  if (submitted === null || !constantTimeEqual(submitted, cookie)) return false;
-  return checkCsrfToken(submitted, options);
+  if (submitted === null || !constantTimeEqual(submitted, cookie)) return null;
+  return submitted;
 }

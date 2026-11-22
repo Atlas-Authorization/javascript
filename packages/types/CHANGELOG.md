@@ -1,5 +1,9 @@
 # @atlasauth/types changelog
 
+## 0.20.0
+
+- **type-widening:** `WebhookEvent` gains `user.deletion_rescheduled`, `user.phone_verified`, `message.bounced`, `message.complained` and `connection.secrets_exported`; webhook user payloads gain the phone fields and `sandbox`; session claims gain `org_claims_withheld`.
+
 ## 0.19.0
 
 - **type-widening:** `WebhookEvent` gains `identity_verification.updated`.

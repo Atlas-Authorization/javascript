@@ -27,6 +27,8 @@ export interface ComplianceSettings {
     dsrDueDays?: number;
     ownershipTransfer?: 'off' | 'block' | 'require_action';
     requireFinalNotice?: boolean;
+    /** How many times a `pre_user_deletion` Action may pause one scheduled deletion (0-10, default 1). */
+    maxPauses?: number;
   };
 }
 
@@ -53,6 +55,8 @@ export interface SessionSettings {
   includeRiskClaim?: boolean;
   /** Raises the absolute ceiling from 90 to 365 days. */
   longLived?: boolean;
+  /** Let a signed-in native session mint a one-time link that opens a signed-in browser session. */
+  browserHandoff?: boolean;
   nonPersistentAbsoluteMs?: number;
   nonPersistentIdleMs?: number;
 }
@@ -61,7 +65,7 @@ export interface SessionSettings {
 export interface InstanceAuthConfigResolved {
   accountUx?: { passkeyAdoption?: { retirePasswords?: boolean; repromptDays?: number } };
   agentFabric?: AgentFabricSettings;
-  appApproval?: Record<string, unknown>;
+  appApproval?: { firstFactor?: boolean; stepUp?: boolean; ttlSeconds?: number; revealNoAccount?: boolean };
   attackProtection?: AttackProtectionSettings;
   changeFeed?: Record<string, unknown>;
   compliance?: ComplianceSettings;

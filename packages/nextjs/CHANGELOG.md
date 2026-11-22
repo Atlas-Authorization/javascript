@@ -1,5 +1,9 @@
 # @atlasauth/nextjs changelog
 
+## 0.21.0
+
+- `csrf: { atlasSigned: true }` accepts the signed, session-bound Atlas CSRF cookie.
+
 ## 0.20.0
 
 - `atlasMiddleware` and `atlasProxy` renew an expired `__session` on page navigations (GET, `Accept: text/html`) that still carry the refresh cookie: the new cookies go to the browser and to your server components, and the user is not bounced. One attempt per request. Option `refreshExpiredSession` (default `true`); the Frontend API must be on the same site as the app (`fapiOrigin`, else the origin of `jwksUrl`).

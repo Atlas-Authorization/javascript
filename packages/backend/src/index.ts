@@ -116,6 +116,7 @@ export * from './fetch-handlers';
 // Session helpers: mirror the Atlas user into your own table; CSRF tokens bound to the session.
 export * from './sync-local-user';
 export * from './csrf';
+export * from './csrf-jws';
 export * from './server-auth';
 
 // The Atlas referral protocol, for a referral platform receiving Atlas's signed calls.
@@ -132,7 +133,7 @@ export * from './client';
 
 // A local, authoritative mirror of end-user API keys (mint/import/revoke at
 // Atlas, verify locally against sha256, sync from the revocation feed).
-export { createKeyMirror, memoryKeyMirrorStore, hashApiKeySecret, intersectScopesWithPermissions, permissionCoversScope } from './key-mirror';
+export { createKeyMirror, memoryKeyMirrorStore, hashApiKeySecret, intersectScopesWithPermissions, permissionCoversScope, ipInAllowlist } from './key-mirror';
 export type { KeyMirror, KeyMirrorOptions, KeyMirrorStore, MirroredApiKey, MirrorVerification, MirrorImportInput, MirrorImportResult } from './key-mirror';
 export { createResourceRoleMirror, memoryResourceRoleMirrorStore, resolveMirrorGrants } from './resource-role-mirror';
 export type {
@@ -228,6 +229,12 @@ export type {
 export * from './legacy-verify';
 export * from './uma';
 export type { SidListRevocation } from './sid-revocation';
+export { revocationStream, memoryCursorStore, parseSseBlocks } from './revocation-stream';
+export type { RevocationFrame, RevocationKind, RevocationCursorStore, RevocationStreamHandle, RevocationStreamOptions } from './revocation-stream';
+export { createRevocationMirror, createSessionDenyList } from './revocation-mirror';
+export type { RevocationMirror, RevocationMirrorOptions, SessionDenyList } from './revocation-mirror';
+export { createMachineDenyList } from './machine-deny-list';
+export type { MachineDenyList, MachineDenyListOptions } from './machine-deny-list';
 export { verifyStatusListToken, createEdgeRevocationChecker, StatusListError } from './status-list';
 export type { VerifiedStatusList, VerifyStatusListOptions, EdgeRevocationOptions, EdgeRevocationVerdict, StatusListKey } from './status-list';
 export { sessionBindingOf, verifyBoundSession } from './session-binding';

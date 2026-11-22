@@ -56,6 +56,7 @@ const OPTIONS = {
   'dry-run': { type: 'boolean' },
   prune: { type: 'boolean' },
   'include-owned': { type: 'boolean' },
+  'match-by-name': { type: 'boolean' },
   // config import / apply / plan: delete live resources of just these `prune: false` types.
   'prune-type': { type: 'string', multiple: true },
   // apply / config import: enable a before_user_create hook even if its test call fails.
@@ -133,6 +134,9 @@ const OPTIONS = {
   'forward-to': { type: 'string' },
   count: { type: 'string' },
   'no-forward': { type: 'boolean' },
+  // listen --revocations.
+  revocations: { type: 'boolean' },
+  kinds: { type: 'string' },
   // dev.
   port: { type: 'string' },
   seed: { type: 'string' },
@@ -208,6 +212,8 @@ const OPTIONS = {
   // config plan / plan / apply: exit 2 on drift (`--check` is the CI spelling).
   'exit-code': { type: 'boolean' },
   check: { type: 'boolean' },
+  // plan --check also exits 2 when live has objects the file no longer declares.
+  'fail-on-unmanaged': { type: 'boolean' },
   // referrals connect / backfill.
   provider: { type: 'string' },
   program: { type: 'string' },

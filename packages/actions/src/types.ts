@@ -28,6 +28,7 @@ export type ActionTrigger =
   | 'custom_token_exchange'
   | 'pre_user_update'
   | 'pre_user_deletion'
+  | 'pre_user_merge'
   | 'mfa_verification_attempt'
   | 'password_verification_attempt'
   | 'account_link_decision'
@@ -59,6 +60,7 @@ export const ACTION_TRIGGERS: readonly ActionTrigger[] = [
   'custom_token_exchange',
   'pre_user_update',
   'pre_user_deletion',
+  'pre_user_merge',
   'mfa_verification_attempt',
   'password_verification_attempt',
   'account_link_decision',

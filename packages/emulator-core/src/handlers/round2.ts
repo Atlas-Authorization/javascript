@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { signOutEverywhere } from './revocations';
 import type { Engine, RouteDef } from '../engine';
 import { bytesToB64url, sha256 } from '../crypto-util';
 import { EmulatorError, notFound } from '../errors';
@@ -268,7 +269,7 @@ export function round2Handlers(): RouteDef[] {
         for (const u of targets) {
           if (action === 'ban') u.banned = true;
           else if (action === 'unban') u.banned = false;
-          else if (action === 'revoke_sessions') e.db.sessions.filter((s) => s.user_id === u.id).forEach((s) => revokeSession(e, s, 'bulk_action'));
+          else if (action === 'revoke_sessions') signOutEverywhere(e, u.id, 'bulk_action');
           else if (action === 'set_metadata') u.public_metadata = { ...(u.public_metadata ?? {}), ...(params.public_metadata ?? {}) };
           else if (action === 'delete') u.deleted = true;
           else if (action === 'add_to_org' && params.organization_id) {

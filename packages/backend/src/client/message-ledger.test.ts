@@ -123,3 +123,18 @@ describe('messageReceivers', () => {
     ]);
   });
 });
+
+describe('messages extras', () => {
+  it('sends reply_to, headers, from, category and unsubscribe as given', async () => {
+    const { c, calls } = setup({ object: 'message' });
+    await c.messages.send({ to: 'a@example.com', subject: 'x', text: 'y', reply_to: { email: 'support@example.com', name: 'Support' }, from: 'shop@example.com', headers: { 'X-Entity-Ref-ID': 'o-1' }, category: 'promos', unsubscribe: true, locale: undefined });
+    expect(calls[0]!.body).toMatchObject({ reply_to: { email: 'support@example.com' }, from: 'shop@example.com', headers: { 'X-Entity-Ref-ID': 'o-1' }, category: 'promos', unsubscribe: true });
+  });
+
+  it('mints a link', async () => {
+    const { c, calls } = setup({ object: 'message_link', type: 'preferences', url: 'https://x' });
+    await c.messages.createLink({ email: 'a@example.com', type: 'preferences' });
+    expect(calls[0]!.url).toBe(`${API_URL}/v1/message_links`);
+    expect(calls[0]!.method).toBe('POST');
+  });
+});

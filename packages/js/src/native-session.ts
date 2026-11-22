@@ -24,7 +24,7 @@
  * a `null`, the caller's cue to re-run the OAuth flow rather than crash.
  */
 
-import { REFRESH_LEAD_MS } from './token-cache';
+import { REFRESH_LEAD_MS, readExpiry } from './token-cache';
 
 /** RFC 8693 token-exchange grant. */
 const TOKEN_EXCHANGE_GRANT = 'urn:ietf:params:oauth:grant-type:token-exchange';
@@ -297,6 +297,14 @@ export interface NativeSessionManagerOptions {
   persist?: (session: NativeSession) => void;
   /** Injectable clock, epoch ms. Defaults to `Date.now`. Keeps refresh timing testable. */
   now?: () => number;
+  /**
+   * Read the freshest persisted session from the store this session is shared through (an extension's
+   * `chrome.storage`, a native secure store). With it, a refresh runs under a Web Lock (`navigator.locks`, present in
+   * tabs, popups and service workers) and first reads the store: if another context already rotated, its session is
+   * adopted and no second refresh is made, so the rotating refresh token never races. The refresh token itself is
+   * never broadcast; contexts share it only through this store.
+   */
+  reload?: () => NativeSession | null | Promise<NativeSession | null>;
 }
 
 /**
@@ -327,8 +335,10 @@ export class NativeSessionManager {
   readonly clientId?: string;
   private readonly fetchImpl?: typeof fetch;
   private readonly now: () => number;
+  private readonly reload?: NativeSessionManagerOptions['reload'];
 
   constructor(options: NativeSessionManagerOptions) {
+    this.reload = options.reload;
     this.baseUrl = options.baseUrl;
     this.publishableKey = options.publishableKey;
     this.clientId = options.clientId;
@@ -436,21 +446,48 @@ export class NativeSessionManager {
     const session = this.session;
     if (!session) return null;
 
-    this.refreshing = refreshNativeSession({
+    const locks = typeof navigator === 'undefined' ? undefined : (navigator as { locks?: LockManager }).locks;
+    const run = () => this.refreshOnce();
+    this.refreshing = (this.reload && locks?.request
+      ? (locks.request(`atlas-native-refresh:${this.publishableKey}:${session.sessionId}`, run) as unknown as Promise<NativeSession | null>)
+      : run()
+    ).finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
+  }
+
+  /**
+   * Take a session another context persisted (it rotated the refresh token). Does not notify listeners: the other
+   * context already wrote it to the shared store, and writing it back could overwrite a newer rotation. Ignored when it
+   * is the same refresh token or belongs to another session.
+   */
+  adopt(stored: NativeSession | null): boolean {
+    if (!stored || !this.session || stored.sessionId !== this.session.sessionId || stored.refreshToken === this.session.refreshToken) return false;
+    this.session = stored;
+    this.expiresAt = readExpiry(stored.sessionToken) ?? this.now() + stored.expiresInSeconds * 1000;
+    return true;
+  }
+
+  private async refreshOnce(): Promise<NativeSession | null> {
+    if (this.reload) {
+      // A peer context may have rotated while this one waited for the lock: its refresh token is the live one.
+      try {
+        if (this.adopt(await this.reload()) && !this.needsRefresh()) return this.session;
+      } catch {
+        // An unreadable store changes nothing: refresh with what is held.
+      }
+    }
+    const session = this.session;
+    if (!session) return null;
+    const rotated = await refreshNativeSession({
       baseUrl: this.baseUrl,
       publishableKey: this.publishableKey,
       sessionId: session.sessionId,
       refreshToken: session.refreshToken,
       fetchImpl: this.fetchImpl,
-    })
-      .then((rotated) => {
-        if (rotated) this.setSession(rotated);
-        return rotated;
-      })
-      .finally(() => {
-        this.refreshing = null;
-      });
-
-    return this.refreshing;
+    });
+    if (rotated) this.setSession(rotated);
+    return rotated;
   }
 }

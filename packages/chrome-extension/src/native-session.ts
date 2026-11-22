@@ -64,19 +64,33 @@ export async function createNativeSessionManager(
   const store = options.store ?? new StorageCache({ key: DEFAULT_NATIVE_SESSION_KEY });
   const initial = parseNativeSession(await store.getToken()) ?? undefined;
 
-  return new NativeSessionManager({
+  const manager = new NativeSessionManager({
     baseUrl,
     publishableKey: options.publishableKey,
     clientId: options.clientId,
     initial,
     fetchImpl: options.fetchImpl,
     now: options.now,
+    // The popup and the service worker share this store: a refresh runs under a Web Lock and reads it first, so only
+    // one of them rotates the refresh token and the other adopts the result.
+    reload: async () => parseNativeSession(await store.getToken()),
     // Fire-and-forget: `chrome.storage` writes are async and a failure must not
     // break the live session held in memory.
     persist: (session: NativeSession) => {
       void store.setToken(serializeNativeSession(session)).catch(() => undefined);
     },
   });
+
+  // Another extension context rotated while this one was idle: take its session at once, not at the next refresh.
+  // Only for the default store, whose key is known here.
+  const onChanged = (globalThis as { chrome?: { storage?: { onChanged?: { addListener(cb: (changes: Record<string, { newValue?: unknown }>, area: string) => void): void } } } }).chrome?.storage?.onChanged;
+  if (!options.store && onChanged) {
+    onChanged.addListener((changes, area) => {
+      const next = changes[DEFAULT_NATIVE_SESSION_KEY]?.newValue;
+      if (area === 'local' && typeof next === 'string') manager.adopt(parseNativeSession(next));
+    });
+  }
+  return manager;
 }
 
 /** Clear the persisted native session (sign-out). */

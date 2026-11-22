@@ -89,7 +89,7 @@ describe('atlas apply --secrets-out', () => {
     const api = new Api();
     api.clients = [{ id: 'oc_1', client_id: 'client_abc', name: 'Web', redirect_uris: ['https://a.example.com/cb'] }];
     const io = captureIO();
-    await run(['apply', write('atlas.yaml', 'oauth_clients:\n  - name: Web\n    redirect_uris: [https://a.example.com/cb]\n'), '--yes', '--secrets-out', join(dir, '.env')], ctx(io, api));
+    await run(['apply', write('atlas.yaml', 'oauth_clients:\n  - id: oc_1\n    name: Web\n    redirect_uris: [https://a.example.com/cb]\n'), '--yes', '--secrets-out', join(dir, '.env')], ctx(io, api));
     expect(io.stdout()).toContain('atlas client rotate client_abc');
     expect(api.calls.some((c) => c.path.includes('rotate'))).toBe(false);
   });

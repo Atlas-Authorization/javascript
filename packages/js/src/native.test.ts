@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  createGoogleNonceSession,
   diagnoseProvider,
   linkExternalAccountWithIdToken,
   loadGoogleIdentityServices,
@@ -502,5 +503,28 @@ describe('linkExternalAccountWithIdToken', () => {
     expect(res.ok).toBe(false);
     expect(res.account).toBeNull();
     expect(res.errors[0]?.code).toBe('IDENTITY_ALREADY_LINKED');
+  });
+});
+
+describe('createGoogleNonceSession', () => {
+  it('mints once, shares the nonce across re-renders, renews 30 s before it lapses', async () => {
+    let n = 0;
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ object: 'native_nonce', nonce: `n${++n}`, nonce_expires_in: 120 }), {
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    const client = new FapiClient({ publishableKey: 'pk_test_1', baseUrl: 'https://accounts.acme.com', fetchImpl });
+    let clock = 0;
+    const session = createGoogleNonceSession(client, () => clock);
+
+    const [a, b] = await Promise.all([session.nonce(), session.nonce()]);
+    expect([a, b]).toEqual(['n1', 'n1']);
+    clock = 80_000;
+    expect(await session.nonce()).toBe('n1');
+    clock = 95_000;
+    expect(await session.nonce()).toBe('n2');
+    session.reset();
+    expect(await session.nonce()).toBe('n3');
   });
 });

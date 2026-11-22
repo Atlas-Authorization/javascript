@@ -451,7 +451,7 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions): RequestHandler
     bapiBaseUrl: options.bapiBaseUrl,
   });
   const revocation = options.revocation ? (options.revocation === true ? {} : options.revocation) : undefined;
-  const csrfGate = options.csrf ? createServerCsrfGate(options.csrf, options.secretKey) : null;
+  const csrfGate = options.csrf ? createServerCsrfGate(options.csrf, options.secretKey, backend) : null;
   const bridges: RequestHandler[] = [];
   if (options.betterAuthBridge) bridges.push(betterAuthBridge({ ...options, config: options.betterAuthBridge === true ? {} : options.betterAuthBridge }));
   if (options.migrationBridge) bridges.push(migrationBridge({ ...options, config: options.migrationBridge }));

@@ -46,4 +46,24 @@ describe('@atlasauth/expo/account-security', () => {
     expect(pkg.main).toBe('./dist/index.js');
     expect(pkg.sideEffects).toEqual(['./dist/index.js']);
   });
+
+  it('serves a session entry that loads no React, React Native or provider code', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    expect(pkg.exports['./session'].default).toBe('./dist/session.js');
+    expect(pkg.peerDependencies['@atlasauth/react']).toBeDefined();
+    expect(pkg.dependencies).toBeUndefined();
+    const seen = new Set<string>();
+    const walk = (file: string) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const src = readFileSync(new URL(`./${file}.ts`, import.meta.url), 'utf8');
+      for (const m of src.matchAll(/^(?:import|export)\b[^;]*?\bfrom\s+'([^']+)'/gm)) {
+        const spec = m[1]!;
+        if (spec.startsWith('./')) walk(spec.slice(2));
+        else expect(spec, `${file} imports ${spec}`).toBe('@atlasauth/js');
+      }
+    };
+    walk('session');
+    expect([...seen].sort()).toEqual(['bridge', 'cache-fetch', 'native-session', 'session', 'token-cache']);
+  });
 });

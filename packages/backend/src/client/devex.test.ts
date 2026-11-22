@@ -50,9 +50,10 @@ describe('environment clones and previews', () => {
     await platform.apps.instances.clones.create('ins_app', 'ins_src', { mode: 'preview', ref: 'pr-42', include: ['config', 'roles'], ttl_hours: 24 }, 'idem-2');
     await platform.apps.instances.clones.list('ins_app', 'ins_src', { kind: 'preview' });
     await platform.apps.instances.clones.get('ins_app', 'ins_src', 'iclone_1');
+    await platform.apps.instances.clones.refresh('ins_app', 'ins_src', 'iclone_1', { synthetic_users: { count: 3, seed: 's' } });
     await platform.apps.instances.clones.delete('ins_app', 'ins_src', 'iclone_1');
     const base = 'https://api.test/v1/platform/apps/ins_app/instances/ins_src/clones';
-    expect(calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([`POST ${base}`, `GET ${base}?kind=preview`, `GET ${base}/iclone_1`, `DELETE ${base}/iclone_1`]);
+    expect(calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([`POST ${base}`, `GET ${base}?kind=preview`, `GET ${base}/iclone_1`, `POST ${base}/iclone_1/refresh`, `DELETE ${base}/iclone_1`]);
     expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ mode: 'preview', ref: 'pr-42', include: ['config', 'roles'], ttl_hours: 24 });
   });
 });

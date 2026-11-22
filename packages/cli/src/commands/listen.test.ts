@@ -192,3 +192,26 @@ describe('atlas listen', () => {
     expect((c.io as ReturnType<typeof captureIO>).stderr()).toContain('webhooks:write');
   });
 });
+
+describe('atlas listen --revocations', () => {
+  const rev = (seq: number, kind: string, type: string) =>
+    `id: ${seq}\nevent: revocation\ndata: ${JSON.stringify({ id: `evt_${seq}`, seq, type, kind, at: 1700000000000, user_id: 'user_1', ids: { api_key_id: 'k1' }, reason: 'revoked_by_api', actor: { type: 'api_key', id: 'key_1' } })}\n\n`;
+
+  it('prints revocations from the stream, filters by kind and stops after --count', async () => {
+    const { seen, ctx } = setup([sse('event: ready\ndata: {"cursor":"7"}\n\n', rev(8, 'api_key', 'api_key.revoked'), rev(9, 'machine', 'machine.revoked'))]);
+    const c = ctx();
+    const code = await run(['listen', '--revocations', '--kinds', 'api_key,machine', '--count', '2'], c);
+    expect(code).toBe(0);
+    const url = new URL(seen[0]!.url);
+    expect(url.pathname).toBe('/v1/revocations/stream');
+    expect(url.searchParams.get('kinds')).toBe('api_key,machine');
+    expect(seen.some((s) => s.url.endsWith('/v1/listen/sessions'))).toBe(false);
+  });
+
+  it('resumes from the last position after the stream closes', async () => {
+    const { seen, ctx } = setup([sse(rev(8, 'api_key', 'api_key.revoked')), sse(rev(9, 'api_key', 'api_key.revoked'))]);
+    await run(['listen', '--revocations', '--count', '2'], ctx());
+    expect(new URL(seen[0]!.url).searchParams.get('after')).toBeNull();
+    expect(new URL(seen[1]!.url).searchParams.get('after')).toBe('8');
+  });
+});

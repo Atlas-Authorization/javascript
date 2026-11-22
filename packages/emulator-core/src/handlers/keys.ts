@@ -4,6 +4,24 @@ import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
 import { recordCaller } from './round2';
 import { bump, listReply, need } from './util';
+import { endActor } from './revocations';
+
+const endReason = (k: Obj): string | null => (!k.revoked_at ? null : (k.revoked_reason ?? (k.revoked_by?.type === 'user' ? 'revoked_by_admin' : 'revoked_by_api')));
+
+const diesWithOf = (v: unknown): 'sign_out_everywhere' | null | undefined => {
+  if (v === undefined || v === '') return undefined;
+  if (v === null) return null;
+  if (v !== 'sign_out_everywhere') throw new EmulatorError('VALIDATION_FAILED', 'dies_with must be "sign_out_everywhere" or null.', 'dies_with');
+  return v;
+};
+
+/** `metadata` is the same object as `claims`: fold it in, and refuse both at once. */
+const foldMetadata = (body: Obj): void => {
+  if (body.metadata === undefined) return;
+  if (body.claims !== undefined) throw new EmulatorError('VALIDATION_FAILED', 'Send `metadata` or `claims`, not both: they are the same object.', 'metadata');
+  body.claims = body.metadata;
+  delete body.metadata;
+};
 
 export function presentKey(e: Engine, k: Obj): Obj {
   return e.shape('ApiKey', {
@@ -14,6 +32,12 @@ export function presentKey(e: Engine, k: Obj): Obj {
     name: k.name ?? null,
     prefix: k.prefix,
     claims: k.claims ?? {},
+    metadata: k.claims ?? {},
+    dies_with: k.dies_with ?? null,
+    end_reason: endReason(k),
+    ended_at: k.revoked_at ?? null,
+    revoked_by: endActor(k.revoked_by?.type, k.revoked_by?.id),
+    revoked_reason: k.revoked_reason ?? null,
     scopes: k.scopes ?? null,
     constraints: k.constraints ?? null,
     enabled: k.enabled !== false,
@@ -57,10 +81,13 @@ export function keysHandlers(): RouteDef[] {
       pattern: '/v1/api_keys',
       handler: (c) => {
         const e = c.engine;
+        foldMetadata(c.body);
         const type = String(need(c.body, 'subject_type'));
         const subject = String(need(c.body, 'subject_id'));
         if (!['user', 'organization', 'machine'].includes(type)) throw new EmulatorError('VALIDATION_FAILED', 'subject_type must be user, organization or machine.', 'subject_type');
         if (!subjectExists(e, type, subject)) throw new EmulatorError('NOT_FOUND', `The ${type} was not found.`, 'subject_id');
+        const diesWith = diesWithOf(c.body.dies_with) ?? null;
+        if (diesWith && type !== 'user') throw new EmulatorError('VALIDATION_FAILED', 'dies_with ends a key with a user signing out everywhere: send subject_type "user".', 'dies_with');
         const now = e.clock.now();
         const prefix = typeof c.body.prefix === 'string' ? c.body.prefix : 'ak';
         const secret = e.tokens.secret(prefix);
@@ -71,6 +98,7 @@ export function keysHandlers(): RouteDef[] {
           prefix: secret.slice(0, prefix.length + 5),
           secret,
           claims: c.body.claims ?? {},
+          dies_with: diesWith,
           scopes: c.body.scopes ?? null,
           constraints: c.body.constraints ?? null,
           enabled: c.body.enabled !== false,
@@ -94,6 +122,10 @@ export function keysHandlers(): RouteDef[] {
       handler: (c) => {
         const e = c.engine;
         const k = liveKey(e, c.params.id);
+        foldMetadata(c.body);
+        const diesWith = diesWithOf(c.body.dies_with);
+        if (diesWith && k.subject_type !== 'user') throw new EmulatorError('VALIDATION_FAILED', 'dies_with ends a key with a user signing out everywhere: only a user key can carry it.', 'dies_with');
+        if (diesWith !== undefined) k.dies_with = diesWith;
         for (const f of ['name', 'claims', 'scopes', 'constraints', 'enabled', 'rate_limit', 'remaining', 'expires_at']) if (f in c.body) k[f] = c.body[f];
         bump(e, k);
         kEvent(e, 'api_key.updated', k, 'update');
@@ -108,6 +140,7 @@ export function keysHandlers(): RouteDef[] {
         const k = liveKey(e, c.params.id);
         if (!k.revoked_at) {
           k.revoked_at = e.clock.now();
+          k.revoked_by = { type: 'api_key', id: null };
           kEvent(e, 'api_key.revoked', k, 'update');
         }
         return { body: presentKey(e, k) };
@@ -141,6 +174,8 @@ export function keysHandlers(): RouteDef[] {
             subject_id: k.subject_id,
             name: k.name ?? null,
             claims: k.claims ?? {},
+            metadata: k.claims ?? {},
+            dies_with: k.dies_with ?? null,
             scopes: k.scopes ?? null,
             effective_scopes: k.scopes ?? [],
             last_used_at: k.last_used_at,
@@ -155,7 +190,7 @@ export function keysHandlers(): RouteDef[] {
       handler: (c) => {
         const since = Number(c.query.get('since') ?? 0) || 0;
         const rows = c.engine.db.apiKeys.filter((k) => k.revoked_at && k.revoked_at > since);
-        return listReply(c, rows, (k) => c.engine.shape('RevokedApiKey', { object: 'api_key', id: k.id, revoked_at: k.revoked_at }));
+        return listReply(c, rows, (k) => c.engine.shape('RevokedApiKey', { object: 'api_key', id: k.id, revoked_at: k.revoked_at, end_reason: endReason(k), revoked_by: endActor(k.revoked_by?.type, k.revoked_by?.id) }));
       },
     },
   ];

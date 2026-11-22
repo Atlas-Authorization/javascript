@@ -14,6 +14,17 @@ export interface ServerCsrfOptions {
   mountBasePath?: string;
   /** Mark the CSRF cookie Secure. Default: true unless the request is plain http. */
   secure?: boolean;
+  /**
+   * Use the CSRF token Atlas issues itself (turn on `session.csrfCookie` for the instance). Atlas sets the
+   * `__atlas_csrf` cookie with each session token; the gate verifies the echoed token against your instance JWKS and
+   * sets no cookie of its own, so no secret is needed.
+   */
+  atlasSigned?: boolean;
+}
+
+/** What the gate needs from an `AtlasBackend` to verify an Atlas-issued CSRF token. */
+export interface CsrfJwsVerifier {
+  verifyCsrf(request: { headers: { get(name: string): string | null } }, options: { sid: string }): Promise<boolean>;
 }
 
 export type CsrfDecision =
@@ -28,11 +39,12 @@ const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * `__atlas_csrf` cookie; unsafe methods must echo it in `x-atlas-csrf`.
  * Bearer-authenticated, signed-out and mount-path requests are skipped.
  */
-export function createServerCsrfGate(option: true | ServerCsrfOptions, secretKey?: string) {
+export function createServerCsrfGate(option: true | ServerCsrfOptions, secretKey?: string, atlas?: CsrfJwsVerifier) {
   const config = option === true ? {} : option;
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+  if (config.atlasSigned && !atlas) throw new Error('csrf: `atlasSigned` needs the Atlas verifier of the adapter.');
   const secret = config.secret ?? env.ATLAS_CSRF_SECRET ?? (secretKey ? deriveCsrfSecret(secretKey) : undefined);
-  if (!secret) throw new Error('csrf: set `csrf.secret`, ATLAS_CSRF_SECRET, or pass `secretKey`.');
+  if (!secret && !config.atlasSigned) throw new Error('csrf: set `csrf.secret`, ATLAS_CSRF_SECRET, or pass `secretKey`.');
   const base = `/${(config.mountBasePath ?? env.ATLAS_BASE_PATH ?? '/atlas').replace(/^\/+|\/+$/g, '')}`;
 
   return async function gate(req: {
@@ -45,8 +57,16 @@ export function createServerCsrfGate(option: true | ServerCsrfOptions, secretKey
     if (!req.sessionId) return { action: 'skip' };
     if (req.headers.get('authorization')?.startsWith('Bearer ')) return { action: 'skip' };
     if (req.path === base || req.path.startsWith(`${base}/`)) return { action: 'skip' };
-    const opts = { sid: req.sessionId, secret };
     const existing = readCookieValue(req.headers.get('cookie'), CSRF_COOKIE);
+    if (config.atlasSigned) {
+      // Atlas sets the cookie itself; this gate only checks the echo.
+      const token = existing ?? '';
+      if (!UNSAFE.has(req.method.toUpperCase())) return { action: 'allow', token, setCookie: null };
+      return (await atlas!.verifyCsrf({ headers: req.headers }, { sid: req.sessionId }))
+        ? { action: 'allow', token, setCookie: null }
+        : { action: 'refuse', token, setCookie: null };
+    }
+    const opts = { sid: req.sessionId, secret: secret! };
     const fresh = !(existing && checkCsrfToken(existing, opts));
     const token = fresh ? csrfToken(opts) : (existing as string);
     const secure = config.secure ?? req.https !== false;

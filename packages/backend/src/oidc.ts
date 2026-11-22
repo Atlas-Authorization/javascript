@@ -1,6 +1,6 @@
 import { createLocalJWKSet, errors as joseErrors, jwtVerify, type JWTPayload } from 'jose';
 import { createPkcePair } from './handshake';
-import { JwksCache } from './jwks-cache';
+import { JwksCache, checkJwksCacheTuning, type JwksCacheTuning } from './jwks-cache';
 import { ATLAS_SIGNING_ALGS } from './algs';
 
 /**
@@ -273,6 +273,8 @@ export interface OidcCallbackOptions extends OidcBaseOptions {
   secret?: string;
   /** Allowed clock skew for `exp`/`iat`, in seconds. Default 60. */
   clockToleranceSec?: number;
+  /** How the JWKS cache behaves (TTL, how long stale keys are served, a stale hook). `maxStaleMs: 0` is strict. Default unchanged. */
+  jwksCache?: JwksCacheTuning;
 }
 
 /** The organization a sign-in was made in (the ID token's `org_*` claims). */
@@ -495,6 +497,7 @@ async function runCallback(
     clockToleranceSec: options.clockToleranceSec ?? 60,
     fetchImpl: options.fetchImpl,
     now: options.now,
+    jwksCache: options.jwksCache,
   });
 
   const sub = claims.sub as string;
@@ -615,6 +618,8 @@ export interface VerifyIdTokenOptions {
   discoveryUrl?: string;
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /** How the JWKS cache behaves (TTL, how long stale keys are served, a stale hook). `maxStaleMs: 0` is strict. Default unchanged. */
+  jwksCache?: JwksCacheTuning;
 }
 
 /**
@@ -633,6 +638,7 @@ export async function oidcVerifyIdToken(
     clockToleranceSec: options.clockToleranceSec ?? 60,
     fetchImpl: options.fetchImpl,
     now: options.now,
+    jwksCache: options.jwksCache,
   });
 }
 
@@ -646,6 +652,7 @@ async function verifyIdToken(
     clockToleranceSec: number;
     fetchImpl?: typeof fetch;
     now?: () => number;
+    jwksCache?: JwksCacheTuning;
   },
 ): Promise<JWTPayload & Record<string, unknown>> {
   const invalid = (why: string, cause?: unknown) =>
@@ -866,17 +873,19 @@ async function fetchDiscovery(url: string, issuer: string, fetchImpl?: typeof fe
   };
 }
 
-function jwksFor(uri: string, opts: { fetchImpl?: typeof fetch; now?: () => number }): JwksCache {
+function jwksFor(uri: string, opts: { fetchImpl?: typeof fetch; now?: () => number; jwksCache?: JwksCacheTuning }): JwksCache {
+  const tuning = checkJwksCacheTuning(opts.jwksCache);
   const key = cacheKeyFor(opts.fetchImpl);
   let cache = jwksCaches.get(key);
   if (!cache) {
     cache = new Map();
     jwksCaches.set(key, cache);
   }
-  let jwks = cache.get(uri);
+  const cacheKey = `${uri}|${tuning?.ttlMs ?? ''}|${tuning?.maxStaleMs ?? ''}`;
+  let jwks = cache.get(cacheKey);
   if (!jwks) {
-    jwks = new JwksCache({ url: uri, fetchImpl: opts.fetchImpl, now: opts.now });
-    cache.set(uri, jwks);
+    jwks = new JwksCache({ url: uri, fetchImpl: opts.fetchImpl, now: opts.now, ...tuning });
+    cache.set(cacheKey, jwks);
   }
   return jwks;
 }

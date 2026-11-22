@@ -230,6 +230,14 @@ export function sessionsResource(request: RequestFn) {
     touch(id: string): Promise<TouchedSession> {
       return request({ method: 'POST', path: `/v1/sessions/${enc(id)}/touch` });
     },
+    /**
+     * `PUT /v1/sessions/:id/active_organization` — set (or clear, with `null`) the session's active organization from
+     * your backend. The user must hold a seat in it and meet its second-factor policy (404 / `STEP_UP_REQUIRED`
+     * otherwise); the next token minted for the session carries that organization's claims. An ended session is a 409.
+     */
+    setActiveOrganization(id: string, organizationId: string | null): Promise<Session> {
+      return request({ method: 'PUT', path: `/v1/sessions/${enc(id)}/active_organization`, body: { organization_id: organizationId } });
+    },
     getToken,
   };
 }

@@ -6,6 +6,8 @@ export interface SessionClaims {
   org_slug?: string;
   org_role?: string;
   org_permissions?: string[];
+  /** An organization is active but its org_* claims are left out: `mfa_required` or `sign_in_method`. */
+  org_claims_withheld?: 'mfa_required' | 'sign_in_method';
   mfa?: boolean;
   [claim: string]: unknown;
 }
@@ -32,6 +34,10 @@ export interface AtlasUser {
     verified: boolean;
     primary: boolean;
   }>;
+  /** The primary phone number (E.164), or null. */
+  primary_phone_number?: string | null;
+  /** True only when the primary phone number was proven. */
+  phone_number_verified?: boolean;
 }
 
 export interface AtlasOrganizationMembership {

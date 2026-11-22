@@ -93,3 +93,64 @@ export function approveSignIn(client: FapiClient, input: { id: string; number: s
 export function denySignIn(client: FapiClient, id: string): Promise<FapiResponse<{ status: string }>> {
   return client.post(`/v1/client/app_approvals/${encodeURIComponent(id)}/respond`, { action: 'deny' });
 }
+
+/** How a held sign-in wait ended. `no_account` and `no_approver_device` appear only when the application turned on `appApproval.revealNoAccount`. */
+export type SignInWaitOutcome = 'pending' | 'complete' | 'denied' | 'expired' | 'cancelled' | 'no_account' | 'no_approver_device';
+
+export interface SignInWaitResult {
+  outcome: SignInWaitOutcome;
+  status: string | null;
+  /** The one-time ticket to exchange for a session; present when `outcome` is `complete`. */
+  ticket: string | null;
+}
+
+/**
+ * Wait for an email-link or approve-in-your-app sign-in to finish without polling every couple of seconds. The server
+ * holds the request up to `timeoutSeconds` (at most 25) and answers as soon as the sign-in changes. `pending` means the
+ * hold ran out: call again. Resolves null when the request itself failed (offline, unknown attempt), so fall back to the
+ * ordinary poll.
+ */
+export async function waitForSignIn(
+  client: FapiClient,
+  input: { attemptId: string; pollSecret: string; timeoutSeconds?: number },
+): Promise<SignInWaitResult | null> {
+  const query = new URLSearchParams({ poll_secret: input.pollSecret });
+  if (input.timeoutSeconds !== undefined) query.set('timeout', String(input.timeoutSeconds));
+  const response = await client.get<{ outcome?: SignInWaitOutcome; status?: string; ticket?: string }>(
+    `/v1/client/sign_ins/${encodeURIComponent(input.attemptId)}/wait?${query}`,
+  );
+  const d = response.data;
+  if (!response.ok || !d?.outcome) return null;
+  return { outcome: d.outcome, status: d.status ?? null, ticket: d.ticket ?? null };
+}
+
+/** One request waiting on the signed-in user: a sign-in approval (`kind: "sign_in_approval"`) or an approval request. */
+export interface PendingApproval {
+  kind: 'sign_in_approval' | 'approval_request';
+  id: string;
+  /** For `sign_in_approval`: answer with {@link approveSignIn} / {@link denySignIn}. */
+  choices: string[];
+  purpose: 'first_factor' | 'step_up' | null;
+  requestedFrom: { userAgent: string | null; ip: string | null; location: string | null } | null;
+  expiresAt: number | null;
+  /** The raw object, for fields of an `approval_request` this type does not name. */
+  raw: Record<string, unknown>;
+}
+
+/** Everything waiting on the signed-in user, so an app needs no pointer to the latest request. Needs the user's own session. */
+export async function listPendingApprovalRequests(client: FapiClient): Promise<PendingApproval[]> {
+  const response = await client.get<{ data?: Array<Record<string, unknown>> }>('/v1/client/me/approval_requests?status=pending');
+  if (!response.ok) return [];
+  return (response.data?.data ?? []).map((r) => {
+    const from = r.requested_from as { user_agent?: string | null; ip?: string | null; location?: string | null } | undefined;
+    return {
+      kind: r.kind === 'sign_in_approval' ? 'sign_in_approval' : 'approval_request',
+      id: String(r.id),
+      choices: Array.isArray(r.choices) ? (r.choices as string[]) : [],
+      purpose: r.purpose === 'first_factor' || r.purpose === 'step_up' ? r.purpose : null,
+      requestedFrom: from ? { userAgent: from.user_agent ?? null, ip: from.ip ?? null, location: from.location ?? null } : null,
+      expiresAt: typeof r.expires_at === 'number' ? r.expires_at : null,
+      raw: r,
+    };
+  });
+}

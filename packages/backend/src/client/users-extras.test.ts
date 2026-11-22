@@ -326,6 +326,14 @@ describe('users: writes', () => {
     expect(last().url).toBe(`${API_URL}/v1/users/user_1/approval_requests/apr_1/cancel`);
   });
 
+  it('approvalRequests list asks for one user\'s open requests', async () => {
+    const { atlas, last } = setup({ object: 'list', data: [{ object: 'approval_request', kind: 'sign_in_approval', id: 'pc_1', status: 'pending' }], has_more: false });
+    const out = await atlas.users.approvalRequests.list('user_1', { status: 'pending', limit: 5 });
+    expect(last().method).toBe('GET');
+    expect(last().url).toBe(`${API_URL}/v1/users/user_1/approval_requests?status=pending&limit=5`);
+    expect(out.data[0]?.kind).toBe('sign_in_approval');
+  });
+
   it('notificationPreferences get / update', async () => {
     const { atlas, last } = setup({ object: 'notification_preferences', preferences: [] });
     await atlas.users.notificationPreferences.get('user_1');

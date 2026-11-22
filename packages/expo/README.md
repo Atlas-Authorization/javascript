@@ -16,7 +16,7 @@ backed by [`expo-secure-store`](https://docs.expo.dev/versions/latest/sdk/secure
 ## Install
 
 ```sh
-npx expo install @atlasauth/expo @atlasauth/js expo-secure-store
+npx expo install @atlasauth/expo @atlasauth/js @atlasauth/react @atlasauth/react-native expo-secure-store
 # plus, as you use them:
 #   expo-web-browser expo-linking expo-crypto   (OAuth; expo-crypto gives PKCE its secure random source on Hermes)
 ```

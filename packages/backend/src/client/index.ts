@@ -37,6 +37,7 @@ import { riskBasedMfaResource, riskEventsResource } from './risk-based-mfa';
 import { ssfResource } from './ssf';
 import { oauthProtocolsResource } from './oauth-protocols';
 import { managedGrantsResource } from './managed-grants';
+import { grantsResource } from './grants';
 import { leastPrivilegeResource } from './least-privilege';
 import { botSignalsResource } from './bot-signals';
 import { networkAclsResource } from './network-acls';
@@ -123,6 +124,7 @@ import { mfaCampaignsResource } from './mfa-campaigns';
 import { riskSignalsResource } from './risk-signals';
 import { oauthPublishersResource } from './oauth-publishers';
 import { usersDepthResource } from './users-depth';
+import { stagingCopiesResource } from './staging-copies';
 import { complianceDepthResource } from './compliance-depth';
 import { configSnapshotsResource } from './devex';
 import { dataKeyDrillsResource, deprecationsResource, writeBudgetResource } from './platform-resilience';
@@ -263,6 +265,7 @@ function buildNamespaces(request: RequestFn) {
     ssf: { ...ssfResource(request), ...ssfOpsResource(request) },
     ...oauthProtocolsResource(request),
     managedGrants: managedGrantsResource(request),
+    grants: grantsResource(request),
     leastPrivilege: leastPrivilegeResource(request),
     botSignals: botSignalsResource(request),
     networkAcls: networkAclsResource(request),
@@ -375,6 +378,8 @@ function buildNamespaces(request: RequestFn) {
     relay: relayResource(request),
     /** Business topics and per-connection provider subscriptions. */
     providerSubscriptions: providerSubscriptionsResource(request),
+    /** Development-mode copies of this instance for release testing, refreshed in place. */
+    stagingCopies: stagingCopiesResource(request),
     /** Per-provider connection policy (one account per owner, the notice secret). */
     providerPolicy: providerPolicyResource(request),
     /** Persisted provider events: read back and replay. */
@@ -558,6 +563,7 @@ export * from './risk-based-mfa';
 export * from './ssf';
 export * from './oauth-protocols';
 export * from './managed-grants';
+export * from './grants';
 export * from './least-privilege';
 export * from './bot-signals';
 export * from './network-acls';

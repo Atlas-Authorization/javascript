@@ -147,6 +147,10 @@ export function instanceClonesResource(request: RequestFn) {
     get(appId: string, instanceId: string, cloneId: string): Promise<InstanceClone> {
       return request({ method: 'GET', path: `${base(appId, instanceId)}/${enc(cloneId)}` });
     },
+    /** Bring a completed clone or preview up to date in place (same instance and keys); `synthetic_users` adds seeded test users. */
+    refresh(appId: string, instanceId: string, cloneId: string, body: { include?: Array<'config' | 'roles' | 'organizations' | 'users' | 'memberships'>; synthetic_users?: { count: number; seed: string }; ttl_hours?: number } = {}, idempotencyKey?: string): Promise<InstanceClone> {
+      return request({ method: 'POST', path: `${base(appId, instanceId)}/${enc(cloneId)}/refresh`, body, idempotencyKey });
+    },
     /** Delete a clone or preview together with its instance. */
     delete(appId: string, instanceId: string, cloneId: string): Promise<InstanceClone> {
       return request({ method: 'DELETE', path: `${base(appId, instanceId)}/${enc(cloneId)}` });

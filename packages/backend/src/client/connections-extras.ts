@@ -203,6 +203,10 @@ export function providerSubscriptionsResource(request: RequestFn) {
 /** Per-provider instance policy: one provider account per owner, and the secret provider notices are verified with. */
 export function providerPolicyResource(request: RequestFn) {
   return {
+    /** Every provider that has a stored policy. */
+    list(): Promise<{ object: 'list'; data: ConnectionProviderPolicy[]; has_more: boolean }> {
+      return request({ method: 'GET', path: '/v1/connection_providers/policies' });
+    },
     get(provider: string): Promise<ConnectionProviderPolicy> {
       return request({ method: 'GET', path: `/v1/connection_providers/${enc(provider)}/policy` });
     },

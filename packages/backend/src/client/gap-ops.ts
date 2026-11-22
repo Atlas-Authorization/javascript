@@ -22,11 +22,23 @@ export interface MigrationVerifyResult {
   dual_run_until?: number;
 }
 
+/** One live legacy session to import: the session (`token` or `token_hash`) and the person (`user_id` or `external_id`). */
+export type LegacySessionImportRow = { expires_at: string | number; mfa_verified?: boolean } & (
+  | { token: string; token_hash?: never }
+  | { token_hash: string; token?: never }
+) &
+  ({ user_id: string; external_id?: never } | { external_id: string; user_id?: never });
+
 /** Where a migration stands; `safe_to_delete_old_auth` lists its blockers. */
 export interface MigrationStatus {
   object?: string;
-  safe_to_delete_old_auth?: boolean;
-  blockers?: string[];
+  /** Imported users who never signed in on Atlas and hold no session. They block `safe_to_delete_old_auth` until migrated or accepted. */
+  unmigrated_users?: number;
+  unmigrated_user_sample?: string[];
+  /** Imported legacy sessions that expired before anyone exchanged them. */
+  lapsed_unexchanged_sessions?: number;
+  bridge_state?: 'on' | 'ended' | 'never';
+  safe_to_delete_old_auth?: { safe: boolean; quiet_days: number; blockers: Array<{ source: string; code: string; detail: string }> };
   [key: string]: unknown;
 }
 
@@ -40,6 +52,28 @@ export interface ScopeDefinition {
   sensitive?: boolean;
   /** Refused at /oauth2/authorize unless the app is approved or the scope is in its `approved_scopes`. */
   requires_verified_client?: boolean;
+  /** The client level that may request it: `any`, `verified` or `certified` (the stricter of this and `requires_verified_client`). */
+  requires_client_level?: 'any' | 'verified' | 'certified';
+  /** The developer who owns a client may request it with that client on their own account whatever its level. */
+  owner_exempt?: boolean;
+  /** A name ending `:*` is a wildcard entry covering every scope with that prefix. Read-only. */
+  wildcard?: boolean;
+}
+
+/** `putScopes` options. */
+export interface PutScopesOptions {
+  /** `partial` applies the valid entries and lists the rest in `rejected`; the default `atomic` writes nothing if any entry is bad. */
+  mode?: 'atomic' | 'partial';
+  /** `truncate` cuts over-long labels and descriptions (listed in `warnings`) instead of refusing them. */
+  too_long?: 'reject' | 'truncate';
+}
+
+export interface PutScopesResult {
+  object?: string;
+  data: ScopeDefinition[];
+  /** Only with `mode: 'partial'` or `too_long: 'truncate'`. */
+  rejected?: Array<{ index: number; name: unknown; errors: Array<{ param: string; message: string }> }>;
+  warnings?: Array<{ index: number; name: string; field: string; message: string }>;
 }
 
 export interface ImpersonationPolicy {
@@ -359,7 +393,14 @@ export function gapOpsResources(request: RequestFn) {
       verifyDualRun(source: string, body: { token: string }): Promise<MigrationVerifyResult> {
         return request({ method: 'POST', path: `/v1/migrations/${enc(source)}/verify`, body });
       },
-      status(params: { quiet_days?: number } = {}): Promise<MigrationStatus> {
+      /** `POST /v1/migrations/:source/sessions` — bulk-import live legacy sessions (up to 1000) so the bridge can answer from Atlas alone and close early. Per-row problems come back in `errors`. */
+      importSessions(
+        source: string,
+        body: { sessions: LegacySessionImportRow[]; dry_run?: boolean },
+      ): Promise<{ object: 'migration_session_import'; source: string; dry_run: boolean; received: number; imported: number; failed: number; errors: Array<{ index: number; code: string; message: string }>; bridge_mode: string | null }> {
+        return request({ method: 'POST', path: `/v1/migrations/${enc(source)}/sessions`, body });
+      },
+      status(params: { quiet_days?: number; accept_unmigrated?: boolean } = {}): Promise<MigrationStatus> {
         return request({ method: 'GET', path: '/v1/migrations/status', query: { ...params } });
       },
     },
@@ -368,8 +409,8 @@ export function gapOpsResources(request: RequestFn) {
         return request({ method: 'GET', path: '/v1/instance/scopes', query: { ...params } });
       },
       /** Replaces the whole scope catalogue. */
-      putScopes(body: { scopes: ScopeDefinition[] }): Promise<{ object?: string; data: ScopeDefinition[] }> {
-        return request({ method: 'PUT', path: '/v1/instance/scopes', body });
+      putScopes(body: { scopes: ScopeDefinition[] }, options: PutScopesOptions = {}): Promise<PutScopesResult> {
+        return request({ method: 'PUT', path: '/v1/instance/scopes', body, query: { ...options } });
       },
       getImpersonationPolicy(): Promise<ImpersonationPolicy> {
         return request({ method: 'GET', path: '/v1/instance/impersonation_policy' });

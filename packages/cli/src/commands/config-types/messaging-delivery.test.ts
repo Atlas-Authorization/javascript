@@ -105,3 +105,51 @@ describe('messaging_fallbacks', () => {
     expect(fallbacks.validate!({ channel: 'push', transport: 'x' })).toEqual([]);
   });
 });
+
+describe('message_receivers', () => {
+  const receivers = MESSAGING_DELIVERY_SPECS.find((s) => s.type === 'message_receivers') as CollectionSpec;
+
+  it('is registered, never pruned by a bare --prune, with a write-only secret', () => {
+    expect(registeredConfigTypes().map((s) => s.type)).toContain('message_receivers');
+    expect(receivers.prune).toBe(false);
+    expect(receivers.writeOnly).toEqual(['secret']);
+  });
+
+  it('lists the providers with a stored secret and the ones that need none, never a secret or a url', async () => {
+    const http = new Http({
+      '/v1/message_receivers': {
+        data: [
+          { provider: 'brevo', secret_set: false, secret_help: null, token: 't', url: 'u' },
+          { provider: 'mailgun', secret_set: true, secret_help: 'key' },
+          { provider: 'resend', secret_set: false, secret_help: 'whsec' },
+        ],
+      },
+    });
+    expect(await receivers.fetchLive(http)).toEqual([
+      { key: 'brevo', id: 'brevo', config: { provider: 'brevo' } },
+      { key: 'mailgun', id: 'mailgun', config: { provider: 'mailgun' } },
+    ]);
+  });
+
+  it('sets the secret with PUT, ignores an entry without one, and deletes only a stored secret', async () => {
+    const http = new Http();
+    await receivers.create(http, { provider: 'mailgun', secret: 'k' });
+    await receivers.update!(http, { key: 'mailgun', id: 'mailgun', config: {} }, { provider: 'mailgun', secret: 'k2' });
+    await receivers.create(http, { provider: 'brevo' });
+    await receivers.remove!(http, { key: 'brevo', id: 'brevo', config: {} });
+    await receivers.remove!(http, { key: 'mailgun', id: 'mailgun', config: {} });
+    expect(http.calls).toEqual([
+      { method: 'PUT', path: '/v1/message_receivers/mailgun', body: { secret: 'k' } },
+      { method: 'PUT', path: '/v1/message_receivers/mailgun', body: { secret: 'k2' } },
+      { method: 'DELETE', path: '/v1/message_receivers/mailgun' },
+    ]);
+  });
+
+  it('requires a secret except for providers that need none', () => {
+    expect(receivers.validate!({ provider: 'mailgun' })).toHaveLength(1);
+    expect(receivers.validate!({ provider: 'mailgun', secret: 'k' })).toEqual([]);
+    expect(receivers.validate!({ provider: 'brevo' })).toEqual([]);
+    expect(receivers.validate!({ provider: 'brevo', secret: 'k' })).toHaveLength(1);
+    expect(receivers.validate!({})).toHaveLength(1);
+  });
+});

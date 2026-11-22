@@ -1,5 +1,5 @@
 import { enc, type RequestFn } from './request';
-import type { CursorParams, ListPage, Metadata } from './types';
+import type { CursorPage, CursorParams, ListPage, Metadata } from './types';
 
 /**
  * §9.3 / §P1-7 MACHINE identities + the device registry.
@@ -44,8 +44,33 @@ export interface Machine {
   enrolled_at: number | null;
   /** When the machine last minted a token (epoch ms); null = never. */
   last_token_at?: number | null;
+  /** Why a revoked machine ended: `revoked_by_api`, `revoked_by_user`, `owner_signed_out`, `superseded`, `delegation_ended`. Null while not revoked. */
+  revoked_reason?: string | null;
+  /** Who revoked it (`api_key`, `user`, `system`). Null while not revoked. */
+  revoked_by?: EndActor | null;
+  /** Epoch ms the machine was revoked. Null while not revoked. */
+  ended_at?: number | null;
+  /** `sign_out_everywhere`: revoked when its owner signs out everywhere. */
+  dies_with?: 'sign_out_everywhere' | null;
   created_at: number;
   updated_at: number;
+}
+
+/** Who ended a credential. */
+export interface EndActor {
+  type: string;
+  id: string | null;
+}
+
+/** One entry of the machine deny feed: a machine revoked, or a machine grant ended. */
+export type RevokedMachineRef =
+  | { object: 'machine'; id: string; revoked_at: number; revoked_reason?: string | null; revoked_by?: EndActor | null; owner_user_id?: string | null; organization_id?: string | null }
+  | { object: 'machine_grant'; id: string; machine_id: string; audience: string; revoked_at: number; revoked_reason?: string | null; revoked_by?: EndActor | null };
+
+export interface ListRevokedMachinesQuery {
+  /** An ISO-8601 instant, epoch-millis, or a `next_cursor` from a previous page. */
+  since?: string;
+  limit?: number;
 }
 
 /** The create / rotate_secret response: the machine plus its `mk_` secret, shown once. */
@@ -61,6 +86,8 @@ export interface CreateMachineBody {
   organization_id?: string;
   /** Round-7: free-form data bag stored on the machine. */
   data?: Metadata;
+  /** `sign_out_everywhere`: revoke the machine when its owner signs out everywhere. Needs `owner_user_id`. */
+  dies_with?: 'sign_out_everywhere';
   /** Device metadata (hostname/os/app_version/…). */
   metadata?: MachineMetadata;
 }
@@ -193,6 +220,13 @@ export interface MachineGrant {
   /** Epoch ms after which the grant mints no tokens, or null. */
   expires_at: number | null;
   expired: boolean;
+  /** Epoch ms the grant was ended (it stays as a record for 90 days); null while live. */
+  revoked_at?: number | null;
+  ended_at?: number | null;
+  /** Why it ended: `revoked_by_api` or `owner_signed_out`. */
+  revoked_reason?: string | null;
+  revoked_by?: EndActor | null;
+  dies_with?: 'sign_out_everywhere' | null;
   created_at: number;
   updated_at: number;
 }
@@ -208,6 +242,8 @@ export interface UpdateMachineGrantBody {
 }
 
 export interface CreateMachineGrantBody {
+  /** `sign_out_everywhere`; needs a machine with an owner. */
+  dies_with?: 'sign_out_everywhere';
   resource_server_id: string;
   /** Scopes the machine may request. Each must be defined on the resource server. */
   scopes?: string[];
@@ -292,8 +328,15 @@ export function machinesResource(request: RequestFn) {
     },
 
     /** The resource servers this machine may obtain tokens for (`GET /v1/machines/:id/grants`). */
-    listGrants(id: string): Promise<ListPage<MachineGrant>> {
-      return request({ method: 'GET', path: `/v1/machines/${enc(id)}/grants` });
+    listGrants(id: string, query: { include_ended?: boolean } = {}): Promise<ListPage<MachineGrant>> {
+      return request({ method: 'GET', path: `/v1/machines/${enc(id)}/grants`, query: { ...(query.include_ended ? { include_ended: 'true' } : {}) } });
+    },
+    /**
+     * The machine deny feed: machines revoked and machine grants ended since a cursor, oldest first. Feed it to
+     * `createMachineDenyList().sync()` (or let `createRevocationMirror` keep it current from the revocation stream).
+     */
+    listRevoked(query: ListRevokedMachinesQuery = {}): Promise<CursorPage<RevokedMachineRef>> {
+      return request({ method: 'GET', path: '/v1/machines/revoked', query: { ...query } });
     },
     /** Authorize the machine for a resource server and its scopes. Takes effect from its next token. */
     createGrant(id: string, body: CreateMachineGrantBody): Promise<MachineGrant> {
@@ -307,7 +350,7 @@ export function machinesResource(request: RequestFn) {
       return request({ method: 'PATCH', path: `/v1/machines/${enc(id)}/grants/${enc(grantId)}`, body });
     },
     /** Revoke a grant. A token already issued lasts until it expires. */
-    deleteGrant(id: string, grantId: string): Promise<{ object: 'machine_grant'; id: string; deleted: true }> {
+    deleteGrant(id: string, grantId: string): Promise<{ object: 'machine_grant'; id: string; deleted: true; revoked_at?: number; revoked_reason?: string }> {
       return request({ method: 'DELETE', path: `/v1/machines/${enc(id)}/grants/${enc(grantId)}` });
     },
 

@@ -253,12 +253,50 @@ export function clientEnvironmentFrom(body: unknown): ClientEnvironment {
   };
 }
 
-/** Fetch the client environment. Null when the server can't be reached or errors. */
-export async function fetchClientEnvironment(client: FapiClient): Promise<ClientEnvironment | null> {
+const ENV_STORE_PREFIX = 'atlas.environment.';
+const memoryEnvironment = new Map<string, unknown>();
+
+/** Remember the last good environment body for a publishable key (memory, and localStorage when it works). */
+export function rememberEnvironment(publishableKey: string, body: unknown): void {
+  if (!isRecord(body)) return;
+  memoryEnvironment.set(publishableKey, body);
   try {
-    const response = await client.get<unknown>('/v1/client/environment');
-    return response.ok ? clientEnvironmentFrom(response.data) : null;
+    globalThis.localStorage?.setItem(ENV_STORE_PREFIX + publishableKey, JSON.stringify(body));
+  } catch {
+    // Storage can be blocked or full; the in-memory copy still serves this page.
+  }
+}
+
+/**
+ * The last environment this browser fetched successfully for the key, or null. It lets the sign-in screen draw when
+ * Atlas cannot be reached; the next successful fetch replaces it.
+ */
+export function lastGoodEnvironment(publishableKey: string): unknown {
+  const mem = memoryEnvironment.get(publishableKey);
+  if (mem) return mem;
+  try {
+    const raw = globalThis.localStorage?.getItem(ENV_STORE_PREFIX + publishableKey);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Fetch the client environment. When the server can't be reached or errors, the last good one this browser saw is
+ * returned instead; null only when there is none.
+ */
+export async function fetchClientEnvironment(client: FapiClient): Promise<ClientEnvironment | null> {
+  try {
+    const response = await client.get<unknown>('/v1/client/environment');
+    if (response.ok) {
+      rememberEnvironment(client.publishableKey, response.data);
+      return clientEnvironmentFrom(response.data);
+    }
+  } catch {
+    // fall through to the remembered copy
+  }
+  const last = lastGoodEnvironment(client.publishableKey);
+  return last ? clientEnvironmentFrom(last) : null;
 }

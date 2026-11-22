@@ -463,7 +463,7 @@ export function atlasPlugin(options: AtlasPluginOptions): FastifyPluginCallback 
     ? betterAuthBridgeHook({ ...options, config: options.betterAuthBridge === true ? {} : options.betterAuthBridge })
     : null;
   const revocation = options.revocation ? (options.revocation === true ? {} : options.revocation) : undefined;
-  const csrfGate = options.csrf ? createServerCsrfGate(options.csrf, options.secretKey) : null;
+  const csrfGate = options.csrf ? createServerCsrfGate(options.csrf, options.secretKey, backend) : null;
   const vendorBridge = options.migrationBridge ? migrationBridgeHook({ ...options, config: options.migrationBridge }) : null;
 
   return function plugin(instance: FastifyInstance, _opts, done) {

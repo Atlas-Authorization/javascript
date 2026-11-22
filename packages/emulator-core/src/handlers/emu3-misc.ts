@@ -18,7 +18,7 @@ const DAY = 86_400_000;
 
 // ── Actions: bindings and the pre_token trigger ──────────────────────
 
-export const ACTION_TRIGGERS = ['post_login', 'pre_user_registration', 'post_user_registration', 'pre_organization_create', 'pre_member_add', 'pre_invitation_create', 'pre_authentication', 'pre_token', 'post_token_exchange', 'custom_token_exchange', 'pre_user_update', 'pre_user_deletion', 'mfa_verification_attempt', 'password_verification_attempt', 'account_link_decision', 'billing_plan_selected', 'pre_message_send', 'post_change_password', 'post_password_reset', 'post_user_update', 'post_email_verified', 'post_mfa_enroll', 'post_mfa_remove', 'post_logout', 'org_membership_changed', 'custom_challenge_create', 'custom_challenge_verify', 'workflow_step'] as const;
+export const ACTION_TRIGGERS = ['post_login', 'pre_user_registration', 'post_user_registration', 'pre_organization_create', 'pre_member_add', 'pre_invitation_create', 'pre_authentication', 'pre_token', 'post_token_exchange', 'custom_token_exchange', 'pre_user_update', 'pre_user_deletion', 'pre_user_merge', 'mfa_verification_attempt', 'password_verification_attempt', 'account_link_decision', 'billing_plan_selected', 'pre_message_send', 'post_change_password', 'post_password_reset', 'post_user_update', 'post_email_verified', 'post_mfa_enroll', 'post_mfa_remove', 'post_logout', 'org_membership_changed', 'custom_challenge_create', 'custom_challenge_verify', 'workflow_step'] as const;
 const MAX_ACTIONS_PER_FLOW = 20;
 const MAX_ACTION_CLAIMS_BYTES = 2048;
 const bindingsOf = engineState(() => new Map<string, string[]>());

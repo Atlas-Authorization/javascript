@@ -1,5 +1,5 @@
 import { createLocalJWKSet, decodeProtectedHeader, jwtVerify } from 'jose';
-import { JwksCache, readKid, type Jwks } from './jwks-cache';
+import { JwksCache, checkJwksCacheTuning, readKid, type Jwks, type JwksCacheTuning } from './jwks-cache';
 import { JwksDiscovery, instanceIdFromPublishableKey } from './discovery';
 import { ATLAS_SIGNING_ALGS } from './algs';
 
@@ -88,6 +88,8 @@ export interface LogoutTokenVerifierOptions {
   jwksUrl?: string;
   /** A static key set, for offline verification (tests). Exclusive with `jwksUrl`. */
   jwks?: Jwks;
+  /** How the JWKS cache behaves (TTL, how long stale keys are served, a stale hook). `maxStaleMs: 0` is strict. Default unchanged. */
+  jwksCache?: JwksCacheTuning;
   /** For discovery on the shared host: the instance id (`ins_...`). */
   instanceId?: string;
   /** Alternative to `instanceId`: read it from the publishable key. */
@@ -145,6 +147,7 @@ export class LogoutTokenVerifier {
       resolveUrl: discovery ? () => discovery.jwksUri() : undefined,
       fetchImpl: options.fetchImpl,
       now: options.now,
+      ...checkJwksCacheTuning(options.jwksCache),
     });
   }
 

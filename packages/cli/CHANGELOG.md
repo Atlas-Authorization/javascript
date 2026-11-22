@@ -1,5 +1,13 @@
 # @atlasauth/cli changelog
 
+## 0.52.0
+
+- `atlas listen --revocations [--kinds ...] [--count n] [--timeout d] [--json]` streams revocations and resumes by cursor.
+- `atlas.yaml`: new `connection_provider_policies`, `message_receivers` and `permission_aliases` sections; new keys for client defaults, scope catalogue fields and `include_private_membership`; unknown nested keys under `branding` are refused with the nearest real key named.
+- `plan --check --fail-on-unmanaged` exits 2 when the live instance holds objects the file dropped; `plan --json` includes `apply_order`; plan warns on templates that read `{{user.external_id}}`.
+- `scopes` must be a mapping with a `scopes:` list. A bare list or a missing key now fails validation, and an empty list needs `confirm_empty: true`. This fixes a bare list silently wiping the catalogue.
+- New `atlas connections` command.
+
 ## 0.51.0
 
 - `atlas dev native [--provider]` prints the publishable key, Frontend API URL, registered native apps and their callbacks, what is missing, and the sign-in call.

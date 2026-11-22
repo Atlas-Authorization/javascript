@@ -105,8 +105,36 @@ export interface UpdatePermissionBody {
   key?: string;
 }
 
+/** A legacy permission key and the canonical key it stands for. */
+export interface PermissionAlias {
+  object: 'permission_alias';
+  alias: string;
+  permission_key: string;
+  created_at: number;
+}
+
 export function permissionsResource(request: RequestFn) {
   return {
+    /**
+     * `POST /v1/permissions/:id/rename` — rename a custom permission. The key moves everywhere Atlas stores it (seats,
+     * invitations, implies, role grants) and the old key stays as an alias that writes still accept. Sessions minted
+     * before the rename carry the old key until they refresh.
+     */
+    rename(id: string, body: { key: string }, idempotencyKey?: string): Promise<{ object: 'permission'; id: string; key: string; previous_key: string; alias: string }> {
+      return request({ method: 'POST', path: `/v1/permissions/${enc(id)}/rename`, body, idempotencyKey });
+    },
+    aliases: {
+      list(): Promise<ListPage<PermissionAlias>> {
+        return request({ method: 'GET', path: '/v1/permission_aliases' });
+      },
+      /** Create or repoint an alias of an existing permission (the alias must not be a permission key itself). */
+      set(alias: string, permissionKey: string): Promise<PermissionAlias> {
+        return request({ method: 'PUT', path: `/v1/permission_aliases/${enc(alias)}`, body: { permission_key: permissionKey } });
+      },
+      delete(alias: string): Promise<{ object: 'permission_alias'; alias: string; deleted: true }> {
+        return request({ method: 'DELETE', path: `/v1/permission_aliases/${enc(alias)}` });
+      },
+    },
     list(): Promise<ListPage<Permission>> {
       return request({ method: 'GET', path: '/v1/permissions' });
     },

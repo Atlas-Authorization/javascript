@@ -36,6 +36,11 @@ export interface SidListRevocation {
   jwksUrl?: string;
   /** `status_list` source: the issuer the signed list must carry. */
   issuer?: string;
+  /**
+   * A push-fed deny list (`createRevocationMirror(...).sessions`). A token it names is refused at once, before any poll
+   * answers; the poll stays as the backstop (raise `intervalMs` when the stream is healthy).
+   */
+  deny?: { isSessionRevoked(claims: { sid?: string; sub?: string; iat?: number }): boolean };
   /** Called when a poll fails. The last list stays in force (a failed poll never rejects or accepts more than before). */
   onError?: (error: unknown) => void;
 }
@@ -80,7 +85,8 @@ export class SidRevocationList {
     return true;
   }
 
-  async isRevoked(sid: string): Promise<boolean> {
+  async isRevoked(sid: string, claims: { sub?: string; iat?: number } = {}): Promise<boolean> {
+    if (this.opts.deny?.isSessionRevoked({ sid, ...claims })) return true;
     if (this.opts.source === 'status_list') {
       const verdict = await this.statusListVerdict(sid);
       if (verdict !== 'fallback') return verdict === 'revoked';

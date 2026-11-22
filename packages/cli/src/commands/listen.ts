@@ -58,6 +58,7 @@ export async function* readSse(
  * only and is written to a 0600 file; point your verifier at it.
  */
 export async function listen(ctx: RunContext, args: ParsedArgs): Promise<number> {
+  if (args.values.revocations === true) return listenRevocations(ctx, args);
   const v = args.values;
   const json = wantsJson(v);
   const forwardTo = str(v, 'forward-to');
@@ -196,5 +197,92 @@ export async function listen(ctx: RunContext, args: ParsedArgs): Promise<number>
     throw err;
   } finally {
     cleanup();
+  }
+}
+
+interface RevocationFrame {
+  id: string;
+  seq: number;
+  type: string;
+  kind: string;
+  at: number;
+  user_id: string | null;
+  ids: Record<string, string | null>;
+  reason: string | null;
+  actor: { type: string; id: string | null };
+}
+
+/** `atlas listen --revocations`: print the revocation stream (events:read), resuming by position on reconnect. */
+async function listenRevocations(ctx: RunContext, args: ParsedArgs): Promise<number> {
+  const v = args.values;
+  const json = wantsJson(v);
+  const kinds = list(v, 'kinds');
+  const maxCount = str(v, 'count') ? Number(str(v, 'count')) : undefined;
+  if (maxCount !== undefined && (!Number.isInteger(maxCount) || maxCount < 1)) throw new CliError('--count must be a positive integer.');
+  const timeoutMs = str(v, 'timeout') ? parseDuration(str(v, 'timeout')!, '--timeout') : undefined;
+  const auth = resolveAuth(ctx, v);
+  const base = auth.apiUrl.replace(/\/+$/, '');
+  const doFetch = ctx.fetch ?? globalThis.fetch;
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  ctx.signal?.addEventListener('abort', stop);
+  const sigs = ctx.signal ? [] : (['SIGINT', 'SIGTERM'] as const);
+  for (const s of sigs) process.once(s, stop);
+  const sleep = ctx.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const deadline = timeoutMs ? Date.now() + timeoutMs : undefined;
+  let cursor: string | undefined;
+  let seen = 0;
+  let failures = 0;
+  try {
+    if (!json) ctx.io.out(`Watching revocations${kinds.length ? ` (${kinds.join(', ')})` : ''}. Ctrl-C to stop.`);
+    while (!controller.signal.aborted && !(deadline && Date.now() >= deadline)) {
+      const params = new URLSearchParams();
+      if (kinds.length) params.set('kinds', kinds.join(','));
+      if (cursor !== undefined) params.set('after', cursor);
+      const headers: Record<string, string> = { authorization: `Bearer ${auth.secretKey}`, accept: 'text/event-stream' };
+      let res: Response;
+      try {
+        res = await doFetch(`${base}/v1/revocations/stream?${params}`, { headers, signal: controller.signal });
+      } catch (err) {
+        if (controller.signal.aborted) break;
+        if (++failures > 5) throw new CliError(`Lost the revocation stream: ${err instanceof Error ? err.message : String(err)}`);
+        await sleep(1000 * failures);
+        continue;
+      }
+      if (!res.ok || !res.body) throw new CliError(`The revocation stream was refused (HTTP ${res.status}). Does this key have events:read?`);
+      failures = 0;
+      try {
+        for await (const msg of readSse(res.body)) {
+          if (msg.event === 'ready') {
+            if (cursor === undefined) cursor = (JSON.parse(msg.data) as { cursor?: string }).cursor;
+            continue;
+          }
+          if (msg.event !== 'revocation') continue;
+          const f = JSON.parse(msg.data) as RevocationFrame;
+          cursor = String(f.seq);
+          seen++;
+          if (json) printJson(ctx.io, f);
+          else {
+            const what = Object.entries(f.ids).filter(([, x]) => x).map(([k, x]) => `${k}=${x}`).join(' ');
+            ctx.io.out(`${new Date(f.at).toISOString()}  ${f.kind}  ${f.type}  ${what}${f.user_id ? ` user=${f.user_id}` : ''}  reason=${f.reason ?? '-'}  by ${f.actor.type}${f.actor.id ? `:${f.actor.id}` : ''}`);
+          }
+          if (maxCount && seen >= maxCount) {
+            controller.abort();
+            break;
+          }
+        }
+      } catch (err) {
+        if (!controller.signal.aborted && ++failures > 5) throw new CliError(`Lost the revocation stream: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      if (controller.signal.aborted) break;
+      await sleep(1000);
+    }
+    return 0;
+  } catch (err) {
+    if (controller.signal.aborted && !(err instanceof CliError)) return 0;
+    throw err;
+  } finally {
+    ctx.signal?.removeEventListener('abort', stop);
+    for (const s of sigs) process.removeListener(s, stop);
   }
 }

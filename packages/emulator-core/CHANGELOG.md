@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0
+
+- Emulates `GET /v1/revocations`, `/v1/revocations/stream`, `/v1/machines/revoked`, soft-ended machine grants, key and machine end records, and the new organization session and invitation routes.
+
 ## 0.4.0
 
 - Models `PUT`, `GET` and `DELETE /v1/connections/oauth_clients`, with `host_params` validation for providers with connection extras.

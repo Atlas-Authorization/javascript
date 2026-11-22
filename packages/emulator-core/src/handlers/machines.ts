@@ -5,6 +5,9 @@ import type { Obj } from '../openapi';
 import { delegationOfToken } from './emu4-authz-trust';
 import { agentGrant, resourceServerOf } from './device';
 import { bump, listReply, need } from './util';
+import { endGrant, endMachine } from './revocations';
+
+const API_KEY_ACTOR = { type: 'api_key', id: null };
 
 export function presentMachine(e: Engine, m: Obj): Obj {
   return e.shape('Machine', {
@@ -17,6 +20,10 @@ export function presentMachine(e: Engine, m: Obj): Obj {
     token_binding: m.token_binding ?? 'none',
     effective_status: m.status,
     metadata: m.metadata ?? {},
+    revoked_reason: m.revoked_reason ?? null,
+    revoked_by: m.revoked_by ?? null,
+    ended_at: m.revoked_at ?? null,
+    dies_with: m.dies_with ?? null,
     created_at: m.created_at,
     updated_at: m.updated_at,
   });
@@ -31,6 +38,11 @@ export function presentGrant(e: Engine, g: Obj): Obj {
     scopes: g.scopes,
     constraints: g.constraints ?? null,
     expires_at: g.expires_at ?? null,
+    dies_with: g.dies_with ?? null,
+    revoked_at: g.revoked_at ?? null,
+    ended_at: g.revoked_at ?? null,
+    revoked_reason: g.revoked_reason ?? null,
+    revoked_by: g.revoked_by ?? null,
     created_at: g.created_at,
     updated_at: g.updated_at,
   });
@@ -118,7 +130,8 @@ function resolveGrant(e: Engine, type: string, id: string | undefined): Obj {
   if (type !== 'machine' && type !== 'agent') throw new EmulatorError('VALIDATION_FAILED', 'grantType must be machine or agent.', 'grantType');
   // An agent grant is an approved agent access request; both kinds share one counter engine.
   const g = type === 'machine' ? e.db.grants.get(id) : agentGrant(e, id);
-  if (!g) throw notFound('Grant');
+  // An ended machine grant is gone for usage, as in the real API.
+  if (!g || (type === 'machine' && g.revoked_at)) throw notFound('Grant');
   return g;
 }
 
@@ -318,9 +331,12 @@ export function machinesHandlers(): RouteDef[] {
         const e = c.engine;
         const name = String(need(c.body, 'name'));
         if (c.body.owner_user_id && !e.db.users.get(c.body.owner_user_id)) throw new EmulatorError('NOT_FOUND', 'owner_user_id is not a user.', 'owner_user_id');
+        if (c.body.dies_with !== undefined && c.body.dies_with !== null && c.body.dies_with !== '' && c.body.dies_with !== 'sign_out_everywhere') throw new EmulatorError('VALIDATION_FAILED', 'dies_with must be "sign_out_everywhere" or null.', 'dies_with');
+        const diesWith = c.body.dies_with === 'sign_out_everywhere' ? 'sign_out_everywhere' : null;
+        if (diesWith && !c.body.owner_user_id) throw new EmulatorError('VALIDATION_FAILED', 'dies_with needs an owner_user_id: it is the owner signing out that ends the machine.', 'dies_with');
         const now = e.clock.now();
         const secret = e.tokens.secret('mk');
-        const m = e.db.machines.insert({ name, owner_user_id: c.body.owner_user_id ?? null, organization_id: null, status: 'active', metadata: c.body.data ?? {}, secret, created_at: now, updated_at: now });
+        const m = e.db.machines.insert({ name, dies_with: diesWith, owner_user_id: c.body.owner_user_id ?? null, organization_id: null, status: 'active', metadata: c.body.data ?? {}, secret, created_at: now, updated_at: now });
         mEvent(e, 'machine.enrolled', m, 'create');
         return { status: 201, body: { ...presentMachine(e, m), secret } };
       },
@@ -359,7 +375,8 @@ export function machinesHandlers(): RouteDef[] {
       handler: (c) => {
         const e = c.engine;
         const m = liveMachine(e, c.params.id);
-        m.status = 'revoked';
+        // A machine revoked before keeps its first end record.
+        endMachine(e, m, 'revoked_by_api', API_KEY_ACTOR);
         bump(e, m);
         mEvent(e, 'machine.revoked', m, 'update');
         return { body: presentMachine(e, m) };
@@ -408,7 +425,7 @@ export function machinesHandlers(): RouteDef[] {
           if (m && audience) {
             // The token's grant is gone: it would still pass a local check until it expires, but the engine knows better.
             const rs = resourceServerOf(e, audience);
-            if (!e.db.grants.find((g) => g.machine_id === m!.id && (g.resource_server_id === rs.id || g.resource_server_id === rs.identifier))) return invalid;
+            if (!e.db.grants.find((g) => !g.revoked_at && g.machine_id === m!.id && (g.resource_server_id === rs.id || g.resource_server_id === rs.identifier))) return invalid;
           }
           // A token minted under an agent delegation stops verifying the moment the delegation (or any ancestor) is revoked or expires.
           const dg = delegationOfToken(e, r.claims);
@@ -433,7 +450,7 @@ export function machinesHandlers(): RouteDef[] {
             machine_id: m.id,
             name: m.name,
             ...fields,
-            grants: e.db.grants.filter((g) => g.machine_id === m!.id && !(g.expires_at && g.expires_at <= now)).map((g) => ({ resource_server_id: g.resource_server_id, audience: resourceServerOf(e, g.resource_server_id).identifier, scopes: g.scopes })),
+            grants: e.db.grants.filter((g) => !g.revoked_at && g.machine_id === m!.id && !(g.expires_at && g.expires_at <= now)).map((g) => ({ resource_server_id: g.resource_server_id, audience: resourceServerOf(e, g.resource_server_id).identifier, scopes: g.scopes })),
             organization_memberships: (e.generic.get('organizations/machine_memberships')?.filter((x) => x.machine_id === m!.id) ?? []).map((x) => ({ organization_id: x._parent, role: x.role ?? null })),
           },
         };
@@ -444,7 +461,8 @@ export function machinesHandlers(): RouteDef[] {
       pattern: '/v1/machines/:id/grants',
       handler: (c) => {
         const m = liveMachine(c.engine, c.params.id);
-        return listReply(c, c.engine.db.grants.filter((g) => g.machine_id === m.id), (g) => presentGrant(c.engine, g));
+        const ended = c.query.get('include_ended') === 'true';
+        return listReply(c, c.engine.db.grants.filter((g) => g.machine_id === m.id && (ended || !g.revoked_at)), (g) => presentGrant(c.engine, g));
       },
     },
     {
@@ -456,10 +474,15 @@ export function machinesHandlers(): RouteDef[] {
         const rs = String(need(c.body, 'resource_server_id'));
         checkCounters(c.body.constraints);
         const now = e.clock.now();
-        const live = e.db.grants.find((g) => g.machine_id === m.id && g.resource_server_id === rs && !(g.expires_at && g.expires_at <= now));
+        const live = e.db.grants.find((g) => g.machine_id === m.id && g.resource_server_id === rs && !g.revoked_at && !(g.expires_at && g.expires_at <= now));
+        const diesWith = c.body.dies_with === 'sign_out_everywhere' ? 'sign_out_everywhere' : null;
+        if (c.body.dies_with !== undefined && c.body.dies_with !== null && c.body.dies_with !== '' && !diesWith) throw new EmulatorError('VALIDATION_FAILED', 'dies_with must be "sign_out_everywhere" or null.', 'dies_with');
+        if (diesWith && !m.owner_user_id) throw new EmulatorError('VALIDATION_FAILED', 'dies_with needs a machine with an owner: it is the owner signing out that ends the grant.', 'dies_with');
         if (live) throw new EmulatorError('IDENTIFIER_EXISTS', 'This machine already has a live grant for that resource server. Delete it first, or wait for it to expire.');
         const expiresAt = stampExpiry(e, c.body);
-        const g = e.db.grants.insert({ machine_id: m.id, resource_server_id: rs, scopes: c.body.scopes ?? [], constraints: c.body.constraints ?? null, expires_at: expiresAt ?? null, created_at: now, updated_at: now });
+        // An expired or soft-ended grant for the same server is replaced.
+        e.db.grants.filter((g) => g.machine_id === m.id && g.resource_server_id === rs).forEach((g) => e.db.grants.delete(g.id));
+        const g = e.db.grants.insert({ machine_id: m.id, resource_server_id: rs, dies_with: diesWith, scopes: c.body.scopes ?? [], constraints: c.body.constraints ?? null, expires_at: expiresAt ?? null, created_at: now, updated_at: now });
         gEvent(e, 'machine_grant.created', g, 'create');
         return { status: 201, body: presentGrant(e, g) };
       },
@@ -471,7 +494,7 @@ export function machinesHandlers(): RouteDef[] {
         const e = c.engine;
         const m = liveMachine(e, c.params.id);
         const g = e.db.grants.get(c.params.grantId);
-        if (!g || g.machine_id !== m.id) throw notFound('Grant');
+        if (!g || g.machine_id !== m.id || g.revoked_at) throw notFound('Grant');
         if (g.expires_at && g.expires_at <= e.clock.now()) throw new EmulatorError('IDENTIFIER_EXISTS', 'That grant has expired.');
         const fields = ['scopes', 'constraints', 'expires_at', 'expires_in_seconds'].filter((k) => k in c.body);
         if (!fields.length) throw new EmulatorError('VALIDATION_FAILED', 'Send at least one field to change.');
@@ -493,10 +516,10 @@ export function machinesHandlers(): RouteDef[] {
         const e = c.engine;
         const m = liveMachine(e, c.params.id);
         const g = e.db.grants.get(c.params.grantId);
-        if (!g || g.machine_id !== m.id) throw notFound('Grant');
-        e.db.grants.delete(g.id);
-        e.changed({ type: 'machine_grant.revoked', data: { object: 'machine_grant', id: g.id, machine_id: m.id }, resource: 'machine_grant', id: g.id, op: 'delete' });
-        return { body: { object: 'machine_grant', id: g.id, deleted: true } };
+        if (!g || g.machine_id !== m.id || g.revoked_at) throw notFound('Grant');
+        // A soft end: the grant stays as a record with its reason and actor, and no longer mints or verifies.
+        endGrant(e, g, 'revoked_by_api', API_KEY_ACTOR);
+        return { body: { object: 'machine_grant', id: g.id, deleted: true, revoked_at: g.revoked_at, revoked_reason: g.revoked_reason } };
       },
     },
     ...usageHandlers(),

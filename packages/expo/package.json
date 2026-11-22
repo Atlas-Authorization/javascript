@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/expo",
-  "version": "0.14.3",
+  "version": "0.15.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -12,12 +12,19 @@
       "types": "./dist/account-security.d.ts",
       "default": "./dist/account-security.js"
     },
+    "./session": {
+      "types": "./dist/session.d.ts",
+      "default": "./dist/session.js"
+    },
     "./package.json": "./package.json"
   },
   "typesVersions": {
     "*": {
       "account-security": [
         "./dist/account-security.d.ts"
+      ],
+      "session": [
+        "./dist/session.d.ts"
       ]
     }
   },
@@ -29,12 +36,10 @@
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@atlasauth/react": "workspace:^",
-    "@atlasauth/react-native": "workspace:^"
-  },
   "peerDependencies": {
     "@atlasauth/js": ">=0.52.0 <1.0.0",
+    "@atlasauth/react": ">=0.41.0 <1.0.0",
+    "@atlasauth/react-native": ">=0.10.0 <1.0.0",
     "react": ">=18",
     "react-native": ">=0.73",
     "expo-secure-store": ">=12",
@@ -72,6 +77,8 @@
   },
   "devDependencies": {
     "@atlasauth/js": "workspace:*",
+    "@atlasauth/react": "workspace:*",
+    "@atlasauth/react-native": "workspace:*",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "expo-auth-session": "57.0.13",

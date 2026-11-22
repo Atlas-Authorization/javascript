@@ -40,7 +40,7 @@ describe('verifyMessageDelivery', () => {
 
   it('covers every delivery event type exactly once', () => {
     expect(new Set(MESSAGE_DELIVERY_EVENT_TYPES).size).toBe(MESSAGE_DELIVERY_EVENT_TYPES.length);
-    for (const t of ['email.delivered', 'email.bounced', 'email.complained', 'email.failed', 'sms.delivered', 'sms.failed', 'message_suppression.created']) {
+    for (const t of ['email.delivered', 'email.bounced', 'email.complained', 'email.failed', 'sms.delivered', 'sms.failed', 'message.bounced', 'message.complained', 'message_suppression.created']) {
       expect(MESSAGE_DELIVERY_EVENT_TYPES).toContain(t);
     }
   });

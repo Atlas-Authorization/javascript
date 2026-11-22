@@ -413,7 +413,7 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
     });
   }
 
-  return async function decide(request: EdgeRequest): Promise<AtlasDecision> {
+  const decide = async function decide(request: EdgeRequest): Promise<AtlasDecision> {
     /**
      * Better Auth session bridge. Only on a page navigation: the exchange is a
      * one-time server-to-server call, and re-entering on the same URL is what
@@ -621,6 +621,8 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
       }
     }
   };
+  // The backend rides along so the proxy's CSRF gate can verify Atlas-issued tokens with the same key cache.
+  return Object.assign(decide, { backend });
 }
 
 /** The JSON body Atlas answers an unauthenticated API request with. */

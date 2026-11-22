@@ -12,9 +12,9 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@atlasauth/expo": "^0.14.0",
-    "@atlasauth/js": "^0.52.0",
-    "@atlasauth/react": "^0.41.0",
+    "@atlasauth/expo": "^0.15.0",
+    "@atlasauth/js": "^0.53.0",
+    "@atlasauth/react": "^0.42.0",
     "expo": "~52.0.0",
     "expo-constants": "~17.0.0",
     "expo-router": "~4.0.0",

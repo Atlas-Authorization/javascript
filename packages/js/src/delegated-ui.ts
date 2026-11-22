@@ -6,7 +6,7 @@
  * `redirect_to` Atlas returned.
  */
 
-export type DelegatedChallenge = { type: 'login' | 'consent'; challenge: string };
+export type DelegatedChallenge = { type: 'login' | 'consent' | 'device'; challenge: string };
 
 /** The challenge on the current page URL, or null when the page was not reached from Atlas. */
 export function readDelegatedChallenge(href: string | URL | { href: string }): DelegatedChallenge | null {
@@ -14,7 +14,9 @@ export function readDelegatedChallenge(href: string | URL | { href: string }): D
   const login = url.searchParams.get('login_challenge');
   if (login) return { type: 'login', challenge: login };
   const consent = url.searchParams.get('consent_challenge');
-  return consent ? { type: 'consent', challenge: consent } : null;
+  if (consent) return { type: 'consent', challenge: consent };
+  const device = url.searchParams.get('device_challenge');
+  return device ? { type: 'device', challenge: device } : null;
 }
 
 export interface DelegatedLoginRequest {
@@ -25,6 +27,18 @@ export interface DelegatedLoginRequest {
   session_subject: string | null;
   ui_locales: string | null;
   login_hint: string | null;
+  request_url: string | null;
+  prompt: string[];
+  select_account: boolean;
+  max_age: number | null;
+  expires_at: number;
+}
+export interface DelegatedDeviceRequest {
+  subject: string;
+  user_code: string;
+  client: { id: string; client_id: string; name: string; first_party?: boolean };
+  requested_scope: string[];
+  audience: string | null;
   expires_at: number;
 }
 export interface DelegatedConsentRequest {
@@ -35,6 +49,9 @@ export interface DelegatedConsentRequest {
   authorization_details: unknown[];
   organization_id: string | null;
   redirect_uri: string;
+  request_url: string | null;
+  prompt: string[];
+  max_age: number | null;
   expires_at: number;
 }
 
@@ -52,7 +69,7 @@ export interface DelegatedUiClientOptions {
 export function createDelegatedUiClient(opts: DelegatedUiClientOptions) {
   const f = opts.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
   const base = opts.baseUrl.replace(/\/$/, '');
-  async function call<T>(method: 'GET' | 'POST', path: string, kind: 'login' | 'consent', challenge: string, body?: unknown): Promise<T> {
+  async function call<T>(method: 'GET' | 'POST', path: string, kind: 'login' | 'consent' | 'device', challenge: string, body?: unknown): Promise<T> {
     const res = await f(`${base}/${path}?${kind}_challenge=${encodeURIComponent(challenge)}`, {
       method,
       credentials: 'same-origin',
@@ -73,6 +90,11 @@ export function createDelegatedUiClient(opts: DelegatedUiClientOptions) {
     getConsentRequest: (challenge: string) => call<DelegatedConsentRequest>('GET', 'consent', 'consent', challenge),
     acceptConsent: (challenge: string, body: { grant_scope?: string[]; remember?: boolean } = {}) =>
       call<{ redirect_to: string }>('POST', 'consent/accept', 'consent', challenge, body),
+    /** The signed-in user is the wrong account: follow the returned redirect_to to restart the app's request at login. */
+    switchAccount: (challenge: string) => call<{ redirect_to: string }>('POST', 'consent/switch_account', 'consent', challenge, {}),
+    getDeviceRequest: (challenge: string) => call<DelegatedDeviceRequest>('GET', 'device', 'device', challenge),
+    acceptDevice: (challenge: string) => call<{ redirect_to: string }>('POST', 'device/accept', 'device', challenge, {}),
+    rejectDevice: (challenge: string) => call<{ redirect_to: string }>('POST', 'device/reject', 'device', challenge, {}),
     rejectConsent: (challenge: string, body: { error?: string; error_description?: string } = {}) =>
       call<{ redirect_to: string }>('POST', 'consent/reject', 'consent', challenge, body),
   };

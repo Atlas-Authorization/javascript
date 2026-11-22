@@ -441,12 +441,12 @@ describe('config plan scope text limits', () => {
   it('flags an over-length scope description before apply and writes nothing', async () => {
     writeFileSync(
       join(dir, 'scopes.json'),
-      JSON.stringify({ scopes: [{ name: 'tools:a', description: { en: 'ok', es: 'x'.repeat(501) } }, { name: 'tools:b', description: 'y'.repeat(500) }] }),
+      JSON.stringify({ scopes: [{ name: 'tools:a', description: { en: 'ok', es: 'x'.repeat(2001) } }, { name: 'tools:b', description: 'y'.repeat(2000) }] }),
     );
     const api = new MockApi(seedState());
     const io = captureIO();
     expect(await run(['config', 'plan', '--dir', dir], ctx(io, api))).toBe(1);
-    expect(io.stderr()).toContain("scopes 'tools:a': description.es is 501 characters; the limit is 500.");
+    expect(io.stderr()).toContain("scopes 'tools:a': description.es is 2001 characters; the limit is 2000.");
     expect(io.stderr()).not.toContain('tools:b');
     expect(api.writes).toEqual([]);
   });
@@ -772,5 +772,31 @@ describe('config plan: owned clients', () => {
     const out = await plan([live({ owner: null })], [{ id: 'oc_u', name: 'Renamed', redirect_uris: ['https://dev.example.com/cb'] }]);
     const rows = out.changes.filter((c: { type: string }) => c.type === 'oauth_clients');
     expect(rows.map((c: { action: string }) => c.action)).toEqual(['update']);
+  });
+
+  const rows = (out: { changes: { type: string; action: string }[] }) => out.changes.filter((c) => c.type === 'oauth_clients').map((c) => c.action);
+  const body = { redirect_uris: ['https://dev.example.com/cb'] };
+
+  it('matches by external_ref, and a renamed client is an update', async () => {
+    const out = await plan([live({ external_ref: 'crm-1' })], [{ name: 'Renamed', external_ref: 'crm-1', ...body }]);
+    expect(rows(out)).toEqual(['update']);
+  });
+
+  it('never binds by name alone: a create plus a warning naming the live client', async () => {
+    const out = await plan([live({ owner: null })], [{ name: 'Dev App', ...body }]);
+    expect(rows(out)).toEqual(['create']);
+    expect(out.warnings.join('\n')).toContain('oc_u');
+  });
+
+  it('does not pick up a user-owned client by name', async () => {
+    const out = await plan([live({ owner: 'user_dev_1' })], [{ name: 'Dev App', ...body }]);
+    expect(rows(out)).toEqual(['create']);
+    expect(out.skipped_owned).toBe(1);
+  });
+
+  it('--match-by-name keeps the old name matching', async () => {
+    const out = await plan([live({ owner: null })], [{ name: 'Dev App', ...body }], ['--match-by-name']);
+    expect(rows(out)).not.toContain('create');
+    expect(out.warnings.join('\n')).not.toContain('oc_u');
   });
 });

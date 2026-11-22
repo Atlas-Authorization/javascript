@@ -40,6 +40,7 @@ import {
   type PreflightReport,
 } from './config-rollout';
 import { configJsonSchema } from './config-types/schema';
+import { BRANDING_KEY_TREE, type KeyTree } from './config-types/branding-keys';
 import { EMAIL_PROVIDER_FIX, envApiUrl, resolveAuth } from './shared';
 import { configHistory } from './config-history';
 import { getVersion } from '../version';
@@ -75,6 +76,8 @@ export interface LiveEntry {
   managedBy?: string;
   /** Created by a developer's own Atlas user (owner `user_…`) or by code at runtime (an external ref): left out of the diff unless declared or `--include-owned`. */
   owned?: boolean;
+  /** The `external_ref` a client was created with: matched before the name, which a strict type never matches. */
+  ref?: string;
 }
 
 /**
@@ -89,6 +92,8 @@ export interface CollectionSpec {
   keyOf(config: Config): string;
   /** A file entry's `id` matches the live entry with that id before the key does (a rename is an update); the `id` is not part of the config. */
   matchById?: boolean;
+  /** Match by id, then `external_ref`; never by name unless `--match-by-name` (deprecated). A name-only hit plans a create and a warning. */
+  strictMatch?: boolean;
   fetchLive(http: ConfigHttp): Promise<LiveEntry[]>;
   create(http: ConfigHttp, config: Config): Promise<void>;
   /** Apply an update to an existing resource; omit when the resource is immutable. */
@@ -138,6 +143,8 @@ export interface SingletonSpec {
   partialWrite?: boolean;
   /** Allowed keys inside a top-level object key. */
   nestedKeys?: Record<string, readonly string[]>;
+  /** Every allowed key at every depth (replaces `fileKeys` / `nestedKeys` for the unknown-key check). */
+  keyTree?: KeyTree;
   /** The live side shows a set secret as "(secret set)", so an absent one really is unset. */
   reportsSecrets?: boolean;
 }
@@ -350,6 +357,7 @@ function registry(): ResourceSpec[] {
       type: 'oauth_clients',
       fileKeys: ['id', ...OAUTH_CLIENT_KEYS, ...OAUTH_CLIENT_WRITE_KEYS],
       matchById: true,
+      strictMatch: true,
       keyOf: (c) => String(obj(c).name ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/oauth_clients');
@@ -357,6 +365,7 @@ function registry(): ResourceSpec[] {
           key: String(r.name ?? ''),
           id: String(r.id ?? ''),
           owned: isOwnedClient(r),
+          ref: typeof r.external_ref === 'string' && r.external_ref ? r.external_ref : undefined,
           config: pick(r, OAUTH_CLIENT_KEYS),
         }));
       },
@@ -549,11 +558,20 @@ function registry(): ResourceSpec[] {
     {
       kind: 'singleton',
       type: 'scopes',
-      fileKeys: ['scopes'],
+      // `confirm_empty` only says "I mean to remove every scope"; it is never sent.
+      fileKeys: ['scopes', 'confirm_empty'],
+      align(live, desired) {
+        const d = obj(desired);
+        return d.confirm_empty === undefined ? live : { ...obj(live), confirm_empty: d.confirm_empty };
+      },
       validate(config) {
         // The API refuses over-length text (it never cuts it); say so before apply.
         const limits: Array<[string, number]> = [['description', SCOPE_DESCRIPTION_MAX], ['label', SCOPE_LABEL_MAX]];
+        // The whole list is replaced on write: a missing or empty list must never be read as "no scopes".
+        const list = obj(config).scopes;
+        if (!Array.isArray(list)) return ['scopes: the file must be a mapping with a `scopes:` list (a bare list or a missing `scopes:` would wipe the catalogue).'];
         const out: string[] = [];
+        if (list.length === 0 && obj(config).confirm_empty !== true) out.push('scopes: an empty list removes every scope; add `confirm_empty: true` to confirm it.');
         asArray(obj(config).scopes ?? []).forEach((entry, i) => {
           const scope = obj(entry);
           const name = String(scope.name ?? `#${i + 1}`);
@@ -571,10 +589,12 @@ function registry(): ResourceSpec[] {
       async fetchLive(http) {
         const rows = await orNotFound(listData<Record<string, unknown>>(http, '/v1/instance/scopes'), []);
         if (rows.length === 0) return null;
-        return { scopes: rows.map((r) => pick(r, ['name', 'label', 'description', 'sensitive', 'requires_verified_client'])) };
+        return { scopes: rows.map((r) => pick(r, ['name', 'label', 'description', 'sensitive', 'requires_verified_client', 'requires_client_level', 'owner_exempt'])) };
       },
       async apply(http, config) {
-        await http.put('/v1/instance/scopes', { scopes: obj(config).scopes ?? [] });
+        const scopes = obj(config).scopes;
+        if (!Array.isArray(scopes)) throw new CliError('scopes: refusing to replace the catalogue without a `scopes:` list.');
+        await http.put('/v1/instance/scopes', { scopes });
       },
     },
 
@@ -728,6 +748,7 @@ function registry(): ResourceSpec[] {
           ...(Array.isArray(c.signature_versions) ? { signature_versions: c.signature_versions } : {}),
           ...(c.filters !== undefined ? { filters: c.filters } : {}),
           ...(c.max_rps !== undefined ? { max_rps: c.max_rps } : {}),
+          ...(c.include_private_membership !== undefined ? { include_private_membership: c.include_private_membership } : {}),
           ...(typeof c.external_ref === 'string' ? { external_ref: c.external_ref } : {}),
         });
       },
@@ -844,11 +865,12 @@ function registry(): ResourceSpec[] {
       keyOf: (c) => String(obj(c).name ?? ''),
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/notification_templates');
-        return rows.map((r) => ({
-          key: String(r.name ?? ''),
-          id: String(r.name ?? ''),
-          config: pick(r, NOTIFICATION_KEYS),
-        }));
+        return rows.map((r) => {
+          const config = pick(r, NOTIFICATION_KEYS) as Record<string, Json>;
+          // No language variants is the same as not declaring any.
+          if (r.locales && typeof r.locales === 'object' && Object.keys(r.locales).length === 0) delete config.locales;
+          return { key: String(r.name ?? ''), id: String(r.name ?? ''), config };
+        });
       },
       async create(http, config) {
         await http.post('/v1/notification_templates', compact(config));
@@ -932,6 +954,8 @@ function registry(): ResourceSpec[] {
     {
       kind: 'singleton',
       type: 'branding',
+      fileKeys: Object.keys(BRANDING_KEY_TREE),
+      keyTree: BRANDING_KEY_TREE,
       async fetchLive(http) {
         let b: Record<string, Json>;
         try {
@@ -1437,12 +1461,19 @@ const OAUTH_CLIENT_KEYS = [
   'refresh_touches_session',
   'require_verified_email',
   'require_pkce',
+  'default_scopes',
+  'default_resource',
+  'require_openid',
   'login_url',
   'consent_url',
+  'delegate_consent',
+  'device_url',
   'subject_type',
+  'subject_fallback',
   'sector_identifier_uri',
   'access_token_format',
   'token_lifetimes',
+  'external_ref',
 ] as const;
 /** What a file may also send on an OAuth client: accepted on write, never exported. */
 const OAUTH_CLIENT_WRITE_KEYS = [
@@ -1454,8 +1485,8 @@ const OAUTH_CLIENT_WRITE_KEYS = [
   'tls_client_auth_subject_dn',
   'frontchannel_logout_session_required',
   'disabled',
+  'certified',
   'metadata',
-  'external_ref',
   'add_redirect_origins',
 ] as const;
 const OAUTH_PROVIDER_KEYS = [
@@ -1514,7 +1545,7 @@ const CUSTOM_PROVIDER_WRITE_KEYS = [
   'logout',
   'idp_initiated_login',
 ] as const;
-const WEBHOOK_KEYS = ['url', 'enabled_events', 'active', 'signature_versions', 'filters', 'max_rps', 'external_ref'] as const;
+const WEBHOOK_KEYS = ['url', 'enabled_events', 'active', 'signature_versions', 'filters', 'max_rps', 'include_private_membership', 'external_ref'] as const;
 const SSO_KEYS = [
   'type',
   'status',
@@ -1583,7 +1614,7 @@ const BILLING_KEYS = [
   'badge',
   'sort_order',
 ] as const;
-const NOTIFICATION_KEYS = ['name', 'subject', 'body', 'category'] as const;
+const NOTIFICATION_KEYS = ['name', 'subject', 'body', 'category', 'locales'] as const;
 const EMAIL_KEYS = ['name', 'subject', 'text'] as const;
 const ORG_POLICY_KEYS = [
   'organization_id',
@@ -1706,6 +1737,37 @@ export function upgradeHint(): string {
   return `If the file was written for a newer release, upgrade the CLI (this is @atlasauth/cli ${getVersion()}): npm install -g @atlasauth/cli@latest, or pin the current version in your CI.`;
 }
 
+const EXTERNAL_ID_REF = /\{\{\s*user\.(?:external_id|externalId)\s*\}\}/;
+
+/** A claim template that reads `user.external_id` renders empty for every user the app never set one on. */
+function emptyClaimWarnings(sections: ConfigPlan['sections']): string[] {
+  const out: string[] = [];
+  const walk = (v: Json, path: string) => {
+    if (typeof v === 'string') {
+      if (EXTERNAL_ID_REF.test(v)) out.push(`${path}: the template reads user.external_id, which renders empty for users that have none. Set external_id on every user, or keep the claim optional in the consumer.`);
+    } else if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${path}[${i}]`));
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, `${path}.${k}`);
+  };
+  for (const sec of sections) walk(sec.doc, sec.type);
+  return out;
+}
+
+/** Walk a document against a key tree: `'*'` is a map with free keys, `'[]'` a list of objects, null a leaf. */
+function walkKeyTree(value: Json | undefined, tree: KeyTree | null, label: string, path: string, out: string[]): void {
+  if (!tree || value === undefined || value === null) return;
+  if ('[]' in tree) {
+    asArray(value).forEach((item, i) => walkKeyTree(item, tree['[]']!, label, `${path}[${i}]`, out));
+    return;
+  }
+  if (!isObj(value)) return;
+  const known = Object.keys(tree);
+  for (const [k, v] of Object.entries(value)) {
+    if ('*' in tree) walkKeyTree(v, tree['*']!, label, `${path}.${k}`, out);
+    else if (!(k in tree)) out.push(`UNKNOWN_FIELD_VALUE ${path}.${k}=${shownValue(k, v)}  (${label}: ${k}${didYouMean(k, known)})`);
+    else walkKeyTree(v, tree[k]!, label, `${path}.${k}`, out);
+  }
+}
+
 /**
  * The keys in one parsed resource file that no spec knows, each as `UNKNOWN_FIELD_VALUE <path>=<value>` and then
  * the section, the key and its nearest real key.
@@ -1723,6 +1785,8 @@ function unknownFileKeys(spec: ResourceSpec, doc: Json): string[] {
       const key = spec.keyOf(entry);
       check(entry, spec.fileKeys, `${spec.type} ${key || '(no key)'}`, `${spec.type}[${key || '?'}]`);
     }
+  } else if (spec.keyTree) {
+    walkKeyTree(doc, spec.keyTree, spec.type, spec.type, out);
   } else if (spec.fileKeys) {
     check(doc, spec.fileKeys, spec.type, spec.type);
     for (const [k, known] of Object.entries(spec.nestedKeys ?? {})) if (isObj(doc)) check(doc[k]!, known, `${spec.type}.${k}`, `${spec.type}.${k}`);
@@ -1737,12 +1801,16 @@ const WEBHOOK_SECRET = /^(?:atlas_(?:live|test)_)?whsec_[A-Za-z0-9+/=_-]{32,256}
 const hasPlaceholder = (v: Json | undefined): boolean => typeof v === 'string' && /\$\{[A-Z0-9_]+\}/.test(v);
 
 /** Longest consent-screen text of a scope (a description, per locale) and its label. */
-const SCOPE_DESCRIPTION_MAX = 500;
-const SCOPE_LABEL_MAX = 200;
+const SCOPE_DESCRIPTION_MAX = 2000;
+const SCOPE_LABEL_MAX = 500;
 
 /** What one resource file's values break, from each spec's own rules. */
 function invalidFileValues(spec: ResourceSpec, doc: Json): string[] {
-  if (spec.kind === 'singleton') return spec.validate?.(doc as Config) ?? [];
+  if (spec.kind === 'singleton') {
+    // A document with keys is a mapping: a list or a scalar there would otherwise read as "nothing set".
+    if (spec.fileKeys && doc !== null && !isObj(doc)) return [`${spec.type}: must be a mapping of settings, not ${Array.isArray(doc) ? 'a list' : 'a single value'}.`];
+    return spec.validate?.(doc as Config) ?? [];
+  }
   if (!spec.validate) return [];
   const out: string[] = [];
   for (const entry of asArray(doc)) out.push(...spec.validate(entry));
@@ -1916,7 +1984,8 @@ async function writeExport(http: ConfigHttp, dir: string, format: Format): Promi
       const entries = (await spec.fetchLive(http)).filter((e) => !e.managedBy);
       // Deterministic: entries sorted by natural key, keys sorted inside each.
       const sorted = [...entries].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-      const doc = sorted.map((e) => canonicalize(withoutMarkers(e.config)));
+      // A type that binds by id exports it, so export -> import matches the same live entry (never by name).
+      const doc = sorted.map((e) => canonicalize(withoutMarkers(spec.matchById && e.id ? { id: e.id, ...(e.config as Record<string, unknown>) } : e.config)));
       writeFileSync(join(dir, `${spec.type}.${ext}`), serialize(doc, format));
       fileCount += 1;
     }
@@ -2003,7 +2072,7 @@ async function instancePlaceholderValues(http: ConfigHttp, text: string): Promis
  */
 export async function planConfigImport(
   rawHttp: ConfigHttp,
-  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; pruneTypes?: readonly string[]; forceHook?: boolean; rotateSecrets?: boolean; baseDir?: string; includeOwned?: boolean },
+  opts: { dir: string; format: Format; env: NodeJS.ProcessEnv; prune: boolean; pruneTypes?: readonly string[]; forceHook?: boolean; rotateSecrets?: boolean; baseDir?: string; includeOwned?: boolean; matchByName?: boolean },
 ): Promise<ConfigPlan> {
   const { dir, format } = opts;
   // Every change's apply runs through `gate`, so the pre-flight pass can turn the same calls into the server's dry run.
@@ -2097,29 +2166,41 @@ export async function planConfigImport(
       if (typeof id === 'string' && id) wantedIds.add(id);
     }
     const desiredId = new Map<string, string>();
+    const desiredRef = new Map<string, string>();
+    const wantedRefs = new Set<string>();
     for (const raw of desiredList) {
       // Only types that match by id drop it; elsewhere `id` is a real field (an integration's id is its key).
       const { id, ...rest } = obj(raw);
       const cfg = spec.matchById ? rest : raw;
       if (spec.matchById && typeof id === 'string' && id) desiredId.set(spec.keyOf(cfg), id);
       desiredByKey.set(spec.keyOf(cfg), cfg);
+      const ref = spec.strictMatch ? obj(cfg).external_ref : undefined;
+      if (typeof ref === 'string' && ref) {
+        desiredRef.set(spec.keyOf(cfg), ref);
+        wantedRefs.add(ref);
+      }
     }
+    const byName = !spec.strictMatch || opts.matchByName === true;
     const all = await spec.fetchLive(http);
     for (const e of all) if (e.managedBy) managed.push({ type: spec.type, key: e.key, managedBy: e.managedBy });
     // Owned entries stay out unless declared (by id or name) or asked for.
     const live = all.filter((e) => {
       if (e.managedBy) return false;
-      if (!e.owned || opts.includeOwned || wantedIds.has(e.id) || desiredByKey.has(e.key)) return true;
+      if (!e.owned || opts.includeOwned || wantedIds.has(e.id) || (e.ref !== undefined && wantedRefs.has(e.ref)) || (byName && desiredByKey.has(e.key))) return true;
       skippedOwned.push({ type: spec.type, action: 'delete', key: e.key, before: e.config });
       return false;
     });
     const liveByKey = new Map(live.map((e) => [e.key, e]));
     const liveById = new Map(live.map((e) => [e.id, e]));
+    const liveByRef = new Map(live.filter((e) => e.ref).map((e) => [e.ref!, e]));
     const matched = new Set<LiveEntry>();
 
     for (const [key, cfg] of desiredByKey) {
       const wantId = desiredId.get(key);
-      const existing = (wantId ? liveById.get(wantId) : undefined) ?? liveByKey.get(key);
+      const wantRef = desiredRef.get(key);
+      const existing = (wantId ? liveById.get(wantId) : undefined) ?? (wantRef ? liveByRef.get(wantRef) : undefined) ?? (byName ? liveByKey.get(key) : undefined);
+      const sameName = !existing && !wantId && !wantRef ? all.find((e) => !e.managedBy && e.key === key) : undefined;
+      if (sameName) warnings.push(`${spec.type} '${key}': a live entry (${sameName.id}) has this name but the file gives no id or external_ref, so it is planned as a create, not matched by name. Add id: ${sameName.id} (or an external_ref) to bind it, or pass --match-by-name (deprecated).`);
       if (existing) matched.add(existing);
       warnings.push(...(spec.warnings?.(cfg, existing?.config) ?? []));
       if (!existing) {
@@ -2199,6 +2280,7 @@ export async function planConfigImport(
   if (noSignup) errors.push(noSignup);
   const typeOrder = new Map(registry().map((s, i) => [s.type, i] as const));
   const preflight = () => runPreflight(changes, gate, typeOrder, (c) => unresolvedPlaceholders([c]).length > 0);
+  warnings.push(...emptyClaimWarnings(sections));
   return { changes, unchanged, skippedDeletes, skippedOwned, managed, warnings, errors, unverifiableSecrets, sections, preflight };
 }
 
@@ -2275,7 +2357,7 @@ async function promoteConfig(ctx: RunContext, values: Values): Promise<number> {
   const dir = mkdtempSync(join(tmpdir(), 'atlas-promote-'));
   try {
     await writeExport(source.http, dir, format);
-    const plan = await planConfigImport(target.http, { dir, format, env: ctx.env, prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true });
+    const plan = await planConfigImport(target.http, { dir, format, env: ctx.env, prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true, matchByName: values['match-by-name'] === true });
     ctx.io.out(`Promoting ${from} -> ${to}`);
     printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
     printPlanNotes(ctx, plan);
@@ -2302,7 +2384,7 @@ async function importConfig(ctx: RunContext, values: Values): Promise<number> {
   const dryRun = values['dry-run'] === true;
   const prune = values.prune === true;
 
-  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
+  const plan = await planConfigImport(http, { dir, format, env: readSecretsEnv(ctx, values), prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true, matchByName: values['match-by-name'] === true, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true });
   printPlan(ctx, plan.changes, plan.unchanged, plan.skippedDeletes, { dryRun, prune });
   printPlanNotes(ctx, plan);
 
@@ -2396,7 +2478,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
   const { dir, format, env } = source;
   const where = source.label ?? dir;
   const prune = values.prune === true;
-  const plan = await planConfigImport(http, { dir, format, env, prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true, rotateSecrets: values['rotate-secret'] === true, baseDir: source.baseDir });
+  const plan = await planConfigImport(http, { dir, format, env, prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true, matchByName: values['match-by-name'] === true, rotateSecrets: values['rotate-secret'] === true, baseDir: source.baseDir });
   // The checks apply would hit, so a plan that passes is an apply that will: published limits plus the server's dry run.
   const validation = await validatePlan(http, plan, values);
   const invalid = validationErrors(validation);
@@ -2424,6 +2506,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
           errors: plan.errors ?? [],
           unverifiable_secrets: plan.unverifiableSecrets.map((u) => ({ type: u.type, key: u.key || null, path: u.path })),
           validation: validationJson(validation),
+          apply_order: configTypes(),
           has_errors: invalid.length > 0,
           has_changes: pending > 0,
         },
@@ -2463,7 +2546,7 @@ async function planConfig(ctx: RunContext, values: Values, source: ConfigSource)
   }
   // A file apply would refuse is worse than drift: exit 1, with or without --check.
   if (invalid.length > 0) return 1;
-  return wantsCheck(values) && pending > 0 ? 2 : 0;
+  return wantsCheck(values) && (pending > 0 || (values['fail-on-unmanaged'] === true && deletes.length > 0)) ? 2 : 0;
 }
 
 /** What validating a plan found: the published-limit errors and the server's dry-run report (null when it was skipped). */
@@ -2715,7 +2798,7 @@ export async function applyCommand(ctx: RunContext, args: ParsedArgs): Promise<n
     const collected: Record<string, string> = {};
     const kept = keepingSecrets(requireHttp(ctx, values, onUnknownFields), str(values, 'out') || productDir(ctx.env, 'atlas'), secretsOut ? collected : undefined);
     const prune = values.prune === true;
-    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true, baseDir: source.baseDir });
+    const plan = await planConfigImport(kept.http, { dir: source.dir, format: source.format, env: source.env, prune, pruneTypes: list(values, 'prune-type'), includeOwned: values['include-owned'] === true, matchByName: values['match-by-name'] === true, forceHook: values['force-hook'] === true, rotateSecrets: values['rotate-secret'] === true, baseDir: source.baseDir });
     const out = (line: string) => {
       if (!json) ctx.io.out(line);
     };

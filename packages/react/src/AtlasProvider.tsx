@@ -66,6 +66,8 @@ import {
   configureReferralCapture,
   referralCacheKeyFor,
   seedReferralConfig,
+  rememberEnvironment,
+  lastGoodEnvironment,
   type ReferralConsent,
   withDevBrowser,
 } from '@atlasauth/js';
@@ -1127,8 +1129,15 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
   const loadEnvironment = useCallback((): Promise<unknown> => {
     if (!environmentRequest.current) {
       environmentRequest.current = call('/v1/client/environment')
-        .then(async (response) => (response.ok ? ((await response.json()) as unknown) : null))
+        .then(async (response) => {
+          if (!response.ok) return null;
+          const fresh = (await response.json()) as unknown;
+          rememberEnvironment(publishableKey, fresh);
+          return fresh;
+        })
         .catch(() => null)
+        // When Atlas cannot be reached, draw from the last environment this browser saw.
+        .then((body) => body ?? lastGoodEnvironment(publishableKey))
         .then((body) => {
           // A failure is not cached, so a later mount can try again.
           if (body) seedReferralConfig(referralKey, body);
@@ -1138,7 +1147,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
         });
     }
     return environmentRequest.current;
-  }, [call, referralKey]);
+  }, [call, referralKey, publishableKey]);
 
   const userWithEmail = useMemo(() => withClaimEmail(user, claims), [user, claims]);
 

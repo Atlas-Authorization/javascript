@@ -343,3 +343,50 @@ describe('NativeSessionManager', () => {
     expect(calls).toHaveLength(1); // one refresh shared, not two
   });
 });
+
+describe('NativeSessionManager across contexts sharing one store', () => {
+  const jwtWith = (expSeconds: number) => `h.${btoa(JSON.stringify({ exp: expSeconds })).replace(/=+$/, '')}.s`;
+
+  it('refreshes once: the second context adopts the first one\'s rotation instead of spending the old refresh token', async () => {
+    let store: NativeSession = { ...session1, sessionToken: jwtWith(1) };
+    let refreshes = 0;
+    const fetchImpl = (async () => {
+      refreshes++;
+      return new Response(JSON.stringify({ jwt: jwtWith(Math.floor(Date.now() / 1000) + 600), session_id: 'sess_1', expires_in: 600, refresh_token: 'refr_2' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    const make = () =>
+      new NativeSessionManager({
+        baseUrl: BASE,
+        publishableKey: 'pk_test',
+        initial: store,
+        fetchImpl,
+        now: () => Date.now(),
+        reload: () => store,
+        persist: (s) => {
+          store = s;
+        },
+      });
+    const popup = make();
+    const worker = make();
+
+    // A Web Lock makes the two contexts take turns; model it with a chain.
+    let chain: Promise<unknown> = Promise.resolve();
+    vi.stubGlobal('navigator', { locks: { request: (_n: string, fn: () => Promise<unknown>) => (chain = chain.then(fn, fn)) } });
+    try {
+      const [a, b] = await Promise.all([popup.refresh(), worker.refresh()]);
+      expect(refreshes).toBe(1);
+      expect(a?.refreshToken).toBe('refr_2');
+      expect(b?.refreshToken).toBe('refr_2');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('adopt ignores the same refresh token and another session', () => {
+    const mgr = new NativeSessionManager({ baseUrl: BASE, publishableKey: 'pk_test', initial: session1 });
+    expect(mgr.adopt(session1)).toBe(false);
+    expect(mgr.adopt({ ...session1, sessionId: 'sess_other', refreshToken: 'r9' })).toBe(false);
+    expect(mgr.adopt({ ...session1, refreshToken: 'refr_9' })).toBe(true);
+    expect(mgr.current?.refreshToken).toBe('refr_9');
+  });
+});

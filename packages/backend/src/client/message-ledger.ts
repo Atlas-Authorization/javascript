@@ -29,6 +29,8 @@ export interface Message {
   template: string | null;
   /** `auth` for sign-in mail, `transactional` for mail sent with `messages.send`. */
   category: 'auth' | 'transactional';
+  /** The `category` sent with `messages.send` (one of your notification categories), or null. */
+  message_category?: string | null;
   /** The tags sent with a transactional message. */
   tags: Record<string, string>;
   /** `jo***@ex***.com`, `+1•••••0123`. */
@@ -86,6 +88,38 @@ export interface SendMessageBody {
   text?: string;
   /** Up to 10 labels; keys are 1-40 letters, digits, `_ . : -`, values up to 100 characters. */
   tags?: Record<string, string>;
+  /** Where replies go: an address, or `{ email, name }`. */
+  reply_to?: string | MessageAddress;
+  /** Send as this address; its domain must be your verified sending domain (else 422 `FROM_DOMAIN_NOT_VERIFIED`). */
+  from?: string | MessageAddress;
+  /** Only `List-Unsubscribe`, `List-Unsubscribe-Post` (`List-Unsubscribe=One-Click`) and `X-Entity-Ref-ID`; any other header is a 400. */
+  headers?: Partial<Record<'List-Unsubscribe' | 'List-Unsubscribe-Post' | 'X-Entity-Ref-ID', string>> & Record<string, string>;
+  /** An https URL: sets `List-Unsubscribe` and the one-click `List-Unsubscribe-Post`. Not with `unsubscribe`. */
+  unsubscribe_url?: string;
+  /** Atlas generates a one-click unsubscribe link per recipient, scoped to `category` (required with it). Fills `{{unsubscribe_url}}`. */
+  unsubscribe?: boolean;
+  /** One of your notification categories. A recipient who opted out of it is not mailed (recorded as `suppressed`). */
+  category?: string;
+  /** With a template: the language copy to send (`fr`, `pt-BR`). */
+  locale?: string;
+}
+
+export interface MessageAddress {
+  email: string;
+  name?: string;
+}
+
+export interface MessageLinkBody {
+  email: string;
+  type: 'unsubscribe' | 'preferences';
+  /** Required for `unsubscribe`, not allowed for `preferences`. */
+  category?: string;
+}
+
+export interface MessageLink {
+  object: 'message_link';
+  type: 'unsubscribe' | 'preferences';
+  url: string;
 }
 
 export interface MessageSummary {
@@ -230,6 +264,10 @@ export function messageLedgerResource(request: RequestFn) {
      */
     send<B extends SendMessageBody>(body: B, idempotencyKey?: string): Promise<B['to'] extends string[] ? MessageList : Message> {
       return request({ method: 'POST', path: '/v1/messages', body, idempotencyKey });
+    },
+    /** A link to the hosted unsubscribe or email-preference page for one address, for your own pages and mail. */
+    createLink(body: MessageLinkBody, idempotencyKey?: string): Promise<MessageLink> {
+      return request({ method: 'POST', path: '/v1/message_links', body, idempotencyKey });
     },
     /** Counts per status over the last `hours` (default 24, up to 720). */
     summary(query: { hours?: number } = {}): Promise<MessageSummary> {

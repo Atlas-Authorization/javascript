@@ -24,6 +24,7 @@ export {
   protectFromClaims,
   ForbiddenError,
 } from './protect';
+export { orgClaimsWithheld, type OrgClaimsWithheld } from './claims';
 export {
   ROLE_KEY_PATTERN,
   PERMISSION_KEY_PATTERN,

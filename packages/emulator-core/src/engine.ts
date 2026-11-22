@@ -342,6 +342,7 @@ function createDb(now: () => number) {
     orgInvitations: t('org_invitations', 'orginv'),
     roles: t('roles', 'role'),
     permissions: t('permissions', 'perm'),
+    permissionAliases: t('permission_aliases', 'palias'),
     apiKeys: t('api_keys', 'apikey'),
     machines: t('machines', 'mch'),
     grants: t('grants', 'mgrant'),

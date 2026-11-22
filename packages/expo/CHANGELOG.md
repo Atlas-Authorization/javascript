@@ -1,5 +1,11 @@
 # @atlasauth/expo changelog
 
+## 0.15.0
+
+- **breaking:** `@atlasauth/react` and `@atlasauth/react-native` are now required peer dependencies instead of dependencies. Install with `npx expo install @atlasauth/expo @atlasauth/js @atlasauth/react @atlasauth/react-native expo-secure-store`.
+- New `@atlasauth/expo/session` entry loads the session pieces without React Native.
+- Native sessions refresh once across a popup and a service worker.
+
 ## 0.14.3
 
 - A token cache that cannot be written (for example the iOS Keychain in a build without its entitlement) no longer fails the sign-in: `<AtlasProvider>` keeps the session in memory for the app run and warns in development that it will not survive a restart. Clearing the token on sign-out still reports a store failure.

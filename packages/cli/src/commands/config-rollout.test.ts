@@ -98,7 +98,7 @@ describe('set-valued fields compare without order', () => {
     const api = new Api();
     api.lists['/v1/oauth_clients'] = [{ id: 'oc_1', name: 'web', redirect_uris: ['https://b.example/cb', 'https://a.example/cb'], allowed_scopes: ['openid', 'email'] }];
     api.lists['/v1/webhook_endpoints'] = [{ id: 'we_1', url: 'https://hooks.example/a', enabled_events: ['user.created', 'user.deleted'], active: true }];
-    write('oauth_clients.json', JSON.stringify([{ name: 'web', redirect_uris: ['https://a.example/cb', 'https://b.example/cb'], allowed_scopes: ['email', 'openid'] }]));
+    write('oauth_clients.json', JSON.stringify([{ id: 'oc_1', name: 'web', redirect_uris: ['https://a.example/cb', 'https://b.example/cb'], allowed_scopes: ['email', 'openid'] }]));
     write('webhook_endpoints.json', JSON.stringify([{ url: 'https://hooks.example/a', enabled_events: ['user.deleted', 'user.created'], active: true }]));
     const plan = await planConfigImport(api, { dir, format: 'json', env: {}, prune: false });
     expect(plan.changes).toEqual([]);

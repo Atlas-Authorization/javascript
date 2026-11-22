@@ -319,4 +319,17 @@ describe('createKeyMirror: serveStaleForMs', () => {
     await mirror.mint({ subject_type: 'user', subject_id: 'u' });
     expect(await mirror.verify('ak_0123_secret')).toEqual({ valid: false, code: 'stale', lastSyncAt: null });
   });
+
+  it('keeps the key metadata and returns it from verify with no call to Atlas', async () => {
+    const { api } = fakeAtlas();
+    api.create.mockResolvedValueOnce({ ...KEY, id: 'eak_meta', secret: 'ak_0123_meta', metadata: { team: 'ops', label: 'ci' }, dies_with: 'sign_out_everywhere' } as never);
+    const mirror = createKeyMirror({ store: memoryKeyMirrorStore(), apiKeys: api as never });
+    await mirror.mint({ subject_type: 'organization', subject_id: 'org_1', metadata: { team: 'ops', label: 'ci' } });
+    const res = await mirror.verify('ak_0123_meta');
+    expect(res.valid).toBe(true);
+    if (res.valid) {
+      expect(res.metadata).toEqual({ team: 'ops', label: 'ci' });
+      expect(res.key.dies_with).toBe('sign_out_everywhere');
+    }
+  });
 });

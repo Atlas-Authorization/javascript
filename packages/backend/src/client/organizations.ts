@@ -68,7 +68,7 @@ export interface OrganizationMembership {
   role_source?: string | null;
   /** Readable by the application; set from the invitation on accept or with `update`. Also in `{{org.membership.public_metadata.*}}` JWT template variables. */
   public_metadata?: Record<string, unknown>;
-  /** Backend only: never in a token, a webhook or a client response. */
+  /** Backend only: never in a token or a client response, and in a webhook only for an instance-owned endpoint that set `include_private_membership`. */
   private_metadata?: Record<string, unknown>;
   /** Permission keys this member holds on top of the role; they join `org_permissions` in the session token. */
   permissions?: string[];
@@ -742,6 +742,16 @@ export function organizationsResource(request: RequestFn) {
     },
 
     invitations: {
+      /**
+       * `GET /v1/organization_invitations` — search invitations across every organization: by invited `email` (exact,
+       * case-insensitive), `status` or `organization_id`, newest first. Each row also carries `organization_name` and
+       * `organization_slug`. Secret key only. Pages with `limit` and `starting_after`.
+       */
+      listByEmail(
+        params: CursorParams & { email?: string; status?: 'pending' | 'accepted' | 'revoked' | 'expired' | 'declined'; organization_id?: string } = {},
+      ): Promise<CursorPage<OrganizationInvitation & { organization_name: string; organization_slug: string }>> {
+        return request({ method: 'GET', path: '/v1/organization_invitations', query: { ...params } });
+      },
       list(orgId: string): Promise<ListPage<OrganizationInvitation>> {
         return request({ method: 'GET', path: `/v1/organizations/${enc(orgId)}/invitations` });
       },
@@ -779,7 +789,7 @@ export function organizationsResource(request: RequestFn) {
        * Same id, a fresh expiry; a link invitation gets a NEW `accept_token` (the old link stops working).
        * With `organizations.invitationEmail: "atlas"`, pass `redirect_url`: Atlas mails an email invitation again.
        */
-      resend(orgId: string, invitationId: string, body?: { redirect_url?: string }): Promise<OrganizationInvitation> {
+      resend(orgId: string, invitationId: string, body?: { redirect_url?: string; /** Keep the replaced link working while the invitation is pending (the last 5 are kept). */ keep_old_link?: boolean }): Promise<OrganizationInvitation> {
         return request({
           method: 'POST',
           path: `/v1/organizations/${enc(orgId)}/invitations/${enc(invitationId)}/resend`,

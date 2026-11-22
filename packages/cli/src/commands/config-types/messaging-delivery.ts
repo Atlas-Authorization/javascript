@@ -1,3 +1,4 @@
+import type { ConfigHttp } from '../../config-http';
 import type { Json } from '../../serialize';
 import type { CollectionSpec, ResourceSpec, SingletonSpec } from '../config';
 import { simpleSingletonSpec } from './simple';
@@ -114,4 +115,55 @@ function body(c: Record<string, Json>): Record<string, Json> {
   return out;
 }
 
-export const MESSAGING_DELIVERY_SPECS: ResourceSpec[] = [MESSAGING_SETTINGS, SMS_COUNTRY_ROUTES, MESSAGING_FALLBACKS];
+
+/** Providers whose callbacks need no verification secret (the URL token or the provider auth token already stored authorises them). */
+const NO_SECRET_RECEIVERS = ['brevo', 'smtp2go', 'postmark', 'twilio', 'plivo'] as const;
+
+/**
+ * `message_receivers`: where your email and SMS providers report bounces, complaints and delivery. Keyed by
+ * provider. `secret` is the verification secret of the provider's webhook (write-only: put `${ENV_VAR}`; never
+ * exported or compared). Providers that need none (brevo, smtp2go, postmark, twilio, plivo) are listed with just
+ * `provider`: their callback URL and token come from `GET /v1/message_receivers`. Never pruned unless
+ * `--prune-type message_receivers`; removing deletes the stored secret.
+ */
+const MESSAGE_RECEIVERS: CollectionSpec = {
+  kind: 'collection',
+  type: 'message_receivers',
+  prune: false,
+  fileKeys: ['provider', 'secret'],
+  writeOnly: ['secret'],
+  keyOf: (c) => String(isObj(c) ? (c.provider ?? '') : ''),
+  async fetchLive(http) {
+    const res = await http.get<{ data?: Array<Record<string, Json>> }>('/v1/message_receivers');
+    return (Array.isArray(res?.data) ? res.data : [])
+      .filter((r) => r.secret_set === true || (NO_SECRET_RECEIVERS as readonly string[]).includes(String(r.provider)))
+      .map((r) => ({ key: String(r.provider), id: String(r.provider), config: { provider: String(r.provider) } }));
+  },
+  async create(http, config) {
+    await putReceiver(http, config);
+  },
+  async update(http, _live, config) {
+    await putReceiver(http, config);
+  },
+  async remove(http, live) {
+    if ((NO_SECRET_RECEIVERS as readonly string[]).includes(live.id)) return;
+    await http.delete(`/v1/message_receivers/${encodeURIComponent(live.id)}`);
+  },
+  validate(config) {
+    const c = isObj(config) ? config : {};
+    const provider = String(c.provider ?? '');
+    if (!provider) return ['message_receivers: provider is required.'];
+    const noSecret = (NO_SECRET_RECEIVERS as readonly string[]).includes(provider);
+    if (noSecret && c.secret !== undefined) return [`message_receivers ${provider}: needs no secret; remove the key.`];
+    if (!noSecret && (typeof c.secret !== 'string' || !c.secret)) return [`message_receivers ${provider}: secret is required.`];
+    return [];
+  },
+};
+
+async function putReceiver(http: ConfigHttp, config: Json): Promise<void> {
+  const c = isObj(config) ? config : {};
+  if (c.secret === undefined) return;
+  await http.put(`/v1/message_receivers/${encodeURIComponent(String(c.provider))}`, { secret: c.secret });
+}
+
+export const MESSAGING_DELIVERY_SPECS: ResourceSpec[] = [MESSAGING_SETTINGS, SMS_COUNTRY_ROUTES, MESSAGING_FALLBACKS, MESSAGE_RECEIVERS];

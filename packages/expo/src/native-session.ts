@@ -70,6 +70,8 @@ export async function createNativeSessionManager(
     initial,
     fetchImpl: config.fetchImpl,
     now: config.now,
+    // Another context (a background task, a share extension) may have rotated the refresh token in the shared store.
+    reload: async () => parseNativeSession(await storage.getToken()),
     // The manager calls this on every set/rotate; persist the fresh session so
     // the rotated refresh token survives an app restart. Fire-and-forget — the
     // adapter may be async, and a write failure must not break the live session.

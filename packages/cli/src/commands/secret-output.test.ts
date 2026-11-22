@@ -29,6 +29,7 @@ class Api implements ConfigHttp {
     if (path === '/v1/webhook_endpoints') return { data: this.webhooks } as T;
     if (path === '/v1/custom_oauth_providers') return { data: this.custom } as T;
     if (path === '/v1/instance') return { allowed_origins: [], auth_config: {} } as T;
+    if (path === '/v1/branding') return {} as T; // a singleton, not a list
     if (path.startsWith('/v1/')) return { data: [] } as T;
     throw new AtlasApiError(404, [{ code: 'NOT_FOUND', message: path }]);
   }

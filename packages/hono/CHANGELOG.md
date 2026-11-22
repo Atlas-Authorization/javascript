@@ -1,5 +1,9 @@
 # @atlasauth/hono changelog
 
+## 0.12.0
+
+- `csrf: { atlasSigned: true }` accepts the signed, session-bound Atlas CSRF cookie.
+
 ## 0.11.0
 
 - The auth state from `getAuth(c)` gains `status` (`signed_in`, `signed_out`, `session_expired`, `token_invalid`) and `reason`. `session_expired` means the short-lived session token lapsed but the refresh cookie or sign-in hint is present: renew, do not sign out. Needs `@atlasauth/backend` 0.62.0.

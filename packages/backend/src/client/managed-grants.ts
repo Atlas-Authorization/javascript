@@ -15,6 +15,8 @@ export interface ManagedGrant {
   authorization_details: Record<string, unknown>[] | null;
   /** Bumped by every merge, replace and narrowing. */
   revision: number;
+  /** The JSON you set with `grants.update` or at consent accept. */
+  metadata: Record<string, unknown>;
   created_at: number;
   updated_at: number;
   revoked_at: number | null;
@@ -47,8 +49,8 @@ export function managedGrantsResource(request: RequestFn) {
     narrow(id: string, body: { scopes?: string[]; authorization_details?: Record<string, unknown>[] }): Promise<ManagedGrant> {
       return request({ method: 'PATCH', path: path(id), body });
     },
-    /** Revoke the grant and end every token issued under it. */
-    revoke(id: string): Promise<{ object: 'managed_grant'; id: string; deleted: true; tokens_ended: number }> {
+    /** Revoke the grant, end every token issued under it, and end the user's consent for the client. */
+    revoke(id: string): Promise<{ object: 'managed_grant'; id: string; deleted: true; tokens_ended: number; tokens_revoked: number }> {
       return request({ method: 'DELETE', path: path(id) });
     },
   };

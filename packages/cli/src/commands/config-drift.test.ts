@@ -180,6 +180,7 @@ const clientFile = {
   oauth_clients: [
     {
       name: 'Web',
+      external_ref: 'web-1',
       redirect_uris: ['https://app.example.com/cb'],
       post_logout_redirect_uris: ['https://app.example.com/bye'],
       backchannel_logout_uri: 'https://app.example.com/bcl',
@@ -425,13 +426,13 @@ describe('integrations forumulate spaces', () => {
 
 describe('explicit null clears a nullable field; an absent key is unmanaged', () => {
   const withUrls = {
-    oauth_clients: [{ name: 'Web', redirect_uris: ['https://app.example.com/cb'], login_url: 'https://app.example.com/login', logo_url: 'https://app.example.com/l.png' }],
+    oauth_clients: [{ name: 'Web', external_ref: 'web-1', redirect_uris: ['https://app.example.com/cb'], login_url: 'https://app.example.com/login', logo_url: 'https://app.example.com/l.png' }],
   };
 
   it('oauth_clients: null sends null on PATCH, plan shows value -> null, then plan --check is clean', async () => {
     const api = new FakeApi();
     await run(['apply', file(withUrls), '--yes'], ctx(captureIO(), api));
-    const cleared = file({ oauth_clients: [{ name: 'Web', redirect_uris: ['https://app.example.com/cb'], login_url: null }] }, 'cleared.json');
+    const cleared = file({ oauth_clients: [{ name: 'Web', external_ref: 'web-1', redirect_uris: ['https://app.example.com/cb'], login_url: null }] }, 'cleared.json');
     const io = captureIO();
     expect(await run(['plan', cleared, '--check'], ctx(io, api))).toBe(2);
     expect(io.stdout()).toContain('login_url: "https://app.example.com/login" -> null');
@@ -444,7 +445,7 @@ describe('explicit null clears a nullable field; an absent key is unmanaged', ()
   it('an absent key is left unmanaged: no PATCH field, no drift', async () => {
     const api = new FakeApi();
     await run(['apply', file(withUrls), '--yes'], ctx(captureIO(), api));
-    const absent = file({ oauth_clients: [{ name: 'Web', redirect_uris: ['https://app.example.com/cb'], logo_url: 'https://app.example.com/other.png' }] }, 'absent.json');
+    const absent = file({ oauth_clients: [{ name: 'Web', external_ref: 'web-1', redirect_uris: ['https://app.example.com/cb'], logo_url: 'https://app.example.com/other.png' }] }, 'absent.json');
     await run(['apply', absent, '--yes'], ctx(captureIO(), api));
     const patch = api.writes.filter((w) => w.method === 'PATCH' && w.path.startsWith('/v1/oauth_clients/')).pop()!;
     expect(patch.body).not.toHaveProperty('login_url');

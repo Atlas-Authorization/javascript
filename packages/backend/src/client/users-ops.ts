@@ -15,6 +15,8 @@ export type UsersCreateAccountClaimResult = {
 export type UsersMergeBody = {
   source_user_id?: string;
   dry_run?: boolean;
+  /** When both users have a different `external_id`: which one the kept user holds. Without it the merge answers 409. */
+  external_id?: 'keep_target' | 'keep_source';
 };
 
 export type UsersMergeResult = Record<string, unknown>;

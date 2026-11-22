@@ -32,6 +32,30 @@ export interface Jwks {
   keys: Array<{ kid?: string; [claim: string]: unknown }>;
 }
 
+/**
+ * How a verifier's JWKS cache behaves, chosen by the integrator. Defaults are unchanged: an hour of TTL, and cached
+ * keys served up to 24 hours past it while Atlas cannot be reached.
+ */
+export interface JwksCacheTuning {
+  /** Keys are fresh this long (ms). Default 1 hour. */
+  ttlMs?: number;
+  /**
+   * How long past the TTL cached keys are still served when a refetch fails (ms). Default 24 hours. `0` is strict:
+   * the moment a refetch fails past the TTL, verification fails closed. `Infinity` never expires them.
+   */
+  maxStaleMs?: number;
+  /** Called each time keys past their TTL are served because a refetch failed, so you can alert. */
+  onServeStale?: (info: { staleForMs: number; error: string | null }) => void;
+}
+
+/** A tuning that cannot make a cache misbehave (negative or NaN values are refused, not ignored). */
+export function checkJwksCacheTuning(t: JwksCacheTuning | undefined): JwksCacheTuning | undefined {
+  if (!t) return t;
+  if (t.ttlMs !== undefined && !(t.ttlMs > 0)) throw new Error('jwksCache.ttlMs must be a positive number of milliseconds.');
+  if (t.maxStaleMs !== undefined && !(t.maxStaleMs >= 0)) throw new Error('jwksCache.maxStaleMs must be 0 (strict) or more.');
+  return t;
+}
+
 export interface JwksCacheDeps {
   /** The instance's JWKS URL. Optional only when `staticJwks` is supplied. */
   url?: string;
@@ -66,6 +90,8 @@ export interface JwksCacheDeps {
    * {@link DEFAULT_MAX_STALE_MS} (24 hours); `Infinity` serves them indefinitely.
    */
   maxStaleMs?: number;
+  /** Fires when stale keys (past their TTL) are served because a refetch failed. */
+  onServeStale?: JwksCacheTuning['onServeStale'];
 }
 
 /** The TTL a `Cache-Control` header asks for, clamped to `bounds`; undefined when it says nothing. */
@@ -214,6 +240,13 @@ export class JwksCache {
   private staleOrNull(now: number, ttl: number): Jwks | null {
     if (!this.cached) return null;
     if (now - this.fetchedAt >= ttl + (this.deps.maxStaleMs ?? DEFAULT_MAX_STALE_MS)) return null;
+    if (now - this.fetchedAt >= ttl && this.deps.onServeStale) {
+      try {
+        this.deps.onServeStale({ staleForMs: now - this.fetchedAt - ttl, error: this.lastError });
+      } catch {
+        // A broken alert hook must not break verification.
+      }
+    }
     return this.cached;
   }
 

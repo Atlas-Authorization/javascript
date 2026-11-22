@@ -6,7 +6,7 @@ import {
   jwtVerify,
   type JWK,
 } from 'jose';
-import { JwksCache, readKid, type Jwks } from './jwks-cache';
+import { JwksCache, checkJwksCacheTuning, readKid, type Jwks, type JwksCacheTuning } from './jwks-cache';
 import { ATLAS_SIGNING_ALGS } from './algs';
 import { OAuthTokenRevocationList, type OAuthTokenRevocationOptions } from './oauth-token-revocation';
 import { matchAuthorizationDetails, senderConstraintOf, thumbprintsEqual, type AuthorizationDetailRequirement } from './oauth-resource-sender';
@@ -202,6 +202,8 @@ export interface AccessTokenVerifierOptions {
   jwksUrl?: string;
   /** A static key set (tests / offline). Mutually exclusive with `jwksUrl`. */
   jwks?: Jwks;
+  /** How the JWKS cache behaves (TTL, how long stale keys are served, a stale hook). `maxStaleMs: 0` is strict. Default unchanged. */
+  jwksCache?: JwksCacheTuning;
   /**
    * Where your protected-resource metadata lives, advertised in every 401 as
    * `resource_metadata` so an MCP / OAuth client can discover Atlas. Typically
@@ -493,6 +495,7 @@ export function createAccessTokenVerifier(
     staticJwks: options.jwks,
     fetchImpl: options.fetchImpl,
     now: options.now,
+    ...checkJwksCacheTuning(options.jwksCache),
   });
   const audiences =
     options.audience === false ? null : typeof options.audience === 'string' ? [options.audience] : [...options.audience];

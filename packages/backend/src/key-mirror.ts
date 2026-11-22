@@ -37,8 +37,16 @@ export interface MirroredApiKey {
   revoked_at: number | null;
   /** The organization a user key is bound to; null/absent = unbound. */
   organization_id?: string | null;
-  /** Why it was revoked, when Atlas said (`membership_ended`, `creator_departed`, `organization_deleted`, `user_banned`, `rotated`). */
+  /** Why it was revoked, when Atlas said (`membership_ended`, `creator_departed`, `organization_deleted`, `user_banned`, `rotated`, `signed_out_everywhere`, or the stream's `revoked_by_api` / `revoked_by_admin`). */
   revoked_reason?: string | null;
+  /** The key's metadata (what you set as `metadata` / `claims`): your own vocabulary, returned by `verify` with no call to Atlas. */
+  metadata?: Record<string, unknown>;
+  /** The delegated-token constraints on the key. */
+  constraints?: Record<string, unknown>;
+  /** The member who created an organization key. */
+  created_by_user_id?: string | null;
+  /** `sign_out_everywhere` when the key ends with its user's sign-out everywhere. */
+  dies_with?: string | null;
 }
 
 export interface KeyMirrorStore {
@@ -161,7 +169,7 @@ export interface KeyMirrorOptions {
 }
 
 export type MirrorVerification =
-  | { valid: true; key: MirroredApiKey; effective_scopes: string[]; /** True when the mirror was past `maxStalenessMs` and this answer came from its last synced data (see `serveStaleForMs`). */ stale?: true; /** A bound key: the membership the scopes were narrowed by. */ organization?: ApiKeyOrganization }
+  | { valid: true; key: MirroredApiKey; /** The key's metadata, from the mirror: no call to Atlas. */ metadata: Record<string, unknown>; effective_scopes: string[]; /** True when the mirror was past `maxStalenessMs` and this answer came from its last synced data (see `serveStaleForMs`). */ stale?: true; /** A bound key: the membership the scopes were narrowed by. */ organization?: ApiKeyOrganization }
   | { valid: false; code?: 'insufficient_scope' | 'ip_not_allowed' | 'client_ip_required' | 'membership_unresolved'; missing_scopes?: string[] }
   | {
       valid: false;
@@ -278,6 +286,10 @@ function toMirrored(key: ApiKey, hash: string): MirroredApiKey {
     revoked_at: key.revoked_at ?? null,
     organization_id: key.organization_id ?? null,
     revoked_reason: key.revoked_reason ?? null,
+    metadata: key.metadata ?? key.claims ?? {},
+    constraints: (key as { constraints?: Record<string, unknown> }).constraints ?? {},
+    created_by_user_id: key.created_by_user_id ?? null,
+    dies_with: key.dies_with ?? null,
   };
 }
 
@@ -430,7 +442,7 @@ export function createKeyMirror(options: KeyMirrorOptions) {
       }
       const missing = (opts.requiredScopes ?? []).filter((s) => !effective.includes(s));
       if (missing.length > 0) return { valid: false, code: 'insufficient_scope', missing_scopes: missing };
-      return { valid: true, key, effective_scopes: effective, ...(organization ? { organization } : {}), ...(servedStale ? { stale: true as const } : {}) };
+      return { valid: true, key, metadata: key.metadata ?? {}, effective_scopes: effective, ...(organization ? { organization } : {}), ...(servedStale ? { stale: true as const } : {}) };
     },
 
     /**
@@ -503,6 +515,9 @@ export function createKeyMirror(options: KeyMirrorOptions) {
           scopes: data.scopes !== undefined ? data.scopes ?? null : held.scopes,
           allowed_ips: data.allowed_ips !== undefined ? data.allowed_ips ?? null : held.allowed_ips ?? null,
           expires_at: data.expires_at !== undefined ? data.expires_at ?? null : held.expires_at,
+          metadata: data.metadata ?? data.claims ?? held.metadata ?? {},
+          constraints: (data as { constraints?: Record<string, unknown> }).constraints ?? held.constraints ?? {},
+          dies_with: data.dies_with !== undefined ? data.dies_with ?? null : held.dies_with ?? null,
         });
         return true;
       }

@@ -1,6 +1,6 @@
 import { createLocalJWKSet, decodeProtectedHeader, jwtVerify, type JWTPayload } from 'jose';
 import { ATLAS_SIGNING_ALGS } from './algs';
-import { JwksCache, type Jwks } from './jwks-cache';
+import { JwksCache, checkJwksCacheTuning, type Jwks, type JwksCacheTuning } from './jwks-cache';
 
 /**
  * Verify machine and API-key credentials LOCALLY: no call to Atlas per request.
@@ -12,7 +12,7 @@ import { JwksCache, type Jwks } from './jwks-cache';
  */
 
 /** Where the keys come from: a cache that fetches the instance JWKS, or a fixed key set (tests, CI). */
-export type CredentialKeySource = JwksCache | Jwks | { jwksUrl: string; fetchImpl?: typeof fetch };
+export type CredentialKeySource = JwksCache | Jwks | { jwksUrl: string; fetchImpl?: typeof fetch; jwksCache?: JwksCacheTuning };
 
 export interface VerifyCredentialOptions {
   /** The instance issuer the token must carry (`issuer` in the mint response; `https://<frontend host>`). */
@@ -40,6 +40,36 @@ export interface VerifyMachineTokenOptions extends VerifyCredentialOptions {
   requiredScopes?: string[];
   /** Accept a token that carries an audience even though {@link VerifyCredentialOptions.audience} is not set. */
   anyAudience?: boolean;
+  /**
+   * Deny-list hook: true when this machine (or its grant for the token's audience) was revoked at or after the
+   * token was issued. Plug in `createMachineDenyList().isRevoked`, kept current by the revocation stream or the
+   * `/v1/machines/revoked` feed, to cut a revoked machine token's life from its lifetime to seconds.
+   */
+  isRevoked?: (claims: MachineTokenClaims) => boolean | Promise<boolean>;
+}
+
+export interface VerifyDelegationTokenOptions extends Omit<VerifyCredentialOptions, 'audience'> {
+  /** Your service's audience. Required: a delegation token is for one named service. */
+  audience: string | string[];
+  /** Every one of these must be among the token's `scope`. */
+  requiredScopes?: string[];
+  /** Refuse a token with no `act` claim (default true; it is always present on tokens Atlas mints). */
+  requireAct?: boolean;
+  /** Refuse unless the outermost actor is one of these (`act.sub`). */
+  allowedActors?: string[];
+  /** Called with the token id; return true to refuse a token you already know is revoked. */
+  isRevoked?: (jti: string) => boolean | Promise<boolean>;
+}
+
+export interface DelegationTokenClaims extends JWTPayload {
+  /** The user the token acts for. */
+  sub: string;
+  jti: string;
+  token_use: 'delegation';
+  scope: string;
+  /** Who is acting for the user. */
+  act: { sub: string; typ?: string; act?: unknown };
+  org_id?: string;
 }
 
 export type CredentialFailure =
@@ -62,6 +92,8 @@ export interface ApiKeyTokenClaims extends JWTPayload {
   constraints: Record<string, unknown>;
   cnf?: { jkt: string };
   organization?: { id: string; role: string; permissions: string[] };
+  /** The key's metadata, signed in when the token was minted with `include_metadata`. */
+  meta?: Record<string, unknown>;
 }
 
 export interface MachineTokenClaims extends JWTPayload {
@@ -88,10 +120,13 @@ async function keysFor(source: JwksCache | Jwks, token: string): Promise<Jwks | 
 const urlCaches = new Map<string, JwksCache>();
 function resolveSource(source: CredentialKeySource): JwksCache | Jwks {
   if (source instanceof JwksCache || 'keys' in source) return source;
-  let cache = urlCaches.get(source.jwksUrl);
+  const tuning = checkJwksCacheTuning(source.jwksCache);
+  // A different tuning is a different cache; the stale hook of the first caller with a given tuning is the one used.
+  const cacheKey = `${source.jwksUrl}|${tuning?.ttlMs ?? ''}|${tuning?.maxStaleMs ?? ''}`;
+  let cache = urlCaches.get(cacheKey);
   if (!cache || source.fetchImpl) {
-    cache = new JwksCache({ url: source.jwksUrl, ...(source.fetchImpl ? { fetchImpl: source.fetchImpl } : {}) });
-    if (!source.fetchImpl) urlCaches.set(source.jwksUrl, cache);
+    cache = new JwksCache({ url: source.jwksUrl, ...(source.fetchImpl ? { fetchImpl: source.fetchImpl } : {}), ...tuning });
+    if (!source.fetchImpl) urlCaches.set(cacheKey, cache);
   }
   return cache;
 }
@@ -154,5 +189,33 @@ export async function verifyMachineToken(token: string, opts: VerifyMachineToken
     ...(Array.isArray(claims.scopes) ? claims.scopes : []),
   ]);
   if ((opts.requiredScopes ?? []).some((s) => !held.has(s))) return { valid: false, code: 'insufficient_scope' };
+  if (opts.isRevoked && (await opts.isRevoked(claims))) return { valid: false, code: 'revoked' };
+  return { valid: true, claims };
+}
+
+/**
+ * Verify a delegation token (`POST /v1/users/{id}/delegation_tokens`) with no call to Atlas: signature, issuer, expiry,
+ * that it really is a delegation token (a session, machine or API-key token signed with the same key is refused), that
+ * it was minted for YOUR audience, the required scopes, and an `act` claim naming who is acting. The result's `claims.sub`
+ * is the user and `claims.act.sub` the actor.
+ */
+export async function verifyDelegationToken(token: string, opts: VerifyDelegationTokenOptions): Promise<CredentialResult<DelegationTokenClaims>> {
+  if (opts.audience === undefined || opts.audience === '' || (Array.isArray(opts.audience) && opts.audience.length === 0)) {
+    throw new TypeError('verifyDelegationToken: audience is required');
+  }
+  const signed = await verifySigned(token, opts);
+  if (!signed.ok) return { valid: false, code: signed.code };
+  const claims = signed.payload as unknown as DelegationTokenClaims;
+  if (claims.token_use !== 'delegation' || typeof claims.sub !== 'string' || typeof claims.jti !== 'string') {
+    return { valid: false, code: 'wrong_token_type' };
+  }
+  const actSub = claims.act && typeof claims.act === 'object' ? (claims.act as { sub?: unknown }).sub : undefined;
+  if ((opts.requireAct ?? true) && typeof actSub !== 'string') return { valid: false, code: 'wrong_token_type' };
+  if (opts.allowedActors && (typeof actSub !== 'string' || !opts.allowedActors.includes(actSub))) {
+    return { valid: false, code: 'wrong_token_type' };
+  }
+  const held = new Set(typeof claims.scope === 'string' ? claims.scope.split(/\s+/).filter(Boolean) : []);
+  if ((opts.requiredScopes ?? []).some((x) => !held.has(x))) return { valid: false, code: 'insufficient_scope' };
+  if (opts.isRevoked && (await opts.isRevoked(claims.jti))) return { valid: false, code: 'revoked' };
   return { valid: true, claims };
 }
