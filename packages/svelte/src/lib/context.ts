@@ -34,6 +34,7 @@ import {
   configureReferralCapture,
   type ReferralConsent,
   withDevBrowser,
+  markAtlasReady,
 } from '@atlasauth/js';
 import { ATLAS_SVELTE_SDK } from './version';
 import { EN_US, withFallback, type Catalog } from './i18n';
@@ -504,7 +505,7 @@ export function createAtlasClient(options: AtlasInitOptions): AtlasClient {
     if (fromUrl && typeof window !== 'undefined') {
       window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
     }
-    await reload();
+    markAtlasReady(await reload());
     // Signed in inside the Atlas popup: hand back to the opener and close.
     if (exchanged) void closeOAuthPopupAfterSignIn();
   }

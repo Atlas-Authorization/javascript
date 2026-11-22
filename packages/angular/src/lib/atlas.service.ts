@@ -47,6 +47,7 @@ import {
   configureReferralCapture,
   withDevBrowser,
   reauthenticate,
+  markAtlasReady,
   type ReauthOptions,
 } from '@atlasauth/js';
 import { evaluate, type ProtectCondition } from '@atlasauth/authz';
@@ -552,7 +553,7 @@ export class AtlasService implements OnDestroy {
     if (fromUrl) {
       window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
     }
-    await this.reload();
+    markAtlasReady(await this.reload());
     // Signed in inside the Atlas popup (the redirect flow ran in it): hand back
     // to the waiting opener and close. A no-op in an ordinary tab.
     if (exchanged) void closeOAuthPopupAfterSignIn();

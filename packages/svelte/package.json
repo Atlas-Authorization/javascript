@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/svelte",
-  "version": "0.23.1",
+  "version": "0.23.2",
   "type": "module",
   "svelte": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -31,10 +31,10 @@
     "@atlasauth/authz": "workspace:*"
   },
   "peerDependencies": {
-    "@atlasauth/js": ">=0.39.0 <1.0.0",
+    "@atlasauth/js": ">=0.51.0 <1.0.0",
     "svelte": ">=4",
     "@sveltejs/kit": ">=1",
-    "@atlasauth/backend": ">=0.51.0 <1.0.0"
+    "@atlasauth/backend": ">=0.62.0 <1.0.0"
   },
   "peerDependenciesMeta": {
     "@sveltejs/kit": {

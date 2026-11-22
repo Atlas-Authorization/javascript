@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/vue",
-  "version": "0.24.1",
+  "version": "0.24.2",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -13,7 +13,7 @@
     "@atlasauth/authz": "workspace:*"
   },
   "peerDependencies": {
-    "@atlasauth/js": ">=0.39.0 <1.0.0",
+    "@atlasauth/js": ">=0.51.0 <1.0.0",
     "vue": ">=3.3"
   },
   "devDependencies": {

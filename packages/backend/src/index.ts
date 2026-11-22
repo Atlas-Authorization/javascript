@@ -4,6 +4,8 @@ export * from './jwks-cache';
 export { DiscoveryError, JwksDiscovery, discoveryUrlFor, instanceIdFromPublishableKey } from './discovery';
 export * from './verify';
 export * from './request-auth';
+export * from './auth-status';
+export * from './refresh-session';
 export * from './recent-auth';
 // Named step-up policies: the guard for your own API and offline verification of the signed receipt.
 export * from './step-up-gate';

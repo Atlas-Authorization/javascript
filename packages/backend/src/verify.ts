@@ -1,4 +1,5 @@
 import { SidRevocationList, type SidListRevocation } from './sid-revocation';
+import { deriveAuthStatus, type AuthStatus } from './auth-status';
 import { createLocalJWKSet, jwtVerify } from 'jose';
 import {
   ForbiddenError,
@@ -238,6 +239,8 @@ export type VerifyResult =
       detail?: string;
     };
 
+const EXPIRED = { ok: false, reason: 'invalid', expired: true } as const;
+
 /** Build the success result with `has`/`protect` bound to the verified claims. */
 function authorized(claims: SessionClaims): AuthorizedSession {
   return {
@@ -450,6 +453,21 @@ export class AtlasBackend {
    * one of those a minute.
    */
   async verify(token: string): Promise<VerifyResult> {
+    const result = await this.verifyWithExpiry(token);
+    if (result.ok || !('expired' in result)) return result;
+    // The public contract stays one `invalid` reason for every failure.
+    return { ok: false, reason: 'invalid' };
+  }
+
+  /**
+   * `verify`, but a token whose signature, issuer, audience, `azp` and token kind
+   * all check out and that is ONLY past its `exp` (beyond the clock skew) comes
+   * back as `{ ok: false, reason: 'invalid', expired: true }`. Everything else
+   * fails exactly as in `verify`. Used to tell "renew this session" from "refuse
+   * this token"; never treat `expired` as authorized.
+   * @internal
+   */
+  async verifyWithExpiry(token: string): Promise<VerifyResult | { ok: false; reason: 'invalid'; expired: true }> {
     if (!token || token.split('.').length !== 3) return { ok: false, reason: 'malformed' };
 
     // A token from a configured legacy issuer (within its window) is verified
@@ -476,6 +494,7 @@ export class AtlasBackend {
     }
 
     let claims: SessionClaims;
+    let expired = false;
     try {
       const { payload } = await jwtVerify(token, createLocalJWKSet(keys as never), {
         // Pinned. Without this, a token whose header says `alg: none` — or any
@@ -494,13 +513,20 @@ export class AtlasBackend {
         currentDate: this.options.now ? new Date(this.options.now()) : undefined,
       });
       claims = payload as unknown as SessionClaims;
-    } catch {
+    } catch (err) {
+      // jose checks signature, issuer and audience before `exp`, so an
+      // ERR_JWT_EXPIRED error carries a payload that is already authentic.
+      const e = err as { code?: string; payload?: unknown };
+      if (e?.code !== 'ERR_JWT_EXPIRED' || !e.payload || typeof e.payload !== 'object') {
       /**
        * One reason for every failure. Telling a caller whether the signature,
        * the issuer or the expiry was wrong helps someone refining a forged
        * token far more than it helps a developer debug a real one.
        */
       return { ok: false, reason: 'invalid' };
+      }
+      claims = e.payload as SessionClaims;
+      expired = true;
     }
 
     /**
@@ -518,7 +544,7 @@ export class AtlasBackend {
       if (this.options.authorizedParties?.length && (!claims.azp || !this.options.authorizedParties.includes(claims.azp))) {
         return { ok: false, reason: 'unauthorized_party' };
       }
-      return authorized(claims);
+      return expired ? EXPIRED : authorized(claims);
     }
     const isSessionMarked = tokenUse === 'session';
     // §S4: a first-party session token now carries `aud` (its instance id), so
@@ -539,6 +565,8 @@ export class AtlasBackend {
         return { ok: false, reason: 'unauthorized_party' };
       }
     }
+
+    if (expired) return EXPIRED;
 
     // The single success-construction point — verifyOnline and
     // authenticateRequest both return this result, so the bound has()/protect()
@@ -603,7 +631,7 @@ export class AtlasBackend {
       headers: { get(name: string): string | null } | Record<string, string | undefined>;
     },
     options: { revocation?: SidListRevocation } = {},
-  ): Promise<VerifyResult> {
+  ): Promise<VerifyResult & { status: AuthStatus }> {
     const header = readHeader(request.headers, 'authorization');
     const cookie = readHeader(request.headers, 'cookie');
 
@@ -611,10 +639,12 @@ export class AtlasBackend {
     const fromCookie = cookie ? readCookie(cookie, '__session') : undefined;
 
     const token = bearer ?? fromCookie;
-    if (!token) return { ok: false, reason: 'malformed' };
+    if (!token) return { ok: false, reason: 'malformed', status: deriveAuthStatus(null, cookie).status };
 
-    const result = await this.verify(token);
-    if (!result.ok || !options.revocation) return result;
+    const raw = await this.verifyWithExpiry(token);
+    const status = deriveAuthStatus(raw, cookie).status;
+    const result: VerifyResult = raw.ok || !('expired' in raw) ? raw : { ok: false, reason: 'invalid' };
+    if (!result.ok || !options.revocation) return { ...result, status };
     if (!this.options.secretKey) {
       throw new Error('authenticateRequest with `revocation` needs `secretKey` (with sessions:read) on the AtlasBackend.');
     }
@@ -624,8 +654,10 @@ export class AtlasBackend {
       fetchImpl: this.options.fetchImpl,
       now: this.options.now ?? Date.now,
     });
-    if (await this.sidList.isRevoked(result.claims.sid)) return { ok: false, reason: 'revoked' };
-    return this.sidList.unavailable() ? { ok: false, reason: 'revocation_unavailable' } : result;
+    if (await this.sidList.isRevoked(result.claims.sid)) return { ok: false, reason: 'revoked', status: 'token_invalid' };
+    return this.sidList.unavailable()
+      ? { ok: false, reason: 'revocation_unavailable', status: 'token_invalid' }
+      : { ...result, status };
   }
 
   /**

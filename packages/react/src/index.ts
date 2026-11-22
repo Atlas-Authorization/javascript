@@ -31,7 +31,7 @@ export { useSignInFlow, useSignUpFlow } from './sign-in-flow';
 export { ATLAS_REACT_SDK, ATLAS_REACT_VERSION } from './version';
 // `onSignOut({ reason })`: the event type, and the `atlas:signout` window event for
 // scripts outside the React tree.
-export { SIGN_OUT_EVENT, onAtlasSignOut } from '@atlasauth/js';
+export { SIGN_OUT_EVENT, onAtlasSignOut, atlasReady, markAtlasReady, mayHaveSession, SIGNED_IN_HINT_COOKIE } from '@atlasauth/js';
 export type { SignOutEvent, SignOutReason } from '@atlasauth/js';
 export * from './fapi';
 export * from './components';

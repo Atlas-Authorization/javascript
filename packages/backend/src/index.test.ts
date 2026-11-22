@@ -566,6 +566,7 @@ describe('reading the token off a request', () => {
     expect(await backend.authenticateRequest({ headers: {} })).toEqual({
       ok: false,
       reason: 'malformed',
+      status: 'signed_out',
     });
   });
 });

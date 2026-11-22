@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/workers",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Atlas for Cloudflare Workers, Deno, Bun and any Web-standard Request/Response runtime: verify the session, require auth, rate limit, spend grant usage and receive webhooks, without a framework.",
   "license": "MIT",
   "type": "module",
@@ -19,7 +19,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@atlasauth/backend": ">=0.51.0 <1.0.0"
+    "@atlasauth/backend": ">=0.62.0 <1.0.0"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

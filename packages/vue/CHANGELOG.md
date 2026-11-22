@@ -1,6 +1,8 @@
 # @atlasauth/vue changelog
 
+## 0.24.2
 
+- Calls `markAtlasReady` after the first boot, so `atlasReady()` from `@atlasauth/js` resolves in apps using this SDK. Needs `@atlasauth/js` 0.51.0.
 
 ## 0.24.1
 

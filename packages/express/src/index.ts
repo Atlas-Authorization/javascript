@@ -13,6 +13,9 @@ import {
   hasFromClaims,
   type ProtectCondition,
   type SessionClaims,
+  deriveAuthStatus,
+  setAuthStatusHeader,
+  type AuthStatus,
 } from '@atlasauth/backend';
 // Real Express types, type-only so `express` is a peer dependency and is NEVER
 // bundled or pinned — the middleware/handlers then type against genuine Express
@@ -82,6 +85,10 @@ export interface AtlasAuth {
   claims: SessionClaims | null;
   /** Convenience flag: `true` exactly when `userId` is non-null. */
   isSignedIn: boolean;
+  /** Why the request is or is not signed in. `session_expired` means renew, do not sign out. */
+  status: AuthStatus;
+  /** The underlying verify reason (`no_token`, `expired`, `malformed`, `invalid`, `revoked`, ...); absent when signed in. */
+  reason?: string;
   /**
    * The impersonator when this is an impersonation session (RFC 8693 `act`),
    * else `null`. Read it to render the mandatory "viewing as X" banner and to
@@ -331,8 +338,10 @@ function readCookie(header: string | undefined, name: string): string | undefine
  * The signed-out auth state. `has()` is always `false` and `protect()` always
  * throws, so a route that forgets to check `userId` still fails closed.
  */
-export function signedOut(): AtlasAuth {
+export function signedOut(status: Exclude<AuthStatus, 'signed_in'> = 'signed_out', reason?: string): AtlasAuth {
   return {
+    status,
+    ...(reason ? { reason } : {}),
     userId: null,
     sessionId: null,
     orgId: null,
@@ -357,6 +366,7 @@ function signedIn(claims: SessionClaims): AtlasAuth {
     orgRole: claims.org_role ?? null,
     claims,
     isSignedIn: true,
+    status: 'signed_in',
     actor:
       claims.act && typeof claims.act.sub === 'string' && claims.act.sub
         ? { sub: claims.act.sub }
@@ -385,25 +395,30 @@ export async function resolveAuth(
   try {
     const header = firstHeader(req.headers.authorization ?? req.headers.Authorization);
     const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-    const cookie = readCookie(firstHeader(req.headers.cookie), '__session');
+    const cookieHeader = firstHeader(req.headers.cookie);
+    const cookie = readCookie(cookieHeader, '__session');
 
     const token = bearer ?? cookie;
-    if (!token) return signedOut();
+    if (!token) {
+      const { status, reason } = deriveAuthStatus(null, cookieHeader);
+      return signedOut(status as Exclude<AuthStatus, 'signed_in'>, reason);
+    }
 
     // With `revocation`, the session-revocation list is consulted too (fails closed without a secret key).
-    const result = revocation
-      ? await backend.authenticateRequest(
-          { headers: { authorization: bearer ? `Bearer ${bearer}` : undefined, cookie: bearer ? undefined : `__session=${cookie}` } },
-          { revocation: { mode: 'sid_list', ...revocation } },
-        )
-      : await backend.verify(token);
-    if (!result.ok) return signedOut();
+    // The full Cookie header goes through so the refresh cookie / signed-in hint can make the status `session_expired`.
+    const result = await backend.authenticateRequest(
+      { headers: { authorization: header, cookie: cookieHeader } },
+      revocation ? { revocation: { mode: 'sid_list', ...revocation } } : {},
+    );
+    if (!result.ok) {
+      return signedOut(result.status as Exclude<AuthStatus, 'signed_in'>, result.status === 'token_invalid' ? result.reason : 'expired');
+    }
 
     return signedIn(result.claims);
   } catch {
     // Any unexpected failure (a corrupt header, a JWKS transport error) still
     // degrades to signed-out rather than propagating and crashing the request.
-    return signedOut();
+    return signedOut('token_invalid', 'error');
   }
 }
 
@@ -540,6 +555,7 @@ export function requireAuth(options?: AtlasMiddlewareOptions): RequestHandler {
   return function requireAuthHandler(req, res, next) {
     const gate = (auth: AtlasAuth): void => {
       if (!auth.userId) {
+        setAuthStatusHeader(res, auth);
         res.status(401).json({ errors: [{ code: 'UNAUTHENTICATED' }] });
         return;
       }

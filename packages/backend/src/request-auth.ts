@@ -1,5 +1,6 @@
 import { ForbiddenError, evaluate, hasFromClaims, type ProtectCondition } from '@atlasauth/authz';
 import type { AtlasBackend, SessionClaims } from './verify';
+import { deriveAuthStatus, type AuthStatus } from './auth-status';
 
 /**
  * Framework-neutral request authentication, shared by the Koa, Hapi and GraphQL
@@ -15,6 +16,10 @@ export interface RequestAuth {
   orgRole: string | null;
   claims: SessionClaims | null;
   isSignedIn: boolean;
+  /** Why the request is or is not signed in. `session_expired` means renew, do not sign out. */
+  status: AuthStatus;
+  /** The underlying verify reason (`no_token`, `expired`, `malformed`, `invalid`, `revoked`, ...); absent when signed in. */
+  reason?: string;
   /** The impersonator (RFC 8693 `act`) or null. */
   actor: { sub: string } | null;
   has(condition?: ProtectCondition): boolean;
@@ -22,8 +27,10 @@ export interface RequestAuth {
   protect(condition?: ProtectCondition): SessionClaims;
 }
 
-export function signedOutAuth(): RequestAuth {
+export function signedOutAuth(status: Exclude<AuthStatus, 'signed_in'> = 'signed_out', reason?: string): RequestAuth {
   return {
+    status,
+    ...(reason ? { reason } : {}),
     userId: null,
     sessionId: null,
     orgId: null,
@@ -46,6 +53,7 @@ export function signedInAuth(claims: SessionClaims): RequestAuth {
     orgRole: claims.org_role ?? null,
     claims,
     isSignedIn: true,
+    status: 'signed_in',
     actor: claims.act && typeof claims.act.sub === 'string' && claims.act.sub ? { sub: claims.act.sub } : null,
     has: (condition = {}) => hasFromClaims(claims, condition),
     protect: (condition = {}) => {
@@ -80,10 +88,16 @@ export function sessionTokenFromHeaders(headers: Record<string, HeaderValue>): s
 export async function authenticateHeaders(backend: AtlasBackend, headers: Record<string, HeaderValue>): Promise<RequestAuth> {
   try {
     const token = sessionTokenFromHeaders(headers);
-    if (!token) return signedOutAuth();
-    const result = await backend.verify(token);
-    return result.ok ? signedInAuth(result.claims) : signedOutAuth();
+    const cookie = first(headers.cookie ?? headers.Cookie);
+    if (!token) {
+      const { status, reason } = deriveAuthStatus(null, cookie);
+      return signedOutAuth(status as Exclude<AuthStatus, 'signed_in'>, reason);
+    }
+    const result = await backend.verifyWithExpiry(token);
+    if (result.ok) return signedInAuth(result.claims);
+    const { status, reason } = deriveAuthStatus(result, cookie);
+    return signedOutAuth(status as Exclude<AuthStatus, 'signed_in'>, reason);
   } catch {
-    return signedOutAuth();
+    return signedOutAuth('token_invalid', 'error');
   }
 }

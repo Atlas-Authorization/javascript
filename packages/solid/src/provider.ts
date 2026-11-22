@@ -34,6 +34,7 @@ import {
   configureReferralCapture,
   type ReferralConsent,
   withDevBrowser,
+  markAtlasReady,
 } from '@atlasauth/js';
 import { ATLAS_SOLID_SDK } from './version';
 import { AtlasContext } from './context';
@@ -445,6 +446,7 @@ export function createAtlasClient(options: {
       window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
     }
     await reload();
+    markAtlasReady(state.status === 'signed_in');
     // Signed in inside the Atlas popup: hand back to the waiting opener and
     // close (a no-op in an ordinary tab).
     if (exchanged) void closeOAuthPopupAfterSignIn();

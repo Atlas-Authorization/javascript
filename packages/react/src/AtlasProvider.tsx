@@ -53,6 +53,14 @@ import {
   reportSdkAdvisory,
   sdkHeaderValue,
   signOutReasonFromClient,
+  signOutReasonFromRefresh,
+  type SignOutReason,
+  atlasReady,
+  markAtlasReady,
+  resetAtlasReady,
+  onWake,
+  coordinatedRefresh,
+  REFRESH_LEAD_MS,
   type SignOutEvent,
   type SignOutListener,
   configureReferralCapture,
@@ -559,7 +567,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
     setClaims(decodeClaims(jwt));
   }, []);
 
-  const reload = useCallback(async (): Promise<boolean> => {
+  const reload = useCallback(async (fallbackReason?: SignOutReason): Promise<boolean> => {
     try {
       // A custom tombstone store may answer asynchronously: never decide whether
       // to adopt a session before it has (settled at once for localStorage).
@@ -592,7 +600,10 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
         // Why we are signed out, when we were signed in: a path that already
         // said (this tab, another tab) wins; otherwise the server's reason.
         if (sessionIdRef.current) {
-          notifier.current?.expect(tombstoned ? 'other_tab' : signOutReasonFromClient(body));
+          const fromServer = signOutReasonFromClient(body);
+          notifier.current?.expect(
+            tombstoned ? 'other_tab' : fromServer === 'unknown' && fallbackReason ? fallbackReason : fromServer,
+          );
         }
         sessionIdRef.current = null;
         cache.current.clear();
@@ -644,18 +655,29 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
     if (!current) return;
 
     try {
-      const response = await call(`/v1/client/sessions/${current.sessionId}/tokens`, {
-        method: 'POST',
+      // One network refresh across every tab of this app; the others adopt the
+      // winner's token from the channel.
+      const token = await coordinatedRefresh(`session:${publishableKey}`, async () => {
+        const response = await call(`/v1/client/sessions/${current.sessionId}/tokens`, {
+          method: 'POST',
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          throw Object.assign(new Error('refresh failed'), { status: response.status, body });
+        }
+        const body = (await response.json()) as { jwt: string; session_id: string };
+        const expiresAt = readExpiry(body.jwt);
+        return expiresAt ? { jwt: body.jwt, expiresAt, sessionId: body.session_id } : null;
       });
-      if (!response.ok) throw new Error('refresh failed');
-
-      const body = (await response.json()) as { jwt: string; session_id: string };
-      applyToken(body.jwt, body.session_id);
-    } catch {
-      // The session may genuinely be gone. Re-boot rather than guess.
-      await reload();
+      if (!token || token.sessionId !== current.sessionId) throw new Error('refresh failed');
+      applyToken(token.jwt, token.sessionId);
+    } catch (err) {
+      // The session may genuinely be gone. Re-boot rather than guess; if that
+      // ends the session, say why (the server's reason wins over ours).
+      const { status, body } = err as { status?: number; body?: unknown };
+      await reload(signOutReasonFromRefresh(status ?? null, body));
     }
-  }, [applyToken, call, reload]);
+  }, [applyToken, call, reload, publishableKey]);
 
   /** §7.4: proactive, jittered refresh scheduled from the token's own expiry. */
   useEffect(() => {
@@ -674,17 +696,12 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
   const keepAlive = props.keepSessionAlive !== false;
   useEffect(() => {
     if (!keepAlive || status !== 'signed_in' || !hasBrowserUrl()) return;
-    const wake = () => {
-      if (document.visibilityState === 'hidden') return;
+    // No hidden->visible gating: a throttled background tab lets the 60 s token
+    // lapse, and the wake that brings it back is exactly when to renew it.
+    return onWake(() => {
       const token = cache.current.peek();
-      if (token && msUntilRefresh({ token, now: Date.now() }) <= 30_000) void refresh();
-    };
-    document.addEventListener('visibilitychange', wake);
-    window.addEventListener('online', wake);
-    return () => {
-      document.removeEventListener('visibilitychange', wake);
-      window.removeEventListener('online', wake);
-    };
+      if (token && token.expiresAt - Date.now() <= REFRESH_LEAD_MS) void refresh();
+    });
   }, [keepAlive, status, refresh]);
 
   /** §R3.2 tell sibling tabs that auth changed here, so they re-check. */
@@ -811,7 +828,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
       if (fromUrl && hasBrowserUrl()) {
         window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
       }
-      await reload();
+      markAtlasReady(await reload());
       // §R3.2 if this was the tab that completed a sign-in, wake any sibling tab
       // (e.g. the one that opened the Google window) so it leaves the form too.
       if (result?.ticket) announceSessionChange();
@@ -865,9 +882,18 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
         if (!sessionId) return null;
         return (await getTemplateToken(fapiClientRef.current!, sessionId, options.template))?.jwt ?? null;
       }
+      // Never answer null while the first boot is still running: wait for it (10 s cap).
+      if (statusRef.current === 'loading') {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          atlasReady(),
+          new Promise((resolve) => (timer = setTimeout(resolve, 10_000))),
+        ]);
+        if (timer) clearTimeout(timer);
+      }
       // A 5s skew so a token that would die inside the caller's request is
       // refreshed first rather than handed over.
-      const usable = cache.current.get(5_000);
+      const usable = options?.skipCache ? null : cache.current.get(5_000);
       if (usable) return usable.jwt;
 
       await refresh();
@@ -1080,6 +1106,8 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
       const ended = lastSessionRef.current;
       lastSessionRef.current = null;
       notifier.current?.signedOut(ended);
+      resetAtlasReady();
+      markAtlasReady(false);
     }
   }, [status, user, session]);
 

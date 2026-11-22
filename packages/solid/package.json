@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/solid",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +16,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@atlasauth/js": ">=0.39.0 <1.0.0",
+    "@atlasauth/js": ">=0.51.0 <1.0.0",
     "solid-js": ">=1.8"
   },
   "devDependencies": {

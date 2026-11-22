@@ -1,5 +1,12 @@
 # @atlasauth/backend changelog
 
+## 0.62.0
+
+- `AuthStatus` (`signed_in`, `signed_out`, `session_expired`, `token_invalid`): `RequestAuth` gains `status` and `reason`, and `authenticateRequest` results gain `status`. A token that is only past its expiry (signature and claims valid) with the refresh cookie or `__atlas_uat` present is `session_expired`, meaning renew rather than sign out. `isSignedIn` and `verify` are unchanged.
+- `authStatusHeaders`, `withAuthStatus` and `setAuthStatusHeader` set `x-atlas-auth-status` (`signed-out`, `session-expired`, `token-invalid`) on a 401.
+- `refreshSessionFromRequest(request, { frontendApi, publishableKey? })` renews a lapsed session server-side through the Frontend API and returns `{ token, setCookie }`, or `null`. It never throws.
+- **type-widening:** `RequestAuth` gains required `status` for code that builds one by hand.
+
 ## 0.61.0
 
 - `atlas.nativeApps`: list, create, get, update and delete native apps (`/v1/native_apps`), and get or set which apps the publishable key may sign in (`/v1/native_apps/publishable_key`).
@@ -176,8 +183,6 @@
 ### Added
 
 - Machine grants, machine organization memberships, scope presets on resource servers, and `acceptMachineTokens` on `createAccessTokenVerifier`.
-
-## Unreleased
 
 ## 0.50.0 — 2026-11-14
 

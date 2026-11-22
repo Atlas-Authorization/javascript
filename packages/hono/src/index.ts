@@ -13,6 +13,8 @@ import {
   hasFromClaims,
   type ProtectCondition,
   type SessionClaims,
+  deriveAuthStatus,
+  type AuthStatus,
 } from '@atlasauth/backend';
 
 /**
@@ -201,6 +203,10 @@ export interface AtlasAuthState {
   orgId: string | null;
   orgRole: string | null;
   claims: SessionClaims | null;
+  /** Why the request is or is not signed in. `session_expired` means renew, do not sign out. */
+  status: AuthStatus;
+  /** The underlying verify reason (`no_token`, `expired`, `malformed`, `invalid`, `revoked`, ...); absent when signed in. */
+  reason?: string;
 }
 
 /**
@@ -287,7 +293,12 @@ export const SIGNED_OUT: AtlasAuth = buildAuth({
   orgId: null,
   orgRole: null,
   claims: null,
+  status: 'signed_out',
 });
+
+function signedOutAuth(status: Exclude<AuthStatus, 'signed_in'>, reason?: string): AtlasAuth {
+  return buildAuth({ ...SIGNED_OUT, status, ...(reason ? { reason } : {}) });
+}
 
 /**
  * Resolve auth from whatever a request carries. The `Authorization: Bearer`
@@ -306,19 +317,24 @@ export async function resolveAuth(
 ): Promise<AtlasAuth> {
   const header = c.req.header('authorization') ?? c.req.header('Authorization');
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-  const cookie = readCookie(c.req.header('cookie') ?? c.req.header('Cookie'), SESSION_COOKIE);
+  const cookieHeader = c.req.header('cookie') ?? c.req.header('Cookie');
+  const cookie = readCookie(cookieHeader, SESSION_COOKIE);
 
   const token = bearer ?? cookie;
-  if (!token) return SIGNED_OUT;
+  if (!token) {
+    const { status, reason } = deriveAuthStatus(null, cookieHeader);
+    return signedOutAuth(status as Exclude<AuthStatus, 'signed_in'>, reason);
+  }
 
   // With `revocation`, the session-revocation list is consulted too (fails closed without a secret key).
-  const result = revocation
-    ? await backend.authenticateRequest(
-        { headers: { authorization: bearer ? `Bearer ${bearer}` : undefined, cookie: bearer ? undefined : `${SESSION_COOKIE}=${cookie}` } },
-        { revocation: { mode: 'sid_list', ...revocation } },
-      )
-    : await backend.verify(token);
-  if (!result.ok) return SIGNED_OUT;
+  // The full Cookie header goes through so the refresh cookie / signed-in hint can make the status `session_expired`.
+  const result = await backend.authenticateRequest(
+    { headers: { authorization: header, cookie: cookieHeader } },
+    revocation ? { revocation: { mode: 'sid_list', ...revocation } } : {},
+  );
+  if (!result.ok) {
+    return signedOutAuth(result.status as Exclude<AuthStatus, 'signed_in'>, result.status === 'token_invalid' ? result.reason : 'expired');
+  }
 
   return buildAuth({
     userId: result.claims.sub,
@@ -326,6 +342,7 @@ export async function resolveAuth(
     orgId: result.claims.org_id ?? null,
     orgRole: result.claims.org_role ?? null,
     claims: result.claims,
+    status: 'signed_in',
   });
 }
 
@@ -364,7 +381,7 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions): MiddlewareHand
     try {
       auth = await resolveAuth(backend, c, revocation);
     } catch {
-      auth = SIGNED_OUT;
+      auth = signedOutAuth('token_invalid', 'error');
     }
     c.set(ATLAS_CONTEXT_KEY, auth);
     if (csrfGate) {

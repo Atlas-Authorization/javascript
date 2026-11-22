@@ -1,5 +1,6 @@
 import {
   CSRF_COOKIE,
+  authStatusHeaders,
   checkCsrfToken,
   csrfToken,
   deriveCsrfSecret,
@@ -178,13 +179,21 @@ export function atlasProxy(options: AtlasProxyOptions): AtlasProxy {
     resolved.set(request, decision.auth);
 
     switch (decision.kind) {
-      case 'continue':
-        return csrfGate ? csrfGate(request, decision.auth) : null;
+      case 'continue': {
+        const blocked = csrfGate ? await csrfGate(request, decision.auth) : null;
+        if (blocked || !decision.refreshed) return blocked;
+        // Next's request-header override protocol: the page sees the renewed cookie, the browser gets Set-Cookie.
+        const headers = new Headers({ 'x-middleware-next': '1' });
+        for (const sc of decision.refreshed.setCookie) headers.append('set-cookie', sc);
+        const res = withAtlasHeaders(request, new Response(null, { headers }), decision.auth);
+        res.headers.set(`${OVERRIDE_PREFIX}cookie`, decision.refreshed.cookieHeader);
+        return res;
+      }
 
       case 'unauthorized':
         return new Response(JSON.stringify(UNAUTHENTICATED_BODY), {
           status: 401,
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', ...authStatusHeaders({ status: decision.status }) },
         });
 
       case 'redirect': {

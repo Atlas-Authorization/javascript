@@ -1,5 +1,9 @@
 # @atlasauth/angular changelog
 
+## 0.23.2
+
+- Calls `markAtlasReady` after the first boot, so `atlasReady()` from `@atlasauth/js` resolves in apps using this SDK. Needs `@atlasauth/js` 0.51.0.
+
 ## 0.23.1
 
 - Uses `@atlasauth/design` 0.5, which has no zod dependency: installing this package no longer changes your app's zod version.

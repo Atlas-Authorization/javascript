@@ -10,6 +10,8 @@ export type AuthStatus = 'loading' | 'signed_in' | 'signed_out';
 
 /** What `getToken` mints: the session JWT by default. */
 export interface GetTokenOptions {
+  /** Ignore the cached session token and renew it now (one refresh shared across tabs). Use it to retry once after a 401 with `x-atlas-auth-status: session-expired`. */
+  skipCache?: boolean;
   /** A named JWT template. */
   template?: string;
   /** An identity integration id (a preset such as `chatly`, or a custom one): its integration token. */

@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/nextjs",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -25,7 +25,7 @@
   },
   "peerDependencies": {
     "next": ">=13.4",
-    "@atlasauth/backend": ">=0.51.0 <1.0.0"
+    "@atlasauth/backend": ">=0.62.0 <1.0.0"
   },
   "peerDependenciesMeta": {
     "next": {

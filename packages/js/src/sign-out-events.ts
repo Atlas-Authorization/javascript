@@ -9,6 +9,9 @@
  *   - `revoked`         the session was ended elsewhere (signed out on another
  *                       device, revoked by an admin, banned), detected on the
  *                       next token refresh or session re-check
+ *   - `refresh_failed`  a token refresh failed (network, 5xx, or a 401 with no
+ *                       reason) and ended the session
+ *   - `token_invalid`   the server said the token itself is bad
  *   - `unknown`         signed out without a reason the SDK could tell
  *
  * Framework providers drive one {@link SignOutNotifier}: it fires listeners
@@ -19,7 +22,14 @@
  *   window.addEventListener('atlas:signout', (e) => Chatly('reset'));
  */
 
-export type SignOutReason = 'user' | 'other_tab' | 'session_expired' | 'revoked' | 'unknown';
+export type SignOutReason =
+  | 'user'
+  | 'other_tab'
+  | 'session_expired'
+  | 'revoked'
+  | 'refresh_failed'
+  | 'token_invalid'
+  | 'unknown';
 
 export interface SignOutEvent {
   reason: SignOutReason;
@@ -35,7 +45,20 @@ export type SignOutListener = (event: SignOutEvent) => void;
 /** Map a signed-out `/v1/client` body's `signed_out_reason` to a reason. */
 export function signOutReasonFromClient(body: unknown): SignOutReason {
   const reason = (body as { signed_out_reason?: unknown } | null)?.signed_out_reason;
-  return reason === 'session_expired' || reason === 'revoked' ? reason : 'unknown';
+  return reason === 'session_expired' || reason === 'revoked' || reason === 'token_invalid' ? reason : 'unknown';
+}
+
+/**
+ * Why a failed token refresh ended the session: the server's reason when a 401
+ * carried one, otherwise `refresh_failed` (network, 5xx, or a bare 401).
+ * `status` is null for a network failure.
+ */
+export function signOutReasonFromRefresh(status: number | null, body: unknown): SignOutReason {
+  if (status === 401) {
+    const reason = signOutReasonFromClient(body);
+    if (reason !== 'unknown') return reason;
+  }
+  return 'refresh_failed';
 }
 
 export class SignOutNotifier {

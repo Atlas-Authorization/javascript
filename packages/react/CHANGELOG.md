@@ -1,5 +1,12 @@
 # @atlasauth/react changelog
 
+## 0.41.0
+
+- `getToken()` called while the provider is still loading now waits for the first boot (up to 10 s) instead of returning `null`, so an app's first request after a reload carries a token.
+- A lapsed token is renewed when the tab wakes (visible, focus, online, back/forward cache restore), including after a hidden tab was throttled; tabs share one refresh. `keepSessionAlive={false}` still opts out.
+- `onSignOut` reasons gain `'refresh_failed'` (a refresh ended the session without a server reason) and `'token_invalid'` (type-widening: an exhaustive `switch` over `SignOutReason` needs the new cases).
+- Re-exports `atlasReady`, `markAtlasReady`, `mayHaveSession` and `SIGNED_IN_HINT_COOKIE`.
+
 ## 0.40.2
 
 - New `host` prop (`'dom'` | `'native'`) says explicitly what `<AtlasProvider>` renders around its children; React Native detection is now only the fallback when it is not set.

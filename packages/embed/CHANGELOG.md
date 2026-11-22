@@ -1,7 +1,5 @@
 # @atlasauth/embed changelog
 
-
-
 ## 0.20.3
 
 - Uses `@atlasauth/js` 0.49 (sign-ups carry the `atlas_visit` token).

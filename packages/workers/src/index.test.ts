@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
-import { SIGNED_OUT, createAtlas } from './index';
+import { createAtlas } from './index';
 
 const ISSUER = 'https://fox.fapi.atlas.test';
 const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
@@ -37,7 +37,7 @@ describe('authenticate', () => {
 
   it('treats a missing or unverifiable token as signed out, never an error', async () => {
     const { atlas } = await setup();
-    expect(await atlas.authenticate(req())).toBe(SIGNED_OUT);
+    expect(await atlas.authenticate(req())).toMatchObject({ isSignedIn: false, userId: null, status: 'signed_out', reason: 'no_token' });
     expect((await atlas.authenticate(req({ authorization: 'Bearer not-a-jwt' }))).isSignedIn).toBe(false);
   });
 
@@ -111,3 +111,45 @@ async function fetchLike(): Promise<Response> {
   const r = Response.redirect('https://x.test/', 302);
   return r;
 }
+
+describe('auth status', () => {
+  const expiredToken = (privateKey: unknown) => {
+    const now = Math.floor(Date.now() / 1000);
+    return new SignJWT({ sid: 'sess_1' }).setProtectedHeader({ alg: 'RS256', kid: 'kid-1' }).setSubject('user_1').setIssuer(ISSUER).setIssuedAt(now - 600).setExpirationTime(now - 120).sign(privateKey as never);
+  };
+
+  it('signed in', async () => {
+    const { atlas, privateKey } = await setup();
+    const auth = await atlas.authenticate(req({ cookie: `__session=${await token(privateKey)}` }));
+    expect(auth).toMatchObject({ status: 'signed_in', isSignedIn: true });
+    expect(auth.reason).toBeUndefined();
+  });
+
+  it('session_expired with only the refresh cookie or hint, signed_out with nothing', async () => {
+    const { atlas } = await setup();
+    expect(await atlas.authenticate(req({ cookie: '__atlas_rt=r' }))).toMatchObject({ status: 'session_expired', reason: 'no_token' });
+    expect(await atlas.authenticate(req({ cookie: '__atlas_uat=1700000000' }))).toMatchObject({ status: 'session_expired' });
+  });
+
+  it('an expired token is session_expired with the refresh cookie, signed_out without; garbage is token_invalid', async () => {
+    const { atlas, privateKey } = await setup();
+    const expired = await expiredToken(privateKey);
+    expect(await atlas.authenticate(req({ cookie: `__session=${expired}; __atlas_rt=r` }))).toMatchObject({ status: 'session_expired', reason: 'expired', isSignedIn: false });
+    expect(await atlas.authenticate(req({ cookie: `__session=${expired}` }))).toMatchObject({ status: 'signed_out', reason: 'expired' });
+    expect(await atlas.authenticate(req({ cookie: '__session=garbage; __atlas_rt=r' }))).toMatchObject({ status: 'token_invalid' });
+  });
+
+  it('requireAuth sets x-atlas-auth-status on its 401', async () => {
+    const { atlas, privateKey } = await setup();
+    const renew = (await atlas.requireAuth(req({ cookie: '__atlas_rt=r' }))) as Response;
+    expect(renew.status).toBe(401);
+    expect(renew.headers.get('x-atlas-auth-status')).toBe('session-expired');
+    expect(renew.headers.get('www-authenticate')).toBe('Bearer');
+    const out = (await atlas.requireAuth(req())) as Response;
+    expect(out.headers.get('x-atlas-auth-status')).toBe('signed-out');
+    const bad = (await atlas.requireAuth(req({ cookie: '__session=garbage' }))) as Response;
+    expect(bad.headers.get('x-atlas-auth-status')).toBe('token-invalid');
+    const ok = await atlas.requireAuth(req({ cookie: `__session=${await token(privateKey)}` }));
+    expect(ok instanceof Response).toBe(false);
+  });
+});

@@ -1,6 +1,8 @@
 # @atlasauth/solid changelog
 
+## 0.17.1
 
+- Calls `markAtlasReady` after the first boot, so `atlasReady()` from `@atlasauth/js` resolves in apps using this SDK. Needs `@atlasauth/js` 0.51.0.
 
 ## 0.17.0
 

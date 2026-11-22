@@ -210,3 +210,50 @@ describe('has / protect helpers', () => {
     expect(() => SIGNED_OUT.protect({ permission: 'x' })).toThrow();
   });
 });
+
+describe('auth status', () => {
+  const expiredToken = async (privateKey: unknown) => {
+    const now = Math.floor(Date.now() / 1000);
+    return new SignJWT({ sid: 'sess_1' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'kid-1' })
+      .setSubject('user_1')
+      .setIssuer(ISSUER)
+      .setIssuedAt(now - 600)
+      .setExpirationTime(now - 120)
+      .sign(privateKey as never);
+  };
+
+  it('signed_in carries no reason', async () => {
+    const { privateKey, jwks } = await keyring();
+    const auth = await resolveAuth(backendFor(jwks), fakeContext({ cookie: `__session=${await token(privateKey)}` }));
+    expect(auth).toMatchObject({ status: 'signed_in', isSignedIn: true });
+    expect(auth.reason).toBeUndefined();
+  });
+
+  it('signed_out with nothing, session_expired with only the refresh cookie or hint', async () => {
+    const { jwks } = await keyring();
+    expect(await resolveAuth(backendFor(jwks), fakeContext())).toMatchObject({ status: 'signed_out', reason: 'no_token', isSignedIn: false });
+    expect(await resolveAuth(backendFor(jwks), fakeContext({ cookie: '__atlas_rt=r' }))).toMatchObject({ status: 'session_expired', reason: 'no_token' });
+    expect(await resolveAuth(backendFor(jwks), fakeContext({ cookie: '__atlas_uat=1700000000' }))).toMatchObject({ status: 'session_expired' });
+  });
+
+  it('an expired token is session_expired with the refresh cookie, signed_out without', async () => {
+    const { privateKey, jwks } = await keyring();
+    const expired = await expiredToken(privateKey);
+    expect(await resolveAuth(backendFor(jwks), fakeContext({ cookie: `__session=${expired}; __atlas_rt=r` }))).toMatchObject({
+      status: 'session_expired',
+      reason: 'expired',
+      isSignedIn: false,
+    });
+    expect(await resolveAuth(backendFor(jwks), fakeContext({ cookie: `__session=${expired}` }))).toMatchObject({ status: 'signed_out', reason: 'expired' });
+  });
+
+  it('a malformed token is token_invalid', async () => {
+    const { jwks } = await keyring();
+    expect(await resolveAuth(backendFor(jwks), fakeContext({ cookie: '__session=garbage; __atlas_rt=r' }))).toMatchObject({ status: 'token_invalid', isSignedIn: false });
+  });
+
+  it('getAuth on a request the middleware never saw stays signed_out', () => {
+    expect(getAuth(fakeContext()).status).toBe('signed_out');
+  });
+});

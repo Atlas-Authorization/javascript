@@ -8,6 +8,7 @@ export * from './sign-out-guard';
 export * from './token-cache';
 export * from './session-global';
 export * from './tab-election';
+export * from './session-continuity';
 export * from './attempt';
 export * from './first-factor';
 export * from './app-approval';

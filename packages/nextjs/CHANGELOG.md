@@ -1,5 +1,11 @@
 # @atlasauth/nextjs changelog
 
+## 0.20.0
+
+- `atlasMiddleware` and `atlasProxy` renew an expired `__session` on page navigations (GET, `Accept: text/html`) that still carry the refresh cookie: the new cookies go to the browser and to your server components, and the user is not bounced. One attempt per request. Option `refreshExpiredSession` (default `true`); the Frontend API must be on the same site as the app (`fapiOrigin`, else the origin of `jwksUrl`).
+- 401 responses carry `x-atlas-auth-status` (`signed-out`, `session-expired`, `token-invalid`) so a client can renew and retry instead of signing out.
+- Re-exports `authStatusHeaders`, `withAuthStatus`, `setAuthStatusHeader`, `refreshSessionFromRequest` and `AuthStatus`. Requires `@atlasauth/backend` with these helpers.
+
 ## 0.19.0
 
 - `@atlasauth/nextjs/server` `createAtlasAuth({ revocation, guests, resolve })` returns `auth()`, `verifyRequest()`, `atlasApi` and `configured()`.
@@ -38,8 +44,6 @@
 
 ### Added
 - `previousIssuers` option on the middleware and server helpers (and comma-separated `ATLAS_PREVIOUS_ISSUERS`), so a sign-in host change does not sign users out: tokens from a listed former issuer are accepted. Absent means only `issuer` is accepted.
-
-## Unreleased
 
 ## 0.15.1 — 2026-11-14
 

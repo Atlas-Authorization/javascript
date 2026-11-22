@@ -1,5 +1,11 @@
 # @atlasauth/js changelog
 
+## 0.51.0
+
+- Session continuity for background tabs: `mayHaveSession()` and `SIGNED_IN_HINT_COOKIE` read the signed-in hint cookie; `onWake(cb)` fires when the page becomes visible, gains focus, comes back online or is restored from the back/forward cache (coalesced to once a second); `coordinatedRefresh(key, fn)` makes tabs that wake together share one token refresh.
+- `atlasReady()` resolves once a provider finished its first boot (`markAtlasReady(signedIn)` is for framework providers).
+- `SignOutReason` gains `'refresh_failed'` and `'token_invalid'` (type-widening: an exhaustive `switch` over `SignOutReason` needs the two new cases). `signOutReasonFromRefresh(status, body)` maps a failed refresh to a reason.
+
 ## 0.50.0
 
 - Native OAuth with PKCE: `signInWithNativeBrowser`, `startOAuthSignIn` (sends `code_challenge`, `native_app_id`, `callback`) and `redeemOAuthCode` (`POST /v1/client/sign_ins/oauth/token`). `createPkcePair` works without WebCrypto (Hermes).

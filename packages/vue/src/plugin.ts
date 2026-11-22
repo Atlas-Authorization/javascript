@@ -43,6 +43,7 @@ import {
   configureReferralCapture,
   type ReferralConsent,
   withDevBrowser,
+  markAtlasReady,
 } from '@atlasauth/js';
 import { ATLAS_VUE_SDK } from './version';
 import { applyAppearanceToDom } from '@atlasauth/design/runtime';
@@ -520,7 +521,7 @@ function createAtlasClient(options: CreateAtlasOptions): {
     if (fromUrl && typeof window !== 'undefined') {
       window.history.replaceState({}, document.title, stripRedirectParams(window.location.href));
     }
-    await reload();
+    markAtlasReady(await reload());
     // Signed in inside the Atlas popup: hand back to the opener and close.
     if (exchanged) void closeOAuthPopupAfterSignIn();
   };

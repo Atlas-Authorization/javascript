@@ -3,10 +3,14 @@ import {
   ForbiddenError,
   createBetterAuthBridge,
   createMigrationBridge,
+  authStatusHeaders,
   createPkcePair,
+  deriveAuthStatus,
   evaluate,
   hasFromClaims,
   redeemHandshake,
+  refreshSessionFromRequest,
+  type AuthStatus,
   type SidListRevocation,
   type MigrationBridgeDecision,
   type MigrationTokenExtractor,
@@ -48,6 +52,16 @@ export interface AtlasMiddlewareOptions extends MiddlewareConfig {
    * in), we don't handshake again and let normal routing proceed.
    */
   handshake?: boolean;
+  /**
+   * Renew a lapsed `__session` on the server. A page navigation (GET, `Accept: text/html`)
+   * whose `__session` expired but that still carries the refresh cookie is renewed through
+   * the Frontend API before routing, so the user is neither bounced nor shown a signed-out
+   * page: the fresh cookies go to the browser and to the page's server components. One
+   * attempt per request. Default `true`; set `false` to leave renewal to the browser SDK.
+   * Needs the Frontend API on the same site as the app (a custom domain); the origin is
+   * `fapiOrigin`, else the origin of `jwksUrl`.
+   */
+  refreshExpiredSession?: boolean;
   /** Origin of the Atlas Frontend API (where `/v1/client/handshake` lives).
    *  Defaults to the origin of `jwksUrl`. */
   fapiOrigin?: string;
@@ -155,9 +169,9 @@ export interface EdgeRedirect {
 }
 
 export interface EdgeResponse {
-  next(): unknown;
+  next(init?: { request?: { headers: Headers } }): unknown;
   redirect(url: string | URL): EdgeRedirect;
-  json(body: unknown, init?: { status?: number }): unknown;
+  json(body: unknown, init?: { status?: number; headers?: Record<string, string> }): unknown;
 }
 
 export interface AuthState {
@@ -226,26 +240,40 @@ export async function resolveAuth(
   revocation?: Omit<SidListRevocation, 'mode'>,
   denylist?: LogoutDenylist,
 ): Promise<AuthState> {
+  return (await resolveAuthStatus(backend, request, revocation, denylist)).state;
+}
+
+/** {@link resolveAuth} plus why the request is (not) signed in. */
+export async function resolveAuthStatus(
+  backend: AtlasBackend,
+  request: EdgeRequest,
+  revocation?: Omit<SidListRevocation, 'mode'>,
+  denylist?: LogoutDenylist,
+): Promise<{ state: AuthState; status: AuthStatus }> {
   const header = request.headers.get('authorization');
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-  const cookie = readCookie(request.headers.get('cookie'), '__session');
+  const cookies = request.headers.get('cookie');
+  const cookie = readCookie(cookies, '__session');
 
   const token = bearer ?? cookie;
-  if (!token) return SIGNED_OUT;
+  if (!token) return { state: SIGNED_OUT, status: deriveAuthStatus(null, cookies).status };
 
   // With `revocation`, the session list is consulted too: a revoked or unverifiable-list session is signed out.
   const result = revocation
     ? await backend.authenticateRequest(request, { revocation: { mode: 'sid_list', ...revocation } })
-    : await backend.verify(token);
-  if (!result.ok) return SIGNED_OUT;
-  if (denylist?.has(result.claims)) return SIGNED_OUT;
+    : await backend.authenticateRequest(request);
+  if (!result.ok) return { state: SIGNED_OUT, status: result.status };
+  if (denylist?.has(result.claims)) return { state: SIGNED_OUT, status: 'token_invalid' };
 
   return {
-    userId: result.claims.sub,
-    sessionId: result.claims.sid,
-    orgId: result.claims.org_id ?? null,
-    orgRole: result.claims.org_role ?? null,
-    claims: result.claims,
+    state: {
+      userId: result.claims.sub,
+      sessionId: result.claims.sid,
+      orgId: result.claims.org_id ?? null,
+      orgRole: result.claims.org_role ?? null,
+      claims: result.claims,
+    },
+    status: 'signed_in',
   };
 }
 
@@ -284,9 +312,36 @@ export interface AtlasCookie {
  * decision in one place means the two can never disagree about who is let in.
  */
 export type AtlasDecision =
-  | { kind: 'continue'; auth: AuthState }
+  | { kind: 'continue'; auth: AuthState; refreshed?: RefreshedRequest }
   | { kind: 'redirect'; location: string; cookies: AtlasCookie[]; auth: AuthState }
-  | { kind: 'unauthorized'; auth: AuthState };
+  | { kind: 'unauthorized'; auth: AuthState; status: AuthStatus };
+
+/** A `__session` renewed server-side: cookies for the browser, and the Cookie header the page should see. */
+export interface RefreshedRequest {
+  setCookie: string[];
+  cookieHeader: string;
+}
+
+/** The request's Cookie header with the cookies a response is about to set applied (deleted ones removed). */
+export function applySetCookies(cookieHeader: string | null, setCookie: string[]): string {
+  const jar = new Map<string, string>();
+  for (const part of (cookieHeader ?? '').split(';')) {
+    const [name, ...rest] = part.trim().split('=');
+    if (name) jar.set(name, rest.join('='));
+  }
+  for (const sc of setCookie) {
+    const [pair = '', ...attrs] = sc.split(';');
+    const [name, ...rest] = pair.trim().split('=');
+    const value = rest.join('=');
+    if (!name) continue;
+    if (!value || attrs.some((a) => /^\s*max-age=0\s*$/i.test(a))) jar.delete(name);
+    else jar.set(name, value);
+  }
+  return [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
+const wantsHtml = (request: EdgeRequest) =>
+  (request.method ?? 'GET').toUpperCase() === 'GET' && (request.headers.get('accept') ?? '').includes('text/html');
 
 /**
  * The runtime-neutral decision engine behind {@link atlasMiddleware} and
@@ -303,6 +358,8 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
     ...revocationBackendOptions(options),
   });
   const revocation = revocationOf(options);
+  /** Loop guard: a request is renewed at most once, however often it reaches the decider. */
+  const refreshAttempted = new WeakSet<object>();
 
   const bridgeConfig: BetterAuthBridgeConfig | null = options.betterAuthBridge
     ? options.betterAuthBridge === true
@@ -452,7 +509,38 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
       }
     }
 
-    const auth = await resolveAuth(backend, request, revocation, options.logoutDenylist);
+    let { state: auth, status } = await resolveAuthStatus(backend, request, revocation, options.logoutDenylist);
+    let refreshed: RefreshedRequest | undefined;
+
+    if (
+      status === 'session_expired' &&
+      options.refreshExpiredSession !== false &&
+      wantsHtml(request) &&
+      !refreshAttempted.has(request)
+    ) {
+      refreshAttempted.add(request);
+      const renewed = await refreshSessionFromRequest(request, {
+        frontendApi: fapiOrigin,
+        publishableKey: options.publishableKey,
+        fetchImpl: options.fetchImpl,
+      });
+      // The new token is verified like any other; an unverifiable one is ignored.
+      const check = renewed ? await backend.verify(renewed.token) : null;
+      if (renewed && check?.ok && !options.logoutDenylist?.has(check.claims)) {
+        auth = {
+          userId: check.claims.sub,
+          sessionId: check.claims.sid,
+          orgId: check.claims.org_id ?? null,
+          orgRole: check.claims.org_role ?? null,
+          claims: check.claims,
+        };
+        status = 'signed_in';
+        refreshed = {
+          setCookie: renewed.setCookie,
+          cookieHeader: applySetCookies(request.headers.get('cookie'), renewed.setCookie),
+        };
+      }
+    }
 
     const decision = decideRoute({
       pathname: request.nextUrl.pathname,
@@ -464,10 +552,10 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
     switch (decision.action) {
       case 'skip':
       case 'allow':
-        return { kind: 'continue', auth };
+        return refreshed ? { kind: 'continue', auth, refreshed } : { kind: 'continue', auth };
 
       case 'unauthorized':
-        return { kind: 'unauthorized', auth };
+        return { kind: 'unauthorized', auth, status };
 
       case 'redirect': {
         /**
@@ -480,7 +568,7 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
          * This is checked before the handshake and the sign-in redirect, so the
          * common "same-property, token just expired" case never leaves the app.
          */
-        if (hasSignedInHint(request)) return { kind: 'continue', auth };
+        if (hasSignedInHint(request)) return refreshed ? { kind: 'continue', auth, refreshed } : { kind: 'continue', auth };
         /**
          * Cross-property handshake: before sending a signed-out user to the
          * sign-in page, try the Atlas handshake ONCE — they may already have a
@@ -544,10 +632,22 @@ export function atlasMiddleware(options: AtlasMiddlewareOptions) {
   return async function middleware(request: EdgeRequest, response: EdgeResponse) {
     const decision = await decide(request);
     switch (decision.kind) {
-      case 'continue':
-        return response.next();
+      case 'continue': {
+        if (!decision.refreshed) return response.next();
+        // Page requests carry the new cookie too, so server components see the fresh token.
+        const headers = new Headers();
+        const source = request.headers as { forEach?: (cb: (value: string, key: string) => void) => void };
+        source.forEach?.((value, key) => headers.set(key, value));
+        headers.set('cookie', decision.refreshed.cookieHeader);
+        const res = response.next({ request: { headers } }) as { headers?: Headers };
+        for (const sc of decision.refreshed.setCookie) res.headers?.append('set-cookie', sc);
+        return res;
+      }
       case 'unauthorized':
-        return response.json(UNAUTHENTICATED_BODY, { status: 401 });
+        return response.json(UNAUTHENTICATED_BODY, {
+          status: 401,
+          headers: authStatusHeaders({ status: decision.status }),
+        });
       case 'redirect': {
         const res = response.redirect(decision.location);
         for (const cookie of decision.cookies) {

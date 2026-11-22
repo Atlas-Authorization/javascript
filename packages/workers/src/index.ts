@@ -12,6 +12,9 @@ import {
   type ProtectCondition,
   type SessionClaims,
   type WebhookHandlerOptions,
+  authStatusHeaders,
+  deriveAuthStatus,
+  type AuthStatus,
 } from '@atlasauth/backend';
 
 /**
@@ -45,14 +48,20 @@ export interface AtlasAuth {
   claims: SessionClaims | null;
   /** `true` exactly when `userId` is set. */
   isSignedIn: boolean;
+  /** Why the request is or is not signed in. `session_expired` means renew, do not sign out. */
+  status: AuthStatus;
+  /** The underlying verify reason (`no_token`, `expired`, `malformed`, `invalid`, `revoked`, ...); absent when signed in. */
+  reason?: string;
   /** True when the claims satisfy the condition (an empty condition means signed in). */
   has(condition?: ProtectCondition): boolean;
   /** Throws `ForbiddenError` when the condition is unmet (signed in when no condition is given). */
   protect(condition?: ProtectCondition): asserts this is AtlasAuth & { userId: string };
 }
 
-function buildAuth(claims: SessionClaims | null): AtlasAuth {
+function buildAuth(claims: SessionClaims | null, status: AuthStatus = claims ? 'signed_in' : 'signed_out', reason?: string): AtlasAuth {
   return {
+    status,
+    ...(reason ? { reason } : {}),
     userId: claims?.sub ?? null,
     sessionId: claims?.sid ?? null,
     orgId: claims?.org_id ?? null,
@@ -69,6 +78,8 @@ function buildAuth(claims: SessionClaims | null): AtlasAuth {
 
 /** The signed-out auth object: every field null, `has()` false, `protect()` throws. */
 export const SIGNED_OUT: AtlasAuth = buildAuth(null);
+
+const signedOutAuth = (status: AuthStatus, reason?: string): AtlasAuth => buildAuth(null, status, reason);
 
 /** What `createAtlas` needs. `jwksUrl` and `issuer` are required: an unchecked issuer accepts any Atlas instance. */
 export interface AtlasWorkerOptions {
@@ -220,28 +231,31 @@ export function createAtlas<Env = unknown>(config: AtlasWorkerConfig<Env>): Atla
   const authenticate = async (request: Request, env?: Env): Promise<AtlasAuth> => {
     const header = request.headers.get('authorization');
     const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-    const cookie = readCookie(request.headers.get('cookie'), SESSION_COOKIE);
+    const cookieHeader = request.headers.get('cookie');
+    const cookie = readCookie(cookieHeader, SESSION_COOKIE);
     const token = bearer ?? cookie;
-    if (!token) return SIGNED_OUT;
+    if (!token) {
+      const { status, reason } = deriveAuthStatus(null, cookieHeader);
+      return signedOutAuth(status, reason);
+    }
     try {
       const { backend, revocation } = resolve(env);
-      const result = revocation
-        ? await backend.authenticateRequest(
-            { headers: { authorization: bearer ? `Bearer ${bearer}` : undefined, cookie: bearer ? undefined : `${SESSION_COOKIE}=${cookie}` } },
-            { revocation: { mode: 'sid_list', ...revocation } },
-          )
-        : await backend.verify(token);
-      return result.ok ? buildAuth(result.claims) : SIGNED_OUT;
+      // The full Cookie header goes through so the refresh cookie / signed-in hint can make the status `session_expired`.
+      const result = await backend.authenticateRequest(
+        { headers: { authorization: header ?? undefined, cookie: cookieHeader ?? undefined } },
+        revocation ? { revocation: { mode: 'sid_list', ...revocation } } : {},
+      );
+      return result.ok ? buildAuth(result.claims) : signedOutAuth(result.status, result.status === 'token_invalid' ? result.reason : 'expired');
     } catch (err) {
       // A misconfiguration (function config without env) must surface; a verification failure is signed out.
       if (err instanceof Error && err.message.startsWith('createAtlas was given')) throw err;
-      return SIGNED_OUT;
+      return signedOutAuth('token_invalid', 'error');
     }
   };
 
   const requireAuth = async (request: Request, condition?: ProtectCondition, env?: Env): Promise<AtlasAuth | Response> => {
     const auth = await authenticate(request, env);
-    if (!auth.isSignedIn) return json(401, { errors: [{ code: 'UNAUTHENTICATED' }] }, { 'www-authenticate': 'Bearer' });
+    if (!auth.isSignedIn) return json(401, { errors: [{ code: 'UNAUTHENTICATED' }] }, { 'www-authenticate': 'Bearer', ...authStatusHeaders(auth) });
     if (condition) {
       const outcome = evaluate(auth.claims, condition);
       if (!outcome.allowed) return json(403, { errors: [{ code: 'FORBIDDEN', reason: outcome.reason }] });

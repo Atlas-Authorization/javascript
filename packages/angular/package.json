@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/angular",
-  "version": "0.23.1",
+  "version": "0.23.2",
   "description": "Official Angular SDK for Atlas — the Angular peer of @atlasauth/react.",
   "license": "MIT",
   "module": "./dist/fesm2022/atlasauth-angular.mjs",
@@ -28,7 +28,7 @@
     "tslib": "^2.6.3"
   },
   "peerDependencies": {
-    "@atlasauth/js": ">=0.39.0 <1.0.0",
+    "@atlasauth/js": ">=0.51.0 <1.0.0",
     "@angular/core": ">=20",
     "@angular/common": ">=20",
     "@angular/router": ">=20",

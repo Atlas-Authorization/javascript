@@ -1,5 +1,9 @@
 # @atlasauth/hono changelog
 
+## 0.11.0
+
+- The auth state from `getAuth(c)` gains `status` (`signed_in`, `signed_out`, `session_expired`, `token_invalid`) and `reason`. `session_expired` means the short-lived session token lapsed but the refresh cookie or sign-in hint is present: renew, do not sign out. Needs `@atlasauth/backend` 0.62.0.
+
 ## 0.10.0
 
 - `atlasStepUp` route guard and a plan feature gate wrapper.
@@ -16,8 +20,6 @@
 
 ### Added
 - `previousIssuers` option, passed through to the verifier, so a sign-in host change does not sign users out: tokens from a listed former issuer are accepted alongside `issuer`. Absent means only `issuer` is accepted.
-
-## Unreleased
 
 ## 0.8.1 — 2026-11-14
 

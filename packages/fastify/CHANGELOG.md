@@ -1,5 +1,9 @@
 # @atlasauth/fastify changelog
 
+## 0.12.0
+
+- The auth state from `request.atlas / getAuth(request)` gains `status` (`signed_in`, `signed_out`, `session_expired`, `token_invalid`) and `reason`. `session_expired` means the short-lived session token lapsed but the refresh cookie or sign-in hint is present: renew, do not sign out. `requireAuth` sets `x-atlas-auth-status` on its 401. Needs `@atlasauth/backend` 0.62.0.
+
 ## 0.11.0
 
 - `atlasStepUp` route guard and a plan feature gate wrapper.
@@ -20,8 +24,6 @@
 
 ### Added
 - `previousIssuers` option, passed through to the verifier, so a sign-in host change does not sign users out: tokens from a listed former issuer are accepted alongside `issuer`. Absent means only `issuer` is accepted.
-
-## Unreleased
 
 ## 0.9.1 — 2026-11-14
 
