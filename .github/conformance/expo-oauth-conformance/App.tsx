@@ -36,6 +36,7 @@ function Screen() {
       <Text testID="signed-in">{isSignedIn ? 'signed-in' : 'signed-out'}</Text>
       <Text testID="status">{status}</Text>
       <Text testID="error">{error}</Text>
+      <Text testID="fapi">{FAPI || 'no Frontend API configured'}</Text>
       <Button testID="sign-in" title="Sign in" onPress={onPress} />
     </View>
   );

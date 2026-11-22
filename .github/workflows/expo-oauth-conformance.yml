@@ -46,6 +46,8 @@ jobs:
           npm install --no-audit --no-fund "$RUNNER_TEMP"/tgz/*.tgz
           # the React Native and Expo module versions that match this Expo SDK
           npx expo install react react-native expo-constants expo-linking expo-secure-store expo-web-browser expo-crypto
+          # Expo's bundler reads .env in every build phase (Xcode's bundling script does not always see the job env).
+          env | grep '^EXPO_PUBLIC_' > .env || true
           npx expo prebuild --platform ios
           xcodebuild -workspace ios/Conformance.xcworkspace -scheme Conformance -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO
@@ -87,6 +89,8 @@ jobs:
           npm install --no-audit --no-fund "$RUNNER_TEMP"/tgz/*.tgz
           # the React Native and Expo module versions that match this Expo SDK
           npx expo install react react-native expo-constants expo-linking expo-secure-store expo-web-browser expo-crypto
+          # Expo's bundler reads .env in every build phase (Xcode's bundling script does not always see the job env).
+          env | grep '^EXPO_PUBLIC_' > .env || true
           npx expo prebuild --platform android --no-install
           (cd android && ./gradlew assembleRelease -x lint)
       - name: Install Maestro
