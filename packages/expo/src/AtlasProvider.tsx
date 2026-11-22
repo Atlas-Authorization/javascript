@@ -8,6 +8,7 @@ import { createCacheFetch } from './cache-fetch';
 import { createExpoNativeContext, ExpoFapiContext, ExpoNativeContext } from './fapi-context';
 import {
   createInMemoryTokenCache,
+  withMemoryFallback,
   DEFAULT_SESSION_KEY,
   tombstoneStoreFor,
   type TokenCache,
@@ -70,7 +71,9 @@ export function AtlasProvider(props: AtlasProviderProps): ReactElement {
   // (and the default in-memory one, when no adapter is passed) survives
   // re-renders rather than being re-created and losing the session every render.
   const [wiring] = useState(() => {
-    const cache = tokenCache ?? createInMemoryTokenCache();
+    const cache = withMemoryFallback(tokenCache ?? createInMemoryTokenCache(), (e) => {
+      if ((globalThis as { __DEV__?: boolean }).__DEV__) console.warn('[atlas] the session could not be saved to the token cache; it lasts until the app restarts.', e);
+    });
     const cacheFetch = createCacheFetch({ cache, key: tokenKey, fetchImpl: fetchImpl ?? fetch, appId });
     return {
       cacheFetch,

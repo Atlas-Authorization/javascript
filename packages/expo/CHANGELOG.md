@@ -1,5 +1,9 @@
 # @atlasauth/expo changelog
 
+## 0.14.3
+
+- A token cache that cannot be written (for example the iOS Keychain in a build without its entitlement) no longer fails the sign-in: `<AtlasProvider>` keeps the session in memory for the app run and warns in development that it will not survive a restart. Clearing the token on sign-out still reports a store failure.
+
 ## 0.14.2
 
 - The default callback is `Linking.createURL('atlas-oauth')`, which is `<your scheme>://atlas-oauth` in a build. It was `createURL('/atlas-oauth')`, which is `<your scheme>:///atlas-oauth` and never matched the registered URL (`CALLBACK_NOT_REGISTERED`).

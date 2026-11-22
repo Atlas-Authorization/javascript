@@ -157,3 +157,35 @@ function storeKey(key: string): string {
 
 /** The default cache key the `<AtlasProvider>` session is stored under. */
 export const DEFAULT_SESSION_KEY = 'atlas.session';
+
+/**
+ * The provider's view of a {@link TokenCache}: a token is also kept in memory for this app run, so a store that
+ * cannot be written or read (the iOS Keychain in a build without its entitlement, a locked Android keystore) never
+ * fails a sign-in or signs the user out mid-run; the session then simply does not survive a restart. A clear still
+ * goes to the store and reports its failure, so a sign-out never silently leaves a stored credential behind.
+ */
+export function withMemoryFallback(cache: TokenCache, onPersistError: (e: unknown) => void = () => {}): TokenCache {
+  const memory = new Map<string, string>();
+  return {
+    async getToken(key) {
+      if (memory.has(key)) return memory.get(key);
+      try {
+        return await cache.getToken(key);
+      } catch {
+        return null;
+      }
+    },
+    async saveToken(key, value) {
+      memory.set(key, value);
+      try {
+        await cache.saveToken(key, value);
+      } catch (e) {
+        onPersistError(e);
+      }
+    },
+    async clearToken(key) {
+      memory.delete(key);
+      await cache.clearToken(key);
+    },
+  };
+}

@@ -3,7 +3,7 @@ import { FapiClient } from '@atlasauth/js';
 import { createExpoOAuth, ensureSecureRandom, isExpoGo } from './expo-oauth';
 import { createExpoNativeContext } from './fapi-context';
 import { createCacheFetch } from './cache-fetch';
-import { createInMemoryTokenCache } from './token-cache';
+import { createInMemoryTokenCache, withMemoryFallback } from './token-cache';
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const START = { authorization_url: 'https://provider.test/auth', attempt_id: 'att_1', redirect_url: 'https://fapi.test/v1/oauth/native-callback/napp_1' };
@@ -147,5 +147,35 @@ describe('createCacheFetch with an unreadable token store', () => {
     const res = await createCacheFetch({ cache, key: 'k', fetchImpl })('https://fapi.test/v1/client');
     expect(res.status).toBe(200);
     expect(seen).toEqual([null]);
+  });
+});
+
+describe('withMemoryFallback (a token store that cannot be used)', () => {
+  const broken = {
+    getToken: async () => { throw new Error('-34018'); },
+    saveToken: async () => { throw new Error('-34018'); },
+    clearToken: async () => { throw new Error('-34018'); },
+  };
+
+  it('keeps a session it could not persist for this run, and reports the failure', async () => {
+    const onPersistError = vi.fn();
+    const cache = withMemoryFallback(broken, onPersistError);
+    expect(await cache.getToken('k')).toBeNull();
+    await cache.saveToken('k', 'jwt1');
+    expect(onPersistError).toHaveBeenCalledOnce();
+    expect(await cache.getToken('k')).toBe('jwt1');
+  });
+
+  it('still reports a failed clear, after forgetting the token in memory', async () => {
+    const cache = withMemoryFallback(broken);
+    await cache.saveToken('k', 'jwt1');
+    await expect(cache.clearToken('k')).rejects.toThrow('-34018');
+    expect(await cache.getToken('k')).toBeNull();
+  });
+
+  it('reads through to a working store after a restart', async () => {
+    const store = createInMemoryTokenCache();
+    await store.saveToken('k', 'persisted');
+    expect(await withMemoryFallback(store).getToken('k')).toBe('persisted');
   });
 });
