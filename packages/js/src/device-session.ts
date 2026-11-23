@@ -1,5 +1,6 @@
 import { deviceProof, type DeviceKey } from './native-device-key';
 import type { NativeSession } from './native-session';
+import { REFRESH_LEAD_MS, readExpiry } from './token-cache';
 
 const DOCS_URL = 'https://atlasauth.net/docs/native-device-bound-sessions';
 const EXCHANGE_PATHS = new Set(['/v1/client/tickets/exchange', '/v1/client/sign_ins/oauth/token']);
@@ -65,6 +66,7 @@ const json = async (res: Response): Promise<Record<string, unknown> | null> => {
  *    token that comes back (with its binding) is kept in `slot`, and a withheld one warns in development;
  *  - `POST /v1/client/sessions/:id/tokens` presents that token with a DPoP proof, answers the server's nonce
  *    challenge once, and keeps the rotated token;
+ *  - `GET /v1/client` with no token, or one about to expire, refreshes first and goes out with the fresh token;
  *  - a revoked session forgets it.
  * Anything that cannot be handled (no key, an unreadable store, a body that is not JSON) goes through untouched.
  */
@@ -100,7 +102,7 @@ export function withDeviceBoundSession(inner: typeof fetch, opts: { deviceKey: D
     return n;
   };
 
-  return async (input, init) => {
+  const wrapped: typeof fetch = async (input, init) => {
     const isReq = typeof Request !== 'undefined' && input instanceof Request;
     const method = (init?.method ?? (isReq ? (input as Request).method : 'GET')).toUpperCase();
     const url = isReq ? (input as Request).url : String(input);
@@ -110,6 +112,24 @@ export function withDeviceBoundSession(inner: typeof fetch, opts: { deviceKey: D
     } catch {
       return inner(input, init);
     }
+
+    // The session check on start: a bound session's token has usually expired while the app was closed, and the
+    // server never trades the refresh token without a proof, so refresh first and check with the fresh token.
+    if (method === 'GET' && path === '/v1/client') {
+      const rec = await load();
+      const headers = new Headers(init?.headers ?? (isReq ? (input as Request).headers : undefined));
+      const bearer = /^Bearer (.+)$/i.exec(headers.get('authorization') ?? '')?.[1];
+      const exp = bearer ? readExpiry(bearer) : null;
+      if (!rec?.sessionId || (exp !== null && exp - Date.now() > REFRESH_LEAD_MS)) return inner(input, init);
+      const refreshHeaders = new Headers(headers);
+      refreshHeaders.delete('authorization');
+      const res = await wrapped(`${new URL(url).origin}/v1/client/sessions/${encodeURIComponent(rec.sessionId)}/tokens`, { method: 'POST', headers: refreshHeaders });
+      const jwt = res.ok ? (await json(res))?.jwt : undefined;
+      if (typeof jwt !== 'string' || !jwt) return inner(input, init);
+      headers.set('authorization', `Bearer ${jwt}`);
+      return inner(isReq ? url : input, { ...init, headers });
+    }
+
     if (method !== 'POST') return inner(input, init);
 
     if (EXCHANGE_PATHS.has(path) && typeof init?.body === 'string') {
@@ -172,6 +192,7 @@ export function withDeviceBoundSession(inner: typeof fetch, opts: { deviceKey: D
     }
     return inner(input, init);
   };
+  return wrapped;
 }
 
 /**

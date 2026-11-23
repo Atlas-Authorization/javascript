@@ -66,6 +66,34 @@ describe('withDeviceBoundSession', () => {
     expect(slot.value).toBeNull();
   });
 
+  it('refreshes with a proof before the start-up session check when the stored token has expired, and not when it is fresh', async () => {
+    const key = createWebCryptoDeviceKey();
+    const slot = memSlot();
+    slot.value = JSON.stringify({ refreshToken: 'rt_1', sessionId: 'sess_1', binding: 'device_key' });
+    const tok = (sid: string, expSec: number) => `h.${btoa(JSON.stringify({ sid, exp: expSec })).replace(/=+$/, '')}.s`;
+    const fresh = tok('sess_1', Math.floor(Date.now() / 1000) + 60);
+    const seen: Array<{ path: string; auth: string | null; dpop: string | null }> = [];
+    const inner = (async (url: string, init: RequestInit) => {
+      const h = new Headers(init.headers);
+      seen.push({ path: new URL(url).pathname, auth: h.get('authorization'), dpop: h.get('DPoP') });
+      if (url.endsWith('/tokens')) return json({ jwt: fresh, refresh_token: 'rt_2' }, 200, { 'DPoP-Nonce': 'n1' });
+      return json({ object: 'client', session: { id: 'sess_1' }, jwt: fresh });
+    }) as unknown as typeof fetch;
+    const f = withDeviceBoundSession(inner, { deviceKey: key, slot });
+
+    const expired = tok('sess_1', Math.floor(Date.now() / 1000) - 120);
+    await f('https://fapi.example.com/v1/client', { headers: { authorization: `Bearer ${expired}`, 'x-publishable-key': 'pk_test_x' } });
+    expect(seen.map((c) => c.path)).toEqual(['/v1/client/sessions/sess_1/tokens', '/v1/client']);
+    expect(seen[0]!.auth).toBeNull();
+    expect(seen[0]!.dpop).toBeTruthy();
+    expect(seen[1]!.auth).toBe(`Bearer ${fresh}`);
+    expect(JSON.parse(slot.value!).refreshToken).toBe('rt_2');
+
+    seen.length = 0;
+    await f('https://fapi.example.com/v1/client', { headers: { authorization: `Bearer ${fresh}` } });
+    expect(seen.map((c) => c.path)).toEqual(['/v1/client']);
+  });
+
   it('warns once in development, naming the reason and the guide, when the refresh token is withheld', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const inner = (async () => json({ jwt: jwt('s'), refresh_token: null, refresh_token_withheld: { reason: 'mfa_required', message: 'Verify a second factor.', docs_url: 'https://atlasauth.net/docs/native-device-bound-sessions' } })) as unknown as typeof fetch;

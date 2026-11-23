@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.55.1
+
+- **behaviour:** `withDeviceBoundSession` now refreshes a device-bound session (with its device proof) before the start-up `GET /v1/client` when the stored session token is missing or about to expire, and sends that check with the fresh token. Before, a native app reopened after its short-lived token expired showed signed out.
+
 ## 0.55.0
 
 - **Breaking: the policy UI moved to its own import path.** `@atlasauth/js` no longer exports the vanilla-DOM policy viewer (`injectPolicyStyles`, `POLICY_CSS`, `mountPolicyConsent`, `mountPolicyClickwrap`, `mountPolicyAcceptStep`, `openPolicyModal`, `runScrollPolicies`, `confirmPolicies`, `policyRequiredMessage`, `sanitizePolicyHtml`, `renderPolicyContent` and the types `PolicyT`, `PolicyClasses`, `MountedPolicyUi`, `MountedPolicyStep`, `PolicyModalOptions`, `PolicyModalHandle`, `PolicyAcceptStepOptions`). Import them from `@atlasauth/js/policy-dom`.
