@@ -1,5 +1,10 @@
 # @atlasauth/backend changelog
 
+## 0.65.1
+
+- Connection reuse: a request that fails with a connection reset before any response (`ECONNRESET`, `EPIPE`, `ECONNREFUSED`, `UND_ERR_SOCKET`, `other side closed`) is retried once after a short jittered wait, for GET, HEAD, OPTIONS, PUT, DELETE or any request with an idempotency key. Timeouts, aborts and other writes are never retried. `retry: false` turns it off.
+- Path mount: `createMountHandler` forwards every incoming `X-Atlas-*` request header unchanged (for example the native app id), except the ones Atlas trusts from your proxy (proxy secret, forwarded host, client IP and other credentials), which stay dropped.
+
 ## 0.65.0
 
 - Security: the key mirror stores `enabled`, follows it from the `api_key.updated` webhook and refuses a disabled key (secret or key pair) until it is re-enabled. Disabling is not in the revocation feed, so a mirror needs that webhook to see it.

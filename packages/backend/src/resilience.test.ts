@@ -132,3 +132,50 @@ describe('doctor', () => {
     expect(refused.checks.filter((c) => c.status === 'skip')).toHaveLength(5);
   });
 });
+
+describe('connection reset retry', () => {
+  const reset = () => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }) });
+  function resetClient(outcomes: Array<Error | Response>) {
+    const calls: string[] = [];
+    const waits: number[] = [];
+    const fetch = (async (_u: string, init: { method: string }) => {
+      calls.push(init.method);
+      const o = outcomes.shift() ?? json(200, {});
+      if (o instanceof Error) throw o;
+      return o;
+    }) as unknown as typeof globalThis.fetch;
+    const atlas = createAtlasClient({ secretKey: 'sk_test_1', fetch, retry: { sleep: async (ms) => void waits.push(ms) } });
+    return { atlas, calls, waits };
+  }
+
+  it('retries a GET once after a reset, with a short jittered wait', async () => {
+    const { atlas, calls, waits } = resetClient([reset(), json(200, { id: 'u1', object: 'user' })]);
+    await atlas.users.get('u1');
+    expect(calls).toEqual(['GET', 'GET']);
+    expect(waits).toHaveLength(1);
+    expect(waits[0]).toBeLessThan(100);
+  });
+
+  it('retries only once', async () => {
+    const { atlas, calls } = resetClient([reset(), reset(), json(200, {})]);
+    await expect(atlas.users.get('u1')).rejects.toThrow('fetch failed');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('does not retry a plain write, a timeout or an abort', async () => {
+    const w = resetClient([reset()]);
+    await expect(w.atlas.users.create({ email_address: 'a@example.com' })).rejects.toThrow();
+    expect(w.calls).toEqual(['POST']);
+    for (const name of ['TimeoutError', 'AbortError']) {
+      const t = resetClient([Object.assign(new Error('x'), { name, cause: { code: 'ECONNRESET' } })]);
+      await expect(t.atlas.users.get('u1')).rejects.toThrow();
+      expect(t.calls).toHaveLength(1);
+    }
+  });
+
+  it('retries a write that carries an idempotency key', async () => {
+    const { atlas, calls } = resetClient([Object.assign(new Error('other side closed')), json(200, {})]);
+    await atlas.users.create({ email_address: 'a@example.com' }, 'idem-1').catch(() => undefined);
+    expect(calls).toEqual(['POST', 'POST']);
+  });
+});

@@ -65,6 +65,35 @@ export function retryDelay(
   return Math.min(policy.maxDelayMs, Math.floor(random() * policy.baseDelayMs * 2 ** attempt));
 }
 
+/**
+ * Whether a thrown fetch error is a connection-level failure before any response (a reused idle
+ * socket the server closed). Timeouts and aborts are never in this set.
+ */
+export function isConnectionReset(e: unknown): boolean {
+  const name = (e as { name?: string } | null)?.name;
+  if (name === 'AbortError' || name === 'TimeoutError') return false;
+  const seen = new Set<unknown>();
+  for (let c: any = e; c && typeof c === 'object' && !seen.has(c); c = c.cause) {
+    seen.add(c);
+    if (['ECONNRESET', 'EPIPE', 'ECONNREFUSED', 'UND_ERR_SOCKET'].includes(c.code)) return true;
+    if (/other side closed|socket hang up|ECONNRESET/i.test(String(c.message ?? ''))) return true;
+  }
+  return false;
+}
+
+/** One retry, after a short jittered wait, for a reset on a method that is safe to repeat. */
+export function resetRetryDelay(
+  attempted: boolean,
+  e: unknown,
+  method: string,
+  hasIdempotencyKey: boolean,
+  random: () => number = Math.random,
+): number | undefined {
+  if (attempted || !isConnectionReset(e)) return undefined;
+  const safe = ['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE'].includes(method) || hasIdempotencyKey;
+  return safe ? 25 + Math.floor(random() * 75) : undefined;
+}
+
 // ---- OpenTelemetry (structural types: no dependency on @opentelemetry/api) ----
 
 export interface OtelSpanLike {

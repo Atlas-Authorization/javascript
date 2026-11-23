@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+
+- The Brevo delivery callback accepts the per-instance token as a bearer header, basic-auth password or `?t=`, like the real receiver.
+
 ## 0.7.0
 
 - Models key-pair API keys: create (Atlas-generated P-256 pair with the private key returned once, or your own `public_key`), read and rotate with `credential`, `audience` and `key_id`, verify with `token` and the assertion refusal codes, and `POST /v1/api_keys/token` exchanging an assertion (or a secret) for an access token with real signature and claim checks.

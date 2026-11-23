@@ -235,6 +235,17 @@ describe('createMountHandler', () => {
       }
     });
 
+    it('forwards other X-Atlas-* request headers unchanged, in any case, and still drops the trusted ones', async () => {
+      const h = await upstreamHeaders(
+        { 'X-Atlas-App-Id': 'app_123', 'x-atlas-csrf': 'tok', 'x-atlas-hook-secret': 'forged', 'X-Atlas-Secret-Key': 'forged' },
+        { proxySecret: 'aps_secret' },
+      );
+      expect(h.get('x-atlas-app-id')).toBe('app_123');
+      expect(h.get('x-atlas-csrf')).toBe('tok');
+      expect(h.get('x-atlas-hook-secret')).toBeNull();
+      expect(h.get('x-atlas-secret-key')).toBeNull();
+    });
+
     it('a hook can drop X-Atlas-SDK', async () => {
       const h = await upstreamHeaders({ 'x-atlas-sdk': '@atlasauth/js/1.0.0' }, { forwardHeaders: () => false, telemetry: false });
       expect(h.get('x-atlas-sdk')).toBeNull();

@@ -1,6 +1,6 @@
 import { ATLAS_BACKEND_VERSION } from '../version';
 import { AtlasApiError, type AtlasErrorItem } from './error';
-import { createInstrumentation, parseRetryAfter, resolveRetry, retryDelay, type OtelOption, type RetryOptions } from './resilience';
+import { createInstrumentation, parseRetryAfter, resetRetryDelay, resolveRetry, retryDelay, type OtelOption, type RetryOptions } from './resilience';
 
 /**
  * The shared HTTP core every resource namespace calls. One place decides how a
@@ -259,8 +259,18 @@ export function createKeyedRequest(key: string, config: KeyedRequestConfig): Req
     const observer = await instrumentation?.start(options.method, options.path);
     let response: Response;
     try {
+      let resetRetried = false;
       for (let attempt = 0; ; attempt++) {
-        response = await fetchImpl(url, { method: options.method, headers, body });
+        try {
+          response = await fetchImpl(url, { method: options.method, headers, body });
+        } catch (e) {
+          const wait = retryPolicy.maxRetries > 0 ? resetRetryDelay(resetRetried, e, options.method, Boolean(options.idempotencyKey)) : undefined;
+          if (wait === undefined) throw e;
+          resetRetried = true;
+          await retryPolicy.sleep(wait);
+          attempt--; // a reset retry does not use up the status-retry budget
+          continue;
+        }
         if (response.ok) break;
         const wait = retryDelay(retryPolicy, attempt, response.status, options.method, Boolean(options.idempotencyKey), response.headers?.get?.('retry-after'));
         if (wait === undefined) {

@@ -626,8 +626,7 @@ export async function verifyCallback(i: CallbackIn): Promise<CallbackOut> {
       return { ok: true, events: parseResend(body), id };
     }
     case 'brevo': {
-      const auth = h('authorization');
-      if (!eq(auth.startsWith('Bearer ') ? auth.slice(7).trim() : '', i.token)) return bad('bad token', 'Invalid webhook token.');
+      if (!tokenOk) return bad('bad token', 'Invalid webhook token.');
       const body = json();
       return { ok: true, events: parseBrevo(body ?? []), id: await digest() };
     }

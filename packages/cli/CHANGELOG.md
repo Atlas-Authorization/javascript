@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.54.1
+
+- A test now holds `atlas apply` to every `auth_config` field the server's schema has, nested ones included (such as `accountUx.passwordImport` and `session.browserHandoff`). The CLI keeps no field list of its own, so it sends them as written; an older instance that predates a field may still refuse it.
+
 ## 0.54.0
 
 - `atlas api-keys create --key-pair [--audience <aud>] [--public-key <file.pem>] [--out <key.p8|->]` creates a key-pair API key. The private key is written once to a 0600 file and never overwritten; `--out -` prints it. With `--public-key` the key is yours and no private key is returned.

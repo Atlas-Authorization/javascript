@@ -43,7 +43,7 @@ interface ReceiverMeta {
 }
 const RECEIVERS: ReceiverMeta[] = [
   { provider: 'ses', channel: 'email', verification: 'token', secret: 'Optional: comma-separated SNS topic ARNs to accept (any other topic is refused). Amazon SNS signatures are always verified.', events: 'Bounce, Complaint and Delivery notifications through an SNS topic subscribed over HTTPS.' },
-  { provider: 'brevo', channel: 'email', verification: 'token', secret: null, events: 'Transactional webhook: request, delivered, hard_bounce, soft_bounce, blocked, spam, invalid_email, unsubscribed, error. Send the token as a bearer header.' },
+  { provider: 'brevo', channel: 'email', verification: 'token', secret: null, events: 'Transactional webhook: request, delivered, hard_bounce, soft_bounce, blocked, spam, invalid_email, unsubscribed, error (deferred counts as a soft bounce; opened and click are acknowledged and ignored). Send the token as a bearer header, as the password of HTTP basic auth, or as ?t= on the URL.' },
   { provider: 'mailgun', channel: 'email', verification: 'signature', secret: 'Your Mailgun HTTP webhook signing key.', events: 'accepted, delivered, failed (temporary and permanent), complained, unsubscribed.' },
   { provider: 'smtp2go', channel: 'email', verification: 'token', secret: null, events: 'processed, delivered, bounce, reject, spam, unsubscribe.' },
   { provider: 'postmark', channel: 'email', verification: 'token', secret: null, events: 'Delivery, Bounce, SpamComplaint, SubscriptionChange. Use HTTP basic auth with the token as the password.' },

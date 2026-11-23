@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/emulator-core",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "An in-memory Atlas engine driven by the OpenAPI document: stateful users, organizations, roles, API keys, machines and grants, real signed tokens, signed webhooks, the change feed and a message sink. Used by the emulator, the msw handlers and in-process tests.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

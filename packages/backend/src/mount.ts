@@ -53,8 +53,8 @@ export interface AtlasMountOptions {
   /**
    * Which request headers reach Atlas (the name is lowercase), replacing the
    * default list of browser basics and what Atlas reads. It can't let through
-   * hop-by-hop headers, `X-Forwarded-*`, or `X-Atlas-*` other than `X-Atlas-SDK`:
-   * Atlas trusts those from your proxy, so they are never taken from the browser.
+   * hop-by-hop headers, `X-Forwarded-*`, or the `X-Atlas-*` headers Atlas trusts
+   * from your proxy (proxy secret, forwarded host, client IP and other credentials).
    */
   forwardHeaders?: (name: string) => boolean;
   fetchImpl?: typeof fetch;
@@ -102,11 +102,17 @@ export interface AtlasMountHandlers {
 }
 
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'te', 'trailer', 'host', 'content-length']);
+/** `X-Atlas-*` headers that carry trust or a credential (set by this mount, a proxy or an edge): never taken from the browser. Every other `X-Atlas-*` request header is forwarded unchanged. */
+const TRUSTED_ATLAS_HEADERS = new Set([
+  'x-atlas-proxy-secret', 'x-atlas-forwarded-host', 'x-atlas-client-ip', 'x-atlas-client-user-agent', 'x-atlas-edge-secret',
+  'x-atlas-kerberos-secret', 'x-atlas-mtls-secret', 'x-atlas-hook-secret', 'x-atlas-secret-key', 'x-atlas-synthetic',
+  'x-atlas-user-id', 'x-atlas-session-id', 'x-atlas-org-id', 'x-atlas-org-role', 'x-atlas-org-permissions', 'x-atlas-agent-id',
+]);
 /** Hop-by-hop headers and the ones Atlas believes from a proxy or edge: never taken from the browser, whatever `forwardHeaders` says. */
 const neverForwardHeader = (name: string) =>
   HOP_BY_HOP.has(name) ||
   name.startsWith('proxy-') ||
-  (name.startsWith('x-atlas-') && name !== 'x-atlas-sdk' && name !== 'x-atlas-app-version') ||
+  TRUSTED_ATLAS_HEADERS.has(name) ||
   name.startsWith('x-forwarded-') ||
   ['forwarded', 'x-real-ip', 'cf-connecting-ip', 'true-client-ip', 'ssl-client-cert', 'x-client-cert'].includes(name);
 const FORWARDED_HEADERS = new Set([
@@ -118,7 +124,7 @@ const FORWARDED_HEADERS = new Set([
   'dpop', 'idempotency-key', 'mcp-session-id', 'oauth-client-attestation', 'oauth-client-attestation-pop', 'pca-action', 'workload-identity-token', 'workload-proof-token',
 ]);
 const forwardHeaderByDefault = (name: string) =>
-  FORWARDED_HEADERS.has(name) || name.startsWith('accept-') || name.startsWith('access-control-request-') || name.startsWith('sec-fetch-') || name.startsWith('sec-ch-');
+  FORWARDED_HEADERS.has(name) || name.startsWith('x-atlas-') || name.startsWith('accept-') || name.startsWith('access-control-request-') || name.startsWith('sec-fetch-') || name.startsWith('sec-ch-');
 /** What Atlas reads and sets. Exact `__session` / `__client`: other vendors' `__session_*` and `__client_uat` are not ours to receive. */
 const forwardCookieByDefault = (name: string) => name === '__session' || name === '__client' || name.startsWith('__atlas_');
 const DROP_RESPONSE = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'te', 'trailer', 'content-encoding', 'content-length', 'set-cookie']);
@@ -184,8 +190,9 @@ function filterCookies(header: string, allow: (name: string) => boolean): string
  * Only allowlisted request headers and cookies go upstream: browser basics, what
  * Atlas reads, and the cookies `__session`, `__client` and `__atlas_*`
  * (`forwardHeaders` and `forwardCookies` replace those lists). Hop-by-hop headers
- * and every incoming `X-Atlas-*` (except `X-Atlas-SDK`), `X-Forwarded-*`,
- * `Forwarded` and `X-Real-IP` header are always dropped, then set as: `X-Atlas-Forwarded-Host`
+ * and the trusted incoming `X-Atlas-*` headers (proxy secret, forwarded host, client IP,
+ * other credentials), `X-Forwarded-*`, `Forwarded` and `X-Real-IP` are always dropped,
+ * then set as (every other `X-Atlas-*` request header, such as the native app id, is forwarded unchanged): `X-Atlas-Forwarded-Host`
  * from `Host`; `X-Atlas-Proxy-Secret` from config; `X-Atlas-Client-IP` and
  * `X-Forwarded-For` from `options.clientIp`, else the incoming `X-Forwarded-For`
  * entry `trustedProxyHops` (default 1) from the right, omitted when absent or not
