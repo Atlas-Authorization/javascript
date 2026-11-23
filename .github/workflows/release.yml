@@ -47,6 +47,13 @@ jobs:
           args=(); for n in ${{ steps.plan.outputs.names }}; do args+=(--filter "$n..."); done
           pnpm -r "${args[@]}" build
 
+      - name: Extension review check (bundle scan + addons-linter, 0 errors 0 warnings)
+        if: contains(steps.plan.outputs.names, '@atlasauth/chrome-extension') || contains(steps.plan.outputs.names, '@atlasauth/js')
+        run: |
+          # Gates the publish: a background bundle must stay free of DOM-UI / innerHTML code and pass AMO's linter.
+          pnpm --filter @atlasauth/chrome-extension... build
+          node packages/chrome-extension/scripts/check-extension-bundle.mjs
+
       - name: Publish
         if: steps.plan.outputs.names != ''
         env:

@@ -1,0 +1,26 @@
+name: extension review
+
+# Every change to the JS SDKs a browser extension bundles: build them, bundle a minimal MV3 extension that
+# signs in with @atlasauth/chrome-extension/background, and require 0 errors and 0 warnings from addons-linter.
+on:
+  push:
+    branches: [main, 'ci/**']
+    paths: ['packages/js/**', 'packages/chrome-extension/**', '.github/workflows/extension-review.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @atlasauth/chrome-extension... build
+      - run: node packages/chrome-extension/scripts/check-extension-bundle.mjs
