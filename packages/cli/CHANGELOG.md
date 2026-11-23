@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.53.1
+
+- `atlas dev native` links to the device-bound sessions guide at its real address.
+
 ## 0.53.0
 
 - `atlas dev native` reports the policy for native clients with no registered app, the development apps (users, expiry, expired) and, when production refuses unregistered clients, the exact fix.

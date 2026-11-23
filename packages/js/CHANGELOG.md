@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.54.1
+
+- The development warning for a withheld refresh token links to the guide at its real address.
+
 ## 0.54.0
 
 - Device-bound native sessions. `createWebCryptoDeviceKey()` and the `DeviceKey` interface (a P-256 key that signs raw 64-byte `r||s`), `deviceProof(key, method, url, { refreshToken, nonce })` (a DPoP proof with `ath` of the refresh token), and `withDeviceBoundSession(fetch, { deviceKey, slot })`: a fetch wrapper that asks for a refresh token with the device's public key on sign-in, keeps the bound token, proves possession on every refresh and answers the server's `DPoP-Nonce` once. `exchangeTicketForNativeSession(...)` does the same for one ticket exchange.

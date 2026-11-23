@@ -36,7 +36,7 @@ interface NativeAppsConfig {
   unregistered?: Unregistered;
   unregisteredSession?: { absoluteMs?: number; requireMfa?: boolean };
 }
-const DOCS = 'https://atlasauth.net/docs/guides/native-device-bound-sessions';
+const DOCS = 'https://atlasauth.net/docs/native-device-bound-sessions';
 
 const NATIVE_CODES = new Set(['native_dev_scheme_on_production', 'native_app_no_callback', 'native_platform_missing_callback', 'apple_sign_in_required', 'native_link_files_unreachable']);
 

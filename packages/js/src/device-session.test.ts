@@ -68,7 +68,7 @@ describe('withDeviceBoundSession', () => {
 
   it('warns once in development, naming the reason and the guide, when the refresh token is withheld', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const inner = (async () => json({ jwt: jwt('s'), refresh_token: null, refresh_token_withheld: { reason: 'mfa_required', message: 'Verify a second factor.', docs_url: 'https://atlasauth.net/docs/guides/native-device-bound-sessions' } })) as unknown as typeof fetch;
+    const inner = (async () => json({ jwt: jwt('s'), refresh_token: null, refresh_token_withheld: { reason: 'mfa_required', message: 'Verify a second factor.', docs_url: 'https://atlasauth.net/docs/native-device-bound-sessions' } })) as unknown as typeof fetch;
     const f = withDeviceBoundSession(inner, { deviceKey: createWebCryptoDeviceKey(), slot: memSlot() });
     await f('https://fapi.example.com/v1/client/tickets/exchange', { method: 'POST', body: '{}' });
     warnRefreshTokenWithheld({ reason: 'mfa_required' });

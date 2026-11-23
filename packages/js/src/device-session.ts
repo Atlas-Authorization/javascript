@@ -1,7 +1,7 @@
 import { deviceProof, type DeviceKey } from './native-device-key';
 import type { NativeSession } from './native-session';
 
-const DOCS_URL = 'https://atlasauth.net/docs/guides/native-device-bound-sessions';
+const DOCS_URL = 'https://atlasauth.net/docs/native-device-bound-sessions';
 const EXCHANGE_PATHS = new Set(['/v1/client/tickets/exchange', '/v1/client/sign_ins/oauth/token']);
 const REFRESH = /^\/v1\/client\/sessions\/([^/]+)\/tokens$/;
 const REVOKE = /^\/v1\/client\/sessions\/([^/]+)\/revoke$/;
