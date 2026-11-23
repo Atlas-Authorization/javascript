@@ -425,6 +425,70 @@ describe('round-two routes', () => {
     expect((await call('POST', `/v1/api_keys/${k.id}/rotate`, { overlap_seconds: 9_999_999 })).status).toBe(400);
   });
 
+  it('key-pair API keys: generated pair signs a passing assertion, refusals, replay, scope narrowing, token exchange, rotate', async () => {
+    const e = makeEngine();
+    const call = client(e);
+    const u = (await call('POST', '/v1/users', { email_address: 'kp@example.com' })).json;
+    const k = (await call('POST', '/v1/api_keys', { subject_type: 'user', subject_id: u.id, credential: 'key_pair', audience: 'https://api.example.com', scopes: ['a', 'b'] })).json;
+    expect(k).toMatchObject({ credential: 'key_pair', secret: null, key_id: k.id, audience: 'https://api.example.com' });
+    expect(k.private_key).toContain('BEGIN PRIVATE KEY');
+    expect((await call('GET', `/v1/api_keys/${k.id}`)).json.private_key).toBeUndefined();
+    expect((await call('POST', '/v1/api_keys', { subject_type: 'user', subject_id: u.id, audience: 'x' })).status).toBe(400);
+    expect((await call('POST', '/v1/api_keys', { subject_type: 'user', subject_id: u.id, credential: 'key_pair', public_key: 'nope' })).status).toBe(400);
+
+    const sign = (priv: string, over: Record<string, unknown> = {}, header: Record<string, unknown> = {}) => {
+      const now = Math.floor(e.clock.now() / 1000);
+      const h = Buffer.from(JSON.stringify({ alg: 'ES256', kid: k.id, typ: 'JWT', ...header })).toString('base64url');
+      const c = Buffer.from(JSON.stringify({ iss: k.id, aud: 'https://api.example.com', iat: now, exp: now + 300, jti: `j${Math.random()}`, ...over })).toString('base64url');
+      const sig = nodeSign('sha256', Buffer.from(`${h}.${c}`), { key: priv, dsaEncoding: 'ieee-p1363' });
+      return `${h}.${c}.${sig.toString('base64url')}`;
+    };
+    const verify = async (token: string, extra: Record<string, unknown> = {}) => (await call('POST', '/v1/api_keys/verify', { token, ...extra })).json;
+    const ok = await verify(sign(k.private_key, { scope: 'a' }));
+    expect(ok).toMatchObject({ valid: true, credential: 'key_pair', id: k.id, scopes: ['a'] });
+    expect((await verify(sign(k.private_key), { required_scopes: ['b'] })).valid).toBe(true);
+    expect(await verify(sign(k.private_key, { scope: 'zzz' }))).toMatchObject({ valid: false, code: 'scope_not_granted' });
+    expect(await verify(sign(k.private_key, { aud: 'other' }))).toMatchObject({ valid: false, code: 'wrong_audience' });
+    expect(await verify(sign(k.private_key, { exp: Math.floor(e.clock.now() / 1000) - 600, iat: Math.floor(e.clock.now() / 1000) - 900 }))).toMatchObject({ code: 'assertion_expired' });
+    expect(await verify(sign(k.private_key, { iat: Math.floor(e.clock.now() / 1000) + 600, exp: Math.floor(e.clock.now() / 1000) + 900 }))).toMatchObject({ code: 'assertion_not_yet_valid' });
+    expect(await verify(sign(k.private_key, { exp: Math.floor(e.clock.now() / 1000) + 7200 }))).toMatchObject({ code: 'assertion_lifetime_too_long' });
+    expect(await verify(sign(k.private_key, {}, { alg: 'none' }))).toMatchObject({ valid: false, code: 'invalid_assertion' });
+    const other = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+    expect(await verify(sign(other))).toMatchObject({ valid: false, code: 'invalid_assertion' });
+    expect(await verify('a.b.c')).toEqual({ object: 'api_key_verification', valid: false });
+    const replay = sign(k.private_key, { jti: 'once' });
+    expect((await verify(replay)).valid).toBe(true);
+    expect(await verify(replay)).toMatchObject({ valid: false, code: 'assertion_replayed' });
+    expect((await call('POST', '/v1/api_keys/verify', { secret: 'x', token: 'y' })).status).toBe(400);
+
+    // exchange: assertion as the bearer, or sk_ bearer + body; no cnf
+    const viaBearer = await call('POST', '/v1/api_keys/token', {}, { authorization: `Bearer ${sign(k.private_key)}` });
+    expect(viaBearer.status).toBe(200);
+    expect(viaBearer.json).toMatchObject({ object: 'api_key_token', key_id: k.id, scopes: ['a', 'b'] });
+    expect(viaBearer.json.cnf).toBeUndefined();
+    expect((await call('POST', '/v1/api_keys/token', { assertion: sign(k.private_key, { scope: 'a' }) })).json.scopes).toEqual(['a']);
+    expect((await call('POST', '/v1/api_keys/token', { assertion: sign(other) })).status).toBe(401);
+
+    // bring your own Ed25519 key
+    const ed = generateKeyPairSync('ed25519');
+    const byo = (await call('POST', '/v1/api_keys', { subject_type: 'user', subject_id: u.id, credential: 'key_pair', public_key: ed.publicKey.export({ type: 'spki', format: 'pem' }) })).json;
+    expect(byo.private_key).toBeUndefined();
+    const now = Math.floor(e.clock.now() / 1000);
+    const eh = Buffer.from(JSON.stringify({ alg: 'EdDSA', kid: byo.id, typ: 'JWT' })).toString('base64url');
+    const ec = Buffer.from(JSON.stringify({ iss: byo.id, aud: byo.audience, iat: now, exp: now + 60 })).toString('base64url');
+    const edToken = `${eh}.${ec}.${nodeSign(null, Buffer.from(`${eh}.${ec}`), ed.privateKey).toString('base64url')}`;
+    expect((await verify(edToken)).valid).toBe(true);
+
+    // rotate: new id and pair, old keeps working through the overlap
+    const rot = (await call('POST', `/v1/api_keys/${k.id}/rotate`, { overlap_seconds: 600 })).json;
+    expect(rot.id).not.toBe(k.id);
+    expect(rot.private_key).toContain('BEGIN PRIVATE KEY');
+    expect(rot.private_key).not.toBe(k.private_key);
+    expect((await verify(sign(k.private_key))).valid).toBe(true);
+    // a key pair is never a bearer secret
+    expect((await call('POST', '/v1/api_keys/verify', { secret: 'null' })).json.valid).toBe(false);
+  });
+
   it('feeds revoked sessions, signs a status list the verifier can read, and revokes by filter', async () => {
     const e = makeEngine();
     const call = client(e);

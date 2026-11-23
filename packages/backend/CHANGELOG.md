@@ -1,5 +1,13 @@
 # @atlasauth/backend changelog
 
+## 0.65.0
+
+- Security: the key mirror stores `enabled`, follows it from the `api_key.updated` webhook and refuses a disabled key (secret or key pair) until it is re-enabled. Disabling is not in the revocation feed, so a mirror needs that webhook to see it.
+- Key-pair API keys: `ApiKey` gains `credential`, `audience`, `key_id`, `public_key`; `CreateApiKeyBody` takes `credential: 'key_pair'`, `audience` and `public_key`; the create and rotate answers carry a one-time `private_key` (and `secret` is `null`).
+- `signApiKeyAssertion(privateKeyPem, { keyId, audience, ttlSeconds, scope, jti })` signs the short-lived assertion (ES256 raw r||s, or EdDSA for Ed25519).
+- `apiKeys.verify({ token })` and `apiKeys.mintToken({ assertion })` take an assertion; the new refusal codes are typed.
+- Key mirror: `MirroredApiKey` gains `credential`, `publicKeyPem`, `audience`; `verifyAssertion(jwt, { requiredScopes, clientIp })` verifies locally with the same checks as Atlas, with single-use `jti` via the optional store method `claimAssertionJti` (in-memory by default).
+
 ## 0.64.1
 
 - Development native apps: `NativeApp` and `NativeAppInput` gain `platform: 'development'`, `allowed_users`, `expires_at` and `expired`.

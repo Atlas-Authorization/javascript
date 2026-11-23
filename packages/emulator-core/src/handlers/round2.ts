@@ -5,6 +5,7 @@ import { bytesToB64url, sha256 } from '../crypto-util';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
 import { presentKey } from './keys';
+import { generateKeyPair, parseHolderPublicKey } from './key-pair';
 import { activeHold } from './support';
 import { need } from './util';
 import { presentUser } from './users';
@@ -85,23 +86,28 @@ export function round2Handlers(): RouteDef[] {
     {
       method: 'POST',
       pattern: '/v1/api_keys/:id/rotate',
-      handler: (c) => {
+      handler: async (c) => {
         const e = c.engine;
         const old = e.db.apiKeys.get(c.params.id);
         if (!old || old.revoked_at) throw notFound('API key');
         const overlap = c.body.overlap_seconds === undefined ? 86_400 : c.body.overlap_seconds;
         if (!Number.isInteger(overlap) || overlap < 0 || overlap > 604_800) throw new EmulatorError('VALIDATION_FAILED', 'overlap_seconds must be an integer from 0 to 604800.', 'overlap_seconds');
         const now = e.clock.now();
-        const prefix = String(old.prefix).split('_')[0] ?? 'ak';
-        const secret = e.tokens.secret(prefix);
-        const next = e.db.apiKeys.insert({ ...old, id: undefined, secret, prefix: secret.slice(0, prefix.length + 5), rotated_from_id: old.id, rotated_to_id: null, last_used_at: null, revoked_at: null, created_at: now } as any);
+        const keyPair = old.credential === 'key_pair';
+        // A key pair rotates to a new pair (or the body's own public key); its private half is returned once.
+        const holder = keyPair && c.body.public_key !== undefined ? await parseHolderPublicKey(c.body.public_key) : null;
+        const generated = keyPair && !holder ? await generateKeyPair() : null;
+        const pub = holder ?? generated;
+        const prefix = keyPair ? 'kp' : (String(old.prefix).split('_')[0] ?? 'ak');
+        const secret = keyPair ? null : e.tokens.secret(prefix);
+        const next = e.db.apiKeys.insert({ ...old, id: undefined, secret, prefix: secret ? secret.slice(0, prefix.length + 5) : prefix, ...(pub ? { public_key: pub.publicKey, public_key_jkt: pub.jkt, used_jtis: {} } : {}), rotated_from_id: old.id, rotated_to_id: null, last_used_at: null, revoked_at: null, created_at: now } as any);
         old.rotated_to_id = next.id;
         if (overlap === 0) old.revoked_at = now;
         else old.expires_at = Math.min(old.expires_at ?? Infinity, now + overlap * 1000);
         e.changed({ type: 'api_key.created', data: presentKey(e, next), resource: 'api_key', id: next.id, op: 'create' });
         e.changed({ type: 'api_key.updated', data: presentKey(e, old), resource: 'api_key', id: old.id, op: 'update' });
         e.webhooks.emit('api_key.rotated', { object: 'api_key_rotation', previous_key_id: old.id, key_id: next.id, overlap_seconds: overlap, previous_expires_at: old.revoked_at ? null : old.expires_at });
-        return { status: 201, body: { ...presentKey(e, next), secret, previous_key: { id: old.id, prefix: old.prefix, expires_at: old.revoked_at ? null : old.expires_at, revoked: !!old.revoked_at } } };
+        return { status: 201, body: { ...presentKey(e, next), secret, ...(generated ? { private_key: generated.privateKey } : {}), previous_key: { id: old.id, prefix: old.prefix, expires_at: old.revoked_at ? null : old.expires_at, revoked: !!old.revoked_at } } };
       },
     },
     {

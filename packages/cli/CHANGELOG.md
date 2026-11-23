@@ -1,5 +1,11 @@
 # @atlasauth/cli changelog
 
+## 0.54.0
+
+- `atlas api-keys create --key-pair [--audience <aud>] [--public-key <file.pem>] [--out <key.p8|->]` creates a key-pair API key. The private key is written once to a 0600 file and never overwritten; `--out -` prints it. With `--public-key` the key is yours and no private key is returned.
+- `atlas api-keys sign-assertion --key <key.p8> --key-id <id> --audience <aud> [--ttl] [--scope]` prints the short-lived JWT a key-pair key presents.
+- `atlas api-keys verify --token <assertion>` checks an assertion online.
+
 ## 0.53.1
 
 - `atlas dev native` links to the device-bound sessions guide at its real address.

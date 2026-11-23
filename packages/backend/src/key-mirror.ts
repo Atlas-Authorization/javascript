@@ -15,7 +15,8 @@
  * for tests and single-process apps; back it with a table in production.
  */
 import { createHash } from './edge-crypto';
-import type { ApiKey, ApiKeyImportOutcome, ApiKeyOrganization, ApiKeyRotation, ApiKeyWithSecret, CreateApiKeyBody, RotateApiKeyBody, apiKeysResource } from './client/api-keys';
+import { parseAssertion, verifyAssertionSignature } from './api-key-assertion';
+import type { ApiKey, ApiKeyAssertionRefusal, ApiKeyImportOutcome, ApiKeyOrganization, ApiKeyRotation, ApiKeyWithSecret, CreateApiKeyBody, RotateApiKeyBody, apiKeysResource } from './client/api-keys';
 
 /** What the mirror keeps per key. Never the secret: only its sha256 (hex). */
 export interface MirroredApiKey {
@@ -47,6 +48,16 @@ export interface MirroredApiKey {
   created_by_user_id?: string | null;
   /** `sign_out_everywhere` when the key ends with its user's sign-out everywhere. */
   dies_with?: string | null;
+  /** `key_pair` for a key whose holder signs assertions; absent/`secret` for an `ak_` key. */
+  credential?: 'secret' | 'key_pair';
+  /** false while the key is disabled (not revoked): it verifies nothing until re-enabled. Absent = enabled. */
+  enabled?: boolean;
+  /** Key pair: the public key (SPKI PEM) assertions are verified against. */
+  publicKeyPem?: string | null;
+  /** Key pair: the `aud` an assertion must carry. */
+  audience?: string | null;
+  /** Key pair: longest assertion lifetime in seconds; null/absent = 3600. */
+  max_token_lifetime_seconds?: number | null;
 }
 
 export interface KeyMirrorStore {
@@ -61,6 +72,11 @@ export interface KeyMirrorStore {
    * the revocation feed and the `api_key.revoked` webhook Atlas sends for each.
    */
   markMembershipEnded?(userId: string, organizationId: string, revokedAt: number): Promise<void>;
+  /**
+   * Record an assertion `jti` as used until `expiresAtMs`; resolve false when it was already used (a replay).
+   * Optional: without it the mirror keeps used ids in process memory, which a restart or a second instance does not share.
+   */
+  claimAssertionJti?(keyId: string, jti: string, expiresAtMs: number): Promise<boolean>;
   /** The revocation-feed cursor last consumed (null = from the start). */
   getCursor(): Promise<string | null>;
   setCursor(cursor: string): Promise<void>;
@@ -74,8 +90,17 @@ export function memoryKeyMirrorStore(): KeyMirrorStore & { keys: Map<string, Mir
   const keys = new Map<string, MirroredApiKey>();
   let cursor: string | null = null;
   let lastSyncAt: number | null = null;
+  const jtis = new Map<string, number>();
   return {
     keys,
+    async claimAssertionJti(keyId, jti, expiresAtMs) {
+      const t = Date.now();
+      for (const [k, exp] of jtis) if (exp <= t) jtis.delete(k);
+      const id = `${keyId}\n${jti}`;
+      if (jtis.has(id)) return false;
+      jtis.set(id, expiresAtMs);
+      return true;
+    },
     async put(key) {
       keys.set(key.id, { ...key });
     },
@@ -284,14 +309,27 @@ function toMirrored(key: ApiKey, hash: string): MirroredApiKey {
     allowed_ips: key.allowed_ips ?? null,
     expires_at: key.expires_at ?? null,
     revoked_at: key.revoked_at ?? null,
+    enabled: key.enabled ?? true,
     organization_id: key.organization_id ?? null,
     revoked_reason: key.revoked_reason ?? null,
     metadata: key.metadata ?? key.claims ?? {},
     constraints: (key as { constraints?: Record<string, unknown> }).constraints ?? {},
     created_by_user_id: key.created_by_user_id ?? null,
     dies_with: key.dies_with ?? null,
+    credential: key.credential ?? 'secret',
+    publicKeyPem: key.public_key ?? null,
+    audience: key.audience ?? null,
+    max_token_lifetime_seconds: key.max_token_lifetime_seconds ?? null,
   };
 }
+
+/** A key-pair row has no secret to hash; this can never equal a sha256 hex, so it never matches a bearer. */
+const keyPairHash = (key: ApiKeyWithSecret) => (key.secret === null ? `kp:${key.id}` : hashApiKeySecret(key.secret));
+
+export type MirrorAssertionVerification =
+  | { valid: true; key: MirroredApiKey; metadata: Record<string, unknown>; effective_scopes: string[]; credential: 'key_pair'; jti?: string; /** The assertion's `exp`, epoch seconds. */ exp: number; stale?: true; organization?: ApiKeyOrganization }
+  | { valid: false; code?: ApiKeyAssertionRefusal | 'insufficient_scope' | 'ip_not_allowed' | 'client_ip_required' | 'membership_unresolved'; missing_scopes?: string[] }
+  | { valid: false; code: 'stale'; lastSyncAt: number | null };
 
 /** Whether a permission covers a key scope: same name, `*`, or `<prefix>:*`. Mirrors Atlas verify. */
 export function permissionCoversScope(permission: string, scope: string): boolean {
@@ -314,12 +352,24 @@ export function createKeyMirror(options: KeyMirrorOptions) {
   const allowed = options.allowedScopes ?? [];
   let memorySyncAt: number | null = null;
   const readSyncAt = async () => (store.getLastSyncAt ? await store.getLastSyncAt() : memorySyncAt);
+  const usedJtis = new Map<string, number>();
+
+  /** The maxStalenessMs / serveStaleForMs gate shared by every verify: a refusal, or whether to mark the answer stale. */
+  async function freshness(): Promise<{ refuse: { valid: false; code: 'stale'; lastSyncAt: number | null } } | { servedStale: boolean }> {
+    if (options.maxStalenessMs === undefined) return { servedStale: false };
+    const lastSyncAt = await readSyncAt();
+    const behind = lastSyncAt === null ? Infinity : now() - lastSyncAt - options.maxStalenessMs;
+    if (behind <= 0) return { servedStale: false };
+    if (lastSyncAt === null || behind > (options.serveStaleForMs ?? 0)) return { refuse: { valid: false, code: 'stale', lastSyncAt } };
+    options.onServeStale?.({ lastSyncAt, staleForMs: behind });
+    return { servedStale: true };
+  }
 
   return {
     /** Mint at Atlas, then mirror it. Resolves with the one-time `secret`. */
     async mint(body: Omit<CreateApiKeyBody, 'import'>, idempotencyKey?: string): Promise<ApiKeyWithSecret> {
       const created = await apiKeys.create(body, idempotencyKey);
-      await store.put(toMirrored(created, hashApiKeySecret(created.secret)));
+      await store.put(toMirrored(created, keyPairHash(created)));
       return created;
     },
 
@@ -331,7 +381,7 @@ export function createKeyMirror(options: KeyMirrorOptions) {
     async rotate(id: string, body: RotateApiKeyBody = {}, idempotencyKey?: string): Promise<ApiKeyRotation> {
       if (!apiKeys.rotate) throw new TypeError('rotate needs an apiKeys client with rotate().');
       const rotated = await apiKeys.rotate(id, body, idempotencyKey);
-      await store.put(toMirrored(rotated, hashApiKeySecret(rotated.secret)));
+      await store.put(toMirrored(rotated, keyPairHash(rotated)));
       const old = await store.get(id);
       if (old) {
         if (rotated.previous_key.revoked) await store.markRevoked(id, now(), 'rotated');
@@ -396,16 +446,9 @@ export function createKeyMirror(options: KeyMirrorOptions) {
      */
     async verify(secret: string, opts: { requiredScopes?: string[]; clientIp?: string } = {}): Promise<MirrorVerification> {
       if (typeof secret !== 'string' || !secret) return { valid: false };
-      let servedStale = false;
-      if (options.maxStalenessMs !== undefined) {
-        const lastSyncAt = await readSyncAt();
-        const behind = lastSyncAt === null ? Infinity : now() - lastSyncAt - options.maxStalenessMs;
-        if (behind > 0) {
-          if (lastSyncAt === null || behind > (options.serveStaleForMs ?? 0)) return { valid: false, code: 'stale', lastSyncAt };
-          servedStale = true;
-          options.onServeStale?.({ lastSyncAt, staleForMs: behind });
-        }
-      }
+      const fresh = await freshness();
+      if ('refuse' in fresh) return fresh.refuse;
+      const servedStale = fresh.servedStale;
       const hash = hashApiKeySecret(secret);
       let key = await store.getByHash(hash);
       if (!key && options.verifyAtAtlas && apiKeys.verify && apiKeys.get) {
@@ -415,7 +458,7 @@ export function createKeyMirror(options: KeyMirrorOptions) {
           await store.put(key);
         }
       }
-      if (!key || key.revoked_at !== null) return { valid: false };
+      if (!key || key.revoked_at !== null || key.enabled === false) return { valid: false };
       if (key.expires_at !== null && key.expires_at <= now()) return { valid: false };
       // A key with allowed_ips needs the end caller's address; no address fails closed.
       if (key.allowed_ips && key.allowed_ips.length > 0) {
@@ -443,6 +486,73 @@ export function createKeyMirror(options: KeyMirrorOptions) {
       const missing = (opts.requiredScopes ?? []).filter((s) => !effective.includes(s));
       if (missing.length > 0) return { valid: false, code: 'insufficient_scope', missing_scopes: missing };
       return { valid: true, key, metadata: key.metadata ?? {}, effective_scopes: effective, ...(organization ? { organization } : {}), ...(servedStale ? { stale: true as const } : {}) };
+    },
+
+    /**
+     * Verify a key-pair assertion (the JWT from `signApiKeyAssertion`) locally, with the checks
+     * Atlas verify makes: signature (ES256 raw r||s or EdDSA, matching the stored key), `iss` = `kid`,
+     * `aud`, `iat`, `exp` and the lifetime cap, `nbf`, single-use `jti` (via the store's
+     * `claimAssertionJti`, else in memory), `scope` (a subset of the key's, narrows the result),
+     * then revocation, expiry and the IP allowlist. A key not in the mirror answers `{ valid: false }`.
+     */
+    async verifyAssertion(jwt: string, opts: { requiredScopes?: string[]; clientIp?: string } = {}): Promise<MirrorAssertionVerification> {
+      const fresh = await freshness();
+      if ('refuse' in fresh) return fresh.refuse;
+      const parsed = parseAssertion(jwt);
+      if (!parsed) return { valid: false, code: 'invalid_assertion' };
+      const { header, claims } = parsed;
+      if (typeof header.kid !== 'string' || !header.kid) return { valid: false, code: 'invalid_assertion' };
+      const key = await store.get(header.kid);
+      if (!key) return { valid: false };
+      if (key.credential !== 'key_pair' || !key.publicKeyPem) return { valid: false, code: 'invalid_assertion' };
+      if (!(await verifyAssertionSignature(parsed, key.publicKeyPem)) || claims.iss !== header.kid) return { valid: false, code: 'invalid_assertion' };
+      if (key.revoked_at !== null || key.enabled === false) return { valid: false };
+      const nowMs = now();
+      if (key.expires_at !== null && key.expires_at <= nowMs) return { valid: false };
+      const nowS = Math.floor(nowMs / 1000);
+      const { aud, iat, exp, nbf, jti, scope } = claims;
+      if (!(typeof aud === 'string' ? aud === key.audience : Array.isArray(aud) && aud.includes(key.audience))) return { valid: false, code: 'wrong_audience' };
+      if (typeof iat !== 'number' || typeof exp !== 'number' || (nbf !== undefined && typeof nbf !== 'number')) return { valid: false, code: 'invalid_assertion' };
+      if (jti !== undefined && (typeof jti !== 'string' || !jti)) return { valid: false, code: 'invalid_assertion' };
+      if (scope !== undefined && typeof scope !== 'string') return { valid: false, code: 'invalid_assertion' };
+      if (iat > nowS + 60 || (nbf !== undefined && nbf > nowS + 60)) return { valid: false, code: 'assertion_not_yet_valid' };
+      if (exp <= nowS - 30) return { valid: false, code: 'assertion_expired' };
+      if (exp - iat > Math.min(key.max_token_lifetime_seconds ?? 3600, 86400)) return { valid: false, code: 'assertion_lifetime_too_long' };
+      if (key.allowed_ips && key.allowed_ips.length > 0) {
+        if (!opts.clientIp) return { valid: false, code: 'client_ip_required' };
+        if (!ipInAllowlist(opts.clientIp, key.allowed_ips)) return { valid: false, code: 'ip_not_allowed' };
+      }
+      let effective = expand(key.scopes ?? [], implications, allowed);
+      let organization: ApiKeyOrganization | undefined;
+      if (key.subject_type === 'user' && key.organization_id) {
+        const held = options.membership ? await options.membership(key.subject_id, key.organization_id) : undefined;
+        if (held === undefined) return { valid: false, code: 'membership_unresolved' };
+        if (!held) return { valid: false };
+        organization = held;
+        effective = intersectScopesWithPermissions(effective, held.permissions);
+      }
+      if (typeof scope === 'string' && scope.trim()) {
+        const asked = scope.trim().split(/\s+/);
+        const missing = asked.filter((x) => !effective.includes(x));
+        if (missing.length > 0) return { valid: false, code: 'scope_not_granted', missing_scopes: missing };
+        effective = effective.filter((x) => asked.includes(x));
+      }
+      const missing = (opts.requiredScopes ?? []).filter((x) => !effective.includes(x));
+      if (missing.length > 0) return { valid: false, code: 'insufficient_scope', missing_scopes: missing };
+      // Last, so a refused assertion never burns its jti.
+      if (typeof jti === 'string') {
+        const until = exp * 1000;
+        let first: boolean;
+        if (store.claimAssertionJti) first = await store.claimAssertionJti(key.id, jti, until);
+        else {
+          for (const [k, t] of usedJtis) if (t <= nowMs) usedJtis.delete(k);
+          const id = `${key.id}\n${jti}`;
+          first = !usedJtis.has(id);
+          if (first) usedJtis.set(id, until);
+        }
+        if (!first) return { valid: false, code: 'assertion_replayed' };
+      }
+      return { valid: true, key, metadata: key.metadata ?? {}, effective_scopes: effective, credential: 'key_pair', ...(typeof jti === 'string' ? { jti } : {}), exp, ...(organization ? { organization } : {}), ...(fresh.servedStale ? { stale: true as const } : {}) };
     },
 
     /**
@@ -518,6 +628,8 @@ export function createKeyMirror(options: KeyMirrorOptions) {
           metadata: data.metadata ?? data.claims ?? held.metadata ?? {},
           constraints: (data as { constraints?: Record<string, unknown> }).constraints ?? held.constraints ?? {},
           dies_with: data.dies_with !== undefined ? data.dies_with ?? null : held.dies_with ?? null,
+          // Disabling is not a revocation, so it reaches the mirror only through this event.
+          enabled: typeof data.enabled === 'boolean' ? data.enabled : held.enabled,
         });
         return true;
       }

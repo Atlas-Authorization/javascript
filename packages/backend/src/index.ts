@@ -134,7 +134,9 @@ export * from './client';
 // A local, authoritative mirror of end-user API keys (mint/import/revoke at
 // Atlas, verify locally against sha256, sync from the revocation feed).
 export { createKeyMirror, memoryKeyMirrorStore, hashApiKeySecret, intersectScopesWithPermissions, permissionCoversScope, ipInAllowlist } from './key-mirror';
-export type { KeyMirror, KeyMirrorOptions, KeyMirrorStore, MirroredApiKey, MirrorVerification, MirrorImportInput, MirrorImportResult } from './key-mirror';
+export { signApiKeyAssertion } from './api-key-assertion';
+export type { SignApiKeyAssertionOptions } from './api-key-assertion';
+export type { MirrorAssertionVerification, KeyMirror, KeyMirrorOptions, KeyMirrorStore, MirroredApiKey, MirrorVerification, MirrorImportInput, MirrorImportResult } from './key-mirror';
 export { createResourceRoleMirror, memoryResourceRoleMirrorStore, resolveMirrorGrants } from './resource-role-mirror';
 export type {
   MirrorResourceRef,

@@ -167,6 +167,10 @@ export type WebhookDataApiKey = {
   } | null;
   /** `sign_out_everywhere` when the key ends with its user's sign-out everywhere. */
   dies_with?: string | null;
+  /** How the key authenticates: a shared secret, or a key pair whose private key only the holder has. */
+  credential?: "secret" | "key_pair";
+  /** key_pair: the audience an assertion must name. Null for a secret key. */
+  audience?: string | null;
   metadata?: Record<string, unknown>;
   /** api_key.limit_reached: the limit that was reached. */
   limit?: Record<string, unknown>;

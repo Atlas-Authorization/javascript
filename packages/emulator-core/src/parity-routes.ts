@@ -84,6 +84,7 @@ export const extraParityRequests: ParityRequest[] = [
   q('key get', 'GET', '/v1/api_keys/{{xk}}'),
   q('key update', 'PATCH', '/v1/api_keys/{{xk}}', { body: { name: 'x2' } }),
   q('key verify', 'POST', '/v1/api_keys/verify', { body: { secret: '{{xks}}' } }),
+  q('key token', 'POST', '/v1/api_keys/token', { body: { secret: '{{xks}}' }, tolerate: ['token', 'jti', 'expires_in', 'expires_at', 'issuer'] }),
   q('key revoked list', 'GET', '/v1/api_keys/revoked'),
   q('key dies with', 'POST', '/v1/api_keys', { body: { subject_type: 'user', subject_id: '{{xu}}', dies_with: 'sign_out_everywhere', metadata: { team: 'ops' } }, capture: { xkd: 'id' }, tolerate: ['secret', 'prefix'] }),
   q('key dies with bad', 'POST', '/v1/api_keys', { body: { subject_type: 'user', subject_id: '{{xu}}', dies_with: 'forever' } }),

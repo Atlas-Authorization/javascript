@@ -1,5 +1,9 @@
 # @atlasauth/emulator changelog
 
+## 0.7.0
+
+- Uses @atlasauth/emulator-core 0.7.0: key-pair API keys (create, rotate, verify with `token`, and the assertion token exchange).
+
 ## 0.6.0
 
 - Uses @atlasauth/emulator-core 0.6.0: every Backend API operation shipped since mid-November is emulated (native apps, Proof-Carrying Authority, Shared Signals, organization depth and more).

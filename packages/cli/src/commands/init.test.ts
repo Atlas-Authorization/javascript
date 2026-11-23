@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { generateKeyPairSync, verify as cryptoVerify } from 'node:crypto';
 import { AtlasApiError } from '@atlasauth/backend';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryConfigStore } from '../config';
@@ -943,6 +944,48 @@ describe('secrets written by default', () => {
     ).toBe(0);
     expect(printed.stdout()).toContain('ak_test_the_secret_value');
     expect(printed.stderr()).toContain('warning');
+  });
+
+  it('api-keys create --key-pair writes the private key to a 0600 .p8 file, refuses to overwrite, and --out - prints it', async () => {
+    const pem = '-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMG\n-----END PRIVATE KEY-----\n';
+    const create = vi.fn(async () => ({ object: 'api_key', id: 'ak_kp1', key_id: 'ak_kp1', credential: 'key_pair', audience: 'ins_1', secret: null, private_key: pem }));
+    const client = { apiKeys: { create } } as unknown as ManagementClient;
+    const io = captureIO();
+    const ctx = ctxWith(io, { makeClient: () => client });
+    ctx.env = { ...ctx.env, ATLAS_SECRET_KEY: SK };
+    const argv = ['api-keys', 'create', '--key-pair', '--subject-type', 'user', '--subject-id', 'user_1'];
+    expect(await run(argv, ctx)).toBe(0);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ credential: 'key_pair' }));
+    expect(io.stdout()).not.toContain('PRIVATE KEY');
+    const file = join(home, 'atlasauth', 'api-key-ak_kp1.p8');
+    expect(readFileSync(file, 'utf8')).toBe(pem);
+    expect(mode(file)).toBe(0o600);
+
+    const again = captureIO();
+    const ctx2 = ctxWith(again, { makeClient: () => client });
+    ctx2.env = { ...ctx2.env, ATLAS_SECRET_KEY: SK };
+    expect(await run(argv, ctx2)).toBe(1);
+    expect(readFileSync(file, 'utf8')).toBe(pem);
+
+    const printed = captureIO();
+    const ctx3 = ctxWith(printed, { makeClient: () => client });
+    ctx3.env = { ...ctx3.env, ATLAS_SECRET_KEY: SK };
+    expect(await run([...argv, '--out', '-'], ctx3)).toBe(0);
+    expect(printed.stdout()).toContain('BEGIN PRIVATE KEY');
+  });
+
+  it('api-keys sign-assertion prints a JWT the public key verifies', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const keyFile = join(home, 'test-key.p8');
+    writeFileSync(keyFile, privateKey.export({ type: 'pkcs8', format: 'pem' }) as string);
+    const io = captureIO();
+    expect(await run(['api-keys', 'sign-assertion', '--key', keyFile, '--key-id', 'ak_kp1', '--audience', 'https://api.example.com', '--ttl', '120', '--scope', 'a b'], ctxWith(io))).toBe(0);
+    const [h, c, sig] = io.stdout().trim().split('.') as [string, string, string];
+    expect(JSON.parse(Buffer.from(h, 'base64url').toString())).toEqual({ alg: 'ES256', kid: 'ak_kp1', typ: 'JWT' });
+    const claims = JSON.parse(Buffer.from(c, 'base64url').toString());
+    expect(claims).toMatchObject({ iss: 'ak_kp1', aud: 'https://api.example.com', scope: 'a b' });
+    expect(claims.exp - claims.iat).toBe(120);
+    expect(cryptoVerify('sha256', Buffer.from(`${h}.${c}`), { key: publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(sig, 'base64url'))).toBe(true);
   });
 
   it('webhooks create writes the signing secret to a 0600 file', async () => {

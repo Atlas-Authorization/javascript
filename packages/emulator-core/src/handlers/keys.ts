@@ -5,6 +5,7 @@ import type { Obj } from '../openapi';
 import { recordCaller } from './round2';
 import { bump, listReply, need } from './util';
 import { endActor } from './revocations';
+import { claimJti, generateKeyPair, narrowScopes, parseHolderPublicKey, peekKid, verifyAssertion } from './key-pair';
 
 const endReason = (k: Obj): string | null => (!k.revoked_at ? null : (k.revoked_reason ?? (k.revoked_by?.type === 'user' ? 'revoked_by_admin' : 'revoked_by_api')));
 
@@ -38,6 +39,10 @@ export function presentKey(e: Engine, k: Obj): Obj {
     ended_at: k.revoked_at ?? null,
     revoked_by: endActor(k.revoked_by?.type, k.revoked_by?.id),
     revoked_reason: k.revoked_reason ?? null,
+    credential: k.credential ?? 'secret',
+    audience: k.audience ?? null,
+    key_id: k.id,
+    ...(k.credential === 'key_pair' ? { public_key: k.public_key, public_key_jkt: k.public_key_jkt } : {}),
     scopes: k.scopes ?? null,
     constraints: k.constraints ?? null,
     enabled: k.enabled !== false,
@@ -79,9 +84,18 @@ export function keysHandlers(): RouteDef[] {
     {
       method: 'POST',
       pattern: '/v1/api_keys',
-      handler: (c) => {
+      handler: async (c) => {
         const e = c.engine;
         foldMetadata(c.body);
+        const credential = c.body.credential ?? 'secret';
+        if (credential !== 'secret' && credential !== 'key_pair') throw new EmulatorError('VALIDATION_FAILED', 'credential must be "secret" or "key_pair".', 'credential');
+        const keyPair = credential === 'key_pair';
+        if (c.body.audience !== undefined && (!keyPair || typeof c.body.audience !== 'string' || c.body.audience.length < 1 || c.body.audience.length > 256)) {
+          throw new EmulatorError('VALIDATION_FAILED', 'audience is a 1 to 256 character string and only applies to key_pair keys.', 'audience');
+        }
+        // Bring your own public key, or generate a P-256 pair whose private half is returned once.
+        const holder = keyPair && c.body.public_key !== undefined ? await parseHolderPublicKey(c.body.public_key) : null;
+        const generated = keyPair && !holder ? await generateKeyPair() : null;
         const type = String(need(c.body, 'subject_type'));
         const subject = String(need(c.body, 'subject_id'));
         if (!['user', 'organization', 'machine'].includes(type)) throw new EmulatorError('VALIDATION_FAILED', 'subject_type must be user, organization or machine.', 'subject_type');
@@ -89,14 +103,20 @@ export function keysHandlers(): RouteDef[] {
         const diesWith = diesWithOf(c.body.dies_with) ?? null;
         if (diesWith && type !== 'user') throw new EmulatorError('VALIDATION_FAILED', 'dies_with ends a key with a user signing out everywhere: send subject_type "user".', 'dies_with');
         const now = e.clock.now();
-        const prefix = typeof c.body.prefix === 'string' ? c.body.prefix : 'ak';
-        const secret = e.tokens.secret(prefix);
+        const prefix = keyPair ? 'kp' : typeof c.body.prefix === 'string' ? c.body.prefix : 'ak';
+        // A key pair has nothing to present as a bearer secret.
+        const secret = keyPair ? null : e.tokens.secret(prefix);
+        const pub = holder ?? generated;
         const k = e.db.apiKeys.insert({
           subject_type: type,
           subject_id: subject,
           name: c.body.name ?? null,
-          prefix: secret.slice(0, prefix.length + 5),
+          prefix: secret ? secret.slice(0, prefix.length + 5) : prefix,
           secret,
+          credential,
+          audience: keyPair ? (c.body.audience ?? 'ins_emulator') : null,
+          public_key: pub?.publicKey ?? null,
+          public_key_jkt: pub?.jkt ?? null,
           claims: c.body.claims ?? {},
           dies_with: diesWith,
           scopes: c.body.scopes ?? null,
@@ -112,7 +132,7 @@ export function keysHandlers(): RouteDef[] {
           created_at: now,
         });
         kEvent(e, 'api_key.created', k, 'create');
-        return { status: 201, body: { ...presentKey(e, k), secret } };
+        return { status: 201, body: { ...presentKey(e, k), secret, ...(generated ? { private_key: generated.privateKey } : {}) } };
       },
     },
     { method: 'GET', pattern: '/v1/api_keys/:id', handler: (c) => ({ body: presentKey(c.engine, liveKey(c.engine, c.params.id)) }) },
@@ -149,22 +169,45 @@ export function keysHandlers(): RouteDef[] {
     {
       method: 'POST',
       pattern: '/v1/api_keys/verify',
-      handler: (c) => {
+      handler: async (c) => {
         const e = c.engine;
-        const secret = String(need(c.body, 'secret'));
-        const k = e.db.apiKeys.find((x) => x.secret === secret);
+        const hasSecret = c.body.secret !== undefined && c.body.secret !== null;
+        const hasToken = c.body.token !== undefined && c.body.token !== null;
+        if (hasSecret === hasToken) throw new EmulatorError('VALIDATION_FAILED', 'Send exactly one of secret or token.', 'token');
         const now = e.clock.now();
         const invalid = (extra: Obj = {}) => ({ body: { object: 'api_key_verification', valid: false, ...extra } });
+        let k: Obj | undefined;
+        let narrowed: string[] | null = null;
+        let assertion: { jti: string | null; exp: number } | null = null;
+        if (hasToken) {
+          const token = String(c.body.token);
+          const kid = peekKid(token);
+          k = kid ? e.db.apiKeys.get(kid) : undefined;
+          if (k?.credential !== 'key_pair') return invalid();
+        } else {
+          const secret = String(c.body.secret);
+          k = e.db.apiKeys.find((x) => x.secret === secret);
+        }
         if (!k || k.revoked_at || k.enabled === false || (k.expires_at && k.expires_at <= now) || !subjectExists(e, k.subject_type, k.subject_id)) return invalid();
+        if (hasToken) {
+          const verdict = await verifyAssertion(k as any, String(c.body.token), now);
+          if (!verdict.ok) return invalid({ code: verdict.code, ...(verdict.authentic ? { id: k.id } : {}) });
+          narrowed = narrowScopes(k.scopes ?? [], verdict.scope);
+          if (narrowed === null) return invalid({ code: 'scope_not_granted', id: k.id });
+          assertion = { jti: verdict.jti, exp: verdict.exp };
+        }
         const required: string[] = c.body.required_scopes ?? [];
-        const have: string[] = k.scopes ?? [];
+        const have: string[] = narrowed ?? k.scopes ?? [];
         if (required.some((s) => !have.includes(s) && !have.includes('*'))) return invalid({ code: 'insufficient_scope', id: k.id });
         if (k.remaining !== null && k.remaining !== undefined) {
           if (k.remaining <= 0) return invalid({ code: 'usage_exhausted', id: k.id });
           k.remaining -= 1;
         }
+        // Single use until exp, claimed last once everything else allows it.
+        if (assertion?.jti && !claimJti(k, assertion.jti, assertion.exp, now)) return invalid({ code: 'assertion_replayed', id: k.id });
         k.last_used_at = now;
         recordCaller(e, k.id, typeof c.body.client_ip === 'string' ? c.body.client_ip : null, c.request.headers.get('user-agent'));
+        const scopes = narrowed ?? k.scopes ?? null;
         return {
           body: e.shape('ApiKeyVerificationValid', {
             object: 'api_key_verification',
@@ -176,11 +219,63 @@ export function keysHandlers(): RouteDef[] {
             claims: k.claims ?? {},
             metadata: k.claims ?? {},
             dies_with: k.dies_with ?? null,
-            scopes: k.scopes ?? null,
-            effective_scopes: k.scopes ?? [],
+            scopes,
+            effective_scopes: scopes ?? [],
             last_used_at: k.last_used_at,
             expires_at: k.expires_at ?? null,
+            ...(assertion ? { credential: 'key_pair', jti: assertion.jti, exp: assertion.exp } : {}),
           }),
+        };
+      },
+    },
+    {
+      // Exchange a secret or a key-pair assertion for a short-lived access token (an sk_ bearer + body, or the credential itself as the bearer).
+      method: 'POST',
+      pattern: '/v1/api_keys/token',
+      public: true,
+      handler: async (c) => {
+        const e = c.engine;
+        const bearer = /^Bearer\s+(.+)$/i.exec(c.request.headers.get('authorization') ?? '')?.[1];
+        let secret: string | undefined = c.body.secret;
+        let assertion: string | undefined = c.body.assertion;
+        if (bearer?.startsWith('sk_')) e.authenticateKey(c.request);
+        else if (bearer && peekKid(bearer)) assertion = bearer;
+        else if (bearer) secret = bearer;
+        if ((secret === undefined) === (assertion === undefined)) throw new EmulatorError('VALIDATION_FAILED', 'Send exactly one of secret or assertion.', 'assertion');
+        const now = e.clock.now();
+        const refuse = (message: string) => new EmulatorError('INVALID_KEY', message);
+        let k: Obj | undefined;
+        if (assertion !== undefined) {
+          const kid = peekKid(assertion);
+          k = kid ? e.db.apiKeys.get(kid) : undefined;
+          if (k?.credential !== 'key_pair') throw refuse('That key cannot mint a token.');
+        } else {
+          k = e.db.apiKeys.find((x) => x.secret === secret);
+        }
+        if (!k || k.revoked_at || k.enabled === false || (k.expires_at && k.expires_at <= now) || !subjectExists(e, k.subject_type, k.subject_id)) throw refuse('The API key is invalid or has been revoked.');
+        let scopes: string[] = k.scopes ?? [];
+        let jti: string | null = null;
+        let capMs = Infinity;
+        if (assertion !== undefined) {
+          const verdict = await verifyAssertion(k as any, assertion, now);
+          if (!verdict.ok) throw refuse(`That assertion was refused: ${verdict.code}.`);
+          const narrowed = narrowScopes(scopes, verdict.scope);
+          if (!narrowed) throw refuse('That assertion was refused: scope_not_granted.');
+          scopes = narrowed;
+          if (verdict.jti && !claimJti(k, verdict.jti, verdict.exp, now)) throw refuse('That assertion was refused: assertion_replayed.');
+          jti = verdict.jti;
+          // A token minted from an assertion never outlives the assertion.
+          capMs = verdict.exp * 1000 - now;
+        }
+        const asked = typeof c.body.ttl_seconds === 'number' ? c.body.ttl_seconds : 900;
+        const ttl = Math.max(1, Math.min(asked, 3600, k.max_token_lifetime_seconds ?? 3600, Math.floor(capMs / 1000), k.expires_at ? Math.floor((k.expires_at - now) / 1000) : Infinity));
+        const tokenJti = jti ?? `tok_${k.id}_${now}`;
+        k.last_used_at = now;
+        const token = await e.tokens.signClaims({ sub: k.subject_id, key_id: k.id, subject_type: k.subject_type, scope: scopes.join(' '), jti: tokenJti }, ttl);
+        // No cnf: the assertion's own signature is the proof of possession.
+        return {
+          status: 200,
+          body: { object: 'api_key_token', token, token_type: 'Bearer', jti: tokenJti, key_id: k.id, subject_type: k.subject_type, subject_id: k.subject_id, scopes, constraints: k.constraints ?? {}, expires_in: ttl, expires_at: now + ttl * 1000, issuer: e.issuer },
         };
       },
     },

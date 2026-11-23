@@ -21,7 +21,7 @@ Commands:
   whoami                     Show the active profile and instance
   users list|get|create|merge|protect|delete|deleted|deletion-update|risk-signals|risk-signal-add|risk-signals-clear|security-summary|approval-requests|delegation-token|upsert
   orgs list|get|members
-  api-keys list|create|revoke
+  api-keys list|create|revoke|sign-assertion|verify
   webhooks list|create|upsert|update|test|deliveries|redeliver|replay|rotate|reveal
   changes tail|consumers     Watch the change feed (users, orgs, memberships, keys, machines); consumers lists its readers
   compliance posture|ropa|sign|board|requests|triage|i18n-check ...   Compliance reports, data rights board, translation checks
@@ -561,7 +561,15 @@ Usage:
   atlas api-keys list [--subject-type <user|organization>] [--subject-id <id>] [--json]
   atlas api-keys create --subject-type <user|organization> --subject-id <id> [--name <n>]
                         [--product <name>] [--force] [--print-secret] [--json]
-  atlas api-keys revoke <api-key-id> [--json]`,
+  atlas api-keys create --key-pair --subject-type <user|organization> --subject-id <id> [--name <n>]
+                        [--audience <aud>] [--public-key <file.pem>] [--out <key.p8|->] [--json]
+  atlas api-keys sign-assertion --key <key.p8> --key-id <id> --audience <aud> [--ttl 300] [--scope "a b"]
+  atlas api-keys verify --token <assertion> [--json]
+  atlas api-keys revoke <api-key-id> [--json]
+
+A key-pair key has no shared secret. The private key (PKCS#8 PEM, like an Apple .p8 file) is shown once:
+it is written to a 0600 file and never printed unless --out -. An existing file is never overwritten.
+With --public-key the key is yours and no private key is returned.`,
 
   compliance: `atlas compliance — compliance reports, the data rights board and translation checks
 

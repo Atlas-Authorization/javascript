@@ -50,6 +50,12 @@ const OPTIONS = {
   'subject-type': { type: 'string' },
   'subject-id': { type: 'string' },
   name: { type: 'string' },
+  // api-keys create --key-pair / sign-assertion / verify.
+  'key-pair': { type: 'boolean' },
+  'public-key': { type: 'string' },
+  key: { type: 'string' },
+  'key-id': { type: 'string' },
+  ttl: { type: 'string' },
   // config export / import.
   dir: { type: 'string' },
   format: { type: 'string' },

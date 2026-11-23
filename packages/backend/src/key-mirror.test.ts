@@ -54,7 +54,7 @@ describe('createKeyMirror', () => {
       scopeImplications: { 'calls:write': ['calls:read'] },
     });
     const made = await mirror.mint({ subject_type: 'organization', subject_id: 'org_1', scopes: ['calls:write'] });
-    expect(store.keys.get('eak_new')!.hash).toBe(hashApiKeySecret(made.secret));
+    expect(store.keys.get('eak_new')!.hash).toBe(hashApiKeySecret(made.secret!));
     expect(JSON.stringify([...store.keys.values()])).not.toContain('ak_0123_secret');
 
     const ok = await mirror.verify('ak_0123_secret', { requiredScopes: ['calls:read'] });
@@ -66,6 +66,18 @@ describe('createKeyMirror', () => {
     });
     expect(await mirror.verify('nope')).toEqual({ valid: false });
     expect(await mirror.verify('')).toEqual({ valid: false });
+  });
+
+  it('a key disabled at Atlas stops verifying locally once api_key.updated arrives, and works again when re-enabled', async () => {
+    const { api } = fakeAtlas();
+    const store = memoryKeyMirrorStore();
+    const mirror = createKeyMirror({ store, apiKeys: api as never });
+    await mirror.mint({ subject_type: 'organization', subject_id: 'org_1', scopes: ['calls:write'] });
+    expect((await mirror.verify('ak_0123_secret')).valid).toBe(true);
+    expect(await mirror.applyWebhook({ type: 'api_key.updated', data: { ...KEY, id: 'eak_new', enabled: false } })).toBe(true);
+    expect(await mirror.verify('ak_0123_secret')).toEqual({ valid: false });
+    await mirror.applyWebhook({ type: 'api_key.updated', data: { ...KEY, id: 'eak_new', enabled: true } });
+    expect((await mirror.verify('ak_0123_secret')).valid).toBe(true);
   });
 
   it('imports by sha256 hex without sending the secret', async () => {

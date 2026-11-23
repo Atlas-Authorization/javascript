@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0
+
+- Models key-pair API keys: create (Atlas-generated P-256 pair with the private key returned once, or your own `public_key`), read and rotate with `credential`, `audience` and `key_id`, verify with `token` and the assertion refusal codes, and `POST /v1/api_keys/token` exchanging an assertion (or a secret) for an access token with real signature and claim checks.
+
 ## 0.6.0
 
 - Models native apps (iOS, Android and development apps with allowed users and an expiry) and the publishable key restriction, the before-first-session hook, sign-up forwarding and integration health, issuers, message links, the webhook dead-letter queue, SMS and captcha analytics, provider policies and connection templates, connection rehoming, legacy session import, grants (consent and managed) with metadata, per-user risk signals, deleted-user reconciliation, deletion rescheduling, the security summary, delegation tokens, the by-external-id user upsert, device approval and consent account switching, and staging copies with refresh.
