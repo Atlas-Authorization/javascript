@@ -23,7 +23,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.esm.json && node ../../scripts/fix-esm-specifiers.mjs dist/esm",
+    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.esm.json && node scripts/fix-esm-specifiers.mjs dist/esm",
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },

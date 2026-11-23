@@ -3615,8 +3615,9 @@ packages:
   '@colordx/core@5.8.0':
     resolution: {integrity: sha512-cG0QJAO6VkaRUlIb0zOzX9gfJgs1pjoOL9gZ/PK1kfvBs0GCkADu5oQh6gPxXgQnZ3gV575h+lQRC0NlMDTclA==}
 
-  '@colordx/core@7.4.0':
-    resolution: {integrity: sha512-TjIukbr2qfzdWZgR7U2o9+7zuqiwVPn2MBnODv5ysw3TgnVJ7oMtrsZfU8OwbOIbP1wwIS9+qBPhKBWdOhlJCQ==}
+  '@colordx/core@7.5.0':
+    resolution: {integrity: sha512-RikRlLV2j5QR6Jj5NrJn/CxqZzuWgfya/OuDLng7ZG/ZYQ73drvDGjE0ad8oNk/02/E3W8kQv0hL5LjIK2H0/g==}
+    engines: {node: '>=18'}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -8337,8 +8338,8 @@ packages:
       picomatch:
         optional: true
 
-  fetch-nodeshim@0.4.10:
-    resolution: {integrity: sha512-m6I8ALe4L4XpdETy7MJZWs6L1IVMbjs99bwbpIKphxX+0CTns4IKDWJY0LWfr4YsFjfg+z1TjzTMU8lKl8rG0w==}
+  fetch-nodeshim@0.4.11:
+    resolution: {integrity: sha512-mdKkKZtNfL3PAK940FSnTgA5XhsGP2IZTE4mv6UoJxixPnslS2oG02Oz06BzH88QwDOJtXRaFqABIJ2Zha6h2A==}
 
   fetchdts@0.2.0:
     resolution: {integrity: sha512-PJb4ZTGT2/wK78RmVrxZITStWabhZlKBsL52VOgq+c7clEkdHdEB+0rtzrXCbZJqeYJj+IwNWYqB5/G6vouA6A==}
@@ -13311,7 +13312,7 @@ snapshots:
 
   '@colordx/core@5.8.0': {}
 
-  '@colordx/core@7.4.0': {}
+  '@colordx/core@7.5.0': {}
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
@@ -13930,7 +13931,7 @@ snapshots:
       dnssd-advertise: 1.1.6
       expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
       expo-server: 58.1.0
-      fetch-nodeshim: 0.4.10
+      fetch-nodeshim: 0.4.11
       lan-network: 0.2.1
       multitars: 1.0.3
       node-forge: 1.4.4
@@ -14009,7 +14010,7 @@ snapshots:
       dnssd-advertise: 1.1.6
       expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
       expo-server: 58.1.0
-      fetch-nodeshim: 0.4.10
+      fetch-nodeshim: 0.4.11
       lan-network: 0.2.1
       multitars: 1.0.3
       node-forge: 1.4.4
@@ -14234,7 +14235,7 @@ snapshots:
       resolve-from: 5.0.0
       tinyglobby: 0.2.17
     optionalDependencies:
-      expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
+      expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -14648,7 +14649,7 @@ snapshots:
       '@jest/schemas': 29.6.3
       '@types/istanbul-lib-coverage': 2.0.6
       '@types/istanbul-reports': 3.0.4
-      '@types/node': 22.20.5
+      '@types/node': 20.19.43
       '@types/yargs': 17.0.35
       chalk: 4.1.2
 
@@ -17079,7 +17080,7 @@ snapshots:
       react-refresh: 0.14.2
     optionalDependencies:
       '@babel/runtime': 7.29.15
-      expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
+      expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
     transitivePeerDependencies:
       - '@babel/core'
       - supports-color
@@ -17343,7 +17344,7 @@ snapshots:
 
   chrome-launcher@0.15.2:
     dependencies:
-      '@types/node': 22.20.5
+      '@types/node': 20.19.43
       escape-string-regexp: 4.0.0
       is-wsl: 2.2.0
       lighthouse-logger: 1.4.2
@@ -17360,7 +17361,7 @@ snapshots:
 
   chromium-edge-launcher@0.3.0:
     dependencies:
-      '@types/node': 22.20.5
+      '@types/node': 20.19.43
       escape-string-regexp: 4.0.0
       is-wsl: 2.2.0
       lighthouse-logger: 1.4.2
@@ -17686,7 +17687,7 @@ snapshots:
 
   cssnano@9.9.0(postcss@8.5.33):
     dependencies:
-      '@colordx/core': 7.4.0
+      '@colordx/core': 7.5.0
       '@csstools/css-tokenizer': 4.0.3
       browserslist: 4.29.6
       caniuse-api: 4.0.0
@@ -18369,7 +18370,7 @@ snapshots:
 
   expo-keep-awake@58.0.4(expo@58.0.26)(react@18.3.1):
     dependencies:
-      expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
+      expo: 58.0.26(@babel/core@7.29.13)(@expo/dom-webview@58.0.2)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.13)(react@18.3.1))(react@18.3.1)(typescript@5.8.3)
       react: 18.3.1
 
   expo-linking@57.0.14(expo@58.0.26)(react-native@0.86.2(@babel/core@7.29.13)(@types/react@18.3.31)(react@18.3.1))(react@18.3.1):
@@ -18680,7 +18681,7 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.7
 
-  fetch-nodeshim@0.4.10: {}
+  fetch-nodeshim@0.4.11: {}
 
   fetchdts@0.2.0: {}
 
@@ -19339,7 +19340,7 @@ snapshots:
   jest-util@29.7.0:
     dependencies:
       '@jest/types': 29.6.3
-      '@types/node': 22.20.5
+      '@types/node': 20.19.43
       chalk: 4.1.2
       ci-info: 3.9.0
       graceful-fs: 4.2.12
@@ -19356,7 +19357,7 @@ snapshots:
 
   jest-worker@29.7.0:
     dependencies:
-      '@types/node': 22.20.5
+      '@types/node': 20.19.43
       jest-util: 29.7.0
       merge-stream: 2.0.0
       supports-color: 8.1.1
