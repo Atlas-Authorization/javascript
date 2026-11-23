@@ -108,6 +108,9 @@ describe('signInWithNativeBrowser', () => {
     expect(await run('exampleapp://cb?__atlas_attempt=att_1&__atlas_status=needs_required_action&__atlas_policy_token=t')).toMatchObject({ status: 'needs_required_action', policyToken: 't' });
     expect(await run('exampleapp://cb?__atlas_attempt=att_1&__atlas_ticket=t')).toMatchObject({ status: 'error', errors: [{ code: 'PKCE_REQUIRED' }] });
     expect(await run('exampleapp://cb?__atlas_attempt=other&__atlas_code=c')).toMatchObject({ status: 'error', errors: [{ code: 'ATTEMPT_MISMATCH' }] });
+    // A refusal at the provider comes back as __atlas_error: an error, or a cancel when the person backed out.
+    expect(await run('exampleapp://cb?__atlas_attempt=att_1&__atlas_error=oauth_exchange_failed')).toMatchObject({ status: 'error', errors: [{ code: 'OAUTH_EXCHANGE_FAILED' }] });
+    expect(await run('exampleapp://cb?__atlas_attempt=att_1&__atlas_error=access_denied')).toEqual({ status: 'cancelled' });
     const { client, calls } = fakeFapi(() => start.clone());
     const out = await signInWithNativeBrowser(client, { provider: 'discord', browser: browserReturning('x'), inWebView: true });
     expect(out).toMatchObject({ status: 'error', errors: [{ code: 'WEBVIEW_NOT_ALLOWED' }] });

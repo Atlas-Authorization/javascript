@@ -230,6 +230,8 @@ export * from './legacy-verify';
 export * from './uma';
 export type { SidListRevocation } from './sid-revocation';
 export { revocationStream, memoryCursorStore, parseSseBlocks } from './revocation-stream';
+export { listenEvents } from './listen-stream';
+export type { ListenEvent, ListenEventsOptions } from './listen-stream';
 export type { RevocationFrame, RevocationKind, RevocationCursorStore, RevocationStreamHandle, RevocationStreamOptions } from './revocation-stream';
 export { createRevocationMirror, createSessionDenyList } from './revocation-mirror';
 export type { RevocationMirror, RevocationMirrorOptions, SessionDenyList } from './revocation-mirror';

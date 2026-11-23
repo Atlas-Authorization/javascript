@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.52.1
+
+- `atlas dev native` lists each enabled sign-in provider, how it signs in from an app (with the client secret, with the client ID only, or in-page only) and the redirect URI to register.
+
 ## 0.52.0
 
 - `atlas listen --revocations [--kinds ...] [--count n] [--timeout d] [--json]` streams revocations and resumes by cursor.

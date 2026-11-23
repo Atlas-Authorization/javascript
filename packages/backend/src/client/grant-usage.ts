@@ -84,7 +84,10 @@ export interface UsageLease {
   expires_at: number;
 }
 
-/** Atomic usage counters on grants (`/v1/grants/{grant_type}/{id}/...`). */
+/**
+ * Atomic usage counters on grants: POST /v1/grants/:grantType/:id/consume, POST /v1/grants/:grantType/:id/refund,
+ * GET /v1/grants/:grantType/:id/usage, POST /v1/grants/:grantType/:id/leases/:leaseId/release.
+ */
 export function grantUsageResource(request: RequestFn) {
   const base = (type: GrantType, id: string) => `/v1/grants/${enc(type)}/${enc(id)}`;
   return {

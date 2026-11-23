@@ -291,7 +291,11 @@ export async function signInWithNativeBrowser(client: FapiClient, opts: NativeOA
   if (outcome.type !== 'success') return { status: 'cancelled' };
 
   const q = outcome.url.indexOf('?');
-  const result = readRedirectResult(q < 0 ? '' : outcome.url.slice(q + 1).split('#')[0]!);
+  const query = q < 0 ? '' : outcome.url.slice(q + 1).split('#')[0]!;
+  // The provider refused or the person backed out at the provider: Atlas returns `__atlas_error` instead of a code.
+  const returnedError = new URLSearchParams(query).get('__atlas_error');
+  if (returnedError) return returnedError === 'access_denied' ? { status: 'cancelled' } : fail(returnedError.toUpperCase(), 'The sign-in could not be completed with that provider.');
+  const result = readRedirectResult(query);
   if (!result) return fail('NO_REDIRECT', 'No Atlas redirect params found.');
   // A callback for some other attempt is never redeemed with this attempt's verifier.
   if (result.attemptId !== started.attemptId) return fail('ATTEMPT_MISMATCH', 'The sign-in callback belongs to a different attempt.');

@@ -13,6 +13,14 @@ interface NativeApp {
   package_name?: string;
   callback_urls?: string[];
 }
+interface Provider {
+  provider: string;
+  display_name?: string;
+  enabled?: boolean;
+  has_secret?: boolean;
+  redirect_uri?: string;
+  hosted_id_token?: { available: boolean; redirect_uri: string } | null;
+}
 interface Finding {
   severity: string;
   code: string;
@@ -34,6 +42,15 @@ export async function devNative(ctx: RunContext, args: ParsedArgs): Promise<numb
   const apps = ((await api.get<{ data?: NativeApp[] }>('/v1/native_apps').catch(() => ({ data: [] as NativeApp[] }))).data ?? []) as NativeApp[];
   const preflight = await api.get<{ findings?: Finding[] }>('/v1/instance/preflight').catch(() => ({ findings: [] as Finding[] }));
   const findings = (preflight.findings ?? []).filter((f) => NATIVE_CODES.has(f.code));
+  const providers = (((await api.get<{ data?: Provider[] }>('/v1/oauth_providers?configured=true').catch(() => ({ data: [] as Provider[] }))).data ?? []) as Provider[]).filter((p) => p.enabled);
+  // How each enabled provider signs in from an app, and the one URL its console needs.
+  const providerLines = providers.map((p) =>
+    p.has_secret
+      ? { provider: p.provider, how: 'browser sign-in with the client secret', register: p.redirect_uri ?? null }
+      : p.hosted_id_token?.available
+        ? { provider: p.provider, how: 'browser sign-in with the client ID only (no secret needed)', register: p.hosted_id_token.redirect_uri }
+        : { provider: p.provider, how: 'in-page or native SDK sign-in only: add a client secret for app browser sign-in', register: null },
+  );
   const fapi = inst.frontend_api_host ? `https://${inst.frontend_api_host}` : null;
   const development = inst.environment === 'development';
 
@@ -42,7 +59,7 @@ export async function devNative(ctx: RunContext, args: ParsedArgs): Promise<numb
   for (const f of findings) missing.push(`${f.code}: ${f.message} ${f.fix}`.trim());
 
   if (wantsJson(args.values)) {
-    printJson(ctx.io, { publishable_key: inst.publishable_key ?? null, frontend_api_url: fapi, environment: inst.environment ?? null, native_apps: apps, missing });
+    printJson(ctx.io, { publishable_key: inst.publishable_key ?? null, frontend_api_url: fapi, environment: inst.environment ?? null, native_apps: apps, providers: providerLines, missing });
     return 0;
   }
   ctx.io.out(`Publishable key:   ${inst.publishable_key ?? '(none)'}`);
@@ -56,6 +73,13 @@ export async function devNative(ctx: RunContext, args: ParsedArgs): Promise<numb
     ctx.io.out(`  ${a.id}  ${a.platform}  ${who}`);
     for (const u of a.callback_urls ?? []) ctx.io.out(`    callback  ${u}`);
     if (!a.callback_urls?.length) ctx.io.out('    (no callback URLs)');
+  }
+  ctx.io.out('');
+  ctx.io.out('Sign-in providers:');
+  if (providerLines.length === 0) ctx.io.out('  (none enabled)');
+  for (const p of providerLines) {
+    ctx.io.out(`  ${p.provider}  ${p.how}`);
+    if (p.register) ctx.io.out(`    register this redirect URI with the provider  ${p.register}`);
   }
   ctx.io.out('');
   if (missing.length) {

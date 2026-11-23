@@ -136,6 +136,7 @@ import { journeysResource } from './journeys';
 import { marketingResource } from './marketing';
 import { logoutNotifyEndpointsResource } from './logout-notify-endpoints';
 import { pcaResource } from './pca';
+import { pcaOpsResource } from './pca-ops';
 import { mcpConnectorResource, mcpResource } from './mcp';
 import { legacyAuthConnectionResource } from './legacy-auth';
 import { redirectUrlsResource } from './redirect-urls';
@@ -181,6 +182,7 @@ import { auditRetentionOpsResource } from './audit-retention-ops';
 import { regionOpsResource } from './region-ops';
 import { opaOpsResource } from './opa-ops';
 import { ssfOpsResource } from './ssf-ops';
+import { revocationsResource } from './revocations';
 import { orgRoleGrantsOpsResource } from './org-role-grants-ops';
 import { policyBundlesOpsResource } from './policy-bundles-ops';
 import { proxyAppsOpsResource } from './proxy-apps-ops';
@@ -263,6 +265,7 @@ function buildNamespaces(request: RequestFn) {
     riskBasedMfa: riskBasedMfaResource(request),
     riskEvents: riskEventsResource(request),
     ssf: { ...ssfResource(request), ...ssfOpsResource(request) },
+    revocations: revocationsResource(request),
     ...oauthProtocolsResource(request),
     managedGrants: managedGrantsResource(request),
     grants: grantsResource(request),
@@ -443,7 +446,7 @@ function buildNamespaces(request: RequestFn) {
     journeys: journeysResource(request),
     marketing: marketingResource(request),
     configChangelog: configChangelogResource(request),
-    pca: pcaResource(request),
+    pca: { ...pcaResource(request), ...pcaOpsResource(request) },
     mcp: mcpResource(request),
     mcpConnector: mcpConnectorResource(request),
     legacyAuthConnection: legacyAuthConnectionResource(request),
@@ -630,6 +633,7 @@ export * from './jwt-connections';
 export * from './journeys';
 export * from './marketing';
 export * from './pca';
+export * from './pca-ops';
 export * from './mcp';
 export * from './legacy-auth';
 export * from './redirect-urls';
@@ -689,6 +693,7 @@ export * from './audit-retention-ops';
 export * from './region-ops';
 export * from './opa-ops';
 export * from './ssf-ops';
+export * from './revocations';
 export * from './org-role-grants-ops';
 export * from './policy-bundles-ops';
 export * from './proxy-apps-ops';

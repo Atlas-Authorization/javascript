@@ -1,5 +1,10 @@
 # @atlasauth/js changelog
 
+## 0.53.1
+
+- A native browser sign-in that the provider refused now resolves as an error (or `cancelled` when the person backed out) instead of a pending step: the callback's `__atlas_error` is read.
+- Providers with no client secret whose sign-in page returns an id_token (Google, Apple, Microsoft, Twitch) now complete `signInWithNativeBrowser` / `signInWithOAuth` with only the client ID (server side; no API change).
+
 ## 0.53.0
 
 - `waitForSignIn` waits on an email-link or approve-in-your-app sign-in; `listPendingApprovals` lists what is waiting on the signed-in user; `createBrowserHandoff` opens a signed-in browser from a signed-in app.

@@ -60,6 +60,8 @@ export interface OAuthProvider {
   atlas_callback?: string;
   /** Your own already-registered callback (migration), or null. */
   custom_redirect_uri?: string | null;
+  /** Sign-in with only the client_id on every platform, for a provider whose authorize page returns an id_token; null otherwise. */
+  hosted_id_token?: { available: boolean; redirect_uri: string } | null;
   /** The instance's icon override for this provider's button, or null. */
   icon_url?: string | null;
   /** Wallet providers only (siwe, siws, siwb, siwf): the stored verifier settings. */

@@ -1,5 +1,17 @@
 # @atlasauth/backend changelog
 
+## 0.64.0
+
+- Full Backend API coverage, checked against the live OpenAPI: every public Backend API operation now has a method.
+- `atlas.pca`: the grant, need, bond account, undo, principal, intent, approver, approval, action registry, workflow receipt, constitution, guardian, beacon and PQ pin operations (64 methods), next to the existing attestor, freeze and revoke calls.
+- `atlas.ssf`: transmitter metadata, stream configuration (create, get, update, replace, delete), add and remove subject, verification and poll.
+- `atlas.revocations.list`: the revocation log as pages (the long-poll form of the revocation stream).
+- `listenEvents()`: read a listen session's event stream (what `atlas listen` uses) as an async iterator.
+
+## 0.63.1
+
+- `OAuthProvider.hosted_id_token` (`{ available, redirect_uri }` or null): client-ID-only sign-in on every platform for providers whose sign-in page returns an id_token.
+
 ## 0.63.0
 
 - Delegation tokens: `users.createDelegationToken`, `verifyDelegationToken`; short-lived, audience- and scope-limited tokens with a mandatory `act` claim.

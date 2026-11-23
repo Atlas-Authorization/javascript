@@ -147,7 +147,7 @@ export function instanceClonesResource(request: RequestFn) {
     get(appId: string, instanceId: string, cloneId: string): Promise<InstanceClone> {
       return request({ method: 'GET', path: `${base(appId, instanceId)}/${enc(cloneId)}` });
     },
-    /** Bring a completed clone or preview up to date in place (same instance and keys); `synthetic_users` adds seeded test users. */
+    /** Bring a completed clone or preview up to date in place (same instance and keys); `synthetic_users` adds seeded test users. POST /v1/platform/apps/:id/instances/:instanceId/clones/:cloneId/refresh. */
     refresh(appId: string, instanceId: string, cloneId: string, body: { include?: Array<'config' | 'roles' | 'organizations' | 'users' | 'memberships'>; synthetic_users?: { count: number; seed: string }; ttl_hours?: number } = {}, idempotencyKey?: string): Promise<InstanceClone> {
       return request({ method: 'POST', path: `${base(appId, instanceId)}/${enc(cloneId)}/refresh`, body, idempotencyKey });
     },

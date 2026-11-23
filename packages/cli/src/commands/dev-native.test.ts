@@ -44,4 +44,26 @@ describe('atlas dev native', () => {
     expect(text).toContain('appId="napp_1"');
     expect(text).not.toContain('Expo Go');
   });
+
+  it('says how each enabled provider signs in from an app and the URL to register', async () => {
+    const { ctx, out } = ctxWith({
+      '/v1/instance': { environment: 'production', publishable_key: 'pk_live_1', frontend_api_host: 'fapi.example.test' },
+      '/v1/native_apps': { data: [] },
+      '/v1/oauth_providers?configured=true': {
+        data: [
+          { provider: 'google', enabled: true, has_secret: false, hosted_id_token: { available: true, redirect_uri: 'https://fapi.example.test/v1/oauth/id_token_return/google' } },
+          { provider: 'discord', enabled: true, has_secret: true, redirect_uri: 'https://fapi.example.test/v1/oauth/callback/discord', hosted_id_token: null },
+          { provider: 'facebook', enabled: true, has_secret: false, hosted_id_token: null },
+          { provider: 'github', enabled: false, has_secret: true },
+        ],
+      },
+    });
+    await devNative(ctx, args());
+    const text = out.join('\n');
+    expect(text).toContain('google  browser sign-in with the client ID only');
+    expect(text).toContain('https://fapi.example.test/v1/oauth/id_token_return/google');
+    expect(text).toContain('https://fapi.example.test/v1/oauth/callback/discord');
+    expect(text).toContain('facebook  in-page or native SDK sign-in only');
+    expect(text).not.toContain('github');
+  });
 });

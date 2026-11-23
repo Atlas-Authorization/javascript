@@ -91,11 +91,12 @@ describe('clientEnvironmentFrom / fetchClientEnvironment', () => {
     expect((await fetchClientEnvironment(ok))?.emailDelivery.passwordSignUp).toBe(false);
     expect(urls).toEqual(['https://fapi.example/v1/client/environment']);
 
-    const down = new FapiClient({
-      publishableKey: 'pk_test_x',
-      baseUrl: 'https://fapi.example',
-      fetchImpl: (async () => Promise.reject(new TypeError('offline'))) as typeof fetch,
-    });
-    expect(await fetchClientEnvironment(down)).toBeNull();
+    const offline = (async () => Promise.reject(new TypeError('offline'))) as typeof fetch;
+    // Offline with a remembered answer for this key: the last good copy.
+    const down = new FapiClient({ publishableKey: 'pk_test_x', baseUrl: 'https://fapi.example', fetchImpl: offline });
+    expect((await fetchClientEnvironment(down))?.emailDelivery.passwordSignUp).toBe(false);
+    // Offline with nothing remembered for this key: null.
+    const fresh = new FapiClient({ publishableKey: 'pk_test_never_seen', baseUrl: 'https://fapi.example', fetchImpl: offline });
+    expect(await fetchClientEnvironment(fresh)).toBeNull();
   });
 });
