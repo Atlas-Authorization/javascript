@@ -62,6 +62,12 @@ export interface AtlasProviderProps {
   attestation?: AtlasStoreConfig['attestation'];
   /** This app's registered id (`napp_…`); sent as `X-Atlas-App-Id` and used by `signInWithOAuth`. */
   appId?: AtlasStoreConfig['appId'];
+  /** A secure slot for the device key and refresh token: turns on device-bound sessions (see `AtlasStoreConfig.deviceStorage`). Read once. */
+  deviceStorage?: AtlasStoreConfig['deviceStorage'];
+  /** Your own device key, or `false` for none. Read once. */
+  deviceKey?: AtlasStoreConfig['deviceKey'];
+  /** Secure random bytes for the generated device key. Read once. */
+  random?: AtlasStoreConfig['random'];
   children: ReactNode;
 }
 
@@ -79,6 +85,9 @@ export function AtlasProvider(props: AtlasProviderProps): JSX.Element {
       getCaptchaToken: props.getCaptchaToken,
       attestation: props.attestation,
       appId: props.appId,
+      deviceStorage: props.deviceStorage,
+      deviceKey: props.deviceKey,
+      random: props.random,
     }),
   );
 

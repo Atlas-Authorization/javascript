@@ -8,6 +8,7 @@ import { emu3OauthParityRequests } from './parity-emu3-oauth';
 import { emu4FederationParityRequests } from './parity-emu4-federation';
 import { emu4ComplianceParityRequests } from './parity-emu4-compliance';
 import { emu4TrustParityRequests } from './parity-emu4-trust';
+import { ndbParityRequests } from './parity-ndb';
 import { emu4MessagingParityRequests } from './parity-emu4-messaging';
 import { emu4BillingParityRequests } from './parity-emu4-billing';
 import { emu4ActionsParityRequests } from './parity-emu4-actions';
@@ -441,7 +442,7 @@ export const waveParityRequests: ParityRequest[] = [
 ];
 
 /** Every request: the first-round list, then the rest. */
-export const fullParityRequests: ParityRequest[] = [...defaultParityRequests, ...extraParityRequests, ...waveParityRequests, ...emu3AuthzParityRequests, ...emu3BillingParityRequests, ...emu3MessagingParityRequests, ...emu3MiscParityRequests, ...emu3OauthParityRequests, ...emu4AuthzParityRequests, ...emu4OauthParityRequests, ...emu4ActionsParityRequests, ...emu4BillingParityRequests, ...emu4MessagingParityRequests, ...emu4TrustParityRequests, ...emu4ComplianceParityRequests, ...emu4FederationParityRequests];
+export const fullParityRequests: ParityRequest[] = [...defaultParityRequests, ...extraParityRequests, ...waveParityRequests, ...emu3AuthzParityRequests, ...emu3BillingParityRequests, ...emu3MessagingParityRequests, ...emu3MiscParityRequests, ...emu3OauthParityRequests, ...emu4AuthzParityRequests, ...emu4OauthParityRequests, ...emu4ActionsParityRequests, ...emu4BillingParityRequests, ...emu4MessagingParityRequests, ...emu4TrustParityRequests, ...emu4ComplianceParityRequests, ...emu4FederationParityRequests, ...ndbParityRequests];
 
 /** Hand-written routes parity deliberately does not send to a real instance, each with the reason. */
 export const PARITY_EXEMPT: Record<string, string> = {

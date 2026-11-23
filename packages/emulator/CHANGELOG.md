@@ -1,5 +1,9 @@
 # @atlasauth/emulator changelog
 
+## 0.6.0
+
+- Uses @atlasauth/emulator-core 0.6.0: every Backend API operation shipped since mid-November is emulated (native apps, Proof-Carrying Authority, Shared Signals, organization depth and more).
+
 ## 0.5.2
 
 - Uses @atlasauth/emulator-core 0.4.0.

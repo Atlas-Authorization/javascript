@@ -633,6 +633,7 @@ function fulfil(e: Engine, r: Obj, actor: [string, string | null]): void {
     const u = e.db.users.get(r.user_id);
     if (u && !u.deleted) {
       u.deleted = true;
+      u.deleted_at = now;
       e.db.sessions.filter((s) => s.user_id === u.id).forEach((s) => revokeSession(e, s, 'user_deleted'));
       e.changed({ type: 'user.deleted', data: { id: u.id, object: 'user', deleted: true }, resource: 'user', id: u.id, op: 'delete' });
     }

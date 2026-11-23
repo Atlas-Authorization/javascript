@@ -1,5 +1,11 @@
 # @atlasauth/expo changelog
 
+## 0.16.0
+
+- **behaviour:** Apps stay signed in with no code change, in Expo Go, development builds and production builds. `<AtlasProvider>` now makes a device key (P-256, kept only in the token cache, so in `expo-secure-store` when you pass `createSecureStoreTokenCache`), sends its public key on sign-in, keeps the device-bound refresh token the server returns, and proves possession on every refresh. When the server does not return a refresh token (an unregistered app on a production instance whose policy is `refuse`, a second factor still owed), a development build logs why and links the guide. Pass `deviceKey={false}` to opt out, or your own key.
+- New `createExpoDeviceKey({ cache?, storageKey? })`. Needs `expo-crypto` for the key's random bytes (an optional peer you likely already have for sign-in).
+- Needs `@atlasauth/js` 0.54.0 and `@atlasauth/react-native` 0.11.0 or later.
+
 ## 0.15.0
 
 - **breaking:** `@atlasauth/react` and `@atlasauth/react-native` are now required peer dependencies instead of dependencies. Install with `npx expo install @atlasauth/expo @atlasauth/js @atlasauth/react @atlasauth/react-native expo-secure-store`.

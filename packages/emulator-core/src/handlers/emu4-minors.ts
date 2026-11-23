@@ -32,6 +32,9 @@ const st = engineState((e: Engine): Minors => ({
   verifications: new Table('identity_verifications', e.clock.now, 'idv'),
 }));
 
+/** The identity checks recorded for users (the id_document methods rest on them). */
+export const verificationRows = (e: Engine): Table => st(e).verifications;
+
 const consentLevel = (method: string, stated?: string | null): string => (method === 'third_party' ? (stated ?? 'low') : CONSENT_LEVEL[method]!);
 const ageLevel = (method: string, stated?: string | null): string => (method === 'third_party' ? (stated ?? 'low') : AGE_LEVEL[method]!);
 

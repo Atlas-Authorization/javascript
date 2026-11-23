@@ -26,6 +26,15 @@ export interface Session {
   provider?: string | null;
   /** Authentication methods proven at sign-in (RFC 8176, e.g. `pwd`, `webauthn`, `ext`, `mfa`); null for a session created before this was recorded. */
   amr?: string[] | null;
+  /** Set when a native app created the session: whether the app was registered and whether its refresh token is bound to a device key. Null otherwise. */
+  native_client?: SessionNativeClient | null;
+}
+
+export interface SessionNativeClient {
+  kind: 'unregistered' | 'development' | 'registered';
+  app_id?: string;
+  /** `device_key`: refreshing needs a DPoP proof signed by the device key. */
+  binding: 'device_key' | null;
 }
 
 /** The session after a keep-alive {@link sessionsResource} `touch`. */

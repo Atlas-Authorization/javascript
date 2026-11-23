@@ -1,16 +1,18 @@
 import { useState, createElement, type ReactElement } from 'react';
-import { FapiClient, resolveFrontendApi, type AttestationProvider } from '@atlasauth/js';
+import { FapiClient, resolveFrontendApi, withDeviceBoundSession, type AttestationProvider, type DeviceKey } from '@atlasauth/js';
 import {
   AtlasProvider as ReactAtlasProvider,
   type AtlasProviderProps as ReactAtlasProviderProps,
 } from '@atlasauth/react';
 import { createCacheFetch } from './cache-fetch';
+import { createExpoDeviceKey, DEFAULT_DEVICE_SESSION_KEY } from './device-key';
 import { createExpoNativeContext, ExpoFapiContext, ExpoNativeContext } from './fapi-context';
 import {
   createInMemoryTokenCache,
   withMemoryFallback,
   DEFAULT_SESSION_KEY,
   tombstoneStoreFor,
+  tokenStorageFor,
   type TokenCache,
 } from './token-cache';
 
@@ -62,10 +64,17 @@ export interface AtlasProviderProps extends Omit<ReactAtlasProviderProps, 'fetch
    * used by `useSignIn().signInWithOAuth`. Required when the publishable key is restricted to specific apps.
    */
   appId?: string;
+  /**
+   * The device key a native session is bound to. On by default: sign-in sends this device's public key and keeps the
+   * refresh token the server returns, every refresh proves possession, and the app stays signed in (also in Expo Go and
+   * development builds against a production instance, when its policy allows). Pass `false` to turn it off, or your own
+   * key. Read once.
+   */
+  deviceKey?: DeviceKey | false;
 }
 
 export function AtlasProvider(props: AtlasProviderProps): ReactElement {
-  const { tokenCache, tokenKey = DEFAULT_SESSION_KEY, fetchImpl, attestation, appId, ...rest } = props;
+  const { tokenCache, tokenKey = DEFAULT_SESSION_KEY, fetchImpl, attestation, appId, deviceKey, ...rest } = props;
 
   // Built exactly once — the initializer runs on first render only, so the cache
   // (and the default in-memory one, when no adapter is passed) survives
@@ -74,7 +83,13 @@ export function AtlasProvider(props: AtlasProviderProps): ReactElement {
     const cache = withMemoryFallback(tokenCache ?? createInMemoryTokenCache(), (e) => {
       if ((globalThis as { __DEV__?: boolean }).__DEV__) console.warn('[atlas] the session could not be saved to the token cache; it lasts until the app restarts.', e);
     });
-    const cacheFetch = createCacheFetch({ cache, key: tokenKey, fetchImpl: fetchImpl ?? fetch, appId });
+    const baseFetch = fetchImpl ?? fetch;
+    // Innermost, so the bearer and app id are already on the request when it reaches the server.
+    const bound =
+      deviceKey === false
+        ? baseFetch
+        : withDeviceBoundSession(baseFetch, { deviceKey: deviceKey ?? createExpoDeviceKey({ cache }), slot: tokenStorageFor(cache, DEFAULT_DEVICE_SESSION_KEY) });
+    const cacheFetch = createCacheFetch({ cache, key: tokenKey, fetchImpl: bound, appId });
     return {
       cacheFetch,
       // The same bearer-authenticated transport for `@atlasauth/js` calls made outside the

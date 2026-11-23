@@ -159,7 +159,7 @@ async function copyPass(e: Engine, c: Obj, all: boolean): Promise<void> {
 export function cloneHandlers(): RouteDef[] {
   const base = '/v1/platform/apps/:id/instances/:instanceId/clones';
   const source = (c: RouteContext): void => {
-    if (c.params.instanceId !== c.engine.instanceId) throw notFound('Unknown app instance');
+    if (c.params.instanceId !== undefined && c.params.instanceId !== c.engine.instanceId) throw notFound('Unknown app instance');
   };
   const cloneOf = (e: Engine, id: string | undefined): Obj => {
     const row = st(e).clones.get(id);
@@ -171,7 +171,7 @@ export function cloneHandlers(): RouteDef[] {
     if (row.status === 'copying') await copyPass(e, row, false);
   };
 
-  return [
+  const routes: RouteDef[] = [
     { method: 'POST', pattern: base, scope: 'platform:apps:write', handler: async (c): Promise<Reply> => {
       const e = c.engine;
       source(c);
@@ -287,4 +287,44 @@ export function cloneHandlers(): RouteDef[] {
       return { body: { object: 'instance_clone_sweep', expired, failed } };
     } },
   ];
+
+  // The instance's own staging copies: the same clones, addressed without an app and instance in the path (instance:read / instance:write).
+  const [create, list, one, remove] = routes;
+  const asStaging = (r: RouteDef, method: string, pattern: string, scope: string): RouteDef => ({ ...r, method, pattern, scope, handler: (c) => {
+    if (method === 'POST' && c.body.secret_key_preset !== undefined) throw bad('A staging copy always gets the app-runtime key preset: do not send secret_key_preset.', 'secret_key_preset');
+    return r.handler({ ...c, params: { ...c.params, cloneId: c.params.id ?? '' } });
+  } });
+  const refresh: RouteDef = { method: 'POST', pattern: '/v1/instance/staging_copies/:id/refresh', scope: 'instance:write', handler: async (c) => {
+    const e = c.engine;
+    const row = cloneOf(e, c.params.id);
+    if (row.status !== 'completed') throw conflict('Only a completed staging copy can be refreshed.');
+    const b = c.body;
+    const unknown = Object.keys(b).find((k) => !['include', 'synthetic_users', 'ttl_hours'].includes(k));
+    if (unknown) throw bad(`Unrecognised field ${unknown}. Expected any of include, synthetic_users, ttl_hours.`, unknown);
+    const include = b.include === undefined ? ['config'] : (b.include as string[]);
+    if (!Array.isArray(include) || include.length === 0 || include.some((s) => !(SECTIONS as readonly string[]).includes(s))) throw bad(`include is a non-empty list of: ${SECTIONS.join(', ')}.`, 'include');
+    const outside = include.find((s) => !(row.include as string[]).includes(s));
+    if (outside) throw bad(`${outside} was not copied when this staging copy was made, so it cannot be refreshed.`, 'include');
+    if (b.ttl_hours !== undefined) {
+      if (row.kind !== 'preview') throw bad('ttl_hours applies to a preview only.', 'ttl_hours');
+      if (typeof b.ttl_hours !== 'number' || !Number.isInteger(b.ttl_hours) || b.ttl_hours < 1 || b.ttl_hours > MAX_PREVIEW_TTL_H) throw bad(`ttl_hours is a whole number from 1 to ${MAX_PREVIEW_TTL_H}.`, 'ttl_hours');
+      row.expires_at = e.clock.now() + b.ttl_hours * 3_600_000;
+    }
+    if (include.includes('config')) row._data.config = redact(currentConfig(e).auth_config).value;
+    for (const section of include.filter((s) => s !== 'config')) row._data[section] = (await sectionRows(e, section, row.mask_emails, row._salt)).slice(0, CLONE_ROW_CAP);
+    const synth = b.synthetic_users;
+    if (synth !== undefined) {
+      if (!synth || typeof synth !== 'object' || !Number.isInteger(synth.count) || synth.count < 1 || synth.count > 500 || typeof synth.seed !== 'string' || !/^[a-z0-9-]{1,40}$/.test(synth.seed)) throw bad('synthetic_users is { count: 1-500, seed: lowercase slug }.', 'synthetic_users');
+      // The same seed gives the same users, so a repeat adds none twice.
+      const users = ((row._data.users ??= []) as Obj[]);
+      for (let i = 1; i <= synth.count; i++) {
+        const id = `synthetic-${synth.seed}-${i}`;
+        if (!users.some((u) => u.id === id)) users.push({ id, first_name: 'Test', last_name: `User ${i}`, external_id: id, public_metadata: {}, unsafe_metadata: {}, private_metadata: {}, has_password: false, created_at: e.clock.now(), username: null, email_addresses: [{ id: `${id}-email`, email: `${synth.seed}-${i}@example.com`, verified: true }], phone_numbers: [], external_accounts: [] });
+      }
+      row.counts = { ...row.counts, users: users.length };
+    }
+    audit(e, c, 'app.instance_clone_refreshed', 'instance_clone', row.id, {});
+    return { body: present(row) };
+  } };
+  return [...routes, asStaging(create!, 'POST', '/v1/instance/staging_copies', 'instance:write'), asStaging(list!, 'GET', '/v1/instance/staging_copies', 'instance:read'), asStaging(one!, 'GET', '/v1/instance/staging_copies/:id', 'instance:read'), asStaging(remove!, 'DELETE', '/v1/instance/staging_copies/:id', 'instance:write'), refresh];
 }

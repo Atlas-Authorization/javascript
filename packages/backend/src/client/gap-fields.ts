@@ -61,6 +61,14 @@ export interface SessionSettings {
   nonPersistentIdleMs?: number;
 }
 
+/** `nativeApps` in `auth_config`: what a native client with no registered app may do, and limits on its sessions. */
+export interface NativeAppsSettings {
+  /** `refuse` (the production default), `device_bound` (the development default: a refresh token bound to a device key) or `allow`. */
+  unregistered?: 'refuse' | 'device_bound' | 'allow';
+  unregisteredSession?: { absoluteMs?: number; requireMfa?: boolean };
+  [key: string]: unknown;
+}
+
 /** The settings of `auth_config_resolved` the typed client names; other keys pass through. */
 export interface InstanceAuthConfigResolved {
   accountUx?: { passkeyAdoption?: { retirePasswords?: boolean; repromptDays?: number } };
@@ -72,6 +80,7 @@ export interface InstanceAuthConfigResolved {
   endUserApiKeys?: { orgKeyOnCreatorDeparture?: 'keep' | 'revoke'; restoreKeysOnUnban?: boolean };
   localization?: { requireFourEyes?: boolean; requireReview?: boolean };
   mfa?: MfaSettings;
+  nativeApps?: NativeAppsSettings;
   oauthProvider?: OAuthProviderSettings;
   organizations?: { invitationRedirectUrl?: string | null };
   session?: SessionSettings;

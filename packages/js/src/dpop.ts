@@ -27,14 +27,24 @@ export interface DpopClient {
   fetch(input: string | URL, init?: RequestInit & { accessToken?: string }): Promise<Response>;
 }
 
-const enc = (o: unknown) => bufferToBase64Url(new TextEncoder().encode(JSON.stringify(o)));
+/** base64url of a value's JSON (the header/payload segments of a JWS). */
+export const b64uJson = (o: unknown): string => bufferToBase64Url(new TextEncoder().encode(JSON.stringify(o)));
+const enc = b64uJson;
 const ALG = { name: 'ECDSA', namedCurve: 'P-256' } as const;
 
 // htu is the request URL without query or fragment (RFC 9449 §4.2).
-const htuOf = (url: string | URL) => {
+export const htuOf = (url: string | URL): string => {
   const u = new URL(String(url));
   return `${u.origin}${u.pathname}`;
 };
+
+/** base64url(SHA-256(utf8(text))): the `ath` of a DPoP proof. */
+export const sha256Base64Url = async (text: string): Promise<string> =>
+  bufferToBase64Url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
+
+/** RFC 7638 thumbprint of an EC public JWK (canonical member order). */
+export const jwkThumbprint = (j: { crv?: string; kty?: string; x?: string; y?: string }): Promise<string> =>
+  sha256Base64Url(JSON.stringify({ crv: j.crv, kty: j.kty, x: j.x, y: j.y }));
 
 export function createDpopClient(options: DpopClientOptions = {}): DpopClient {
   const doFetch = options.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
@@ -57,10 +67,7 @@ export function createDpopClient(options: DpopClientOptions = {}): DpopClient {
   };
 
   const thumbprint = async () => {
-    // RFC 7638 canonical member order for EC keys.
-    const j = await publicJwk();
-    const canon = JSON.stringify({ crv: j.crv, kty: j.kty, x: j.x, y: j.y });
-    return bufferToBase64Url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canon)));
+    return jwkThumbprint(await publicJwk());
   };
 
   const proof: DpopClient['proof'] = async (method, url, opts = {}) => {
@@ -72,9 +79,7 @@ export function createDpopClient(options: DpopClientOptions = {}): DpopClient {
     };
     if (opts.nonce) payload.nonce = opts.nonce;
     if (opts.accessToken) {
-      payload.ath = bufferToBase64Url(
-        await crypto.subtle.digest('SHA-256', new TextEncoder().encode(opts.accessToken)),
-      );
+      payload.ath = await sha256Base64Url(opts.accessToken);
     }
     const signingInput = `${enc({ typ: 'dpop+jwt', alg: 'ES256', jwk: await publicJwk() })}.${enc(payload)}`;
     const sig = await crypto.subtle.sign(

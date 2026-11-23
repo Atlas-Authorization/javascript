@@ -70,8 +70,9 @@ export function resourceCommand(name: string, ops: Ops): Handler {
     if (op.query) {
       const q = new URLSearchParams(path.includes('?') ? path.slice(path.indexOf('?') + 1) : '');
       for (const k of op.query) {
-        const v = str(args.values, k as keyof Values);
-        if (v) q.set(k.replace(/-/g, '_'), v);
+        const [flag, param] = k.split('=') as [string, string | undefined]; // 'flag=param' when the API name differs
+        const v = str(args.values, flag as keyof Values);
+        if (v) q.set((param ?? flag).replace(/-/g, '_'), v);
       }
       if (op.query.includes('live') && args.values.live === true) q.set('live', 'true');
       path = path.split('?')[0]! + ([...q].length ? `?${q}` : '');
@@ -149,6 +150,8 @@ export const COMPLIANCE: Ops = {
   'cookie-subject-erase': { m: 'DELETE', p: '/v1/cookie_consents/subjects/{}', f: 'y' },
   'cookie-user-erase': { m: 'DELETE', p: '/v1/users/{}/cookie_consents', f: 'y' },
   'i18n-reviews': { m: 'GET', p: '/v1/localizations/{}/reviews' },
+  receipt: { m: 'GET', p: '/v1/data_subject_requests/{}/receipt' },
+  extend: { m: 'POST', p: '/v1/data_subject_requests/{}/extend', f: 'by' },
 };
 export const WORKFLOWS: Ops = {
   list: { m: 'GET', p: '/v1/workflows', f: 'q' },
@@ -287,6 +290,7 @@ export const AGENTS: Ops = {
   'delegation-revoke': { m: 'POST', p: '/v1/agent_delegations/{}/revoke', f: 'by' },
   'delegation-revoke-user': { m: 'POST', p: '/v1/agent_delegations/revoke_for_user', f: 'by' },
   'delegation-evaluate': { m: 'POST', p: '/v1/agent_delegations/{}/evaluate', f: 'b' },
+  'verify-request': { m: 'POST', p: '/v1/agents/verify_request', f: 'by' },
 };
 export const TELEMETRY: Ops = {
   show: { m: 'GET', p: '/v1/telemetry_export' },
@@ -313,6 +317,12 @@ export const BILLING: Ops = {
   'connect-transfer': { m: 'GET', p: '/v1/billing/connect/transfers/{}' },
   'connect-transfer-create': { m: 'POST', p: '/v1/billing/connect/transfers', f: 'by' },
   'store-link': { m: 'POST', p: '/v1/billing/store_links', f: 'by' },
+  invoices: { m: 'GET', p: '/v1/billing/invoices', f: 'q' },
+  invoice: { m: 'GET', p: '/v1/billing/invoices/{}' },
+  'invoice-refund': { m: 'POST', p: '/v1/billing/invoices/{}/refund', f: 'by' },
+  'trial-extend': { m: 'POST', p: '/v1/billing/subscriptions/{}/extend_trial', f: 'by' },
+  usage: { m: 'GET', p: '/v1/billing/usage', f: 'q', query: ['user-id', 'organization-id', 'from', 'to'] },
+  'usage-batch': { m: 'POST', p: '/v1/billing/usage/batch', f: 'by' },
 };
 export const AUDIT: Ops = {
   retention: { m: 'GET', p: '/v1/audit_retention' },
@@ -365,6 +375,7 @@ export const FLOWS: Ops = {
   messages: { m: 'GET', p: '/v1/flows/{}/messages', f: 'q' },
   'message-cancel': { m: 'POST', p: '/v1/flows/{}/messages/{}/cancel', f: 'y' },
   readout: { m: 'GET', p: '/v1/flows/{}/experiments/{}/readout' },
+  runs: { m: 'GET', p: '/v1/flows/{}/runs', f: 'q' },
 };
 /** Referral rewards: the ledger, voiding one, and running the reward rules now. */
 export const REFERRAL_REWARDS: Ops = {
@@ -421,6 +432,323 @@ export const APPROVAL_DEVICES: Ops = {
   list: { m: 'GET', p: '/v1/users/{}/approval_devices' },
   trust: { m: 'POST', p: '/v1/users/{}/approval_devices/trust', f: 'by' },
   remove: { m: 'DELETE', p: '/v1/users/{}/approval_devices/{}', f: 'y' },
+};
+
+/** The action registry: published actions and their review, drafts, namespace versions and pins, publisher keys, reviewers, sources and templates. */
+export const PCA_REGISTRY: Ops = {
+  show: { m: 'GET', p: '/v1/pca/action-registry' },
+  actions: { m: 'GET', p: '/v1/pca/action-registry/actions', f: 'q' },
+  action: { m: 'GET', p: '/v1/pca/action-registry/actions/{}' },
+  review: { m: 'POST', p: '/v1/pca/action-registry/actions/{}/review', f: 'b' },
+  drafts: { m: 'GET', p: '/v1/pca/action-registry/drafts', f: 'q' },
+  draft: { m: 'GET', p: '/v1/pca/action-registry/drafts/{}' },
+  'draft-update': { m: 'PATCH', p: '/v1/pca/action-registry/drafts/{}', f: 'b' },
+  'draft-confirm': { m: 'POST', p: '/v1/pca/action-registry/drafts/{}/confirm', f: 'by' },
+  'draft-delete': { m: 'DELETE', p: '/v1/pca/action-registry/drafts/{}', f: 'y' },
+  versions: { m: 'GET', p: '/v1/pca/action-registry/namespaces/{}/versions', f: 'q' },
+  version: { m: 'GET', p: '/v1/pca/action-registry/namespaces/{}/versions/{}' },
+  diff: { m: 'GET', p: '/v1/pca/action-registry/namespaces/{}/diff', query: ['from', 'to'] },
+  pin: { m: 'PUT', p: '/v1/pca/action-registry/namespaces/{}/pin', f: 'by' },
+  unpin: { m: 'DELETE', p: '/v1/pca/action-registry/namespaces/{}/pin', f: 'y' },
+  'publisher-key-add': { m: 'POST', p: '/v1/pca/action-registry/publisher-keys', f: 'by' },
+  'publisher-key-remove': { m: 'DELETE', p: '/v1/pca/action-registry/publisher-keys/{}', f: 'y' },
+  reviewers: { m: 'GET', p: '/v1/pca/action-registry/reviewers' },
+  'reviewer-enrol': { m: 'POST', p: '/v1/pca/action-registry/reviewers/enrolments', f: 'by' },
+  'reviewer-remove': { m: 'DELETE', p: '/v1/pca/action-registry/reviewers/{}', f: 'y' },
+  sources: { m: 'GET', p: '/v1/pca/action-registry/sources' },
+  'source-add': { m: 'POST', p: '/v1/pca/action-registry/sources', f: 'by' },
+  'source-update': { m: 'PATCH', p: '/v1/pca/action-registry/sources/{}', f: 'by' },
+  'source-sync': { m: 'POST', p: '/v1/pca/action-registry/sources/{}/sync', f: 'y' },
+  'source-remove': { m: 'DELETE', p: '/v1/pca/action-registry/sources/{}', f: 'y' },
+  templates: { m: 'GET', p: '/v1/pca/action-registry/templates' },
+  'template-apply': { m: 'POST', p: '/v1/pca/action-registry/templates/{}/apply', f: 'by' },
+  import: { m: 'POST', p: '/v1/pca/action-registry/imports', f: 'by' },
+  pack: { m: 'POST', p: '/v1/pca/action-registry/packs', f: 'by' },
+  publish: { m: 'POST', p: '/v1/pca/action-registry/publish', f: 'by' },
+};
+/** Grants of authority: read them, amend one, set its authority, raise a need, step up, withdraw. */
+export const PCA_GRANTS: Ops = {
+  list: { m: 'GET', p: '/v1/pca/grants', query: ['limit', 'status', 'principal', 'agent', 'starting-after=cursor'] },
+  get: { m: 'GET', p: '/v1/pca/grants/{}' },
+  needs: { m: 'GET', p: '/v1/pca/grants/{}/needs' },
+  'need-add': { m: 'POST', p: '/v1/pca/grants/{}/needs', f: 'by' },
+  amend: { m: 'POST', p: '/v1/pca/grants/{}/amend', f: 'by' },
+  authority: { m: 'PUT', p: '/v1/pca/grants/{}/authority', f: 'by' },
+  'step-up': { m: 'POST', p: '/v1/pca/grants/{}/step-up', f: 'by' },
+  'step-up-approve': { m: 'POST', p: '/v1/pca/grants/{}/step-up/{}/approve', f: 'by' },
+  revoke: { m: 'DELETE', p: '/v1/pca/grants/{}', f: 'y' },
+};
+/** Approvers, their groups and members, approval settings, and the needs they decide. */
+export const PCA_APPROVERS: Ops = {
+  list: { m: 'GET', p: '/v1/pca/approvers' },
+  get: { m: 'GET', p: '/v1/pca/approvers/{}' },
+  enrol: { m: 'POST', p: '/v1/pca/approvers/enrolments', f: 'by' },
+  update: { m: 'PATCH', p: '/v1/pca/approvers/{}', f: 'by' },
+  'member-update': { m: 'PATCH', p: '/v1/pca/approvers/{}/members/{}', f: 'by' },
+  'credential-remove': { m: 'DELETE', p: '/v1/pca/approvers/{}/credentials/{}', f: 'y' },
+  settings: { m: 'GET', p: '/v1/pca/approvals/settings' },
+  'settings-set': { m: 'PUT', p: '/v1/pca/approvals/settings', f: 'by' },
+  approve: { m: 'POST', p: '/v1/pca/needs/{}/approve', f: 'by' },
+  deny: { m: 'POST', p: '/v1/pca/needs/{}/deny', f: 'by' },
+};
+/** Undo records and the vetoes against them. */
+export const PCA_UNDO: Ops = {
+  record: { m: 'GET', p: '/v1/pca/undo/records/{}' },
+  'record-add': { m: 'POST', p: '/v1/pca/undo/records', f: 'by' },
+  'record-update': { m: 'PUT', p: '/v1/pca/undo/records/{}', f: 'by' },
+  vetoes: { m: 'GET', p: '/v1/pca/undo/vetoes', f: 'q' },
+};
+/** Proof-carrying authority admin: principals, bond accounts, constitutions, beacons, guardian rotation, intent, post-quantum pins and workflow receipts. */
+export const PCA: Ops = {
+  principals: { m: 'GET', p: '/v1/pca/principals' },
+  'principal-add': { m: 'POST', p: '/v1/pca/principals', f: 'by' },
+  'principal-remove': { m: 'DELETE', p: '/v1/pca/principals/{}', f: 'y' },
+  'bond-accounts': { m: 'GET', p: '/v1/pca/bond-accounts' },
+  'bond-account-add': { m: 'POST', p: '/v1/pca/bond-accounts', f: 'by' },
+  constitution: { m: 'POST', p: '/v1/pca/constitutions', f: 'by' },
+  beacon: { m: 'POST', p: '/v1/pca/beacons', f: 'by' },
+  'guardian-rotate': { m: 'POST', p: '/v1/pca/guardian/rotate', f: 'y' },
+  'intent-schema': { m: 'POST', p: '/v1/pca/intent/schemas', f: 'by' },
+  'intent-observations': { m: 'GET', p: '/v1/pca/intent/maps/{}/observations', f: 'q' },
+  'pq-pin-remove': { m: 'DELETE', p: '/v1/pca/pq-pins/{}', f: 'y' },
+  'workflow-receipt': { m: 'POST', p: '/v1/pca/workflow-receipts', f: 'by' },
+};
+/** Shared signals framework: the stream configuration, subjects, verification and polling. */
+export const SSF: Ops = {
+  show: { m: 'GET', p: '/v1/ssf/configuration' },
+  metadata: { m: 'GET', p: '/v1/ssf/metadata' },
+  create: { m: 'POST', p: '/v1/ssf/configuration', f: 'by' },
+  replace: { m: 'PUT', p: '/v1/ssf/configuration', f: 'by' },
+  update: { m: 'PATCH', p: '/v1/ssf/configuration', f: 'by' },
+  remove: { m: 'DELETE', p: '/v1/ssf/configuration', f: 'y' },
+  'add-subject': { m: 'POST', p: '/v1/ssf/add_subject', f: 'by' },
+  'remove-subject': { m: 'POST', p: '/v1/ssf/remove_subject', f: 'by' },
+  verify: { m: 'POST', p: '/v1/ssf/verification', f: 'b' },
+  poll: { m: 'POST', p: '/v1/ssf/streams/{}/poll', f: 'b' },
+};
+/** Staging copies of the instance: copy it, read a copy, refresh it from the source, delete it. */
+export const STAGING_COPIES: Ops = {
+  list: { m: 'GET', p: '/v1/instance/staging_copies', f: 'q', query: ['kind'] },
+  get: { m: 'GET', p: '/v1/instance/staging_copies/{}' },
+  create: { m: 'POST', p: '/v1/instance/staging_copies', f: 'by' },
+  refresh: { m: 'POST', p: '/v1/instance/staging_copies/{}/refresh', f: 'y' },
+  delete: { m: 'DELETE', p: '/v1/instance/staging_copies/{}', f: 'y' },
+};
+/** Platform apps: refresh a clone from its source, renew a web app's 24-hour provisioning key. */
+export const PLATFORM_APPS: Ops = {
+  'clone-refresh': { m: 'POST', p: '/v1/platform/apps/{}/instances/{}/clones/{}/refresh', f: 'by' },
+  'renew-provisioning-key': { m: 'POST', p: '/v1/platform/apps/{}/provisioning_key/renew', f: 'by' },
+  'narrow-secret-keys': { m: 'POST', p: '/v1/platform/apps/{}/narrow_secret_keys', f: 'by' },
+};
+/** Revocations as a long poll (see also `atlas revocations stream`). */
+export const REVOCATIONS: Ops = {
+  list: { m: 'GET', p: '/v1/revocations', query: ['after', 'since', 'kinds', 'limit', 'wait-seconds=wait'] },
+};
+/** Per-user security reads and writes that sit beside `users`. */
+export const USER_SECURITY: Ops = {
+  deleted: { m: 'GET', p: '/v1/users/deleted', f: 'q' },
+  'deletion-update': { m: 'PATCH', p: '/v1/users/{}/deletion', f: 'by' },
+  'risk-signals': { m: 'GET', p: '/v1/users/{}/risk_signals', f: 'q' },
+  'risk-signal-add': { m: 'POST', p: '/v1/users/{}/risk_signals', f: 'by' },
+  'risk-signals-clear': { m: 'DELETE', p: '/v1/users/{}/risk_signals', f: 'y' },
+  'security-summary': { m: 'GET', p: '/v1/users/{}/security_summary' },
+  'approval-requests': { m: 'GET', p: '/v1/users/{}/approval_requests', f: 'q' },
+  'delegation-token': { m: 'POST', p: '/v1/users/{}/delegation_tokens', f: 'by' },
+  upsert: { m: 'PUT', p: '/v1/users/by_external_id/{}', f: 'by' },
+  journeys: { m: 'GET', p: '/v1/users/{}/journeys', f: 'q' },
+  'journeys-clear': { m: 'DELETE', p: '/v1/users/{}/journeys', f: 'y' },
+  'legal-hold': { m: 'GET', p: '/v1/users/{}/legal_hold' },
+  'legal-hold-set': { m: 'POST', p: '/v1/users/{}/legal_hold', f: 'by' },
+  'legal-hold-release': { m: 'POST', p: '/v1/users/{}/legal_hold/release', f: 'by' },
+  'owned-organizations': { m: 'GET', p: '/v1/users/{}/owned_organizations', f: 'q' },
+  'identity-verification': { m: 'GET', p: '/v1/users/{}/identity_verifications/{}' },
+  'identity-verification-import': { m: 'POST', p: '/v1/users/{}/identity_verifications/import', f: 'by' },
+  'approval-request-cancel': { m: 'POST', p: '/v1/users/{}/approval_requests/{}/cancel', f: 'by' },
+  'deletion-reconfirm': { m: 'POST', p: '/v1/users/{}/deletion/reconfirm', f: 'by' },
+  'bulk-actions': { m: 'GET', p: '/v1/users/bulk_actions', f: 'q' },
+  'bulk-action': { m: 'GET', p: '/v1/users/bulk_actions/{}' },
+  'bulk-action-create': { m: 'POST', p: '/v1/users/bulk_actions', f: 'by' },
+  'bulk-action-cancel': { m: 'POST', p: '/v1/users/bulk_actions/{}/cancel', f: 'by' },
+  'deleted-address-add': { m: 'POST', p: '/v1/users/deleted_addresses', f: 'by' },
+  'deleted-address-check': { m: 'POST', p: '/v1/users/deleted_addresses/check', f: 'b' },
+  'search-fields': { m: 'GET', p: '/v1/users/search/fields' },
+  'search-view-count': { m: 'POST', p: '/v1/users/search/views/{}/count', f: 'b' },
+};
+/** Pending device authorizations and the account switch of a consent request. */
+export const OAUTH_DEVICE: Ops = {
+  list: { m: 'GET', p: '/v1/oauth_device_requests', f: 'q' },
+  accept: { m: 'PUT', p: '/v1/oauth_device_requests/accept', f: 'by' },
+  reject: { m: 'PUT', p: '/v1/oauth_device_requests/reject', f: 'by' },
+  'switch-account': { m: 'PUT', p: '/v1/oauth_consent_requests/switch_account', f: 'by' },
+};
+export const ANALYTICS: Ops = {
+  captcha: { m: 'GET', p: '/v1/analytics/captcha', query: ['from', 'to', 'days'] },
+  sms: { m: 'GET', p: '/v1/analytics/sms', query: ['from', 'to', 'days', 'organization-id'] },
+};
+export const MACHINES: Ops = { revoked: { m: 'GET', p: '/v1/machines/revoked', f: 'q' } };
+export const WEBHOOK_DLQ: Ops = { list: { m: 'GET', p: '/v1/webhook_dlq', f: 'q' } };
+export const ORG_INVITATIONS: Ops = { list: { m: 'GET', p: '/v1/organization_invitations', f: 'q', query: ['organization-id'] } };
+export const MESSAGE_LINKS: Ops = { create: { m: 'POST', p: '/v1/message_links', f: 'by' } };
+export const PERMISSIONS: Ops = { rename: { m: 'POST', p: '/v1/permissions/{}/rename', f: 'by' } };
+export const MIGRATION_SESSIONS: Ops = { create: { m: 'POST', p: '/v1/migrations/{}/sessions', f: 'by' } };
+export const SESSIONS_MORE: Ops = {
+  'set-active-organization': { m: 'PUT', p: '/v1/sessions/{}/active_organization', f: 'by' },
+  'grant-update': { m: 'PATCH', p: '/v1/machines/{}/grants/{}', f: 'by' },
+  events: { m: 'GET', p: '/v1/sessions/{}/events', f: 'q' },
+  export: { m: 'GET', p: '/v1/sessions/export', f: 'q', query: ['user-id', 'from', 'to'] },
+  'revocations-status-list': { m: 'GET', p: '/v1/sessions/revocations/status-list' },
+  'revoke-jobs': { m: 'GET', p: '/v1/sessions/revoke_jobs', f: 'q' },
+  'revoke-job': { m: 'GET', p: '/v1/sessions/revoke_jobs/{}' },
+  'revoke-by-filter': { m: 'POST', p: '/v1/sessions/revoke_by_filter', f: 'by' },
+};
+
+/** Extra subcommands of existing handlers (a name here must not clash with the handler's own). */
+export const API_KEYS_MORE: Ops = {
+  callers: { m: 'GET', p: '/v1/api_keys/{}/callers', f: 'q' },
+  posture: { m: 'GET', p: '/v1/api_keys/posture' },
+  rotate: { m: 'POST', p: '/v1/api_keys/{}/rotate', f: 'by' },
+};
+export const CHANGES_MORE: Ops = {
+  snapshot: { m: 'GET', p: '/v1/changes/snapshot/{}', f: 'q' },
+  'consumer-ack': { m: 'PUT', p: '/v1/changes/consumers/{}/ack', f: 'by' },
+};
+export const CONNECTIONS_MORE: Ops = {
+  activity: { m: 'GET', p: '/v1/connections/{}/activity', f: 'q' },
+  'provider-events': { m: 'GET', p: '/v1/connections/{}/provider_events', f: 'q' },
+  'provider-event': { m: 'GET', p: '/v1/connections/{}/provider_events/{}' },
+  'provider-event-replay': { m: 'POST', p: '/v1/connections/{}/provider_events/{}/replay', f: 'by' },
+  'provider-event-log': { m: 'GET', p: '/v1/connection_provider_event_log', f: 'q' },
+  'reconnect-link': { m: 'POST', p: '/v1/connections/{}/reconnect_link', f: 'by' },
+  'token-exchange': { m: 'POST', p: '/v1/connections/{}/token/exchange', f: 'by' },
+  'oauth-complete': { m: 'POST', p: '/v1/connections/oauth/complete', f: 'by' },
+};
+export const GRANTS_MORE: Ops = {
+  consume: { m: 'POST', p: '/v1/grants/{}/{}/consume', f: 'by' },
+  refund: { m: 'POST', p: '/v1/grants/{}/{}/refund', f: 'by' },
+  'lease-release': { m: 'POST', p: '/v1/grants/{}/{}/leases/{}/release', f: 'by' },
+};
+export const MESSAGES_MORE: Ops = { summary: { m: 'GET', p: '/v1/messages/summary', query: ['from', 'to', 'days'] } };
+export const ORGS_MORE: Ops = {
+  'directory-sync-runs': { m: 'GET', p: '/v1/organizations/{}/directory_sync_runs', f: 'q' },
+  'directory-sync-retry': { m: 'POST', p: '/v1/organizations/{}/directory_sync_runs/{}/retry', f: 'by' },
+  'it-health': { m: 'GET', p: '/v1/organizations/{}/it_health' },
+  'role-policy': { m: 'GET', p: '/v1/organizations/{}/role_policy' },
+  'role-policy-set': { m: 'PUT', p: '/v1/organizations/{}/role_policy', f: 'by' },
+  'scim-requests': { m: 'GET', p: '/v1/organizations/{}/scim/requests', f: 'q' },
+  seats: { m: 'GET', p: '/v1/organizations/{}/seats' },
+  'seats-set': { m: 'PUT', p: '/v1/organizations/{}/seats', f: 'by' },
+  'invitations-import': { m: 'POST', p: '/v1/organizations/{}/invitations/import', f: 'by' },
+  'membership-import': { m: 'POST', p: '/v1/organizations/{}/membership_imports', f: 'by' },
+  'webhook-redeliver': { m: 'POST', p: '/v1/organizations/{}/webhook_endpoints/{}/deliveries/{}/redeliver', f: 'by' },
+  'webhook-replay': { m: 'POST', p: '/v1/organizations/{}/webhook_endpoints/{}/replay', f: 'by' },
+  'webhook-reveal-secret': { m: 'POST', p: '/v1/organizations/{}/webhook_endpoints/{}/reveal_secret', f: 'y' },
+  'webhook-test': { m: 'POST', p: '/v1/organizations/{}/webhook_endpoints/{}/test', f: 'by' },
+};
+export const AUTHZ: Ops = {
+  'what-ifs': { m: 'GET', p: '/v1/authz/what_if', f: 'q' },
+  'what-if': { m: 'GET', p: '/v1/authz/what_if/{}' },
+  'what-if-run': { m: 'POST', p: '/v1/authz/what_if', f: 'by' },
+  'what-if-delete': { m: 'DELETE', p: '/v1/authz/what_if/{}', f: 'y' },
+  events: { m: 'GET', p: '/v1/authz/events', f: 'q' },
+  explain: { m: 'POST', p: '/v1/authz/explain', f: 'b' },
+  'rbac-check': { m: 'POST', p: '/v1/authz/rbac/check', f: 'b' },
+};
+export const ATLAS_ID_APPS: Ops = {
+  codes: { m: 'GET', p: '/v1/platform/atlas_id_apps/{}/adoption_codes', f: 'q' },
+  'code-create': { m: 'POST', p: '/v1/platform/atlas_id_apps/{}/adoption_codes', f: 'by' },
+  'code-delete': { m: 'DELETE', p: '/v1/platform/atlas_id_apps/{}/adoption_codes/{}', f: 'y' },
+  adopt: { m: 'POST', p: '/v1/atlas_id_apps/adopt', f: 'by' },
+  release: { m: 'POST', p: '/v1/atlas_id_apps/{}/release', f: 'by' },
+};
+export const RATE_LIMITS: Ops = {
+  overrides: { m: 'GET', p: '/v1/rate_limit_overrides', f: 'q' },
+  override: { m: 'GET', p: '/v1/rate_limit_overrides/{}/{}' },
+  'override-set': { m: 'PUT', p: '/v1/rate_limit_overrides/{}/{}', f: 'by' },
+  'override-clear': { m: 'DELETE', p: '/v1/rate_limit_overrides/{}/{}', f: 'y' },
+  resolve: { m: 'GET', p: '/v1/rate_limit_policies/resolve', query: ['subject-type', 'subject-id'] },
+};
+export const RISK_SIGNALS: Ops = {
+  list: { m: 'GET', p: '/v1/risk_signals', f: 'q', query: ['user-id'] },
+  get: { m: 'GET', p: '/v1/risk_signals/{}' },
+  add: { m: 'POST', p: '/v1/risk_signals', f: 'by' },
+  delete: { m: 'DELETE', p: '/v1/risk_signals/{}', f: 'y' },
+};
+export const SUPPRESSIONS: Ops = {
+  list: { m: 'GET', p: '/v1/suppressions', f: 'q' },
+  get: { m: 'GET', p: '/v1/suppressions/{}' },
+  add: { m: 'POST', p: '/v1/suppressions', f: 'by' },
+  remove: { m: 'DELETE', p: '/v1/suppressions/{}', f: 'y' },
+};
+export const WEB_BOT_AUTH: Ops = {
+  list: { m: 'GET', p: '/v1/web_bot_auth/directories', f: 'q' },
+  add: { m: 'POST', p: '/v1/web_bot_auth/directories', f: 'by' },
+  remove: { m: 'DELETE', p: '/v1/web_bot_auth/directories/{}', f: 'y' },
+};
+export const ABUSE_SIGNALS: Ops = {
+  list: { m: 'GET', p: '/v1/abuse_signals', f: 'q', query: ['user-id', 'from', 'to'] },
+  summary: { m: 'GET', p: '/v1/abuse_signals/summary', query: ['from', 'to', 'days'] },
+};
+export const APPROVAL_REQUESTS: Ops = {
+  list: { m: 'GET', p: '/v1/approval_requests', f: 'q' },
+  get: { m: 'GET', p: '/v1/approval_requests/{}' },
+  create: { m: 'POST', p: '/v1/approval_requests', f: 'by' },
+  cancel: { m: 'POST', p: '/v1/approval_requests/{}/cancel', f: 'by' },
+  consume: { m: 'POST', p: '/v1/approval_requests/{}/consume', f: 'by' },
+};
+export const ENTITLEMENTS: Ops = {
+  consume: { m: 'POST', p: '/v1/entitlements/consume', f: 'by' },
+  refund: { m: 'POST', p: '/v1/entitlements/consume/refund', f: 'by' },
+};
+export const FGA_SYNC: Ops = {
+  runs: { m: 'GET', p: '/v1/fga/sync/runs', f: 'q' },
+  run: { m: 'GET', p: '/v1/fga/sync/runs/{}' },
+  backfill: { m: 'POST', p: '/v1/fga/sync/backfill', f: 'by' },
+  purge: { m: 'POST', p: '/v1/fga/sync/purge', f: 'by' },
+};
+export const IMPERSONATIONS: Ops = { request: { m: 'GET', p: '/v1/impersonations/requests/{}' } };
+/** Instance-level moves and checks: data-key rotation drills, deprecations, exports and imports. */
+export const INSTANCE: Ops = {
+  'rotation-drills': { m: 'GET', p: '/v1/instance/data_key_provider/rotation_drills', f: 'q' },
+  'rotation-drill': { m: 'GET', p: '/v1/instance/data_key_provider/rotation_drills/{}' },
+  'rotation-drill-run': { m: 'POST', p: '/v1/instance/data_key_provider/rotation_drill', f: 'by' },
+  deprecations: { m: 'GET', p: '/v1/instance/deprecations' },
+  exports: { m: 'GET', p: '/v1/instance/exports', f: 'q' },
+  export: { m: 'GET', p: '/v1/instance/exports/{}' },
+  'export-bundle': { m: 'GET', p: '/v1/instance/exports/{}/bundle' },
+  'export-create': { m: 'POST', p: '/v1/instance/exports', f: 'by' },
+  'export-download-url': { m: 'POST', p: '/v1/instance/exports/{}/download_url', f: 'by' },
+  'export-revoke-links': { m: 'POST', p: '/v1/instance/exports/{}/revoke_links', f: 'y' },
+  imports: { m: 'GET', p: '/v1/instance/imports', f: 'q' },
+  import: { m: 'GET', p: '/v1/instance/imports/{}' },
+  'import-create': { m: 'POST', p: '/v1/instance/imports', f: 'by' },
+};
+export const LEGAL_HOLDS: Ops = { list: { m: 'GET', p: '/v1/legal_holds', f: 'q' } };
+export const MFA_CAMPAIGNS: Ops = {
+  users: { m: 'GET', p: '/v1/mfa_campaigns/{}/users', f: 'q' },
+  user: { m: 'GET', p: '/v1/mfa_campaigns/{}/users/{}' },
+  'user-set': { m: 'PUT', p: '/v1/mfa_campaigns/{}/users/{}', f: 'by' },
+};
+export const MACHINE_TRUST_POLICIES: Ops = { test: { m: 'POST', p: '/v1/machine_trust_policies/{}/test', f: 'b' } };
+export const ORG_TEMPLATES: Ops = { 'create-organization': { m: 'POST', p: '/v1/org_templates/{}/organizations', f: 'by' } };
+export const RISK_BASED_MFA: Ops = { replay: { m: 'POST', p: '/v1/risk_based_mfa/replay', f: 'b' } };
+export const SCIM_TOKENS: Ops = { rotate: { m: 'POST', p: '/v1/scim_tokens/{}/rotate', f: 'by' } };
+export const SSO_CONNECTIONS: Ops = {
+  'login-history': { m: 'GET', p: '/v1/sso_connections/{}/login_history', f: 'q' },
+  test: { m: 'POST', p: '/v1/sso_connections/{}/test', f: 'b' },
+  'test-login': { m: 'POST', p: '/v1/sso_connections/{}/test_login', f: 'b' },
+};
+export const STEP_UP: Ops = { assert: { m: 'POST', p: '/v1/step_up/assert', f: 'b' } };
+export const MESSAGING_PROVIDERS: Ops = {
+  'fallbacks-order': { m: 'PUT', p: '/v1/messaging_providers/{}/fallbacks/order', f: 'by' },
+  push: { m: 'PUT', p: '/v1/messaging_providers/push', f: 'by' },
+};
+export const RESOURCE_ROLE_ASSIGNMENTS: Ops = { changes: { m: 'GET', p: '/v1/resource_role_assignments/changes', f: 'q' } };
+export const RESOURCE_SERVERS: Ops = { 'revoked-tokens': { m: 'GET', p: '/v1/resource_servers/{}/revoked_tokens', f: 'q' } };
+
+/** A handler with extra table-driven subcommands: the table answers its own names, the handler everything else. */
+export const withOps = (name: string, ops: Ops, base: Handler): Handler => {
+  const more = resourceCommand(name, ops);
+  return (ctx, args) => (args.positionals[1] && Object.hasOwn(ops, args.positionals[1]) ? more(ctx, args) : base(ctx, args));
 };
 
 /** The same handler seen from one positional deeper: `atlas keys data status` → sub `status`. */

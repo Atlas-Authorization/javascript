@@ -1,5 +1,9 @@
 # @atlasauth/cli changelog
 
+## 0.53.0
+
+- `atlas dev native` reports the policy for native clients with no registered app, the development apps (users, expiry, expired) and, when production refuses unregistered clients, the exact fix.
+
 ## 0.52.1
 
 - `atlas dev native` lists each enabled sign-in provider, how it signs in from an app (with the client secret, with the client ID only, or in-page only) and the redirect URI to register.

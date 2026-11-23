@@ -1,5 +1,10 @@
 # @atlasauth/react-native changelog
 
+## 0.11.0
+
+- Device-bound sessions on a bare React Native app. Pass `deviceStorage` (a Keychain / Keystore slot, its own key) to `<AtlasProvider>` or `createAtlasStore`: sign-in then sends the device's public key and asks for a refresh token bound to it, every refresh carries a proof from that key, and the app stays signed in after the session token expires. New `createSecureDeviceKey({ storage, random? })` (a P-256 key in pure JavaScript, private key only in the secure slot) and `splitDeviceStorage`. Pass `deviceKey` to use your own, or `deviceKey: false` to opt out. Without `deviceStorage` nothing changes.
+- Needs `@atlasauth/js` 0.54.0 or later.
+
 ## 0.10.0
 
 - `signInWithSSO({ identifier?, connectionId?, strategy? }, { browser })` on the store and `useSignIn()`: enterprise sign-in (OIDC SSO, SAML or WS-Federation) in the system browser with PKCE, next to `signInWithOAuth`. Exports `NativeBrowserOptions`.

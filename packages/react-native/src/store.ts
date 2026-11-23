@@ -16,6 +16,8 @@ import {
   signInWithNativeBrowser,
   resolveFrontendApi,
   startSignUp,
+  withDeviceBoundSession,
+  type DeviceKey,
   type AttestationProvider,
   type NativeAuthBrowser,
   type CaptchaFlowKey,
@@ -40,6 +42,7 @@ import {
   startOAuthSignIn,
 } from './fapi';
 import { createInMemoryStorage, createInMemoryTombstoneStore, type TokenStorage } from './storage';
+import { createSecureDeviceKey, splitDeviceStorage } from './device-key';
 import {
   decodeClaims,
   type AtlasSession,
@@ -88,6 +91,17 @@ export interface AtlasStoreConfig {
   tombstoneStore?: TombstoneStore;
   /** Injectable for tests; defaults to the platform `fetch`. */
   fetchImpl?: typeof fetch;
+  /**
+   * A secure slot (Keychain / Keystore, its own key, never the one `storage` uses) that holds this device's key and
+   * the refresh token. Giving it turns on device-bound sessions: sign-in asks for a refresh token bound to a key made
+   * here, and the app stays signed in after the session token expires. Without it (and without `deviceKey`) the
+   * session lasts only as long as its token, as before.
+   */
+  deviceStorage?: TokenStorage;
+  /** Bring your own device key (see `createSecureDeviceKey`), or `false` to turn device-bound sessions off. */
+  deviceKey?: DeviceKey | false;
+  /** Secure random bytes for the generated device key, on a runtime without `crypto.getRandomValues`. */
+  random?: (length: number) => Uint8Array;
   /**
    * The app's UI language as a BCP-47 tag (`"es"`), sent to the Frontend API as
    * `Accept-Language` so every error `message` comes back in that language.
@@ -182,7 +196,12 @@ export class AtlasStore {
     this.getCaptchaToken = config.getCaptchaToken;
     this.locale = config.locale;
     this.appId = config.appId;
-    const fetchImpl = config.fetchImpl ?? fetch;
+    let fetchImpl = config.fetchImpl ?? fetch;
+    if (config.deviceKey !== false && (config.deviceKey || config.deviceStorage)) {
+      const slots = splitDeviceStorage(config.deviceStorage ?? createInMemoryStorage());
+      const deviceKey = config.deviceKey || createSecureDeviceKey({ storage: slots.key, random: config.random });
+      fetchImpl = withDeviceBoundSession(fetchImpl, { deviceKey, slot: slots.session });
+    }
     const frontendApi = resolveFrontendApi(config.frontendApi, {
       component: '<AtlasProvider> / createAtlasStore()',
       allowSameOrigin: false,

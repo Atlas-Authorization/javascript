@@ -6,18 +6,31 @@ export interface NativeApp {
   object: 'native_app';
   /** `napp_...`: the `native_app_id` of a sign-in start and the `X-Atlas-App-Id` header. */
   id: string;
-  platform: 'ios' | 'android';
+  platform: NativeAppPlatform;
   bundle_id?: string;
   team_id?: string;
   package_name?: string;
   sha256_cert_fingerprints?: string[];
   callback_urls: string[];
+  /** `development` apps only: user ids or emails allowed to sign in (1 to 100). */
+  allowed_users?: string[];
+  /** `development` apps only: epoch ms the app stops working (at most 90 days ahead). */
+  expires_at?: number;
+  /** `development` apps only: true once `expires_at` has passed. */
+  expired?: boolean;
   /** Epoch ms. */
   created_at: number;
 }
 
+/** `development` is a temporary, per-user app for builds you have not registered (Expo Go, dev clients), including on production. */
+export type NativeAppPlatform = 'ios' | 'android' | 'development';
+
 export interface NativeAppInput {
-  platform: 'ios' | 'android';
+  platform: NativeAppPlatform;
+  /** development: user ids or emails allowed to sign in (1 to 100). */
+  allowed_users?: string[];
+  /** development: epoch ms, at most 90 days from now. Update it to extend the app. */
+  expires_at?: number;
   /** ios. */
   bundle_id?: string;
   /** ios. */
@@ -42,7 +55,7 @@ export function nativeAppsResource(request: RequestFn) {
     create(input: NativeAppInput, idempotencyKey?: string): Promise<NativeApp> {
       return request({ method: 'POST', path: '/v1/native_apps', body: input, idempotencyKey });
     },
-    /** Change an app; `callback_urls` is replaced as a whole. The platform cannot change. */
+    /** Change an app; `callback_urls` is replaced as a whole. The platform cannot change. For a development app, `expires_at` (at most 90 days ahead) and `allowed_users` may change. */
     update(id: string, patch: Partial<NativeAppInput>, idempotencyKey?: string): Promise<NativeApp> {
       return request({ method: 'PATCH', path: `/v1/native_apps/${enc(id)}`, body: patch, idempotencyKey });
     },

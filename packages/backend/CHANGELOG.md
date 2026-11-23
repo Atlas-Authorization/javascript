@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.64.1
+
+- Development native apps: `NativeApp` and `NativeAppInput` gain `platform: 'development'`, `allowed_users`, `expires_at` and `expired`.
+- `Session.native_client` (`{ kind, app_id, binding }`) says whether a native app's session is unregistered, development or registered, and whether it is bound to a device key.
+- `NativeAppsSettings` types `auth_config.nativeApps.unregistered` and `unregisteredSession`.
+
 ## 0.64.0
 
 - Full Backend API coverage, checked against the live OpenAPI: every public Backend API operation now has a method.

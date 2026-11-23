@@ -153,8 +153,21 @@ export type WebhookDataApiKey = {
   organization_id?: string | null;
   /** The member who created an organization key, or null. */
   created_by_user_id?: string | null;
-  /** Why the key was revoked when it was not a person: membership_ended, creator_departed, organization_deleted, user_banned or rotated. */
+  /** Why the key was revoked when it was not a person: membership_ended, creator_departed, organization_deleted, user_banned, rotated or signed_out_everywhere. */
   revoked_reason?: string | null;
+  /** Why the key ended, always answered once it has (revoked_by_api or revoked_by_admin when a person revoked it). Null while live. */
+  end_reason?: string | null;
+  /** Ended (epoch ms), or null. */
+  ended_at?: number | null;
+  /** Who revoked the key. */
+  revoked_by?: {
+    type?: string;
+    id?: string | null;
+    [key: string]: unknown;
+  } | null;
+  /** `sign_out_everywhere` when the key ends with its user's sign-out everywhere. */
+  dies_with?: string | null;
+  metadata?: Record<string, unknown>;
   /** api_key.limit_reached: the limit that was reached. */
   limit?: Record<string, unknown>;
   [key: string]: unknown;
@@ -684,6 +697,24 @@ export type WebhookDataConnectionProviderChange = {
   [key: string]: unknown;
 };
 
+/** A sealed export of connection secrets was made. Never carries a secret. */
+export type WebhookDataConnectionSecretsExport = {
+  object: "connection_secrets_export";
+  count: number;
+  /** The connections whose secrets were exported (the first 200). */
+  connection_ids: string[];
+  /** The thumbprint of the public key the bundle was sealed to. */
+  recipient_key_id: string;
+  requested_by: {
+    type: "dashboard_user" | "api_key" | "partner_link" | "operator_token";
+    id?: string | null;
+    [key: string]: unknown;
+  };
+  /** Exported (epoch ms). */
+  occurred_at?: number;
+  [key: string]: unknown;
+};
+
 /** A visitor cookie choice that was stored. */
 export type WebhookDataCookieConsent = {
   object: "cookie_consent";
@@ -910,6 +941,8 @@ export type WebhookDataGrant = {
   user_id: string;
   organization_id: string | null;
   session_ids?: string[];
+  /** The metadata you set on the grant, when it has any. */
+  metadata?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -1106,6 +1139,8 @@ export type WebhookDataInvitation = {
   expires_at: number;
   /** Created (epoch ms). */
   created_at: number;
+  /** Per-organization sequence number shared with organization_membership events; apply only when above the highest you hold. */
+  organization_seq?: number;
   delivery?: "email" | "link";
   accept_by?: string | null;
   public_metadata?: Record<string, unknown> | null;
@@ -1258,6 +1293,17 @@ export type WebhookDataMachine = {
   /** Updated (epoch ms). */
   updated_at: number;
   reason?: "superseded" | "owner_banned" | "owner_locked" | "owner_deleted";
+  /** Why a revoked machine ended (revoked_by_api, revoked_by_user, owner_signed_out, superseded, delegation_ended). Null while not revoked. */
+  revoked_reason?: string | null;
+  /** Who revoked the machine. */
+  revoked_by?: {
+    type?: string;
+    id?: string | null;
+    [key: string]: unknown;
+  } | null;
+  /** Ended (epoch ms), or null. */
+  ended_at?: number | null;
+  dies_with?: string | null;
   [key: string]: unknown;
 };
 
@@ -1274,6 +1320,21 @@ export type WebhookDataMachineGrant = {
   changed?: string[];
   /** At (epoch ms). */
   at?: number;
+  /** machine_grant.revoked: the resource server identifier, the `aud` of the machine tokens the grant covered. */
+  audience?: string | null;
+  /** Revoked (epoch ms), or null. */
+  revoked_at?: number | null;
+  /** Ended (epoch ms), or null. */
+  ended_at?: number | null;
+  /** machine_grant.revoked: revoked_by_api or owner_signed_out. */
+  revoked_reason?: string | null;
+  /** Who ended the grant. */
+  revoked_by?: {
+    type?: string;
+    id?: string | null;
+    [key: string]: unknown;
+  } | null;
+  dies_with?: string | null;
   [key: string]: unknown;
 };
 
@@ -1327,6 +1388,10 @@ export type WebhookDataMembership = {
   allowed_sign_in_methods?: string[] | null;
   /** When the membership ends (epoch ms); null when it does not expire. */
   expires_at?: number | null;
+  /** Per-organization sequence number, higher for a later membership or invitation event of the same organization. Apply an event only when it is above the highest one you hold for that organization. */
+  organization_seq?: number;
+  /** The seat's private metadata. Present only on an instance-owned endpoint that set include_private_membership; never sent to organization or per-app endpoints. */
+  private_metadata?: Record<string, unknown>;
   /** organization_membership.updated only: what manages the role now. `scim`, `sso:<connection id>` or `ldap:<connection id>` when your identity provider's groups or roles changed it; `manual` when it was set through the API or dashboard (directory changes then leave it alone). */
   role_source?: string | null;
   [key: string]: unknown;
@@ -1595,6 +1660,8 @@ export type WebhookDataPermission = {
   description?: string | null;
   is_system: boolean;
   implies?: string[];
+  /** permission.updated after a rename only: the key before the rename (it stays accepted as an alias). */
+  previous_key?: string;
   [key: string]: unknown;
 };
 
@@ -1947,8 +2014,10 @@ export type WebhookDataSession = {
   /** session.pending: the stage the sign-in waits on. */
   pending_status?: string;
   strategy?: string;
-  /** session.expired: idle_expired = no activity for the idle window; expired = the absolute lifetime ran out. */
-  reason?: "idle_expired" | "expired";
+  /** session.expired: idle_expired = no activity for the idle window; expired = the absolute lifetime ran out. session.revoked: why it ended (signed_out, revoked_by_api, signed_out_everywhere, token_reuse, grant_revoked, ...). */
+  reason?: string;
+  /** Revoked (epoch ms). */
+  revoked_at?: number;
   [key: string]: unknown;
 };
 
@@ -2221,6 +2290,7 @@ export type WebhookDataUser = {
   /** Whether the user holds at least one passkey. */
   has_passkey?: boolean;
   is_anonymous: boolean;
+  sandbox?: boolean;
   banned: boolean;
   /** When the ban lifts (epoch ms), or null. */
   ban_expires_at: number | null;
@@ -2234,6 +2304,19 @@ export type WebhookDataUser = {
   version: number;
   /** Added to user.* events: the primary address. */
   primary_email_address?: string | null;
+  /** Added to user.* events: every phone number of the user. */
+  phone_numbers?: Array<{
+    object: "phone_number";
+    id: string;
+    phone_number: string;
+    verified: boolean;
+    primary: boolean;
+    [key: string]: unknown;
+  }>;
+  /** Added to user.* events: the primary phone number (E.164), or null. */
+  primary_phone_number?: string | null;
+  /** Added to user.* events: true when the primary phone number was proven. */
+  phone_number_verified?: boolean;
   /** Added to user.* events: every address of the user. */
   email_addresses?: Array<{
     id: string;
@@ -2312,6 +2395,7 @@ export type WebhookDataUserDeleted = {
   /** Whether the user holds at least one passkey. */
   has_passkey?: boolean;
   is_anonymous: boolean;
+  sandbox?: boolean;
   banned: boolean;
   /** When the ban lifts (epoch ms), or null. */
   ban_expires_at: number | null;
@@ -2325,6 +2409,19 @@ export type WebhookDataUserDeleted = {
   version: number;
   /** Added to user.* events: the primary address. */
   primary_email_address?: string | null;
+  /** Added to user.* events: every phone number of the user. */
+  phone_numbers?: Array<{
+    object: "phone_number";
+    id: string;
+    phone_number: string;
+    verified: boolean;
+    primary: boolean;
+    [key: string]: unknown;
+  }>;
+  /** Added to user.* events: the primary phone number (E.164), or null. */
+  primary_phone_number?: string | null;
+  /** Added to user.* events: true when the primary phone number was proven. */
+  phone_number_verified?: boolean;
   /** Added to user.* events: every address of the user. */
   email_addresses?: Array<{
     id: string;
@@ -2364,6 +2461,8 @@ export type WebhookDataUserDeletionSchedule = {
   deletion_paused_at?: number | null;
   deletion_pause_reason?: string | null;
   deletion_refusal_reason?: string | null;
+  /** user.deletion_rescheduled: the date it was moved from (epoch ms), or null. */
+  previous_deletion_effective_at?: number | null;
   data_subject_request_id?: string;
   primary_email_address?: string | null;
   email_addresses?: Array<Record<string, unknown>>;
@@ -2385,6 +2484,21 @@ export type WebhookDataUserMerged = {
   object: "user_merge";
   source_user_id: string;
   target_user_id: string;
+  /** The user that was kept (same as target_user_id). */
+  survivor_user_id?: string;
+  surviving?: "target";
+  /** The merged-away user's external_id, read before it was erased. */
+  source_external_id?: string | null;
+  /** The kept user's external_id after the merge. */
+  survivor_external_id?: string | null;
+  external_ids?: {
+    source?: string | null;
+    survivor?: string | null;
+  };
+  /** The merged-away user's email addresses, read before they moved. */
+  source_email_addresses?: string[];
+  /** Which call merged the users. */
+  via?: "merge" | "identity_link";
   moved?: Record<string, unknown>;
   /** Merged (epoch ms). */
   merged_at?: number;
@@ -2570,6 +2684,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"connection.revoked", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.scopes_changed", WebhookDataConnection>
   | AtlasWebhookEnvelope<"connection.secret_expiring", WebhookDataConnection>
+  | AtlasWebhookEnvelope<"connection.secrets_exported", WebhookDataConnectionSecretsExport>
   | AtlasWebhookEnvelope<"connection.trigger_fired", WebhookDataTriggerFired>
   | AtlasWebhookEnvelope<"connection.updated", WebhookDataConnection>
   | AtlasWebhookEnvelope<"cookie_consent.recorded", WebhookDataCookieConsent>
@@ -2665,6 +2780,8 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"machine_membership.deleted", WebhookDataMachineMembership>
   | AtlasWebhookEnvelope<"machine_membership.updated", WebhookDataMachineMembership>
   | AtlasWebhookEnvelope<"mcp_gateway.tool_changed", WebhookDataMcpToolChange>
+  | AtlasWebhookEnvelope<"message.bounced", WebhookDataMessageFailure>
+  | AtlasWebhookEnvelope<"message.complained", WebhookDataMessageFailure>
   | AtlasWebhookEnvelope<"message.rate_limited", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"message_suppression.created", WebhookDataMessageSuppression>
   | AtlasWebhookEnvelope<"mfa_factor.enrolled", WebhookDataMfaFactor>
@@ -2794,6 +2911,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"user.deletion_canceled", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.deletion_paused", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.deletion_requested", WebhookDataSubjectRequest>
+  | AtlasWebhookEnvelope<"user.deletion_rescheduled", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.deletion_resumed", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.deletion_scheduled", WebhookDataUserDeletionSchedule>
   | AtlasWebhookEnvelope<"user.graduated", WebhookDataUser>
@@ -2806,6 +2924,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"user.parental_consent_declined", WebhookDataMinorStatus>
   | AtlasWebhookEnvelope<"user.parental_consent_granted", WebhookDataMinorStatus>
   | AtlasWebhookEnvelope<"user.parental_consent_required", WebhookDataMinorStatus>
+  | AtlasWebhookEnvelope<"user.phone_verified", WebhookDataUser>
   | AtlasWebhookEnvelope<"user.policy_accepted", WebhookDataPolicyAcceptance>
   | AtlasWebhookEnvelope<"user.reactivated", WebhookDataUserReactivation>
   | AtlasWebhookEnvelope<"user.referral_attributed", WebhookDataUserReferral>
@@ -2896,6 +3015,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "connection.revoked",
   "connection.scopes_changed",
   "connection.secret_expiring",
+  "connection.secrets_exported",
   "connection.trigger_fired",
   "connection.updated",
   "cookie_consent.recorded",
@@ -2991,6 +3111,8 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "machine_membership.deleted",
   "machine_membership.updated",
   "mcp_gateway.tool_changed",
+  "message.bounced",
+  "message.complained",
   "message.rate_limited",
   "message_suppression.created",
   "mfa_factor.enrolled",
@@ -3120,6 +3242,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "user.deletion_canceled",
   "user.deletion_paused",
   "user.deletion_requested",
+  "user.deletion_rescheduled",
   "user.deletion_resumed",
   "user.deletion_scheduled",
   "user.graduated",
@@ -3132,6 +3255,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "user.parental_consent_declined",
   "user.parental_consent_granted",
   "user.parental_consent_required",
+  "user.phone_verified",
   "user.policy_accepted",
   "user.reactivated",
   "user.referral_attributed",

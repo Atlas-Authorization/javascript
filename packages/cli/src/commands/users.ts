@@ -4,6 +4,7 @@ import type { RunContext } from '../context';
 import { CliError } from '../errors';
 import { fmtTime, printJson, printList, type Column } from '../output';
 import { httpFor } from '../project';
+import { USER_SECURITY, resourceCommand } from './resources';
 import { envApiUrl, requireArg, requireClient, resolveAuth, wantsJson } from './shared';
 
 /** Columns for the human `users list` table — User carries no email inline. */
@@ -107,9 +108,10 @@ export async function users(ctx: RunContext, args: ParsedArgs): Promise<number> 
     }
 
     default:
+      if (sub && sub in USER_SECURITY) return resourceCommand('users', USER_SECURITY)(ctx, args);
       throw new CliError(
         sub
-          ? `Unknown subcommand 'users ${sub}'. Try: list, get, create, merge, clear-password, protect, delete.`
+          ? `Unknown subcommand 'users ${sub}'. Try: list, get, create, merge, clear-password, protect, delete, ${Object.keys(USER_SECURITY).join(', ')}.`
           : "users needs a subcommand: list, get, create, delete.",
       );
   }

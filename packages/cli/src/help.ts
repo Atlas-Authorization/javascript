@@ -1,5 +1,5 @@
 import { EMAIL_PROVIDER_LIST } from './commands/shared';
-import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, PROVIDER_CHANGES, FLOWS, REFERRAL_REWARDS, POLICIES, REGION, OAUTH_PUBLISHERS, DOMAINS, AGE_ASSURANCE, APPROVAL_DEVICES, type Ops } from './commands/resources';
+import { AGENTS, AUDIT, BILLING, CATALOG, CHAT, CLOUD, PROVISIONING, SAML_IDP, CONNECTION_ACTIONS, CONNECTION_LIMITS, DEVICE_SSO, FEDERATION, PDP, TELEMETRY, TRIGGERS, VC, WORKFLOWS, APP_EVENTS, DIAGNOSTICS, PROVIDER_CHANGES, FLOWS, REFERRAL_REWARDS, POLICIES, REGION, OAUTH_PUBLISHERS, DOMAINS, AGE_ASSURANCE, APPROVAL_DEVICES, PCA, PCA_REGISTRY, PCA_GRANTS, PCA_APPROVERS, PCA_UNDO, SSF, STAGING_COPIES, PLATFORM_APPS, OAUTH_DEVICE, ANALYTICS, MACHINES, WEBHOOK_DLQ, ORG_INVITATIONS, MESSAGE_LINKS, PERMISSIONS, MIGRATION_SESSIONS, REVOCATIONS, USER_SECURITY, SESSIONS_MORE, API_KEYS_MORE, CHANGES_MORE, CONNECTIONS_MORE, GRANTS_MORE, MESSAGES_MORE, ORGS_MORE, AUTHZ, ATLAS_ID_APPS, RATE_LIMITS, RISK_SIGNALS, SUPPRESSIONS, WEB_BOT_AUTH, ABUSE_SIGNALS, APPROVAL_REQUESTS, ENTITLEMENTS, FGA_SYNC, IMPERSONATIONS, INSTANCE, LEGAL_HOLDS, MFA_CAMPAIGNS, MACHINE_TRUST_POLICIES, ORG_TEMPLATES, RISK_BASED_MFA, SCIM_TOKENS, SSO_CONNECTIONS, STEP_UP, MESSAGING_PROVIDERS, RESOURCE_ROLE_ASSIGNMENTS, RESOURCE_SERVERS, type Ops } from './commands/resources';
 /**
  * All help text lives here as plain strings — the CLI's "docs" surface. Kept
  * out of the handlers so the dispatch code stays about control flow and the
@@ -19,7 +19,7 @@ Commands:
                              Scoped secret keys; new secrets go sealed into 0600 files
   logout                     Remove a stored profile credential
   whoami                     Show the active profile and instance
-  users list|get|create|merge|protect|delete
+  users list|get|create|merge|protect|delete|deleted|deletion-update|risk-signals|risk-signal-add|risk-signals-clear|security-summary|approval-requests|delegation-token|upsert
   orgs list|get|members
   api-keys list|create|revoke
   webhooks list|create|upsert|update|test|deliveries|redeliver|replay|rotate|reveal
@@ -62,6 +62,23 @@ Commands:
   domains list|get|verify|rotate-verification  Custom domains; rotate-verification issues a new path-mount verify URL
   age-assurance list|record|revoke <user-id>   A user's age checks
   approval-devices list|trust|remove <user-id>  A user's trusted approval devices
+  pca principals|bond-accounts|constitution|beacon|guardian-rotate|intent-schema|workflow-receipt ...   Proof-carrying authority admin
+  pca-registry actions|drafts|versions|diff|pin|sources|reviewers|templates|publish ...   The action registry
+  pca-grants list|get|needs|amend|authority|step-up|revoke   Grants of authority
+  pca-approvers list|get|enrol|update|settings|approve|deny   Approvers and the needs they decide
+  pca-undo record|record-add|record-update|vetoes   Undo records and vetoes
+  ssf show|metadata|create|replace|update|remove|add-subject|remove-subject|verify|poll   Shared signals stream
+  revocations list|stream    Everything that ended a credential, as a long poll or a live feed
+  staging-copies list|get|create|refresh|delete   Staging copies of the instance
+  platform-apps clone-refresh|renew-provisioning-key   Refresh a clone; extend a web app's provisioning key
+  oauth-device list|accept|reject|switch-account   Pending device authorizations and consent account switch
+  analytics captcha|sms      Captcha and SMS reports
+  machines revoked           Revoked machines
+  webhook-dlq list           Dead-lettered deliveries across all endpoints
+  org-invitations list       Organization invitations across the instance
+  message-links create       Signed links for messages
+  permissions rename <id>    Rename a permission everywhere it is used
+  migration-sessions create <source>   Start a migration session for a vendor
   csp --framework next|express|nginx
                              Print the Content Security Policy sources Atlas needs
   types generate [--out atlas-types.d.ts] [--check] [--from-config <atlas.yaml>]
@@ -80,7 +97,7 @@ Commands:
   admin developer-accounts provision|revoke
                              Atlas staff: accounts for other platforms' integration teams
                              (operator sign-in with a recent second factor; passwords to 0600 files)
-  sessions revoke|binding|unbind
+  sessions revoke|binding|unbind|set-active-organization
   grants usage <machine|agent> <grant-id>
   connections templates | rehome <from-client> <to-client> [<connection-id>...] [--dry-run|--yes]
                              Marketplace connection templates; move connections between owner OAuth clients
@@ -515,6 +532,9 @@ Usage:
   atlas users clear-password <user-id> [--json]
   atlas users protect <user-id> [--json]
   atlas users delete <user-id> [--json]
+  atlas users deleted | deletion-update <id> | risk-signals <id> | risk-signal-add <id> | risk-signals-clear <id>
+  atlas users security-summary <id> | approval-requests <id> | delegation-token <id> | upsert <external-id>
+    (route per subcommand; a body is JSON from --data or --file; anything that changes data needs --yes)
 
 protect makes a proof of an unverified user's address reach that user, instead of
 making a second account. A password goes on hold; a row with no credential is marked
@@ -1033,7 +1053,10 @@ many seconds. Prints when the old secret stops working.`,
   sessions: `atlas sessions — manage sessions
 
 Usage:
-  atlas sessions revoke <session-id> [--json]`,
+  atlas sessions revoke <session-id> [--json]
+  atlas sessions binding <session-id>        the key a session is bound to
+  atlas sessions unbind <session-id>         let it bind a new key
+  atlas sessions set-active-organization <session-id> --data '{"organization_id":"org_..."}' --yes`,
 
   grants: `atlas grants — inspect grants
 
@@ -1203,6 +1226,43 @@ data needs --yes. --json prints raw JSON. Secrets the API returns once are shown
 right away.`;
 }
 Object.assign(COMMAND_HELP, {
+  'authz': resHelp('authz', 'what-if runs, authorization events, explain and RBAC checks', AUTHZ),
+  'atlas-id-apps': resHelp('atlas-id-apps', 'adoption codes, adopting and releasing a Sign in with Atlas app', ATLAS_ID_APPS),
+  'rate-limits': resHelp('rate-limits', 'per-subject rate limit overrides and the policy that applies (resolve takes --subject-type, --subject-id)', RATE_LIMITS),
+  'risk-signals': resHelp('risk-signals', 'risk signals on record (list takes --user-id)', RISK_SIGNALS),
+  'suppressions': resHelp('suppressions', 'addresses mail is never sent to', SUPPRESSIONS),
+  'web-bot-auth': resHelp('web-bot-auth', 'trusted web bot key directories', WEB_BOT_AUTH),
+  'abuse-signals': resHelp('abuse-signals', 'abuse signals and their summary', ABUSE_SIGNALS),
+  'approval-requests': resHelp('approval-requests', 'approval requests: create, read, cancel, consume', APPROVAL_REQUESTS),
+  'entitlements': resHelp('entitlements', 'consume entitlement units and refund them', ENTITLEMENTS),
+  'fga-sync': resHelp('fga-sync', 'authorization sync runs, backfill and purge', FGA_SYNC),
+  'impersonations': resHelp('impersonations', 'one impersonation request', IMPERSONATIONS),
+  'instance': resHelp('instance', 'data-key rotation drills, deprecations, instance exports and imports', INSTANCE),
+  'legal-holds': resHelp('legal-holds', 'users under legal hold', LEGAL_HOLDS),
+  'mfa-campaigns': resHelp('mfa-campaigns', 'per-user state of an MFA enrolment campaign', MFA_CAMPAIGNS),
+  'machine-trust-policies': resHelp('machine-trust-policies', 'test a machine trust policy', MACHINE_TRUST_POLICIES),
+  'org-templates': resHelp('org-templates', 'create an organization from a template', ORG_TEMPLATES),
+  'risk-based-mfa': resHelp('risk-based-mfa', 'replay risk-based MFA decisions', RISK_BASED_MFA),
+  'scim-tokens': resHelp('scim-tokens', 'rotate a SCIM token', SCIM_TOKENS),
+  'sso-connections': resHelp('sso-connections', 'SSO login history and connection tests', SSO_CONNECTIONS),
+  'step-up': resHelp('step-up', 'assert a step-up proof', STEP_UP),
+  'messaging-providers': resHelp('messaging-providers', 'fallback order and push provider', MESSAGING_PROVIDERS),
+  'resource-role-assignments': resHelp('resource-role-assignments', 'changes to resource role assignments', RESOURCE_ROLE_ASSIGNMENTS),
+  'resource-servers': resHelp('resource-servers', 'revoked tokens of a resource server', RESOURCE_SERVERS),
+  'staging-copies': resHelp('staging-copies', 'staging copies of the instance (list takes --kind)', STAGING_COPIES),
+  'platform-apps': resHelp('platform-apps', 'platform apps: refresh a clone from its source; renew the 24-hour provisioning key of a web app (platform key)', PLATFORM_APPS),
+  revocations: `${resHelp('revocations', 'revoked sessions, tokens, keys, machines and banned users (list takes --after, --since, --kinds, --wait-seconds)', REVOCATIONS)}
+
+atlas revocations stream [--after <cursor>] [--since <time>] [--kinds <list>] [--count <n>]
+  Follow the live feed; one JSON frame per line. Resume with --after <cursor of the last frame>.`,
+  'oauth-device': resHelp('oauth-device', 'pending device authorizations (accept or reject by user code) and the account switch of a consent request', OAUTH_DEVICE),
+  analytics: resHelp('analytics', 'captcha and SMS reports (--from, --to, --days)', ANALYTICS),
+  machines: resHelp('machines', 'revoked machines', MACHINES),
+  'webhook-dlq': resHelp('webhook-dlq', 'dead-lettered webhook deliveries across every endpoint', WEBHOOK_DLQ),
+  'org-invitations': resHelp('org-invitations', 'organization invitations across the instance (--organization-id to narrow)', ORG_INVITATIONS),
+  'message-links': resHelp('message-links', 'signed links for messages', MESSAGE_LINKS),
+  permissions: resHelp('permissions', 'rename a permission everywhere it is used', PERMISSIONS),
+  'migration-sessions': resHelp('migration-sessions', 'start a migration session for a vendor', MIGRATION_SESSIONS),
   suite: `atlas suite — run several config-as-code tools in dependency order
 
 Usage:
@@ -1346,4 +1406,14 @@ atlas audit verify [--after <seq>] [--jwks-url <url>] [--json]
   'oauth-publishers': resHelp('oauth-publishers', 'verified publishers; attach takes the app\'s public client_id (--data \'{"allow_subject_change":true}\' to confirm a subject change)', OAUTH_PUBLISHERS),
   'age-assurance': resHelp('age-assurance', 'age checks on record for a user, recording one and revoking one', AGE_ASSURANCE),
   'approval-devices': resHelp('approval-devices', 'a user\'s trusted approval devices', APPROVAL_DEVICES),
+  pca: resHelp('pca', 'proof-carrying authority admin: principals, bond accounts, constitutions, beacons, guardian rotation, intent schemas, post-quantum pins and workflow receipts', PCA),
+  'pca-registry': resHelp('pca-registry', 'the action registry: actions and their review, drafts, namespace versions and pins, publisher keys, reviewers, sources, templates', PCA_REGISTRY),
+  'pca-grants': resHelp('pca-grants', 'grants of authority (list takes --principal, --agent, --status)', PCA_GRANTS),
+  'pca-approvers': resHelp('pca-approvers', 'approvers, approval settings and the needs they approve or deny', PCA_APPROVERS),
+  'pca-undo': resHelp('pca-undo', 'undo records and the vetoes against them', PCA_UNDO),
+  ssf: resHelp('ssf', 'shared signals: stream configuration, subjects, verification and polling', SSF),
 });
+
+for (const [name, ops] of [['api-keys', API_KEYS_MORE], ['changes', CHANGES_MORE], ['connections', CONNECTIONS_MORE], ['grants', GRANTS_MORE], ['messages', MESSAGES_MORE], ['orgs', ORGS_MORE], ['sessions', SESSIONS_MORE], ['users', USER_SECURITY]] as Array<[string, Ops]>) {
+  if (Object.keys(ops).length && COMMAND_HELP[name]) COMMAND_HELP[name] += `\n\nMore subcommands:\n${resHelp(name, 'more', ops).split('\n\nUsage:\n')[1]!.split('\n\n')[0]}`;
+}

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- Models native apps (iOS, Android and development apps with allowed users and an expiry) and the publishable key restriction, the before-first-session hook, sign-up forwarding and integration health, issuers, message links, the webhook dead-letter queue, SMS and captcha analytics, provider policies and connection templates, connection rehoming, legacy session import, grants (consent and managed) with metadata, per-user risk signals, deleted-user reconciliation, deletion rescheduling, the security summary, delegation tokens, the by-external-id user upsert, device approval and consent account switching, and staging copies with refresh.
+- Models Proof-Carrying Authority: principals, grants with authority statements, step-ups, needs, constitutions, post-quantum pins, beacons, bond accounts, the undo ledger, guardian key rotation, intent maps and schemas, workflow receipts, passkey approvers and their settings, and the hosted action registry (imports, drafts, review, publish, versions, pins, sources, templates). Signatures are not verified.
+- Models Shared Signals stream management (configuration, subjects, verification, poll).
+- Models organization depth (MFA campaigns, role sets and policy, seats, templates, membership and invitation imports), the organization IT-admin views (health, SCIM request log, directory sync runs, SSO login history and tests, organization webhook endpoints, SCIM token rotation), risk and abuse signals, the user traits schema and search fields, config limits, rotation drills, the role-assignment change feed, identity-check import, Atlas ID app adoption and web bot auth request verification.
+
 ## 0.5.0
 
 - Emulates `GET /v1/revocations`, `/v1/revocations/stream`, `/v1/machines/revoked`, soft-ended machine grants, key and machine end records, and the new organization session and invitation routes.

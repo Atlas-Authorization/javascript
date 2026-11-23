@@ -35,9 +35,12 @@ import { emu4ActionsHandlers } from './emu4-actions';
 import { emu4OauthHandlers } from './emu4-oauth';
 import { emu4AuthzHandlers } from './emu4-authz';
 import { domainsHandlers } from './domains';
+import { ndbMiscHandlers } from './ndb-misc';
+import { ndbPcaHandlers } from './ndb-pca';
+import { ndbOrgHandlers } from './ndb-org';
 
 export function allHandlers(): RouteDef[] {
-  return [...usersHandlers(), ...orgsHandlers(), ...accessHandlers(), ...keysHandlers(), ...revocationsHandlers(), ...machinesHandlers(), ...hooksHandlers(), ...sessionsHandlers(), ...controlHandlers(), ...deviceHandlers(), ...oauthHandlers(), ...scimHandlers(), ...passkeyHandlers(), ...round2Handlers(), ...federationHandlers(), ...oauthFlowHandlers(), ...approvalsHandlers(), ...governanceHandlers(), ...messagingHandlers(), ...billingHandlers(), ...workflowHandlers(), ...platformHandlers(), ...connectionsHandlers(), ...authzDataHandlers(), ...oauthAdvHandlers(), ...emu3MiscHandlers(), ...emu4AuthzHandlers(), ...emu4ActionsHandlers(), ...emu4MessagingHandlers(), ...emu4BillingHandlers(), ...emu4OauthHandlers(), ...emu4ComplianceHandlers(), ...emu4FederationHandlers(), ...emu4TrustHandlers(), ...domainsHandlers()];
+  return [...usersHandlers(), ...orgsHandlers(), ...accessHandlers(), ...keysHandlers(), ...revocationsHandlers(), ...machinesHandlers(), ...hooksHandlers(), ...sessionsHandlers(), ...controlHandlers(), ...deviceHandlers(), ...oauthHandlers(), ...scimHandlers(), ...passkeyHandlers(), ...round2Handlers(), ...federationHandlers(), ...oauthFlowHandlers(), ...approvalsHandlers(), ...governanceHandlers(), ...messagingHandlers(), ...billingHandlers(), ...workflowHandlers(), ...platformHandlers(), ...connectionsHandlers(), ...authzDataHandlers(), ...oauthAdvHandlers(), ...emu3MiscHandlers(), ...emu4AuthzHandlers(), ...emu4ActionsHandlers(), ...emu4MessagingHandlers(), ...emu4BillingHandlers(), ...emu4OauthHandlers(), ...emu4ComplianceHandlers(), ...emu4FederationHandlers(), ...emu4TrustHandlers(), ...domainsHandlers(), ...ndbMiscHandlers(), ...ndbPcaHandlers(), ...ndbOrgHandlers()];
 }
 
 export { seedAccess } from './access';

@@ -25,6 +25,7 @@
  */
 
 import { REFRESH_LEAD_MS, readExpiry } from './token-cache';
+import { deviceProof, type DeviceKey } from './native-device-key';
 
 /** RFC 8693 token-exchange grant. */
 const TOKEN_EXCHANGE_GRANT = 'urn:ietf:params:oauth:grant-type:token-exchange';
@@ -50,6 +51,10 @@ export interface NativeSession {
   sessionId: string;
   /** Reported lifetime of `sessionToken`, in seconds. A hint, not a guarantee. */
   expiresInSeconds: number;
+  /** `'device_key'` when the refresh token is bound to this device's key: every refresh then needs a proof from it. */
+  binding?: 'device_key';
+  /** RFC 7638 thumbprint of the key the session is bound to (a reference, never key material). */
+  deviceKeyId?: string;
 }
 
 /** The shape `/oauth2/token` answers a successful token-exchange with. */
@@ -192,22 +197,40 @@ export async function refreshNativeSession(opts: {
   sessionId: string;
   refreshToken: string;
   fetchImpl?: typeof fetch;
+  /** Set on a session whose `binding` is `'device_key'`: the refresh then carries a proof from this key. */
+  deviceKey?: DeviceKey;
+  /** The session's `binding`; a bound session cannot refresh without `deviceKey`. */
+  binding?: 'device_key';
+  /** The session's `deviceKeyId`, carried onto the rotated session. */
+  deviceKeyId?: string;
+  /** The latest server nonce (`DPoP-Nonce`), if one is known. */
+  nonce?: string;
+  /** Told the latest nonce the server issued, to keep for the next refresh. */
+  onNonce?: (nonce: string) => void;
 }): Promise<NativeSession | null> {
   const doFetch = opts.fetchImpl ?? fetch;
+  if (opts.binding === 'device_key' && !opts.deviceKey) return null;
+  const url = `${opts.baseUrl}/v1/client/sessions/${encodeURIComponent(opts.sessionId)}/tokens`;
+  let nonce = opts.nonce;
+
+  const send = async (): Promise<Response> => {
+    const headers: Record<string, string> = { 'content-type': 'application/json', 'x-publishable-key': opts.publishableKey };
+    if (opts.binding === 'device_key' && opts.deviceKey) headers.DPoP = await deviceProof(opts.deviceKey, 'POST', url, { refreshToken: opts.refreshToken, nonce });
+    const res = await doFetch(url, { method: 'POST', headers, body: JSON.stringify({ refresh_token: opts.refreshToken }) });
+    const next = res.headers.get('DPoP-Nonce');
+    if (next) opts.onNonce?.(next);
+    return res;
+  };
 
   let response: Response;
   try {
-    response = await doFetch(
-      `${opts.baseUrl}/v1/client/sessions/${encodeURIComponent(opts.sessionId)}/tokens`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-publishable-key': opts.publishableKey,
-        },
-        body: JSON.stringify({ refresh_token: opts.refreshToken }),
-      },
-    );
+    response = await send();
+    // A server that wants a (newer) nonce answers 401 with `DPoP-Nonce`: retry once with it.
+    const next = response.headers.get('DPoP-Nonce');
+    if (response.status === 401 && next && next !== nonce) {
+      nonce = next;
+      response = await send();
+    }
   } catch {
     return null;
   }
@@ -230,6 +253,8 @@ export async function refreshNativeSession(opts: {
     refreshToken: typeof body.refresh_token === 'string' ? body.refresh_token : opts.refreshToken,
     sessionId: typeof body.session_id === 'string' ? body.session_id : opts.sessionId,
     expiresInSeconds: asNumber(body.expires_in),
+    ...(opts.binding ? { binding: opts.binding } : {}),
+    ...(opts.deviceKeyId ? { deviceKeyId: opts.deviceKeyId } : {}),
   };
 }
 
@@ -271,6 +296,8 @@ export function parseNativeSession(raw: string | null | undefined): NativeSessio
     refreshToken: s.refreshToken,
     sessionId: s.sessionId,
     expiresInSeconds: s.expiresInSeconds,
+    ...(s.binding === 'device_key' ? { binding: 'device_key' as const } : {}),
+    ...(typeof s.deviceKeyId === 'string' ? { deviceKeyId: s.deviceKeyId } : {}),
   };
 }
 
@@ -305,6 +332,8 @@ export interface NativeSessionManagerOptions {
    * never broadcast; contexts share it only through this store.
    */
   reload?: () => NativeSession | null | Promise<NativeSession | null>;
+  /** The key a `binding: 'device_key'` session refreshes with. Without it such a session cannot refresh (it needs a new sign-in). */
+  deviceKey?: DeviceKey;
 }
 
 /**
@@ -336,9 +365,13 @@ export class NativeSessionManager {
   private readonly fetchImpl?: typeof fetch;
   private readonly now: () => number;
   private readonly reload?: NativeSessionManagerOptions['reload'];
+  private readonly deviceKey?: DeviceKey;
+  /** The latest server nonce, in memory only (it lives 5 minutes). */
+  private nonce?: string;
 
   constructor(options: NativeSessionManagerOptions) {
     this.reload = options.reload;
+    this.deviceKey = options.deviceKey;
     this.baseUrl = options.baseUrl;
     this.publishableKey = options.publishableKey;
     this.clientId = options.clientId;
@@ -486,6 +519,13 @@ export class NativeSessionManager {
       sessionId: session.sessionId,
       refreshToken: session.refreshToken,
       fetchImpl: this.fetchImpl,
+      deviceKey: this.deviceKey,
+      binding: session.binding,
+      deviceKeyId: session.deviceKeyId,
+      nonce: this.nonce,
+      onNonce: (n) => {
+        this.nonce = n;
+      },
     });
     if (rotated) this.setSession(rotated);
     return rotated;

@@ -48,8 +48,50 @@ const live = (e: Engine, id: string | undefined): Obj => {
   return u;
 };
 
-const emailTaken = (e: Engine, address: string, except?: string): boolean =>
+export const emailTaken = (e: Engine, address: string, except?: string): boolean =>
   e.db.users.all().some((u) => !u.deleted && u.id !== except && (u.emails as Obj[]).some((m) => m.email_address.toLowerCase() === address.toLowerCase()));
+
+/** Create a user from a POST /v1/users body (also the create half of the by-external-id upsert); emits user.created. */
+export function createUser(e: Engine, body: Obj): Obj {
+  const c = { body };
+  const raw = c.body.email_address;
+  const addresses: string[] = raw === undefined ? [] : ([] as string[]).concat(raw);
+  for (const a of addresses) {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a)) throw new EmulatorError('VALIDATION_FAILED', `${a} is not an email address.`, 'email_address');
+    if (emailTaken(e, a)) throw new EmulatorError('IDENTIFIER_EXISTS', `${a} is already in use.`, 'email_address');
+  }
+  if (c.body.username && e.db.users.all().some((u) => !u.deleted && String(u.username ?? '').toLowerCase() === String(c.body.username).toLowerCase())) {
+    throw new EmulatorError('IDENTIFIER_EXISTS', 'That username is taken.', 'username');
+  }
+  if (c.body.external_id && e.db.users.all().some((u) => !u.deleted && u.external_id === c.body.external_id)) {
+    throw new EmulatorError('EXTERNAL_ID_TAKEN', 'That external_id is taken.', 'external_id');
+  }
+  const now = e.clock.now();
+  const verified = c.body.email_verified !== false;
+  const emails = addresses.map((a) => ({ id: e.db.newId('idn'), email_address: a, verified }));
+  const u = e.db.users.insert({
+    username: c.body.username ?? null,
+    first_name: c.body.first_name ?? null,
+    last_name: c.body.last_name ?? null,
+    image_url: c.body.image_url ?? null,
+    external_id: c.body.external_id ?? null,
+    emails,
+    primary_email_address_id: emails[0]?.id ?? null,
+    has_password: typeof c.body.password === 'string' || typeof c.body.password_hash === 'string' || typeof c.body.password_digest === 'string',
+    // Test-only: lets the Frontend API mock sign this user in with a password. Never serialised.
+    password_plain: typeof c.body.password === 'string' ? c.body.password : null,
+    public_metadata: c.body.public_metadata ?? {},
+    unsafe_metadata: c.body.unsafe_metadata ?? {},
+    private_metadata: c.body.private_metadata ?? {},
+    banned: false,
+    locked: false,
+    created_at: now,
+    updated_at: now,
+    version: 1,
+  });
+  e.changed({ type: 'user.created', data: presentUser(e, u), resource: 'user', id: u.id, op: 'create' });
+  return u;
+}
 
 export function usersHandlers(): RouteDef[] {
   const emit = (e: Engine, type: string, u: Obj, op: 'create' | 'update' | 'delete', data?: Obj) =>
@@ -84,46 +126,7 @@ export function usersHandlers(): RouteDef[] {
     {
       method: 'POST',
       pattern: '/v1/users',
-      handler: (c) => {
-        const e = c.engine;
-        const raw = c.body.email_address;
-        const addresses: string[] = raw === undefined ? [] : ([] as string[]).concat(raw);
-        for (const a of addresses) {
-          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a)) throw new EmulatorError('VALIDATION_FAILED', `${a} is not an email address.`, 'email_address');
-          if (emailTaken(e, a)) throw new EmulatorError('IDENTIFIER_EXISTS', `${a} is already in use.`, 'email_address');
-        }
-        if (c.body.username && e.db.users.all().some((u) => !u.deleted && String(u.username ?? '').toLowerCase() === String(c.body.username).toLowerCase())) {
-          throw new EmulatorError('IDENTIFIER_EXISTS', 'That username is taken.', 'username');
-        }
-        if (c.body.external_id && e.db.users.all().some((u) => !u.deleted && u.external_id === c.body.external_id)) {
-          throw new EmulatorError('EXTERNAL_ID_TAKEN', 'That external_id is taken.', 'external_id');
-        }
-        const now = e.clock.now();
-        const verified = c.body.email_verified !== false;
-        const emails = addresses.map((a) => ({ id: e.db.newId('idn'), email_address: a, verified }));
-        const u = e.db.users.insert({
-          username: c.body.username ?? null,
-          first_name: c.body.first_name ?? null,
-          last_name: c.body.last_name ?? null,
-          image_url: c.body.image_url ?? null,
-          external_id: c.body.external_id ?? null,
-          emails,
-          primary_email_address_id: emails[0]?.id ?? null,
-          has_password: typeof c.body.password === 'string' || typeof c.body.password_hash === 'string' || typeof c.body.password_digest === 'string',
-          // Test-only: lets the Frontend API mock sign this user in with a password. Never serialised.
-          password_plain: typeof c.body.password === 'string' ? c.body.password : null,
-          public_metadata: c.body.public_metadata ?? {},
-          unsafe_metadata: c.body.unsafe_metadata ?? {},
-          private_metadata: c.body.private_metadata ?? {},
-          banned: false,
-          locked: false,
-          created_at: now,
-          updated_at: now,
-          version: 1,
-        });
-        emit(e, 'user.created', u, 'create');
-        return { status: 201, body: presentUser(e, u) };
-      },
+      handler: (c) => ({ status: 201, body: presentUser(c.engine, createUser(c.engine, c.body)) }),
     },
     { method: 'GET', pattern: '/v1/users/:id', handler: (c) => ({ body: presentUser(c.engine, live(c.engine, c.params.id)) }) },
     {
@@ -150,6 +153,7 @@ export function usersHandlers(): RouteDef[] {
         const u = live(e, c.params.id);
         assertNotOnHold(e, u.id);
         u.deleted = true;
+        u.deleted_at = e.clock.now();
         for (const m of e.db.memberships.filter((x) => x.user_id === u.id)) {
           e.db.memberships.delete(m.id);
           e.changed({ type: 'organization_membership.deleted', data: { id: m.id, organization_id: m.organization_id, user_id: u.id }, resource: 'membership', id: m.id, op: 'delete' });

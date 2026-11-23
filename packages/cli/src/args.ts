@@ -316,6 +316,10 @@ const OPTIONS = {
   // admin id-accounts / developer-accounts (Atlas staff).
   team: { type: 'string' },
   kind: { type: 'string' },
+  // pca grants list / revocations list.
+  principal: { type: 'string' },
+  agent: { type: 'string' },
+  'wait-seconds': { type: 'string' },
   days: { type: 'string' },
   'any-app': { type: 'boolean' },
   'staff-account': { type: 'string' },

@@ -188,6 +188,10 @@ export const ERROR_CATALOG: Record<string, { status: number; title: string }> = 
     "status": 409,
     "title": "Identity already linked"
   },
+  "EXTERNAL_ID_REQUIRED": {
+    "status": 403,
+    "title": "Account not linked yet"
+  },
   "EXTERNAL_ID_TAKEN": {
     "status": 409,
     "title": "external_id already in use"
@@ -384,6 +388,10 @@ export const ERROR_CATALOG: Record<string, { status: number; title: string }> = 
     "status": 422,
     "title": "Email delivery not configured"
   },
+  "FROM_DOMAIN_NOT_VERIFIED": {
+    "status": 422,
+    "title": "From domain not verified"
+  },
   "EMAIL_ADDRESS_UNREACHABLE": {
     "status": 422,
     "title": "Email address unreachable"
@@ -568,4 +576,20 @@ export const ERROR_CATALOG: Record<string, { status: number; title: string }> = 
     "status": 400,
     "title": "Development scheme on production"
   },
+  "DEVICE_PROOF_REQUIRED": {
+    "status": 401,
+    "title": "Device proof required"
+  },
+  "DEVICE_PROOF_INVALID": {
+    "status": 401,
+    "title": "Device proof invalid"
+  },
+  "NATIVE_APP_EXPIRED": {
+    "status": 403,
+    "title": "Development app expired"
+  },
+  "NATIVE_APP_USER_NOT_ALLOWED": {
+    "status": 403,
+    "title": "User not allowed on this development app"
+  }
 };

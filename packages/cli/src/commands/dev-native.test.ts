@@ -66,4 +66,31 @@ describe('atlas dev native', () => {
     expect(text).toContain('facebook  in-page or native SDK sign-in only');
     expect(text).not.toContain('github');
   });
+
+  it('prints the fix when production refuses unregistered apps, and lists development apps', async () => {
+    const { ctx, out } = ctxWith({
+      '/v1/instance': { environment: 'production', publishable_key: 'pk_live_1', frontend_api_host: 'fapi.example.test' },
+      '/v1/native_apps': { data: [{ id: 'napp_dev', platform: 'development', allowed_users: ['dev@example.com'], expires_at: 1000, callback_urls: ['exp://192.168.0.2:8081/--/cb'] }] },
+    });
+    await devNative(ctx, args());
+    const text = out.join('\n');
+    expect(text).toContain('Unregistered apps: refuse (default)');
+    expect(text).toContain('napp_dev  EXPIRED');
+    expect(text).toContain('dev@example.com');
+    expect(text).toContain('PATCH /v1/native_apps/napp_dev');
+    expect(text).toContain('"platform":"development"');
+  });
+
+  it('reports a configured policy and an active development app without the refuse fix', async () => {
+    const { ctx, out } = ctxWith({
+      '/v1/instance': { environment: 'production', publishable_key: 'pk_live_1', frontend_api_host: 'fapi.example.test', auth_config_resolved: { nativeApps: { unregistered: 'device_bound', unregisteredSession: { absoluteMs: 86400000, requireMfa: true } } } },
+      '/v1/native_apps': { data: [{ id: 'napp_dev', platform: 'development', allowed_users: ['dev@example.com'], expires_at: Date.now() + 86400000, callback_urls: [] }] },
+    });
+    await devNative(ctx, args());
+    const text = out.join('\n');
+    expect(text).toContain('Unregistered apps: device_bound');
+    expect(text).toContain('MFA required');
+    expect(text).toContain('napp_dev  active');
+    expect(text).not.toContain('are refused on this instance');
+  });
 });

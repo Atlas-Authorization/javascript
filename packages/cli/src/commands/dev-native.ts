@@ -7,7 +7,10 @@ import { wantsJson } from './shared';
 
 interface NativeApp {
   id: string;
-  platform: 'ios' | 'android';
+  platform: 'ios' | 'android' | 'development';
+  allowed_users?: string[];
+  expires_at?: number;
+  expired?: boolean;
   bundle_id?: string;
   team_id?: string;
   package_name?: string;
@@ -28,6 +31,13 @@ interface Finding {
   fix: string;
 }
 
+type Unregistered = 'refuse' | 'device_bound' | 'allow';
+interface NativeAppsConfig {
+  unregistered?: Unregistered;
+  unregisteredSession?: { absoluteMs?: number; requireMfa?: boolean };
+}
+const DOCS = 'https://atlasauth.net/docs/guides/native-device-bound-sessions';
+
 const NATIVE_CODES = new Set(['native_dev_scheme_on_production', 'native_app_no_callback', 'native_platform_missing_callback', 'apple_sign_in_required', 'native_link_files_unreachable']);
 
 /**
@@ -38,7 +48,8 @@ const NATIVE_CODES = new Set(['native_dev_scheme_on_production', 'native_app_no_
 export async function devNative(ctx: RunContext, args: ParsedArgs): Promise<number> {
   const provider = str(args.values, 'provider') ?? 'discord';
   const api = httpFor(ctx, instanceCredential(ctx, args));
-  const inst = await api.get<{ environment?: string; publishable_key?: string; frontend_api_host?: string | null }>('/v1/instance');
+  const inst = await api.get<{ environment?: string; publishable_key?: string; frontend_api_host?: string | null; auth_config_resolved?: { nativeApps?: NativeAppsConfig }; auth_config?: { nativeApps?: NativeAppsConfig } }>('/v1/instance');
+  const nativeCfg = inst.auth_config_resolved?.nativeApps ?? inst.auth_config?.nativeApps ?? {};
   const apps = ((await api.get<{ data?: NativeApp[] }>('/v1/native_apps').catch(() => ({ data: [] as NativeApp[] }))).data ?? []) as NativeApp[];
   const preflight = await api.get<{ findings?: Finding[] }>('/v1/instance/preflight').catch(() => ({ findings: [] as Finding[] }));
   const findings = (preflight.findings ?? []).filter((f) => NATIVE_CODES.has(f.code));
@@ -53,26 +64,51 @@ export async function devNative(ctx: RunContext, args: ParsedArgs): Promise<numb
   );
   const fapi = inst.frontend_api_host ? `https://${inst.frontend_api_host}` : null;
   const development = inst.environment === 'development';
+  // Unset means device_bound on development and refuse on production.
+  const policy: Unregistered = nativeCfg.unregistered ?? (development ? 'device_bound' : 'refuse');
+  const now = Date.now();
+  const devApps = apps.filter((a) => a.platform === 'development').map((a) => ({ ...a, expired: a.expired ?? (a.expires_at !== undefined && a.expires_at <= now) }));
+  const registered = apps.filter((a) => a.platform !== 'development');
 
   const missing: string[] = [];
-  if (apps.length === 0) missing.push('No native app is registered. Add one under native_apps: in atlas.yaml (or POST /v1/native_apps) with its callback_urls.');
+  if (policy === 'refuse' && !development && registered.length === 0 && devApps.every((a) => a.expired)) {
+    missing.push(
+      `Native clients with no registered app are refused on this instance, so Expo Go and unregistered builds cannot stay signed in. Register the app, or for a temporary build run POST /v1/native_apps {"platform":"development","allowed_users":["you@example.com"],"expires_at":<epoch ms, at most 90 days ahead>}, or set auth_config nativeApps.unregistered to "device_bound". See ${DOCS}`,
+    );
+  }
+  for (const a of devApps) if (a.expired) missing.push(`Development app ${a.id} expired. Extend it with PATCH /v1/native_apps/${a.id} {"expires_at":<epoch ms, at most 90 days ahead>}.`);
+  if (registered.length === 0 && devApps.length === 0) missing.push('No native app is registered. Add one under native_apps: in atlas.yaml (or POST /v1/native_apps) with its callback_urls.');
   for (const f of findings) missing.push(`${f.code}: ${f.message} ${f.fix}`.trim());
 
   if (wantsJson(args.values)) {
-    printJson(ctx.io, { publishable_key: inst.publishable_key ?? null, frontend_api_url: fapi, environment: inst.environment ?? null, native_apps: apps, providers: providerLines, missing });
+    printJson(ctx.io, { publishable_key: inst.publishable_key ?? null, frontend_api_url: fapi, environment: inst.environment ?? null, native_apps: apps, unregistered_policy: policy, unregistered_session: nativeCfg.unregisteredSession ?? null, providers: providerLines, missing });
     return 0;
   }
   ctx.io.out(`Publishable key:   ${inst.publishable_key ?? '(none)'}`);
   ctx.io.out(`Frontend API URL:  ${fapi ?? '(this instance has no Frontend API host yet)'}`);
   ctx.io.out(`Environment:       ${inst.environment ?? 'unknown'}`);
   ctx.io.out('');
+  ctx.io.out(`Unregistered apps: ${policy}${nativeCfg.unregistered ? '' : ' (default)'}`);
+  const us = nativeCfg.unregisteredSession;
+  if (us?.absoluteMs) ctx.io.out(`  session capped at ${us.absoluteMs} ms`);
+  if (us?.requireMfa) ctx.io.out('  MFA required before a refresh token is issued');
+  ctx.io.out('');
   ctx.io.out('Native apps:');
-  if (apps.length === 0) ctx.io.out('  (none)');
-  for (const a of apps) {
+  if (registered.length === 0) ctx.io.out('  (none)');
+  for (const a of registered) {
     const who = a.platform === 'ios' ? `${a.team_id ?? '?'}.${a.bundle_id ?? '?'}` : (a.package_name ?? '?');
     ctx.io.out(`  ${a.id}  ${a.platform}  ${who}`);
     for (const u of a.callback_urls ?? []) ctx.io.out(`    callback  ${u}`);
     if (!a.callback_urls?.length) ctx.io.out('    (no callback URLs)');
+  }
+  if (devApps.length) {
+    ctx.io.out('');
+    ctx.io.out('Development apps:');
+    for (const a of devApps) {
+      ctx.io.out(`  ${a.id}  ${a.expired ? 'EXPIRED' : 'active'}  expires ${a.expires_at ? new Date(a.expires_at).toISOString() : '?'}`);
+      ctx.io.out(`    users  ${(a.allowed_users ?? []).join(', ') || '(none)'}`);
+      for (const u of a.callback_urls ?? []) ctx.io.out(`    callback  ${u}`);
+    }
   }
   ctx.io.out('');
   ctx.io.out('Sign-in providers:');
@@ -87,7 +123,7 @@ export async function devNative(ctx: RunContext, args: ParsedArgs): Promise<numb
     for (const m of missing) ctx.io.out(`  - ${m}`);
     ctx.io.out('');
   }
-  const appId = apps[0]?.id;
+  const appId = registered[0]?.id;
   ctx.io.out('In your app (Expo):');
   ctx.io.out(`  <AtlasProvider publishableKey="${inst.publishable_key ?? 'pk_...'}"${appId ? ` appId="${appId}"` : ''}>`);
   ctx.io.out(`  const { signInWithOAuth } = useSignIn();`);

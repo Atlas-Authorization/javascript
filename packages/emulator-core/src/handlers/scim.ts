@@ -3,7 +3,8 @@ import type { Engine, Reply, RouteContext, RouteDef } from '../engine';
 import { bytesToB64url, sha256 } from '../crypto-util';
 import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
-import { randomToken } from '../store';
+import { Table, randomToken } from '../store';
+import { engineState } from './support';
 import { listReply, need } from './util';
 import { presentUser } from './users';
 
@@ -98,6 +99,9 @@ interface Auth {
   orgId: string;
   canWrite: boolean;
 }
+/** The requests the SCIM endpoint answered for an organization's token, for the IT-admin request log. */
+export const scimRequestLog = engineState((e: Engine) => new Table('scim_requests', e.clock.now, 'scimreq'));
+
 function authenticate(e: Engine, c: RouteContext): Auth | Reply {
   const bearer = /^Bearer\s+(.+)$/i.exec(c.request.headers.get('authorization') ?? '')?.[1];
   const token = bearer ? e.db.scimTokens.find((t) => t.secret === bearer && !t.revoked) : undefined;
@@ -508,6 +512,24 @@ export function scimHandlers(): RouteDef[] {
       };
     });
 
+  /** Record each answered request (method, path, status, why it failed, how long it took) under the token's organization; never the body. */
+  const logged = (routes: RouteDef[]): RouteDef[] =>
+    routes.map((r) => ({
+      ...r,
+      handler: async (c: RouteContext): Promise<Reply> => {
+        const started = c.engine.clock.now();
+        const bearer = /^Bearer\s+(.+)$/i.exec(c.request.headers.get('authorization') ?? '')?.[1];
+        const token = bearer ? c.engine.db.scimTokens.find((t) => t.secret === bearer) : undefined;
+        const out = await r.handler(c);
+        if (token) {
+          const status = out.status ?? 200;
+          const errs = (out.body as Obj | undefined)?.detail;
+          scimRequestLog(c.engine).insert({ organization_id: token.organization_id, token_id: token.revoked ? null : token.id, method: r.method, path: new URL(c.request.url).pathname, resource: /\/(Users|Groups|Bulk)\b/.exec(r.pattern)?.[1] ?? null, status, error_detail: status >= 400 && typeof errs === 'string' ? errs : null, ip: c.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null, user_agent: c.request.headers.get('user-agent'), duration_ms: Math.max(0, c.engine.clock.now() - started), created_at: started } as any);
+        }
+        return out;
+      },
+    }));
+
   return [
     // ── token management (Backend API) ──
     {
@@ -552,7 +574,7 @@ export function scimHandlers(): RouteDef[] {
         return { body: { object: 'scim_token', id: t.id, revoked: true, note: 'Requests with this token now answer 401.' } };
       },
     },
-    ...withEtag(userRoutes('/scim/v2')),
-    ...withEtag(userRoutes('/scim/v2/d/:directoryId')),
+    ...logged(withEtag(userRoutes('/scim/v2'))),
+    ...logged(withEtag(userRoutes('/scim/v2/d/:directoryId'))),
   ];
 }

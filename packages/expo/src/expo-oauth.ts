@@ -41,7 +41,7 @@ const guarded = <T>(load: () => T): T | null => {
 const loadWebBrowser = () => guarded<WebBrowserLike>(() => require!('expo-web-browser'));
 const loadConstants = () => guarded<ConstantsLike>(() => require!('expo-constants')?.default ?? require!('expo-constants'));
 const loadLinking = () => guarded<LinkingLike>(() => require!('expo-linking'));
-const loadCrypto = () => guarded<CryptoLike>(() => require!('expo-crypto'));
+export const loadCrypto = () => guarded<CryptoLike>(() => require!('expo-crypto'));
 
 type CryptoGlobal = { crypto?: { getRandomValues?: unknown } };
 

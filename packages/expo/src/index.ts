@@ -36,6 +36,8 @@ export * from './policies';
 
 // Native social sign-in, the upgrade bridge for apps with existing users, and approve-in-your-app.
 export * from './social';
+// The device key a native session is bound to (on by default in <AtlasProvider>).
+export * from './device-key';
 export * from './bridge';
 export * from './app-approval';
 export * from './push-devices';

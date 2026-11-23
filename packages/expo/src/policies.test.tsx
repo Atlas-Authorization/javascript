@@ -27,7 +27,8 @@ vi.mock('@atlasauth/react', async (importOriginal) => {
   return { ...actual, useAtlas: () => atlasState };
 });
 
-vi.mock('@atlasauth/react-native', () => ({
+vi.mock('@atlasauth/react-native', async () => ({
+  createSecureDeviceKey: (await import('@atlasauth/react-native/dist/device-key.js')).createSecureDeviceKey,
   PolicyAcceptStep: 'PolicyAcceptStep',
   PolicyClickwrap: 'PolicyClickwrap',
   PolicyConsent: 'PolicyConsent',

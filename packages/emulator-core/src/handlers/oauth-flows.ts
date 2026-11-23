@@ -70,14 +70,22 @@ interface Flows {
   par: Map<string, { clientId: string; params: Record<string, string>; expiresAt: number; used: boolean }>;
   consents: Map<string, Consent>;
   remembered: Map<string, Set<string>>;
+  /** When each remembered consent was first given. */
+  rememberedAt: Map<string, number>;
   devices: Map<string, DeviceRec>;
   ciba: Map<string, CibaRec>;
   dpopSeen: Map<string, number>;
 }
-const flows = engineState((): Flows => ({ par: new Map(), consents: new Map(), remembered: new Map(), devices: new Map(), ciba: new Map(), dpopSeen: new Map() }));
+const flows = engineState((): Flows => ({ par: new Map(), consents: new Map(), remembered: new Map(), rememberedAt: new Map(), devices: new Map(), ciba: new Map(), dpopSeen: new Map() }));
 /** The CIBA requests of this engine (the delivery sweep announces expired push requests). */
 export const cibaRecords = (e: Engine): Map<string, CibaRec> => flows(e).ciba;
 /** The scopes a user holds a remembered consent for at a client, if any. */
+/** Every consent a user remembered for a client, for the Backend API grants list. */
+export const consentGrants = (e: Engine): Array<{ userId: string; clientId: string; scopes: string[]; at: number }> =>
+  [...flows(e).remembered.entries()].map(([key, scopes]) => {
+    const [userId = '', clientId = ''] = key.split('|');
+    return { userId, clientId, scopes: [...scopes], at: flows(e).rememberedAt.get(key) ?? 0 };
+  });
 export const heldConsent = (e: Engine, userId: string, clientId: string): Set<string> | undefined => flows(e).remembered.get(`${userId}|${clientId}`);
 export const resetOAuthFlows = (_e: Engine): void => undefined; // state lives in engineState, which engine.reset clears
 
@@ -141,6 +149,14 @@ function liveConsent(e: Engine, id: string | null | undefined): Consent {
   return c;
 }
 
+/** A pending, unexpired device request named by its user code (the device challenge). */
+function liveDevice(e: Engine, challenge: string | null | undefined): DeviceRec {
+  const code = normaliseUserCode(challenge);
+  const rec = [...flows(e).devices.values()].find((d) => normaliseUserCode(d.userCode) === code && d.status === 'pending' && d.expiresAt > e.clock.now());
+  if (!rec) throw new EmulatorError('NOT_FOUND', 'This device request has expired or was already answered.');
+  return rec;
+}
+
 /** Answer a consent request; returns the URL to send the browser to. The scopes granted are always a subset of what was asked. */
 async function settleConsent(e: Engine, c: Consent, d: { approve: boolean; grant?: string[]; remember?: boolean; error?: string; description?: string }): Promise<string> {
   const back = (p: Record<string, string | undefined>) => authUrl(e, c.redirectUri, { ...p, state: c.state, iss: e.issuer }, !!parseResponseType(c.ext.rt)?.frontChannelTokens, c.ext.mode);
@@ -160,6 +176,7 @@ async function settleConsent(e: Engine, c: Consent, d: { approve: boolean; grant
   if (d.remember !== false) {
     const key = rememberKey(c.userId, c.clientId);
     flows(e).remembered.set(key, new Set([...(flows(e).remembered.get(key) ?? []), ...grant]));
+    if (!flows(e).rememberedAt.has(key)) flows(e).rememberedAt.set(key, e.clock.now());
   }
   return completeAuth(e, { client, userId: c.userId, scope: grant, redirectUri: c.redirectUri, challenge: c.challenge, nonce: c.nonce, state: c.state, ext: c.ext });
 }
@@ -322,6 +339,58 @@ export function oauthFlowHandlers(): RouteDef[] {
         const e = c.engine;
         const r = liveConsent(e, c.query.get('consent_challenge'));
         return { body: { object: 'oauth_consent_redirect', redirect_to: await settleConsent(e, r, { approve: false, error: c.body.error, description: c.body.error_description }) } };
+      },
+    },
+    {
+      // The signed-in user is not who should consent: restart the application's authorization request at login (prompt=login).
+      method: 'PUT',
+      pattern: '/v1/oauth_consent_requests/switch_account',
+      handler: (c) => {
+        const e = c.engine;
+        const r = liveConsent(e, c.query.get('consent_challenge'));
+        const client = e.db.oauthClients.get(r.clientId);
+        if (!client || client.deleted) throw new EmulatorError('NOT_FOUND', 'The application is gone.');
+        const u = new URL(`${e.issuer}/oauth2/authorize`);
+        const set: Record<string, string | null | undefined> = { client_id: client.id, redirect_uri: r.redirectUri, response_type: parseResponseType(r.ext.rt) ? r.ext.rt : 'code', scope: r.scope.join(' '), state: r.state, nonce: r.nonce, code_challenge: r.challenge, code_challenge_method: r.challenge ? 'S256' : undefined, prompt: 'login' };
+        for (const [k, v] of Object.entries(set)) if (v) u.searchParams.set(k, v);
+        r.status = 'rejected'; // this challenge is spent: a fresh one follows the new sign-in
+        return { body: { object: 'oauth_consent_redirect', redirect_to: u.toString() } };
+      },
+    },
+    // ── device approval: the customer's own device page (delegated challenge) ──
+    {
+      method: 'GET',
+      pattern: '/v1/oauth_device_requests',
+      handler: (c) => {
+        const e = c.engine;
+        const rec = liveDevice(e, c.query.get('device_challenge'));
+        const client = e.db.oauthClients.get(rec.clientId)!;
+        const user = resolveUser(e, null);
+        return { body: { object: 'oauth_device_request', subject: user?.id ?? null, user_code: rec.userCode, client: { id: client.id, client_id: client.id, name: client.name }, requested_scope: rec.scope, audience: null, expires_at: rec.expiresAt } };
+      },
+    },
+    {
+      method: 'PUT',
+      pattern: '/v1/oauth_device_requests/accept',
+      handler: (c) => {
+        const e = c.engine;
+        const rec = liveDevice(e, c.query.get('device_challenge'));
+        const user = resolveUser(e, typeof c.body.user_id === 'string' ? c.body.user_id : null);
+        if (!user) throw new EmulatorError('VALIDATION_FAILED', 'No user to sign in. Pass user_id or POST /__emulator/oauth/login.', 'user_id');
+        if (user.banned) throw new EmulatorError('FORBIDDEN', 'The user is banned.');
+        // The emulator follows the redirect itself: the code is bound to the user now.
+        rec.userId = user.id;
+        rec.status = 'approved';
+        return { body: { object: 'oauth_device_redirect', redirect_to: `${e.issuer}/oauth2/device/done?status=approved` } };
+      },
+    },
+    {
+      method: 'PUT',
+      pattern: '/v1/oauth_device_requests/reject',
+      handler: (c) => {
+        const e = c.engine;
+        liveDevice(e, c.query.get('device_challenge')).status = 'denied';
+        return { body: { object: 'oauth_device_redirect', redirect_to: `${e.issuer}/oauth2/device/done?status=denied` } };
       },
     },
     // ── device authorization ──

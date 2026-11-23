@@ -91,6 +91,7 @@ export function genericHandler(c: RouteContext): Reply {
     const seed = base();
     delete seed.id; // the synthesized id is a placeholder; the table assigns the real one
     if (collection === 'workflows') seed.enabled = true; // the real API creates workflows enabled unless told otherwise
+    if (collection === 'organizations/webhook_endpoints') Object.assign(seed, { active: true, secret: `whsec_${btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24))))}` }); // created active, with a signing secret
     const row = t.insert({ ...seed, ...known(c.body), ...stamp('created_at'), ...stamp('updated_at'), _parent: parent } as any);
     const objectConst = engine.index.resolve(props.object)?.const;
     t.update(row.id, { object: objectConst ?? name } as any);

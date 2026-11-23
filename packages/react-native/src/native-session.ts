@@ -19,6 +19,7 @@ import {
   parseNativeSession,
   resolveFrontendApi,
   serializeNativeSession,
+  type DeviceKey,
   type NativeSession,
 } from '@atlasauth/js';
 import { createInMemoryStorage, type TokenStorage } from './storage';
@@ -40,6 +41,8 @@ export interface NativeSessionConfig {
   fetchImpl?: typeof fetch;
   /** Injectable clock, epoch ms. Defaults to `Date.now`. */
   now?: () => number;
+  /** The key a device-bound session (`binding: 'device_key'`) refreshes with; see `createSecureDeviceKey`. */
+  deviceKey?: DeviceKey;
 }
 
 /**
@@ -69,6 +72,7 @@ export async function createNativeSessionManager(
     initial,
     fetchImpl: config.fetchImpl,
     now: config.now,
+    deviceKey: config.deviceKey,
     // The manager calls this on every set/rotate; persist the fresh session so
     // the rotated refresh token survives an app restart. Fire-and-forget — the
     // adapter may be async, and a write failure must not break the live session.

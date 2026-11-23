@@ -55,6 +55,9 @@ export * from './sign-out-events';
 export * from './native';
 export * from './browser-handoff';
 export * from './native-session';
+// Device-bound native sessions: the key, its DPoP proof, and the fetch wrapper that keeps a native app signed in.
+export * from './native-device-key';
+export * from './device-session';
 export * from './passkey';
 // Device-bound biometric sign-in for native apps (register a device key, sign in with it).
 export * from './attestation';

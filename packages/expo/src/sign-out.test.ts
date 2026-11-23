@@ -10,6 +10,12 @@ import {
   type TokenCache,
 } from './token-cache';
 
+// `react-native` itself cannot load in node: take only the device-key module of `@atlasauth/react-native`.
+vi.mock('@atlasauth/react-native', async () => {
+  const { createSecureDeviceKey } = await import('@atlasauth/react-native/dist/device-key.js');
+  return { createSecureDeviceKey };
+});
+
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
   // The provider is a thin wrapper: run its one `useState` initializer directly

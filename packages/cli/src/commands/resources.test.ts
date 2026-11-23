@@ -4,6 +4,7 @@ import type { ConfigHttp } from '../config-http';
 import type { ManagementClient, RunContext } from '../context';
 import { captureIO } from '../io';
 import { run } from '../run';
+import * as R from './resources';
 
 type Call = { method: string; path: string; body?: unknown };
 
@@ -205,3 +206,37 @@ describe('surface resource commands', () => {
     }
   });
 });
+
+describe('every op of the newer tables sends its route', () => {
+  const tables: Record<string, [string, R.Ops]> = {
+    pca: ['pca', R.PCA], 'pca-registry': ['pca-registry', R.PCA_REGISTRY], 'pca-grants': ['pca-grants', R.PCA_GRANTS], 'pca-approvers': ['pca-approvers', R.PCA_APPROVERS], 'pca-undo': ['pca-undo', R.PCA_UNDO],
+    ssf: ['ssf', R.SSF], 'staging-copies': ['staging-copies', R.STAGING_COPIES], 'platform-apps': ['platform-apps', R.PLATFORM_APPS], 'oauth-device': ['oauth-device', R.OAUTH_DEVICE],
+    analytics: ['analytics', R.ANALYTICS], machines: ['machines', R.MACHINES], 'webhook-dlq': ['webhook-dlq', R.WEBHOOK_DLQ], 'org-invitations': ['org-invitations', R.ORG_INVITATIONS],
+    'message-links': ['message-links', R.MESSAGE_LINKS], permissions: ['permissions', R.PERMISSIONS], 'migration-sessions': ['migration-sessions', R.MIGRATION_SESSIONS],
+    users: ['users', R.USER_SECURITY], sessions: ['sessions', R.SESSIONS_MORE],
+    'api-keys': ['api-keys', R.API_KEYS_MORE], changes: ['changes', R.CHANGES_MORE], connections: ['connections', R.CONNECTIONS_MORE], grants: ['grants', R.GRANTS_MORE], messages: ['messages', R.MESSAGES_MORE], orgs: ['orgs', R.ORGS_MORE],
+    billing: ['billing', R.BILLING], compliance: ['compliance', R.COMPLIANCE], flows: ['flows', R.FLOWS], agents: ['agents', R.AGENTS], machinesMore: ['machines', R.MACHINES], platformMore: ['platform-apps', R.PLATFORM_APPS],
+    authz: ['authz', R.AUTHZ], 'atlas-id-apps': ['atlas-id-apps', R.ATLAS_ID_APPS], 'rate-limits': ['rate-limits', R.RATE_LIMITS], 'risk-signals': ['risk-signals', R.RISK_SIGNALS], suppressions: ['suppressions', R.SUPPRESSIONS], 'web-bot-auth': ['web-bot-auth', R.WEB_BOT_AUTH],
+    'abuse-signals': ['abuse-signals', R.ABUSE_SIGNALS], 'approval-requests': ['approval-requests', R.APPROVAL_REQUESTS], entitlements: ['entitlements', R.ENTITLEMENTS], 'fga-sync': ['fga-sync', R.FGA_SYNC], impersonations: ['impersonations', R.IMPERSONATIONS], instance: ['instance', R.INSTANCE],
+    'legal-holds': ['legal-holds', R.LEGAL_HOLDS], 'mfa-campaigns': ['mfa-campaigns', R.MFA_CAMPAIGNS], 'machine-trust-policies': ['machine-trust-policies', R.MACHINE_TRUST_POLICIES], 'org-templates': ['org-templates', R.ORG_TEMPLATES], 'risk-based-mfa': ['risk-based-mfa', R.RISK_BASED_MFA],
+    'scim-tokens': ['scim-tokens', R.SCIM_TOKENS], 'sso-connections': ['sso-connections', R.SSO_CONNECTIONS], 'step-up': ['step-up', R.STEP_UP], 'messaging-providers': ['messaging-providers', R.MESSAGING_PROVIDERS], 'resource-role-assignments': ['resource-role-assignments', R.RESOURCE_ROLE_ASSIGNMENTS], 'resource-servers': ['resource-servers', R.RESOURCE_SERVERS],
+  };
+  const rows = Object.values(tables).flatMap(([cmd, ops]) => Object.entries(ops).map(([sub, op]) => [cmd, sub, op] as const));
+  it.each(rows)('%s %s', async (cmd, sub, op) => {
+    const calls: Call[] = [];
+    const { c } = ctx(calls, { 'POST /v1/localizations/check': { ok: true, checked: 1 } });
+    const need = (op.p.match(/\{\}/g) ?? []).length;
+    const ids = Array.from({ length: need }, (_, i) => `id${i + 1}`);
+    expect(await run([cmd, sub, ...ids, '--yes', ...(op.f?.includes('b') ? ['--data', '{"a":1}'] : [])], c)).toBe(0);
+    let n = 0;
+    expect(calls).toEqual([{ method: op.m, path: op.p.replace(/\{\}/g, () => ids[n++]!), ...(op.f?.includes('b') ? { body: { a: 1 } } : op.m === 'GET' || op.m === 'DELETE' ? {} : { body: {} }) }]);
+  });
+
+  it('maps a renamed query flag and a repeatable list flag', async () => {
+    const calls: Call[] = [];
+    const { c } = ctx(calls);
+    await run(['pca-grants', 'list', '--principal', 'p1', '--starting-after', 'c9', '--limit', '5'], c);
+    expect(calls[0]!.path).toBe('/v1/pca/grants?limit=5&principal=p1&cursor=c9');
+  });
+});
+

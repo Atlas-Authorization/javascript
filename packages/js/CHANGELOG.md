@@ -1,5 +1,12 @@
 # @atlasauth/js changelog
 
+## 0.54.0
+
+- Device-bound native sessions. `createWebCryptoDeviceKey()` and the `DeviceKey` interface (a P-256 key that signs raw 64-byte `r||s`), `deviceProof(key, method, url, { refreshToken, nonce })` (a DPoP proof with `ath` of the refresh token), and `withDeviceBoundSession(fetch, { deviceKey, slot })`: a fetch wrapper that asks for a refresh token with the device's public key on sign-in, keeps the bound token, proves possession on every refresh and answers the server's `DPoP-Nonce` once. `exchangeTicketForNativeSession(...)` does the same for one ticket exchange.
+- `NativeSession` gains optional `binding` and `deviceKeyId`; stored sessions without them still parse. `refreshNativeSession` and `NativeSessionManager` take a `deviceKey` and send the proof for a bound session.
+- In development, a refresh token the server withheld logs a warning naming the reason and the guide.
+- `dpop.ts` exports its encoding helpers (`b64uJson`, `htuOf`, `sha256Base64Url`, `jwkThumbprint`).
+
 ## 0.53.1
 
 - A native browser sign-in that the provider refused now resolves as an error (or `cancelled` when the person backed out) instead of a pending step: the callback's `__atlas_error` is read.

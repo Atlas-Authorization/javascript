@@ -56,6 +56,9 @@ export class Table<T extends Row = Row> {
   filter(pred: (r: T) => boolean): T[] {
     return this.all().filter(pred);
   }
+  some(pred: (r: T) => boolean): boolean {
+    return this.find(pred) !== undefined;
+  }
   get size(): number {
     return this.map.size;
   }
