@@ -26,8 +26,8 @@ import type { TokenCache } from './token-cache';
  *      provider remembers the session as signed out (its tombstone) and re-tries
  *      the revoke in the background, which needs the token to authenticate.
  *
- * The persist is fire-and-forget: a secure-store write failure must not break a
- * live, already-parsed response.
+ * The persist is awaited before the response is handed back (the next request
+ * must carry the new token), but a secure-store write failure never breaks it.
  */
 export function createCacheFetch(opts: {
   cache: TokenCache;
@@ -66,17 +66,16 @@ export function createCacheFetch(opts: {
     // body the caller still needs.
     const contentType = response.headers.get('content-type') ?? '';
     if (response.ok && contentType.includes('application/json')) {
-      void (async () => {
-        try {
-          const body = (await response.clone().json()) as { jwt?: unknown };
-          if (typeof body.jwt === 'string' && body.jwt) {
-            await cache.saveToken(key, body.jwt);
-          }
-        } catch {
-          // Not JSON, an empty body, or a secure-store write failure — the live
-          // response is unaffected.
+      // Awaited: the provider reloads the client right after a sign-in, and that request must already carry the new token.
+      try {
+        const body = (await response.clone().json()) as { jwt?: unknown };
+        if (typeof body.jwt === 'string' && body.jwt) {
+          await cache.saveToken(key, body.jwt);
         }
-      })();
+      } catch {
+        // Not JSON, an empty body, or a secure-store write failure — the live
+        // response is unaffected.
+      }
     }
 
     return response;

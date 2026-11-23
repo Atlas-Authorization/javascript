@@ -110,6 +110,21 @@ describe('createCacheFetch', () => {
     expect(await cache.getToken('atlas.session')).toBe('jwt.rotated');
   });
 
+  it('the request right after a sign-in carries the new token, even with a slow store', async () => {
+    const mem = createInMemoryTokenCache();
+    // A secure store whose writes land a tick later (the Keychain / Keystore are async).
+    const cache = { ...mem, saveToken: async (k: string, v: string) => { await new Promise((r) => setTimeout(r, 20)); await mem.saveToken(k, v); } };
+    const seen: (string | null)[] = [];
+    const fetchImpl = (async (_i: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get('authorization'));
+      return new Response(JSON.stringify({ jwt: 'jwt.signed-in' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    const cacheFetch = createCacheFetch({ cache, key: 'atlas.session', fetchImpl });
+    await cacheFetch('https://fapi.example.test/v1/client/sign_ins/oauth/token', { method: 'POST', body: '{}' });
+    await cacheFetch('https://fapi.example.test/v1/client');
+    expect(seen).toEqual([null, 'Bearer jwt.signed-in']);
+  });
+
   it('does not clobber the cache when the response carries no jwt', async () => {
     const cache = createInMemoryTokenCache();
     await cache.saveToken('atlas.session', 'jwt.existing');

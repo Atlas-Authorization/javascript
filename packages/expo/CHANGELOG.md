@@ -1,5 +1,9 @@
 # @atlasauth/expo changelog
 
+## 0.16.1
+
+- **behaviour:** Fixed: right after a native sign-in, the app could stay signed out. The new session token was saved to the token cache in the background, so the provider's next request went out before the save finished and carried no token. The save now finishes before the response is returned. A failed secure-store write still never fails the request.
+
 ## 0.16.0
 
 - **behaviour:** Apps stay signed in with no code change, in Expo Go, development builds and production builds. `<AtlasProvider>` now makes a device key (P-256, kept only in the token cache, so in `expo-secure-store` when you pass `createSecureStoreTokenCache`), sends its public key on sign-in, keeps the device-bound refresh token the server returns, and proves possession on every refresh. When the server does not return a refresh token (an unregistered app on a production instance whose policy is `refuse`, a second factor still owed), a development build logs why and links the guide. Pass `deviceKey={false}` to opt out, or your own key.
