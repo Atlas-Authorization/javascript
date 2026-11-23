@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { injectPolicyStyles, mountPolicyClickwrap, type PolicyAcceptanceController } from '@atlasauth/js';
+  import { type PolicyAcceptanceController } from '@atlasauth/js';
+  import { injectPolicyStyles, mountPolicyClickwrap } from '@atlasauth/js/policy-dom';
   import { usePolicyUi } from '../policies';
 
   /** The clickwrap sentence ("By continuing you agree to …") for `link`-mode policies, under the submit button. */

@@ -1,5 +1,12 @@
 # @atlasauth/chrome-extension changelog
 
+## 0.8.0 — 2026-11-23
+
+- Firefox for Android: with no `identity` API but `tabs` available, `signInWithWebAuthFlow` signs in through a browser tab automatically (needs the `tabs` permission). An explicit `identity` still wins.
+- New exports: `firefoxRedirectUrl(addonId)`, `createTabIdentity(tabs, runtimeId)` and the `TabsApi` type. `ChromeIdentity.getRedirectURL` may now return a promise.
+- New error code `silent_unsupported` (a silent sign-in on the tab flow did not return in 20 seconds) and option `silentTabFlow` (`false` refuses silent sign-in on the tab flow).
+- ESM build next to CommonJS and `"sideEffects": false` on this package: bundlers tree-shake the package, and a background bundle carries no DOM UI. Needs `@atlasauth/js` 0.55.0, where the policy viewer moved to `@atlasauth/js/policy-dom`.
+
 ## 0.7.0
 
 - Native sessions refresh once across the popup and the service worker (Web Lock plus shared store); the Google nonce is reused across re-renders.

@@ -4,16 +4,18 @@ import {
   PolicyGateController,
   controllerForPending,
   formatPolicyDate,
-  injectPolicyStyles,
   joinTitles,
   loadPolicies,
+  policyTranslator,
+} from '@atlasauth/js';
+import {
+  injectPolicyStyles,
   mountPolicyAcceptStep,
   mountPolicyClickwrap,
   mountPolicyConsent,
-  policyTranslator,
   type PolicyClasses,
   type PolicyT,
-} from '@atlasauth/js';
+} from '@atlasauth/js/policy-dom';
 
 /**
  * Policy acceptance (terms of service, privacy, any policy) for Qwik.

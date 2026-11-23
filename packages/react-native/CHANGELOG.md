@@ -1,5 +1,9 @@
 # @atlasauth/react-native changelog
 
+## 0.11.1
+
+- Imports the policy viewer from @atlasauth/js/policy-dom (@atlasauth/js 0.55.0).
+
 ## 0.11.0
 
 - Device-bound sessions on a bare React Native app. Pass `deviceStorage` (a Keychain / Keystore slot, its own key) to `<AtlasProvider>` or `createAtlasStore`: sign-in then sends the device's public key and asks for a refresh token bound to it, every refresh carries a proof from that key, and the app stays signed in after the session token expires. New `createSecureDeviceKey({ storage, random? })` (a P-256 key in pure JavaScript, private key only in the secure slot) and `splitDeviceStorage`. Pass `deviceKey` to use your own, or `deviceKey: false` to opt out. Without `deviceStorage` nothing changes.

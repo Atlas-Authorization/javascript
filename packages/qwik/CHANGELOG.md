@@ -1,5 +1,9 @@
 # @atlasauth/qwik changelog
 
+## 0.7.1
+
+- Imports the policy viewer from @atlasauth/js/policy-dom (@atlasauth/js 0.55.0).
+
 ## 0.7.0
 
 - API keys, billing (pricing table, invoices, checkout with discount codes, usage reader) and device authorization components, matching React.

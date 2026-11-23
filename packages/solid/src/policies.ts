@@ -4,14 +4,16 @@ import {
   FapiClient,
   PolicyGateController,
   formatPolicyDate,
-  injectPolicyStyles,
   joinTitles,
-  mountPolicyAcceptStep,
   policyTranslator,
-  type MountedPolicyStep,
   type PolicyAcceptanceController,
-  type PolicyT,
 } from '@atlasauth/js';
+import {
+  injectPolicyStyles,
+  mountPolicyAcceptStep,
+  type MountedPolicyStep,
+  type PolicyT,
+} from '@atlasauth/js/policy-dom';
 import type { AtlasClient } from './provider';
 import { ATLAS_SOLID_SDK } from './version';
 

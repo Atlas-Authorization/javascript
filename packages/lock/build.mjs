@@ -24,7 +24,8 @@ await build({
   legalComments: 'none',
   alias: {
     '@atlasauth/embed': pkg('embed'),
-    '@atlasauth/js': pkg('js'),
+    // A directory alias: the root resolves to src/index.ts, `/policy-dom` to src/policy-dom.ts.
+    '@atlasauth/js': resolve(here, '..', 'js', 'src'),
     '@atlasauth/themes': pkg('themes'),
     // A directory alias so `@atlasauth/design/runtime` (the widget's zod-free
     // design entry) resolves to src/runtime.ts.

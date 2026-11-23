@@ -59,46 +59,104 @@ export function injectPolicyStyles(doc: Document = document): void {
   doc.head.appendChild(style);
 }
 
-const FORBIDDEN_TAGS = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'LINK', 'META', 'BASE', 'SVG', 'MATH']);
+const ALLOWED_TAGS = new Set(
+  (
+    'h1 h2 h3 h4 h5 h6 p br hr div span section article header footer ul ol li dl dt dd ' +
+    'strong b em i u s small sub sup mark abbr blockquote q cite code pre kbd a img ' +
+    'table thead tbody tfoot tr th td caption colgroup col'
+  ).split(' '),
+);
+const VOID_TAGS = new Set(['br', 'hr', 'img', 'col']);
+const ALLOWED_ATTRS = new Set(['id', 'class', 'title', 'lang', 'dir', 'href', 'src', 'alt', 'width', 'height', 'colspan', 'rowspan', 'scope', 'start', 'span']);
+const URL_ATTRS = new Set(['href', 'src']);
+const SAFE_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
+const DROP_WITH_CONTENT = /^(script|style|iframe|frame|frameset|object|embed|applet|form|input|button|select|textarea|option|link|meta|base|svg|math|template|noscript|title|head|audio|video|source|track|canvas|dialog)$/;
+
+/** Whether a URL attribute value is relative or uses a safe scheme (whitespace/control characters and case ignored: a tab-split `javascript:` is still `javascript:`). */
+function safeUrl(value: string): boolean {
+  const v = value.replace(/[\u0000-\u0020\u007f-\u009f]/g, '').toLowerCase();
+  const m = /^([a-z][a-z0-9+.-]*):/.exec(v);
+  return !m || SAFE_SCHEMES.has(m[1]!);
+}
+
+function copySafe(src: Node, into: Node, doc: Document): void {
+  for (const child of Array.from(src.childNodes)) {
+    if (child.nodeType === 3) {
+      into.appendChild(doc.createTextNode(child.nodeValue ?? ''));
+      continue;
+    }
+    if (child.nodeType !== 1) continue;
+    const from = child as Element;
+    const tag = from.tagName.toLowerCase();
+    if (!ALLOWED_TAGS.has(tag)) {
+      // An unknown tag loses the element but keeps its text and safe children; active content drops with its text.
+      if (!DROP_WITH_CONTENT.test(tag)) copySafe(from, into, doc);
+      continue;
+    }
+    const el = doc.createElement(tag);
+    for (const attr of Array.from(from.attributes)) {
+      const name = attr.name.toLowerCase();
+      if (!ALLOWED_ATTRS.has(name)) continue;
+      if (URL_ATTRS.has(name) && !safeUrl(attr.value)) continue;
+      el.setAttribute(name, attr.value);
+    }
+    if (tag === 'a') {
+      el.setAttribute('target', '_blank');
+      el.setAttribute('rel', 'noopener noreferrer');
+    }
+    copySafe(from, el, doc);
+    into.appendChild(el);
+  }
+}
 
 /**
- * Defence in depth on top of the server's sanitiser: strip active content from
- * policy HTML before it is put in the page. Unparseable input (no DOM) is
- * escaped to text.
+ * Defence in depth on top of the server's sanitiser: parse policy HTML in an
+ * inert document and copy an allow-listed subset into a fragment of `doc`.
+ * No markup is ever assigned to a live element. Without a DOM the input is
+ * kept as text.
  */
-export function sanitizePolicyHtml(html: string): string {
-  if (typeof document === 'undefined' || typeof document.createElement !== 'function') {
-    return html.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+export function sanitizePolicyFragment(html: string, doc: Document = document): DocumentFragment {
+  const frag = doc.createDocumentFragment();
+  if (typeof DOMParser === 'undefined') {
+    frag.appendChild(doc.createTextNode(html));
+    return frag;
   }
-  const tpl = document.createElement('template');
-  tpl.innerHTML = html;
-  const walk = (node: Element) => {
-    for (const child of Array.from(node.children)) {
-      if (FORBIDDEN_TAGS.has(child.tagName.toUpperCase())) {
-        child.remove();
-        continue;
-      }
-      for (const attr of Array.from(child.attributes)) {
-        const name = attr.name.toLowerCase();
-        const value = attr.value.trim().toLowerCase().replace(/[\s\u0000-\u001f]/g, '');
-        if (name.startsWith('on') || name === 'style' || ((name === 'href' || name === 'src' || name === 'xlink:href') && /^(javascript|data|vbscript):/.test(value))) {
-          child.removeAttribute(attr.name);
-        }
-      }
-      if (child.tagName === 'A') {
-        child.setAttribute('target', '_blank');
-        child.setAttribute('rel', 'noopener noreferrer');
-      }
-      walk(child);
+  copySafe(new DOMParser().parseFromString(html, 'text/html').body, frag, doc);
+  return frag;
+}
+
+const escText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function serialize(node: Node): string {
+  let out = '';
+  for (const child of Array.from(node.childNodes)) {
+    if (child.nodeType === 3) out += escText(child.nodeValue ?? '');
+    else if (child.nodeType === 1) {
+      const el = child as Element;
+      const tag = el.tagName.toLowerCase();
+      const attrs = Array.from(el.attributes)
+        .map((a) => ` ${a.name}="${escText(a.value).replace(/"/g, '&quot;')}"`)
+        .join('');
+      out += VOID_TAGS.has(tag) ? `<${tag}${attrs}>` : `<${tag}${attrs}>${serialize(el)}</${tag}>`;
     }
-  };
-  walk(tpl.content as unknown as Element);
-  return tpl.innerHTML;
+  }
+  return out;
+}
+
+/** {@link sanitizePolicyFragment} as an HTML string, for hosts that render markup themselves. */
+export function sanitizePolicyHtml(html: string): string {
+  if (typeof document === 'undefined' || typeof DOMParser === 'undefined') return escText(html);
+  return serialize(sanitizePolicyFragment(html));
 }
 
 /** The safe HTML string to draw for a policy. */
 export function renderPolicyContent(policy: Pick<Policy, 'contentHtml' | 'contentMarkdown'>): string {
   return sanitizePolicyHtml(policyHtml(policy));
+}
+
+/** The safe nodes to draw for a policy, built in `doc`. */
+export function renderPolicyFragment(policy: Pick<Policy, 'contentHtml' | 'contentMarkdown'>, doc: Document = document): DocumentFragment {
+  return sanitizePolicyFragment(policyHtml(policy), doc);
 }
 
 interface DomOptions {
@@ -267,7 +325,7 @@ function renderViewer(
     .filter(Boolean)
     .join(' · ');
   const body = el(doc, 'div', cx('atlas-policy-body', classes?.viewerBody), { tabindex: '0', 'data-atlas-policy-content': '' });
-  body.innerHTML = renderPolicyContent(policy);
+  body.replaceChildren(renderPolicyFragment(policy, doc));
   const sentinel = el(doc, 'span', 'atlas-policy-sentinel', { 'aria-hidden': 'true' });
   body.append(sentinel);
   wrap.append(head);
@@ -321,7 +379,7 @@ export function openPolicyModal(policy: Policy, options: PolicyModalOptions): Po
     modal.append(sum);
   }
   const body = el(doc, 'div', cx('atlas-policy-body', classes?.viewerBody), { tabindex: '0', role: 'region', 'aria-label': policy.title, 'data-atlas-policy-content': '' });
-  body.innerHTML = renderPolicyContent(policy);
+  body.replaceChildren(renderPolicyFragment(policy, doc));
   const sentinel = el(doc, 'span', 'atlas-policy-sentinel', { 'aria-hidden': 'true', 'data-atlas-policy-end': '' });
   body.append(sentinel);
   const hint = el(doc, 'p', 'atlas-policy-hint', { id: hintId, 'aria-live': 'polite' }, t('policy.scrollHint'));

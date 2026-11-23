@@ -4,12 +4,14 @@
     FapiClient,
     PolicyGateController,
     formatPolicyDate,
-    injectPolicyStyles,
     joinTitles,
-    mountPolicyAcceptStep,
-    type MountedPolicyStep,
     type PolicyAcceptanceController,
   } from '@atlasauth/js';
+  import {
+    injectPolicyStyles,
+    mountPolicyAcceptStep,
+    type MountedPolicyStep,
+  } from '@atlasauth/js/policy-dom';
   import { useAtlas } from '../context';
   import { classFor } from '../appearance';
   import { usePolicyUi } from '../policies';

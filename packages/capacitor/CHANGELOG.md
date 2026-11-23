@@ -1,5 +1,9 @@
 # @atlasauth/capacitor changelog
 
+## 0.4.1
+
+- Imports the policy viewer from @atlasauth/js/policy-dom (@atlasauth/js 0.55.0).
+
 ## 0.4.0 — 2026-11-13
 
 - `@atlasauth/js` is now a peer dependency, so the app and every Atlas SDK share one copy.

@@ -25,7 +25,7 @@
  * faint to find the focus by), and inputs are never under 16px so iOS Safari
  * does not zoom the page on focus.
  */
-import { POLICY_CSS } from '@atlasauth/js';
+import { POLICY_CSS } from '@atlasauth/js/policy-dom';
 import { adoptConstructable, applyHostVariableBridge, applyStyleNonce } from '@atlasauth/design/runtime';
 
 export const ATLAS_STYLE_ELEMENT_ID = 'atlas-base-styles';

@@ -21,7 +21,6 @@ import {
   observeScrollEnd,
   policyHtml,
   policyTranslator,
-  sanitizePolicyHtml,
   splitTemplate,
   trapFocus,
   type FieldError,
@@ -30,6 +29,7 @@ import {
   type PolicyAcceptancePayload,
   type PolicySnapshot,
 } from '@atlasauth/js';
+import { sanitizePolicyHtml } from '@atlasauth/js/policy-dom';
 import { useAtlas } from './AtlasProvider';
 import { useClass, useClasses, useFapiClient, useText } from './components-shared';
 import type { FapiClient } from './fapi';

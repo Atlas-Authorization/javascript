@@ -1,5 +1,9 @@
 # @atlasauth/react changelog
 
+## 0.42.1
+
+- Imports the policy viewer from @atlasauth/js/policy-dom (@atlasauth/js 0.55.0).
+
 ## 0.42.0
 
 - Re-exports the new `@atlasauth/js` helpers (CSRF token, security summary, sign-in wait, pending approvals, browser handoff).

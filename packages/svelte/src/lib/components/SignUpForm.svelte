@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    confirmPolicies,
     localizedErrorMessage,
     policyTranslator,
     type CaptchaController,
@@ -9,6 +8,7 @@
     type PolicyAcceptanceController,
     type PublicSignUpField,
   } from '@atlasauth/js';
+  import { confirmPolicies } from '@atlasauth/js/policy-dom';
   import { onDestroy } from 'svelte';
   import { useAtlas } from '../context';
   import { classFor, type ElementKey } from '../appearance';

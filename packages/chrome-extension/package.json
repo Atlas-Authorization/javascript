@@ -1,24 +1,28 @@
 {
   "name": "@atlasauth/chrome-extension",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "main": "./dist/index.js",
+  "module": "./dist/esm/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "module": "./dist/esm/index.js",
       "default": "./dist/index.js"
     },
     "./background": {
       "types": "./dist/background.d.ts",
+      "module": "./dist/esm/background.js",
       "default": "./dist/background.js"
     },
     "./react": {
       "types": "./dist/react.d.ts",
+      "module": "./dist/esm/react.js",
       "default": "./dist/react.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.esm.json && node ../../scripts/fix-esm-specifiers.mjs dist/esm",
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
@@ -38,6 +42,7 @@
     "@atlasauth/js": "workspace:*",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
+    "esbuild": "^0.25.12",
     "react": "^18.3.1",
     "typescript": "^5.6.3",
     "vitest": "^4.1.12"
@@ -51,6 +56,17 @@
     "README.md",
     "CHANGELOG.md"
   ],
+  "typesVersions": {
+    "*": {
+      "background": [
+        "./dist/background.d.ts"
+      ],
+      "react": [
+        "./dist/react.d.ts"
+      ]
+    }
+  },
+  "sideEffects": false,
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Atlas-Authorization/javascript.git",

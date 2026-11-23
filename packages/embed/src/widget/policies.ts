@@ -1,16 +1,18 @@
 import {
   PolicyAcceptanceController,
   controllerForPending,
-  injectPolicyStyles,
   isPolicyAcceptanceRequired,
   loadPolicies,
+  policyTranslator,
+} from '@atlasauth/js';
+import {
+  injectPolicyStyles,
   mountPolicyClickwrap,
   mountPolicyAcceptStep,
   mountPolicyConsent,
-  policyTranslator,
   runScrollPolicies,
   type PolicyT,
-} from '@atlasauth/js';
+} from '@atlasauth/js/policy-dom';
 import type { AtlasWidget } from '../widget';
 import { doc, el } from './dom';
 import { render } from './render';

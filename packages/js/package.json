@@ -1,21 +1,29 @@
 {
   "name": "@atlasauth/js",
-  "version": "0.54.1",
+  "version": "0.55.0",
   "main": "./dist/index.js",
+  "module": "./dist/esm/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "module": "./dist/esm/index.js",
       "default": "./dist/index.js"
     },
     "./compat": {
       "types": "./dist/compat.d.ts",
+      "module": "./dist/esm/compat.js",
       "default": "./dist/compat.js"
+    },
+    "./policy-dom": {
+      "types": "./dist/policy-dom.d.ts",
+      "module": "./dist/esm/policy-dom.js",
+      "default": "./dist/policy-dom.js"
     },
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.esm.json && node ../../scripts/fix-esm-specifiers.mjs dist/esm",
     "typecheck": "tsgo -p tsconfig.json --noEmit --module preserve --moduleResolution bundler --incremental --tsBuildInfoFile node_modules/.cache/typecheck.tsbuildinfo",
     "test": "vitest run"
   },
@@ -36,6 +44,20 @@
     "!dist/*.tsbuildinfo",
     "README.md",
     "CHANGELOG.md"
+  ],
+  "typesVersions": {
+    "*": {
+      "compat": [
+        "./dist/compat.d.ts"
+      ],
+      "policy-dom": [
+        "./dist/policy-dom.d.ts"
+      ]
+    }
+  },
+  "sideEffects": [
+    "./dist/referral.js",
+    "./dist/esm/referral.js"
   ],
   "repository": {
     "type": "git",

@@ -5,17 +5,19 @@ import {
   controllerForPending,
   formatPolicyDate,
   loadPolicies,
-  injectPolicyStyles,
   joinTitles,
+  policyTranslator,
+  type Policy,
+  type PolicyAcceptancePayload,
+} from '@atlasauth/js';
+import {
+  injectPolicyStyles,
   mountPolicyAcceptStep,
   mountPolicyClickwrap,
   mountPolicyConsent,
-  policyTranslator,
   type MountedPolicyUi,
-  type Policy,
-  type PolicyAcceptancePayload,
   type PolicyClasses,
-} from '@atlasauth/js';
+} from '@atlasauth/js/policy-dom';
 import { useAtlas } from './context';
 import { FapiClient } from './fapi';
 import { classFor } from './appearance';

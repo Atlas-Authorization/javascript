@@ -1,4 +1,5 @@
-import { policyTranslator, type PolicyClasses, type PolicyT } from '@atlasauth/js';
+import { policyTranslator } from '@atlasauth/js';
+import { type PolicyClasses, type PolicyT } from '@atlasauth/js/policy-dom';
 import { useAtlas } from './context';
 import { classFor } from './appearance';
 import { translate } from './i18n';

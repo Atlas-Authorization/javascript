@@ -43,6 +43,47 @@ Needs the `"identity"` permission. Register `chrome.identity.getRedirectURL()`
 (`https://<extension-id>.chromiumapp.org/`) as the redirect URI of a public,
 first-party OAuth client. See the "Sign in from a browser extension" guide.
 
+## Firefox (desktop and Android)
+
+Firefox gives every add-on a redirect URL on `extensions.allizom.org`, derived from its id. The same URL works on desktop and on Android, so one registered redirect URI covers both. Compute it with `firefoxRedirectUrl`:
+
+```ts
+import { firefoxRedirectUrl } from '@atlasauth/chrome-extension/background';
+
+await firefoxRedirectUrl('atlas-test@example.com'); // "https://<sha1 hex of the id>.extensions.allizom.org/"
+```
+
+Set a stable id in `manifest.json` (it is the input to that hash), and declare Android support:
+
+```json
+{
+  "permissions": ["identity", "tabs", "storage"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "atlas-test@example.com",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": { "required": ["none"] }
+    },
+    "gecko_android": { "strict_min_version": "142.0" }
+  }
+}
+```
+
+`data_collection_permissions` needs Firefox 140 or later on desktop and 142 or later on Android, so those are the minimum versions to declare.
+
+Firefox for Android has no `identity` API. When there is no `identity.launchWebAuthFlow` but `tabs` exists, `signInWithWebAuthFlow` signs in through a browser tab on its own: it opens the authorize URL, waits for that tab to reach your redirect URL, then closes it. This needs the `tabs` permission; pass your own `identity` to override it, or call `createTabIdentity(browser.tabs, browser.runtime.id)` to build the same identity yourself.
+
+Silent sign-in (`interactive: false`) opens the tab inactive and closes it on the first redirect; with no Atlas session in the browser the answer is `login_required`, as everywhere else. If the tab never comes back within 20 seconds the error is `silent_unsupported`. Set `silentTabFlow: false` to refuse silent sign-in on the tab flow immediately, without opening a tab (also `silent_unsupported`). An interactive sign-in is `cancelled` when the user closes the tab or after 10 minutes.
+
+## Headless contexts
+
+The service-worker entry points no longer pull any DOM UI. The policy viewer lives at its own path, `@atlasauth/js/policy-dom`; import it from pages only:
+
+```ts
+import { mountPolicyConsent } from '@atlasauth/js/policy-dom';
+```
+
+
 ## Background service worker
 
 ```ts

@@ -33,7 +33,6 @@ import {
   startSignInWithAtlas,
   type AttemptView,
   PolicyAcceptanceController,
-  confirmPolicies,
   policyTranslator,
   type CaptchaController,
   type EmailDelivery,
@@ -50,6 +49,7 @@ import {
   runOrgStepUp,
   type OrgStepUpError,
 } from '@atlasauth/js';
+import { confirmPolicies } from '@atlasauth/js/policy-dom';
 import { useAtlas } from './context';
 import { FapiClient, type FlowState } from './fapi';
 import { ATLAS_VUE_SDK } from './version';

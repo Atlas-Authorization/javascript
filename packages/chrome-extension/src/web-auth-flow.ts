@@ -24,7 +24,8 @@
  * authorize step finish without asking for anything; Chrome only shows the window when a page has to be displayed.
  *
  * Firefox's `browser.identity` has the same two calls; its redirect URL is
- * `https://<hash>.extensions.allizom.org/`.
+ * `https://<hash>.extensions.allizom.org/`. Firefox for Android has no `identity` API at all: when only `tabs` exists, the flow
+ * runs in a browser tab ({@link createTabIdentity}) and returns to the same redirect URL.
  */
 
 import { exchangeForSession, resolveFrontendApi, type NativeSessionManager } from '@atlasauth/js';
@@ -33,16 +34,18 @@ import type { TokenStore } from './storage';
 
 /** The slice of `chrome.identity` (or Firefox's `browser.identity`) this flow uses. */
 export interface ChromeIdentity {
-  getRedirectURL(path?: string): string;
+  getRedirectURL(path?: string): string | Promise<string>;
   launchWebAuthFlow(details: { url: string; interactive?: boolean }): Promise<string | undefined>;
 }
 
 /** Why {@link signInWithWebAuthFlow} failed. */
 export type WebAuthFlowErrorCode =
-  /** No `chrome.identity` (missing `"identity"` permission, or not an extension). */
+  /** Neither `identity` nor `tabs` is available (missing `"identity"` / `"tabs"` permission, or not an extension). */
   | 'identity_unavailable'
   /** The user closed the window. */
   | 'cancelled'
+  /** A silent sign-in on the tab fallback (no `browser.identity`) did not come back in 20 seconds, or `silentTabFlow: false` turned it off. Sign in with `interactive: true`. */
+  | 'silent_unsupported'
   /** `interactive: false` and the browser has no usable instance session (Atlas answered `login_required`), or the window could not open silently. Sign in with `interactive: true`. */
   | 'login_required'
   /** `interactive: false` and the sign-in needs the user (`interaction_required`, `consent_required`, `account_selection_required`). Sign in with `interactive: true`. */
@@ -88,6 +91,12 @@ export interface WebAuthFlowOptions {
   store?: TokenStore;
   /** @default `chrome.identity`, else `browser.identity` */
   identity?: ChromeIdentity;
+  /**
+   * Only on the tab fallback (no `identity` API, e.g. Firefox for Android): `false` makes `interactive: false` throw
+   * `silent_unsupported` at once instead of opening an inactive tab.
+   * @default true
+   */
+  silentTabFlow?: boolean;
   fetchImpl?: typeof fetch;
 }
 
@@ -102,9 +111,115 @@ const random = (n: number): string => {
   return base64url(raw);
 };
 
+interface Ext {
+  identity?: ChromeIdentity;
+  tabs?: TabsApi;
+  runtime?: { id?: string };
+}
+const ext = (): { chrome?: Ext; browser?: Ext } => globalThis as { chrome?: Ext; browser?: Ext };
+
 function defaultIdentity(): ChromeIdentity | undefined {
-  const g = globalThis as { chrome?: { identity?: ChromeIdentity }; browser?: { identity?: ChromeIdentity } };
-  return g.chrome?.identity ?? g.browser?.identity;
+  return ext().chrome?.identity ?? ext().browser?.identity;
+}
+
+interface Evt<A extends unknown[]> {
+  addListener(fn: (...args: A) => void): void;
+  removeListener(fn: (...args: A) => void): void;
+}
+/** The slice of `tabs` the tab fallback uses. */
+export interface TabsApi {
+  create(props: { url: string; active?: boolean }): Promise<{ id?: number }>;
+  remove(tabId: number): Promise<void> | void;
+  onUpdated: Evt<[number, { url?: string }, { url?: string }]>;
+  onRemoved: Evt<[number]>;
+}
+
+/** Firefox's redirect URL for an add-on id: `https://<sha1 hex of the id>.extensions.allizom.org/` (desktop and Android). */
+export async function firefoxRedirectUrl(addonId: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-1', new TextEncoder().encode(addonId)));
+  return `https://${Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('')}.extensions.allizom.org/`;
+}
+
+const SILENT_TIMEOUT_MS = 20_000;
+const INTERACTIVE_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * An identity built on `tabs`, for browsers with no `identity` API (Firefox for Android). The sign-in opens in a tab and
+ * resolves with the first navigation of THAT tab to the redirect URL, then closes the tab. Needs the `tabs` permission.
+ */
+export function createTabIdentity(tabs: TabsApi, runtimeId: string, options: { silentTabFlow?: boolean } = {}): ChromeIdentity {
+  return {
+    getRedirectURL: () => firefoxRedirectUrl(runtimeId),
+    async launchWebAuthFlow({ url, interactive = true }) {
+      if (!interactive && options.silentTabFlow === false) {
+        throw new AtlasWebAuthFlowError('silent_unsupported', 'Silent sign-in is turned off on the tab flow (silentTabFlow: false).');
+      }
+      const target = new URL(await firefoxRedirectUrl(runtimeId));
+      const isRedirect = (u?: string): u is string => {
+        if (!u) return false;
+        try {
+          const parsed = new URL(u);
+          return parsed.origin === target.origin && parsed.pathname.startsWith(target.pathname);
+        } catch {
+          return false;
+        }
+      };
+      let tabId: number | undefined;
+      let finish: (r: { url: string } | { error: AtlasWebAuthFlowError }) => void = () => {};
+      const done = new Promise<{ url: string } | { error: AtlasWebAuthFlowError }>((resolve) => (finish = resolve));
+      // A redirect can arrive before tabs.create resolves with the tab's id: keep it and match it once the id is known.
+      const early: Array<{ id: number; url: string }> = [];
+      const onUpdated = (id: number, change: { url?: string }, tab: { url?: string }) => {
+        const hit = [change.url, tab?.url].find(isRedirect);
+        if (!hit) return;
+        if (tabId === undefined) early.push({ id, url: hit });
+        else if (id === tabId) finish({ url: hit });
+      };
+      const onRemoved = (id: number) => {
+        if (tabId !== undefined && id === tabId) {
+          tabId = undefined; // already gone: nothing to remove
+          finish({ error: new AtlasWebAuthFlowError('cancelled', 'The sign-in tab was closed.') });
+        }
+      };
+      const timer = setTimeout(
+        () =>
+          finish({
+            error: interactive
+              ? new AtlasWebAuthFlowError('cancelled', 'The sign-in timed out.')
+              : new AtlasWebAuthFlowError('silent_unsupported', 'The silent sign-in did not return in time. Sign in with interactive: true.'),
+          }),
+        interactive ? INTERACTIVE_TIMEOUT_MS : SILENT_TIMEOUT_MS,
+      );
+      tabs.onUpdated.addListener(onUpdated);
+      tabs.onRemoved.addListener(onRemoved);
+      try {
+        const tab = await tabs.create({ url, active: interactive });
+        tabId = tab.id;
+        const seen = early.find((e) => e.id === tabId);
+        if (seen) finish({ url: seen.url });
+        const result = await done;
+        if ('error' in result) throw result.error;
+        return result.url;
+      } finally {
+        clearTimeout(timer);
+        tabs.onUpdated.removeListener(onUpdated);
+        tabs.onRemoved.removeListener(onRemoved);
+        if (tabId !== undefined) {
+          try {
+            await tabs.remove(tabId);
+          } catch {
+            // already closed
+          }
+        }
+      }
+    },
+  };
+}
+
+function fallbackIdentity(silentTabFlow: boolean | undefined): ChromeIdentity | undefined {
+  const tabs = ext().browser?.tabs ?? ext().chrome?.tabs;
+  const id = ext().browser?.runtime?.id ?? ext().chrome?.runtime?.id;
+  return tabs && id ? createTabIdentity(tabs, id, { silentTabFlow }) : undefined;
 }
 
 /**
@@ -114,12 +229,12 @@ function defaultIdentity(): ChromeIdentity | undefined {
  * Throws {@link AtlasWebAuthFlowError} on any failure; nothing is stored then.
  */
 export async function signInWithWebAuthFlow(options: WebAuthFlowOptions): Promise<NativeSessionManager> {
-  const identity = options.identity ?? defaultIdentity();
+  const identity = options.identity ?? defaultIdentity() ?? fallbackIdentity(options.silentTabFlow);
   if (!identity) {
-    throw new AtlasWebAuthFlowError('identity_unavailable', 'chrome.identity is unavailable: add "identity" to the manifest permissions.');
+    throw new AtlasWebAuthFlowError('identity_unavailable', 'chrome.identity and browser.tabs are unavailable: add "identity" (or, on Firefox for Android, "tabs") to the manifest permissions.');
   }
   const baseUrl = resolveFrontendApi(options.frontendApi, { component: 'signInWithWebAuthFlow()', allowSameOrigin: false });
-  const redirectUri = options.redirectUri ?? identity.getRedirectURL();
+  const redirectUri = options.redirectUri ?? await identity.getRedirectURL();
   const fetchImpl = options.fetchImpl ?? fetch;
 
   const verifier = random(32);
@@ -143,6 +258,7 @@ export async function signInWithWebAuthFlow(options: WebAuthFlowOptions): Promis
   try {
     returned = await identity.launchWebAuthFlow({ url: authorize.toString(), interactive });
   } catch (error) {
+    if (error instanceof AtlasWebAuthFlowError) throw error;
     // A silent flow the browser could not complete without a window is "no session", not a closed window.
     throw new AtlasWebAuthFlowError(interactive ? 'cancelled' : 'login_required', error instanceof Error && error.message ? error.message : 'The sign-in window was closed.');
   }

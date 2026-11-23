@@ -21,7 +21,8 @@ await build({
   sourcemap: false,
   legalComments: 'none',
   alias: {
-    '@atlasauth/js': resolve(here, '../js/src/index.ts'),
+    // A directory alias: the root resolves to src/index.ts, `/policy-dom` to src/policy-dom.ts.
+    '@atlasauth/js': resolve(here, '../js/src'),
     // A directory alias, so `@atlasauth/design/runtime` resolves to src/runtime.ts
     // (the widget imports only the zod-free runtime entry).
     '@atlasauth/design': resolve(here, '../design/src'),

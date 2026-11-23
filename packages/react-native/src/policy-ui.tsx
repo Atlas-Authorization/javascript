@@ -5,8 +5,8 @@ import {
   type Policy,
   type PolicyAcceptanceController,
   type PolicyAcceptancePayload,
-  type PolicyT,
 } from '@atlasauth/js';
+import { type PolicyT } from '@atlasauth/js/policy-dom';
 import { useControllerTick, usePolicyGate, type UsePolicyGateResult } from './hooks';
 import {
   ScrollEndTracker,

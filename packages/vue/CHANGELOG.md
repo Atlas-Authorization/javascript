@@ -1,5 +1,9 @@
 # @atlasauth/vue changelog
 
+## 0.24.3
+
+- Imports the policy viewer from @atlasauth/js/policy-dom (@atlasauth/js 0.55.0).
+
 ## 0.24.2
 
 - Calls `markAtlasReady` after the first boot, so `atlasReady()` from `@atlasauth/js` resolves in apps using this SDK. Needs `@atlasauth/js` 0.51.0.

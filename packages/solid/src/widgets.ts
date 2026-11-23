@@ -23,15 +23,10 @@ import {
   createPasskeySignInController,
   createSignUp,
   PolicyAcceptanceController,
-  confirmPolicies,
   controllerForPending,
   fetchInstanceSettings,
   loadPolicies,
   initialFlow,
-  injectPolicyStyles,
-  mountPolicyAcceptStep,
-  mountPolicyClickwrap,
-  mountPolicyConsent,
   flowFromPending,
   flowNeedsCaptcha,
   acknowledgeExistingAccount,
@@ -76,6 +71,13 @@ import {
   codeWaitText,
   createCodeWaits,
 } from '@atlasauth/js';
+import {
+  confirmPolicies,
+  injectPolicyStyles,
+  mountPolicyAcceptStep,
+  mountPolicyClickwrap,
+  mountPolicyConsent,
+} from '@atlasauth/js/policy-dom';
 import { useAtlas } from './context';
 import type { AtlasClient } from './provider';
 import { ATLAS_SOLID_SDK } from './version';

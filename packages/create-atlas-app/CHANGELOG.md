@@ -1,5 +1,9 @@
 # @atlasauth/create-atlas-app changelog
 
+## 0.5.4
+
+- Templates pin `@atlasauth/js` `^0.55.0` and `@atlasauth/backend` `^0.65.0`.
+
 ## 0.5.3
 
 - Templates pin `@atlasauth/expo` `^0.14.0`, `@atlasauth/js` `^0.52.0`, `@atlasauth/react` `^0.41.0`, `@atlasauth/backend` `^0.62.0`, `@atlasauth/nextjs` `^0.20.0`, `@atlasauth/express` `^0.12.0` and `@atlasauth/hono` `^0.11.0`.

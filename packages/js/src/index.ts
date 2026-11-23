@@ -27,9 +27,8 @@ export * from './policies';
 export * from './cookie-consent';
 // An organization's audit trail for its admins (`<OrganizationAuditLog/>` in every framework SDK).
 export * from './organization-audit-log';
-// Policy acceptance (terms, privacy, any policy) at sign-up and sign-in: state machine, FAPI calls, DOM UI.
+// Policy acceptance (terms, privacy, any policy) at sign-up and sign-in: state machine and FAPI calls (the DOM UI is at @atlasauth/js/policy-dom).
 export * from './policy-acceptance';
-export * from './policy-dom';
 // Referral attribution: capture the visitor's referral and send it on sign-up.
 export * from './referral';
 export * from './sign-in-with-atlas-loader';

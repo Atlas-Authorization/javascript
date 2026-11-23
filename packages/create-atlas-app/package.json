@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/create-atlas-app",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Scaffold a starter app pre-wired with Atlas auth (npm create @atlasauth/atlas-app).",
   "bin": {
     "create-atlas-app": "dist/index.js"

@@ -6,8 +6,8 @@ import {
   splitTemplate,
   type Policy,
   type PolicyAcceptanceController,
-  type PolicyT,
 } from '@atlasauth/js';
+import { type PolicyT } from '@atlasauth/js/policy-dom';
 import { parsePolicyHtml, type PolicyBlock, type PolicySpan } from './policy-html';
 
 /*

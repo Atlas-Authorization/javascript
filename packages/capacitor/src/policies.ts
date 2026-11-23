@@ -24,14 +24,16 @@ import {
   PolicyGateController,
   controllerForPending,
   formatPolicyDate,
-  injectPolicyStyles,
   joinTitles,
   loadPolicies,
-  mountPolicyAcceptStep,
   policyTranslator,
+} from '@atlasauth/js';
+import {
+  injectPolicyStyles,
+  mountPolicyAcceptStep,
   type PolicyClasses,
   type PolicyT,
-} from '@atlasauth/js';
+} from '@atlasauth/js/policy-dom';
 
 export interface PolicyApiConfig {
   publishableKey: string;
@@ -205,17 +207,19 @@ export function mountPolicyGate(
   };
 }
 
-// The DOM pieces and helpers a WebView screen draws with (all from `@atlasauth/js`).
+// The DOM pieces and helpers a WebView screen draws with (`@atlasauth/js` and `@atlasauth/js/policy-dom`).
 export {
   PolicyAcceptanceController,
   PolicyGateController,
   buildPolicyAcceptances,
-  injectPolicyStyles,
   isPolicyAcceptanceRequired,
+  type Policy,
+  type PolicyAcceptancePayload,
+} from '@atlasauth/js';
+export {
+  injectPolicyStyles,
   mountPolicyAcceptStep,
   mountPolicyClickwrap,
   mountPolicyConsent,
   runScrollPolicies,
-  type Policy,
-  type PolicyAcceptancePayload,
-} from '@atlasauth/js';
+} from '@atlasauth/js/policy-dom';

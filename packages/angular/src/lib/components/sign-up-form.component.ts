@@ -11,7 +11,6 @@ import {
   type SimpleChanges,
 } from '@angular/core';
 import {
-  confirmPolicies,
   localizedErrorMessage,
   type PolicyAcceptanceController,
   type CaptchaController,
@@ -19,6 +18,7 @@ import {
   type InstanceSettings,
   type PublicSignUpField,
 } from '@atlasauth/js';
+import { confirmPolicies } from '@atlasauth/js/policy-dom';
 import { AtlasService } from '../atlas.service';
 import { classFor, type ElementKey } from '../appearance';
 import { translate } from '../i18n';

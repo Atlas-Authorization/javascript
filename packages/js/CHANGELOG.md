@@ -1,5 +1,15 @@
 # @atlasauth/js changelog
 
+## 0.55.0
+
+- **Breaking: the policy UI moved to its own import path.** `@atlasauth/js` no longer exports the vanilla-DOM policy viewer (`injectPolicyStyles`, `POLICY_CSS`, `mountPolicyConsent`, `mountPolicyClickwrap`, `mountPolicyAcceptStep`, `openPolicyModal`, `runScrollPolicies`, `confirmPolicies`, `policyRequiredMessage`, `sanitizePolicyHtml`, `renderPolicyContent` and the types `PolicyT`, `PolicyClasses`, `MountedPolicyUi`, `MountedPolicyStep`, `PolicyModalOptions`, `PolicyModalHandle`, `PolicyAcceptStepOptions`). Import them from `@atlasauth/js/policy-dom`.
+  - Before: `import { mountPolicyConsent, injectPolicyStyles } from '@atlasauth/js';`
+  - After: `import { mountPolicyConsent, injectPolicyStyles } from '@atlasauth/js/policy-dom';`
+  - Everything else in the policy flow (`PolicyAcceptanceController`, `policyHtml`, `policyTranslator`, `buildPolicyAcceptances`, ...) stays on `@atlasauth/js`. A background script or service worker that imports the root no longer carries the viewer.
+- ESM build next to the CommonJS one. Bundlers (esbuild, webpack, Rollup, Vite) resolve the `module` condition for both `import` and `require`, so an app gets one copy of the package; Node keeps loading CommonJS.
+- `sideEffects` is declared, so unused modules are dropped from bundles. Only the referral capture module runs code when loaded, and it is listed.
+- The policy sanitizer no longer assigns HTML to an element. It parses in an inert document and copies an allow-list of tags and attributes: scripts, frames, `on*` attributes and `style` are removed, and links and images keep only http, https, mailto, tel or relative URLs. Links open with `rel="noopener noreferrer"`. `sanitizePolicyHtml(html): string` still works; `sanitizePolicyFragment` and `renderPolicyFragment` return a `DocumentFragment` for hosts that can take nodes.
+
 ## 0.54.1
 
 - The development warning for a withheld refresh token links to the guide at its real address.

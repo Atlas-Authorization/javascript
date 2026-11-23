@@ -3,12 +3,14 @@
   import {
     FapiClient,
     controllerForPending,
-    injectPolicyStyles,
-    mountPolicyAcceptStep,
-    type MountedPolicyStep,
     type Policy,
     type PolicyAcceptanceController,
   } from '@atlasauth/js';
+  import {
+    injectPolicyStyles,
+    mountPolicyAcceptStep,
+    type MountedPolicyStep,
+  } from '@atlasauth/js/policy-dom';
   import { useAtlas } from '../context';
   import { usePolicyUi } from '../policies';
   import { ATLAS_SVELTE_SDK } from '../version';

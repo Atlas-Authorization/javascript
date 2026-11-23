@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { injectPolicyStyles, mountPolicyConsent, type PolicyAcceptanceController } from '@atlasauth/js';
+  import { type PolicyAcceptanceController } from '@atlasauth/js';
+  import { injectPolicyStyles, mountPolicyConsent } from '@atlasauth/js/policy-dom';
   import { usePolicyUi } from '../policies';
 
   /**

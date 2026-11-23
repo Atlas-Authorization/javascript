@@ -17,19 +17,21 @@ import {
   PolicyGateController,
   controllerForPending,
   formatPolicyDate,
-  injectPolicyStyles,
   joinTitles,
+  policyTranslator,
+  type Policy,
+  type PolicyAcceptanceController,
+} from '@atlasauth/js';
+import {
+  injectPolicyStyles,
   mountPolicyAcceptStep,
   mountPolicyClickwrap,
   mountPolicyConsent,
-  policyTranslator,
   type MountedPolicyStep,
   type MountedPolicyUi,
-  type Policy,
-  type PolicyAcceptanceController,
   type PolicyClasses,
   type PolicyT,
-} from '@atlasauth/js';
+} from '@atlasauth/js/policy-dom';
 import { AtlasService } from '../atlas.service';
 import { classFor } from '../appearance';
 import { translate } from '../i18n';
