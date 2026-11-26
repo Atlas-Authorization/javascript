@@ -662,6 +662,43 @@ export function billingHandlers(): RouteDef[] {
         return { body: subView(c.engine, s) };
       },
     },
+    {
+      method: 'POST',
+      pattern: '/v1/billing/subscriptions/:id/sync',
+      scope: 'billing:write',
+      handler: (c) => ({ body: subView(c.engine, subOf(c.engine, c.params.id)) }),
+    },
+    {
+      method: 'POST',
+      pattern: '/v1/billing/checkout/sync',
+      scope: 'billing:write',
+      handler: (c) => {
+        known(c.body, ['session_id']);
+        if (typeof c.body.session_id !== 'string' || !/^cs_[A-Za-z0-9_]{1,250}$/.test(c.body.session_id)) throw bad('session_id must be a Stripe Checkout Session id (cs_…).', 'session_id');
+        // The emulator runs no Stripe account, so no session is ever this instance's.
+        throw notFound('Checkout session');
+      },
+    },
+    {
+      method: 'POST',
+      pattern: '/v1/billing/stripe/events',
+      scope: 'billing:write',
+      handler: (c) => {
+        if (typeof c.body.id !== 'string' || !/^evt_[A-Za-z0-9_]{1,250}$/.test(c.body.id)) throw bad('id must be a Stripe event id (evt_…); you may post the whole event, only its id is used.', 'id');
+        return { body: { object: 'billing_stripe_event', id: c.body.id, type: null, outcome: 'ignored' } };
+      },
+    },
+    {
+      method: 'POST',
+      pattern: '/v1/client/billing/checkout/sync',
+      public: true,
+      handler: async (c) => {
+        await sessionFromBearer(c);
+        known(c.body, ['session_id']);
+        if (typeof c.body.session_id !== 'string' || !/^cs_[A-Za-z0-9_]{1,250}$/.test(c.body.session_id)) throw bad('session_id must be the Checkout Session id from the return URL.', 'session_id');
+        throw notFound('Checkout session');
+      },
+    },
     // ── the signed-in user's own routes (client side): the subject is the user, or an organization they administer ──
     ...(['change', 'cancel', 'restore'] as const).flatMap((op): RouteDef[] =>
       (['/v1/client/billing/subscription/' + op, '/v1/client/billing/subscriptions/:id/' + op] as const).map((pattern) => ({

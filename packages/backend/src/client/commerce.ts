@@ -142,6 +142,18 @@ export function commerceBillingResource(request: RequestFn) {
     createStoreLink(body: CreateBillingStoreLinkBody): Promise<BillingStoreLink> {
       return request({ method: 'POST', path: '/v1/billing/store_links', body });
     },
+    /** Re-read one Stripe subscription now and apply what Stripe reports (no webhook needed). */
+    syncSubscription(id: string): Promise<Record<string, unknown>> {
+      return request({ method: 'POST', path: `/v1/billing/subscriptions/${enc(id)}/sync` });
+    },
+    /** Record a purchase from its Stripe Checkout Session id (the return URL carries it), no webhook needed. `status` is `synced` or `pending`. */
+    syncCheckoutSession(sessionId: string): Promise<{ object: 'billing_checkout_sync'; status: 'synced' | 'pending'; subscription: Record<string, unknown> | null }> {
+      return request({ method: 'POST', path: '/v1/billing/checkout/sync', body: { session_id: sessionId } });
+    },
+    /** Forward a Stripe event from your own endpoint: pass the event or its id; Atlas re-fetches it from Stripe and processes that. */
+    forwardStripeEvent(event: string | { id: string }): Promise<{ object: 'billing_stripe_event'; id: string; type: string | null; outcome: 'processed' | 'ignored' }> {
+      return request({ method: 'POST', path: '/v1/billing/stripe/events', body: { id: typeof event === 'string' ? event : event.id } });
+    },
   };
 }
 

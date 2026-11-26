@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.58.0
+
+- **behaviour:** Back from a provider Checkout, the billing controller reads the session id from the return URL (`atlas_checkout_session` or `session_id`) and records the purchase with `POST /v1/client/billing/checkout/sync` before it loads the subscription, so a subscription shows up without a Stripe webhook. New `syncCheckoutReturn` does the same on demand.
+
 ## 0.57.0
 
 - **behaviour:** Reads and writes the instance's suffixed cookies and CSRF cookie when `session.cookieIsolation` is on.

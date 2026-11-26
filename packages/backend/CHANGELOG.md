@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.68.0
+
+- Billing without a Stripe webhook: `syncCheckoutSession`, `syncSubscription` and `forwardStripeEvent` (Atlas re-reads the forwarded event from Stripe by id).
+
 ## 0.67.0
 
 - **behaviour:** New cookie-name helpers (suffix derived from the publishable key); session, refresh, CSRF and handshake helpers honour the suffix, and `HandshakeSession` carries `cookieNames`.

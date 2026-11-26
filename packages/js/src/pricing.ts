@@ -170,3 +170,42 @@ export function describeDiscount(d: CouponDiscountView, locale?: string): string
   if (d.duration === 'repeating' && d.duration_months) return `${what} for ${d.duration_months} month${d.duration_months === 1 ? '' : 's'}`;
   return `${what} on the first payment`;
 }
+
+/** The query parameter Atlas adds to a Checkout success URL that lacks `{CHECKOUT_SESSION_ID}`. */
+export const CHECKOUT_RETURN_PARAM = 'atlas_checkout_session';
+
+const syncedSessions = new Set<string>();
+
+/**
+ * On return from a provider Checkout, tell Atlas to read the session back and record the purchase, so the
+ * subscription shows up without waiting for a webhook. Reads the session id from the page URL (the
+ * `atlas_checkout_session` parameter, or a Stripe `session_id` parameter), needs a signed-in session, removes the
+ * parameter once the purchase is recorded, and does nothing when the URL carries no session id. Safe to call on
+ * every load: each session is synced once per page, and the server side is idempotent.
+ */
+export async function syncCheckoutReturn(
+  client: FapiClient,
+  opts: { href?: string; clearUrl?: boolean } = {},
+): Promise<{ status: 'synced' | 'pending' | 'error'; error?: string } | null> {
+  const href = opts.href ?? (typeof window === 'undefined' || !window.location ? '' : window.location.href);
+  if (!href) return null;
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  const fromParam = url.searchParams.get(CHECKOUT_RETURN_PARAM) ?? url.searchParams.get('session_id');
+  if (!fromParam || !/^cs_[A-Za-z0-9_]+$/.test(fromParam) || syncedSessions.has(fromParam)) return null;
+  syncedSessions.add(fromParam);
+  const res = await client.post<{ status?: 'synced' | 'pending' }>('/v1/client/billing/checkout/sync', { session_id: fromParam });
+  const status = res.ok ? (res.data?.status ?? 'synced') : 'error';
+  // A pending session is tried again on the next load; anything else is done with.
+  if (status === 'pending') syncedSessions.delete(fromParam);
+  if (status !== 'pending' && opts.clearUrl !== false && typeof window !== 'undefined' && window.history?.replaceState) {
+    url.searchParams.delete(CHECKOUT_RETURN_PARAM);
+    if (url.searchParams.get('session_id') === fromParam) url.searchParams.delete('session_id');
+    window.history.replaceState(window.history.state, '', url.toString());
+  }
+  return status === 'error' ? { status, error: res.errors[0]?.message ?? 'Could not sync the checkout.' } : { status };
+}

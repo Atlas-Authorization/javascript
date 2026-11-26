@@ -22,6 +22,7 @@ import {
 import {
   describeDiscount,
   planPriceView,
+  syncCheckoutReturn,
   validatePlanCoupon,
   type CouponCheck,
   type PlanPriceView,
@@ -690,6 +691,8 @@ export class BillingController extends ObservableController<BillingState> {
     const plansRes = await this.client.get<{ data: BillingPlan[] }>('/v1/client/billing/plans');
     if (plansRes.ok && plansRes.data) this.patch({ plans: plansRes.data.data ?? [] });
     if (signedIn) {
+      // Back from a provider Checkout: record the purchase now, before reading the subscription.
+      await syncCheckoutReturn(this.client).catch(() => null);
       const [subRes, invRes, pmRes] = await Promise.all([
         this.client.get<BillingSubscription>(`/v1/client/billing/subscription${orgQuery}`),
         this.client.get<{ data: BillingInvoice[] }>(`/v1/client/billing/invoices${orgQuery}`),

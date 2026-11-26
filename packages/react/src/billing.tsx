@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { describeDiscount, formatMoney, planPriceView, validatePlanCoupon, type CouponCheck, type PublicBillingPlan } from '@atlasauth/js';
+import { describeDiscount, formatMoney, planPriceView, syncCheckoutReturn, validatePlanCoupon, type CouponCheck, type PublicBillingPlan } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
 import { currentUrl, navigateTo, useClass, useClasses, useErrorText, useMeClient, useText } from './components-shared';
 import type {
@@ -102,6 +102,8 @@ export function useBilling(opts: { orgId?: string } = {}) {
     if (plansRes.ok && plansRes.data) setPlans(plansRes.data.data ?? []);
     // Subscription, invoices and payment method are subject-scoped — signed in only.
     if (status === 'signed_in') {
+      // Back from a provider Checkout: record the purchase now, before reading the subscription.
+      await syncCheckoutReturn(client).catch(() => null);
       const [subRes, invRes, pmRes] = await Promise.all([
         client.get<AtlasBillingSubscription>(`/v1/client/billing/subscription${orgQuery}`),
         client.get<{ data: AtlasBillingInvoice[] }>(`/v1/client/billing/invoices${orgQuery}`),

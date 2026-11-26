@@ -1,5 +1,10 @@
 # @atlasauth/react changelog
 
+## 0.44.0
+
+- **behaviour:** `useBilling` (and so `<PricingTable>`, `<Checkout>`) records a purchase on return from a provider Checkout, with no webhook needed, before it reads the subscription.
+- Requires @atlasauth/js 0.58.0.
+
 ## 0.43.0
 
 - **behaviour:** `<SignIn>` and `<SignUp>` take `onSignedIn` and `exchange` and navigate only after your session exchange succeeds.

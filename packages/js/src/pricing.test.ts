@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { describeDiscount, formatMoney, planPriceView, startPlanCheckout, validatePlanCoupon, type PublicBillingPlan } from './pricing';
+import { describe, expect, it, vi } from 'vitest';
+import { describeDiscount, formatMoney, planPriceView, startPlanCheckout, syncCheckoutReturn, validatePlanCoupon, type PublicBillingPlan } from './pricing';
 import type { FapiClient } from './fapi';
 
 const plan = (over: Partial<PublicBillingPlan> = {}): PublicBillingPlan => ({
@@ -70,5 +70,38 @@ describe('discount codes at checkout', () => {
     const f = fake({ ok: true, data: { url: 'https://pay.example/c' } });
     await startPlanCheckout(f.client, { planId: 'bp_1', successUrl: 'https://app.example/done', couponCode: 'SAVE10' });
     expect(f.calls[0]!.body).toMatchObject({ plan_id: 'bp_1', coupon_code: 'SAVE10' });
+  });
+});
+
+describe('syncCheckoutReturn', () => {
+  const clientOf = (res: unknown) => {
+    const post = vi.fn(async () => res);
+    return { client: { post } as unknown as FapiClient, post };
+  };
+  it('does nothing when the URL carries no session id', async () => {
+    const { client, post } = clientOf({ ok: true, data: {}, errors: [] });
+    expect(await syncCheckoutReturn(client, { href: 'https://app.test/billing', clearUrl: false })).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  });
+  it('posts the session id from the return URL once', async () => {
+    const { client, post } = clientOf({ ok: true, data: { status: 'synced' }, errors: [] });
+    const href = 'https://app.test/billing?atlas_checkout_session=cs_test_once1';
+    expect(await syncCheckoutReturn(client, { href, clearUrl: false })).toEqual({ status: 'synced' });
+    expect(post).toHaveBeenCalledWith('/v1/client/billing/checkout/sync', { session_id: 'cs_test_once1' });
+    expect(await syncCheckoutReturn(client, { href, clearUrl: false })).toBeNull();
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+  it('reads a Stripe session_id parameter and ignores anything that is not a session id', async () => {
+    const { client, post } = clientOf({ ok: true, data: { status: 'pending' }, errors: [] });
+    expect(await syncCheckoutReturn(client, { href: 'https://app.test/?session_id=cs_live_p2', clearUrl: false })).toEqual({ status: 'pending' });
+    expect(await syncCheckoutReturn(client, { href: 'https://app.test/?session_id=abc', clearUrl: false })).toBeNull();
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+  it('reports a refusal', async () => {
+    const { client } = clientOf({ ok: false, data: null, errors: [{ message: 'Unknown checkout session.' }] });
+    expect(await syncCheckoutReturn(client, { href: 'https://app.test/?atlas_checkout_session=cs_test_bad', clearUrl: false })).toEqual({
+      status: 'error',
+      error: 'Unknown checkout session.',
+    });
   });
 });

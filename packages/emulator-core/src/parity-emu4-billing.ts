@@ -25,6 +25,8 @@ export const emu4BillingParityRequests: ParityRequest[] = [
   q('b4 connect account unknown', 'GET', '/v1/billing/connect/accounts/bca_unknown', { group: 'billing' }),
   q('b4 connect refresh unknown', 'POST', '/v1/billing/connect/accounts/bca_unknown/refresh', { group: 'billing' }),
   q('b4 connect link unknown', 'POST', '/v1/billing/connect/accounts/bca_unknown/onboarding_link', { body: {}, group: 'billing' }),
+  q('b4 checkout sync invalid', 'POST', '/v1/billing/checkout/sync', { body: {}, group: 'billing' }),
+  q('b4 stripe event invalid', 'POST', '/v1/billing/stripe/events', { body: {}, group: 'billing' }),
   q('b4 connect transfer invalid', 'POST', '/v1/billing/connect/transfers', { body: {}, group: 'billing' }),
   q('b4 connect transfers', 'GET', '/v1/billing/connect/transfers', { group: 'billing' }),
   q('b4 connect transfer unknown', 'GET', '/v1/billing/connect/transfers/btr_unknown', { group: 'billing' }),
