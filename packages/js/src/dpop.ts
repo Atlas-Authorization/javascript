@@ -1,3 +1,4 @@
+import { sha256 } from './native-oauth';
 import { bufferToBase64Url } from './passkey';
 
 /**
@@ -39,8 +40,12 @@ export const htuOf = (url: string | URL): string => {
 };
 
 /** base64url(SHA-256(utf8(text))): the `ath` of a DPoP proof. */
-export const sha256Base64Url = async (text: string): Promise<string> =>
-  bufferToBase64Url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
+export const sha256Base64Url = async (text: string): Promise<string> => {
+  const bytes = new TextEncoder().encode(text);
+  // Hermes (React Native) has no `crypto.subtle`: fall back to the pure-JS hash.
+  const subtle = (globalThis as { crypto?: { subtle?: SubtleCrypto } }).crypto?.subtle;
+  return bufferToBase64Url(subtle ? await subtle.digest('SHA-256', bytes) : sha256(bytes));
+};
 
 /** RFC 7638 thumbprint of an EC public JWK (canonical member order). */
 export const jwkThumbprint = (j: { crv?: string; kty?: string; x?: string; y?: string }): Promise<string> =>

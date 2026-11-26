@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.58.2
+
+- **behaviour:** a device-bound native session on React Native now refreshes. The proof's `ath` was hashed with `crypto.subtle`, which Hermes does not have, so building the proof threw, the client sent the refresh with no token and no proof, and every refresh was answered 401 "No refresh token was presented" (the session never rotated). The hash falls back to the pure-JS SHA-256 the PKCE challenge already uses. In development a failed proof now logs a warning instead of falling through silently.
+
 ## 0.58.1
 
 - **behaviour:** a device-bound native session's refresh goes out with `credentials: 'omit'`. On iOS the HTTP stack kept the server's `Set-Cookie` and sent the rotated refresh cookie next to the body token; the server prefers the cookie, so the proof no longer matched and the rotated token was never returned in the body: the first refresh worked and every later one was refused (401), which with the provider's re-check looped.

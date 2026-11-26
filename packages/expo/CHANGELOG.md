@@ -1,5 +1,9 @@
 # @atlasauth/expo changelog
 
+## 0.16.2
+
+- **behaviour:** Fixed: a device-bound session never refreshed on a device (the refresh went out with no token and was refused with 401). Needs `@atlasauth/js` 0.58.2, which hashes the refresh token with a pure-JS SHA-256 when `crypto.subtle` is missing (Hermes).
+
 ## 0.16.1
 
 - **behaviour:** Fixed: right after a native sign-in, the app could stay signed out. The new session token was saved to the token cache in the background, so the provider's next request went out before the save finished and carried no token. The save now finishes before the response is returned. A failed secure-store write still never fails the request.

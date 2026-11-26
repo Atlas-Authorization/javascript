@@ -178,7 +178,9 @@ export function withDeviceBoundSession(inner: typeof fetch, opts: { deviceKey: D
         // RFC 9449 section 8: a server that wants (a newer) nonce answers 401 with DPoP-Nonce; retry once with it.
         if (res.status === 401 && fresh && fresh !== before) res = await send();
         seeNonce(res);
-      } catch {
+      } catch (e) {
+        // Say so: a silent fall-through sends the refresh with no token, and the server answers 401 "No refresh token was presented".
+        if (isDev()) console.warn('[atlas] could not build the device proof for the refresh; sending it without one.', e);
         return inner(input, init);
       }
       if (res.ok) {

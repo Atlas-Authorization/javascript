@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/expo",
-  "version": "0.16.1",
+  "version": "0.16.2",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -37,7 +37,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@atlasauth/js": ">=0.54.0 <1.0.0",
+    "@atlasauth/js": ">=0.58.2 <1.0.0",
     "@atlasauth/react": ">=0.41.0 <1.0.0",
     "@atlasauth/react-native": ">=0.11.0 <1.0.0",
     "react": ">=18",
