@@ -102,7 +102,7 @@ export interface FapiClientOptions {
   referralSource?: ReferralSourceReader;
   /**
    * Copy page values into the sign-up's `unsafe_metadata` (so they land on the new
-   * user and on `user.created`): `{ seolyticize_visit: { global: 'seolyticize', globalArg: 'visit' } }`.
+   * user and on `user.created`): `{ seolyticize_visit: { global: 'seolyticize', globalArg: 'visitToken' } }`.
    * Your own `unsafe_metadata` on the call wins. See `./attribution-fields`.
    */
   attribution?: AttributionOptions;
@@ -111,6 +111,11 @@ export interface FapiClientOptions {
    * restricted to specific apps refuses a native request without it (`APP_NOT_ALLOWED`).
    */
   appId?: string;
+  /**
+   * A signed sign-in method list (`token` from `pageTemplates.hostedMethodFilter`): sent on every request, so the
+   * server binds it to each attempt this client starts and refuses a session for a method outside it.
+   */
+  methodFilter?: string;
 }
 
 /**
@@ -253,6 +258,7 @@ export class FapiClient {
           [SDK_HEADER]: sdkHeaderValue(sdk),
           ...(language ? { 'accept-language': language } : {}),
           ...(this.options.appId ? { 'x-atlas-app-id': this.options.appId } : {}),
+          ...(this.options.methodFilter ? { 'x-atlas-allowed-methods': this.options.methodFilter } : {}),
           ...(attestation ? { 'atlas-attestation': attestation } : {}),
           ...(dpopProof ? { dpop: dpopProof } : {}),
           ...csrfHeadersFor(init.method),
@@ -335,7 +341,7 @@ export class FapiClient {
     }
     if (bare !== undefined && ATTRIBUTION_ROUTES.has(bare) && (this.options.attribution ?? pageAttribution()) && payload && typeof payload === 'object' && !Array.isArray(payload)) {
       const p = payload as { unsafe_metadata?: Record<string, unknown> };
-      const captured = captureAttributionFields(this.options.attribution ?? pageAttribution());
+      const captured = await captureAttributionFields(this.options.attribution ?? pageAttribution());
       if (Object.keys(captured).length) payload = { ...p, unsafe_metadata: { ...captured, ...p.unsafe_metadata } };
     }
     return this.request<T>(path, {

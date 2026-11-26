@@ -56,6 +56,8 @@ export interface ScopeDefinition {
   requires_client_level?: 'any' | 'verified' | 'certified';
   /** The developer who owns a client may request it with that client on their own account whatever its level. */
   owner_exempt?: boolean;
+  /** The consent screen lets the user leave this scope out. Never for `openid`. */
+  optional?: boolean;
   /** A name ending `:*` is a wildcard entry covering every scope with that prefix. Read-only. */
   wildcard?: boolean;
 }

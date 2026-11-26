@@ -75,6 +75,8 @@ export interface Entitlements {
   plan: string | null;
   /** `plan` (a subscription), `override` (a sales-led grant), `internal` (an owner account, never revenue) or `none`. */
   planSource: 'plan' | 'override' | 'internal' | 'none';
+  /** The subject's entitlement version, the counter every `entitlement.*` webhook carries; 0 when it never changed. */
+  version: number;
   entitlements: Array<{
     key: string;
     enabled: boolean;

@@ -22,7 +22,7 @@ export interface AtlasOptions {
    * it) lets the forms read the cookie. Default: the cookie is not read.
    */
   referralConsent?: ReferralConsent;
-  /** Page values copied into every sign-up's `unsafe_metadata`, e.g. `{ seolyticize_visit: { global: 'seolyticize', globalArg: 'visit' } }`. */
+  /** Page values copied into every sign-up's `unsafe_metadata`, e.g. `{ seolyticize_visit: { global: 'seolyticize', globalArg: 'visitToken' } }`. */
   attribution?: AttributionOptions;
   /**
    * The instance's Frontend API: an absolute URL such as

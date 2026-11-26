@@ -135,7 +135,7 @@ export async function token(ctx: RunContext, args: ParsedArgs): Promise<number> 
 }
 
 /** Named scope sets a secret key can be minted or rotated to. */
-const KEY_PRESETS = ['app-runtime', 'provisioning', 'integrations'];
+const KEY_PRESETS = ['app-runtime', 'web-app', 'provisioning', 'operator', 'end-user-pools', 'integrations'];
 
 /** Write a secret to a 0600 file (directories 0700). */
 function writeSecret(path: string, name: string, secret: string): void {

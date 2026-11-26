@@ -8,6 +8,7 @@ import {
 } from 'jose';
 import { JwksCache, checkJwksCacheTuning, readKid, type Jwks, type JwksCacheTuning } from './jwks-cache';
 import { ATLAS_SIGNING_ALGS } from './algs';
+import { PreviousIssuersFeed } from './previous-issuers';
 import { OAuthTokenRevocationList, type OAuthTokenRevocationOptions } from './oauth-token-revocation';
 import { matchAuthorizationDetails, senderConstraintOf, thumbprintsEqual, type AuthorizationDetailRequirement } from './oauth-resource-sender';
 
@@ -192,6 +193,13 @@ export interface AccessTokenVerifierOptions {
    * `false` only to accept tokens with no audience (userinfo-style tokens).
    */
   audience: string | readonly string[] | false;
+  /**
+   * Earlier issuers of THIS instance, also accepted while it moves to a new origin (`atlas move-origin`, a custom
+   * domain or a path mount going active). The keys are the instance's own. Pass `'discovery'` (or set
+   * `ATLAS_PREVIOUS_ISSUERS=discovery`) to read the list, each with its own end date, from the issuer's discovery
+   * document. Default: `ATLAS_PREVIOUS_ISSUERS` (comma separated), else none.
+   */
+  previousIssuers?: readonly string[] | 'discovery';
   /** Scopes every request must carry (all of them). */
   requiredScopes?: readonly string[];
   /** Billing features (the `fea` claim) every request's token must carry (all of them). */
@@ -257,7 +265,8 @@ export interface AccessTokenVerifierOptions {
    * `GET /v1/resource_servers/{id}/revoked_tokens` and refuses a token whose `fid` (its
    * refresh-token family: reuse detected, /oauth2/revoke, the grant ended) or `jti` is listed.
    * `true` uses the defaults; pass an object to tune the poll. Needs `secretKey`
-   * (with `resource_servers:read`), and either `resourceServerId` or a single string `audience`.
+   * (with `resource_servers:read`), and either `resourceServerId` or a string / string-array `audience`: with
+   * several audiences one poller runs per audience's resource server, and a token revoked on any of them is refused.
    * The worst-case window is the poll interval plus the time to your next poll.
    */
   revocation?: boolean | OAuthTokenRevocationOptions;
@@ -490,6 +499,17 @@ export function createAccessTokenVerifier(
   if (options.jwks && options.jwksUrl) throw new Error('Pass `jwks` or `jwksUrl`, not both.');
   const issuer = options.issuer.replace(/\/+$/, '');
   const now = () => (options.now ?? Date.now)();
+  const envPrevious = ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.ATLAS_PREVIOUS_ISSUERS ?? '')
+    .split(/[\s,]+/)
+    .filter(Boolean);
+  let previous = options.previousIssuers ?? (envPrevious.length ? envPrevious : []);
+  if (Array.isArray(previous) && previous.length === 1 && previous[0] === 'discovery') previous = 'discovery';
+  const previousFeed = previous === 'discovery' ? new PreviousIssuersFeed({ issuer, fetchImpl: options.fetchImpl, now: options.now }) : null;
+  /** The issuers accepted right now: the current one first, then the earlier ones inside their window. */
+  const acceptedIssuers = async (): Promise<string[]> => [
+    issuer,
+    ...(previousFeed ? await previousFeed.get() : (previous as readonly string[]).map((i) => i.replace(/\/+$/, ''))),
+  ];
   const jwks = new JwksCache({
     url: options.jwks ? undefined : (options.jwksUrl ?? `${issuer}/.well-known/jwks.json`),
     staticJwks: options.jwks,
@@ -507,16 +527,20 @@ export function createAccessTokenVerifier(
   if (options.revocation && !options.secretKey) {
     throw new Error('createAccessTokenVerifier with `revocation` needs `secretKey` (with resource_servers:read).');
   }
-  const revocationList = options.revocation
-    ? new OAuthTokenRevocationList(options.revocation === true ? {} : options.revocation, {
-        secretKey: options.secretKey!,
-        resourceServerId: options.resourceServerId,
-        identifier: typeof options.audience === 'string' ? options.audience : undefined,
-        baseUrl: options.apiUrl,
-        fetchImpl: options.fetchImpl,
-        now,
-      })
-    : null;
+  // One poller per resource server: an explicit id, else one per audience (a token revoked on any listed server is refused).
+  const revocationLists = options.revocation
+    ? (options.resourceServerId ? [undefined] : (audiences ?? [undefined])).map(
+        (identifier) =>
+          new OAuthTokenRevocationList(options.revocation === true ? {} : (options.revocation as OAuthTokenRevocationOptions), {
+            secretKey: options.secretKey!,
+            resourceServerId: options.resourceServerId,
+            identifier,
+            baseUrl: options.apiUrl,
+            fetchImpl: options.fetchImpl,
+            now,
+          }),
+      )
+    : [];
 
   return async (request, extra) => {
     const required = [...(options.requiredScopes ?? []), ...(extra?.requiredScopes ?? [])];
@@ -566,7 +590,7 @@ export function createAccessTokenVerifier(
         return fail(401, 'invalid_token', 'The access token could not be validated right now.');
       }
       if (!active) return fail(401, 'invalid_token', 'The access token is invalid or expired.');
-      if (active.iss !== undefined && String(active.iss).replace(/\/+$/, '') !== issuer) {
+      if (active.iss !== undefined && !(await acceptedIssuers()).includes(String(active.iss).replace(/\/+$/, ''))) {
         return fail(401, 'invalid_token', 'The access token was issued by another authorization server.');
       }
       if (typeof active.exp === 'number' && active.exp * 1000 + ACCESS_TOKEN_CLOCK_SKEW_SECONDS * 1000 <= now()) {
@@ -578,7 +602,7 @@ export function createAccessTokenVerifier(
       if (!keys || keys.keys.length === 0) return fail(401, 'invalid_token', 'No signing keys are available to verify the token.');
       try {
         const { payload } = await jwtVerify(token, createLocalJWKSet(keys as never), {
-          issuer,
+          issuer: await acceptedIssuers(),
           algorithms: ATLAS_SIGNING_ALGS,
           clockTolerance: ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
           currentDate: new Date(now()),
@@ -600,9 +624,10 @@ export function createAccessTokenVerifier(
     }
 
     // Revoked token families and single tokens (the polled feed): no call per request.
-    if (revocationList) {
-      if (await revocationList.isRevoked(claims as { fid?: unknown; jti?: unknown })) return fail(401, 'invalid_token', 'The access token has been revoked.');
-      if (revocationList.unavailable()) return fail(401, 'invalid_token', 'Token revocation status is unavailable right now.');
+    if (revocationLists.length > 0) {
+      const revoked = await Promise.all(revocationLists.map((l) => l.isRevoked(claims as { fid?: unknown; jti?: unknown })));
+      if (revoked.some(Boolean)) return fail(401, 'invalid_token', 'The access token has been revoked.');
+      if (revocationLists.some((l) => l.unavailable())) return fail(401, 'invalid_token', 'Token revocation status is unavailable right now.');
     }
 
     // A token that is bound to nobody is refused where the resource demands a sender constraint.

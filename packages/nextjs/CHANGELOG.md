@@ -1,5 +1,10 @@
 # @atlasauth/nextjs changelog
 
+## 0.22.0
+
+- `@atlasauth/nextjs/server` adds `createSessionExchange`, idempotent per Atlas session, for the sign-in panels' `exchange`.
+- Requires @atlasauth/backend 0.66.0.
+
 ## 0.21.0
 
 - `csrf: { atlasSigned: true }` accepts the signed, session-bound Atlas CSRF cookie.

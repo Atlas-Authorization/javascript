@@ -1,5 +1,10 @@
 # @atlasauth/js changelog
 
+## 0.56.0
+
+- **behaviour:** `attribution` `read()` and `global` functions may return a Promise (1.5 s limit), so a late visit id is no longer lost.
+- Supports hosted-page sign-in method filters (`allowed_methods`) and the `inactive_methods` field of the client environment.
+
 ## 0.55.1
 
 - **behaviour:** `withDeviceBoundSession` now refreshes a device-bound session (with its device proof) before the start-up `GET /v1/client` when the stored session token is missing or about to expire, and sends that check with the fresh token. Before, a native app reopened after its short-lived token expired showed signed out.

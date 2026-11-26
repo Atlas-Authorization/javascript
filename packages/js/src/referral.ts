@@ -41,6 +41,7 @@
  * {@link withReferralParams} and {@link referralParams}.
  */
 
+import { withMethodFilter, type HostedMethodFilterInput } from './allowed-methods';
 import {
   REFERRAL_BROWSER_SOURCES,
   customReferral,
@@ -777,6 +778,8 @@ export interface HostedRedirectOptions extends ReferralRedirectOptions {
   redirectUrl?: string;
   /** `false`: return the URL without navigating. Default true. */
   navigate?: boolean;
+  /** Limit the hosted page to some sign-in methods: the signed list from the Backend API (`pageTemplates.hostedMethodFilter`) or its `query`. */
+  methodFilter?: HostedMethodFilterInput;
 }
 
 function hostedUrl(page: 'sign-in' | 'sign-up', options: HostedRedirectOptions): string {
@@ -789,7 +792,7 @@ function hostedUrl(page: 'sign-in' | 'sign-up', options: HostedRedirectOptions):
 }
 
 function go(page: 'sign-in' | 'sign-up', options: HostedRedirectOptions): string {
-  const target = withReferralParams(hostedUrl(page, options), options);
+  const target = withMethodFilter(withReferralParams(hostedUrl(page, options), options), options.methodFilter);
   if (options.navigate !== false) browser()?.location?.assign?.(target);
   return target;
 }

@@ -69,6 +69,14 @@ export function parsePasswordPolicy(raw: string | undefined): string | undefined
   return raw;
 }
 
+/** `--password-normalize`, checked. */
+export function parsePasswordNormalize(raw: string | undefined): string | undefined {
+  if (raw !== undefined && raw !== 'nfkc' && raw !== 'nfc' && raw !== 'none') {
+    throw new CliError(`--password-normalize must be nfkc, nfc or none, got '${raw}'.`);
+  }
+  return raw;
+}
+
 /** `--on-conflict`, checked. */
 export function parseOnConflict(raw: string | undefined, fallback: 'skip' | 'update'): 'skip' | 'update' {
   if (raw === undefined) return fallback;
@@ -84,6 +92,10 @@ interface InputRow {
   algorithm?: string;
   password_salt?: string;
   password_hash_params?: Record<string, unknown> | null;
+  /** nfkc | nfc | none: the Unicode form the old system hashed the password in. */
+  password_normalize?: string;
+  /** A second factor to import: { totp | hotp: { secret_base32, algorithm?, digits?, period? }, backup_codes?: [plaintext or bcrypt digests] }. */
+  mfa?: { totp?: Record<string, unknown>; hotp?: Record<string, unknown>; backup_codes?: unknown[] };
   first_name?: string;
   last_name?: string;
   oauth_identities?: Array<{ provider: string; provider_user_id: string }>;
@@ -100,6 +112,8 @@ const ROW_KEYS = [
   'algorithm',
   'password_salt',
   'password_hash_params',
+  'password_normalize',
+  'mfa',
   'first_name',
   'last_name',
   'oauth_identities',
@@ -199,6 +213,8 @@ function toImportRow(row: InputRow): Record<string, unknown> {
     if (hasParams) out.password_hash_params = row.password_hash_params;
   } else if (row.algorithm) out.password_hasher = row.algorithm;
   if (row.password_salt) out.password_salt = row.password_salt;
+  if (row.password_normalize !== undefined && row.password_digest) out.password_normalize = row.password_normalize;
+  if (row.mfa) out.mfa = row.mfa;
   if (row.first_name !== undefined) out.first_name = row.first_name;
   if (row.last_name !== undefined) out.last_name = row.last_name;
   if (row.created_at !== undefined) out.created_at = row.created_at;
@@ -248,12 +264,54 @@ async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Prom
 
 const BATCH = 100;
 
+const BCRYPT_CODE = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
+
+/** Per credential on a row: will it verify at the person's next sign-in? Mirrors what the API stores, so a dry run can say before anything is sent. */
+export function factorVerdicts(row: InputRow): Array<{ kind: string; will_verify: boolean; detail: string }> {
+  const out: Array<{ kind: string; will_verify: boolean; detail: string }> = [];
+  const mfa = row.mfa;
+  if (!mfa) return out;
+  const kind = mfa.hotp ? 'hotp' : 'totp';
+  const f = (mfa.hotp ?? mfa.totp) as Record<string, unknown> | undefined;
+  if (f) {
+    const secret = typeof f.secret_base32 === 'string' ? f.secret_base32.replace(/[\s=-]/g, '') : '';
+    const algo = String(f.algorithm ?? 'SHA1').toUpperCase().replace(/^HMAC-?/, '').replace('-', '');
+    const digitsOk = f.digits === undefined || Number(f.digits) === 6 || Number(f.digits) === 8;
+    const periodOk = kind === 'hotp' || f.period === undefined || Number(f.period) === 30 || Number(f.period) === 60;
+    const problem = !/^[A-Za-z2-7]+$/.test(secret)
+      ? 'secret_base32 is not valid base32'
+      : !['SHA1', 'SHA256', 'SHA512'].includes(algo)
+        ? 'algorithm must be SHA1, SHA256 or SHA512'
+        : !digitsOk
+          ? 'digits must be 6 or 8'
+          : !periodOk
+            ? 'period must be 30 or 60 seconds'
+            : null;
+    out.push({ kind, will_verify: problem === null, detail: problem ?? 'codes from the old authenticator keep working' });
+  }
+  if (mfa.backup_codes !== undefined) {
+    const codes = Array.isArray(mfa.backup_codes) ? mfa.backup_codes : [];
+    const bad = codes.filter((c) => typeof c !== 'string' || (c.startsWith('$') && (!BCRYPT_CODE.test(c.trim()) || Number(c.trim().slice(4, 6)) > 12)));
+    out.push({
+      kind: 'backup_codes',
+      will_verify: f !== undefined && bad.length === 0 && codes.length > 0,
+      detail: !f
+        ? 'recovery codes need a totp or hotp factor beside them'
+        : bad.length
+          ? `${bad.length} code(s) are hashed in a format Atlas cannot check; use plaintext codes or bcrypt digests ($2a$/$2b$/$2y$, cost 12 or less)`
+          : `${codes.length} code(s): plaintext, or bcrypt digests checked against the code as typed`,
+    });
+  }
+  return out;
+}
+
 export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: string): Promise<number> {
   const v = args.values;
   const json = wantsJson(v);
   const dry = v['dry-run'] === true;
   const onConflict = parseOnConflict(str(v, 'on-conflict'), 'skip');
   const policy = parsePasswordPolicy(str(v, 'password-policy'));
+  const normalize = parsePasswordNormalize(str(v, 'password-normalize'));
   const since = parseSince(str(v, 'since'));
   const all = parseUsersJsonl(ctx.readFile(file));
 
@@ -355,6 +413,7 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
     ...(skippedUnheld.length ? [`${skippedUnheld.length} existing unverified row(s) were skipped, so this run did not protect them. If they were imported without a hold, run again with --on-conflict update. external_id: ${skippedUnheld.join(', ')}`] : []),
   ];
 
+  const factorRows = rows.map((r) => ({ external_id: r.external_id, factors: factorVerdicts(r) })).filter((r) => r.factors.length > 0);
   if (dry) {
     const unheld = creates.filter((r) => r.email_verified !== true && (r.external_accounts || r.password_hash) && !(wantsHold && r.password_hash));
     if (unheld.length) rowWarned.set('unverified_without_hold', new Set(unheld.map((r) => String(r.external_id))));
@@ -365,7 +424,7 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
     const unsupported = new Map<string, string[]>();
     const unmatched: string[] = [];
     const send = async (batch: Record<string, unknown>[], upsert: boolean) => {
-      const job = await sendImportBatch(ctx, http, { users: batch, upsert, ...(policy ? { password_policy: policy } : {}) });
+      const job = await sendImportBatch(ctx, http, { users: batch, upsert, ...(policy ? { password_policy: policy } : {}), ...(normalize ? { password_normalize: normalize } : {}) });
       report.jobs.push(job.id);
       collectRowWarnings(job, batch, rowWarned);
       if (job.failed > 0) {
@@ -413,7 +472,7 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
   }
   for (const [code, ids] of rowWarned) warn(code, [...ids], rowWarningText(code));
 
-  if (json) printJson(ctx.io, { dry_run: dry, ...report, notes, warnings });
+  if (json) printJson(ctx.io, { dry_run: dry, ...report, notes, warnings, ...(dry && factorRows.length ? { factors: factorRows } : {}) });
   else {
     const landed = report.created + report.updated;
     ctx.io.out(dry ? `Dry run: would import ${landed} of ${all.length} row(s). Nothing was sent.` : `Imported ${landed} of ${all.length} row(s).`);
@@ -423,6 +482,7 @@ export async function importJsonl(ctx: RunContext, args: ParsedArgs, file: strin
     ctx.io.out(`  unverified with password: ${report.unverified_with_password}`);
     if (!dry) ctx.io.out(`  failed: ${report.failed}`);
     for (const n of notes) ctx.io.out(`  note: ${n}`);
+    if (dry) for (const r of factorRows) for (const x of r.factors) ctx.io.out(`  factor: ${r.external_id} ${x.kind} ${x.will_verify ? 'will verify' : "won't verify"}: ${x.detail}`);
     for (const w of warnings) ctx.io.out(`  warning: ${w.code}: ${w.count} row(s) ${w.message} external_id: ${w.external_ids.join(', ')}`);
     if (report.failed) ctx.io.out(`Per-row issues: GET /v1/jobs/<job-id>/errors for jobs ${report.jobs.join(', ')}`);
   }

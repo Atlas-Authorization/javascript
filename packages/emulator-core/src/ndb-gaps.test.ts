@@ -37,6 +37,24 @@ describe('hooks, forwarding and instance reads', () => {
     expect((await c('POST', '/v1/instance/hooks/before_first_session/test')).json).toMatchObject({ ok: false, error: { code: 'not_configured' } });
   });
 
+  it('forwards security events to watchtower like the server does', async () => {
+    const c = call();
+    expect((await c('PUT', '/v1/instance/integrations/forwarding/watchtower', { server_key: 'wt_ingest_1234' })).status).toBe(400);
+    expect((await c('PUT', '/v1/instance/integrations/forwarding/watchtower', { server_key: 'wt_ingest_1234', endpoint: 'http://insecure.example.com' })).status).toBe(400);
+    expect((await c('PUT', '/v1/instance/integrations/forwarding/lucida', { server_key: 'sk_lucida_1', endpoint: 'https://x.example.com' })).status).toBe(400);
+    const put = await c('PUT', '/v1/instance/integrations/forwarding/watchtower', { server_key: 'wt_ingest_1234', endpoint: 'https://ingest.example.com' });
+    expect(put.status).toBe(201);
+    expect(put.json).toMatchObject({ forwarding: 'watchtower', created: true, endpoint: 'https://ingest.example.com' });
+    expect(put.json.events).toContain('user.locked');
+    expect(put.json.events).not.toContain('user.created');
+    expect(JSON.stringify(put.json)).not.toContain('wt_ingest_1234');
+    // A repeat call keeps the saved host.
+    const again = await c('PUT', '/v1/instance/integrations/forwarding/watchtower', { active: false });
+    expect(again.json).toMatchObject({ created: false, active: false, endpoint: 'https://ingest.example.com' });
+    expect((await c('GET', '/v1/instance/integrations/forwarding/watchtower')).status).toBe(200);
+    expect((await c('DELETE', '/v1/instance/integrations/forwarding/watchtower')).status).toBe(204);
+  });
+
   it('forwards sign-ups, lists health and answers the issuers', async () => {
     const c = call();
     expect((await c('PUT', '/v1/instance/integrations/forwarding/lucida', {})).status).toBe(400);

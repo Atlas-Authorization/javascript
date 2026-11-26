@@ -2,30 +2,49 @@ import { describe, expect, it } from 'vitest';
 import { captureAttributionFields } from './attribution-fields';
 
 describe('captureAttributionFields', () => {
-  it('reads read(), skips empty and swallows throwing sources', () => {
+  it('reads read(), skips empty and swallows throwing sources', async () => {
     expect(
-      captureAttributionFields({
+      await captureAttributionFields({
         a: { read: () => 'tok' },
         b: { read: () => '' },
         c: { read: () => { throw new Error('x'); } },
       }),
     ).toEqual({ a: 'tok' });
   });
-  it('reads a cookie, a query parameter and a global function', () => {
+  it('reads a cookie, a query parameter and a global function', async () => {
     const doc = { cookie: 'x=1; sv=a%20b' };
     (globalThis as any).window = { location: { search: '?q=z' }, seo: (a: string) => `v-${a}` };
     (globalThis as any).document = doc;
     try {
       expect(
-        captureAttributionFields({ c: { cookie: 'sv' }, q: { query: 'q' }, g: { global: 'seo', globalArg: 'visit' } }),
+        await captureAttributionFields({ c: { cookie: 'sv' }, q: { query: 'q' }, g: { global: 'seo', globalArg: 'visit' } }),
       ).toEqual({ c: 'a b', q: 'z', g: 'v-visit' });
     } finally {
       delete (globalThis as any).window;
       delete (globalThis as any).document;
     }
   });
-  it('is empty with no options', () => {
-    expect(captureAttributionFields(undefined)).toEqual({});
+  it('is empty with no options', async () => {
+    expect(await captureAttributionFields(undefined)).toEqual({});
+  });
+  it('awaits a Promise from read() and from a global function', async () => {
+    (globalThis as any).window = { seo: async (a: string) => `p-${a}` };
+    try {
+      expect(
+        await captureAttributionFields({
+          r: { read: () => Promise.resolve('late') },
+          g: { global: 'seo', globalArg: 'visit' },
+          rej: { read: () => Promise.reject(new Error('x')) },
+        }),
+      ).toEqual({ r: 'late', g: 'p-visit' });
+    } finally {
+      delete (globalThis as any).window;
+    }
+  });
+  it('gives up on a Promise that never settles', async () => {
+    const t0 = Date.now();
+    expect(await captureAttributionFields({ s: { read: () => new Promise<string>(() => {}) } })).toEqual({});
+    expect(Date.now() - t0).toBeLessThan(5000);
   });
 });
 
@@ -79,5 +98,24 @@ describe('attribution on every account-creating start', () => {
     await c.post('/v1/client/me', { x: 1 });
     expect(seen.slice(0, 4).every((s) => JSON.parse(s.body).unsafe_metadata?.v === 't')).toBe(true);
     expect(JSON.parse(seen[4]!.body).unsafe_metadata).toBeUndefined();
+  });
+});
+
+describe('methodFilter', () => {
+  it('is sent as X-Atlas-Allowed-Methods on every request', async () => {
+    const seen: Array<Record<string, string>> = [];
+    const c = new FapiClient({
+      publishableKey: 'pk_test_abc',
+      baseUrl: 'https://fapi.test',
+      referral: false,
+      methodFilter: 'passkey,password.sig',
+      fetchImpl: (async (_url: string, init: RequestInit) => {
+        seen.push(init.headers as Record<string, string>);
+        return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+      }) as unknown as typeof fetch,
+    });
+    await c.get('/v1/client');
+    await c.post('/v1/client/sign_ins', { identifier: 'a@b.co' });
+    expect(seen.every((h) => h['x-atlas-allowed-methods'] === 'passkey,password.sig')).toBe(true);
   });
 });

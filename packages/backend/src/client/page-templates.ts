@@ -62,6 +62,17 @@ export interface PageTemplatePreview {
   expires_at: number;
 }
 
+export interface HostedMethodFilter {
+  object: 'hosted_method_filter';
+  methods: string[];
+  allowed_methods: string;
+  allowed_methods_sig: string;
+  /** `<allowed_methods>.<allowed_methods_sig>`: pass as `allowedMethods` to the React panels or `methodFilter` to the browser SDK client. */
+  token: string;
+  /** Both parameters, URL-encoded, ready to append to a hosted sign-in or sign-up URL. */
+  query: string;
+}
+
 export function pageTemplatesResource(request: RequestFn) {
   return {
     /** Every page's instance-wide template, then one entry per other audience that has one; `audience` returns only that audience's pages. */
@@ -82,6 +93,13 @@ export function pageTemplatesResource(request: RequestFn) {
     /** Make the draft the live template. */
     promote(page: PageTemplatePage, audience?: PageTemplateAudience): Promise<PageTemplate> {
       return request({ method: 'POST', path: `/v1/instance/page_templates/${enc(page)}/promote`, query: audience ? { ...audience } : undefined });
+    },
+    /**
+     * Limit a hosted sign-in or sign-up page to some sign-in methods (`password`, `email_code`, `passkey`, `oauth`, `oauth_google`, …).
+     * Append `.query` to the page URL; the page offers only those methods and the ticket exchange refuses a sign-in made another way.
+     */
+    hostedMethodFilter(methods: string[]): Promise<HostedMethodFilter> {
+      return request({ method: 'POST', path: '/v1/instance/hosted_method_filters', body: { methods } });
     },
     /** Drop the draft, or take the live template down (the page then draws the next template in the chain). */
     discard(page: PageTemplatePage, status: 'draft' | 'live', audience?: PageTemplateAudience): Promise<PageTemplate> {

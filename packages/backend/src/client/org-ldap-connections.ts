@@ -31,6 +31,9 @@ export interface OrgLdapConnection {
   user_filter: string;
   start_tls: boolean;
   require_consent_screen: boolean;
+  /** The explicit linking mode; null = the default (`same_org_only`). */
+  account_linking: 'email' | 'same_org_only' | 'none' | null;
+  account_linking_effective: 'email' | 'same_org_only' | 'none';
   attributes: OrgLdapAttributeMap;
   group_role_mappings: OrgLdapGroupRoleMapping[];
   has_bind_password: boolean;
@@ -52,6 +55,8 @@ export interface UpdateOrgLdapConnectionBody {
   start_tls?: boolean;
   /** Ask the person to confirm the sign-in before it completes (the sign-in response then carries `consent_required`). */
   require_consent_screen?: boolean;
+  /** May a directory sign-in link to an existing user by shared email: `same_org_only` (default), `none` or `email`; null restores the default. */
+  account_linking?: 'email' | 'same_org_only' | 'none' | null;
   attributes?: OrgLdapAttributeMap;
   /** The first mapping whose group the person is in picks their role when they are seated; null clears. */
   group_role_mappings?: OrgLdapGroupRoleMapping[] | null;

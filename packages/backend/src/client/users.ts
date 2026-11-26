@@ -328,6 +328,13 @@ export interface ListUsersParams extends CursorParams {
 export interface CreateUserBody {
   email_address: string;
   password?: string;
+  /** An existing hash to import instead of a plaintext `password`. */
+  password_hash?: string;
+  password_hash_algorithm?: string;
+  password_hash_params?: Record<string, string | number | boolean>;
+  password_salt?: string;
+  /** The Unicode form the old system hashed the password in: `nfkc`, `nfc` or `none` (default). */
+  password_normalize?: 'nfkc' | 'nfc' | 'none';
   first_name?: string;
   last_name?: string;
   /** The profile picture: an https URL, stored as given. */

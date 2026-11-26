@@ -4,7 +4,8 @@ import { EmulatorError, notFound } from '../errors';
 import type { Obj } from '../openapi';
 import { Table } from '../store';
 import { adv } from './oauth-adv';
-import { consentGrants } from './oauth-flows';
+import { consentGrants, consentHoldById, grantEvent, pairHolds, removeConsentHold } from './oauth-flows';
+import { revokeGrant, st as oauthSt } from './oauth';
 import { bad, canonical, hex, isObj, listOf, pageReply } from './emu4-shared';
 import { engineState } from './support';
 import { dsrRows } from './emu3-misc';
@@ -22,7 +23,10 @@ const DAY = 86_400_000;
 const MAX_DEV_APP_MS = 90 * DAY;
 const PLATFORMS = ['ios', 'android', 'development'];
 const BAD_SCHEMES = ['http:', 'javascript:', 'data:', 'file:', 'ftp:', 'blob:', 'about:', 'vbscript:'];
-const DESTINATIONS = ['lucida', 'hermetica', 'seolyticize', 'webhook'];
+const DESTINATIONS = ['lucida', 'hermetica', 'seolyticize', 'webhook', 'watchtower'];
+/** What watchtower forwarding delivers, as on the server: security events, never sign-ups. */
+const WATCHTOWER_EVENTS = ['user.locked', 'user.banned', 'user.contained', 'risky_user.updated', 'session.impersonation_started', 'mfa_factor.quarantined'];
+const eventsOf = (dest: unknown): string[] => (dest === 'watchtower' ? WATCHTOWER_EVENTS : ['user.created']);
 
 interface State {
   apps: Table;
@@ -256,7 +260,7 @@ function hookRoutes(): RouteDef[] {
 
 // ── sign-up forwarding, integration health, issuers, cookie consent ──
 
-const forwardingView = (f: Obj): Obj => ({ object: 'integration_forwarding', forwarding: f.forwarding, event: 'user.created', id: f.id, active: f.active, ...(f.site_key ? { site_key: f.site_key } : {}), ...(f.site_url ? { site_url: f.site_url } : {}), ...(f.host ? { host: f.host } : {}), ...(f.conversion_event ? { conversion_event: f.conversion_event } : {}), ...(f.include_pii !== undefined ? { include_pii: f.include_pii } : {}), ...(f.url ? { url: f.url } : {}) });
+const forwardingView = (f: Obj): Obj => ({ object: 'integration_forwarding', forwarding: f.forwarding, event: eventsOf(f.forwarding)[0], events: eventsOf(f.forwarding), id: f.id, active: f.active, ...(f.site_key ? { site_key: f.site_key } : {}), ...(f.site_url ? { site_url: f.site_url } : {}), ...(f.host ? { host: f.host } : {}), ...(f.conversion_event ? { conversion_event: f.conversion_event } : {}), ...(f.include_pii !== undefined ? { include_pii: f.include_pii } : {}), ...(f.url ? { url: f.url } : {}), ...(f.endpoint ? { endpoint: f.endpoint } : {}) });
 
 function destinationOf(c: { params: Record<string, string | undefined> }): string {
   const d = c.params.destination;
@@ -267,7 +271,7 @@ function destinationOf(c: { params: Record<string, string | undefined> }): strin
 const endpointState = (ep: Obj): string => (ep.active === false ? 'disabled' : (ep.consecutive_failures ?? 0) > 0 ? 'failing' : ep.last_success_at ? 'healthy' : 'no_deliveries');
 
 function integrationRoutes(): RouteDef[] {
-  const FIELDS = ['server_key', 'site_key', 'site_url', 'host', 'conversion_event', 'include_pii', 'url', 'active'];
+  const FIELDS = ['server_key', 'site_key', 'site_url', 'host', 'conversion_event', 'include_pii', 'url', 'endpoint', 'active'];
   return [
     {
       method: 'PUT',
@@ -283,6 +287,11 @@ function integrationRoutes(): RouteDef[] {
           const url = b.url ?? prior?.url;
           if (typeof url !== 'string' || !url.startsWith('https://')) throw bad('webhook forwarding needs an https url.', 'url');
         } else if (!prior && typeof b.server_key !== 'string') throw bad(`${dest} forwarding needs server_key.`, 'server_key');
+        if (b.endpoint !== undefined && dest !== 'watchtower') throw bad('endpoint is for watchtower forwarding.', 'endpoint');
+        if (dest === 'watchtower') {
+          const endpoint = b.endpoint ?? prior?.endpoint;
+          if (typeof endpoint !== 'string' || !endpoint.startsWith('https://')) throw bad('watchtower forwarding needs endpoint, your https ingest host.', 'endpoint');
+        }
         if (dest === 'seolyticize' && typeof (b.site_key ?? prior?.site_key) !== 'string') throw bad('seolyticize forwarding needs site_key.', 'site_key');
         if (b.conversion_event !== undefined && (dest !== 'seolyticize' || !['user.created', 'user.attributed'].includes(b.conversion_event))) throw bad('conversion_event is user.created or user.attributed, for seolyticize.', 'conversion_event');
         for (const k of ['include_pii', 'active']) if (b[k] !== undefined && typeof b[k] !== 'boolean') throw bad(`${k} is true or false.`, k);
@@ -590,9 +599,9 @@ function grantRoutes(): RouteDef[] {
       return { object: 'grant', id: m.id, type: 'managed', client_id: m.clientId, client_name: client?.name ?? null, user_id: m.userId, organization_id: null, status: m.status, scopes: m.scopes, resource: null, authorization_details: m.details, revision: m.revision, metadata: meta(m.id), created_at: m.createdAt, updated_at: m.updatedAt, last_used_at: null, revoked_at: m.status === 'revoked' ? m.updatedAt : null, revoked_by: m.status === 'revoked' ? 'admin' : null };
     });
     const consent = consentGrants(e).map((g) => {
-      const id = `consent_${g.userId}_${g.clientId}`;
+      const id = g.id;
       const client = e.db.oauthClients.get(g.clientId);
-      return { object: 'grant', id, type: 'consent', client_id: g.clientId, client_name: client?.name ?? null, user_id: g.userId, organization_id: null, status: 'active', scopes: g.scopes, resource: null, authorization_details: null, metadata: meta(id), created_at: g.at, updated_at: g.at, last_used_at: null, revoked_at: null, revoked_by: null };
+      return { object: 'grant', id, type: 'consent', client_id: g.clientId, client_name: client?.name ?? null, user_id: g.userId, organization_id: g.organizationId, remembered: g.remembered, status: 'active', scopes: [...g.scopes], resource: null, authorization_details: null, metadata: meta(id), created_at: g.at, updated_at: g.at, last_used_at: null, revoked_at: null, revoked_by: null };
     });
     return [...managed, ...consent].sort((a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : -1));
   };
@@ -616,6 +625,28 @@ function grantRoutes(): RouteDef[] {
       },
     },
     { method: 'GET', pattern: '/v1/grants/:id', handler: (c) => ({ body: one(c.engine, c.params.id) }) },
+    {
+      // Revoke one consent. Another organization's consent for the same app stands (only this organization's tokens end);
+      // the last consent of the pair ends every token that is left.
+      method: 'DELETE',
+      pattern: '/v1/grants/:id',
+      handler: (c) => {
+        const e = c.engine;
+        const g = one(e, c.params.id);
+        const hold = consentHoldById(e, c.params.id);
+        if (g.type !== 'consent' || !hold) throw bad('Only a consent grant is revoked here; revoke a managed grant through the grant-management API.', 'id');
+        const onlyOrg = hold.organizationId && pairHolds(e, hold.userId, hold.clientId).some((h) => h.id !== hold.id) ? hold.organizationId : undefined;
+        let revoked = 0;
+        for (const t of oauthSt(e).grants.values()) {
+          if (t.clientId !== hold.clientId || t.userId !== hold.userId || t.revoked || (onlyOrg !== undefined && (t.organizationId ?? null) !== onlyOrg)) continue;
+          revokeGrant(e, t);
+          revoked++;
+          e.webhooks.emit('grant.revoked', { ...grantEvent(e, { id: t.id, userId: hold.userId, clientId: hold.clientId, organizationId: t.organizationId ?? null, scopes: new Set(t.scope), at: hold.at }), session_ids: [] });
+        }
+        removeConsentHold(e, hold);
+        return { body: { object: 'grant', id: g.id, type: 'consent', deleted: true, tokens_revoked: revoked } };
+      },
+    },
     {
       method: 'PATCH',
       pattern: '/v1/grants/:id',

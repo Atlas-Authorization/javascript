@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  methodAllowed,
   atlasCaptchaLabels,
   listPublicPlans,
   planPriceView,
@@ -24,6 +25,7 @@ import {
   uploadJourneyFile,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
+import { AllowedMethodsProvider, useAllowedMethods } from './allowed-methods';
 import { FapiClient, type FlowState } from './fapi';
 import { AttemptFlow, useFlow, usePrefilledValues, type FlowProps } from './flow';
 import { CaptchaSlot, localizeCaptchaErrors, useCaptcha, type CaptchaController } from './captcha';
@@ -61,7 +63,8 @@ import { ATLAS_REACT_SDK } from './version';
 export function SignUp(props: FlowProps = {}) {
   const link = useEmailLink('sign_up');
   if (useAtlas().inert) return null;
-  return link ? <EmailLinkPage link={link} hideTitle={props.hideTitle} /> : <SignUpFlow {...props} />;
+  const body = link ? <EmailLinkPage link={link} hideTitle={props.hideTitle} /> : <SignUpFlow {...props} />;
+  return <AllowedMethodsProvider value={props.allowedMethods}>{body}</AllowedMethodsProvider>;
 }
 
 function SignUpFlow(props: FlowProps) {
@@ -82,6 +85,8 @@ function SignUpFlow(props: FlowProps) {
   );
   const { state, setState, submit, client, finish, saveRecoveryCodes, continueAfterExistingAccount } = useFlow({
     afterUrl: props.afterUrl,
+    onSignedIn: props.onSignedIn,
+    exchange: props.exchange,
     afterSignIn,
     signInCaptcha: false,
     holdExistingAccountNotice: true,
@@ -93,7 +98,8 @@ function SignUpFlow(props: FlowProps) {
   const referralChallenge = useReferralChallenge(client, instanceSettings);
   const signUpFlow = forceCaptchaFlow(instanceSettings?.captchaFlows.signUp, referralChallenge);
   const passkeyOffer = instanceSettings?.account?.passkeySignUp ?? null;
-  const canPasskey = !!passkeyOffer && passkeysSupported();
+  const allowedMethods = useAllowedMethods();
+  const canPasskey = !!passkeyOffer && passkeysSupported() && methodAllowed('passkey', allowedMethods);
   const [mode, setMode] = useState<'password' | 'passkey'>('password');
   const usingPasskey = mode === 'passkey' && canPasskey;
   const emailUnavailable =

@@ -39,12 +39,16 @@ import {
   startOauthRedirect,
   startOauthPopup,
   signUp as hostedSignUp,
+  filterFactors,
+  methodAllowed,
   type AttemptView,
   type EmailFactor,
   type FieldError,
   type ReferralConsent,
 } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
+import { useAllowedMethods, useMethodFilterToken } from './allowed-methods';
+import { runSignedIn as runSignedInHooks, type SignedInContext } from './signed-in';
 import {
   FapiClient,
   advance,
@@ -88,6 +92,28 @@ import { ATLAS_REACT_SDK } from './version';
 export interface FlowProps {
   /** Where to send the user once the flow completes. */
   afterUrl?: string;
+  /**
+   * Runs once the session is held, BEFORE the redirect to `afterUrl`, and is awaited: the panel shows its
+   * pending state meanwhile and navigates only when it resolves. A returned string overrides `afterUrl`;
+   * a throw keeps the user on the panel with an error and does not navigate. Use it to trade the Atlas
+   * token for your own session. Runs after `exchange` when both are set.
+   */
+  onSignedIn?: (ctx: SignedInContext) => Promise<string | void>;
+  /**
+   * A path on your app (`/api/auth/atlas/session`) that receives `POST` with the session token (as
+   * `{ token }` and as a bearer `Authorization` header) once the session is held. The panel navigates only
+   * after it answers 2xx; any other answer keeps the user on the panel with an error. Pair it with
+   * `createSessionExchange` from `@atlasauth/nextjs/server`.
+   */
+  exchange?: string;
+  /**
+   * Offer only these sign-in methods: `password`, `email_code`, `email_link`, `phone_code`, `passkey`,
+   * `oauth_<provider>` (`oauth_google`), a family (`oauth`, `enterprise_sso`). It narrows what the instance has on,
+   * never adds a method. A plain list only changes what the panel draws. Pass the signed token instead
+   * (`token` from `pageTemplates.hostedMethodFilter` in `@atlasauth/backend`) and the server enforces it too:
+   * it is sent with every call, bound to each attempt, and no session is created for a method outside it.
+   */
+  allowedMethods?: string[] | string;
   /**
    * `<SignUp>`: offer the instance's plans as a step before the account form and,
    * once the account exists, send the user straight to Checkout for the chosen
@@ -335,6 +361,7 @@ export function AttemptFlow({
     if (Object.keys(seed).length) setValues((cur) => ({ ...seed, ...cur }));
   }, [owedFormId]); // eslint-disable-line react-hooks/exhaustive-deps
   // The MFA steps: what the app offers, and the enrolment step's own state.
+  const allowedMethods = useAllowedMethods();
   const mfaChoices = useMfaChoices();
   const enrolment = useMfaEnrollment(attempt?.id ?? null, step.kind === 'enroll_second_factor');
   const enrolSubmitKey = step.kind === 'enroll_second_factor' ? enrollmentSubmitKey(enrolment.state) : null;
@@ -346,7 +373,7 @@ export function AttemptFlow({
    */
   const firstFactors =
     step.kind === 'collect_first_factor'
-      ? offeredFirstFactors(step.strategies, instanceSettings?.emailDelivery)
+      ? filterFactors(offeredFirstFactors(step.strategies, instanceSettings?.emailDelivery), allowedMethods)
       : [];
   const noFirstFactor =
     step.kind === 'collect_first_factor' && step.strategies.length > 0 && firstFactors.length === 0;
@@ -931,6 +958,8 @@ function navigateAfterComplete(afterUrl?: string): void {
  */
 export function useFlow({
   afterUrl,
+  onSignedIn,
+  exchange,
   afterSignIn,
   signInCaptcha = true,
   holdExistingAccountNotice = false,
@@ -938,6 +967,10 @@ export function useFlow({
   referralConsent,
 }: {
   afterUrl?: string;
+  /** See {@link FlowProps.onSignedIn}. */
+  onSignedIn?: FlowProps['onSignedIn'];
+  /** See {@link FlowProps.exchange}. */
+  exchange?: string;
   /** Wait for `continueAfterExistingAccount` (see `pendingExistingAccountNotice`). `<SignUp>` draws the notice. */
   holdExistingAccountNotice?: boolean;
   /**
@@ -957,8 +990,14 @@ export function useFlow({
    */
   signInCaptcha?: boolean;
 } = {}) {
-  const { publishableKey, frontendApi, locale, reload, pendingAttempt, instanceSettings, broadcastSessionChange } = useAtlas();
+  const { publishableKey, frontendApi, locale, reload, pendingAttempt, instanceSettings, broadcastSessionChange, getToken } = useAtlas();
   const t = useText();
+  const allowedMethods = useAllowedMethods();
+  const methodFilterToken = useMethodFilterToken();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+  const onSignedInRef = useRef(onSignedIn);
+  onSignedInRef.current = onSignedIn;
   // Seeded from a redirect that came back mid-flow (e.g. OAuth needing a second
   // factor), so the user resumes at the demanded step instead of starting over.
   const [state, setState] = useState<FlowState>(() => flowFromPending(pendingAttempt));
@@ -981,8 +1020,9 @@ export function useFlow({
         sdk: ATLAS_REACT_SDK,
         referral,
         referralConsent: consent,
+        methodFilter: methodFilterToken ?? undefined,
       }),
-    [frontendApi, publishableKey, locale, referral, consent],
+    [frontendApi, publishableKey, locale, referral, consent, methodFilterToken],
   );
   // A referred sign-in / sign-up shows the challenge when the instance asks for it.
   const referralChallenge = useReferralChallenge(client, instanceSettings);
@@ -1002,6 +1042,20 @@ export function useFlow({
 
     atlasLabels: atlasCaptchaLabels(t),
   });
+
+  /**
+   * `exchange` then `onSignedIn`, once the session is held. `failed` keeps the user on the panel with an
+   * error (no navigation); `url` is an `onSignedIn` override of `afterUrl`.
+   */
+  const runSignedIn = useCallback(
+    () =>
+      runSignedInHooks({
+        exchange,
+        onSignedIn: onSignedInRef.current,
+        getToken: (o) => getTokenRef.current(o),
+      }),
+    [exchange],
+  );
 
   // Apply a driver result to the UI, and — on completion — exchange the one-time
   // ticket (§7.1) for cookies over a same-origin request (FAPI is cross-origin
@@ -1047,22 +1101,36 @@ export function useFlow({
         return;
       }
       const kept = exchanged && (await reload());
-      setState({ ...next, busy: false, sessionKept: kept });
+      const hooked = !!(onSignedInRef.current || exchange);
+      setState({ ...next, busy: kept && hooked, sessionKept: kept });
       if (!kept) {
         warnSessionNotKept(exchanged, afterUrl);
         return;
       }
       // §R3.2 wake sibling tabs now, rather than when they next gain focus.
       broadcastSessionChange();
+      // Await the app's own session exchange before navigating (pending state = busy).
+      const hook = await runSignedIn();
+      if (hooked) {
+        const stays = hook.failed || !(hook.url ?? afterUrlTarget(afterUrl) ?? journeyUrl);
+        if (stays) {
+          setState((cur) => ({
+            ...cur,
+            busy: false,
+            errors: hook.failed ? [{ code: 'SIGNED_IN_HOOK_FAILED', message: t('error.generic') }] : cur.errors,
+          }));
+        }
+        if (hook.failed) return;
+      }
       if (afterSignIn && (await afterSignIn(client))) return;
       if (journeyUrl && typeof window !== 'undefined') {
         window.location.assign(journeyUrl);
         return;
       }
       // §10.2 send the user on once signed-in — no-op when afterUrl is unset.
-      navigateAfterComplete(afterUrl);
+      navigateAfterComplete(hook.url ?? afterUrl);
     },
-    [afterSignIn, afterUrl, broadcastSessionChange, client, holdExistingAccountNotice, reload],
+    [afterSignIn, afterUrl, broadcastSessionChange, client, exchange, holdExistingAccountNotice, reload, runSignedIn, t],
   );
 
   const submit = useCallback(
@@ -1168,7 +1236,7 @@ export function useFlow({
   const step = state.attempt ? nextStep(state.attempt) : null;
   const autoSend =
     step?.kind === 'collect_first_factor'
-      ? planFirstFactor(offeredFirstFactors(step.strategies, instanceSettings?.emailDelivery)).autoSend
+      ? planFirstFactor(filterFactors(offeredFirstFactors(step.strategies, instanceSettings?.emailDelivery), allowedMethods)).autoSend
       : null;
   const attemptId = state.attempt?.id ?? null;
   const autoSentFor = useRef<string | null>(null);
@@ -1199,23 +1267,30 @@ export function useFlow({
           ticket,
         });
         const kept = res.ok && (await reload());
-        setState((current) => ({ ...current, busy: false, sessionKept: kept }));
+        const hooked = !!(onSignedInRef.current || exchange);
+        setState((current) => ({ ...current, busy: kept && hooked, sessionKept: kept }));
         if (!kept) {
           warnSessionNotKept(res.ok, afterUrl);
           return;
         }
+        const hook = await runSignedIn();
+        if (hook.failed) {
+          setState((current) => ({ ...current, busy: false, errors: [{ code: 'SIGNED_IN_HOOK_FAILED', message: t('error.generic') }] }));
+          return;
+        }
+        if (hooked) setState((current) => ({ ...current, busy: false }));
         const journeyUrl = journeyRedirectUrl(res.data);
         if (journeyUrl && typeof window !== 'undefined') {
           window.location.assign(journeyUrl);
           return;
         }
         // §10.2 a cross-device sign-in that completes here redirects too.
-        navigateAfterComplete(afterUrl);
+        navigateAfterComplete(hook.url ?? afterUrl);
       })();
     }, 2_000);
 
     return () => clearInterval(timer);
-  }, [afterUrl, client, reload, state]);
+  }, [afterUrl, client, exchange, reload, runSignedIn, state, t]);
 
   /** "I've saved my codes": forget the recovery codes and finish the sign-in. */
   const saveRecoveryCodes = useCallback(() => {
@@ -1912,15 +1987,16 @@ export function SocialSignInButtons({
   const errorText = useErrorText();
   const effectiveMode = oauthMode ?? providerOauthMode ?? 'redirect';
   const { environment, loadEnvironment, appearanceData } = useAtlas();
+  const allowedMethods = useAllowedMethods();
   const lastMethod = useLastSignInMethod(client);
   // From the provider's own `/v1/appearance` (server-seeded or fetched once); no
   // Atlas button until it is known.
   const atlasConnection = useMemo(
     () =>
-      appearanceData && typeof appearanceData === 'object'
+      appearanceData && typeof appearanceData === 'object' && methodAllowed('sso_oidc', allowedMethods)
         ? atlasSsoTarget(appearanceData as { sign_in_with_atlas?: { enabled: boolean; connection_id?: string } })
         : null,
-    [appearanceData],
+    [appearanceData, allowedMethods],
   );
   const [atlasError, setAtlasError] = useState<string | null>(null);
 
@@ -1946,7 +2022,7 @@ export function SocialSignInButtons({
   // HTML when it was fetched there, else as soon as the one shared request lands.
   const redirectProviders = useMemo(() => {
     const list = ((environment as { social_providers?: EnvSocialProvider[] } | null)?.social_providers ?? [])
-      .filter((p) => p.allow_sign_in !== false)
+      .filter((p) => p.allow_sign_in !== false && methodAllowed(`oauth_${p.provider}`, allowedMethods))
       // Google renders as the native GSI button below — UNLESS the instance
       // resolved it to redirect mode (§2.1a), in which case it needs an ordinary
       // redirect button here (GoogleSignInButton renders nothing for a non-native
@@ -1959,7 +2035,7 @@ export function SocialSignInButtons({
       // provider both render their mark, not label-only.
       .map((p) => ({ provider: p.provider, label: p.label, icon: p.icon }));
     return list;
-  }, [environment]);
+  }, [environment, allowedMethods]);
   useEffect(() => {
     if (environment == null) void loadEnvironment();
   }, [environment, loadEnvironment]);
@@ -2013,6 +2089,7 @@ export function SocialSignInButtons({
 
   return (
     <>
+      {methodAllowed('oauth_google', allowedMethods) ? (
       <GoogleSignInButton
         client={client}
         onComplete={onComplete}
@@ -2023,6 +2100,7 @@ export function SocialSignInButtons({
           onProviderUnavailable ? (reason) => onProviderUnavailable('google', reason) : undefined
         }
       />
+      ) : null}
       {isLastUsed(lastMethod, 'google') && !redirectProviders.some((p) => p.provider === 'google') ? (
         <div data-atlas-provider="google" style={{ display: 'flex' }}>
           <LastUsedBadge />

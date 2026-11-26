@@ -1,5 +1,13 @@
 # @atlasauth/cli changelog
 
+## 0.55.0
+
+- **behaviour:** `atlas plan` and `atlas apply` stop on an unresolved `${VAR}`.
+- **behaviour:** `atlas golive` retries the issuer probe and fails a production instance with no email provider.
+- **behaviour:** `move-origin` re-applies integrations and takes `--clone-resource-server`; `apply --prune` no longer deletes sign-up forwarding endpoints.
+- Config as code: `account_linking` on SSO connections, `externalJwt.issuers[]` `organizationId` / `accountLinking`, `consent_per_organization` and `require_consent` on OAuth clients, `oauthProvider.dynamicRegistrationLimits`, `password_normalize` (`atlas import --password-normalize`), and the Watchtower forwarding destination.
+- Preflight finding `env_values_stale`.
+
 ## 0.54.1
 
 - A test now holds `atlas apply` to every `auth_config` field the server's schema has, nested ones included (such as `accountUx.passwordImport` and `session.browserHandoff`). The CLI keeps no field list of its own, so it sends them as written; an older instance that predates a field may still refuse it.

@@ -326,8 +326,8 @@ export type InstanceIntegrationsHealth = {
   generated_at?: number;
 };
 
-/** Where sign-ups (`user.created`) can be forwarded. */
-export type SignupForwardingDestination = 'lucida' | 'hermetica' | 'seolyticize' | 'webhook';
+/** Where events can be forwarded: sign-ups (`user.created`) to the first four, security events to `watchtower`. */
+export type SignupForwardingDestination = 'lucida' | 'hermetica' | 'seolyticize' | 'webhook' | 'watchtower';
 
 /** `PUT /v1/instance/integrations/forwarding/{destination}`: send only the fields that destination takes. */
 export type SignupForwardingBody = {
@@ -343,6 +343,8 @@ export type SignupForwardingBody = {
   include_pii?: boolean;
   /** webhook: the https receiver. */
   url?: string;
+  /** watchtower: your ingest host (https); `server_key` is then an ingestion key with the `ingest:logs` scope. */
+  endpoint?: string;
   active?: boolean;
 };
 
@@ -350,7 +352,10 @@ export type SignupForwardingBody = {
 export type SignupForwarding = {
   object: 'integration_forwarding';
   forwarding: SignupForwardingDestination;
-  event: 'user.created';
+  /** The first event delivered: `user.created`, or `user.locked` for watchtower. */
+  event: string;
+  /** Every event this destination receives. */
+  events: string[];
   /** True when this call created the endpoint (201), false on an update. */
   created: boolean;
   /** The managed webhook endpoint. */

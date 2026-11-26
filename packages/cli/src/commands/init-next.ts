@@ -26,10 +26,19 @@ function parseMount(raw: string | undefined): string {
 
 const mountRoute = (base: string) => `import { createMountHandler } from '@atlasauth/nextjs/server';
 
+// The mount proxies live requests: run it on Node and never cache it.
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+// If this app has a middleware.ts (or proxy.ts), keep it off the mount and the verify route:
+//   export const config = { matcher: ['/((?!${base.slice(1)}(?:/|$)|\\\\.well-known/atlas-verify|_next/static|_next/image|favicon.ico).*)'] };
 export const { GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD } = createMountHandler({ basePath: '${base}' });
 `;
 
 const VERIFY_ROUTE = `import { createVerifyHandler } from '@atlasauth/nextjs/server';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export const { GET } = createVerifyHandler();
 `;
@@ -39,6 +48,22 @@ const YAML = `# Atlas config for this app. Plan with: atlas plan atlas.yaml
 instance:
   allowed_origins:
     - \${APP_ORIGIN}
+  # Everything below is also an instance setting, so it is indented under instance: (a top-level auth_config: is refused).
+  # auth_config:
+  #   strategies:
+  #     passkey: true
+
+# Redirect URLs: a plain string or { url } both work.
+# redirect_urls:
+#   - \${APP_ORIGIN}/atlas/callback
+
+# Privacy policy and terms links live under branding.legal (not branding.privacyPolicyUrl).
+# branding:
+#   legal:
+#     privacyUrl: \${APP_ORIGIN}/privacy
+#     termsUrl: \${APP_ORIGIN}/terms
+#
+# Every \${NAME} must be set in the environment or the --secrets-file, or plan and apply stop and list the missing names.
 
 # oauth_providers:
 #   - provider: google
@@ -65,7 +90,7 @@ ATLAS_PROXY_SECRET=
 ATLAS_UPSTREAM=
 ATLAS_VERIFY_TOKEN=
 ATLAS_ISSUER=
-ATLAS_JWKS_URL=
+# No ATLAS_JWKS_URL: the SDK derives the key set URL from ATLAS_ISSUER.
 APP_ORIGIN=
 `;
 

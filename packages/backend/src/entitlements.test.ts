@@ -7,6 +7,7 @@ const doc = (features: Array<{ key: string; limit?: number }>): Entitlements => 
   subject: { type: 'org', id: 'org_1' },
   plan: 'pro',
   planSource: 'plan',
+  version: 0,
   entitlements: features.map((f) => ({ key: f.key, enabled: true, source: 'plan' as const, ...(f.limit === undefined ? {} : { limit: f.limit }) })),
 });
 

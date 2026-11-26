@@ -154,3 +154,4 @@ export {
   useUsage,
 } from './billing';
 export type { CheckoutLabels } from './billing';
+export type { SignedInContext } from './signed-in';

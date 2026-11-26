@@ -91,6 +91,12 @@ export async function moveOrigin(ctx: RunContext, args: ParsedArgs): Promise<num
     }
   }
 
+  const clone = str(v, 'clone-resource-server');
+  const cloneParts = clone === undefined ? undefined : clone.split('=');
+  if (cloneParts && (cloneParts.length !== 2 || !cloneParts[0] || !cloneParts[1] || cloneParts[0] === cloneParts[1])) {
+    throw new CliError('--clone-resource-server needs <old identifier>=<new identifier>, for example https://old.example.com/mcp=https://new.example.com/mcp.');
+  }
+  const issuerBefore = (await http.get<{ issuer?: string | null }>('/v1/instance').catch(() => ({}) as { issuer?: string | null })).issuer ?? null;
   const done = await http.post<OriginMove>(path, { from, to });
   const hooks = [...new Set(done.changes.filter((c) => c.object === 'webhook_endpoint').map((c) => c.id))];
   const tests: Array<{ endpoint: string; ok: boolean; http_status: number | null; error: string | null }> = [];
@@ -107,14 +113,40 @@ export async function moveOrigin(ctx: RunContext, args: ParsedArgs): Promise<num
     }
   }
 
+
+  // The server re-syncs the managed integrations' receivers as part of the move (and sends issuer.changed to partners when the issuer moves).
+  let cloned: { from: string; to: string; ok: boolean; error: string | null } | undefined;
+  if (cloneParts) {
+    const [oldId, newId] = cloneParts as [string, string];
+    try {
+      const rows = (await http.get<{ data?: Array<Record<string, unknown>> }>('/v1/resource_servers')).data ?? [];
+      const src = rows.find((r) => r.identifier === oldId);
+      if (!src) throw new Error(`no resource server with identifier ${oldId}`);
+      const body: Record<string, unknown> = { identifier: newId };
+      for (const k of ['name', 'scopes', 'token_ttl_seconds', 'scope_presets', 'publish_resource_metadata', 'access_token_format', 'refresh_token_absolute_ttl_seconds', 'refresh_token_idle_ttl_seconds', 'introspection_client_ids']) {
+        if (src[k] !== undefined && src[k] !== null) body[k] = src[k];
+      }
+      await http.post('/v1/resource_servers', body);
+      cloned = { from: oldId, to: newId, ok: true, error: null };
+    } catch (err) {
+      cloned = { from: oldId, to: newId, ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+  const issuerAfter = (await http.get<{ issuer?: string | null }>('/v1/instance').catch(() => ({}) as { issuer?: string | null })).issuer ?? null;
+  const health = await http.get<{ summary?: { failing?: number } }>('/v1/instance/integrations/health').catch(() => undefined);
+  const failing = health?.summary?.failing ?? 0;
+
   if (json) {
-    printJson(ctx.io, { ...done, webhook_tests: tests });
+    printJson(ctx.io, { ...done, webhook_tests: tests, ...(cloned ? { resource_server_clone: cloned } : {}), issuer: { before: issuerBefore, after: issuerAfter }, integration_health_failing: failing });
   } else {
     ctx.io.out(`Moved ${done.changes.length} field(s) from ${done.from} to ${done.to}.`);
     for (const t of tests) {
       ctx.io.out(`webhook ${t.endpoint}: ${t.ok ? `test delivery answered ${t.http_status}` : `test delivery did not get a 2xx${t.http_status ? ` (${t.http_status})` : ''}${t.error ? `: ${t.error}` : ''}`}`);
     }
+    if (cloned) ctx.io.out(cloned.ok ? `resource server ${cloned.from} cloned to ${cloned.to}; delete the old one once nothing uses it.` : `resource server clone failed: ${cloned.error}`);
+    if (issuerBefore && issuerAfter && issuerBefore !== issuerAfter) ctx.io.out(`issuer: ${issuerBefore} -> ${issuerAfter}`);
+    ctx.io.out(failing ? `integration health: ${failing} check(s) failing (atlas integrations health).` : 'integration health: green.');
     ctx.io.out("Next: update your app's own config (env vars, DNS, deploy) to the new origin, then run 'atlas preflight'.");
   }
-  return tests.some((t) => !t.ok) ? 1 : 0;
+  return tests.some((t) => !t.ok) || cloned?.ok === false || failing > 0 ? 1 : 0;
 }

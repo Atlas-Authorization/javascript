@@ -434,6 +434,13 @@ function registry(): ResourceSpec[] {
       validate(config) {
         const { provider, mode, settings } = obj(config);
         const out: string[] = [];
+        const sharedKeys = obj(config).use_shared_dev_credentials;
+        if (sharedKeys !== undefined && typeof sharedKeys !== 'boolean' && !hasPlaceholder(sharedKeys)) {
+          out.push(`oauth_providers ${String(provider)}: use_shared_dev_credentials must be true or false.`);
+        }
+        if (sharedKeys === true && (obj(config).client_id !== undefined || obj(config).client_secret !== undefined || obj(config).values !== undefined)) {
+          out.push(`oauth_providers ${String(provider)}: use_shared_dev_credentials: true cannot be combined with your own client_id / client_secret / values (development instances only).`);
+        }
         if (!(mode === undefined || mode === 'native' || mode === 'redirect' || hasPlaceholder(mode))) {
           out.push(`oauth_providers ${String(provider)}: mode must be native or redirect, got ${JSON.stringify(mode)}.`);
         }
@@ -455,7 +462,7 @@ function registry(): ResourceSpec[] {
         return { ...l, settings: { ...ls, native_client_ids: obj(obj(desired).settings ?? null).native_client_ids! } };
       },
       reportsSecrets: true,
-      defaulted: ['mode'],
+      defaulted: ['mode', 'use_shared_dev_credentials'],
       writeOnly: ['values'],
       warnings(config, live) {
         const c = obj(config);
@@ -474,7 +481,7 @@ function registry(): ResourceSpec[] {
       async fetchLive(http) {
         const rows = await listData<Record<string, unknown>>(http, '/v1/oauth_providers');
         return rows
-          .filter((r) => r.configured === true)
+          .filter((r) => r.configured === true || r.use_shared_dev_credentials === true)
           .map((r) => ({
             key: String(r.provider ?? ''),
             id: String(r.provider ?? ''),
@@ -562,7 +569,16 @@ function registry(): ResourceSpec[] {
       fileKeys: ['scopes', 'confirm_empty'],
       align(live, desired) {
         const d = obj(desired);
-        return d.confirm_empty === undefined ? live : { ...obj(live), confirm_empty: d.confirm_empty };
+        const base = obj(d.confirm_empty === undefined ? live : { ...obj(live), confirm_empty: d.confirm_empty });
+        // A key the file leaves out means "the default": a live scope holding that default is not a change.
+        const wanted = new Map(asArray(d.scopes ?? []).map((e) => [String(obj(e).name ?? ''), obj(e)] as const));
+        const scopes = asArray(base.scopes ?? []).map((e) => {
+          const l: Record<string, Json> = { ...obj(e) };
+          const w = wanted.get(String(l.name ?? ''));
+          if (w) for (const [k, def] of SCOPE_DEFAULTS) if (!(k in w) && l[k] === def) delete l[k];
+          return l;
+        });
+        return { ...base, scopes };
       },
       validate(config) {
         // The API refuses over-length text (it never cuts it); say so before apply.
@@ -589,7 +605,7 @@ function registry(): ResourceSpec[] {
       async fetchLive(http) {
         const rows = await orNotFound(listData<Record<string, unknown>>(http, '/v1/instance/scopes'), []);
         if (rows.length === 0) return null;
-        return { scopes: rows.map((r) => pick(r, ['name', 'label', 'description', 'sensitive', 'requires_verified_client', 'requires_client_level', 'owner_exempt'])) };
+        return { scopes: rows.map((r) => pick(r, ['name', 'label', 'description', 'sensitive', 'requires_verified_client', 'requires_client_level', 'owner_exempt', 'optional'])) };
       },
       async apply(http, config) {
         const scopes = obj(config).scopes;
@@ -734,7 +750,12 @@ function registry(): ResourceSpec[] {
           key: String(r.url ?? ''),
           id: String(r.id ?? ''),
           config: pick(r, WEBHOOK_KEYS),
-          ...(typeof r.managed_by === 'string' && r.managed_by ? { managedBy: r.managed_by } : {}),
+          // Sign-up forwarding endpoints (`atlas integrations forwarding`) carry no managed_by but are not config-as-code's: never planned, never pruned.
+          ...(typeof r.managed_by === 'string' && r.managed_by
+            ? { managedBy: r.managed_by }
+            : typeof r.description === 'string' && r.description.startsWith('Sign-up forwarding to ')
+              ? { managedBy: 'integration_forwarding' }
+              : {}),
         }));
       },
       async create(http, config) {
@@ -948,6 +969,32 @@ function registry(): ResourceSpec[] {
       },
       // No delete: pruning a policy would silently loosen an org's security, so
       // org policies are never deleted by import (reported as skipped).
+    },
+
+    // 14b. Organization branding — key = organization_id; an organization's own name, logo and colour over the instance brand.
+    {
+      kind: 'collection',
+      type: 'organization_branding',
+      fileKeys: ORG_BRANDING_KEYS,
+      keyOf: (c) => String(obj(c).organization_id ?? ''),
+      async fetchLive(http) {
+        const orgs = await listData<{ id: string }>(http, '/v1/organizations');
+        const out: LiveEntry[] = [];
+        for (const org of orgs) {
+          const b = await http.get<Record<string, Json>>(`/v1/organizations/${enc(org.id)}/branding`);
+          const config = pick({ organization_id: org.id, ...obj(b ?? null) }, ORG_BRANDING_KEYS);
+          // Only organizations with a field set are config.
+          if (Object.keys(obj(config)).length > 1) out.push({ key: org.id, id: org.id, config });
+        }
+        return out;
+      },
+      async create(http, config) {
+        await putOrgBranding(http, config);
+      },
+      async update(http, _live, config) {
+        await putOrgBranding(http, config);
+      },
+      // No delete: to drop an override, set the field to null in the file.
     },
 
     // 12. Branding — the hosted-page appearance; a partial merge on write (PATCH).
@@ -1450,6 +1497,9 @@ const OAUTH_CLIENT_KEYS = [
   'grant_types',
   'token_endpoint_auth_method',
   'logo_url',
+  'client_uri',
+  'policy_uri',
+  'tos_uri',
   'first_party',
   'post_logout_redirect_uris',
   'claims_redirect_uris',
@@ -1460,6 +1510,8 @@ const OAUTH_CLIENT_KEYS = [
   'skip_logout_confirmation',
   'refresh_touches_session',
   'require_verified_email',
+  'require_consent',
+  'consent_per_organization',
   'require_pkce',
   'default_scopes',
   'default_resource',
@@ -1497,6 +1549,7 @@ const OAUTH_PROVIDER_KEYS = [
   'scopes',
   'client_id',
   'mode',
+  'use_shared_dev_credentials',
 ] as const;
 const RESOURCE_SERVER_KEYS = [
   'identifier',
@@ -1584,6 +1637,7 @@ const SSO_WRITE_KEYS = [
   'attribute_mapping',
   'oidc_scopes',
   'rerole_on_sign_in',
+  'account_linking',
   'profile_mapping',
   'token_endpoint_auth_method',
   'client_assertion_audience',
@@ -1752,6 +1806,21 @@ function emptyClaimWarnings(sections: ConfigPlan['sections']): string[] {
   return out;
 }
 
+/** What a scope reads as when the file does not state the key. */
+const SCOPE_DEFAULTS = [['sensitive', false], ['requires_verified_client', false], ['requires_client_level', 'any'], ['owner_exempt', false], ['optional', false]] as const;
+
+/** Spellings people try that live somewhere else: where the setting really is. */
+const MOVED_KEYS: Record<string, string> = {
+  'branding.privacyPolicyUrl': 'branding.legal.privacyUrl',
+  'branding.privacy_policy_url': 'branding.legal.privacyUrl',
+  'branding.privacyUrl': 'branding.legal.privacyUrl',
+  'branding.termsUrl': 'branding.legal.termsUrl',
+  'branding.termsOfServiceUrl': 'branding.legal.termsUrl',
+  'branding.termsOfUseUrl': 'branding.legal.termsUrl',
+  'branding.tosUrl': 'branding.legal.termsUrl',
+  'branding.terms_url': 'branding.legal.termsUrl',
+};
+
 /** Walk a document against a key tree: `'*'` is a map with free keys, `'[]'` a list of objects, null a leaf. */
 function walkKeyTree(value: Json | undefined, tree: KeyTree | null, label: string, path: string, out: string[]): void {
   if (!tree || value === undefined || value === null) return;
@@ -1763,7 +1832,7 @@ function walkKeyTree(value: Json | undefined, tree: KeyTree | null, label: strin
   const known = Object.keys(tree);
   for (const [k, v] of Object.entries(value)) {
     if ('*' in tree) walkKeyTree(v, tree['*']!, label, `${path}.${k}`, out);
-    else if (!(k in tree)) out.push(`UNKNOWN_FIELD_VALUE ${path}.${k}=${shownValue(k, v)}  (${label}: ${k}${didYouMean(k, known)})`);
+    else if (!(k in tree)) out.push(`UNKNOWN_FIELD_VALUE ${path}.${k}=${shownValue(k, v)}  (${label}: ${k}${MOVED_KEYS[`${path}.${k}`] ? ` is not a branding field: it lives at ${MOVED_KEYS[`${path}.${k}`]} (a url under branding: legal: { privacyUrl, termsUrl })` : didYouMean(k, known)})`);
     else walkKeyTree(v, tree[k]!, label, `${path}.${k}`, out);
   }
 }
@@ -1875,6 +1944,10 @@ async function putProvider(http: ConfigHttp, config: Config): Promise<void> {
   }
   if (c.mode !== undefined) body.mode = c.mode;
   const provider = String(c.provider ?? '');
+  // Atlas's shared development credentials (development instances): its own request, before enabling.
+  if (c.use_shared_dev_credentials === true || (c.use_shared_dev_credentials === false && !Object.keys(body).length)) {
+    await http.put(`/v1/oauth_providers/${enc(provider)}`, { use_shared_dev_credentials: c.use_shared_dev_credentials });
+  }
   if (Object.keys(body).length) {
     await http.put(`/v1/oauth_providers/${enc(provider)}`, body);
   }
@@ -1895,6 +1968,19 @@ async function putEmail(http: ConfigHttp, config: Config): Promise<void> {
   if (c.subject !== undefined) body.subject = c.subject;
   if (c.text !== undefined) body.text = c.text;
   await http.put(`/v1/email_templates/${enc(String(c.name ?? ''))}`, body);
+}
+
+const ORG_BRANDING_KEYS = ['organization_id', 'display_name', 'logo_url', 'primary_color', 'support_url', 'custom_domain'] as const;
+
+async function putOrgBranding(http: ConfigHttp, config: Config): Promise<void> {
+  const c = obj(config);
+  const body: Record<string, Json> = {};
+  for (const k of ORG_BRANDING_KEYS) {
+    if (k === 'organization_id') continue;
+    // null clears the field back to the instance brand; absent leaves it alone.
+    if (c[k] !== undefined) body[k] = c[k] as Json;
+  }
+  await http.put(`/v1/organizations/${enc(String(c.organization_id ?? ''))}/branding`, body);
 }
 
 async function patchOrgPolicy(http: ConfigHttp, config: Config): Promise<void> {
@@ -2091,13 +2177,16 @@ export async function planConfigImport(
   const prepared = new Map<string, { doc: Json; skippedKeys: Set<string>; skippedSection: boolean }>();
   const files = registry().flatMap((spec) => {
     if (!present.has(`${spec.type}.${ext}`)) return [];
-    const req = applyRequires(spec.type, deserialize(readFileSync(join(dir, `${spec.type}.${ext}`), 'utf8'), format), env, spec.kind === 'collection' ? (e) => spec.keyOf(e) : undefined);
+    const req = applyRequires(spec.type, bareUrlItems(spec.type, deserialize(readFileSync(join(dir, `${spec.type}.${ext}`), 'utf8'), format)), env, spec.kind === 'collection' ? (e) => spec.keyOf(e) : undefined);
     requiresNotes.push(...req.notes);
     const doc = req.skippedSection ? null : resolveCodeFiles(spec.type, req.doc, opts.baseDir ?? dir);
     prepared.set(spec.type, { doc, skippedKeys: req.skippedKeys, skippedSection: req.skippedSection });
     return req.skippedSection ? [] : [{ spec, doc }];
   });
   env = { ...env, ...(await instancePlaceholderValues(http, JSON.stringify(files.map((f) => f.doc)))) };
+  // A ${VAR} nobody supplied is an error for plan as for apply: it would otherwise plan, and be stored, as the literal text.
+  const unset = unresolvedIn(files.map(({ doc }) => interpolate(doc, env)));
+  if (unset.length) throw new CliError(`Unresolved placeholder(s): ${unset.map((n) => `\${${n}}`).join(', ')}. Set them in the environment or in --secrets-file.`);
   const unknown = files.flatMap(({ spec, doc }) => unknownFileKeys(spec, doc));
   if (unknown.length) throw new CliError(`Unknown key(s) in the config:\n  ${unknown.join('\n  ')}\n${upgradeHint()}`);
   const invalid = files.flatMap(({ spec, doc }) => invalidFileValues(spec, interpolate(doc, env)));
@@ -2660,6 +2749,18 @@ export function readSecretsEnv(ctx: RunContext, values: Values): NodeJS.ProcessE
   return { ...ctx.env, ...parseDotenv(ctx.readFile(file)) };
 }
 
+/** Every `${VAR}` left in already-interpolated documents, sorted, each name once. */
+function unresolvedIn(docs: Json[]): string[] {
+  const names = new Set<string>();
+  for (const d of docs) for (const m of JSON.stringify(d ?? null).matchAll(/\$\{([A-Z0-9_]+)\}/g)) names.add(m[1]!);
+  return [...names].sort();
+}
+
+/** `redirect_urls: [ "https://…" ]` reads as `[ { url: "https://…" } ]`. */
+function bareUrlItems(type: string, doc: Json): Json {
+  return type === 'redirect_urls' && Array.isArray(doc) ? doc.map((i) => (typeof i === 'string' ? { url: i } : i)) : doc;
+}
+
 /** `${VAR}` placeholders still in a planned change (no env value and no --secrets-file entry). */
 export function unresolvedPlaceholders(changes: Change[]): string[] {
   const names = new Set<string>();
@@ -2903,7 +3004,17 @@ function keepingSecrets(http: ConfigHttp, dir: string, into?: Record<string, str
   const saved: string[] = [];
   const wrapped: ConfigHttp = {
     get: <T>(path: string) => http.get<T>(path),
-    put: <T>(path: string, body: unknown) => http.put<T>(path, body),
+    async put<T>(path: string, body: unknown): Promise<T> {
+      const res = await http.put<T>(path, body);
+      const secret = (res as { webhook_secret?: unknown } | null)?.webhook_secret;
+      // A client's webhook signing secret is shown once, on the create that mints it.
+      if (/^\/v1\/oauth_clients\/[^/]+\/webhook$/.test(path) && typeof secret === 'string') {
+        const id = decodeURIComponent(path.split('/')[3]!).replace(/[^A-Za-z0-9_-]/g, '_');
+        if (into) Object.assign(into, { ATLAS_CLIENT_WEBHOOK_SECRET: secret });
+        else saved.push(writeSecretFile(dir, `client-webhook-${id}.env`, { ATLAS_CLIENT_WEBHOOK_SECRET: secret }, { comment: `Written by atlas apply. client webhook ${id}.` }).path);
+      }
+      return res;
+    },
     patch: <T>(path: string, body: unknown) => http.patch<T>(path, body),
     delete: (path: string, body?: unknown) => http.delete(path, body),
     async post<T>(path: string, body: unknown): Promise<T> {

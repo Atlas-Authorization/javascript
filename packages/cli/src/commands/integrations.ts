@@ -48,7 +48,7 @@ const HEALTH_COLUMNS: Column<HealthRow>[] = [
   { header: 'FAILS', get: (r) => r.consecutive_failures },
 ];
 
-const FORWARDING_DESTINATIONS = ['lucida', 'hermetica', 'seolyticize', 'webhook'];
+const FORWARDING_DESTINATIONS = ['lucida', 'hermetica', 'seolyticize', 'webhook', 'watchtower'];
 
 /**
  * `atlas integrations list | get <id> | set <id> | remove <id> | deliveries <id>`:
@@ -86,7 +86,7 @@ export async function integrations(ctx: RunContext, args: ParsedArgs): Promise<n
       return 0;
     }
     case 'forwarding': {
-      // atlas integrations forwarding show|set|remove <lucida|hermetica|seolyticize|webhook>
+      // atlas integrations forwarding show|set|remove <lucida|hermetica|seolyticize|webhook|watchtower>
       const action = id;
       const dest = args.positionals[3];
       if ((action !== 'set' && action !== 'remove' && action !== 'show') || !dest || !FORWARDING_DESTINATIONS.includes(dest)) {
@@ -96,7 +96,7 @@ export async function integrations(ctx: RunContext, args: ParsedArgs): Promise<n
       if (action === 'show') {
         const found = await http().get<{ id?: string; active?: boolean }>(url);
         if (json) printJson(ctx.io, found);
-        else ctx.io.out(`Forwarding user.created to ${dest} (endpoint ${found.id ?? 'unknown'}, ${found.active === false ? 'inactive' : 'active'}).`);
+        else ctx.io.out(`Forwarding ${dest === 'watchtower' ? 'security events' : 'user.created'} to ${dest} (endpoint ${found.id ?? 'unknown'}, ${found.active === false ? 'inactive' : 'active'}).`);
         return 0;
       }
       if (action === 'remove') {
@@ -109,6 +109,11 @@ export async function integrations(ctx: RunContext, args: ParsedArgs): Promise<n
       if (dest === 'webhook') {
         const target = str(args.values, 'url');
         if (target) body.url = target;
+      } else if (dest === 'watchtower') {
+        const keyFile = str(args.values, 'secret-file');
+        if (keyFile) body.server_key = readKeyFile(ctx, keyFile, 'the Watchtower ingestion key');
+        const endpoint = str(args.values, 'endpoint');
+        if (endpoint) body.endpoint = endpoint;
       } else {
         const keyFile = str(args.values, 'secret-file');
         if (keyFile) body.server_key = readKeyFile(ctx, keyFile, `the ${dest} server key`);
@@ -126,7 +131,7 @@ export async function integrations(ctx: RunContext, args: ParsedArgs): Promise<n
       if (args.values.inactive === true) body.active = false;
       const saved = await http().put<{ id?: string; created?: boolean }>(url, body);
       if (json) printJson(ctx.io, saved);
-      else ctx.io.out(`${saved.created ? 'Now forwarding' : 'Updated forwarding of'} user.created to ${dest}${saved.id ? ` (endpoint ${saved.id})` : ''}.`);
+      else ctx.io.out(`${saved.created ? 'Now forwarding' : 'Updated forwarding of'} ${dest === 'watchtower' ? 'security events' : 'user.created'} to ${dest}${saved.id ? ` (endpoint ${saved.id})` : ''}.`);
       return 0;
     }
     case 'get': {

@@ -60,6 +60,18 @@ export interface ImportUserRow {
   email?: string;
   password?: string;
   password_hash?: string;
+  /** A hash that does not describe itself: its algorithm (`scrypt`, `pbkdf2`, `md5`, ...), parameters and salt. */
+  password_hash_algorithm?: string;
+  password_hash_params?: Record<string, string | number | boolean>;
+  password_salt?: string;
+  /** The Unicode form the old system hashed the password in. Overrides the job's `password_normalize`. */
+  password_normalize?: 'nfkc' | 'nfc' | 'none';
+  /** A second factor to import. `backup_codes` take plaintext codes or bcrypt digests (cost 12 or less). */
+  mfa?: {
+    totp?: { secret_base32: string; algorithm?: string; digits?: 6 | 8; period?: 30 | 60; verified_at?: string | number };
+    hotp?: { secret_base32: string; algorithm?: string; digits?: 6 | 8; counter?: number; verified_at?: string | number };
+    backup_codes?: string[];
+  };
   email_verified?: boolean;
   verified?: boolean;
   first_name?: string;
@@ -84,6 +96,8 @@ export interface ImportUsersBody {
   upsert?: boolean;
   /** Whether the import may notify the imported users. Defaults to false: nothing is sent. */
   notify?: boolean;
+  /** Default `password_normalize` for every row that does not name its own. */
+  password_normalize?: 'nfkc' | 'nfc' | 'none';
 }
 
 export function importExportResource(request: RequestFn) {

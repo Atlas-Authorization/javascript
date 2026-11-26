@@ -302,7 +302,9 @@ const HANDLERS: Record<StepId, (m: Migration) => Promise<StepResult>> = {
     m.say('  Review:');
     for (const o of added) m.say(`    + allowed_origins ${o}`);
     for (const d of diff) m.say(`    ~ auth_config.${d.path}: ${short(d.from)} -> ${short(rawLeaves.get(d.path) ?? d.to)}`);
-    const plan = await planConfigImport(http, { dir: m.dir, format: m.format, env: m.env, prune: false });
+    // A dry run reports what is still unset instead of failing on it: plan refuses unresolved placeholders, so stand in for them.
+    const planEnv = m.dryRun ? { ...Object.fromEntries([...missing].map((n) => [n, `<${n}>`])), ...m.env } : m.env;
+    const plan = await planConfigImport(http, { dir: m.dir, format: m.format, env: planEnv, prune: false });
     if (!diff.length && !added.length) plan.changes = plan.changes.filter((c) => c.type !== 'instance');
     if (m.json) {
       for (const c of plan.changes) m.say(`    ${c.action} ${c.type}${c.key ? ` ${c.key}` : ''}`);

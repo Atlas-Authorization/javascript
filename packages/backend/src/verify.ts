@@ -13,6 +13,8 @@ import {
   type RegisteredSessionClaims,
 } from '@atlasauth/authz';
 import { PreviousIssuersFeed } from './previous-issuers';
+import { AtlasConfigError } from './mount';
+import { DEFAULT_API_URL } from './client/request';
 import { verifyCsrfJws } from './csrf-jws';
 import type { CsrfRequest } from './csrf';
 import { JwksCache, checkJwksCacheTuning, readKid, type Jwks, type JwksCacheTuning } from './jwks-cache';
@@ -338,7 +340,9 @@ export interface AtlasBackendOptions {
    * refused by a `'template'` verifier, and the reverse.
    */
   tokenUse?: 'session' | 'template';
+  /** Secret key for `verifyOnline`, revocation and legacy-issuer mapping. Default: `ATLAS_SECRET_KEY`. */
   secretKey?: string;
+  /** Backend API origin. Default: `ATLAS_API_URL`, else `https://api.atlasauth.net`. */
   bapiBaseUrl?: string;
   fetchImpl?: typeof fetch;
   now?: () => number;
@@ -359,6 +363,25 @@ export function parseIssuerList(raw: string | undefined | null): string[] {
   return (raw ?? '').split(/[\s,]+/).filter(Boolean);
 }
 
+const warnedJwksHosts = new Set<string>();
+
+/** One-time warning: a `jwksUrl` on another host than the issuer is usually a stale value after a move to a new origin. */
+function warnJwksHostMismatch(issuer: string, jwksUrl: string): void {
+  let ih: string;
+  let jh: string;
+  try {
+    ih = new URL(issuer).host;
+    jh = new URL(jwksUrl).host;
+  } catch {
+    return;
+  }
+  if (ih === jh || warnedJwksHosts.has(`${ih}|${jh}`)) return;
+  warnedJwksHosts.add(`${ih}|${jh}`);
+  console.warn(
+    `AtlasBackend: jwksUrl host (${jh}) differs from the issuer host (${ih}). If you moved the instance to a new origin, remove jwksUrl (and ATLAS_JWKS_URL): the keys are discovered from the issuer.`,
+  );
+}
+
 export class AtlasBackend {
   private readonly jwks: JwksCache;
   private readonly legacy?: LegacyIssuerVerifier;
@@ -373,12 +396,19 @@ export class AtlasBackend {
   readonly oidc: AtlasBackendOidc;
 
   constructor(private readonly options: AtlasBackendOptions) {
+    // Option not passed: ATLAS_SECRET_KEY / ATLAS_API_URL, then the public API origin.
+    const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+    this.options = {
+      ...options,
+      secretKey: options.secretKey || env.ATLAS_SECRET_KEY || undefined,
+      bapiBaseUrl: options.bapiBaseUrl || env.ATLAS_API_URL || DEFAULT_API_URL,
+    };
     // Option not passed: fall back to ATLAS_PREVIOUS_ISSUERS so every adapter gets it for free.
     if (options.previousIssuers === undefined) {
       const fromEnv = parseIssuerList(
         (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.ATLAS_PREVIOUS_ISSUERS,
       );
-      if (fromEnv.length) this.options = { ...options, previousIssuers: fromEnv };
+      if (fromEnv.length) this.options = { ...this.options, previousIssuers: fromEnv };
     }
     const declared = this.options.previousIssuers;
     if (Array.isArray(declared) && declared.length === 1 && declared[0] === 'discovery') {
@@ -395,6 +425,7 @@ export class AtlasBackend {
         'AtlasBackend takes one key source: `jwksUrl` (fetch from the instance) OR `jwks` (a static key set for offline verification), not both. Omit both to discover the JWKS URL from the issuer.',
       );
     }
+    if (hasUrl && typeof options.issuer === 'string') warnJwksHostMismatch(options.issuer, options.jwksUrl as string);
     if (typeof options.issuer !== 'string' || !options.issuer) {
       throw new Error('AtlasBackend needs `issuer` (your instance\'s frontend API origin, the `iss` of its tokens).');
     }
@@ -436,8 +467,8 @@ export class AtlasBackend {
       }
       this.legacy = new LegacyIssuerVerifier({
         issuers: options.legacyIssuers,
-        secretKey: options.secretKey,
-        bapiBaseUrl: options.bapiBaseUrl,
+        secretKey: this.options.secretKey,
+        bapiBaseUrl: this.options.bapiBaseUrl,
         fetchImpl: options.fetchImpl,
         now: options.now,
         clockToleranceSeconds: CLOCK_SKEW_SECONDS,
@@ -638,15 +669,17 @@ export class AtlasBackend {
     const local = await this.verify(token);
     if (!local.ok) return local;
 
-    if (!this.options.secretKey || !this.options.bapiBaseUrl) {
-      throw new Error(
-        'verifyOnline needs secretKey and bapiBaseUrl. Without them it would silently fall back to local verification, which is the opposite of what the caller asked for.',
+    if (!this.options.secretKey) {
+      throw new AtlasConfigError(
+        'secret_key_missing',
+        'verifyOnline needs a secret key: pass the `secretKey` option or set ATLAS_SECRET_KEY. Without it it would silently fall back to local verification, which is the opposite of what the caller asked for.',
+        ['secretKey'],
       );
     }
 
     try {
       const response = await (this.options.fetchImpl ?? fetch)(
-        `${this.options.bapiBaseUrl}/v1/tokens/verify`,
+        `${(this.options.bapiBaseUrl ?? DEFAULT_API_URL).replace(/\/+$/, '')}/v1/tokens/verify`,
         {
           method: 'POST',
           headers: {

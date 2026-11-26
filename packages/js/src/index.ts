@@ -100,6 +100,7 @@ export * from './pricing';
 export * from './referral-rewards';
 export * from './marketing';
 export { configureAttribution, type AttributionOptions, type AttributionSource } from './attribution-fields';
+export { methodAllowed, filterFactors, withMethodFilter, type HostedMethodFilterInput } from './allowed-methods';
 export * from './phone-numbers';
 export * from './security-summary';
 export * from './email-addresses';

@@ -69,6 +69,10 @@ export interface SsoConnection {
   oidc_scopes?: string[];
   /** Opt-in: on later sign-ins, also re-role members with no recorded role source when their claims map elsewhere. */
   rerole_on_sign_in?: boolean;
+  /** Whether this connection's sign-in may link to an existing user by shared email: `same_org_only` (default for an organization-bound connection), `email` or `none`. */
+  account_linking?: 'email' | 'same_org_only' | 'none' | null;
+  /** The mode in force: the explicit setting, else `same_org_only` when the connection has an organization, else `email`. */
+  account_linking_effective?: 'email' | 'same_org_only' | 'none';
   /** OIDC relying-party settings (see custom OAuth providers). */
   profile_mapping?: Required<ProfileMapping> | null;
   token_endpoint_auth_method?: TokenEndpointAuthMethod | null;
@@ -153,6 +157,8 @@ export interface CreateSsoConnectionBody {
   /** OIDC only; null clears them. */
   oidc_scopes?: string[] | null;
   rerole_on_sign_in?: boolean | null;
+  /** See `account_linking` on the connection; null restores the default. */
+  account_linking?: 'email' | 'same_org_only' | 'none' | null;
   /** OIDC: declarative profile mapping; null clears it. */
   profile_mapping?: ProfileMapping | null;
   /** OIDC: token-endpoint client authentication (private_key_jwt needs no secret). */

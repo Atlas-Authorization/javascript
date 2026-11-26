@@ -360,7 +360,7 @@ export interface AtlasProviderProps {
   referralConsent?: ReferralConsent;
   /**
    * Page values to copy into every sign-up's `unsafe_metadata` (and so onto `user.created`), e.g.
-   * `{ seolyticize_visit: { global: 'seolyticize', globalArg: 'visit' } }`. Each key reads a
+   * `{ seolyticize_visit: { global: 'seolyticize', globalArg: 'visitToken' } }`. Each key reads a
    * `cookie`, URL parameter (`query`), `window` `global` or your own `read()`.
    */
   attribution?: AttributionOptions;

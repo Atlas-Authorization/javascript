@@ -7,7 +7,7 @@ import type { ConfigHttp } from '../config-http';
 import type { ManagementClient, RunContext } from '../context';
 import { captureIO, type CaptureIO } from '../io';
 import { run } from '../run';
-import { collectRowWarnings, parseTimestamp } from './import-jsonl';
+import { collectRowWarnings, factorVerdicts, parseTimestamp } from './import-jsonl';
 
 /** An instance that keeps users and answers the import route the way the real one does. */
 class Api implements ConfigHttp {
@@ -503,5 +503,19 @@ describe('parseTimestamp', () => {
     expect(parseTimestamp('2026-01-01T00:00:00Z')).toBe(Date.parse('2026-01-01T00:00:00Z'));
     expect(parseTimestamp('nope')).toBeUndefined();
     expect(parseTimestamp(undefined)).toBeUndefined();
+  });
+});
+
+describe('factorVerdicts', () => {
+  const row = (mfa: Record<string, unknown>) => ({ external_id: 'u1', email: 'a@example.com', mfa }) as never;
+  it('says a valid factor and bcrypt recovery codes will verify', () => {
+    const bc = '$2a$04$W9k3nV.MxVpINivNv0fy3uFfQN69uNZfTuyKqdViZXOqtbXOwEdry';
+    const v = factorVerdicts(row({ totp: { secret_base32: 'JBSWY3DPEHPK3PXP' }, backup_codes: [bc, 'ABCDE-FGHJK'] }));
+    expect(v.map((x) => [x.kind, x.will_verify])).toEqual([['totp', true], ['backup_codes', true]]);
+  });
+  it('says a bad secret or an unsupported digest will not verify', () => {
+    expect(factorVerdicts(row({ totp: { secret_base32: '!!!' } }))[0]!.will_verify).toBe(false);
+    const v = factorVerdicts(row({ totp: { secret_base32: 'JBSWY3DPEHPK3PXP' }, backup_codes: ['$argon2id$v=19$m=1,t=1,p=1$a$b'] }));
+    expect(v[1]!.will_verify).toBe(false);
   });
 });

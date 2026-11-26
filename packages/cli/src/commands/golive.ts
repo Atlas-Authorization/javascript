@@ -171,6 +171,10 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
   const results: CheckResult[] = [];
   let current = 'domains';
   let issuerMoved = false;
+  let envDiff: string[] = [];
+  // What the project manifest held before this run (the values `atlas env` last printed).
+  const before = cred.instance ? { ...cred.instance } : undefined;
+  const issuerBefore = before?.issuer ? trimSlash(before.issuer) : null;
 
   const pass = (id: string, detail: string) => {
     results.push({ id, ok: true, detail });
@@ -218,7 +222,7 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
 
     // (2) issuer
     current = 'issuer';
-    const instance = await api.get<{ issuer?: string | null; discovery_url?: string | null; jwks_uri?: string | null }>('/v1/instance');
+    const instance = await api.get<{ issuer?: string | null; discovery_url?: string | null; jwks_uri?: string | null; frontend_api_host?: string | null; environment?: string }>('/v1/instance');
     const expected = instance.issuer ? trimSlash(instance.issuer) : null;
     if (!expected) fail('the instance reports no issuer', 'Check GET /v1/instance; a verified Frontend API domain sets it.');
     const base =
@@ -228,15 +232,9 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
           ? `https://${domain.host}${domain.base_path ?? ''}`
           : expected!;
     const discoveryUrl = `${trimSlash(base)}/.well-known/openid-configuration`;
-    let served: string | undefined;
-    try {
-      const res = await fetchImpl(discoveryUrl, { headers: { accept: 'application/json' } });
-      if (!res.ok) fail(`${discoveryUrl} answered ${res.status}`, 'Route that path to your Atlas Frontend API (see the domain instructions in GET /v1/domains).');
-      served = ((await res.json()) as { issuer?: string }).issuer;
-    } catch (err) {
-      if (err instanceof StepFailed) throw err;
-      fail(`${discoveryUrl} is unreachable (${err instanceof Error ? err.message : String(err)})`, 'Check DNS, TLS and the proxy rule for that host.');
-    }
+    const probe = await probeDiscovery(discoveryUrl, fetchImpl, ctx.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))));
+    if (!probe.ok) fail(probe.problem, probe.fix);
+    const served = probe.ok ? probe.issuer : undefined;
     if (!served || trimSlash(served) !== expected) {
       fail(`${discoveryUrl} serves issuer ${served ?? '(none)'}, expected ${expected}`, 'Point that host/path at this instance\'s Frontend API, or verify the domain so the instance issues tokens for it.');
     }
@@ -246,7 +244,11 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
     if (issuerMoved || (recorded && recorded !== expected)) {
       const product = cred.manifest?.product ?? '<product>';
       const envFlag = cred.instance && cred.instance.environment !== 'production' ? ` --instance-env ${cred.instance.environment}` : '';
-      warn('env_values_stale', `the issuer is now ${expected}${recorded && recorded !== expected ? ` (your last 'atlas env' wrote ${recorded})` : ''}, so ATLAS_ISSUER, ATLAS_DISCOVERY_URL and ATLAS_JWKS_URI you copied into your hosting are stale. Re-run: atlas env --product ${product}${envFlag} --format dotenv, and redeploy.`);
+      envDiff = envDiffLines(
+        { issuer: recorded ?? issuerBefore, discovery: before?.discovery_url ?? null, jwks: before?.jwks_uri ?? null, fapi: before?.frontend_api_host ?? null },
+        { issuer: expected!, discovery: instance.discovery_url ?? null, jwks: instance.jwks_uri ?? null, fapi: instance.frontend_api_host ?? before?.frontend_api_host ?? null },
+      );
+      warn('env_values_stale', `the issuer is now ${expected}${recorded && recorded !== expected ? ` (your last 'atlas env' wrote ${recorded})` : ''}. Change these in your hosting: ${envDiff.join('; ')}. Re-run: atlas env --product ${product}${envFlag} --format dotenv, and redeploy.`);
       if (!dry && cred.manifest && cred.instance) {
         cred.instance.issuer = expected;
         cred.instance.discovery_url = instance.discovery_url ?? `${expected}/.well-known/openid-configuration`;
@@ -302,6 +304,14 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
     current = 'preflight';
     const pre = await preflightCheck(api);
     check(pre);
+    // A live instance that declares email sign-in but cannot send: the methods are on and not offered. Never go live like that.
+    const noEmail = (instance.environment ?? cred.instance?.environment) === 'production' ? (pre.warnings ?? []).find((w) => w.id === 'preflight/email_provider_missing') : undefined;
+    if (noEmail) {
+      fail(
+        noEmail.detail,
+        `Give the instance an email provider: atlas init --product <product> --email-provider brevo --email-from "Name <noreply@example.com>" --email-key-file <path|->, or PUT /v1/messaging_providers/email {"transport":"brevo","from_address":"Name <noreply@example.com>","config":{"api_key":"<key>"}}. Or turn the email methods off: PATCH /v1/instance with auth_config.strategies emailCode: false, emailLink: false, password: false. Then run golive again.`,
+      );
+    }
     for (const w of pre.warnings ?? []) warn(w.id, `${w.detail}${w.fix ? ` Fix: ${w.fix}` : ''}`);
     current = 'login_readiness';
     check(await loginReadinessCheck(api, origin.origin));
@@ -407,8 +417,14 @@ export async function golive(ctx: RunContext, args: ParsedArgs): Promise<number>
     else ctx.io.out(scrubText(`✗ ${failed.step} — ${failed.problem}\n  fix: ${failed.fix}`));
     return 1;
   }
-  if (json) printJson(ctx.io, redactDeep({ ok: true, dry_run: dry, origin: origin.origin, steps: results }));
-  else if (dry) ctx.io.out('Dry run: nothing was written.');
+  if (json) printJson(ctx.io, redactDeep({ ok: true, dry_run: dry, origin: origin.origin, steps: results, ...(envDiff.length ? { env_diff: envDiff } : {}) }));
+  else {
+    if (envDiff.length) {
+      ctx.io.out('Environment changes to deploy:');
+      for (const l of envDiff) ctx.io.out(`  ${l}`);
+    }
+    if (dry) ctx.io.out('Dry run: nothing was written.');
+  }
   return 0;
 }
 
@@ -426,6 +442,73 @@ export function unscopedAdvice(wide: Array<{ id: string }>): string {
   ]
     .filter(Boolean)
     .join(' ');
+}
+
+/** One env line per variable that must change after the issuer moved: old and new value, or "remove". */
+export function envDiffLines(
+  before: { issuer: string | null; discovery: string | null; jwks: string | null; fapi: string | null },
+  after: { issuer: string; discovery: string | null; jwks: string | null; fapi: string | null },
+): string[] {
+  const fapi = after.fapi ? trimSlash(after.fapi.startsWith('http') ? after.fapi : `https://${after.fapi}`) : null;
+  const next: Record<string, string | null> = {
+    ATLAS_ISSUER: after.issuer,
+    ATLAS_DISCOVERY_URL: after.discovery ?? `${after.issuer}/.well-known/openid-configuration`,
+    ATLAS_JWKS_URI: after.jwks ?? `${after.issuer}/.well-known/jwks.json`,
+    ATLAS_PREVIOUS_ISSUERS: fapi && fapi !== after.issuer ? fapi : null,
+  };
+  const prev: Record<string, string | null> = {
+    ATLAS_ISSUER: before.issuer,
+    ATLAS_DISCOVERY_URL: before.discovery,
+    ATLAS_JWKS_URI: before.jwks,
+    ATLAS_PREVIOUS_ISSUERS: null,
+  };
+  const lines: string[] = [];
+  for (const [k, v] of Object.entries(next)) {
+    if (!v || v === prev[k]) continue;
+    lines.push(prev[k] ? `${k}: ${prev[k]} -> ${v}` : `${k}: set to ${v}`);
+  }
+  // The SDK derives the JWKS location from the issuer; a hand-set old variable is what breaks a path mount.
+  lines.push('ATLAS_JWKS_URL: remove (derived from issuer)');
+  return lines;
+}
+
+const sleepFor = [2000, 4000, 8000, 16000, 30000];
+
+/**
+ * Read the discovery document the way a verifier would. Sends `Accept-Encoding: identity`, retries with backoff for about a
+ * minute (a domain just verified takes a moment to serve), and on failure reports what came back with a curl line that repeats it.
+ * A document that answers with another issuer is final: no retry.
+ */
+export async function probeDiscovery(
+  url: string,
+  f: typeof fetch,
+  sleep: (ms: number) => Promise<void>,
+): Promise<{ ok: true; issuer: string | undefined } | { ok: false; problem: string; fix: string }> {
+  let seen = '';
+  let hint = 'Route that path to your Atlas Frontend API (see the domain instructions in GET /v1/domains).';
+  for (let attempt = 0; attempt <= sleepFor.length; attempt++) {
+    if (attempt > 0) await sleep(sleepFor[attempt - 1]!);
+    let status: number | undefined;
+    let encoding: string | null = null;
+    let head = '';
+    try {
+      const res = await f(url, { headers: { accept: 'application/json', 'accept-encoding': 'identity' }, signal: AbortSignal.timeout(10_000) });
+      status = res.status;
+      encoding = res.headers.get('content-encoding');
+      const text = await res.text();
+      head = JSON.stringify(text.slice(0, 80));
+      if (res.ok) return { ok: true, issuer: (JSON.parse(text) as { issuer?: string }).issuer };
+      seen = `answered ${status}, content-encoding ${encoding ?? 'none'}, first bytes ${head}`;
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      seen = status === undefined ? `unreachable (${why})` : `answered ${status} but the body could not be read as JSON (${why}), content-encoding ${encoding ?? 'none'}${head ? `, first bytes ${head}` : ''}`;
+    }
+    if (encoding && encoding !== 'identity') {
+      hint = `The request asked for Accept-Encoding: identity but the response is ${encoding}-encoded: a proxy or CDN in front of the mount compresses it. Turn compression off for the mount path, or let it pass through unchanged. ${hint}`;
+    }
+  }
+  const curl = `curl -sS -D - -H 'Accept: application/json' -H 'Accept-Encoding: identity' '${url}'`;
+  return { ok: false, problem: `${url} ${seen} (tried ${sleepFor.length + 1} times over about a minute)`, fix: `${hint} Reproduce it with: ${curl}` };
 }
 
 /** A read that is absent on this instance (404) is "not declared". */

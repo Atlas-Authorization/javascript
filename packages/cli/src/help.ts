@@ -303,7 +303,8 @@ reported, not fatal. Anything shaped like a secret is redacted.`,
 
 Usage:
   atlas import <users.jsonl> [--dry-run] [--since <ts>] [--on-conflict skip|update]
-                             [--password-policy active|until_email_verified] [--json]
+                             [--password-policy active|until_email_verified]
+                             [--password-normalize nfkc|nfc|none] [--json]
   atlas import --from <vendor> <export-file> [--dry-run]
   atlas import --from better-auth --bundle <file> [--dry-run] [--yes]
   atlas import --from better-auth --import <id> [--confirm-conflicts]
@@ -343,6 +344,8 @@ Options:
   --on-conflict <mode>   update (the default for --from) or skip a user who already exists
   --password-policy <p>  active (default), or until_email_verified: an imported hash signs in
                          only once the address is verified
+  --password-normalize <f>  nfkc, nfc or none (default): the Unicode form the old system hashed
+                         passwords in; applied to the typed password before the hash is checked
   --json                 Machine-readable summary
 
 Better Auth bundle (npx atlas-better-auth-export --out <file> --public-key <key>):
@@ -502,8 +505,8 @@ owner turned on cli_handoff (you must have signed in to that app once). The toke
 Usage:
   atlas keys whoami                         What the current key is and can do
   atlas keys list                           Every credential on the instance
-  atlas keys create (--scopes "<scopes>" | --preset app-runtime|provisioning|integrations) [--name n] [--env-var <NAME>] [--owner o] [--expires-at <ISO>] [--allowed-ips <cidr,…>] [--out <file>]
-  atlas keys rotate <id> [--preset app-runtime|provisioning|integrations] [--overlap <dur, e.g. 72h or seconds>] [--out <file>] [--env-var <NAME>]   --preset narrows an all-scope key; the old key keeps working for the overlap
+  atlas keys create (--scopes "<scopes>" | --preset app-runtime|web-app|provisioning|operator|end-user-pools|integrations) [--name n] [--env-var <NAME>] [--owner o] [--expires-at <ISO>] [--allowed-ips <cidr,…>] [--out <file>]
+  atlas keys rotate <id> [--preset app-runtime|web-app|provisioning|operator|end-user-pools|integrations] [--overlap <dur, e.g. 72h or seconds>] [--out <file>] [--env-var <NAME>]   --preset narrows an all-scope key; the old key keeps working for the overlap
   atlas keys data status|enable|rotate|rewrap|check|shred   Customer-managed data key (shred needs the instance id typed or --confirm)
   atlas keys op list|rotate                           OpenID provider signing keys
   atlas keys revoke <id>
@@ -692,7 +695,7 @@ registered native apps with their callback URLs, what is still missing (prefligh
 findings for native apps), and the exact useSignIn().signInWithOAuth call to paste.`,
   'move-origin': `atlas move-origin — move an app to a new domain
 
-Usage: atlas move-origin --from <origin> --to <origin> [--dry-run] [--yes] [--json]
+Usage: atlas move-origin --from <origin> --to <origin> [--clone-resource-server <old>=<new>] [--dry-run] [--yes] [--json]
 
 Rewrites every field that points at the old origin: allowed origins, branding
 links, OAuth client redirect and logout URIs, webhook URLs, the redirect-URL
@@ -843,8 +846,9 @@ Usage:
                          [--disable] [--dry-run] [--json]
   atlas integrations remove <id> [--json]
   atlas integrations health [--json]
-  atlas integrations forwarding set <lucida|hermetica|seolyticize|webhook> [--secret-file <path|->] [--host <h>]
-                         [--site-key <k>] [--conversion-event <e>] [--include-pii] [--url <https url>] [--active|--inactive]
+  atlas integrations forwarding set <lucida|hermetica|seolyticize|webhook|watchtower> [--secret-file <path|->] [--host <h>]
+                         [--site-key <k>] [--conversion-event <e>] [--include-pii] [--url <https url>]
+                         [--endpoint <https ingest host>] [--active|--inactive]
   atlas integrations forwarding show <destination> [--json]
   atlas integrations forwarding remove <destination>
   atlas integrations deliveries <id> [--trace <id>] [--json]
@@ -852,7 +856,9 @@ Usage:
 health lists every connected receiver (webhook endpoints, integrations, the privacy
 orchestrator) with its last delivery. forwarding set sends user.created sign-ups to
 a platform with YOUR key (read from --secret-file, or - for stdin; never printed) or
-to any https receiver (webhook, with --url); show reads it back (never the key); remove stops it.
+to any https receiver (webhook, with --url); watchtower sends security events (locks, bans,
+risk changes, impersonation, quarantined factors) to your Watchtower ingest host (--endpoint) with an
+ingestion key; show reads it back (never the key); remove stops it.
 
 <id> is a preset (chatly, forumulate, cookiemunch, referalli) or your own id.
 --oauth-client-id names the first-party OAuth client the service signs users in
@@ -894,7 +900,7 @@ Usage:
              [--client-redirect <url>]... [--webhook-url <url>]
              [--backchannel <url>]
              [--with-dev] [--no-env-files --json]
-             [--key-preset app-runtime|all] [--allow-no-email]
+             [--key-preset app-runtime|all[,operator][,end-user-pools]] [--allow-no-email]
              [--yes] [--force] [--rotate-secret] [--json]
   atlas init --next [--mount /atlas] [--dir <app-root>] [--force]
   atlas init nextjs-local-users [--dir <app>]    (a starter that keeps your own user table in step; runs create-atlas-app)
@@ -920,7 +926,7 @@ is never printed. An existing file is never overwritten without --force.
 --rotate-secret mints a new secret key when the app exists but its file is gone.
 The app key is the app-runtime preset (ATLAS_SECRET_KEY); a separate provisioning key (ATLAS_PROVISIONING_KEY,
 for atlas plan/apply and the CLI) goes in its own file, and the all-scope key that came with the app is revoked.
---key-preset all keeps the all-scope key. A production app with no email transport is refused unless
+--key-preset all keeps the all-scope key; add ",operator" and/or ",end-user-pools" to also mint those preset keys (saved as operator.env / end-user-pools.env next to the others). A production app with no email transport is refused unless
 --allow-no-email.
 Public values and file paths are kept in ~/.config/<product>/atlas.json.
 Turns on strict request bodies unless the instance has them or opted out.
@@ -1316,7 +1322,7 @@ Usage:
         or a directory from 'atlas config export' (default ./atlas-config).
 
 Shows the plan, asks before applying (--yes skips the question; needed without a
-terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, referral_reward_rules, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, journey_experiments, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, permission_aliases, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, message_receivers, write_budget, oauth_publishers, erasure_connectors, signing_key_schedule, audit_chain, policy_audiences, oauth_publisher_clients, region, native_apps, native_apps_publishable_key, connection_provider_policies. Re-running is a no-op.
+terminal), then applies creates and updates in a fixed order: email_provider, sms_provider, push_provider, instance, org_settings_schema, redirect_urls, oauth_clients, hooks, oauth_providers, custom_oauth_providers, resource_servers, scopes, jwt_templates, permissions, roles, webhook_endpoints, sso_connections, sso_onboarding_profiles, billing_plans, notification_templates, email_templates, organization_policies, organization_branding, branding, cookie_consent, sign_in_with_atlas, signing_key_policy, domains, integrations, referrals, privacy_orchestrator, proxy_secret, hosted_pages, connection_oauth_clients, migration_bridges, impersonation_policy, connection_token_limits, connection_provider_topics, connection_reconnect, referral_reward_rules, connection_relay_limits, web_bot_auth, notification_categories, sms_templates, localizations, page_templates, passkey_campaigns, step_up_policies, mfa_campaigns, policy_settings, policy_source, actions, action_bindings, journeys, journey_experiments, workflows, app_event_types, audit_event_schemas, log_streams, audit_exports, audit_retention, telemetry_export, alert_rules, abac_policies, abac_schema, access_policies, fga_stores, fga_settings, fga_sync, authz_decision_settings, marketing_settings, groups, group_rules, permission_aliases, app_roles, resource_types, iga_sod_rules, iga_birthright_rules, iga_bundles, iga_settings, agent_registration, scim_provisioning_targets, service_connectors, logout_notify_endpoints, billing_coupons, billing_settings, billing_providers, identity_verification, user_traits_schema, rate_limit_policies, org_role_sets, org_templates, machine_trust_policies, messaging_settings, sms_country_routes, messaging_fallbacks, message_receivers, write_budget, oauth_publishers, oauth_client_webhooks, erasure_connectors, signing_key_schedule, audit_chain, policy_audiences, oauth_publisher_clients, region, native_apps, native_apps_publishable_key, connection_provider_policies. Re-running is a no-op.
 Without --prune the plan compares only the keys the file sets.
   --check         plan only; exit 2 when anything would change (CI)
   --skip-validate leave out the server dry-run pass (the published-limit checks still run)

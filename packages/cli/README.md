@@ -189,7 +189,7 @@ Managed resource types (the same set the Terraform provider manages):
 `instance` (auth config + allowed origins), `email_provider`, `hooks` (`before_user_create`), `branding`, `oauth_clients`, `oauth_providers`,
 `sso_connections`, `sso_onboarding_profiles`, `cookie_consent`, `resource_servers`, `jwt_templates`, `roles`,
 `webhook_endpoints`, `billing_plans`, `redirect_urls`, `org_settings_schema`,
-`notification_templates`, `email_templates`, `organization_policies`, plus `domains`,
+`notification_templates`, `email_templates`, `organization_policies`, `organization_branding`, plus `domains`,
 `integrations`, `referrals`, `privacy_orchestrator` and `proxy_secret` (below).
 
 Rules that make it safe and repeatable:

@@ -406,6 +406,7 @@ export async function envCommand(ctx: RunContext, args: ParsedArgs): Promise<num
   if (format === 'dotenv') {
     out(`# ${label} (${environment}): public values`);
     for (const [k, v] of Object.entries(pub)) out(`${k}=${v}`);
+    out('# ATLAS_JWKS_URL is not part of the set: the SDKs derive the key set URL from ATLAS_ISSUER, so remove it if your hosting still has it.');
     out('# Secrets are not printed. Each *_FILE variable names the 0600 file that holds it.');
     for (const s of secrets) out(`${s.key}_FILE=${s.file}`);
   } else if (format === 'coolify') {

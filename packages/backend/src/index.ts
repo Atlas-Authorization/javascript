@@ -12,6 +12,8 @@ export * from './step-up-gate';
 export * from './txn-token';
 export * from './access-control';
 export * from './handshake';
+// Sign in on a hub host, finish on a tenant's own domain with a single-use code.
+export * from './domain-handoff';
 // Moving from Better Auth: exchange its session cookie once, accept its JWTs for a window.
 export * from './better-auth';
 // Moving from any vendor: the generic zero-logout bridge and its per-vendor presets.

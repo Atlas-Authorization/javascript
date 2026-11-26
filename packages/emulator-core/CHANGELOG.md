@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0
+
+- Version bump alongside this release; the emulator follows the new request and response fields (consent, account linking, key presets, imports, memberships).
+
 ## 0.7.1
 
 - The Brevo delivery callback accepts the per-instance token as a bearer header, basic-auth password or `?t=`, like the real receiver.

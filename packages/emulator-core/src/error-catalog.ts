@@ -8,6 +8,10 @@ export const ERROR_CATALOG: Record<string, { status: number; title: string }> = 
     "status": 422,
     "title": "Unknown field"
   },
+  "UNKNOWN_QUERY_PARAM": {
+    "status": 400,
+    "title": "Unknown query parameter"
+  },
   "READ_ONLY_FIELD": {
     "status": 422,
     "title": "Read-only field"
@@ -351,6 +355,10 @@ export const ERROR_CATALOG: Record<string, { status: number; title: string }> = 
   "ORG_METHOD_NOT_ALLOWED": {
     "status": 403,
     "title": "Sign-in method not allowed by the organization"
+  },
+  "SIGN_IN_METHOD_NOT_ALLOWED": {
+    "status": 403,
+    "title": "Sign-in method not offered here"
   },
   "SETTINGS_INVALID": {
     "status": 422,

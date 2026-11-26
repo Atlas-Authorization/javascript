@@ -56,7 +56,8 @@ describe('backward compatibility (no design anywhere)', () => {
     // then the error colour #c53030 (4.5:1 contrast on white), then the profile
     // traits / profile completion layout (.atlas-profile-traits, .atlas-profile-completion),
     // then logical properties for right-to-left locales (inset-inline-end, text-align:start),
-    // then the disabled passkey sign-in button (.atlas-passkey-button:disabled).
+    // then the disabled passkey sign-in button (.atlas-passkey-button:disabled),
+    // then the account panel's label/input layout in the token path (.atlas-account-field, .atlas-account-input).
     expect(designKey(ATLAS_BASE_CSS)).toBe(BASE_CSS_HASH);
   });
 
@@ -191,4 +192,4 @@ describe('element keys', () => {
   });
 });
 
-const BASE_CSS_HASH = '1dda2hi';
+const BASE_CSS_HASH = '51zpim';

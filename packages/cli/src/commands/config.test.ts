@@ -41,6 +41,7 @@ class MockApi implements ConfigHttp {
       '/v1/organizations': 'organizations',
       '/v1/permissions': 'permissions',
       '/v1/custom_oauth_providers': 'custom_oauth_providers',
+      '/v1/instance/scopes': 'scopes',
     };
     const key = map[path];
     if (key) return { data: (this.state[key] as unknown[]) ?? [] } as T;
@@ -703,6 +704,40 @@ describe('atlas apply / atlas plan (one config file)', () => {
     expect(await run(['apply', path, '--yes'], ctx(io, api))).toBe(1);
     expect(io.stderr()).toContain('${MISSING_TOKEN}');
     expect(api.writes).toEqual([]);
+  });
+
+  it('plan is a hard error too, listing every missing ${VAR} once', async () => {
+    const path = file({ oauth_clients: [{ name: 'Web App', redirect_uris: ['https://x/y'], client_secret: '${B_TOKEN}' }, { name: 'Two', redirect_uris: ['https://x/z'], client_secret: '${A_TOKEN}-${B_TOKEN}' }] });
+    const io = captureIO();
+    expect(await run(['plan', path], ctx(io, new MockApi({ ...seedState(), oauth_clients: [] })))).toBe(1);
+    expect(io.stderr()).toContain('Unresolved placeholder(s): ${A_TOKEN}, ${B_TOKEN}');
+  });
+
+  it('--prune leaves sign-up forwarding endpoints alone', async () => {
+    const api = new MockApi({ ...seedState(), webhook_endpoints: [{ id: 'we_fwd', url: 'https://hooks.example.com/f', description: 'Sign-up forwarding to webhook', enabled_events: ['user.created'], active: true }] });
+    const path = file({ webhook_endpoints: [] });
+    const io = captureIO();
+    expect(await run(['apply', path, '--prune', '--yes'], ctx(io, api))).toBe(0);
+    expect(api.writes.filter((w) => w.method === 'DELETE')).toEqual([]);
+  });
+
+  it('redirect_urls takes bare strings as { url }', async () => {
+    const api = new MockApi(seedState());
+    const path = file({ redirect_urls: ['https://app.example.com/cb', 'https://app.example.com/cb2', 'https://app.example.com/new'] });
+    expect(await run(['apply', path, '--yes'], ctx(captureIO(), api))).toBe(0);
+    expect(api.writes).toContainEqual({ method: 'POST', path: '/v1/redirect_urls', body: { url: 'https://app.example.com/new' } });
+  });
+
+  it('branding.privacyPolicyUrl names where privacy and terms URLs live', async () => {
+    const io = captureIO();
+    expect(await run(['plan', file({ branding: { privacyPolicyUrl: 'https://example.com/privacy' } })], ctx(io, new MockApi(seedState())))).toBe(1);
+    expect(io.stderr()).toContain('branding.legal.privacyUrl');
+  });
+
+  it('a scope that leaves requires_client_level and owner_exempt out is not drift against their defaults', async () => {
+    const api = new MockApi({ ...seedState(), scopes: [{ name: 'orders:read', label: { en: 'Orders' }, description: { en: 'Read' }, sensitive: false, requires_verified_client: false, requires_client_level: 'any', owner_exempt: false, optional: false }] });
+    const path = file({ scopes: { scopes: [{ name: 'orders:read', label: { en: 'Orders' }, description: { en: 'Read' } }] } });
+    expect(await run(['plan', path, '--check'], ctx(captureIO(), api))).not.toBe(1);
   });
 });
 

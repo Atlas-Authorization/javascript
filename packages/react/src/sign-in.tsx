@@ -13,7 +13,9 @@ import {
   type OAuthPopupHandlers,
   uploadJourneyFile,
 } from '@atlasauth/js';
+import { filterFactors, methodAllowed } from '@atlasauth/js';
 import { useAtlas } from './AtlasProvider';
+import { AllowedMethodsProvider, useAllowedMethods } from './allowed-methods';
 import { FapiClient, initialFlow, type FlowState } from './fapi';
 import { usePolicyText } from './policies';
 import { CaptchaSlot } from './captcha';
@@ -40,28 +42,32 @@ const noopSubscribe = () => () => {};
 const IDENTIFIER_FIRST_FACTORS = ['password', 'email_code', 'email_link', 'phone_code', 'username'];
 
 /** True when the environment lists the enabled first factors and none of them starts with an identifier. */
-function hasNoIdentifierStep(environment: unknown): boolean {
+function hasNoIdentifierStep(environment: unknown, allowed?: readonly string[] | null): boolean {
   const factors = (environment as { first_factors?: unknown } | null)?.first_factors;
-  return Array.isArray(factors) && !factors.some((f) => IDENTIFIER_FIRST_FACTORS.includes(f as string));
+  return Array.isArray(factors) && !filterFactors(factors as string[], allowed).some((f) => IDENTIFIER_FIRST_FACTORS.includes(f));
 }
 
 export function SignIn(props: FlowProps = {}) {
   const link = useEmailLink('sign_in');
   if (useAtlas().inert) return null;
-  return link ? <EmailLinkPage link={link} hideTitle={props.hideTitle} /> : <SignInFlow {...props} />;
+  const body = link ? <EmailLinkPage link={link} hideTitle={props.hideTitle} /> : <SignInFlow {...props} />;
+  return <AllowedMethodsProvider value={props.allowedMethods}>{body}</AllowedMethodsProvider>;
 }
 
 function SignInFlow(props: FlowProps) {
   const t = usePolicyText();
   const { state, setState, submit, client, finish, captcha, prepare, usePassword, saveRecoveryCodes } = useFlow({
     afterUrl: props.afterUrl,
+    onSignedIn: props.onSignedIn,
+    exchange: props.exchange,
     referral: props.referral,
     referralConsent: props.referralConsent,
   });
   const { status, serverRendered, environment, loadEnvironment } = useAtlas();
   // No identifier-first method (email code / link, password, phone, username) is on: the identifier box would
   // lead nowhere. Only decided once the environment has answered and says which first factors are on.
-  const noIdentifierStep = hasNoIdentifierStep(environment);
+  const allowedMethods = useAllowedMethods();
+  const noIdentifierStep = hasNoIdentifierStep(environment, allowedMethods);
   useEffect(() => {
     if (environment == null) void loadEnvironment();
   }, [environment, loadEnvironment]);
@@ -77,7 +83,7 @@ function SignInFlow(props: FlowProps) {
     setState,
     captcha,
     // Only on the first step, before an attempt exists (as the hosted page).
-    atStart: !state.attempt && !hidden,
+    atStart: !state.attempt && !hidden && methodAllowed('passkey', allowedMethods),
     prf: props.passkeyPrf,
     onExtensionResults: props.onPasskeyExtensionResults,
   });
@@ -85,7 +91,7 @@ function SignInFlow(props: FlowProps) {
   const placement = props.layout?.alternativeMethods ?? 'below';
   const alternatives = (
     <>
-      {passkey.offered ? <PasskeySignInButton busy={state.busy} onClick={passkey.signIn} /> : null}
+      {passkey.offered && methodAllowed('passkey', allowedMethods) ? <PasskeySignInButton busy={state.busy} onClick={passkey.signIn} /> : null}
       {/* Social buttons belong on the first step, not mid-flow (e.g. during a
           second factor). `!state.attempt` is exactly the initial identifier step. */}
       {!state.attempt ? (
@@ -102,8 +108,16 @@ function SignInFlow(props: FlowProps) {
   );
 
   if (hidden) return props.passkeyPrompt && status === 'signed_in' ? <PasskeyPrompt /> : null;
+  // Developer notice, outside production builds only: methods switched on but not offered because the instance cannot send email.
+  const inactive = (environment as { inactive_methods?: unknown } | null)?.inactive_methods;
+  const showNotice = Array.isArray(inactive) && inactive.length > 0 && typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production';
   return (
     <>
+      {showNotice ? (
+        <p role="note" data-atlas-dev-notice style={{ fontSize: 12, opacity: 0.8 }}>
+          Developer notice: {(inactive as string[]).join(', ')} {inactive.length === 1 ? 'is' : 'are'} switched on but not offered, because this instance has no email provider. Set one with PUT /v1/messaging_providers/email.
+        </p>
+      ) : null}
       {!state.attempt ? <LastUsedHint client={client} /> : null}
       {placement === 'above' ? alternatives : null}
       {noIdentifierStep && !state.attempt ? (

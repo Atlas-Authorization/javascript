@@ -45,8 +45,9 @@ export const ATLAS_BASE_CSS = `
 .atlas-field{display:flex;flex-direction:column;gap:calc(var(--atlas-spacing-unit,4px) * 1.5);font-size:.875rem;}
 .atlas-field > span{font-weight:500;color:var(--atlas-color-text,#1c1c1f);}
 
-.atlas-input{width:100%;padding:10px 12px;font-size:max(16px,.95rem);font-family:inherit;color:var(--atlas-color-text,#1c1c1f);background:var(--atlas-color-background,#fff);border:1px solid var(--atlas-color-border,#e4e4e9);border-radius:var(--atlas-border-radius,8px);outline:none;transition:border-color .15s ease,box-shadow .15s ease;}
-.atlas-input:focus{border-color:var(--atlas-color-primary,#5b5bd6);}
+.atlas-account-field{display:flex;flex-direction:column;gap:calc(var(--atlas-spacing-unit,4px) * 1.5);font-size:.875rem;font-weight:500;color:var(--atlas-color-text,#1c1c1f);}
+.atlas-account-input,.atlas-input{width:100%;padding:10px 12px;font-size:max(16px,.95rem);font-family:inherit;color:var(--atlas-color-text,#1c1c1f);background:var(--atlas-color-background,#fff);border:1px solid var(--atlas-color-border,#e4e4e9);border:1px solid color-mix(in srgb,var(--atlas-color-border) 50%,var(--atlas-color-text));border-radius:var(--atlas-border-radius,8px);outline:none;transition:border-color .15s ease,box-shadow .15s ease;}
+.atlas-input:focus,.atlas-account-input:focus{border-color:var(--atlas-color-primary,#5b5bd6);}
 :is(.atlas-input,.atlas-button,.atlas-social-button,.atlas-menu-item,.atlas-tab,.atlas-avatar):focus-visible{outline:2px solid var(--atlas-color-focus-ring,var(--atlas-color-primary,#5b5bd6));outline-offset:2px;}
 
 .atlas-button{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:40px;padding:10px 16px;font-size:.95rem;font-weight:600;font-family:inherit;color:var(--atlas-color-text-on-primary,#fff);background:var(--atlas-color-primary,#5b5bd6);border:1px solid transparent;border-radius:var(--atlas-border-radius,8px);cursor:pointer;transition:filter .15s ease,opacity .15s ease;}
@@ -141,7 +142,7 @@ export const ATLAS_DESIGN_CSS = `
 :where(.atlas-root[data-atlas-design]) .atlas-account-field{display:flex;flex-direction:column;gap:calc(var(--atlas-space-unit) * 1.5);font-size:var(--atlas-font-size-sm);color:var(--atlas-color-text);}
 :where(.atlas-root[data-atlas-design]) .atlas-account-input{padding:6px 10px;font-family:inherit;outline:none;}
 
-:where(.atlas-root[data-atlas-design]) :is(.atlas-input,.atlas-account-input){min-height:var(--atlas-control-height);font-size:max(16px,var(--atlas-font-size-base));color:var(--atlas-color-input-text);background:var(--atlas-color-input-background);border:var(--atlas-border-width) solid var(--atlas-color-border);border-radius:var(--atlas-radius-control);}
+:where(.atlas-root[data-atlas-design]) :is(.atlas-input,.atlas-account-input){min-height:var(--atlas-control-height);font-size:max(16px,var(--atlas-font-size-base));color:var(--atlas-color-input-text);background:var(--atlas-color-input-background);border:var(--atlas-border-width) solid var(--atlas-color-border);border-color:color-mix(in srgb,var(--atlas-color-border) 50%,var(--atlas-color-text));border-radius:var(--atlas-radius-control);}
 :where(.atlas-root[data-atlas-design]) :is(.atlas-input:focus,.atlas-account-input:focus){border-color:var(--atlas-color-primary);}
 :where(.atlas-root[data-atlas-design]) :is(.atlas-input,.atlas-account-input,.atlas-button,.atlas-button-secondary,.atlas-social-button,.atlas-menu-item,.atlas-tab,.atlas-avatar):focus-visible{outline:2px solid var(--atlas-focus-outline-color,var(--atlas-color-primary));outline-offset:2px;}
 :where(.atlas-root[data-atlas-input="filled"]) :is(.atlas-input,.atlas-account-input){background:color-mix(in srgb,var(--atlas-color-text) 6%,var(--atlas-color-input-background));border-color:transparent;}

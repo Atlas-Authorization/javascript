@@ -452,3 +452,7 @@ export type { LinkHookOptions, LinkCandidate } from '@atlasauth/backend';
 // The Frontend API path mount and its domain-verification file, for route handlers.
 export { createMountHandler, createVerifyHandler } from './mount';
 export type { AtlasMountHandlers, AtlasMountOptions } from './mount';
+
+// The route handler behind `<SignIn exchange>`: verify the Atlas token, create your own session once per `sid`.
+export { createSessionExchange } from './session-exchange';
+export type { CreateSessionExchangeOptions, SessionExchangeResult, SessionExchangeStore } from './session-exchange';

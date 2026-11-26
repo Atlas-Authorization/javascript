@@ -101,6 +101,10 @@ export interface OAuthClient extends ProvisioningFields, OAuthClientDefaultField
   refresh_touches_session?: boolean;
   /** No authorization code is issued for a user whose primary email is not verified. */
   require_verified_email?: boolean;
+  /** Show the consent screen, a first-party client included, until the user approves with remember. */
+  require_consent?: boolean;
+  /** Consent kept per organization: null = whenever the request names one, true = always, false = one consent for all. */
+  consent_per_organization?: boolean | null;
   /** Refused at every OAuth endpoint while true (kept, not deleted). */
   disabled?: boolean;
   /** PKCE required even though the client is confidential. */
@@ -276,6 +280,10 @@ export interface CreateOAuthClientBody extends ProvisioningInput, OAuthClientDef
   client_secret?: string;
   /** Issue no authorization code for a user whose primary email is not verified. Default false. */
   require_verified_email?: boolean;
+  /** Show the consent screen, a first-party client included, until the user approves with remember. Default false. */
+  require_consent?: boolean;
+  /** Consent kept per organization: null (default) = whenever the request names one, true = always, false = one consent for all. */
+  consent_per_organization?: boolean | null;
   /** Require PKCE. New clients default to true (confidential ones included); send false to opt out. */
   require_pkce?: boolean;
   /** Also add the redirect URIs' origins to allowed_origins (append only; listed in `added_origins`). */
@@ -299,6 +307,10 @@ export interface UpdateOAuthClientBody extends OAuthClientDefaultFields, OAuthCl
   require_pkce?: boolean;
   /** Issue no authorization code for a user whose primary email is not verified. */
   require_verified_email?: boolean;
+  /** Show the consent screen, a first-party client included, until the user approves with remember. */
+  require_consent?: boolean;
+  /** Consent kept per organization: null = whenever the request names one, true = always, false = one consent for all. */
+  consent_per_organization?: boolean | null;
   /** Also add the redirect URIs' origins to allowed_origins (append only; listed in `added_origins`). */
   add_redirect_origins?: boolean;
 }
@@ -529,7 +541,7 @@ export function oauthClientsResource(request: RequestFn) {
       get(consentChallenge: string): Promise<DelegatedConsentRequest> {
         return request({ method: 'GET', path: '/v1/oauth_consent_requests', query: { consent_challenge: consentChallenge } });
       },
-      accept(consentChallenge: string, body: { grant_scope?: string[]; remember?: boolean } = {}): Promise<DelegatedRedirect> {
+      accept(consentChallenge: string, body: { granted_scopes?: string[]; grant_scope?: string[]; organization_id?: string; remember?: boolean; metadata?: Record<string, unknown> } = {}): Promise<DelegatedRedirect> {
         return request({ method: 'PUT', path: '/v1/oauth_consent_requests/accept', query: { consent_challenge: consentChallenge }, body });
       },
       reject(consentChallenge: string, body: DelegatedReject = {}): Promise<DelegatedRedirect> {
@@ -691,6 +703,8 @@ export interface DelegatedConsentRequest {
   audience: string | null;
   authorization_details: unknown[];
   organization_id: string | null;
+  /** The requested scopes the user may leave out (send the rest, and any kept, as `granted_scopes`). */
+  optional_scopes: string[];
   redirect_uri: string;
   /** The application's original /oauth2/authorize request on this instance; null when too large to carry. */
   request_url: string | null;

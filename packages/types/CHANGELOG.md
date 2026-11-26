@@ -1,5 +1,9 @@
 # @atlasauth/types changelog
 
+## 0.21.0
+
+- **type-widening:** `WebhookEvent` gains `grant.created`, `grant.updated`, `messaging.fallback_used` and `issuer.changed`; `grant.revoked` carries the public `client_id` and `oauth_client_id`; `user.created` carries `organization_memberships`; entitlement events carry `version`.
+
 ## 0.20.0
 
 - **type-widening:** `WebhookEvent` gains `user.deletion_rescheduled`, `user.phone_verified`, `message.bounced`, `message.complained` and `connection.secrets_exported`; webhook user payloads gain the phone fields and `sandbox`; session claims gain `org_claims_withheld`.

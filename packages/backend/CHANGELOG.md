@@ -1,5 +1,14 @@
 # @atlasauth/backend changelog
 
+## 0.66.0
+
+- **behaviour:** `AtlasBackend` reads `ATLAS_SECRET_KEY` and `ATLAS_API_URL` when `secretKey` and `bapiBaseUrl` are not passed; `verifyOnline` without a key throws `AtlasConfigError` (`secret_key_missing`). One warning when `jwksUrl` is on another host than the issuer.
+- **behaviour:** `createAccessTokenVerifier` accepts `previousIssuers` (a list, `'discovery'` or `ATLAS_PREVIOUS_ISSUERS`) and polls revocation per resource server when `audience` is a list.
+- `syncLocalUser({ writeExternalId: true, localIdOf })` sets the Atlas user's `external_id`; failures throw `AtlasExternalIdWriteError`.
+- New `@atlasauth/backend/fastify` plugin (authenticate, raw-body webhook route with dedupe, sign-in exchange route).
+- `createDomainHandoff` / `redeemDomainHandoff`, and a method to sign a hosted-page sign-in method filter.
+- Widened request and response types: OAuth client `client_uri`, `policy_uri`, `tos_uri`, `logo_uri`, `require_consent`, `consent_per_organization`; `oauth_client_id` in the revoked-token feed; `password_normalize`; entitlement `version`; organization memberships by external id; the Watchtower forwarding destination; new key presets.
+
 ## 0.65.1
 
 - Connection reuse: a request that fails with a connection reset before any response (`ECONNRESET`, `EPIPE`, `ECONNREFUSED`, `UND_ERR_SOCKET`, `other side closed`) is retried once after a short jittered wait, for GET, HEAD, OPTIONS, PUT, DELETE or any request with an idempotency key. Timeouts, aborts and other writes are never retried. `retry: false` turns it off.

@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/react",
-  "version": "0.42.1",
+  "version": "0.43.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -25,7 +25,7 @@
     "@atlasauth/authz": "workspace:*"
   },
   "peerDependencies": {
-    "@atlasauth/js": ">=0.51.0 <1.0.0",
+    "@atlasauth/js": ">=0.56.0 <1.0.0",
     "react": ">=18"
   },
   "devDependencies": {

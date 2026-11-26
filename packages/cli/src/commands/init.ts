@@ -51,8 +51,12 @@ const EMAIL_STRATEGIES = new Set(['emailCode', 'emailLink']);
 const MANAGED_EMAIL_PROVIDERS: readonly string[] = ['resend', 'brevo'];
 
 /** The flags that give `atlas init` an email transport (the yaml equivalent is in {@link EMAIL_YAML_HINT}). */
-const EMAIL_FLAGS_HINT =
-  `Add an email transport: --email managed --domain <your-domain> --email-provider ${EMAIL_PROVIDER_LIST} --email-key-file <path|-> (development instances: --email development).`;
+const EMAIL_FLAGS_HINT = [
+  'Add an email transport, either way:',
+  `  your domain registered with the provider: --email managed --domain <your-domain> --email-provider ${EMAIL_PROVIDER_LIST} --email-key-file <path|->`,
+  `  your provider account directly: --email-provider brevo --email-from noreply@<your-domain> --email-key-file <path|->  (or PUT /v1/messaging_providers/email {"transport":"brevo","from_address":"noreply@<your-domain>","config":{"api_key":"<key>"}})`,
+  '  development instances: --email development',
+].join('\n');
 const EMAIL_YAML_HINT = [
   '  email_provider:',
   '    transport: resend            # or brevo, hermetica',
@@ -88,6 +92,8 @@ interface InitOptions {
   withDev: boolean;
   /** `app-runtime` (default): the app key and a separate provisioning key are scoped presets; `all` keeps the all-scope key. */
   keyPreset: 'app-runtime' | 'all';
+  /** Further preset keys to mint and save next to the app's (`--key-preset app-runtime,operator`): operator, end-user-pools. */
+  extraKeyPresets: string[];
   /** Production without an email transport is refused unless this is passed. */
   allowNoEmail: boolean;
   /** `--email` (or a `--domain`, which implies managed) was given: nothing to ask or announce. */
@@ -99,11 +105,14 @@ interface InitOptions {
  * a folder's `*.env` never mixes a development and a production key. An existing flat
  * `<env>.env` keeps its layout: init never moves a file it didn't just write.
  */
-function secretLayout(dir: string, env: InstanceEnv): { dir: string; key: string; client: string; webhook: string; provisioning: string } {
+function secretLayout(dir: string, env: InstanceEnv): { dir: string; key: string; client: string; webhook: string; provisioning: string; preset: (name: string) => string } {
   return existsSync(join(dir, `${env}.env`))
-    ? { dir, key: `${env}.env`, client: `${env}-oauth-client.env`, webhook: `${env}-webhook.env`, provisioning: `${env}-provisioning.env` }
-    : { dir: join(dir, env), key: 'atlas.env', client: 'oauth-client.env', webhook: 'webhook.env', provisioning: 'provisioning.env' };
+    ? { dir, key: `${env}.env`, client: `${env}-oauth-client.env`, webhook: `${env}-webhook.env`, provisioning: `${env}-provisioning.env`, preset: (n) => `${env}-${n}.env` }
+    : { dir: join(dir, env), key: 'atlas.env', client: 'oauth-client.env', webhook: 'webhook.env', provisioning: 'provisioning.env', preset: (n) => `${n}.env` };
 }
+
+/** Presets `atlas init` can mint besides the app-runtime and provisioning keys it always makes, with the variable each key is saved under. */
+const EXTRA_KEY_PRESETS: Record<string, string> = { operator: 'ATLAS_OPERATOR_KEY', 'end-user-pools': 'ATLAS_END_USER_POOLS_KEY' };
 
 /** Whether this folder already holds the other environment's key directly, as an older init left it. */
 function holdsOtherFlat(dir: string, env: InstanceEnv): boolean {
@@ -126,7 +135,7 @@ function parseOptions(args: ParsedArgs): InitOptions {
   }
   const providerRaw = str(v, 'email-provider');
   // hermetica has no managed-domain registration: it is set directly (PUT) with --email-from.
-  const emailRaw = str(v, 'email') ?? (providerRaw === 'hermetica' ? 'provider' : domain ? 'managed' : 'none');
+  const emailRaw = str(v, 'email') ?? (providerRaw === 'hermetica' || (providerRaw && !domain && str(v, 'email-from')) ? 'provider' : domain ? 'managed' : 'none');
   if (emailRaw === 'managed' && providerRaw && !MANAGED_EMAIL_PROVIDERS.includes(providerRaw)) {
     throw new CliError(`--email managed registers your domain with ${MANAGED_EMAIL_PROVIDERS.join(' or ')}; ${providerRaw} is set directly: drop --email managed and pass --email-from <address> with --email-provider ${providerRaw}.`);
   }
@@ -150,8 +159,14 @@ function parseOptions(args: ParsedArgs): InitOptions {
   }
   const emailKeyFile = str(v, 'email-key-file');
   if (emailKeyFile !== undefined && !providerRaw) throw new CliError(`--email-key-file needs --email-provider ${EMAIL_PROVIDER_LIST}.`);
-  const keyPreset = str(v, 'key-preset') ?? 'app-runtime';
-  if (keyPreset !== 'app-runtime' && keyPreset !== 'all') throw new CliError(`--key-preset must be app-runtime or all, got '${keyPreset}'.`);
+  // `--key-preset app-runtime|all`, optionally followed by more presets to mint: `--key-preset app-runtime,operator,end-user-pools`.
+  const [keyPreset = 'app-runtime', ...extraKeyPresets] = (str(v, 'key-preset') ?? 'app-runtime').split(',').map((x) => x.trim()).filter(Boolean);
+  if (keyPreset !== 'app-runtime' && keyPreset !== 'all') {
+    throw new CliError(`--key-preset must start with app-runtime or all, got '${keyPreset}'. Extra presets follow after a comma: ${Object.keys(EXTRA_KEY_PRESETS).join(', ')}.`);
+  }
+  for (const x of extraKeyPresets) {
+    if (!(x in EXTRA_KEY_PRESETS)) throw new CliError(`--key-preset can also mint ${Object.keys(EXTRA_KEY_PRESETS).join(' and ')}, got '${x}'.`);
+  }
   const allowNoEmail = v['allow-no-email'] === true;
   const strategies = list(v, 'strategies').map((s) => STRATEGY_ALIASES[s] ?? camel(s));
   const redirects = list(v, 'client-redirect');
@@ -173,7 +188,11 @@ function parseOptions(args: ParsedArgs): InitOptions {
     if (u.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)) {
       throw new CliError('--backchannel must be an https URL (http only on localhost).');
     }
-    if (redirects.length === 0) throw new CliError('--backchannel needs --client-redirect: it is set on the OAuth client.');
+    if (redirects.length === 0) {
+      throw new CliError(
+        `--backchannel is stored on the app's OAuth client, and init only creates an OAuth client when it is given a redirect URL. Add one: --client-redirect ${u.origin}/atlas/callback (the URL your app receives the sign-in on), then run the same command again.`,
+      );
+    }
   }
   return {
     product,
@@ -195,6 +214,7 @@ function parseOptions(args: ParsedArgs): InitOptions {
     noEnvFiles: v['no-env-files'] === true,
     withDev: v['with-dev'] === true,
     keyPreset,
+    extraKeyPresets: [...new Set(extraKeyPresets)],
     allowNoEmail,
   };
 }
@@ -335,7 +355,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   }
   if (env === 'production' && opts.email === 'none' && !opts.allowNoEmail) {
     throw new CliError(
-      `A production instance with no email transport cannot send sign-in codes, links or password resets. Nothing was changed.\n${EMAIL_FLAGS_HINT}\nOr pass --allow-no-email if this instance will not use email sign-in methods.`,
+      `A production instance with no email transport cannot send sign-in codes, links or password resets. Nothing was changed.\n${EMAIL_FLAGS_HINT}\nOr pass --allow-no-email if this instance will not use email sign-in methods (password-only and social sign-in need no email transport).`,
     );
   }
 
@@ -374,6 +394,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   if (!app) {
     checkFree(secretFile, opts.force);
     if (opts.keyPreset !== 'all') checkFree(provisioningFile, opts.force);
+    for (const x of opts.extraKeyPresets) checkFree(join(layout.dir, layout.preset(x)), opts.force);
     const origins = [...new Set(opts.redirects.map((r) => new URL(r).origin).filter((o) => o.startsWith('http')))];
     app = await plat.post<AppRow>('/v1/platform/apps', {
       name: opts.appName,
@@ -675,6 +696,20 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   record.discovery_url = inst?.discovery_url ?? app.discovery_url ?? (record.issuer ? `${record.issuer}/.well-known/openid-configuration` : null);
   record.jwks_uri = inst?.jwks_uri ?? app.jwks_uri ?? (base ? `${base}/.well-known/jwks.json` : null);
 
+  // Mint and save the extra preset keys (operator, end-user-pools) with whatever key `mint` uses.
+  const mintExtraKeys = async (mint: (preset: string, name: string) => Promise<{ id: string; secret?: string }>) => {
+    for (const x of opts.extraKeyPresets) {
+      const key = await mint(x, `${opts.appName} ${x}`);
+      if (!key.secret) {
+        log(`The server did not return the ${x} key. Mint it with: atlas keys create --preset ${x} --out <file>.`);
+        continue;
+      }
+      const file = join(layout.dir, layout.preset(x));
+      saveSecret(layout, env, layout.preset(x), { [EXTRA_KEY_PRESETS[x]!]: key.secret }, { force: true, comment: `Atlas ${x} key for ${opts.appName} (${env}, ${app.id}). Expires after a year.` });
+      log(`Minted a ${x} key (${savedAt(file)}, ${EXTRA_KEY_PRESETS[x]}).`);
+    }
+  };
+
   // The app was created (or its key re-minted) with an all-scope key. Hand the app a runtime-only key and keep
   // a separate provisioning key for config-as-code, then retire the all-scope one.
   if (bootstrap && opts.keyPreset !== 'all') {
@@ -683,6 +718,8 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
       const mint = (preset: string, name: string) => api.post<{ id: string; secret?: string }>('/v1/secret_keys', { preset, name });
       const runtime = await mint('app-runtime', `${opts.appName} app runtime`);
       const prov = await mint('provisioning', `${opts.appName} provisioning`);
+      // Extra presets are minted while the app's own all-scope key can still mint them, before it is revoked below.
+      await mintExtraKeys(mint);
       if (runtime.secret && prov.secret) {
         saveSecret(layout, env, layout.key, { ATLAS_SECRET_KEY: runtime.secret }, {
           force: true,
@@ -711,6 +748,16 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
     }
   }
 
+  // Not a first run: the key in use may lack the scopes of the extra presets; say so instead of failing.
+  if (!(bootstrap && opts.keyPreset !== 'all') && opts.extraKeyPresets.length > 0) {
+    try {
+      await mintExtraKeys((preset, name) => api.post<{ id: string; secret?: string }>('/v1/secret_keys', { preset, name }));
+    } catch (err) {
+      if (!(err instanceof AtlasApiError)) throw err;
+      log(`Could not mint the ${opts.extraKeyPresets.join(', ')} key (${err.message}). Mint it with a key that holds those scopes: atlas keys create --preset <name> --out <file>.`);
+    }
+  }
+
   const manifest: ProjectManifest = {
     product: opts.product,
     api_url: platform.apiUrl,
@@ -736,7 +783,12 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   if (record.webhook?.secret_file) ctx.io.out(`  Webhook secret file: ${record.webhook.secret_file}`);
   if (devRecord) ctx.io.out(`  Development key file: ${devRecord.secret_file}`);
   ctx.io.out(`  Project manifest:  ${manifestFile}`);
+  ctx.io.out('  Keys expire after a year (atlas preflight warns 30 days before). Other jobs: atlas keys create --preset operator | end-user-pools --out <file>');
   ctx.io.out(`  For a platform connect flow, mint its own key: atlas keys create --preset integrations --out <file> --env-var <NAME>`);
+  if (opts.email === 'none' && opts.allowNoEmail) {
+    ctx.io.out('Reminder: this instance has no email transport yet, so email codes, links and password resets are not offered. Add one before you rely on them:');
+    ctx.io.out(EMAIL_FLAGS_HINT);
+  }
   ctx.io.out(`Next: atlas preflight --product ${opts.product} --instance-env ${env}, and atlas env --product ${opts.product} --format dotenv`);
   return 0;
 }

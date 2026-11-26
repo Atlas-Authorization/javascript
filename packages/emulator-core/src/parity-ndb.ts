@@ -204,6 +204,7 @@ export const ndbParityRequests: ParityRequest[] = [
   q("nd delete pca/action-registry/namespaces/:ns/pin", 'DELETE', '/v1/pca/action-registry/namespaces/nd{{rand}}/pin', { group: 'ndb' }),
   q("nd delete instance/hooks/before_first_session", 'DELETE', '/v1/instance/hooks/before_first_session', { group: 'ndb' }),
   q("nd delete instance/integrations/forwarding/:destination", 'DELETE', '/v1/instance/integrations/forwarding/datadog', { group: 'ndb' }),
+  q("nd delete grants/:id", 'DELETE', '/v1/grants/nd_unknown', { group: 'ndb' }),
   q("nd delete pca/approvers/:id/credentials/:credentialId", 'DELETE', '/v1/pca/approvers/nd_unknown/credentials/cred_nd', { group: 'ndb' }),
   q("nd delete pca/action-registry/publisher-keys/:kid", 'DELETE', '/v1/pca/action-registry/publisher-keys/kid_nd', { group: 'ndb' }),
   q("nd delete pca/action-registry/drafts/:verb", 'DELETE', '/v1/pca/action-registry/drafts/nd.verb', { group: 'ndb' }),

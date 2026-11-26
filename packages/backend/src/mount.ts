@@ -66,11 +66,11 @@ export interface AtlasMountOptions {
 
 type Handler = (request: Request) => Promise<Response>;
 
-/** Thrown at boot when the path mount is misconfigured in production. Check `code` (`mount_env_missing`). */
+/** Thrown when the SDK is misconfigured. Check `code`: `mount_env_missing` (path mount, at boot in production) or `secret_key_missing` (`verifyOnline` without `secretKey` / `ATLAS_SECRET_KEY`). */
 export class AtlasConfigError extends Error {
-  readonly code: 'mount_env_missing';
+  readonly code: 'mount_env_missing' | 'secret_key_missing';
   readonly missing: string[];
-  constructor(code: 'mount_env_missing', message: string, missing: string[]) {
+  constructor(code: 'mount_env_missing' | 'secret_key_missing', message: string, missing: string[]) {
     super(message);
     this.name = 'AtlasConfigError';
     this.code = code;

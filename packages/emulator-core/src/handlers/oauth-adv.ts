@@ -24,6 +24,8 @@ export interface AuthExt {
   mode: string | null;
   details: unknown[] | null;
   gm: { action: string; grantId?: string } | null;
+  /** The organization the authorization is made in (consent and the grant are kept per organization). */
+  organizationId?: string | null;
 }
 export const CODE_EXT: AuthExt = { rt: 'code', mode: null, details: null, gm: null };
 
@@ -65,7 +67,7 @@ interface UmaRes {
   shares: Map<string, string[]>;
 }
 interface Adv {
-  cfg: { dynamic_registration: boolean; require_initial_access_token: boolean; authorization_details_types: string[]; uma_enabled: boolean; dynamic_client_secret_ttl_seconds: number };
+  cfg: { dynamic_registration: boolean; require_initial_access_token: boolean; authorization_details_types: string[]; uma_enabled: boolean; dynamic_client_secret_ttl_seconds: number; optional_scopes: string[] };
   managed: Map<string, Managed>;
   sessions: Map<string, string>;
   rp: Array<{ sid: string; clientId: string; userId: string }>;
@@ -73,7 +75,7 @@ interface Adv {
   uma: { res: Map<string, UmaRes>; tickets: Map<string, { clientId: string; perms: Array<{ resource_id: string; resource_scopes: string[] }>; userId?: string; expiresAt: number }>; pct: Map<string, { clientId: string; userId: string }> };
 }
 export const adv = engineState((): Adv => ({
-  cfg: { dynamic_registration: false, require_initial_access_token: false, authorization_details_types: [], uma_enabled: false, dynamic_client_secret_ttl_seconds: 0 },
+  cfg: { dynamic_registration: false, require_initial_access_token: false, authorization_details_types: [], uma_enabled: false, dynamic_client_secret_ttl_seconds: 0, optional_scopes: [] },
   managed: new Map(),
   sessions: new Map(),
   rp: [],
@@ -518,6 +520,11 @@ export function oauthAdvHandlers(): RouteDef[] {
         if (types !== undefined) {
           if (!Array.isArray(types) || types.some((t) => typeof t !== 'string')) throw new EmulatorError('VALIDATION_FAILED', 'authorization_details_types must be a list of strings.', 'authorization_details_types');
           cfg.authorization_details_types = types;
+        }
+        const optional = c.body.optional_scopes;
+        if (optional !== undefined) {
+          if (!Array.isArray(optional) || optional.some((t) => typeof t !== 'string' || t === 'openid')) throw new EmulatorError('VALIDATION_FAILED', 'optional_scopes must be a list of scope names (never openid).', 'optional_scopes');
+          cfg.optional_scopes = optional;
         }
         const ttl = c.body.dynamic_client_secret_ttl_seconds;
         if (ttl !== undefined) {

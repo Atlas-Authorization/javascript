@@ -56,6 +56,7 @@ describe('useAuth() shape', () => {
         'has',
         'isLoaded',
         'isSignedIn',
+        'orgClaimsWithheld',
         'orgId',
         'orgRole',
         'session',

@@ -25,10 +25,24 @@ const DEVICE_TTL_S = 600;
 const POLL_INTERVAL_S = 5;
 const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ';
 
+/** What a user approved for a client in one organization ('' = none): one row per (user, client, organization). */
+export interface ConsentHold {
+  id: string;
+  userId: string;
+  clientId: string;
+  organizationId: string | null;
+  scopes: Set<string>;
+  at: number;
+  /** false = the user declined to be remembered: kept so the tokens issued can be revoked, never skips the screen. */
+  remembered: boolean;
+}
 interface Consent {
   id: string;
   clientId: string;
   userId: string;
+  /** The organization the request named (null = none), and whether consent is kept per organization for it. */
+  organizationId: string | null;
+  perOrg: boolean;
   scope: string[];
   redirectUri: string;
   challenge: string | null;
@@ -69,24 +83,26 @@ export interface CibaRec {
 interface Flows {
   par: Map<string, { clientId: string; params: Record<string, string>; expiresAt: number; used: boolean }>;
   consents: Map<string, Consent>;
-  remembered: Map<string, Set<string>>;
-  /** When each remembered consent was first given. */
-  rememberedAt: Map<string, number>;
+  holds: Map<string, ConsentHold>;
   devices: Map<string, DeviceRec>;
   ciba: Map<string, CibaRec>;
   dpopSeen: Map<string, number>;
 }
-const flows = engineState((): Flows => ({ par: new Map(), consents: new Map(), remembered: new Map(), rememberedAt: new Map(), devices: new Map(), ciba: new Map(), dpopSeen: new Map() }));
+const flows = engineState((): Flows => ({ par: new Map(), consents: new Map(), holds: new Map(), devices: new Map(), ciba: new Map(), dpopSeen: new Map() }));
 /** The CIBA requests of this engine (the delivery sweep announces expired push requests). */
 export const cibaRecords = (e: Engine): Map<string, CibaRec> => flows(e).ciba;
-/** The scopes a user holds a remembered consent for at a client, if any. */
-/** Every consent a user remembered for a client, for the Backend API grants list. */
-export const consentGrants = (e: Engine): Array<{ userId: string; clientId: string; scopes: string[]; at: number }> =>
-  [...flows(e).remembered.entries()].map(([key, scopes]) => {
-    const [userId = '', clientId = ''] = key.split('|');
-    return { userId, clientId, scopes: [...scopes], at: flows(e).rememberedAt.get(key) ?? 0 };
-  });
-export const heldConsent = (e: Engine, userId: string, clientId: string): Set<string> | undefined => flows(e).remembered.get(`${userId}|${clientId}`);
+const holdKey = (userId: string, clientId: string, organizationId: string | null) => `${userId}|${clientId}|${organizationId ?? ''}`;
+/** Every consent a user gave (one per organization), for the Backend API grants list. */
+export const consentGrants = (e: Engine): ConsentHold[] => [...flows(e).holds.values()];
+export const consentHoldById = (e: Engine, id: string | undefined): ConsentHold | undefined => [...flows(e).holds.values()].find((h) => h.id === id);
+export const removeConsentHold = (e: Engine, h: ConsentHold): void => void flows(e).holds.delete(holdKey(h.userId, h.clientId, h.organizationId));
+/** The consents of one (user, client) pair, one per organization. */
+export const pairHolds = (e: Engine, userId: string, clientId: string): ConsentHold[] => [...flows(e).holds.values()].filter((h) => h.userId === userId && h.clientId === clientId);
+/** The scopes the user approved and chose to be remembered, across the pair's organizations (publisher consent reads this). */
+export const heldConsent = (e: Engine, userId: string, clientId: string): Set<string> | undefined => {
+  const hs = pairHolds(e, userId, clientId).filter((h) => h.remembered);
+  return hs.length ? new Set(hs.flatMap((h) => [...h.scopes])) : undefined;
+};
 export const resetOAuthFlows = (_e: Engine): void => undefined; // state lives in engineState, which engine.reset clears
 
 /** Claim a DPoP proof's jti once inside its window; false when it was already used. */
@@ -125,21 +141,63 @@ export function resolveRequestUri(e: Engine, query: URLSearchParams): { query: U
 
 // ── consent ──────────────────────────────────────────────────────────
 
-const rememberKey = (userId: string, clientId: string) => `${userId}|${clientId}`;
+/** An organization named by id or slug that the user belongs to; undefined when unknown or not a member. */
+export function memberOrg(e: Engine, ref: string, userId: string): Obj | undefined {
+  const org = e.db.organizations.find((o) => o.id === ref || o.slug === ref);
+  return org && e.db.memberships.find((m) => m.user_id === userId && m.organization_id === org.id) ? org : undefined;
+}
+
+/** Consent is kept per organization when the client says so, or by default when the request names one. */
+export const consentPerOrg = (client: Obj, organizationId: string | null): boolean => (typeof client.consent_per_organization === 'boolean' ? client.consent_per_organization : organizationId !== null);
+
+/** The requested scopes the user may untick (the emulator's `optional_scopes` setting); openid is never one. */
+export const optionalOf = (e: Engine, scope: string[]): string[] => scope.filter((s) => s !== 'openid' && adv(e).cfg.optional_scopes.includes(s));
+
+/** What the user already approved and chose to be remembered: that organization's row when per organization, else the pair's union. */
+function rememberedScopes(e: Engine, userId: string, clientId: string, perOrg: boolean, organizationId: string | null): Set<string> {
+  const rows = pairHolds(e, userId, clientId).filter((h) => h.remembered && (!perOrg || h.organizationId === organizationId));
+  return new Set(rows.flatMap((h) => [...h.scopes]));
+}
+
+/** Record (or widen) a consent and announce `grant.created` / `grant.updated`. A not-remembered consent never replaces a remembered one. */
+function recordHold(e: Engine, a: { userId: string; clientId: string; organizationId: string | null; perOrg: boolean; scopes: string[]; remembered: boolean }): ConsentHold {
+  const pair = pairHolds(e, a.userId, a.clientId);
+  const existing = a.perOrg ? pair.find((h) => h.organizationId === a.organizationId) : pair[0];
+  if (existing && !a.remembered) return existing;
+  const before = existing ? [...existing.scopes] : [];
+  const scopes = new Set(existing && existing.remembered ? [...existing.scopes, ...a.scopes] : a.scopes);
+  const hold: ConsentHold = existing ?? { id: e.db.newId('cns'), userId: a.userId, clientId: a.clientId, organizationId: a.organizationId, scopes, at: e.clock.now(), remembered: a.remembered };
+  const changed = !existing || scopes.size !== before.length || [...scopes].some((x) => !before.includes(x)) || existing.remembered !== a.remembered;
+  hold.scopes = scopes;
+  hold.remembered = a.remembered;
+  flows(e).holds.set(holdKey(hold.userId, hold.clientId, hold.organizationId), hold);
+  if (changed) e.webhooks.emit(existing ? 'grant.updated' : 'grant.created', grantEvent(e, hold));
+  return hold;
+}
+
+/** The payload of every `grant.*` event: the client's public and internal ids, the scopes, the organization and its external id. */
+export function grantEvent(e: Engine, h: Pick<ConsentHold, 'id' | 'userId' | 'clientId' | 'organizationId' | 'scopes' | 'at'>, extra: Obj = {}): Obj {
+  const org = h.organizationId ? e.db.organizations.get(h.organizationId) : undefined;
+  return { object: 'oauth_grant', id: h.id, client_id: h.clientId, oauth_client_id: h.clientId, user_id: h.userId, scopes: [...h.scopes], organization_id: h.organizationId, org_external_id: org?.external_id ?? null, created_at: h.at, ...extra };
+}
 
 /** Where an authorize request must stop for the user's consent, or null when it can proceed (first-party client, consent not required, or already remembered). */
-export async function consentGate(e: Engine, a: { client: Obj; user: Obj; scope: string[]; redirectUri: string; challenge: string | null; nonce: string | null; state?: string; prompt: string | null; ext?: AuthExt; force?: boolean }): Promise<Reply | null> {
+export async function consentGate(e: Engine, a: { client: Obj; user: Obj; scope: string[]; redirectUri: string; challenge: string | null; nonce: string | null; state?: string; prompt: string | null; ext?: AuthExt; force?: boolean; organizationId?: string | null }): Promise<Reply | null> {
   const { client, user, scope, prompt } = a;
+  const organizationId = a.organizationId ?? null;
   const forced = prompt === 'consent' || a.force === true;
   const ext = a.ext ?? CODE_EXT;
-  if (client.first_party === true || !(client.require_consent === true || forced)) return null;
-  const held = flows(e).remembered.get(rememberKey(user.id, client.id));
-  if (!forced && held && scope.every((s) => held.has(s))) return null;
+  // A client with require_consent stops at the screen (a first-party one too) until the user approves with remember.
+  if (!(client.require_consent === true || forced) || (client.first_party === true && client.require_consent !== true)) return null;
+  // Approving for one organization never covers another (per-organization consent); a not-remembered consent covers nothing.
+  const perOrg = consentPerOrg(client, organizationId);
+  const held = rememberedScopes(e, user.id, client.id, perOrg, organizationId);
+  if (!forced && scope.every((s) => held.has(s))) return null;
   // One consent for a verified publisher's other apps (openid, email and profile only).
   if (!forced && publisherDecision(e, client, user.id, scope).skipConsent) return null;
   if (prompt === 'none') return authReply(e, client, a.redirectUri, authUrl(e, a.redirectUri, { error: 'consent_required', error_description: 'The user has not consented to these scopes.', state: a.state, iss: e.issuer }, !!parseResponseType(ext.rt)?.frontChannelTokens, ext.mode), ext.mode);
   const id = `consent_${randomToken(24)}`;
-  flows(e).consents.set(id, { id, clientId: client.id, userId: user.id, scope, redirectUri: a.redirectUri, challenge: a.challenge, nonce: a.nonce, state: a.state, ext, expiresAt: e.clock.now() + CONSENT_TTL_MS, status: 'pending' });
+  flows(e).consents.set(id, { id, clientId: client.id, userId: user.id, organizationId, perOrg, scope, redirectUri: a.redirectUri, challenge: a.challenge, nonce: a.nonce, state: a.state, ext, expiresAt: e.clock.now() + CONSENT_TTL_MS, status: 'pending' });
   return found(`${e.issuer}/oauth2/authorize/consent?consent_token=${id}`);
 }
 
@@ -157,8 +215,12 @@ function liveDevice(e: Engine, challenge: string | null | undefined): DeviceRec 
   return rec;
 }
 
-/** Answer a consent request; returns the URL to send the browser to. The scopes granted are always a subset of what was asked. */
-async function settleConsent(e: Engine, c: Consent, d: { approve: boolean; grant?: string[]; remember?: boolean; error?: string; description?: string }): Promise<string> {
+/**
+ * Answer a consent request; returns the URL to send the browser to. The scopes granted are always a subset of what was asked.
+ * `ticked` = the boxes left ticked on the built-in screen (only optional scopes can be dropped); `strict` = the delegated
+ * `granted_scopes`, which must keep every scope that is not optional. `organizationId` = the organization the user chose.
+ */
+async function settleConsent(e: Engine, c: Consent, d: { approve: boolean; grant?: string[]; ticked?: string[]; strict?: boolean; organizationId?: string; remember?: boolean; error?: string; description?: string }): Promise<string> {
   const back = (p: Record<string, string | undefined>) => authUrl(e, c.redirectUri, { ...p, state: c.state, iss: e.issuer }, !!parseResponseType(c.ext.rt)?.frontChannelTokens, c.ext.mode);
   const client = e.db.oauthClients.get(c.clientId);
   if (!client || client.deleted) {
@@ -169,16 +231,23 @@ async function settleConsent(e: Engine, c: Consent, d: { approve: boolean; grant
     c.status = 'rejected';
     return back({ error: d.error ?? 'access_denied', error_description: d.description ?? 'The user denied the request.' });
   }
-  const grant = d.grant ?? c.scope;
+  const optional = optionalOf(e, c.scope);
+  let grant = d.grant ?? c.scope;
+  if (d.ticked) grant = grant.filter((s) => !optional.includes(s) || d.ticked!.includes(s));
   if (grant.some((s) => !c.scope.includes(s))) throw new EmulatorError('VALIDATION_FAILED', 'grant_scope can only narrow the requested scopes.', 'grant_scope');
   if (c.scope.includes('openid') && !grant.includes('openid')) throw new EmulatorError('VALIDATION_FAILED', 'grant_scope must include openid.', 'grant_scope');
-  c.status = 'accepted';
-  if (d.remember !== false) {
-    const key = rememberKey(c.userId, c.clientId);
-    flows(e).remembered.set(key, new Set([...(flows(e).remembered.get(key) ?? []), ...grant]));
-    if (!flows(e).rememberedAt.has(key)) flows(e).rememberedAt.set(key, e.clock.now());
+  const missing = d.strict ? c.scope.filter((s) => !optional.includes(s) && !grant.includes(s)) : [];
+  if (missing.length) throw new EmulatorError('VALIDATION_FAILED', `granted_scopes must include every scope that is not optional; missing: ${missing.join(' ')}.`, 'granted_scopes');
+  let organizationId = c.organizationId;
+  if (d.organizationId) {
+    const org = memberOrg(e, d.organizationId, c.userId);
+    if (!org) throw new EmulatorError('VALIDATION_FAILED', 'organization_id is not an organization the user belongs to.', 'organization_id');
+    organizationId = org.id;
   }
-  return completeAuth(e, { client, userId: c.userId, scope: grant, redirectUri: c.redirectUri, challenge: c.challenge, nonce: c.nonce, state: c.state, ext: c.ext });
+  c.status = 'accepted';
+  // Always leave a consent row, so the tokens issued can be found and revoked; one that is not remembered never skips the screen.
+  recordHold(e, { userId: c.userId, clientId: c.clientId, organizationId, perOrg: c.perOrg || consentPerOrg(client, organizationId), scopes: grant, remembered: d.remember !== false });
+  return completeAuth(e, { client, userId: c.userId, scope: grant, redirectUri: c.redirectUri, challenge: c.challenge, nonce: c.nonce, state: c.state, ext: { ...c.ext, organizationId } });
 }
 
 // ── extension grants on /oauth2/token ────────────────────────────────
@@ -296,7 +365,7 @@ export function oauthFlowHandlers(): RouteDef[] {
         const r = liveConsent(e, c.query.get('consent_token'));
         const client = e.db.oauthClients.get(r.clientId)!;
         const pub = publisherDecision(e, client, r.userId, r.scope);
-        return { body: { object: 'oauth_consent_screen', consent_token: r.id, client: { id: client.id, name: client.name, ...(pub.publisherName ? { published_by: pub.publisherName } : {}) }, user_id: r.userId, requested_scope: r.scope, expires_at: r.expiresAt } };
+        return { body: { object: 'oauth_consent_screen', consent_token: r.id, client: { id: client.id, name: client.name, ...(pub.publisherName ? { published_by: pub.publisherName } : {}) }, user_id: r.userId, requested_scope: r.scope, optional_scopes: optionalOf(e, r.scope), organization_id: r.organizationId, expires_at: r.expiresAt } };
       },
     },
     {
@@ -308,7 +377,8 @@ export function oauthFlowHandlers(): RouteDef[] {
         const r = liveConsent(e, typeof c.body.consent_token === 'string' ? c.body.consent_token : null);
         const approve = c.body.decision === 'approve';
         if (!approve && c.body.decision !== 'deny') throw new EmulatorError('VALIDATION_FAILED', 'decision must be approve or deny.', 'decision');
-        return authReply(e, e.db.oauthClients.get(r.clientId), r.redirectUri, await settleConsent(e, r, { approve }), r.ext.mode);
+        const ticked = [c.body.granted_scope ?? []].flat().filter((v): v is string => typeof v === 'string');
+        return authReply(e, e.db.oauthClients.get(r.clientId), r.redirectUri, await settleConsent(e, r, { approve, ticked, organizationId: typeof c.body.organization_id === 'string' ? c.body.organization_id : undefined }), r.ext.mode);
       },
     },
     // ── consent: the delegated challenge (a customer's own consent page) ──
@@ -319,7 +389,7 @@ export function oauthFlowHandlers(): RouteDef[] {
         const e = c.engine;
         const r = liveConsent(e, c.query.get('consent_challenge'));
         const client = e.db.oauthClients.get(r.clientId)!;
-        return { body: { object: 'oauth_consent_request', subject: r.userId, client: { id: client.id, client_id: client.id, name: client.name }, requested_scope: r.scope, expires_at: r.expiresAt } };
+        return { body: { object: 'oauth_consent_request', subject: r.userId, client: { id: client.id, client_id: client.id, name: client.name }, requested_scope: r.scope, optional_scopes: optionalOf(e, r.scope), organization_id: r.organizationId, expires_at: r.expiresAt } };
       },
     },
     {
@@ -329,7 +399,10 @@ export function oauthFlowHandlers(): RouteDef[] {
         const e = c.engine;
         const r = liveConsent(e, c.query.get('consent_challenge'));
         if (c.body.grant_scope !== undefined && (!Array.isArray(c.body.grant_scope) || c.body.grant_scope.some((s: unknown) => typeof s !== 'string'))) throw new EmulatorError('VALIDATION_FAILED', 'grant_scope must be a list of scopes.', 'grant_scope');
-        return { body: { object: 'oauth_consent_redirect', redirect_to: await settleConsent(e, r, { approve: true, grant: c.body.grant_scope, remember: c.body.remember }) } };
+        if (c.body.granted_scopes !== undefined && c.body.grant_scope !== undefined) throw new EmulatorError('VALIDATION_FAILED', 'Send granted_scopes or grant_scope, not both.', 'granted_scopes');
+        if (c.body.granted_scopes !== undefined && (!Array.isArray(c.body.granted_scopes) || c.body.granted_scopes.some((s: unknown) => typeof s !== 'string'))) throw new EmulatorError('VALIDATION_FAILED', 'granted_scopes must be a list of scopes.', 'granted_scopes');
+        const strict = c.body.granted_scopes !== undefined;
+        return { body: { object: 'oauth_consent_redirect', redirect_to: await settleConsent(e, r, { approve: true, grant: strict ? c.body.granted_scopes : c.body.grant_scope, strict, organizationId: typeof c.body.organization_id === 'string' ? c.body.organization_id : undefined, remember: c.body.remember }) } };
       },
     },
     {

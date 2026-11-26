@@ -8,6 +8,7 @@ import type { ConfigHttp } from '../config-http';
 import type { ManagementClient, RunContext } from '../context';
 import { captureIO, type CaptureIO } from '../io';
 import { run } from '../run';
+import { envDiffLines, probeDiscovery } from './golive';
 
 /** `atlas golive` and `atlas doctor --origin`, driven through `run()` with an in-memory API. */
 
@@ -333,5 +334,58 @@ describe('unscopedKeysInUse', () => {
       { id: 'd', scopes: ['*'], last_used_at: 1, revoked_at: 2 },
     ] }) } as never;
     expect((await unscopedKeysInUse(api)).map((k) => k.id)).toEqual(['a']);
+  });
+});
+
+describe('golive: issuer probe, email, env diff', () => {
+  it('probeDiscovery sends Accept-Encoding: identity and retries a transient failure quietly', async () => {
+    const seen: Array<Record<string, string>> = [];
+    let n = 0;
+    const f = (async (_u: string, init: { headers: Record<string, string> }) => {
+      seen.push(init.headers);
+      if (++n < 3) throw new Error('zstd bytes');
+      return new Response(JSON.stringify({ issuer: ISSUER }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const waits: number[] = [];
+    const r = await probeDiscovery(`${ISSUER}/.well-known/openid-configuration`, f, async (ms) => void waits.push(ms));
+    expect(r).toEqual({ ok: true, issuer: ISSUER });
+    expect(seen[0]!['accept-encoding']).toBe('identity');
+    expect(waits).toEqual([2000, 4000]);
+  });
+
+  it('probeDiscovery failure names the status, content-encoding, first bytes and a curl line', async () => {
+    const f = (async () => new Response('<html>nope</html>', { status: 502, headers: { 'content-encoding': 'zstd' } })) as unknown as typeof fetch;
+    const r = await probeDiscovery(`${ISSUER}/x`, f, async () => undefined);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.problem).toContain('answered 502, content-encoding zstd, first bytes "<html>nope</html>"');
+      expect(r.fix).toContain("curl -sS -D - -H 'Accept: application/json' -H 'Accept-Encoding: identity'");
+      expect(r.fix).toContain('zstd-encoded');
+    }
+  });
+
+  it('a production instance whose email methods are inactive fails golive with both fixes', async () => {
+    const { make } = setup(
+      mockApi({
+        'GET /v1/instance': { id: 'ins_1', issuer: ISSUER, environment: 'production' },
+        'GET /v1/instance/preflight': { findings: [{ severity: 'warning', code: 'email_provider_missing', message: 'email code is on but not offered', fix: 'x' }] },
+      }),
+    );
+    const io = captureIO();
+    expect(await run(['golive', '--origin', 'https://app.example.com'], make(io))).toBe(1);
+    expect(io.stdout()).toContain('✗ preflight — email code is on but not offered');
+    expect(io.stdout()).toContain('--email-provider brevo');
+    expect(io.stdout()).toContain('PUT /v1/messaging_providers/email');
+  });
+
+  it('envDiffLines lists each variable with old and new, and the stale ATLAS_JWKS_URL', () => {
+    const lines = envDiffLines(
+      { issuer: 'https://old.example.com', discovery: null, jwks: 'https://old.example.com/.well-known/jwks.json', fapi: 'https://old.example.com' },
+      { issuer: 'https://app.example.com/atlas', discovery: null, jwks: null, fapi: 'old.example.com' },
+    );
+    expect(lines).toContain('ATLAS_ISSUER: https://old.example.com -> https://app.example.com/atlas');
+    expect(lines).toContain('ATLAS_JWKS_URI: https://old.example.com/.well-known/jwks.json -> https://app.example.com/atlas/.well-known/jwks.json');
+    expect(lines).toContain('ATLAS_PREVIOUS_ISSUERS: set to https://old.example.com');
+    expect(lines).toContain('ATLAS_JWKS_URL: remove (derived from issuer)');
   });
 });

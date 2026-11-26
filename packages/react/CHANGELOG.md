@@ -1,5 +1,12 @@
 # @atlasauth/react changelog
 
+## 0.43.0
+
+- **behaviour:** `<SignIn>` and `<SignUp>` take `onSignedIn` and `exchange` and navigate only after your session exchange succeeds.
+- **behaviour:** `allowedMethods` on `<SignIn>` / `<SignUp>` limits the sign-in methods offered.
+- **behaviour:** `UserProfile` is readable in dark appearance (labels above inputs, input borders at 3:1 contrast).
+- Requires @atlasauth/js 0.56.0.
+
 ## 0.42.1
 
 - Imports the policy viewer from @atlasauth/js/policy-dom (@atlasauth/js 0.55.0).

@@ -831,6 +831,8 @@ export type WebhookDataEntitlement = {
   object: "entitlement";
   subject_type: "user" | "org";
   subject_id: string;
+  /** Rises by one each time this subject's entitlement changes. Apply events in version order; a lower or equal version is stale. */
+  version?: number;
   plan_id?: string | null;
   plan?: string | null;
   status?: string | null;
@@ -937,14 +939,23 @@ export type WebhookDataFgaTupleBatch = {
   [key: string]: unknown;
 };
 
-/** An OAuth access grant that was revoked. */
+/** An OAuth app grant: recorded (grant.created), changed scope (grant.updated) or revoked (grant.revoked). */
 export type WebhookDataGrant = {
   object: "oauth_grant";
   id: string;
+  /** The OAuth client's public client_id. */
   client_id: string;
   user_id: string;
   organization_id: string | null;
   session_ids?: string[];
+  /** The OAuth client's internal id (the value client_id carried before it became the public id). */
+  oauth_client_id?: string;
+  /** The scopes the grant holds (for grant.created / grant.updated: the consent as it now stands). */
+  scopes?: string[];
+  /** The organization's external_id (your own tenant id); null when the grant is not for an organization or it has none. */
+  org_external_id?: string | null;
+  /** Created (epoch ms). */
+  created_at?: number;
   /** The metadata you set on the grant, when it has any. */
   metadata?: Record<string, unknown>;
   [key: string]: unknown;
@@ -1156,6 +1167,18 @@ export type WebhookDataInvitation = {
   accepted_email_address?: string | null;
   /** organization_invitation.accepted only: true when the accepting user's verified address differs from the invited one (link-holder acceptance). */
   email_mismatch?: boolean;
+  [key: string]: unknown;
+};
+
+/** The instance token issuer changed. Tokens under the old issuer verify until accepted_until. */
+export type WebhookDataIssuerChanged = {
+  object: "issuer_change";
+  /** The issuer tokens carried until now. */
+  old_issuer: string;
+  /** The issuer new tokens carry. */
+  new_issuer: string;
+  /** Accepted until (epoch ms). */
+  accepted_until: number;
   [key: string]: unknown;
 };
 
@@ -1429,6 +1452,26 @@ export type WebhookDataMessageSuppression = {
   message_id?: string | null;
   /** At (epoch ms). */
   at?: number;
+  [key: string]: unknown;
+};
+
+/** A message was delivered by a fallback provider because an earlier one failed. */
+export type WebhookDataMessagingFallbackUsed = {
+  object: "messaging_fallback_use";
+  channel: "email" | "sms" | "whatsapp" | "voice" | "push";
+  message_id?: string | null;
+  template?: string | null;
+  /** The provider that was tried first and failed. */
+  primary_provider: string;
+  /** The fallback provider that delivered the message. */
+  used_provider: string;
+  /** Every provider tried, in order. */
+  attempts: Array<{
+    provider: string;
+    ok: boolean;
+    error?: string | null;
+    [key: string]: unknown;
+  }>;
   [key: string]: unknown;
 };
 
@@ -2335,6 +2378,14 @@ export type WebhookDataUser = {
   external_accounts?: Array<Record<string, unknown>>;
   referral_code?: string | null;
   referral_link?: string | null;
+  /** user.created only: the organization seats the person holds the moment they exist, including seats that were waiting for their external_id. */
+  organization_memberships?: Array<{
+    organization_id: string;
+    organization_external_id?: string | null;
+    role: string;
+    role_source?: string | null;
+    [key: string]: unknown;
+  }>;
   /** What to end for this person on your side: product-issued API keys and sessions. */
   revoke_hint?: Array<"api_keys" | "sessions">;
   /** user.created only, for a sign-up made in a browser: where it came from. Webhook deliveries only; never stored on the user. */
@@ -2726,8 +2777,10 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"fga.tuple_written", WebhookDataFgaTupleBatch>
   | AtlasWebhookEnvelope<"fga_sync.completed", WebhookDataFgaSyncRun>
   | AtlasWebhookEnvelope<"fga_sync.failed", WebhookDataFgaSyncRun>
+  | AtlasWebhookEnvelope<"grant.created", WebhookDataGrant>
   | AtlasWebhookEnvelope<"grant.exhausted", WebhookDataGrantUsage>
   | AtlasWebhookEnvelope<"grant.revoked", WebhookDataGrant>
+  | AtlasWebhookEnvelope<"grant.updated", WebhookDataGrant>
   | AtlasWebhookEnvelope<"grant.usage_threshold", WebhookDataGrantUsage>
   | AtlasWebhookEnvelope<"group.created", WebhookDataGroup>
   | AtlasWebhookEnvelope<"group.deleted", WebhookDataGroup>
@@ -2761,6 +2814,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"invitation.accepted", WebhookDataInstanceInvitation>
   | AtlasWebhookEnvelope<"invitation.created", WebhookDataInstanceInvitation>
   | AtlasWebhookEnvelope<"invitation.revoked", WebhookDataInstanceInvitation>
+  | AtlasWebhookEnvelope<"issuer.changed", WebhookDataIssuerChanged>
   | AtlasWebhookEnvelope<"journey.abandoned", WebhookDataJourneyRun>
   | AtlasWebhookEnvelope<"journey.completed", WebhookDataJourneyRun>
   | AtlasWebhookEnvelope<"journey.experiment_started", WebhookDataJourneyExperiment>
@@ -2788,6 +2842,7 @@ export type AtlasWebhookEvent =
   | AtlasWebhookEnvelope<"message.complained", WebhookDataMessageFailure>
   | AtlasWebhookEnvelope<"message.rate_limited", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"message_suppression.created", WebhookDataMessageSuppression>
+  | AtlasWebhookEnvelope<"messaging.fallback_used", WebhookDataMessagingFallbackUsed>
   | AtlasWebhookEnvelope<"mfa_factor.enrolled", WebhookDataMfaFactor>
   | AtlasWebhookEnvelope<"mfa_factor.quarantined", WebhookDataSecuritySignal>
   | AtlasWebhookEnvelope<"mfa_factor.removed", WebhookDataMfaFactor>
@@ -3057,8 +3112,10 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "fga.tuple_written",
   "fga_sync.completed",
   "fga_sync.failed",
+  "grant.created",
   "grant.exhausted",
   "grant.revoked",
+  "grant.updated",
   "grant.usage_threshold",
   "group.created",
   "group.deleted",
@@ -3092,6 +3149,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "invitation.accepted",
   "invitation.created",
   "invitation.revoked",
+  "issuer.changed",
   "journey.abandoned",
   "journey.completed",
   "journey.experiment_started",
@@ -3119,6 +3177,7 @@ export const ATLAS_WEBHOOK_EVENT_TYPES = [
   "message.complained",
   "message.rate_limited",
   "message_suppression.created",
+  "messaging.fallback_used",
   "mfa_factor.enrolled",
   "mfa_factor.quarantined",
   "mfa_factor.removed",

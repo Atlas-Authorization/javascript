@@ -5,7 +5,7 @@ import { EmulatorError, notFound } from '../errors';
 import { synthesize, type Obj } from '../openapi';
 import { randomToken } from '../store';
 import { DPOP_IAT_WINDOW_S, forwardedCertThumbprint, verifyDpopProof } from '../jws';
-import { claimDpopJti, consentGate, extensionGrant, resolveRequestUri, resetOAuthFlows } from './oauth-flows';
+import { claimDpopJti, consentGate, consentGrants, grantEvent, memberOrg, removeConsentHold, extensionGrant, resolveRequestUri, resetOAuthFlows } from './oauth-flows';
 import { GRANT_MANAGEMENT_SCOPES, REQUEST_OBJECT_ALGS, REQUEST_OBJECT_PARAMS, RESPONSE_TYPES_SUPPORTED, UMA_GRANT_TYPE, adv, applyGrantManagement, authUrl, clientResponseTypes, completeAuth, gmValid, gmWidens, loadRequestObject, managedFor, parseClientMeta, parseGrantManagement, parseResponseType, recordRp, responseModeAllowed, responseTypeProblem, sidFor, umaEnabled, umaProtectionToken, umaTicketGrant, validateAuthorizationDetails, type AuthExt } from './oauth-adv';
 import { listReply, need } from './util';
 import { AUTH_METHODS, EXT_RESPONSE_MODES, OP_SIGNING_ALGS, assertionClientId, authReply, clientExtras, keyedClientProblem, resolveSubject, subjectFor, verifyClientAssertion } from './emu4-oauth-auth';
@@ -41,6 +41,8 @@ export interface Grant {
   details?: unknown[] | null;
   /** The OpenID grant-management grant these tokens belong to. */
   managedId?: string;
+  /** The organization this authorization was made in. */
+  organizationId?: string | null;
 }
 export interface OAuthState {
   codes: Map<string, { grantId: string; redirectUri: string; challenge: string | null; nonce: string | null; authTime: number; expiresAt: number; used: boolean; ext?: AuthExt }>;
@@ -112,10 +114,17 @@ export function discoveryDocument(e: Engine): Obj {
   };
 }
 
+/** `consent_per_organization`: true, false or null (the default: per organization whenever the request names one). */
+function pickConsentPerOrg(body: Obj): Obj {
+  const v = body.consent_per_organization;
+  if (v === undefined) return {};
+  if (v !== null && typeof v !== 'boolean') throw new EmulatorError('VALIDATION_FAILED', 'consent_per_organization must be true, false or null.', 'consent_per_organization');
+  return { consent_per_organization: v };
+}
 const FLOW_FLAGS = ['require_consent', 'dpop_bound_access_tokens', 'tls_client_certificate_bound_access_tokens', 'require_pushed_authorization_requests'] as const;
 /** The client settings the consent, binding, PAR and CIBA flows read; validated here so a bad value never reaches a flow. */
 function pickFlowFields(body: Obj, existing?: Obj): Obj {
-  const out: Obj = {};
+  const out: Obj = { ...pickConsentPerOrg(body) };
   for (const k of FLOW_FLAGS) {
     if (body[k] === undefined) continue;
     if (typeof body[k] !== 'boolean') throw new EmulatorError('VALIDATION_FAILED', `${k} must be true or false.`, k);
@@ -154,6 +163,7 @@ const clientShape = (e: Engine, c: Obj, secret?: string): Obj => {
     first_party: c.first_party === true,
     post_logout_redirect_uris: c.post_logout_redirect_uris ?? [],
     require_consent: c.require_consent === true,
+    consent_per_organization: typeof c.consent_per_organization === 'boolean' ? c.consent_per_organization : null,
     dpop_bound_access_tokens: c.dpop_bound_access_tokens === true,
     tls_client_certificate_bound_access_tokens: c.tls_client_certificate_bound_access_tokens === true,
     require_pushed_authorization_requests: c.require_pushed_authorization_requests === true,
@@ -291,7 +301,7 @@ export async function checkResourceToken(c: RouteContext, bearer: string, scheme
 
 /** Create the grant and the single-use authorization code for an approved request (after login and, when needed, consent). */
 export function issueCode(e: Engine, a: { client: Obj; userId: string; scope: string[]; redirectUri: string; challenge: string | null; nonce: string | null; ext?: AuthExt }): string {
-  const grant: Grant = { id: e.db.newId('oag'), clientId: a.client.id, userId: a.userId, scope: a.scope, revoked: false, jtis: new Set(), sid: sidFor(e, a.userId), details: a.ext?.details ?? null };
+  const grant: Grant = { id: e.db.newId('oag'), clientId: a.client.id, userId: a.userId, scope: a.scope, revoked: false, jtis: new Set(), sid: sidFor(e, a.userId), details: a.ext?.details ?? null, organizationId: a.ext?.organizationId ?? null };
   st(e).grants.set(grant.id, grant);
   const code = `oc_${randomToken(24)}`;
   const now = e.clock.now();
@@ -456,7 +466,13 @@ export function oauthHandlers(): RouteDef[] {
           g.revoked = true;
           tokens++;
           users.add(g.userId);
-          e.changed({ type: 'grant.revoked', data: { object: 'grant', id: g.id, client_id: row.id, user_id: g.userId } });
+          e.changed({ type: 'grant.revoked', data: { object: 'grant', ...grantEvent(e, { id: g.id, userId: g.userId, clientId: row.id, organizationId: g.organizationId ?? null, scopes: new Set(g.scope), at: row.created_at }), session_ids: [] } });
+        }
+        // Every consent of those users (one per organization), including ones that were not remembered.
+        for (const h of consentGrants(e)) {
+          if (h.clientId !== row.id || (only && !(only as string[]).includes(h.userId))) continue;
+          users.add(h.userId);
+          removeConsentHold(e, h);
         }
         return { body: { object: 'oauth_client_consents_revocation', client_id: row.id, consents_revoked: users.size, tokens_revoked: tokens } };
       },
@@ -552,8 +568,15 @@ export function oauthHandlers(): RouteDef[] {
         const gmProblem = gmValid(e, gm, client.id, user.id);
         if (gmProblem) return back({ error: 'invalid_grant', error_description: gmProblem });
         const widens = !!gm && gm.action !== 'create' && gmWidens(gm, managedFor(e, gm.grantId!, client.id, user.id), scope, details);
-        const ext: AuthExt = { rt: rt.canonical, mode, details, gm };
-        const gate = await consentGate(e, { client, user, scope, redirectUri, challenge, nonce: p.nonce ?? null, state, prompt: q.get('prompt'), ext, force: widens });
+        // The organization the request names (id or slug): the user must belong to it.
+        let organizationId: string | null = null;
+        if (p.organization) {
+          const org = memberOrg(e, p.organization, user.id);
+          if (!org) return back({ error: 'access_denied', error_description: 'The user is not a member of the requested organization.' });
+          organizationId = org.id;
+        }
+        const ext: AuthExt = { rt: rt.canonical, mode, details, gm, organizationId };
+        const gate = await consentGate(e, { client, user, scope, redirectUri, challenge, nonce: p.nonce ?? null, state, prompt: q.get('prompt'), ext, force: widens, organizationId });
         if (gate) return gate;
         return authReply(e, client, redirectUri, await completeAuth(e, { client, userId: user.id, scope, redirectUri, challenge, nonce: p.nonce ?? null, state, ext }), mode);
       },

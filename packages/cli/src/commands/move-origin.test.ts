@@ -13,9 +13,20 @@ const CHANGES = [
 
 function setup(opts: { problems?: unknown[]; testStatus?: number; answer?: string; changes?: unknown[] } = {}) {
   const posts: Array<{ path: string; body: unknown }> = [];
+  const gets: string[] = [];
+  const puts: Array<{ path: string; body: unknown }> = [];
   const http: ConfigHttp = {
-    get: async () => ({}) as never,
-    put: async () => ({}) as never,
+    get: async (path: string) => {
+      gets.push(path);
+      if (path === '/v1/instance/integrations') return { data: [{ id: 'chatly', connected: true, enabled: true }, { id: 'forumulate', connected: false }] } as never;
+      if (path === '/v1/resource_servers') return { data: [{ identifier: 'https://old.example.com/mcp', name: 'MCP', scopes: ['a'], signing_alg: 'RS256' }] } as never;
+      if (path === '/v1/instance/integrations/health') return { summary: { failing: 0 } } as never;
+      return {} as never;
+    },
+    put: async (path: string, body: unknown) => {
+      puts.push({ path, body });
+      return {} as never;
+    },
     patch: async () => ({}) as never,
     delete: async () => undefined,
     post: async (path: string, body: unknown) => {
@@ -37,7 +48,7 @@ function setup(opts: { problems?: unknown[]; testStatus?: number; answer?: strin
     makeHttp: () => http,
     readFile: () => '',
   });
-  return { posts, make };
+  return { posts, puts, make };
 }
 
 const ARGS = ['move-origin', '--from', 'https://old.example.com', '--to', 'https://new.example.com'];
@@ -111,5 +122,14 @@ describe('atlas move-origin', () => {
     const io = captureIO();
     expect(await run(['move-origin', '--from', 'https://a.example'], make(io))).toBe(1);
     expect(io.stderr()).toContain('--from');
+  });
+
+  it('clones a resource server and reports health', async () => {
+    const { posts, puts, make } = setup();
+    const io = captureIO();
+    expect(await run([...ARGS, '--yes', '--clone-resource-server', 'https://old.example.com/mcp=https://new.example.com/mcp'], make(io))).toBe(0);
+    expect(puts).toEqual([]);
+    expect(posts.find((p) => p.path === '/v1/resource_servers')?.body).toEqual({ identifier: 'https://new.example.com/mcp', name: 'MCP', scopes: ['a'] });
+    expect(io.stdout()).toContain('integration health: green');
   });
 });

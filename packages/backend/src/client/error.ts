@@ -71,6 +71,8 @@ export const AtlasErrorCodes = {
   CAPTCHA_IN_USE: 'CAPTCHA_IN_USE',
   /** Strict mode: the body had a field this endpoint does not accept (`param` names it). */
   UNKNOWN_FIELD: 'UNKNOWN_FIELD',
+  /** 400 — `Atlas-Strict: true`: a write carried a query parameter this endpoint does not document (`param` names it). */
+  UNKNOWN_QUERY_PARAM: 'UNKNOWN_QUERY_PARAM',
   /** 422 — the body set a field that is not writable on this endpoint (`param` names it; the message names the call that changes it). */
   READ_ONLY_FIELD: 'READ_ONLY_FIELD',
   /** 409 — the development email sender is not available on a production instance. */

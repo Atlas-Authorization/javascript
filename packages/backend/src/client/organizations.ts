@@ -684,6 +684,31 @@ export function organizationsResource(request: RequestFn) {
           idempotencyKey,
         });
       },
+      /**
+       * Seat a person by the id your own system gives them (`external_id`), before they have signed in. With a user
+       * that has that external_id this is `upsert`; with none the seat waits (`status: 'pending'`) and is attached when
+       * a user with that external_id is created, imported or given it. Repeating the call replaces the waiting seat.
+       */
+      upsertByExternalId(
+        orgId: string,
+        userExternalId: string,
+        body: { role: string; role_source?: string } & OrganizationSeatGrants & OrganizationSeatExpiry,
+        idempotencyKey?: string,
+      ): Promise<
+        | (OrganizationMembership & { status: 'active'; user_external_id: string; unchanged: boolean })
+        | { object: 'pending_organization_membership'; id: string; organization_id: string; user_external_id: string; role: string; status: 'pending'; expires_at: number | null; created_at: number }
+      > {
+        return request({
+          method: 'PUT',
+          path: `/v1/organizations/${enc(orgId)}/memberships/by_external_id/${enc(userExternalId)}`,
+          body,
+          idempotencyKey,
+        });
+      },
+      /** Cancel a seat that is still waiting for its person. */
+      cancelPendingByExternalId(orgId: string, userExternalId: string): Promise<{ object: 'pending_organization_membership'; organization_id: string; user_external_id: string; deleted: true }> {
+        return request({ method: 'DELETE', path: `/v1/organizations/${enc(orgId)}/memberships/by_external_id/${enc(userExternalId)}` });
+      },
       add(
         orgId: string,
         body: { user_id: string; role?: string } & OrganizationSeatGrants & OrganizationSeatExpiry,
