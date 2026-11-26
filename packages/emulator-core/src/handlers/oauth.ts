@@ -8,6 +8,7 @@ import { DPOP_IAT_WINDOW_S, forwardedCertThumbprint, verifyDpopProof } from '../
 import { claimDpopJti, consentGate, consentGrants, grantEvent, memberOrg, removeConsentHold, extensionGrant, resolveRequestUri, resetOAuthFlows } from './oauth-flows';
 import { GRANT_MANAGEMENT_SCOPES, REQUEST_OBJECT_ALGS, REQUEST_OBJECT_PARAMS, RESPONSE_TYPES_SUPPORTED, UMA_GRANT_TYPE, adv, applyGrantManagement, authUrl, clientResponseTypes, completeAuth, gmValid, gmWidens, loadRequestObject, managedFor, parseClientMeta, parseGrantManagement, parseResponseType, recordRp, responseModeAllowed, responseTypeProblem, sidFor, umaEnabled, umaProtectionToken, umaTicketGrant, validateAuthorizationDetails, type AuthExt } from './oauth-adv';
 import { listReply, need } from './util';
+import { signDelivery } from '../webhooks';
 import { AUTH_METHODS, EXT_RESPONSE_MODES, OP_SIGNING_ALGS, assertionClientId, authReply, clientExtras, keyedClientProblem, resolveSubject, subjectFor, verifyClientAssertion } from './emu4-oauth-auth';
 import { GOOGLE_ACCESS_TOKEN_TYPE, googleTokenExchange, publisherSectorOf } from './emu4-oauth-pub';
 
@@ -186,6 +187,101 @@ const clientShape = (e: Engine, c: Obj, secret?: string): Obj => {
     ...(secret ? { client_secret: secret } : {}),
   };
 };
+
+/** The client's event webhook (kept on the client row): url, events, and the secrets that sign (new first). */
+const hookOf = (row: Obj): Obj => {
+  if (!row.webhook) throw notFound('Webhook');
+  return row.webhook;
+};
+const presentHook = (e: Engine, h: Obj): Obj => ({
+  object: 'oauth_client_webhook',
+  id: h.id,
+  url: h.url,
+  enabled_events: h.enabled_events,
+  active: true,
+  available_events: ['user.updated', 'user.deleted', 'grant.revoked', 'user.deletion_scheduled', 'user.deletion_canceled', 'signing_key.staged', 'signing_key.activated'],
+  created_at: h.created_at,
+  last_delivery_at: h.last_delivery_at ?? null,
+  ...(h.previous_secret && h.previous_until > e.clock.now() ? { previous_secret_expires_at: h.previous_until } : {}),
+});
+const hookSecrets = (e: Engine, h: Obj): string[] => [h.secret, ...(h.previous_secret && h.previous_until > e.clock.now() ? [h.previous_secret] : [])];
+
+const clientWebhookHandlers = (): RouteDef[] => [
+  { method: 'GET', pattern: '/v1/oauth_clients/:id/webhook', handler: (c) => ({ body: presentHook(c.engine, hookOf(liveClient(c.engine, c.params.id))) }) },
+  {
+    method: 'PUT',
+    pattern: '/v1/oauth_clients/:id/webhook',
+    handler: (c) => {
+      const e = c.engine;
+      const row = liveClient(e, c.params.id);
+      const url = String(need(c.body, 'url')).trim();
+      if (!/^https:\/\//.test(url)) throw new EmulatorError('VALIDATION_FAILED', 'url must be a public https URL.', 'url');
+      const events = Array.isArray(c.body.enabled_events) && c.body.enabled_events.length ? c.body.enabled_events : ['user.updated', 'user.deleted', 'grant.revoked', 'user.deletion_scheduled', 'user.deletion_canceled', 'signing_key.staged', 'signing_key.activated'];
+      const existing = row.webhook as Obj | undefined;
+      if (existing) {
+        Object.assign(existing, { url, enabled_events: events });
+        return { body: presentHook(e, existing) };
+      }
+      row.webhook = { id: `whep_${randomToken(12)}`, url, enabled_events: events, secret: e.webhooks.newSecret(), created_at: e.clock.now() };
+      return { status: 201, body: { ...presentHook(e, row.webhook), webhook_secret: row.webhook.secret, note: 'Copy the signing secret now. It is not shown again.' } };
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: '/v1/oauth_clients/:id/webhook',
+    handler: (c) => {
+      const row = liveClient(c.engine, c.params.id);
+      hookOf(row);
+      delete row.webhook;
+      return { status: 204, body: null };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/oauth_clients/:id/webhook/rotate_secret',
+    handler: (c) => {
+      const e = c.engine;
+      const h = hookOf(liveClient(e, c.params.id));
+      const overlap = c.body.overlap_seconds === undefined || c.body.overlap_seconds === null ? 86_400 : c.body.overlap_seconds;
+      if (typeof overlap !== 'number' || !Number.isInteger(overlap) || overlap < 0 || overlap > 604_800) throw new EmulatorError('VALIDATION_FAILED', 'overlap_seconds must be an integer from 0 to 604800.', 'overlap_seconds');
+      h.previous_secret = overlap > 0 ? h.secret : undefined;
+      h.previous_until = e.clock.now() + overlap * 1000;
+      h.secret = e.webhooks.newSecret();
+      return { body: { object: 'webhook_secret', webhook_secret: h.secret, overlap_seconds: overlap, previous_secret_expires_at: overlap > 0 ? h.previous_until : null } };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/oauth_clients/:id/webhook/test',
+    handler: async (c) => {
+      const e = c.engine;
+      const row = liveClient(e, c.params.id);
+      const h = hookOf(row);
+      let creator: { id: string } | null = null;
+      const userId = c.body.user_id;
+      if (userId !== undefined && userId !== null) {
+        if (typeof userId !== 'string' || !consentGrants(e).some((g) => g.userId === userId && g.clientId === row.id)) throw notFound('User');
+        creator = { id: await subjectFor(e, row, userId) };
+      }
+      const now = e.clock.now();
+      const id = `evt_${randomToken(12)}`;
+      const body = JSON.stringify({ id, type: 'webhook.test', timestamp: now, instance_id: e.instanceId, actor: { type: 'system', id: null }, idempotency_key: null, data: { object: 'webhook_test', id: `test_${randomToken(8)}` }, creator });
+      // One entry per secret, the new one first, like the real API.
+      const signed = await Promise.all(hookSecrets(e, h).map((secret) => signDelivery({ secret, id, timestampMs: now, body })));
+      const headers = { ...signed[0]!, 'atlas-signature': signed.map((s) => s['atlas-signature']).join(' '), 'content-type': 'application/json' };
+      let status: number | null = null;
+      let error: string | null = null;
+      try {
+        status = (await (e.options.fetch ?? fetch)(h.url, { method: 'POST', headers, body })).status;
+      } catch (err) {
+        error = (err as Error).message;
+      }
+      h.last_delivery_at = now;
+      const ok = status !== null && status >= 200 && status < 300;
+      return { body: { object: 'webhook_test_result', ok, event_id: id, event_type: 'webhook.test', url: h.url, status: ok ? 'success' : 'failed', status_code: status, http_status: status, duration_ms: e.clock.now() - now, latency_ms: e.clock.now() - now, error: ok ? null : (error ?? (status !== null ? `HTTP ${status}` : null)), signature_header_sent: headers['atlas-signature'] } };
+    },
+  },
+];
 
 const liveClient = (e: Engine, id: string | undefined): Obj => {
   const c = e.db.oauthClients.get(id);
@@ -507,6 +603,7 @@ export function oauthHandlers(): RouteDef[] {
         return { body: clientShape(e, row, row.secret) };
       },
     },
+    ...clientWebhookHandlers(),
     // ── discovery ──
     { method: 'GET', pattern: '/.well-known/oauth-authorization-server', public: true, handler: (c) => ({ body: discoveryDocument(c.engine) }) },
     // ── authorize ──

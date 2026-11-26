@@ -232,6 +232,39 @@ export interface OAuthClientWebhook {
   /** Shown once, on create. */
   webhook_secret?: string;
   note?: string;
+  /** Epoch ms. */
+  created_at?: number;
+  /** Epoch ms of the last delivery attempt, or null if there has never been one. */
+  last_delivery_at?: number | null;
+  /** Epoch ms; present only while a secret rotation overlap is open. */
+  previous_secret_expires_at?: number;
+}
+
+export interface OAuthClientWebhookSecret {
+  object?: 'webhook_secret';
+  /** The new signing secret, returned exactly once. */
+  webhook_secret: string;
+  overlap_seconds: number;
+  /** When the previous secret stops signing (epoch ms), or null when it already has. */
+  previous_secret_expires_at: number | null;
+  note?: string;
+}
+
+export interface OAuthClientWebhookTestResult {
+  object?: 'webhook_test_result';
+  ok: boolean;
+  delivery_id?: string;
+  event_id?: string;
+  event_type?: 'webhook.test';
+  url?: string;
+  status?: 'success' | 'failed';
+  /** The HTTP status the endpoint answered with, or null if it never answered. */
+  status_code: number | null;
+  duration_ms: number | null;
+  error: string | null;
+  error_kind?: string | null;
+  response_snippet?: string | null;
+  signature_header_sent?: string | null;
 }
 
 export interface PutOAuthClientWebhookBody {
@@ -488,6 +521,14 @@ export function gapOpsResources(request: RequestFn) {
       },
       deleteWebhook(id: string): Promise<void> {
         return request({ method: 'DELETE', path: `/v1/oauth_clients/${enc(id)}/webhook` });
+      },
+      /** New signing secret, returned once. The previous one keeps signing for `overlap_seconds` (default 86400, 0 to 604800) with both signatures in the header. */
+      rotateWebhookSecret(id: string, body: { overlap_seconds?: number } = {}): Promise<OAuthClientWebhookSecret> {
+        return request({ method: 'POST', path: `/v1/oauth_clients/${enc(id)}/webhook/rotate_secret`, body });
+      },
+      /** Send one signed `webhook.test` to this client's URL only. With `user_id` (a user who granted the client) it sets `creator`. */
+      testWebhook(id: string, body: { user_id?: string } = {}): Promise<OAuthClientWebhookTestResult> {
+        return request({ method: 'POST', path: `/v1/oauth_clients/${enc(id)}/webhook/test`, body });
       },
     },
     oauthGrants: {

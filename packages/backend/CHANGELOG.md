@@ -1,5 +1,9 @@
 # @atlasauth/backend changelog
 
+## 0.69.0
+
+- `oauthClients.rotateWebhookSecret` and `oauthClients.testWebhook` (rotate a client webhook's signing secret with an overlap; send one signed test delivery). `getWebhook` also returns `created_at`, `last_delivery_at` and, during an overlap, `previous_secret_expires_at`.
+
 ## 0.68.0
 
 - Billing without a Stripe webhook: `syncCheckoutSession`, `syncSubscription` and `forwardStripeEvent` (Atlas re-reads the forwarded event from Stripe by id).

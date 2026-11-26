@@ -197,6 +197,11 @@ export const extraParityRequests: ParityRequest[] = [
   q('oauth client rotate', 'POST', '/v1/oauth_clients/{{xc}}/rotate_secret', { tolerate: ['client_secret'], group: 'oauth' }),
   q('oauth client consents', 'GET', '/v1/oauth_clients/{{xc}}/consents', { group: 'oauth' }),
   q('oauth client consents revoke', 'POST', '/v1/oauth_clients/{{xc}}/consents/revoke', { group: 'oauth' }),
+  q('oauth client webhook put', 'PUT', '/v1/oauth_clients/{{xc}}/webhook', { body: { url: 'https://example.com/hooks/oauth-{{rand}}' }, tolerate: ['webhook_secret', 'id', 'note'], group: 'oauth' }),
+  q('oauth client webhook get', 'GET', '/v1/oauth_clients/{{xc}}/webhook', { tolerate: ['id'], group: 'oauth' }),
+  q('oauth client webhook rotate', 'POST', '/v1/oauth_clients/{{xc}}/webhook/rotate_secret', { body: { overlap_seconds: 60 }, tolerate: ['webhook_secret', 'previous_secret_expires_at', 'note'], group: 'oauth' }),
+  q('oauth client webhook test unknown user', 'POST', '/v1/oauth_clients/{{xc}}/webhook/test', { body: { user_id: 'user_unknown' }, group: 'oauth' }),
+  q('oauth client webhook delete', 'DELETE', '/v1/oauth_clients/{{xc}}/webhook', { group: 'oauth' }),
   q('oauth client delete', 'DELETE', '/v1/oauth_clients/{{xc}}', { group: 'oauth' }),
   // ── SCIM ──
   q('scim token', 'POST', '/v1/scim_tokens', { body: { organization_id: '{{xo}}', name: 'parity' }, capture: { xst: 'id', xsts: 'token' }, tolerate: ['token', 'prefix'], group: 'scim' }),
