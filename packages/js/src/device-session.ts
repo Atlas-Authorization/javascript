@@ -165,7 +165,10 @@ export function withDeviceBoundSession(inner: typeof fetch, opts: { deviceKey: D
         const headers = new Headers(init?.headers);
         headers.set('content-type', 'application/json');
         if (rec.binding === 'device_key') headers.set('DPoP', await deviceProof(key, 'POST', url, { refreshToken: rec.refreshToken, nonce }));
-        return inner(input, { ...init, headers, body: JSON.stringify({ refresh_token: rec.refreshToken }) });
+        // No cookies: the device's HTTP stack (iOS) keeps the server's Set-Cookie and would send the rotated cookie token
+        // next to this body's, which the server then prefers, so the proof (made for the body's token) no longer matches
+        // and the rotated token is never handed back in the body: every refresh after the first would be refused.
+        return inner(input, { ...init, headers, credentials: 'omit', body: JSON.stringify({ refresh_token: rec.refreshToken }) });
       };
       let res: Response;
       try {

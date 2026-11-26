@@ -1,5 +1,9 @@
 # @atlasauth/react changelog
 
+## 0.44.1
+
+- **behaviour:** the provider keeps proactive session-token refreshes at least 5 s apart, so a token already inside its refresh window (a failed refresh that re-checked the session, a very short token lifetime) can no longer start a request / secure-store write / re-render loop (about every 250 ms on React Native).
+
 ## 0.44.0
 
 - **behaviour:** `useBilling` (and so `<PricingTable>`, `<Checkout>`) records a purchase on return from a provider Checkout, with no webhook needed, before it reads the subscription.

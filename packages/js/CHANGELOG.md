@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.58.1
+
+- **behaviour:** a device-bound native session's refresh goes out with `credentials: 'omit'`. On iOS the HTTP stack kept the server's `Set-Cookie` and sent the rotated refresh cookie next to the body token; the server prefers the cookie, so the proof no longer matched and the rotated token was never returned in the body: the first refresh worked and every later one was refused (401), which with the provider's re-check looped.
+
 ## 0.58.0
 
 - **behaviour:** Back from a provider Checkout, the billing controller reads the session id from the return URL (`atlas_checkout_session` or `session_id`) and records the purchase with `POST /v1/client/billing/checkout/sync` before it loads the subscription, so a subscription shows up without a Stripe webhook. New `syncCheckoutReturn` does the same on demand.

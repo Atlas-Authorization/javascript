@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWebCryptoDeviceKey, deviceProof } from './native-device-key';
+import { sha256Base64Url } from './dpop';
 import { exchangeTicketForNativeSession, warnRefreshTokenWithheld, withDeviceBoundSession, type SecretSlot } from './device-session';
 import { parseNativeSession, refreshNativeSession, serializeNativeSession } from './native-session';
 
@@ -138,5 +139,46 @@ describe('native session binding', () => {
     const fetchImpl = (async () => json({ jwt: jwt('sess_9'), refresh_token: 'rt', binding: 'device_key', expires_in: 60 })) as unknown as typeof fetch;
     const s = await exchangeTicketForNativeSession({ baseUrl: 'https://fapi.example.com', publishableKey: 'pk', attemptId: 'a', ticket: 't', deviceKey: key, fetchImpl });
     expect(s).toMatchObject({ sessionId: 'sess_9', refreshToken: 'rt', binding: 'device_key', deviceKeyId: await key.thumbprint() });
+  });
+});
+
+describe('withDeviceBoundSession on a device that keeps cookies', () => {
+  it('refreshes with the rotated token every time, whatever cookies the server set', async () => {
+    const key = createWebCryptoDeviceKey();
+    const slot = memSlot();
+    slot.value = JSON.stringify({ refreshToken: 'rt_0', sessionId: 'sess_1', binding: 'device_key' });
+    // The server: rotates the refresh token on every refresh and also sets it as a cookie; prefers a cookie token over the
+    // body's; answers only the current token with a proof made for exactly that token; hands the new token back in the
+    // body only to a caller that sent no cookie. Anything else is 401.
+    let current = 'rt_0';
+    let n = 0;
+    const server = (async (_url: string, init: RequestInit) => {
+      const headers = new Headers(init.headers);
+      const cookie = /(?:^|; )__atlas_rt=([^;]+)/.exec(headers.get('cookie') ?? '')?.[1];
+      const presented = cookie ?? (JSON.parse(String(init.body)) as { refresh_token?: string }).refresh_token;
+      const proof = headers.get('DPoP');
+      const ath = proof ? dec(proof.split('.')[1]!).ath : null;
+      if (!presented || presented !== current || ath !== (await sha256Base64Url(presented))) return json({ code: 'UNAUTHENTICATED' }, 401, { 'DPoP-Nonce': 'n' });
+      current = `rt_${++n}`;
+      return json({ jwt: jwt('sess_1'), ...(cookie ? {} : { refresh_token: current }) }, 200, { 'DPoP-Nonce': 'n', 'set-cookie': `__atlas_rt=${current}` });
+    }) as unknown as typeof fetch;
+    // The platform's HTTP stack: keeps Set-Cookie and sends it back unless the request says credentials: 'omit'.
+    let jar = '';
+    const device = (async (url: string, init: RequestInit) => {
+      const headers = new Headers(init.headers);
+      if (jar && init.credentials !== 'omit') headers.set('cookie', jar);
+      const res = await server(url, { ...init, headers });
+      const set = res.headers.get('set-cookie');
+      if (set && init.credentials !== 'omit') jar = set;
+      return res;
+    }) as unknown as typeof fetch;
+    // The sign-in itself leaves the cookie behind, as on a device.
+    jar = '__atlas_rt=rt_0';
+
+    const f = withDeviceBoundSession(device, { deviceKey: key, slot });
+    const statuses: number[] = [];
+    for (let i = 0; i < 3; i++) statuses.push((await f('https://fapi.example.com/v1/client/sessions/sess_1/tokens', { method: 'POST', credentials: 'include' })).status);
+    expect(statuses).toEqual([200, 200, 200]);
+    expect(JSON.parse(slot.value!).refreshToken).toBe('rt_3');
   });
 });

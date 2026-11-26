@@ -401,6 +401,9 @@ const INERT_VALUE: AtlasContextValue = {
  * take the host page down: the provider goes inert (signed out, no requests,
  * the sign-in UI renders nothing) and warns once.
  */
+/** The least time between two proactive session-token refreshes of one provider. */
+const MIN_REFRESH_GAP_MS = 5_000;
+
 export function AtlasProvider(props: AtlasProviderProps) {
   if (typeof props.publishableKey !== 'string' || props.publishableKey.trim() === '') {
     return <AtlasProviderKeyless {...props} />;
@@ -502,6 +505,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
 
   const cache = useRef(new TokenCache());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRefreshAt = useRef(0);
   // §R3.2 cross-tab session channel + refs the tab-propagation effect reads
   // without re-subscribing on every render.
   const channel = useRef<Channel | null>(null);
@@ -655,6 +659,7 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
   const refresh = useCallback(async () => {
     const current = cache.current.peek();
     if (!current) return;
+    lastRefreshAt.current = Date.now();
 
     try {
       // One network refresh across every tab of this app; the others adopt the
@@ -687,7 +692,10 @@ function AtlasProviderLive(props: AtlasProviderProps & { publishableKey: string 
     const token = cache.current.peek();
     if (!token) return;
 
-    const delay = msUntilRefresh({ token, now: Date.now() });
+    // A token already inside its lead window (a failed refresh re-booted into the same near-expiry token, or a very
+    // short lifetime) reschedules at once, so keep proactive refreshes apart: never a hot loop of requests and token writes.
+    const now = Date.now();
+    const delay = Math.max(msUntilRefresh({ token, now }), lastRefreshAt.current + MIN_REFRESH_GAP_MS - now);
     timer.current = setTimeout(() => void refresh(), delay);
 
     return () => {

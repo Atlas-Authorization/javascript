@@ -115,8 +115,10 @@ jobs:
           unzip -q "$RUNNER_TEMP/cmdtools.zip" -d "$RUNNER_TEMP/cmdtools"
           rm -rf "$ANDROID_HOME/cmdline-tools/latest" && mkdir -p "$ANDROID_HOME/cmdline-tools"
           mv "$RUNNER_TEMP/cmdtools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install 'system-images;android-34;google_apis;x86_64'
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install 'system-images;android-34;google_apis;x86_64'
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
