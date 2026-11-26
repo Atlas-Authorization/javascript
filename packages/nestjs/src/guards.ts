@@ -18,6 +18,8 @@ import { extractToken, getRequest, type AtlasRequest } from './request';
  */
 export interface AtlasVerifier {
   verify(token: string): Promise<VerifyResult>;
+  /** `AtlasBackend.cookieSuffix`: the suffix of an instance's cookie names under cookie isolation. */
+  readonly cookieSuffix?: string;
 }
 
 /**
@@ -58,7 +60,7 @@ export class AtlasGuard implements CanActivate {
    */
   protected async authenticate(context: ExecutionContext): Promise<AtlasRequest> {
     const request = getRequest(context);
-    const token = extractToken(request);
+    const token = extractToken(request, this.backend.cookieSuffix);
     if (!token) {
       throw new UnauthorizedException('No Atlas session token on the request.');
     }

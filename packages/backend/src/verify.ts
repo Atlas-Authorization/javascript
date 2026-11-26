@@ -16,6 +16,7 @@ import { PreviousIssuersFeed } from './previous-issuers';
 import { AtlasConfigError } from './mount';
 import { DEFAULT_API_URL } from './client/request';
 import { verifyCsrfJws } from './csrf-jws';
+import { cookieNameFor, readSessionCookie, resolveCookieSuffix } from './cookie-names';
 import type { CsrfRequest } from './csrf';
 import { JwksCache, checkJwksCacheTuning, readKid, type Jwks, type JwksCacheTuning } from './jwks-cache';
 import { JwksDiscovery, instanceIdFromPublishableKey } from './discovery';
@@ -290,6 +291,12 @@ export interface AtlasBackendOptions {
   /** Alternative to `instanceId`: the instance id is read from the publishable key. */
   publishableKey?: string;
   /**
+   * With per-instance cookie isolation (`session.cookieIsolation`) on, the suffix of this instance's cookie names
+   * (`__session_<suffix>`). Normally not needed: it is derived from `publishableKey`, `instanceId` or
+   * `ATLAS_PUBLISHABLE_KEY`. Pass an empty string to force the plain names.
+   */
+  cookieSuffix?: string;
+  /**
    * A static JSON Web Key Set to verify against, INSTEAD of fetching from a URL.
    * When set, verification makes NO network call — the hermetic path a
    * customer's CI uses to validate Atlas-minted test session JWTs (§1.3c). The
@@ -395,6 +402,14 @@ export class AtlasBackend {
    */
   readonly oidc: AtlasBackendOidc;
 
+  /** The suffix this instance's cookie names carry (`''` when its cookies are not isolated or the key is unknown). */
+  readonly cookieSuffix: string;
+
+  /** A Frontend API cookie name as this instance sets it: `cookieName('__atlas_csrf')`. */
+  cookieName(base: string): string {
+    return cookieNameFor(base, this.cookieSuffix);
+  }
+
   constructor(private readonly options: AtlasBackendOptions) {
     // Option not passed: ATLAS_SECRET_KEY / ATLAS_API_URL, then the public API origin.
     const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
@@ -414,6 +429,10 @@ export class AtlasBackend {
     if (Array.isArray(declared) && declared.length === 1 && declared[0] === 'discovery') {
       this.options = { ...this.options, previousIssuers: 'discovery' };
     }
+    this.cookieSuffix = resolveCookieSuffix({
+      cookieSuffix: options.cookieSuffix,
+      publishableKey: options.publishableKey ?? options.instanceId ?? env.ATLAS_PUBLISHABLE_KEY,
+    });
     checkJwksCacheTuning(options.jwksCache);
     // Exactly one key source. Two would be ambiguous (which wins?), and zero
     // leaves nothing to verify against — either is a configuration error worth
@@ -512,6 +531,7 @@ export class AtlasBackend {
       issuer: this.options.issuer,
       jwks: (kid) => this.jwks.get(kid),
       now: this.options.now,
+      cookieSuffix: this.cookieSuffix,
     });
   }
 
@@ -720,13 +740,13 @@ export class AtlasBackend {
     const cookie = readHeader(request.headers, 'cookie');
 
     const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-    const fromCookie = cookie ? readCookie(cookie, '__session') : undefined;
+    const fromCookie = cookie ? readSessionCookie(cookie, this.cookieSuffix) : undefined;
 
     const token = bearer ?? fromCookie;
-    if (!token) return { ok: false, reason: 'malformed', status: deriveAuthStatus(null, cookie).status };
+    if (!token) return { ok: false, reason: 'malformed', status: deriveAuthStatus(null, cookie, this.cookieSuffix).status };
 
     const raw = await this.verifyWithExpiry(token);
-    const status = deriveAuthStatus(raw, cookie).status;
+    const status = deriveAuthStatus(raw, cookie, this.cookieSuffix).status;
     const result: VerifyResult = raw.ok || !('expired' in raw) ? raw : { ok: false, reason: 'invalid' };
     if (!result.ok || !options.revocation) return { ...result, status };
     if (!this.options.secretKey) {
@@ -818,14 +838,6 @@ function readHeader(
   }
   const record = headers as Record<string, string | undefined>;
   return record[name] ?? record[name.toLowerCase()];
-}
-
-function readCookie(header: string, name: string): string | undefined {
-  for (const part of header.split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) return rest.join('=');
-  }
-  return undefined;
 }
 
 /**

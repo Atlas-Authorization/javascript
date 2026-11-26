@@ -1,3 +1,5 @@
+import { readAtlasCookie } from './cookie-names';
+
 /**
  * Why a request is, or is not, signed in. `session_expired` means "renew, do
  * not sign out": the short-lived `__session` lapsed but the browser still holds
@@ -7,19 +9,10 @@ export type AuthStatus = 'signed_in' | 'signed_out' | 'session_expired' | 'token
 
 export const AUTH_STATUS_HEADER = 'x-atlas-auth-status';
 
-function readCookie(header: string | null | undefined, name: string): string | undefined {
-  if (!header) return undefined;
-  for (const part of header.split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) return rest.join('=');
-  }
-  return undefined;
-}
-
 /** True when the request carries the refresh cookie or a live (non-zero, numeric) `__atlas_uat` hint. */
-export function hasSessionCookies(cookieHeader: string | null | undefined): boolean {
-  if (readCookie(cookieHeader, '__atlas_rt')) return true;
-  const uat = readCookie(cookieHeader, '__atlas_uat');
+export function hasSessionCookies(cookieHeader: string | null | undefined, suffix = ''): boolean {
+  if (readAtlasCookie(cookieHeader, '__atlas_rt', suffix)) return true;
+  const uat = readAtlasCookie(cookieHeader, '__atlas_uat', suffix);
   return Boolean(uat) && /^\d+$/.test(uat!) && Number(uat) > 0;
 }
 
@@ -30,9 +23,10 @@ export function hasSessionCookies(cookieHeader: string | null | undefined): bool
 export function deriveAuthStatus(
   result: { ok: boolean; reason?: string; expired?: boolean } | null,
   cookieHeader: string | null | undefined,
+  suffix = '',
 ): { status: AuthStatus; reason?: string } {
   if (result?.ok) return { status: 'signed_in' };
-  const renewable = hasSessionCookies(cookieHeader);
+  const renewable = hasSessionCookies(cookieHeader, suffix);
   if (!result) return { status: renewable ? 'session_expired' : 'signed_out', reason: 'no_token' };
   if (result.expired) return { status: renewable ? 'session_expired' : 'signed_out', reason: 'expired' };
   return { status: 'token_invalid', reason: result.reason };

@@ -45,7 +45,7 @@ describe('redeemHandshake — PKCE proof', () => {
     ) as unknown as typeof fetch;
 
     const session = await redeemHandshake({ ...base, fetchImpl });
-    expect(session).toEqual({ jwt: 'j', refreshToken: 'r', sessionId: 's', expiresIn: 60 });
+    expect(session).toEqual({ jwt: 'j', refreshToken: 'r', sessionId: 's', expiresIn: 60, cookieNames: { session: '__session', refresh: '__atlas_rt' } });
 
     const call = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call).toBeTruthy();

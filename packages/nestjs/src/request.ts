@@ -1,3 +1,4 @@
+import { readSessionCookie } from '@atlasauth/backend';
 import type { ExecutionContext } from '@nestjs/common';
 import type { AuthorizedSession } from '@atlasauth/backend';
 
@@ -26,14 +27,6 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
   return value ?? undefined;
 }
 
-function readCookie(header: string | undefined, name: string): string | undefined {
-  if (!header) return undefined;
-  for (const part of header.split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) return rest.join('=');
-  }
-  return undefined;
-}
 
 /**
  * Pull the session JWT off a request: an `Authorization: Bearer <jwt>` header,
@@ -41,10 +34,10 @@ function readCookie(header: string | undefined, name: string): string | undefine
  * deliberately should not be overridden by a stale cookie — the same precedence
  * `@atlasauth/backend`, `@atlasauth/express` and `@atlasauth/fastify` apply.
  */
-export function extractToken(request: AtlasRequest): string | undefined {
+export function extractToken(request: AtlasRequest, cookieSuffix = ''): string | undefined {
   const headers = request.headers ?? {};
   const header = firstHeader(headers.authorization ?? headers.Authorization);
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-  const cookie = readCookie(firstHeader(headers.cookie), '__session');
+  const cookie = readSessionCookie(firstHeader(headers.cookie), cookieSuffix);
   return bearer ?? cookie;
 }

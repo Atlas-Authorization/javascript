@@ -51,11 +51,13 @@ export interface OAuthState {
   /** jti -> access token record (client_credentials and exchanged tokens have no grant). */
   access: Map<string, { clientId: string; userId: string | null; scope: string[]; exp: number; revoked: boolean; grantId: string | null; cnf?: Obj }>;
   autoUser: string | null;
+  /** Clients deleted: every token of the client issued at or before `at` is revoked (the feed's `kind: client` rows). */
+  clientRevocations: Array<{ clientId: string; at: number }>;
 }
 const states = new WeakMap<Engine, OAuthState>();
 export const st = (e: Engine): OAuthState => {
   let s = states.get(e);
-  if (!s) states.set(e, (s = { codes: new Map(), grants: new Map(), refresh: new Map(), access: new Map(), autoUser: null }));
+  if (!s) states.set(e, (s = { codes: new Map(), grants: new Map(), refresh: new Map(), access: new Map(), autoUser: null, clientRevocations: [] }));
   return s;
 };
 export const resetOAuth = (e: Engine): void => {
@@ -406,8 +408,19 @@ export function oauthHandlers(): RouteDef[] {
         const row = liveClient(e, c.params.id);
         row.deleted = true;
         // Deleting a client ends everything it was issued.
-        for (const g of st(e).grants.values()) if (g.clientId === row.id) g.revoked = true;
+        const at = e.clock.now();
+        for (const g of st(e).grants.values()) {
+          if (g.clientId !== row.id) continue;
+          const wasLive = !g.revoked;
+          g.revoked = true;
+          if (wasLive && g.userId) {
+            e.changed({ type: 'grant.revoked', data: { object: 'grant', ...grantEvent(e, { id: g.id, userId: g.userId, clientId: row.id, organizationId: g.organizationId ?? null, scopes: new Set(g.scope), at: row.created_at }), session_ids: [] } });
+            e.changed({ type: 'oauth_tokens.revoked', data: { object: 'oauth_tokens_revocation', client_id: row.id, user_id: g.userId, grant_id: g.managedId ?? null, family_id: g.id, audience: null, access_token_jtis: [], reason: 'client_revoked', revoked_at: at } });
+          }
+        }
         for (const a of st(e).access.values()) if (a.clientId === row.id) a.revoked = true;
+        // One feed row for the whole client, so a client_credentials token (no family) is covered too.
+        st(e).clientRevocations.push({ clientId: row.id, at });
         e.changed({ type: 'oauth_client.deleted', data: { object: 'oauth_client', id: row.id, deleted: true } });
         return { body: { object: 'oauth_client', id: row.id, deleted: true } };
       },

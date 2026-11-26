@@ -261,7 +261,7 @@ export class FapiClient {
           ...(this.options.methodFilter ? { 'x-atlas-allowed-methods': this.options.methodFilter } : {}),
           ...(attestation ? { 'atlas-attestation': attestation } : {}),
           ...(dpopProof ? { dpop: dpopProof } : {}),
-          ...csrfHeadersFor(init.method),
+          ...csrfHeadersFor(init.method, this.options.publishableKey),
           ...(init.body ? { 'content-type': 'application/json' } : {}),
           ...init.headers,
         },

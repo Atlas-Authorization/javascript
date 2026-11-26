@@ -67,7 +67,7 @@ export interface CreateSecretKeyBody {
   /** Instance scopes, or presets `read_only`, `privacy:execute`, `privacy:grants:revoke`. Send this or `preset`. */
   scopes?: string[];
   /** A named scope set instead of `scopes`: `app-runtime` (what an app server needs; no webhook secret reveal, instance writes or key management) `provisioning` (what a deploy script needs to configure the instance, keys included; no user, session or member data) or `integrations` (a key handed to a connected platform's connect flow). */
-  preset?: 'app-runtime' | 'web-app' | 'provisioning' | 'operator' | 'end-user-pools' | 'integrations';
+  preset?: 'app-runtime' | 'web-app' | 'provisioning' | 'operator' | 'end-user-pools' | 'oauth-apps' | 'integrations';
   /** Unix ms or ISO 8601; at most one year away. Default: one year. Every new key expires. */
   expires_at?: number | string;
   /** CIDRs the key may be used from. */
@@ -292,7 +292,7 @@ export function secretKeysResource(request: RequestFn) {
       return request({ method: 'PATCH', path: `/v1/secret_keys/${enc(id)}`, body });
     },
     /** New key with the same scopes; the old one works for `overlap_seconds` (default 72 h, 0 = now). */
-    rotate(id: string, body: { overlap_seconds?: number; key_format?: 'atlas' | 'legacy'; /** `app-runtime`: the replacement gets the preset's scopes (only ever narrower than the old key). */ preset?: 'app-runtime' | 'web-app' | 'provisioning' | 'operator' | 'end-user-pools' | 'integrations' } = {}): Promise<SecretKeyWithSecret & { replaces: string; previous_key_expires_at: number | null; /** Same as `previous_key_expires_at`. */ old_key_valid_until: number | null }> {
+    rotate(id: string, body: { overlap_seconds?: number; key_format?: 'atlas' | 'legacy'; /** `app-runtime`: the replacement gets the preset's scopes (only ever narrower than the old key). */ preset?: 'app-runtime' | 'web-app' | 'provisioning' | 'operator' | 'end-user-pools' | 'oauth-apps' | 'integrations' } = {}): Promise<SecretKeyWithSecret & { replaces: string; previous_key_expires_at: number | null; /** Same as `previous_key_expires_at`. */ old_key_valid_until: number | null }> {
       return request({ method: 'POST', path: `/v1/secret_keys/${enc(id)}/rotate`, body });
     },
     revoke(id: string): Promise<SecretKey & { revoked: true }> {

@@ -8,6 +8,7 @@
  */
 
 import { ATLAS_BACKEND_VERSION } from './version';
+import { cookieNameFor, resolveCookieSuffix } from './cookie-names';
 
 type Env = Record<string, string | undefined>;
 
@@ -47,9 +48,12 @@ export interface AtlasMountOptions {
   trustedProxyHops?: number;
   /**
    * Which request cookies reach Atlas, replacing the default: `__session`,
-   * `__client` and `__atlas_*`. Your app's own cookies stay on your side.
+   * `__client` and `__atlas_*` (and `__session_<suffix>` / `__client_<suffix>` of your instance with cookie
+   * isolation on). Your app's own cookies stay on your side.
    */
   forwardCookies?: (name: string) => boolean;
+  /** Your instance's publishable key (default `ATLAS_PUBLISHABLE_KEY`, else the `X-Publishable-Key` of the request): names its isolated cookies. */
+  publishableKey?: string;
   /**
    * Which request headers reach Atlas (the name is lowercase), replacing the
    * default list of browser basics and what Atlas reads. It can't let through
@@ -126,7 +130,8 @@ const FORWARDED_HEADERS = new Set([
 const forwardHeaderByDefault = (name: string) =>
   FORWARDED_HEADERS.has(name) || name.startsWith('x-atlas-') || name.startsWith('accept-') || name.startsWith('access-control-request-') || name.startsWith('sec-fetch-') || name.startsWith('sec-ch-');
 /** What Atlas reads and sets. Exact `__session` / `__client`: other vendors' `__session_*` and `__client_uat` are not ours to receive. */
-const forwardCookieByDefault = (name: string) => name === '__session' || name === '__client' || name.startsWith('__atlas_');
+const forwardCookieByDefault = (name: string, suffix = '') =>
+  name === '__session' || name === '__client' || name.startsWith('__atlas_') || (suffix !== '' && (name === cookieNameFor('__session', suffix) || name === cookieNameFor('__client', suffix)));
 const DROP_RESPONSE = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'te', 'trailer', 'content-encoding', 'content-length', 'set-cookie']);
 const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
 
@@ -234,11 +239,12 @@ export function createMountHandler(options: AtlasMountOptions = {}): AtlasMountH
       .map((u) => new URL(/^https?:\/\//i.test(u) ? u : `https://${u}`).origin);
 
     const headers = new Headers();
+    const cookieSuffix = resolveCookieSuffix({ publishableKey: options.publishableKey ?? env.ATLAS_PUBLISHABLE_KEY ?? request.headers.get('x-publishable-key') ?? undefined });
     const forwardHeader = options.forwardHeaders ?? forwardHeaderByDefault;
     request.headers.forEach((value, key) => {
       const name = key.toLowerCase();
       if (neverForwardHeader(name) || !forwardHeader(name)) return;
-      const kept = name === 'cookie' ? filterCookies(value, options.forwardCookies ?? forwardCookieByDefault) : value;
+      const kept = name === 'cookie' ? filterCookies(value, options.forwardCookies ?? ((n) => forwardCookieByDefault(n, cookieSuffix))) : value;
       if (kept !== undefined) headers.set(key, kept);
     });
     if (options.telemetry !== false && !headers.has('x-atlas-sdk')) headers.set('x-atlas-sdk', `${sdk.name}/${sdk.version}`);

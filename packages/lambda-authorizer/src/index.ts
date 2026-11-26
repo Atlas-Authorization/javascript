@@ -1,3 +1,4 @@
+import { readSessionCookie } from '@atlasauth/backend';
 import {
   AtlasBackend,
   createAccessTokenVerifier,
@@ -134,16 +135,9 @@ function headerOf(headers: AuthorizerEvent['headers'], name: string): string | u
   return undefined;
 }
 
-function cookieValue(cookie: string, name: string): string | undefined {
-  for (const part of cookie.split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) return rest.join('=') || undefined;
-  }
-  return undefined;
-}
 
 /** The token a request carries: the Bearer header wins, then the `__session` cookie. Null when none. */
-export function extractToken(event: AuthorizerEvent): string | null {
+export function extractToken(event: AuthorizerEvent, cookieSuffix = ''): string | null {
   const bearer = (v: string | undefined) => {
     const m = /^bearer +(\S+)$/i.exec(v?.trim() ?? '');
     return m ? m[1]! : null;
@@ -153,7 +147,7 @@ export function extractToken(event: AuthorizerEvent): string | null {
   if (fromHeader) return fromHeader;
   const cookies = [...(event.cookies ?? []), headerOf(event.headers, 'cookie') ?? ''];
   for (const c of cookies) {
-    const v = typeof c === 'string' ? cookieValue(c, '__session') : undefined;
+    const v = typeof c === 'string' ? readSessionCookie(c, cookieSuffix) || undefined : undefined;
     if (v) return v;
   }
   return null;
@@ -313,7 +307,7 @@ export function createLambdaAuthorizer(options: LambdaAuthorizerOptions) {
     if (!event || typeof event !== 'object' || typeof arn !== 'string' || !arn || (event.type !== 'TOKEN' && event.type !== 'REQUEST')) {
       return refuse();
     }
-    const token = extractToken(event);
+    const token = extractToken(event, backend?.cookieSuffix);
     if (!token) return refuse();
     const outcome = await outcomeFor(token);
     if (outcome.kind === 'unauthorized') return refuse();

@@ -1,5 +1,9 @@
 # @atlasauth/js changelog
 
+## 0.57.0
+
+- **behaviour:** Reads and writes the instance's suffixed cookies and CSRF cookie when `session.cookieIsolation` is on.
+
 ## 0.56.0
 
 - **behaviour:** `attribution` `read()` and `global` functions may return a Promise (1.5 s limit), so a late visit id is no longer lost.

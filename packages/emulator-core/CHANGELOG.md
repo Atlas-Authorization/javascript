@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0
+
+- Follows the new request and response fields (cookie suffix, client-revocation feed rows).
+
 ## 0.8.0
 
 - Version bump alongside this release; the emulator follows the new request and response fields (consent, account linking, key presets, imports, memberships).

@@ -5,8 +5,11 @@ import {
   createMigrationBridge,
   authStatusHeaders,
   createPkcePair,
+  cookieSuffixForKey,
   deriveAuthStatus,
   evaluate,
+  readAtlasCookie,
+  readSessionCookie,
   hasFromClaims,
   redeemHandshake,
   refreshSessionFromRequest,
@@ -218,12 +221,12 @@ function readCookie(header: string | null, name: string): string | undefined {
  * valid token. On real sign-out Atlas clears BOTH cookies, so the hint disappears
  * exactly when the session does. Mirrors Clerk's `__client_uat` model.
  */
-export function hasSignedInHint(request: EdgeRequest): boolean {
+export function hasSignedInHint(request: EdgeRequest, cookieSuffix = ''): boolean {
   const header = request.headers.get('cookie');
-  const uat = readCookie(header, '__atlas_uat');
+  const uat = readAtlasCookie(header, '__atlas_uat', cookieSuffix);
   if (uat && uat !== '0' && Number(uat) > 0) return true;
   // Same-origin edge: the HttpOnly refresh cookie is present on the request.
-  return Boolean(readCookie(header, '__atlas_rt'));
+  return Boolean(readAtlasCookie(header, '__atlas_rt', cookieSuffix));
 }
 
 /**
@@ -253,10 +256,10 @@ export async function resolveAuthStatus(
   const header = request.headers.get('authorization');
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
   const cookies = request.headers.get('cookie');
-  const cookie = readCookie(cookies, '__session');
+  const cookie = readSessionCookie(cookies, backend.cookieSuffix);
 
   const token = bearer ?? cookie;
-  if (!token) return { state: SIGNED_OUT, status: deriveAuthStatus(null, cookies).status };
+  if (!token) return { state: SIGNED_OUT, status: deriveAuthStatus(null, cookies, backend.cookieSuffix).status };
 
   // With `revocation`, the session list is consulted too: a revoked or unverifiable-list session is signed out.
   const result = revocation
@@ -355,6 +358,8 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
     previousIssuers: options.previousIssuers,
     authorizedParties: options.authorizedParties,
     fetchImpl: options.fetchImpl,
+    // Cookie names follow the publishable key (`__session_<suffix>` under cookie isolation).
+    cookieSuffix: options.publishableKey ? cookieSuffixForKey(options.publishableKey) : undefined,
     ...revocationBackendOptions(options),
   });
   const revocation = revocationOf(options);
@@ -482,9 +487,9 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
             location: clean.toString(),
             auth: SIGNED_OUT,
             cookies: [
-              { name: '__session', value: session.jwt, options: { path: '/', sameSite: 'lax', secure: true } },
+              { name: session.cookieNames.session, value: session.jwt, options: { path: '/', sameSite: 'lax', secure: true } },
               {
-                name: '__atlas_rt',
+                name: session.cookieNames.refresh,
                 value: session.refreshToken,
                 options: { path: '/', httpOnly: true, sameSite: 'lax', secure: true },
               },
@@ -568,7 +573,7 @@ export function createAtlasDecider(options: AtlasMiddlewareOptions) {
          * This is checked before the handshake and the sign-in redirect, so the
          * common "same-property, token just expired" case never leaves the app.
          */
-        if (hasSignedInHint(request)) return refreshed ? { kind: 'continue', auth, refreshed } : { kind: 'continue', auth };
+        if (hasSignedInHint(request, backend.cookieSuffix)) return refreshed ? { kind: 'continue', auth, refreshed } : { kind: 'continue', auth };
         /**
          * Cross-property handshake: before sending a signed-out user to the
          * sign-in page, try the Atlas handshake ONCE — they may already have a
@@ -675,6 +680,8 @@ export function createAuthHelper(options: AtlasMiddlewareOptions) {
     previousIssuers: options.previousIssuers,
     authorizedParties: options.authorizedParties,
     fetchImpl: options.fetchImpl,
+    // Cookie names follow the publishable key (`__session_<suffix>` under cookie isolation).
+    cookieSuffix: options.publishableKey ? cookieSuffixForKey(options.publishableKey) : undefined,
     ...revocationBackendOptions(options),
   });
   const revocation = revocationOf(options);

@@ -1,5 +1,10 @@
 # @atlasauth/nextjs changelog
 
+## 0.23.0
+
+- **behaviour:** Cookie isolation: with `session.cookieIsolation` on, the server helpers read and write the instance's suffixed cookie names, derived from the publishable key with no configuration.
+- Requires @atlasauth/backend 0.67.0.
+
 ## 0.22.0
 
 - `@atlasauth/nextjs/server` adds `createSessionExchange`, idempotent per Atlas session, for the sign-in panels' `exchange`.

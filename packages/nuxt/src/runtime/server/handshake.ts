@@ -60,8 +60,8 @@ export async function atlasHandshake(event: H3Event): Promise<boolean> {
     // The verifier is spent either way — clear it.
     setCookie(event, '__atlas_hv', '', { path: '/', maxAge: 0 });
     if (session) {
-      setCookie(event, '__session', session.jwt, { path: '/', sameSite: 'lax', secure: true });
-      setCookie(event, '__atlas_rt', session.refreshToken, {
+      setCookie(event, session.cookieNames.session, session.jwt, { path: '/', sameSite: 'lax', secure: true });
+      setCookie(event, session.cookieNames.refresh, session.refreshToken, {
         path: '/',
         httpOnly: true,
         sameSite: 'lax',

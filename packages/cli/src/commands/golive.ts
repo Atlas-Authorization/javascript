@@ -125,9 +125,10 @@ export async function pathMountCheck(api: ConfigHttp, host: string): Promise<Che
 }
 
 export async function declaredCookiesCheck(api: ConfigHttp): Promise<CheckResult> {
-  const cc = await api.get<{ declared_cookies?: Array<{ name: string | null }> }>('/v1/instance/cookie_consent');
+  const cc = await api.get<{ cookie_suffix?: string | null; declared_cookies?: Array<{ name: string | null }> }>('/v1/instance/cookie_consent');
   const names = new Set((cc.declared_cookies ?? []).map((c) => c.name));
-  const missing = SDK_COOKIES.filter((n) => !names.has(n));
+  // With cookie isolation on, the declaration carries the suffixed names.
+  const missing = SDK_COOKIES.filter((n) => !names.has(cc.cookie_suffix ? `${n}_${cc.cookie_suffix}` : n));
   if (!missing.length) return { id: 'declared_cookies', ok: true, detail: `declares ${SDK_COOKIES.join(', ')}` };
   return {
     id: 'declared_cookies',

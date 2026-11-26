@@ -117,6 +117,7 @@ export * from './fetch-handlers';
 
 // Session helpers: mirror the Atlas user into your own table; CSRF tokens bound to the session.
 export * from './sync-local-user';
+export * from './cookie-names';
 export * from './csrf';
 export * from './csrf-jws';
 export * from './server-auth';

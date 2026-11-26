@@ -1,5 +1,11 @@
 # @atlasauth/backend changelog
 
+## 0.67.0
+
+- **behaviour:** New cookie-name helpers (suffix derived from the publishable key); session, refresh, CSRF and handshake helpers honour the suffix, and `HandshakeSession` carries `cookieNames`.
+- `createAccessTokenVerifier` honours client-kind revocation feed rows, so tokens of a deleted OAuth client (including `client_credentials` JWTs) stop verifying.
+- New `oauth-apps` key preset type.
+
 ## 0.66.0
 
 - **behaviour:** `AtlasBackend` reads `ATLAS_SECRET_KEY` and `ATLAS_API_URL` when `secretKey` and `bapiBaseUrl` are not passed; `verifyOnline` without a key throws `AtlasConfigError` (`secret_key_missing`). One warning when `jwksUrl` is on another host than the issuer.

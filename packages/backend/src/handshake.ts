@@ -19,6 +19,8 @@
  * parent-domain cookie directly; this is only the cross-domain path.)
  */
 
+import { cookieNameFor } from './cookie-names';
+
 export interface RedeemHandshakeOptions {
   /** Origin of the Atlas Frontend API, e.g. `https://id.atlasauth.net`. */
   fapiOrigin: string;
@@ -78,6 +80,8 @@ export interface HandshakeSession {
   sessionId: string;
   /** Seconds until the `__session` JWT expires. */
   expiresIn: number;
+  /** The cookie names to set them under: `__session` / `__atlas_rt`, with the instance suffix when the instance isolates its cookies. */
+  cookieNames: { session: string; refresh: string };
 }
 
 /**
@@ -114,6 +118,7 @@ export async function redeemHandshake(options: RedeemHandshakeOptions): Promise<
     refresh_token?: string;
     session_id?: string;
     expires_in?: number;
+    cookie_suffix?: string | null;
   } | null;
   if (!data?.jwt || !data.refresh_token) return null;
 
@@ -122,6 +127,10 @@ export async function redeemHandshake(options: RedeemHandshakeOptions): Promise<
     refreshToken: data.refresh_token,
     sessionId: data.session_id ?? '',
     expiresIn: data.expires_in ?? 0,
+    cookieNames: {
+      session: cookieNameFor('__session', data.cookie_suffix ?? ''),
+      refresh: cookieNameFor('__atlas_rt', data.cookie_suffix ?? ''),
+    },
   };
 }
 

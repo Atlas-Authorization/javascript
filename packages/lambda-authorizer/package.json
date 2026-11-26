@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/lambda-authorizer",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "AWS API Gateway Lambda authorizer that verifies Atlas session and access tokens locally and returns IAM policies (REST and HTTP API v2).",
   "license": "MIT",
   "type": "module",
@@ -35,7 +35,7 @@
     "CHANGELOG.md"
   ],
   "peerDependencies": {
-    "@atlasauth/backend": ">=0.51.0 <1.0.0"
+    "@atlasauth/backend": ">=0.67.0 <1.0.0"
   },
   "repository": {
     "type": "git",

@@ -36,7 +36,7 @@ export async function refreshSessionFromRequest(
 ): Promise<RefreshedSession | null> {
   try {
     const cookie = atlasCookies(request.headers.get('cookie') ?? '');
-    if (!/(^|; )__atlas_rt=[^;]/.test(cookie)) return null;
+    if (!/(^|; )__atlas_rt(?:_[a-z0-9]{8})?=[^;]/.test(cookie)) return null;
 
     const headers: Record<string, string> = { cookie, accept: 'application/json' };
     if (options.publishableKey) headers['x-publishable-key'] = options.publishableKey;

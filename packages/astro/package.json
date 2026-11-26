@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/astro",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -21,7 +21,7 @@
   },
   "peerDependencies": {
     "astro": ">=4",
-    "@atlasauth/backend": ">=0.51.0 <1.0.0"
+    "@atlasauth/backend": ">=0.67.0 <1.0.0"
   },
   "peerDependenciesMeta": {
     "astro": {

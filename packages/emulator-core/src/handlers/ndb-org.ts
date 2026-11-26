@@ -10,6 +10,7 @@ import { signalTable, signalView } from './ndb-misc';
 import { scimRequestLog } from './scim';
 import { addMember } from './orgs';
 import { engineState } from './support';
+import { st as oauthState } from './oauth';
 import { presentUser } from './users';
 
 /**
@@ -1193,7 +1194,15 @@ function miscRoutes(): RouteDef[] {
         seq++;
         const d: Obj = (ev.payload as Obj)?.data ?? {};
         if (ev.created_at < windowStart || seq <= after) continue;
-        rows.push({ seq, row: { family_id: d.family_id ?? null, jti: d.jti ?? null, user_id: d.user_id ?? null, client_id: d.client_id ?? null, reason: d.reason ?? (ev.type === 'grant.revoked' ? 'grant_revoked' : 'admin_revoked'), revoked_at: d.revoked_at ?? ev.created_at } });
+        // A grant ended with its own `oauth_tokens.revoked` event is listed once, by that event.
+        if (ev.type === 'grant.revoked' && e.webhooks.events.some((x) => x.type === 'oauth_tokens.revoked' && (x.payload as Obj)?.data?.family_id === d.id)) continue;
+        rows.push({ seq, row: { kind: d.jti ? 'jti' : 'family', family_id: d.family_id ?? null, jti: d.jti ?? null, user_id: d.user_id ?? null, client_id: d.client_id ?? null, oauth_client_id: d.oauth_client_id ?? d.client_id ?? null, reason: d.reason ?? (ev.type === 'grant.revoked' ? 'grant_revoked' : 'admin_revoked'), revoked_at: d.revoked_at ?? ev.created_at } });
+      }
+      // A deleted client: one row for every token it issued at or before `revoked_at`, shown to every API.
+      for (const r of oauthState(e).clientRevocations) {
+        seq++;
+        if (r.at < windowStart || seq <= after) continue;
+        rows.push({ seq, row: { kind: 'client', family_id: null, jti: null, user_id: null, client_id: r.clientId, oauth_client_id: r.clientId, reason: 'client_revoked', revoked_at: r.at } });
       }
       const page = rows.slice(0, limit);
       return { body: { data: page.map((r) => r.row), has_more: rows.length > page.length, next_cursor: page.length ? String(page[page.length - 1]!.seq) : (c.query.get('after') ?? null), server_time: now, window_start: windowStart, retention_seconds: retention } };

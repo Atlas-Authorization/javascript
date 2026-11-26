@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/nuxt",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "type": "module",
   "description": "Official Nuxt 3 and 4 module for Atlas — SSR session verification (Nitro) built on the @atlasauth/vue client.",
   "license": "MIT",
@@ -36,7 +36,7 @@
   "peerDependencies": {
     "@atlasauth/js": ">=0.39.0 <1.0.0",
     "nuxt": "^3 || ^4",
-    "@atlasauth/backend": ">=0.51.0 <1.0.0"
+    "@atlasauth/backend": ">=0.67.0 <1.0.0"
   },
   "devDependencies": {
     "@atlasauth/js": "workspace:*",

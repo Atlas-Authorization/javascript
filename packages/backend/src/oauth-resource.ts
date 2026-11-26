@@ -625,7 +625,7 @@ export function createAccessTokenVerifier(
 
     // Revoked token families and single tokens (the polled feed): no call per request.
     if (revocationLists.length > 0) {
-      const revoked = await Promise.all(revocationLists.map((l) => l.isRevoked(claims as { fid?: unknown; jti?: unknown })));
+      const revoked = await Promise.all(revocationLists.map((l) => l.isRevoked(claims as { fid?: unknown; jti?: unknown; azp?: unknown; iat?: unknown })));
       if (revoked.some(Boolean)) return fail(401, 'invalid_token', 'The access token has been revoked.');
       if (revocationLists.some((l) => l.unavailable())) return fail(401, 'invalid_token', 'Token revocation status is unavailable right now.');
     }

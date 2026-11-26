@@ -11,6 +11,8 @@ export interface CsrfJwsOptions {
   /** The instance key set (what `AtlasBackend` already fetches), or a function that returns it. */
   jwks: Jwks | ((kid?: string) => Promise<Jwks | null>);
   now?: () => number;
+  /** The instance's cookie suffix (`__atlas_csrf_<suffix>` with cookie isolation); the plain cookie is read too. */
+  cookieSuffix?: string;
 }
 
 /**
@@ -43,6 +45,6 @@ export async function checkCsrfJws(token: string | null | undefined, options: Cs
  * for this session. Reads a form body from a clone, so your handler can still read it.
  */
 export async function verifyCsrfJws(request: CsrfRequest, options: CsrfJwsOptions): Promise<boolean> {
-  const submitted = await submittedMatchingCookie(request);
+  const submitted = await submittedMatchingCookie(request, options.cookieSuffix);
   return submitted !== null && checkCsrfJws(submitted, options);
 }

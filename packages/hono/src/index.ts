@@ -1,3 +1,4 @@
+import { readSessionCookie } from '@atlasauth/backend';
 import {
   AtlasBackend,
   createBetterAuthBridge,
@@ -260,15 +261,6 @@ export interface HonoContextLike {
 export type NextLike = () => Promise<void>;
 export type MiddlewareHandler = (c: HonoContextLike, next: NextLike) => Promise<void | Response>;
 
-/** Parse one cookie value out of a raw `Cookie` header. */
-function readCookie(header: string | undefined, name: string): string | undefined {
-  if (!header) return undefined;
-  for (const part of header.split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) return rest.join('=');
-  }
-  return undefined;
-}
 
 /** Bind `has`/`protect` to a resolved state — the single construction point. */
 function buildAuth(state: AtlasAuthState): AtlasAuth {
@@ -318,11 +310,11 @@ export async function resolveAuth(
   const header = c.req.header('authorization') ?? c.req.header('Authorization');
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
   const cookieHeader = c.req.header('cookie') ?? c.req.header('Cookie');
-  const cookie = readCookie(cookieHeader, SESSION_COOKIE);
+  const cookie = readSessionCookie(cookieHeader, backend.cookieSuffix);
 
   const token = bearer ?? cookie;
   if (!token) {
-    const { status, reason } = deriveAuthStatus(null, cookieHeader);
+    const { status, reason } = deriveAuthStatus(null, cookieHeader, backend.cookieSuffix);
     return signedOutAuth(status as Exclude<AuthStatus, 'signed_in'>, reason);
   }
 

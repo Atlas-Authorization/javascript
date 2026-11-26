@@ -505,8 +505,8 @@ owner turned on cli_handoff (you must have signed in to that app once). The toke
 Usage:
   atlas keys whoami                         What the current key is and can do
   atlas keys list                           Every credential on the instance
-  atlas keys create (--scopes "<scopes>" | --preset app-runtime|web-app|provisioning|operator|end-user-pools|integrations) [--name n] [--env-var <NAME>] [--owner o] [--expires-at <ISO>] [--allowed-ips <cidr,…>] [--out <file>]
-  atlas keys rotate <id> [--preset app-runtime|web-app|provisioning|operator|end-user-pools|integrations] [--overlap <dur, e.g. 72h or seconds>] [--out <file>] [--env-var <NAME>]   --preset narrows an all-scope key; the old key keeps working for the overlap
+  atlas keys create (--scopes "<scopes>" | --preset app-runtime|web-app|provisioning|operator|end-user-pools|oauth-apps|integrations) [--name n] [--env-var <NAME>] [--owner o] [--expires-at <ISO>] [--allowed-ips <cidr,…>] [--out <file>]
+  atlas keys rotate <id> [--preset app-runtime|web-app|provisioning|operator|end-user-pools|oauth-apps|integrations] [--overlap <dur, e.g. 72h or seconds>] [--out <file>] [--env-var <NAME>]   --preset narrows an all-scope key; the old key keeps working for the overlap
   atlas keys data status|enable|rotate|rewrap|check|shred   Customer-managed data key (shred needs the instance id typed or --confirm)
   atlas keys op list|rotate                           OpenID provider signing keys
   atlas keys revoke <id>
@@ -900,7 +900,7 @@ Usage:
              [--client-redirect <url>]... [--webhook-url <url>]
              [--backchannel <url>]
              [--with-dev] [--no-env-files --json]
-             [--key-preset app-runtime|all[,operator][,end-user-pools]] [--allow-no-email]
+             [--key-preset app-runtime|all[,operator][,end-user-pools][,oauth-apps]] [--allow-no-email]
              [--yes] [--force] [--rotate-secret] [--json]
   atlas init --next [--mount /atlas] [--dir <app-root>] [--force]
   atlas init nextjs-local-users [--dir <app>]    (a starter that keeps your own user table in step; runs create-atlas-app)
@@ -926,7 +926,7 @@ is never printed. An existing file is never overwritten without --force.
 --rotate-secret mints a new secret key when the app exists but its file is gone.
 The app key is the app-runtime preset (ATLAS_SECRET_KEY); a separate provisioning key (ATLAS_PROVISIONING_KEY,
 for atlas plan/apply and the CLI) goes in its own file, and the all-scope key that came with the app is revoked.
---key-preset all keeps the all-scope key; add ",operator" and/or ",end-user-pools" to also mint those preset keys (saved as operator.env / end-user-pools.env next to the others). A production app with no email transport is refused unless
+--key-preset all keeps the all-scope key; add ",operator", ",end-user-pools" and/or ",oauth-apps" to also mint those preset keys (saved as operator.env / end-user-pools.env / oauth-apps.env next to the others). A production app with no email transport is refused unless
 --allow-no-email.
 Public values and file paths are kept in ~/.config/<product>/atlas.json.
 Turns on strict request bodies unless the instance has them or opted out.

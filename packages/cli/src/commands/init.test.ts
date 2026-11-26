@@ -507,14 +507,15 @@ describe('atlas init: scoped keys and email', () => {
   it('--key-preset app-runtime,operator,end-user-pools also mints those keys, before the all-scope key is revoked', async () => {
     state.mint = true;
     const io = captureIO();
-    expect(await run([...ARGS, '--key-preset', 'app-runtime,operator,end-user-pools'], ctxWith(io))).toBe(0);
+    expect(await run([...ARGS, '--key-preset', 'app-runtime,operator,end-user-pools,oauth-apps'], ctxWith(io))).toBe(0);
     noSecrets(io);
     const dir = join(home, 'acme', 'production');
     expect(readFileSync(join(dir, 'operator.env'), 'utf8')).toContain('ATLAS_OPERATOR_KEY=');
     expect(readFileSync(join(dir, 'end-user-pools.env'), 'utf8')).toContain('ATLAS_END_USER_POOLS_KEY=');
+    expect(readFileSync(join(dir, 'oauth-apps.env'), 'utf8')).toContain('ATLAS_OAUTH_APPS_KEY=');
     expect(mode(join(dir, 'operator.env'))).toBe(0o600);
     const minted = state.writes.filter((w) => w.path === '/v1/secret_keys').map((w) => (w.body as { preset: string }).preset);
-    expect(minted).toEqual(['app-runtime', 'provisioning', 'operator', 'end-user-pools']);
+    expect(minted).toEqual(['app-runtime', 'provisioning', 'operator', 'end-user-pools', 'oauth-apps']);
     const revoke = state.writes.findIndex((w) => w.path === '/v1/secret_keys/key_boot/revoke');
     expect(revoke).toBeGreaterThan(state.writes.findIndex((w) => (w.body as { preset?: string })?.preset === 'end-user-pools'));
     const bad = captureIO();

@@ -1,5 +1,10 @@
 # @atlasauth/lambda-authorizer
 
+## 0.4.0
+
+- **behaviour:** Cookie isolation: with `session.cookieIsolation` on, the server helpers read and write the instance's suffixed cookie names, derived from the publishable key with no configuration.
+- Requires @atlasauth/backend 0.67.0.
+
 ## 0.3.0
 
 - `feature` option for plan feature gating; verifies the signed session status list at the edge.

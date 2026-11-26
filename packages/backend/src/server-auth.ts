@@ -1,3 +1,4 @@
+import { cookieNameFor } from './cookie-names';
 import { CSRF_COOKIE, checkCsrfToken, csrfToken, deriveCsrfSecret, readCookieValue, verifyCsrf } from './csrf';
 
 /**
@@ -25,6 +26,8 @@ export interface ServerCsrfOptions {
 /** What the gate needs from an `AtlasBackend` to verify an Atlas-issued CSRF token. */
 export interface CsrfJwsVerifier {
   verifyCsrf(request: { headers: { get(name: string): string | null } }, options: { sid: string }): Promise<boolean>;
+  /** The suffix of this instance's cookie names under cookie isolation (`AtlasBackend.cookieSuffix`). */
+  cookieSuffix?: string;
 }
 
 export type CsrfDecision =
@@ -57,7 +60,8 @@ export function createServerCsrfGate(option: true | ServerCsrfOptions, secretKey
     if (!req.sessionId) return { action: 'skip' };
     if (req.headers.get('authorization')?.startsWith('Bearer ')) return { action: 'skip' };
     if (req.path === base || req.path.startsWith(`${base}/`)) return { action: 'skip' };
-    const existing = readCookieValue(req.headers.get('cookie'), CSRF_COOKIE);
+    // Atlas's own CSRF cookie carries the instance suffix under cookie isolation; the gate's own cookie never does.
+    const existing = (config.atlasSigned && atlas?.cookieSuffix ? readCookieValue(req.headers.get('cookie'), cookieNameFor(CSRF_COOKIE, atlas.cookieSuffix)) : undefined) ?? readCookieValue(req.headers.get('cookie'), CSRF_COOKIE);
     if (config.atlasSigned) {
       // Atlas sets the cookie itself; this gate only checks the echo.
       const token = existing ?? '';

@@ -1,5 +1,10 @@
 # @atlasauth/tanstack-react-start changelog
 
+## 0.4.0
+
+- **behaviour:** Cookie isolation: with `session.cookieIsolation` on, the server helpers read and write the instance's suffixed cookie names, derived from the publishable key with no configuration.
+- Requires @atlasauth/backend 0.67.0.
+
 ## 0.3.1
 
 - Built against `@atlasauth/react` 0.40, whose `@atlasauth/design` 0.5 has no zod dependency.

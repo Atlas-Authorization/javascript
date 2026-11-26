@@ -18,7 +18,7 @@ export interface OAuthTokenRevocationOptions {
 }
 
 interface Page {
-  data: Array<{ family_id: string | null; jti: string | null; revoked_at: number }>;
+  data: Array<{ kind?: 'family' | 'jti' | 'client'; family_id: string | null; jti: string | null; client_id?: string | null; revoked_at: number }>;
   has_more: boolean;
   next_cursor: string | null;
   server_time: number;
@@ -32,6 +32,8 @@ interface Page {
  */
 export class OAuthTokenRevocationList {
   private readonly revoked = new Map<string, number>();
+  /** A deleted client's cut-off: its tokens issued at or before this (epoch ms) are revoked. Kept until none can be live. */
+  private readonly clientCutoffs = new Map<string, number>();
   private since: number | undefined;
   private nextPollAt = 0;
   private inflight: Promise<void> | undefined;
@@ -66,10 +68,14 @@ export class OAuthTokenRevocationList {
   }
 
   /** Is this token's family or jti on the feed? Refreshes the feed first when the interval has passed. */
-  async isRevoked(claims: { fid?: unknown; jti?: unknown }): Promise<boolean> {
+  async isRevoked(claims: { fid?: unknown; jti?: unknown; azp?: unknown; iat?: unknown }): Promise<boolean> {
     const now = this.io.now();
     if (now >= this.nextPollAt) await (this.inflight ??= this.poll().finally(() => (this.inflight = undefined)));
     const live = (key: string) => (this.revoked.get(key) ?? 0) > now;
+    if (typeof claims.azp === 'string') {
+      const cutoff = this.clientCutoffs.get(claims.azp);
+      if (cutoff !== undefined && cutoff + this.lifetimeMs > now && (typeof claims.iat === 'number' ? claims.iat * 1000 : 0) <= cutoff) return true;
+    }
     return (typeof claims.fid === 'string' && live(`fid:${claims.fid}`)) || (typeof claims.jti === 'string' && live(`jti:${claims.jti}`));
   }
 
@@ -106,6 +112,7 @@ export class OAuthTokenRevocationList {
         if (!res.ok) throw new Error(`GET /v1/resource_servers/{id}/revoked_tokens answered ${res.status}`);
         const page = (await res.json()) as Page;
         for (const r of page.data) {
+          if (r.kind === 'client' && r.client_id) this.clientCutoffs.set(r.client_id, Math.max(this.clientCutoffs.get(r.client_id) ?? 0, r.revoked_at));
           if (r.family_id) this.revoked.set(`fid:${r.family_id}`, r.revoked_at + this.lifetimeMs);
           if (r.jti) this.revoked.set(`jti:${r.jti}`, r.revoked_at + this.lifetimeMs);
         }
@@ -116,6 +123,7 @@ export class OAuthTokenRevocationList {
       this.since = serverTime - 10_000;
       this.lastSuccessAt = started;
       for (const [key, expiry] of this.revoked) if (expiry <= started) this.revoked.delete(key);
+      for (const [key, cutoff] of this.clientCutoffs) if (cutoff + this.lifetimeMs <= started) this.clientCutoffs.delete(key);
     } catch (error) {
       this.opts.onError?.(error);
     }

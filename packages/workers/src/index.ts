@@ -1,3 +1,4 @@
+import { readSessionCookie } from '@atlasauth/backend';
 import {
   AtlasBackend,
   ForbiddenError,
@@ -132,14 +133,6 @@ export type FetchHandler<Env> = (request: Request, env: Env, ctx?: unknown) => R
 const json = (status: number, body: unknown, headers: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 
-const readCookie = (header: string | null, name: string): string | undefined => {
-  if (!header) return undefined;
-  for (const part of header.split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) return rest.join('=');
-  }
-  return undefined;
-};
 
 const headerRecord = (headers: Headers): Record<string, string> => {
   const out: Record<string, string> = {};
@@ -232,10 +225,12 @@ export function createAtlas<Env = unknown>(config: AtlasWorkerConfig<Env>): Atla
     const header = request.headers.get('authorization');
     const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
     const cookieHeader = request.headers.get('cookie');
-    const cookie = readCookie(cookieHeader, SESSION_COOKIE);
+    let suffix = '';
+    try { suffix = resolve(env).backend.cookieSuffix; } catch { /* a misconfiguration surfaces below */ }
+    const cookie = readSessionCookie(cookieHeader, suffix);
     const token = bearer ?? cookie;
     if (!token) {
-      const { status, reason } = deriveAuthStatus(null, cookieHeader);
+      const { status, reason } = deriveAuthStatus(null, cookieHeader, suffix);
       return signedOutAuth(status, reason);
     }
     try {

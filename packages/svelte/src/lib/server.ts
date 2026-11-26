@@ -98,7 +98,8 @@ export async function resolveServerAuth(
 ): Promise<ServerAuth> {
   const header = event.request.headers.get('authorization');
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-  const token = bearer ?? event.cookies.get(cookieName);
+  // The default cookie follows the instance's cookie isolation (`__session_<suffix>`); an explicit name is read as given.
+  const token = bearer ?? (cookieName === '__session' && backend.cookieSuffix ? event.cookies.get(backend.cookieName('__session')) : undefined) ?? event.cookies.get(cookieName);
   if (!token) return bind(SIGNED_OUT);
 
   const result = await backend.verify(token);

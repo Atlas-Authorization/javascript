@@ -1,5 +1,9 @@
 # @atlasauth/testing changelog
 
+## 0.7.0
+
+- **behaviour:** Cypress helpers use the instance's suffixed cookie names when cookie isolation is on.
+
 ## 0.6.0
 
 - New `createTestUser`, `createTestOrg`, `createTestMembership`, `createTestRole`, `seedScenario`, `waitForMessage` and `signWebhook` helpers for the emulator.

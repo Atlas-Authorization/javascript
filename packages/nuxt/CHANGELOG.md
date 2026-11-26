@@ -1,5 +1,10 @@
 # @atlasauth/nuxt changelog
 
+## 0.5.0
+
+- **behaviour:** Cookie isolation: with `session.cookieIsolation` on, the server helpers read and write the instance's suffixed cookie names, derived from the publishable key with no configuration.
+- Requires @atlasauth/backend 0.67.0.
+
 ## 0.4.1
 
 - Nuxt 4 is now a supported peer (`nuxt` `^3 || ^4`); the module is built and tested against Nuxt 4.6, which carries the current Nuxt security fixes (Nuxt 3 has none). No API change.

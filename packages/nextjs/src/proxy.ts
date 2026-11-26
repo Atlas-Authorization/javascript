@@ -127,7 +127,7 @@ function underBase(pathname: string, base: string): boolean {
 }
 
 /** The CSRF gate: a 403 to return, or null after recording the request's token. */
-function createCsrfGate(option: true | AtlasProxyCsrfOptions, atlas: { verifyCsrf(request: { headers: { get(name: string): string | null } }, o: { sid: string }): Promise<boolean> }) {
+function createCsrfGate(option: true | AtlasProxyCsrfOptions, atlas: { verifyCsrf(request: { headers: { get(name: string): string | null } }, o: { sid: string }): Promise<boolean>; cookieSuffix?: string }) {
   const config = option === true ? {} : option;
   let secret: string | undefined;
   return async function gate(request: ProxyRequest, auth: AuthState): Promise<Response | null> {
@@ -137,7 +137,9 @@ function createCsrfGate(option: true | AtlasProxyCsrfOptions, atlas: { verifyCsr
     const base = `/${(config.mountBasePath ?? env.ATLAS_BASE_PATH ?? '/atlas').replace(/^\/+|\/+$/g, '')}`;
     if (underBase(request.nextUrl.pathname, base)) return null;
     if (config.atlasSigned) {
-      const existing = readCookieValue(request.headers.get('cookie'), CSRF_COOKIE);
+      // Atlas's own CSRF cookie carries the instance suffix under cookie isolation.
+      const jar = request.headers.get('cookie');
+      const existing = (atlas.cookieSuffix ? readCookieValue(jar, `${CSRF_COOKIE}_${atlas.cookieSuffix}`) : undefined) ?? readCookieValue(jar, CSRF_COOKIE);
       csrfState.set(request, { token: existing ?? '', setCookie: false, secure: true });
       if (!UNSAFE_METHODS.has((request.method ?? 'GET').toUpperCase())) return null;
       if (await atlas.verifyCsrf(request, { sid: auth.sessionId })) return null;

@@ -1,3 +1,4 @@
+import { readSessionCookie } from '@atlasauth/backend';
 import {
   AtlasBackend,
   ForbiddenError,
@@ -143,14 +144,6 @@ export type AtlasMiddlewareHandler = (
   next: AtlasMiddlewareNext,
 ) => Promise<Response> | Response;
 
-function readCookie(header: string | null, name: string): string | undefined {
-  if (!header) return undefined;
-  for (const part of header.split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) return rest.join('=');
-  }
-  return undefined;
-}
 
 /** Read `process.env` without requiring `process` to be typed (no @types/node). */
 function readEnv(): Record<string, string | undefined> {
@@ -256,7 +249,7 @@ export async function resolveAuth(
   try {
     const header = request.headers.get('authorization');
     const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-    const cookie = readCookie(request.headers.get('cookie'), '__session');
+    const cookie = readSessionCookie(request.headers.get('cookie'), backend.cookieSuffix);
 
     const token = bearer ?? cookie;
     if (!token) return signedOut();

@@ -8,6 +8,7 @@
  * - `onWake` fires when the page comes back (visible, focus, online, pageshow).
  * - `coordinatedRefresh` makes N tabs waking together do ONE network refresh.
  */
+import { readAtlasCookie } from './cookie-names';
 import { REFRESH_LEAD_MS, type CachedToken } from './token-cache';
 import { broadcastChannel, winsElection, type Channel, type Claim, type RefreshMessage } from './tab-election';
 
@@ -15,14 +16,9 @@ import { broadcastChannel, winsElection, type Channel, type Claim, type RefreshM
 export const SIGNED_IN_HINT_COOKIE = '__atlas_uat';
 
 /** True when the hint cookie is present and numeric. SSR-safe: false without a document. */
-export function mayHaveSession(cookieSource?: string): boolean {
+export function mayHaveSession(cookieSource?: string, publishableKey?: string): boolean {
   const source = cookieSource ?? (typeof document === 'undefined' ? '' : document.cookie);
-  for (const part of source.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq < 0 || part.slice(0, eq).trim() !== SIGNED_IN_HINT_COOKIE) continue;
-    if (/^\d+$/.test(part.slice(eq + 1).trim())) return true;
-  }
-  return false;
+  return /^\d+$/.test(readAtlasCookie(source, SIGNED_IN_HINT_COOKIE, publishableKey) ?? '');
 }
 
 // --- atlasReady ---------------------------------------------------------

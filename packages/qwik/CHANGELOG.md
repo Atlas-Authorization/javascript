@@ -1,5 +1,10 @@
 # @atlasauth/qwik changelog
 
+## 0.8.0
+
+- **behaviour:** Cookie isolation: with `session.cookieIsolation` on, the server helpers read and write the instance's suffixed cookie names, derived from the publishable key with no configuration.
+- Requires @atlasauth/backend 0.67.0.
+
 ## 0.7.1
 
 - Imports the policy viewer from @atlasauth/js/policy-dom (@atlasauth/js 0.55.0).

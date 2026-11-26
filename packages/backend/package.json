@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/backend",
-  "version": "0.66.0",
+  "version": "0.67.0",
   "main": "./dist/index.js",
   "bin": {
     "atlas-doctor": "./dist/doctor-cli.js"

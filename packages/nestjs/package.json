@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/nestjs",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -20,7 +20,7 @@
     "@nestjs/core": ">=10",
     "reflect-metadata": ">=0.1.13",
     "rxjs": ">=7",
-    "@atlasauth/backend": ">=0.51.0 <1.0.0"
+    "@atlasauth/backend": ">=0.67.0 <1.0.0"
   },
   "devDependencies": {
     "@nestjs/common": "^11.1.18",

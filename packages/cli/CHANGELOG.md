@@ -1,5 +1,11 @@
 # @atlasauth/cli changelog
 
+## 0.56.0
+
+- `atlas keys create --preset oauth-apps` and `atlas init --key-preset oauth-apps`.
+- Config as code: `session.cookieIsolation`.
+- `atlas golive` gives a clearer error for social providers without production credentials.
+
 ## 0.55.0
 
 - **behaviour:** `atlas plan` and `atlas apply` stop on an unresolved `${VAR}`.

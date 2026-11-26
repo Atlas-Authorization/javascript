@@ -1,6 +1,7 @@
 import { ForbiddenError, evaluate, hasFromClaims, type ProtectCondition } from '@atlasauth/authz';
 import type { AtlasBackend, SessionClaims } from './verify';
 import { deriveAuthStatus, type AuthStatus } from './auth-status';
+import { readSessionCookie } from './cookie-names';
 
 /**
  * Framework-neutral request authentication, shared by the Koa, Hapi and GraphQL
@@ -71,31 +72,25 @@ function first(v: HeaderValue): string | undefined {
 }
 
 /** The raw session token a request carries (bearer header first, then the `__session` cookie), or null. */
-export function sessionTokenFromHeaders(headers: Record<string, HeaderValue>): string | null {
+export function sessionTokenFromHeaders(headers: Record<string, HeaderValue>, cookieSuffix = ''): string | null {
   const authz = first(headers.authorization ?? headers.Authorization);
   if (authz?.startsWith('Bearer ')) return authz.slice(7) || null;
   const cookie = first(headers.cookie ?? headers.Cookie);
-  if (cookie) {
-    for (const part of cookie.split(';')) {
-      const [key, ...rest] = part.trim().split('=');
-      if (key === '__session') return rest.join('=') || null;
-    }
-  }
-  return null;
+  return (cookie && readSessionCookie(cookie, cookieSuffix)) || null;
 }
 
 /** Verify a request's headers into a {@link RequestAuth}. Never throws. */
 export async function authenticateHeaders(backend: AtlasBackend, headers: Record<string, HeaderValue>): Promise<RequestAuth> {
   try {
-    const token = sessionTokenFromHeaders(headers);
+    const token = sessionTokenFromHeaders(headers, backend.cookieSuffix);
     const cookie = first(headers.cookie ?? headers.Cookie);
     if (!token) {
-      const { status, reason } = deriveAuthStatus(null, cookie);
+      const { status, reason } = deriveAuthStatus(null, cookie, backend.cookieSuffix);
       return signedOutAuth(status as Exclude<AuthStatus, 'signed_in'>, reason);
     }
     const result = await backend.verifyWithExpiry(token);
     if (result.ok) return signedInAuth(result.claims);
-    const { status, reason } = deriveAuthStatus(result, cookie);
+    const { status, reason } = deriveAuthStatus(result, cookie, backend.cookieSuffix);
     return signedOutAuth(status as Exclude<AuthStatus, 'signed_in'>, reason);
   } catch {
     return signedOutAuth('token_invalid', 'error');

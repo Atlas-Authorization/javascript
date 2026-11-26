@@ -26,9 +26,11 @@ export { atlasHandshake } from './handshake';
 export async function getAtlasAuth(event: H3Event): Promise<AtlasAuth> {
   if (event.context.auth) return event.context.auth;
 
-  const auth = await verifyCarriers(atlasBackend(), {
+  const backend = atlasBackend();
+  const auth = await verifyCarriers(backend, {
     authorization: getRequestHeader(event, 'authorization') ?? null,
-    sessionCookie: getCookie(event, '__session') ?? null,
+    // The suffixed name (an instance with cookie isolation) first, then the plain one.
+    sessionCookie: (backend.cookieSuffix ? getCookie(event, backend.cookieName('__session')) : undefined) ?? getCookie(event, '__session') ?? null,
   });
 
   event.context.auth = auth;

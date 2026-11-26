@@ -43,6 +43,22 @@ describe('createAccessTokenVerifier({ revocation: true })', () => {
     expect(urls.some((u) => u.includes('/v1/resource_servers/rs_1/revoked_tokens'))).toBe(true);
   });
 
+  it('rejects every token of a client on a client-kind row issued at or before its cut-off, and only those', async () => {
+    const { jwks, mint } = await setup();
+    const feed = [
+      { kind: 'client', family_id: null, jti: null, client_id: 'client_dead', revoked_at: Date.now() + 5000 },
+      { kind: 'client', family_id: null, jti: null, client_id: 'client_old', revoked_at: Date.now() - 60_000 },
+    ];
+    const { fetchImpl } = atlas(() => feed);
+    const verify = createAccessTokenVerifier({ issuer: ISSUER, audience: API, jwks, revocation: true, secretKey: 'sk_test_x', fetchImpl });
+    const req = (t: string) => ({ headers: { authorization: `Bearer ${t}` } });
+    // A client_credentials token has no fid: the client row alone ends it.
+    expect((await verify(req(await mint({ azp: 'client_dead' })))).ok).toBe(false);
+    expect((await verify(req(await mint({ azp: 'client_other' })))).ok).toBe(true);
+    // Issued after the cut-off (a re-registered client): still valid.
+    expect((await verify(req(await mint({ azp: 'client_old' })))).ok).toBe(true);
+  });
+
   it('fails closed with onStale reject when the feed is unreachable', async () => {
     const { jwks, mint } = await setup();
     let t = Date.now();

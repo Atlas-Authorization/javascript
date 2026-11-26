@@ -92,7 +92,7 @@ interface InitOptions {
   withDev: boolean;
   /** `app-runtime` (default): the app key and a separate provisioning key are scoped presets; `all` keeps the all-scope key. */
   keyPreset: 'app-runtime' | 'all';
-  /** Further preset keys to mint and save next to the app's (`--key-preset app-runtime,operator`): operator, end-user-pools. */
+  /** Further preset keys to mint and save next to the app's (`--key-preset app-runtime,operator`): operator, end-user-pools, oauth-apps. */
   extraKeyPresets: string[];
   /** Production without an email transport is refused unless this is passed. */
   allowNoEmail: boolean;
@@ -112,7 +112,7 @@ function secretLayout(dir: string, env: InstanceEnv): { dir: string; key: string
 }
 
 /** Presets `atlas init` can mint besides the app-runtime and provisioning keys it always makes, with the variable each key is saved under. */
-const EXTRA_KEY_PRESETS: Record<string, string> = { operator: 'ATLAS_OPERATOR_KEY', 'end-user-pools': 'ATLAS_END_USER_POOLS_KEY' };
+const EXTRA_KEY_PRESETS: Record<string, string> = { operator: 'ATLAS_OPERATOR_KEY', 'end-user-pools': 'ATLAS_END_USER_POOLS_KEY', 'oauth-apps': 'ATLAS_OAUTH_APPS_KEY' };
 
 /** Whether this folder already holds the other environment's key directly, as an older init left it. */
 function holdsOtherFlat(dir: string, env: InstanceEnv): boolean {
@@ -783,7 +783,7 @@ export async function init(ctx: RunContext, args: ParsedArgs): Promise<number> {
   if (record.webhook?.secret_file) ctx.io.out(`  Webhook secret file: ${record.webhook.secret_file}`);
   if (devRecord) ctx.io.out(`  Development key file: ${devRecord.secret_file}`);
   ctx.io.out(`  Project manifest:  ${manifestFile}`);
-  ctx.io.out('  Keys expire after a year (atlas preflight warns 30 days before). Other jobs: atlas keys create --preset operator | end-user-pools --out <file>');
+  ctx.io.out('  Keys expire after a year (atlas preflight warns 30 days before). Other jobs: atlas keys create --preset operator | end-user-pools | oauth-apps --out <file>');
   ctx.io.out(`  For a platform connect flow, mint its own key: atlas keys create --preset integrations --out <file> --env-var <NAME>`);
   if (opts.email === 'none' && opts.allowNoEmail) {
     ctx.io.out('Reminder: this instance has no email transport yet, so email codes, links and password resets are not offered. Add one before you rely on them:');

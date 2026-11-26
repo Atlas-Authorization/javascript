@@ -1,6 +1,6 @@
 {
   "name": "@atlasauth/express",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -10,7 +10,7 @@
   },
   "peerDependencies": {
     "express": ">=4",
-    "@atlasauth/backend": ">=0.62.0 <1.0.0"
+    "@atlasauth/backend": ">=0.67.0 <1.0.0"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

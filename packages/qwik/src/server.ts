@@ -57,8 +57,9 @@ export interface ServerAuthState {
  * token past its `exp` is treated as signed-out so a stale cookie does not keep
  * a visitor on a protected page.
  */
-export function getAuthState(event: GuardRequestEvent): ServerAuthState {
-  const raw = event.cookie.get(SESSION_COOKIE)?.value;
+export function getAuthState(event: GuardRequestEvent, cookieSuffix = ''): ServerAuthState {
+  // The suffixed cookie (an instance with cookie isolation) first, then the plain one.
+  const raw = (cookieSuffix ? event.cookie.get(`${SESSION_COOKIE}_${cookieSuffix}`)?.value : undefined) ?? event.cookie.get(SESSION_COOKIE)?.value;
   const claims = raw ? decodeClaims(raw) : null;
   const fresh = claims && (typeof claims.exp !== 'number' || claims.exp * 1000 > Date.now());
   const effective = fresh ? claims : null;

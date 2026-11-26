@@ -1,5 +1,10 @@
 # @atlasauth/nestjs changelog
 
+## 0.4.0
+
+- **behaviour:** Cookie isolation: with `session.cookieIsolation` on, the server helpers read and write the instance's suffixed cookie names, derived from the publishable key with no configuration.
+- Requires @atlasauth/backend 0.67.0.
+
 ## 0.3.0
 
 - `AtlasStepUpGuard` and `AtlasLimitsModule.register({ stepUp })`; `AtlasFeatureGuard` for plan features.

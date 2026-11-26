@@ -115,8 +115,9 @@ export async function verifyCsrf(request: CsrfRequest, options: CsrfOptions): Pr
 }
 
 /** The token the request submitted (header, else form field) when it equals the `__atlas_csrf` cookie; else null. */
-export async function submittedMatchingCookie(request: CsrfRequest): Promise<string | null> {
-  const cookie = readCookieValue(request.headers.get('cookie'), CSRF_COOKIE);
+export async function submittedMatchingCookie(request: CsrfRequest, cookieSuffix = ''): Promise<string | null> {
+  const header = request.headers.get('cookie');
+  const cookie = (cookieSuffix ? readCookieValue(header, `${CSRF_COOKIE}_${cookieSuffix}`) : undefined) ?? readCookieValue(header, CSRF_COOKIE);
   if (!cookie) return null;
   let submitted: string | null = request.headers.get(CSRF_HEADER);
   if (submitted === null) {

@@ -1,5 +1,10 @@
 # @atlasauth/workers changelog
 
+## 0.3.0
+
+- **behaviour:** Cookie isolation: with `session.cookieIsolation` on, the server helpers read and write the instance's suffixed cookie names, derived from the publishable key with no configuration.
+- Requires @atlasauth/backend 0.67.0.
+
 ## 0.2.0
 
 - The auth state from `authenticate()` gains `status` (`signed_in`, `signed_out`, `session_expired`, `token_invalid`) and `reason`. `session_expired` means the short-lived session token lapsed but the refresh cookie or sign-in hint is present: renew, do not sign out. `requireAuth` and `withAuth` set `x-atlas-auth-status` on their 401. Needs `@atlasauth/backend` 0.62.0.

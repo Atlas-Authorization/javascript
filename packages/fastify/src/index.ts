@@ -1,3 +1,4 @@
+import { readSessionCookie } from '@atlasauth/backend';
 import {
   AtlasBackend,
   createBetterAuthBridge,
@@ -324,14 +325,6 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
   return value ?? undefined;
 }
 
-function readCookie(header: string | undefined, name: string): string | undefined {
-  if (!header) return undefined;
-  for (const part of header.split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) return rest.join('=');
-  }
-  return undefined;
-}
 
 /**
  * The signed-out auth state. `has()` is always `false` and `protect()` always
@@ -395,11 +388,11 @@ export async function resolveAuth(
     const header = firstHeader(request.headers.authorization ?? request.headers.Authorization);
     const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
     const cookieHeader = firstHeader(request.headers.cookie);
-    const cookie = readCookie(cookieHeader, '__session');
+    const cookie = readSessionCookie(cookieHeader, backend.cookieSuffix);
 
     const token = bearer ?? cookie;
     if (!token) {
-      const { status, reason } = deriveAuthStatus(null, cookieHeader);
+      const { status, reason } = deriveAuthStatus(null, cookieHeader, backend.cookieSuffix);
       return signedOut(status as Exclude<AuthStatus, 'signed_in'>, reason);
     }
 

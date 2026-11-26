@@ -618,6 +618,29 @@ describe('signals, schema and the small reads (wave 2)', () => {
     expect((await c('GET', `/v1/resource_servers/${rs.id}/revoked_tokens`)).json).toMatchObject({ data: [], has_more: false, retention_seconds: 2_592_000 });
   });
 
+  it('revokes a deleted OAuth client\'s tokens and lists it in the revoked-token feed, every item with kind, client_id and oauth_client_id', async () => {
+    const e = makeEngine();
+    const c = client(e);
+    // The OAuth endpoints take form bodies.
+    const form = async (path: string, fields: Record<string, string>) => {
+      const res = await e.handle(new Request(`http://emulator.test${path}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields).toString() }));
+      return { status: res.status, json: await res.json() };
+    };
+    const rs = (await c('POST', '/v1/resource_servers', { name: 'API', identifier: 'https://api.example.com' })).json;
+    const oc = (await c('POST', '/v1/oauth_clients', { name: 'M2M', redirect_uris: ['https://app.example.com/cb'], grant_types: ['authorization_code', 'client_credentials'], allowed_scopes: ['read'], token_endpoint_auth_method: 'client_secret_post' })).json;
+    const tok = await form('/oauth2/token', { grant_type: 'client_credentials', client_id: oc.client_id, client_secret: oc.client_secret, scope: 'read' });
+    expect(tok.status).toBe(200);
+    const introspect = () => form('/oauth2/introspect', { token: tok.json.access_token, client_id: oc.client_id, client_secret: oc.client_secret });
+    expect((await introspect()).json.active).toBe(true);
+    expect((await c('GET', `/v1/resource_servers/${rs.id}/revoked_tokens`)).json.data).toEqual([]);
+
+    expect((await c('DELETE', `/v1/oauth_clients/${oc.id}`)).status).toBe(200);
+
+    const feed = (await c('GET', `/v1/resource_servers/${rs.id}/revoked_tokens`)).json.data;
+    expect(feed).toEqual([expect.objectContaining({ kind: 'client', family_id: null, jti: null, client_id: oc.client_id, oauth_client_id: oc.client_id, reason: 'client_revoked' })]);
+    for (const item of feed) expect(item).toEqual(expect.objectContaining({ kind: expect.any(String), client_id: expect.any(String), oauth_client_id: expect.any(String) }));
+  });
+
   it('handles identity checks, reconfirm and saved-search counts', async () => {
     const c = call();
     const user = (await c('POST', '/v1/users', { email_address: 'ada@example.com' })).json;

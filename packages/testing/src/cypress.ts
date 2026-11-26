@@ -72,6 +72,11 @@ export interface AddAtlasCommandsOptions {
    * The session-cookie name the FAPI sets. @default '__session'
    */
   cookieName?: string;
+  /**
+   * The instance's publishable key. With per-instance cookie isolation on, the session cookie is
+   * `__session_<suffix>` and the suffix is derived from this key. Ignored when `cookieName` is set.
+   */
+  publishableKey?: string;
   /** Injectable `Cypress` global, for unit testing. Defaults to `globalThis.Cypress`. */
   Cypress?: CypressStatic;
   /** Injectable `cy` chain, for unit testing. Defaults to `globalThis.cy`. */
@@ -138,7 +143,9 @@ export function addAtlasCommands(options: AddAtlasCommandsOptions = {}): void {
   }
 
   const tokenEnvKey = options.testingTokenEnvKey ?? 'ATLAS_TESTING_TOKEN';
-  const cookieName = options.cookieName ?? '__session';
+  const cookieName =
+    options.cookieName ??
+    (options.publishableKey ? `__session_${options.publishableKey.replace(/[^A-Za-z0-9]/g, '').slice(-8).toLowerCase()}` : '__session');
 
   CypressRef.Commands.add('atlasSignIn', ((params: AtlasSignInParams) => {
     const cy = options.cy ?? g.cy;

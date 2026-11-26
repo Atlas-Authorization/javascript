@@ -55,6 +55,7 @@ export type RevocationFeed = (cursor: string | undefined) => Promise<{ data: Arr
 
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'host']);
 const SESSION_COOKIE = '__session';
+const SESSION_COOKIE_RE = /^__session(?:_[a-z0-9]{8})?=/;
 const CACHE_MAX = 2000;
 
 /** The credential a request carries: a bearer token first, then the session cookie. Never a query string. */
@@ -62,8 +63,9 @@ export function readCredential(headers: IncomingHttpHeaders, allowApiKeys: boole
   const auth = headers.authorization;
   const bearer = typeof auth === 'string' ? /^Bearer\s+(\S+)$/i.exec(auth)?.[1] : undefined;
   if (bearer) return allowApiKeys && bearer.startsWith('ak_') ? { kind: 'api_key', token: bearer } : { kind: 'session', token: bearer };
-  const cookie = typeof headers.cookie === 'string' ? headers.cookie.split(';').map((p) => p.trim()).find((p) => p.startsWith(`${SESSION_COOKIE}=`)) : undefined;
-  const value = cookie?.slice(SESSION_COOKIE.length + 1);
+  // `__session`, or `__session_<8 characters>` when the instance isolates its cookies.
+  const cookie = typeof headers.cookie === 'string' ? headers.cookie.split(';').map((p) => p.trim()).find((p) => SESSION_COOKIE_RE.test(p)) : undefined;
+  const value = cookie?.slice(cookie.indexOf('=') + 1);
   return value ? { kind: 'session', token: decodeURIComponent(value) } : undefined;
 }
 
@@ -176,7 +178,7 @@ export async function startAuthProxy(opts: AuthProxyOptions): Promise<{ url: str
       if (value === undefined || HOP_BY_HOP.has(lower) || lower.startsWith('x-atlas-')) continue;
       if (opts.stripCredentials && lower === 'authorization') continue;
       if (opts.stripCredentials && lower === 'cookie') {
-        const rest = (Array.isArray(value) ? value.join('; ') : value).split(';').map((p) => p.trim()).filter((p) => p && !p.startsWith(`${SESSION_COOKIE}=`));
+        const rest = (Array.isArray(value) ? value.join('; ') : value).split(';').map((p) => p.trim()).filter((p) => p && !SESSION_COOKIE_RE.test(p));
         if (rest.length) headers.cookie = rest.join('; ');
         continue;
       }
