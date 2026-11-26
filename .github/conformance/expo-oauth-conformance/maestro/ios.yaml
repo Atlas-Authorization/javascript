@@ -6,10 +6,16 @@ appId: com.example.app
 - assertVisible: "signed-out"
 - tapOn:
     id: "sign-in"
-# The system asks once to allow the app to use the provider's site to sign in.
-- tapOn:
-    text: "Continue"
-    optional: true
+# The system asks once to allow the app to use the provider's site to sign in. The sheet belongs to another process and
+# can appear many seconds after the tap, so wait for it (or the provider page) instead of probing once.
+- extendedWaitUntil:
+    visible: "Continue|Sign in as test user"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
 # The test OIDC provider shows one button and signs the fixed test user in.
 - extendedWaitUntil:
     visible: "Sign in as test user"

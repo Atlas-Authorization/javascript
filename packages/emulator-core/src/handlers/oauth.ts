@@ -260,8 +260,12 @@ const clientWebhookHandlers = (): RouteDef[] => [
       let creator: { id: string } | null = null;
       const userId = c.body.user_id;
       if (userId !== undefined && userId !== null) {
-        if (typeof userId !== 'string' || !consentGrants(e).some((g) => g.userId === userId && g.clientId === row.id)) throw notFound('User');
-        creator = { id: await subjectFor(e, row, userId) };
+        if (typeof userId !== 'string') throw notFound('User');
+        // The Atlas user id, or the sub this client receives for the user; no grant is needed.
+        let resolved: string | undefined = e.db.users.get(userId) ? userId : undefined;
+        if (!resolved) for (const u of e.db.users.all()) if ((await subjectFor(e, row, u.id)) === userId) { resolved = u.id; break; }
+        if (!resolved) throw notFound('User');
+        creator = { id: await subjectFor(e, row, resolved) };
       }
       const now = e.clock.now();
       const id = `evt_${randomToken(12)}`;
