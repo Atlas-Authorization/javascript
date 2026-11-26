@@ -126,6 +126,9 @@ jobs:
           target: google_apis
           script: |
             adb install "$RUNNER_TEMP"/app/android/app/build/outputs/apk/release/app-release.apk
+            # The emulator's Chrome opens on its first-run welcome screen; the Custom Tab never reaches the sign-in page behind it.
+            adb shell am set-debug-app --persistent com.android.chrome
+            adb shell 'echo "chrome --disable-fre --no-default-browser-check --no-first-run" > /data/local/tmp/chrome-command-line'
             maestro test .github/conformance/expo-oauth-conformance/maestro/android.yaml --format junit --output android-report.xml || (adb logcat -d > android-logcat.txt; exit 1)
       - uses: actions/upload-artifact@v4
         if: always()

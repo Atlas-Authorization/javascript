@@ -6,6 +6,20 @@ appId: com.example.app
 - assertVisible: "signed-out"
 - tapOn:
     id: "sign-in"
+# Fallback when Chrome still shows its first-run screens.
+- extendedWaitUntil:
+    visible: "Use without an account|Sign in as test user"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "Use without an account"
+    commands:
+      - tapOn: "Use without an account"
+- runFlow:
+    when:
+      visible: "No thanks"
+    commands:
+      - tapOn: "No thanks"
 - extendedWaitUntil:
     visible: "Sign in as test user"
     timeout: 30000
