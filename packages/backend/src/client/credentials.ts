@@ -123,7 +123,7 @@ export interface PartnerLink {
   object: 'partner_link';
   id: string;
   client_id: string;
-  /** Any lowercase id; cookiemunch, chatly, forumulate and referalli are presets. */
+  /** Any lowercase id; cookiemunch, chatly, forumulate, referalli and seolyticize are presets. */
   partner: string;
   name: string;
   preset: boolean;
